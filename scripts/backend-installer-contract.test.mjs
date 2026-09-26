@@ -103,9 +103,31 @@ test('development launchers fail closed and keep live E2E shell-neutral', () => 
 test('README follows the paired install and development launcher contract', () => {
   const root = new URL('..', import.meta.url);
   const readme = readFileSync(new URL('README.md', root), 'utf8');
-  const developmentStart = readme.indexOf('## Development quick start');
+  const quickStart = readme.indexOf('## Developer setup with uv and npm');
+  const installStart = readme.indexOf('## Install and run MoDiff');
+  const developmentStart = readme.indexOf('## Optional development launchers');
   const developmentEnd = readme.indexOf('## Your First Workflow');
 
+  assert.notEqual(quickStart, -1, 'README must expose the uv/npm quick start');
+  assert.ok(installStart > quickStart, 'Developer quick start must precede launcher installation');
+  const quick = readme.slice(quickStart, installStart);
+  for (const command of [
+    'git clone https://github.com/sdevil7th/MoDiff.git MoDiff',
+    'git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
+    'cd MoDiff',
+    'uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json',
+    'uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive',
+    'uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error',
+    'uv run --no-project --no-sync --python 3.12 -m modiff.dev run',
+    'cd MoDiff-client',
+    'npm ci',
+    'npm run dev',
+  ]) {
+    assert.ok(quick.split('\n').includes(command), `Quick start is missing command: ${command}`);
+  }
+  assert.match(quick, /docs\/developer-setup\.md/);
+  assert.match(quick, /CPU profile is for API\/UI development/);
+  assert.ok(developmentStart > installStart, 'Optional launchers must remain separate from the uv/npm quick start');
   assert.notEqual(developmentStart, -1);
   assert.ok(developmentEnd > developmentStart);
   const development = readme.slice(developmentStart, developmentEnd);

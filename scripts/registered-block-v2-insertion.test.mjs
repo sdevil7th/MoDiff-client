@@ -376,7 +376,7 @@ function fixture() {
     definitionKind: 'modular_pipeline_workflow',
     ownership: 'library',
     mutable: false,
-    libraryRevision: '2f7e0154a9db246e95c9ede43edba7db5b130805',
+    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
     pipelineClass: 'QwenImageModularPipeline',
     blocksClass: 'QwenImageAutoBlocks',
     pipelineKind: 'auto',
@@ -421,7 +421,7 @@ function fixture() {
         url: 'https://huggingface.co/Qwen/Qwen-Image-2512/blob/' + '25468b98e3276ca6700de15c6628e51b7de54a26/README.md',
       },
     },
-    contentHash: 'sha256:9cbb38204acb409888b94e880a6e343e9bd67ea5703455560bc5c6d713437f68',
+    contentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
   };
   const executionSpec = {
     schemaVersion: 1,
@@ -498,7 +498,7 @@ function fluxFixture() {
         url: 'https://huggingface.co/black-forest-labs/FLUX.1-dev',
       },
     },
-    contentHash: 'sha256:a356ee05c84bbc30230e07c8477b9159a36678b9f76fa07127eea1a37e399e3a',
+    contentHash: 'sha256:cfec41815a507f63620e7b80cb6a18700485ac2520a7472826b1389418bbd7ed',
   });
   Object.assign(admission, {
     id: admissionId,
@@ -1493,23 +1493,27 @@ test('an exact Qwen cluster always submits a workflow Auto plan from top-bar and
         : { task_id: `exact-qwen-${requests.length}`, sid: 'session-1' };
     return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } });
   };
-  for (const targetNodeId of [undefined, root.id]) {
-    requests.length = 0;
-    const result = await runCoordinator.coordinateGraphRun({ sid: 'session-1', targetNodeId });
-    assert.match(requests[0].url, /\/auto_resource\/workflow$/u);
-    assert.equal(requests.length, 2);
-    assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
-    assert.equal(
-      result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash,
-      `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
-    );
-    assert.deepEqual(JSON.parse(JSON.stringify(result.submittedGraph.nodes)), requests[0].body.graph.nodes);
-    assert.deepEqual(flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.values, before.values);
-    assert.deepEqual(
-      flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot,
-      before.definitionSnapshot,
-    );
+  for (const viewMode of ['auto', 'expert']) {
+    settingsStore.useSettingsStore.setState({ studioViewMode: viewMode });
+    for (const targetNodeId of [undefined, root.id]) {
+      requests.length = 0;
+      const result = await runCoordinator.coordinateGraphRun({ sid: 'session-1', targetNodeId });
+      assert.match(requests[0].url, /\/auto_resource\/workflow$/u);
+      assert.equal(requests.length, 2);
+      assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
+      assert.equal(
+        result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash,
+        `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+      );
+      assert.deepEqual(JSON.parse(JSON.stringify(result.submittedGraph.nodes)), requests[0].body.graph.nodes);
+      assert.deepEqual(flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.values, before.values);
+      assert.deepEqual(
+        flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot,
+        before.definitionSnapshot,
+      );
+    }
   }
+  assert.equal(studioStore.useStudioStore.getState().form.resourceMode, 'auto');
   ready = false;
   requests.length = 0;
   await assert.rejects(
@@ -1519,7 +1523,44 @@ test('an exact Qwen cluster always submits a workflow Auto plan from top-bar and
   assert.equal(requests.length, 1, 'a rejected plan must never fall through to Expert submission');
 });
 
-test('Qwen Auto preparation failure is atomic and Expert mode bypasses the request boundary', async () => {
+test('unified workspace removes old mode keys and preserves the active layout and resources', () => {
+  const settings = settingsStore.useSettingsStore;
+  const options = settings.persist.getOptions();
+  const before = structuredClone(studioStore.useStudioStore.getState().form);
+  for (const oldMode of ['creator', 'developer']) {
+    const restored = options.merge(
+      {
+        workspaceMode: oldMode,
+        studioViewMode: 'auto',
+        workspacePanelPreferences: { creator: { leftPanelWidth: 900 } },
+        leftPanelWidth: 480,
+        leftPanelTabIndex: 0,
+        rightPanelTab: 'queue',
+      },
+      settings.getState(),
+    );
+    assert.equal(restored.studioViewMode, undefined);
+    assert.equal(restored.workspacePanelPreferences, undefined);
+    assert.equal(restored.workspaceMode, undefined);
+    assert.equal(restored.leftPanelWidth, 480);
+    assert.equal(restored.rightPanelTab, 'queue');
+  }
+  assert.deepEqual(studioStore.useStudioStore.getState().form, before);
+  assert.equal(settings.getState().setStudioViewMode, undefined);
+});
+
+test('resource settings retain their independent meanings after workspace consolidation', () => {
+  for (const [savedResource, resource] of [
+    ['manual', 'expert'],
+    ['expert', 'expert'],
+    ['auto', 'auto'],
+  ]) {
+    const restoredForm = outputContracts.coerceStudioFormState({ ...form(), resourceMode: savedResource });
+    assert.equal(restoredForm.resourceMode, resource);
+  }
+});
+
+test('Qwen Auto preparation uses resource policy independently of authoring mode and preserves atomic failure', async () => {
   const configured = fixture();
   libraryStore.useHuggingFaceNodeLibraryStore.setState({
     library: fixtureLibrary([configured.definition], configured.blockDefinitions),
@@ -1556,14 +1597,16 @@ test('Qwen Auto preparation failure is atomic and Expert mode bypasses the reque
     before,
   );
 
-  // A restored graph can momentarily disagree with the visibly-off top-bar
-  // switch. The user's explicit Expert choice wins, repairs the stale form,
-  // and still performs no planner request.
+  // Expert authoring must keep the restored automatic execution policy and
+  // its planner rejection. Opening an inspector is not a policy override.
   studioStore.useStudioStore.setState((state) => ({ form: { ...state.form, resourceMode: 'auto' } }));
   settingsStore.useSettingsStore.setState({ studioViewMode: 'expert' });
-  await blockAutoAuthority.prepareRegisteredBlockAutoAuthoritiesV2([root.id]);
-  assert.equal(requests, 1);
-  assert.equal(studioStore.useStudioStore.getState().form.resourceMode, 'expert');
+  await assert.rejects(
+    blockAutoAuthority.prepareRegisteredBlockAutoAuthoritiesV2([root.id]),
+    /bounded planner rejection/u,
+  );
+  assert.equal(requests, 2);
+  assert.equal(studioStore.useStudioStore.getState().form.resourceMode, 'auto');
   assert.equal(
     JSON.stringify(flowStore.useFlowStore.getState().nodes.find(({ id }) => id === root.id).data.blockInstanceV2),
     before,
@@ -2461,3 +2504,136 @@ test('workflow replacement during a deferred field action aborts and cleans the 
   assert.equal(flowStore.useFlowStore.getState().historyPast.length, 0);
   assert.equal(persistedFlowText().includes('blockCompilationTransientV2'), false);
 });
+
+for (const change of ['workflow', 'edit', 'cancel', 'gesture', 'none']) {
+  test(`a delayed registered Block switch preserves its owner after ${change}`, async () => {
+    const switching = await server.ssrLoadModule('/src/studio/registeredBlockRouteSwitchV1.ts');
+    const configured = fixture();
+    const root = await insertion.createHuggingFaceClusterForGraph(configured.definition, { x: 80, y: 90 }, form());
+    // Existing workflow route state intentionally exercises the compatibility
+    // path. New modelVariant Blocks are not converted to legacy route sets.
+    root.data.blockInstanceV2.routeSelection = {
+      schemaVersion: 1,
+      routeSetId: 'diffusers.route-set:text-to-image:v1',
+      selectedRouteKey: 'qwen-image-2512',
+      inactiveDrafts: {},
+    };
+    const target = fluxFixture();
+    configureFixture(target);
+    libraryStore.useHuggingFaceNodeLibraryStore.setState({
+      library: fixtureLibrary([configured.definition, target.definition], target.blockDefinitions),
+      loaded: true,
+    });
+    flowStore.useFlowStore.getState().replaceGraph({ nodes: [root, baseNode()], edges: [] });
+    flowStore.useFlowStore.getState().resetHistory();
+    const original = flowStore.useFlowStore.getState().toObject();
+    const fetch = globalThis.fetch;
+    const entered = deferred();
+    const release = deferred();
+    globalThis.fetch = async (url, init) => {
+      entered.resolve();
+      await release.promise;
+      return fetch(url, init);
+    };
+    const controller = new AbortController();
+    const pending = switching.switchRegisteredBlockRouteV1(root.id, 'flux-1-dev', { signal: controller.signal });
+    // Observe rejection immediately so cancellation cannot become an unhandled
+    // rejection while the deliberately delayed metadata server finishes.
+    const settled = pending.then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+    await entered.promise;
+    if (change === 'workflow') {
+      studioStore.useStudioStore.setState({ activeWorkflowTabId: 'different-workflow', workflowCanvasEpoch: 2 });
+    } else if (change === 'edit') {
+      flowStore.useFlowStore.getState().setBlockInstanceValueV2(root.id, 'prompt', 'Newer draft must survive');
+    } else if (change === 'cancel') controller.abort();
+    else if (change === 'gesture') flowStore.useFlowStore.getState().beginHistoryTransaction('Unfinished gesture');
+    const before = flowStore.useFlowStore.getState().toObject();
+    const history = structuredClone(flowStore.useFlowStore.getState().historyPast);
+    release.resolve();
+    const result = await settled;
+    if (change === 'none') {
+      assert.equal(result.error, undefined);
+      assert.equal(result.value.definitionSnapshot.source.pipelineClass, 'FluxModularPipeline');
+      assert.equal(flowStore.useFlowStore.getState().historyPast.length, 1);
+      flowStore.useFlowStore.getState().undo();
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), original);
+      flowStore.useFlowStore.getState().redo();
+      assert.equal(
+        flowStore.useFlowStore.getState().nodes[0].data.blockInstanceV2.definitionSnapshot.source.pipelineClass,
+        'FluxModularPipeline',
+      );
+    } else {
+      assert.ok(result.error, `The ${change} must reject the delayed switch`);
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), before);
+      assert.deepEqual(flowStore.useFlowStore.getState().historyPast, history);
+    }
+  });
+}
+
+for (const hasRestoredPort of [false, true]) {
+  test(`Block switching validates the restored interface when a custom port is ${hasRestoredPort ? 'present' : 'absent'}`, async () => {
+    const routes = await server.ssrLoadModule('/src/studio/blockRouteSelectionV1.ts');
+    const qwen = fixture();
+    const qwenRoot = await insertion.createHuggingFaceClusterForGraph(qwen.definition, { x: 80, y: 90 }, form());
+    const flux = fluxFixture();
+    configureFixture(flux);
+    const fluxRoot = await insertion.createHuggingFaceClusterForGraph(flux.definition, { x: 80, y: 90 }, form());
+    const routeState = (selectedRouteKey) => ({
+      schemaVersion: 1,
+      routeSetId: 'diffusers.route-set:text-to-image:v1',
+      selectedRouteKey,
+      inactiveDrafts: {},
+    });
+    const sourceFlux = { ...fluxRoot.data.blockInstanceV2, routeSelection: routeState('flux-1-dev') };
+    const portId = hasRestoredPort ? 'detail_image' : 'images';
+    const changeOutputs = (instance, add) =>
+      blockRuntime.replaceBlockEffectiveInterfaceV2(instance, {
+        ...instance.effectiveInterface,
+        boundary: {
+          ...instance.effectiveInterface.boundary,
+          outputs: add
+            ? [
+                ...instance.effectiveInterface.boundary.outputs,
+                { ...instance.effectiveInterface.boundary.outputs[0], portId: 'detail_image' },
+              ]
+            : instance.effectiveInterface.boundary.outputs.filter((p) => p.portId !== 'images'),
+        },
+      });
+    const editedFlux = changeOutputs(sourceFlux, hasRestoredPort);
+    let current = routes.switchBlockRouteInstanceV1(editedFlux, 'qwen-image-2512', qwenRoot.data.blockInstanceV2);
+    if (hasRestoredPort) current = changeOutputs(current, true);
+    const owner = blockRuntime.createBlockRootNodeV2(current);
+    const edge = {
+      id: 'public-output',
+      source: owner.id,
+      sourceHandle: portId,
+      target: baseNode().id,
+      targetHandle: 'image',
+      type: 'default',
+    };
+    flowStore.useFlowStore.getState().replaceGraph({ nodes: [owner, baseNode()], edges: [edge] });
+    flowStore.useFlowStore.getState().resetHistory();
+    const before = flowStore.useFlowStore.getState().toObject();
+    const change = () =>
+      flowStore.useFlowStore.getState().switchBlockRouteV1(owner.id, 'flux-1-dev', fluxRoot.data.blockInstanceV2);
+    if (hasRestoredPort) {
+      change();
+      const after = flowStore.useFlowStore.getState().toObject();
+      assert.deepEqual(after.edges, before.edges);
+      assert.deepEqual(after.nodes[0].data.blockInstanceV2.effectiveInterface, editedFlux.effectiveInterface);
+      assert.deepEqual(after.nodes[0].data.blockInstanceV2.definitionSnapshot, sourceFlux.definitionSnapshot);
+      assert.equal(flowStore.useFlowStore.getState().historyPast.length, 1);
+      flowStore.useFlowStore.getState().undo();
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), before);
+      flowStore.useFlowStore.getState().redo();
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), after);
+    } else {
+      assert.throws(change, /images is connected.*does not expose/u);
+      assert.deepEqual(flowStore.useFlowStore.getState().toObject(), before);
+      assert.equal(flowStore.useFlowStore.getState().historyPast.length, 0);
+    }
+  });
+}

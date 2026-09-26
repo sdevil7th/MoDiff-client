@@ -2,19 +2,6 @@ import { STUDIO_MODEL_PROFILES, STUDIO_OFFLOAD_RUNTIME_LABELS } from './modelPro
 import { normalizeStudioDeviceOffloadPlan, supportsStudioCpuOffload } from './deviceOffload';
 import type { StudioFormState, StudioOffloadMode, StudioResourceMode } from './types';
 
-export const STUDIO_RESOURCE_MODES = ['auto', 'expert'] as const;
-
-export const STUDIO_RESOURCE_LABELS: Record<StudioResourceMode, string> = {
-  auto: 'Auto',
-  expert: 'Expert',
-};
-
-export const STUDIO_RESOURCE_DESCRIPTIONS: Record<StudioResourceMode, string> = {
-  auto: 'MoDiff checks local hardware, available resources, model requirements, and installed artifacts, then chooses the best known local recipe.',
-  expert:
-    'Expose precision, quantization, offload, device, and scheduler-level controls for debugging or custom graph work.',
-};
-
 const RESOURCE_RETRY_ORDER: StudioOffloadMode[] = ['model_cpu', 'sequential_cpu', 'group_disk'];
 export const AUTO_RESOURCE_TARGET_KEYS = [
   'executionProfileId',
@@ -32,6 +19,12 @@ export const AUTO_RESOURCE_LOADER_TARGETS = [
   'modules.DiffusersVideo.LoadPipeline.direct-diffusers-video',
   'modules.DiffusersVideo.LoadPipeline.direct-wan-vace',
   'modules.DiffusersThreeD.LoadPipeline.direct-diffusers-three-d',
+  'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel.direct-huggingface-speech',
+  'modules.HuggingFaceSpeech.LoadCTCSpeechRecognitionModel.direct-huggingface-speech-ctc',
+  'modules.HuggingFaceTransformers.LoadDepthEstimationModel.direct-huggingface-transformers-depth',
+  'modules.HuggingFaceTransformers.LoadTextGenerationModel.direct-huggingface-transformers-text',
+  'modules.HuggingFaceTransformers.LoadImageTextToTextModel.direct-huggingface-transformers-image-text',
+  'modules.HuggingFaceTransformers.LoadAnyToAnyModel.direct-huggingface-transformers-any-to-any',
 ] as const;
 export function autoProofIsReady(proof: { status?: string } | null | undefined) {
   return ['passed', 'declared_safe', 'live_proven'].includes(proof?.status as string);

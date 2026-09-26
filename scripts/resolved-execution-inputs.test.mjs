@@ -4,17 +4,136 @@ import { createServer } from 'vite';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-let server, contracts, inputs, outputUtils;
+let server, contracts, inputs, outputUtils, profiles;
 before(async () => {
   globalThis.window = { location: { origin: 'http://localhost' } };
   server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   contracts = await server.ssrLoadModule('/src/studio/outputContracts.ts');
   inputs = await server.ssrLoadModule('/src/studio/resolvedExecutionInputs.ts');
   outputUtils = await server.ssrLoadModule('/src/studio/outputUtils.ts');
+  profiles = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
 });
 after(async () => {
   await server?.close();
   delete globalThis.window;
+});
+
+function capturedOutput(fields, extra = {}) {
+  const evidence = receipt();
+  evidence.nodes[0].fields = Object.fromEntries(
+    Object.entries(fields).map(([key, value]) => [key, { value, source: 'literal' }]),
+  );
+  const names = { model_type: 'modelType', num_inference_steps: 'steps', guidance_scale: 'guidanceScale' };
+  evidence.summary = Object.fromEntries(Object.entries(fields).map(([key, value]) => [names[key] ?? key, value]));
+  return contracts.coerceStudioOutput({
+    id: 'captured',
+    url: '/image.webp',
+    taskId: 'actual-task',
+    attemptIndex: 2,
+    nodeId: 'preview',
+    modelType: 'ZImageModularPipeline',
+    modelLabel: 'Z-Image Turbo',
+    steps: 9,
+    guidanceScale: 1,
+    formSnapshot: { modelType: 'ZImageModularPipeline', steps: 9, guidanceScale: 1 },
+    resolvedExecutionInputs: evidence,
+    ...extra,
+  });
+}
+
+test('captured model identity replaces stale labels for every registered model and custom pipelines', () => {
+  for (const [modelType, profile] of Object.entries(profiles.STUDIO_MODEL_PROFILES)) {
+    const output = capturedOutput({ model_type: modelType });
+    assert.equal(output.modelType, modelType);
+    assert.equal(output.modelLabel, profile.label);
+    assert.equal(inputs.outputModelKey(output), modelType);
+    assert.equal(output.formSnapshot.modelType, 'ZImageModularPipeline');
+    const restored = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+    assert.equal(restored.modelLabel, profile.label);
+  }
+  for (const modelType of ['CustomModularPipeline', 'AnotherCustomPipeline', 'constructor']) {
+    const output = capturedOutput({ model_type: modelType });
+    assert.equal(output.modelLabel, modelType);
+    assert.equal(inputs.outputModelKey(output), modelType, 'custom models must not share the legacy fallback filter');
+  }
+  const legacy = capturedOutput({}, { resolvedExecutionInputs: undefined, modelLabel: 'My historical alias' });
+  assert.equal(legacy.modelLabel, 'My historical alias');
+  assert.equal(inputs.outputModelKey(legacy), 'ZImageModularPipeline');
+});
+
+test('missing, ambiguous and incomplete model evidence never labels a run with the starting form model', () => {
+  const missing = capturedOutput({});
+  const ambiguous = structuredClone(missing.resolvedExecutionInputs);
+  ambiguous.nodes[0].fields.model_type = { value: 'FluxModularPipeline', source: 'literal' };
+  ambiguous.nodes.push({
+    ...structuredClone(ambiguous.nodes[0]),
+    nodeId: 'other',
+    fields: { model_type: { value: 'StableDiffusionXLModularPipeline', source: 'literal' } },
+  });
+  ambiguous.ambiguousFields = ['modelType'];
+  const incomplete = structuredClone(ambiguous);
+  incomplete.truncated = true;
+  incomplete.unavailableFields = ['modelType'];
+  for (const evidence of [missing.resolvedExecutionInputs, ambiguous, incomplete]) {
+    const output = capturedOutput({}, { resolvedExecutionInputs: evidence });
+    assert.ok(output.resolvedExecutionInputs);
+    assert.equal(output.modelLabel, 'Model not uniquely captured');
+    assert.equal(inputs.outputModelKey(output), 'uncaptured-model');
+  }
+});
+
+test('numeric string display preserves raw receipts and forms across history reload', () => {
+  for (const [raw, expected] of [
+    ['32', 32],
+    ['6.5', 6.5],
+    ['0', 0],
+    ['.62', 0.62],
+    ['  +3.2e1  ', 32],
+  ]) {
+    let output = capturedOutput({ num_inference_steps: raw, guidance_scale: raw });
+    const original = structuredClone(output.resolvedExecutionInputs);
+    for (let reload = 0; reload < 2; reload++) {
+      assert.equal(inputs.outputInputDisplay(output, 'steps'), expected);
+      assert.equal(inputs.outputNumericInputValue(output, 'guidanceScale'), expected);
+      assert.deepEqual(output.resolvedExecutionInputs, original);
+      assert.equal(output.formSnapshot.steps, 9);
+      output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+    }
+  }
+  for (const raw of [
+    '',
+    ' ',
+    '0x20',
+    '0b10',
+    '32px',
+    'NaN',
+    'Infinity',
+    '1e400',
+    '9007199254740993',
+    true,
+    null,
+    ['32'],
+  ]) {
+    const output = capturedOutput({ num_inference_steps: raw });
+    assert.equal(inputs.outputNumericInputValue(output, 'steps'), undefined, JSON.stringify(raw));
+    assert.match(inputs.outputInputDisplay(output, 'steps'), /Not uniquely captured/);
+  }
+  const output = capturedOutput({ num_inference_steps: '32' });
+  const evidence = structuredClone(output.resolvedExecutionInputs);
+  evidence.nodes.push({
+    ...structuredClone(evidence.nodes[0]),
+    nodeId: 'other',
+    fields: { num_inference_steps: { value: 32, source: 'literal' } },
+  });
+  evidence.summary = {};
+  evidence.ambiguousFields = ['steps'];
+  const mixed = capturedOutput({}, { resolvedExecutionInputs: evidence });
+  assert.ok(mixed.resolvedExecutionInputs);
+  assert.equal(
+    inputs.outputNumericInputValue(mixed, 'steps'),
+    undefined,
+    'display parsing cannot erase capture ambiguity',
+  );
 });
 
 function receipt() {
@@ -295,5 +414,105 @@ test('effective image overrides survive persistence without presenting unused fo
     assert.equal(output.formSnapshot.seed, requested.seed);
     assert.deepEqual(output.resolvedExecutionInputs, capture);
     output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+  }
+});
+
+test('graph task evidence replaces stale history labels while preserving the saved form', () => {
+  const evidence = receipt();
+  evidence.nodes.push({
+    nodeId: 'loader',
+    module: 'modules.ModularDiffusers',
+    action: 'ModelsLoader',
+    fields: {
+      model_type: { value: 'StableDiffusionXLModularPipeline', source: 'literal' },
+    },
+    omittedFields: {},
+  });
+  evidence.summary.modelType = 'StableDiffusionXLModularPipeline';
+  evidence.graphTasks = [
+    { loaderId: 'loader', pipelineClass: 'StableDiffusionXLModularPipeline', task: 'image_to_image' },
+  ];
+  const value = {
+    id: 'graph-task',
+    url: '/image.webp',
+    taskId: 'actual-task',
+    attemptIndex: 2,
+    nodeId: 'preview',
+    mode: 'text_to_image',
+    formSnapshot: { mode: 'text_to_image' },
+    resolvedExecutionInputs: evidence,
+  };
+  const output = contracts.coerceStudioOutput(value);
+  assert.equal(output.mode, 'image_to_image');
+  assert.equal(output.formSnapshot.mode, 'text_to_image');
+  assert.deepEqual(output.resolvedExecutionInputs.graphTasks, evidence.graphTasks);
+  assert.equal(contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output))).mode, 'image_to_image');
+  for (const patch of [{ loaderId: 'missing' }, { pipelineClass: 'FluxModularPipeline' }, { task: {} }]) {
+    const malformed = structuredClone(evidence);
+    Object.assign(malformed.graphTasks[0], patch);
+    assert.equal(inputs.coerceResolvedExecutionInputs(malformed, output), undefined);
+  }
+});
+
+test('depth receipt preserves model-default resolution and false input matching through history parsing', () => {
+  const value = receipt();
+  value.nodes[0] = {
+    nodeId: 'depth',
+    module: 'modules.HuggingFaceTransformers',
+    action: 'PredictDepth',
+    fields: {
+      processing_resolution: { value: 0, source: 'literal' },
+      match_input_resolution: { value: false, source: 'literal' },
+      depth_convention: { value: 'model_default', source: 'literal' },
+    },
+    omittedFields: {},
+  };
+  value.summary = { processingResolution: 0, matchInputResolution: false, depthConvention: 'model_default' };
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(value, identity), value);
+  const mismatched = structuredClone(value);
+  mismatched.summary.matchInputResolution = true;
+  assert.equal(inputs.coerceResolvedExecutionInputs(mismatched, identity), undefined);
+});
+
+test('audio receipt validates duration, delivery rate and consumed controls through history parsing', () => {
+  const value = receipt();
+  value.nodes[0] = {
+    nodeId: 'audio',
+    module: 'modules.DiffusersAudio',
+    action: 'Generate',
+    fields: {
+      num_inference_steps: { value: 200, source: 'connected', sourceNodeId: 'steps', sourcePortId: 'value' },
+      guidance_scale: { value: 3.5, source: 'literal' },
+      audio_duration: { value: 10, source: 'literal' },
+      sample_rate: { value: 16000, source: 'literal' },
+    },
+    omittedFields: {},
+  };
+  value.summary = { steps: 200, guidanceScale: 3.5, audioDuration: 10, sampleRate: 16000 };
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(value, identity), value);
+  const mismatched = structuredClone(value);
+  mismatched.summary.steps = 8;
+  assert.equal(inputs.coerceResolvedExecutionInputs(mismatched, identity), undefined);
+  const restored = inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(value)), identity);
+  assert.equal(restored.nodes[0].fields.num_inference_steps.sourceNodeId, 'steps');
+});
+
+test('attention context reuse survives receipts and rejects a contradictory summary', () => {
+  for (const enabled of [true, false]) {
+    const value = receipt();
+    value.nodes[0] = {
+      nodeId: 'generate',
+      module: 'modules.DiffusersImage',
+      action: 'Generate',
+      fields: { use_kv_cache: { value: enabled, source: 'literal' } },
+      omittedFields: {},
+    };
+    value.summary = { attentionContextReuse: enabled };
+    const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(value)), identity), value);
+    value.summary.attentionContextReuse = !enabled;
+    assert.equal(inputs.coerceResolvedExecutionInputs(value, identity), undefined);
   }
 });

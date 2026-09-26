@@ -1,3 +1,6 @@
+import { remapOperationAuthoring, sharedOperationInput } from '../workflow/operationSharedInputs';
+import { planVisualSharedInput } from '../workflow/visualOperationGroups';
+import { isFocusedStageNode, isFocusedGuidance } from '../workflow/encodingNodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
@@ -116,7 +119,11 @@ import {
   rebaseBlockInstanceV2ToDefinition,
   reusableBlockDefinitionFromSubtreeV2,
 } from '../studio/blockDefinitionPersistenceV2';
-import { configureBlockContainerInterfaceV1, setBlockContainerControlValueV1 } from '../studio/blockContainerEditingV1';
+import {
+  configureBlockContainerInterfaceV1,
+  setBlockContainerControlValueV1,
+  setBlockSharedOperationInputV2,
+} from '../studio/blockContainerEditingV1';
 import {
   blockContainerFieldV1,
   blockContainerFieldValueV1,
@@ -146,7 +153,8 @@ import {
   type BlockPresentationPatchV2,
 } from '../studio/blockRuntimeV2';
 
-export type CustomNodeType = Node<NodeData, NodeData['type']>;
+// `encoding` is a canvas renderer; persisted stage contracts keep their canonical identity.
+export type CustomNodeType = Node<NodeData, NodeData['type'] | 'encoding'>;
 export interface CustomConnection extends Connection {
   edgeType?: 'default' | 'smoothstep' | 'straight' | 'step' | string;
 }
@@ -177,6 +185,7 @@ export type FlowStore = {
 
   // actions
   addNode: (node: CustomNodeType) => void;
+  addNodeWithConnection: (node: CustomNodeType, connection?: CustomConnection) => void;
   removeNodes: (ids: string | string[]) => void;
   removeEdges: (id: string | string[]) => void;
   clearWorkflow: () => void;
@@ -380,7 +389,7 @@ export function resolveFlowExecutionTargetNodeId(
       ),
     );
     const endpoint = preview ?? terminals[0];
-    if (!endpoint) throw new Error(`User Node run target ${targetNodeId} has no executable terminal node.`);
+    if (!endpoint) throw new Error(`Block run target ${targetNodeId} has no executable terminal node.`);
     return endpoint.id;
   }
 
@@ -638,8 +647,16 @@ function projectBlockInstanceV2(
   const projection = materializeBlockProjectionV2(root);
   const [canonicalRoot, ...projectedChildren] = projection.nodes;
   if (!canonicalRoot) throw new Error(`Could not project Block V2 root ${id}.`);
+  const encodingSummaries =
+    current.data.blockInstanceV2?.effectiveGraph.graphHash === instance.effectiveGraph.graphHash &&
+    deepEqual(current.data.blockInstanceV2.values, instance.values)
+      ? current.data.uiState?.encodingSummaries
+      : undefined;
   const projectedRoot = {
     ...canonicalRoot,
+    ...(encodingSummaries
+      ? { data: { ...canonicalRoot.data, uiState: { ...canonicalRoot.data.uiState, encodingSummaries } } }
+      : {}),
     ...(current.selected === undefined ? {} : { selected: current.selected }),
     ...(current.zIndex === undefined ? {} : { zIndex: current.zIndex }),
   };
@@ -651,6 +668,18 @@ function projectBlockInstanceV2(
       return [
         projectedRoot,
         ...projectedChildren.map((child) => {
+          const receipt = encodingSummaries?.[child.id];
+          if (receipt && child.data.params.encode_summary)
+            child = {
+              ...child,
+              data: {
+                ...child.data,
+                params: {
+                  ...child.data.params,
+                  encode_summary: { ...child.data.params.encode_summary, value: receipt.value },
+                },
+              },
+            };
           const previous = previousById.get(child.id);
           return previous?.selected === undefined ? child : { ...child, selected: previous.selected };
         }),
@@ -705,7 +734,7 @@ function adoptTopLevelNodeIntoBlockV2(
   if (!target.data.blockInstanceV2.presentation.expanded)
     throw new Error(`Cannot move node "${nodeId}" into Block "${blockId}": expand the Block before dropping.`);
   if (source.id === target.id || source.data.type === 'block' || source.data.type === 'cluster')
-    throw new Error('Cluster Nodes and User Nodes cannot be nested.');
+    throw new Error('Legacy Blocks cannot be nested directly.');
   if (source.parentId)
     throw new Error(`Cannot move node "${nodeId}" into this Block: only disconnected top-level nodes are supported.`);
   if (state.nodes.some((node) => node.parentId === source.id))
@@ -1005,6 +1034,11 @@ function adoptTopLevelBlockFragmentIntoBlockV2(
     const metadata = node.modularDiffusers ? cloneJson(node.modularDiffusers) : undefined;
     if (metadata?.kind === 'upstream_block') delete metadata.parentPlacementPath;
     let copied = cloneJson(node);
+    const operationHint = remapOperationAuthoring(
+      copied.data.operationAuthoring,
+      (id) => semanticIdBySource.get(id) ?? id,
+    );
+    if (operationHint) copied.data.operationAuthoring = operationHint as unknown as BlockJsonValue;
     delete copied.parentNodeId;
     const sourceParent = sourceParents.get(node.nodeId);
     const parent = sourceParent ? semanticIdBySource.get(sourceParent) : (wrapperId ?? parentSemanticNodeId);
@@ -1582,6 +1616,25 @@ export const useFlowStore = create<FlowStore>()(
       addNode: (node: CustomNodeType) => {
         get().withHistory('Add node', () => addFlowNode(node, set, get));
       },
+      addNodeWithConnection: (node, connection) => {
+        if (get().historyTransaction) throw new Error('Finish the current graph edit before inserting a node.');
+        get().beginHistoryTransaction('Add and connect node');
+        try {
+          addFlowNode(node, set, get);
+          if (connection) {
+            const before = get().edges;
+            // Use the canvas commit path, including Block ownership/state validation.
+            handleConnect(connection, set, get);
+            if (get().edges === before) {
+              throw new Error('The selected ports can no longer be connected. Reopen node search and try again.');
+            }
+          }
+          get().commitHistoryTransaction();
+        } catch (error) {
+          get().cancelHistoryTransaction();
+          throw error;
+        }
+      },
       removeNodes: (ids: string | string[]) => {
         get().withHistory('Remove nodes', () => removeFlowNodes(ids, set, get));
       },
@@ -1615,10 +1668,31 @@ export const useFlowStore = create<FlowStore>()(
         value: NodeParams[K],
         key?: K,
       ) => {
+        if (key === undefined || key === 'value') {
+          const sharedGraph = planVisualSharedInput(get(), id, param, value);
+          if (sharedGraph) {
+            get().withHistory('Edit shared stage parameter', () => get().replaceGraph(sharedGraph));
+            return;
+          }
+        }
         const node = get().nodes.find((candidate) => candidate.id === id);
         const blockOwnerId = node?.data.blockProjectionOwnerId;
         const blockSemanticNodeId = node?.data.blockProjectionNodeId;
         if (blockOwnerId && blockSemanticNodeId && (key === undefined || key === 'value')) {
+          const owner = get().nodes.find((n) => n.id === blockOwnerId)?.data.blockInstanceV2;
+          const shared =
+            owner &&
+            setBlockSharedOperationInputV2(
+              owner,
+              [{ nodeId: blockSemanticNodeId, fieldId: param }],
+              value as BlockJsonValue | undefined,
+            );
+          if (shared) {
+            get().withHistory('Edit shared Block input', () => {
+              set((state) => updateBlockInstanceV2(state, blockOwnerId, () => shared) ?? state);
+            });
+            return;
+          }
           const localBindingValue = node.data.params[param]?.fieldOptions?.blockContainerControlV1;
           const localBinding = isRecord(localBindingValue) ? localBindingValue : null;
           if (localBinding) {
@@ -1685,7 +1759,7 @@ export const useFlowStore = create<FlowStore>()(
             deepEqual(node.data.params[param]?.value, value)
           )
             return;
-          get().withHistory('Edit Diffusers Cluster Node parameter', () => {
+          get().withHistory('Edit Diffusers Block parameter', () => {
             set((state) => {
               const root = state.nodes.find((candidate) => candidate.id === node.data.huggingFaceClusterInstanceId);
               const definition = huggingFaceDefinitionForNode(root);
@@ -1699,10 +1773,18 @@ export const useFlowStore = create<FlowStore>()(
           }
           return;
         }
+        const shared =
+          key === undefined || key === 'value' ? sharedOperationInput(get().nodes, get().edges, id, param) : null;
+        if (shared) {
+          get().withHistory(`Edit shared ${shared.name}`, () => {
+            for (const member of shared.members) writeNodeParam(member.node.id, member.field, value, key, set, true);
+          });
+          return;
+        }
         if (key && ['disabled', 'hidden', 'isConnected', 'isInput', 'signal'].includes(key)) {
           writeNodeParam(id, param, value, key, set);
         } else {
-          get().withHistory('Edit node parameter', () => writeNodeParam(id, param, value, key, set));
+          get().withHistory('Edit node parameter', () => writeNodeParam(id, param, value, key, set, true));
         }
         if (key === 'type') {
           get().refreshConnectionVisuals();
@@ -1740,7 +1822,7 @@ export const useFlowStore = create<FlowStore>()(
         const node = get().nodes.find((item) => item.id === id);
         if (node?.data.huggingFaceClusterRole === 'root') {
           const expanded = Boolean(node.data.huggingFaceClusterInstance?.presentation.expanded);
-          get().withHistory(expanded ? 'Fit Cluster Node to contents' : 'Reset Cluster Node size', () => {
+          get().withHistory(expanded ? 'Fit Block to contents' : 'Reset Block size', () => {
             if (expanded) {
               set((state) => {
                 const graph = fitHuggingFaceClusterInstance(state, id);
@@ -1822,7 +1904,7 @@ export const useFlowStore = create<FlowStore>()(
         );
       },
       toggleHuggingFaceClusterExpanded: (id) => {
-        get().withHistory('Toggle Hugging Face Cluster Node expansion', () => {
+        get().withHistory('Toggle Hugging Face Block expansion', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1834,7 +1916,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       toggleHuggingFaceClusterBlockExpanded: (id, path) => {
-        get().withHistory('Toggle Hugging Face Cluster block parameters', () => {
+        get().withHistory('Toggle Hugging Face Block parameters', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1844,7 +1926,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       setHuggingFaceClusterParameter: (id, name, value) => {
-        get().withHistory('Change Hugging Face Cluster Node parameter', () => {
+        get().withHistory('Change Hugging Face Block parameter', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1855,7 +1937,7 @@ export const useFlowStore = create<FlowStore>()(
         useHuggingFaceClusterRuntimeStore.getState().clearAuthority(id);
       },
       setHuggingFaceClusterExecution: (id, admissionId) => {
-        get().withHistory('Change Hugging Face Cluster Node execution mode', () => {
+        get().withHistory('Change Hugging Face Block execution mode', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1866,7 +1948,7 @@ export const useFlowStore = create<FlowStore>()(
         useHuggingFaceClusterRuntimeStore.getState().clearAuthority(id);
       },
       setHuggingFaceClusterExecutionParameter: (id, source, value) => {
-        get().withHistory('Change Hugging Face Cluster Node execution parameter', () => {
+        get().withHistory('Change Hugging Face Block execution parameter', () => {
           set((state) => {
             const definition = huggingFaceDefinitionForNode(state.nodes.find((node) => node.id === id));
             if (!definition) return state;
@@ -1887,16 +1969,33 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       setBlockInstanceValueV2: (id, logicalId, value) => {
+        const sharedGraph = planVisualSharedInput(get(), id, logicalId, value);
+        if (sharedGraph) {
+          get().withHistory('Edit shared stage parameter', () => get().replaceGraph(sharedGraph));
+          return;
+        }
         get().withHistory('Edit block parameter', () => {
           set((state) => {
-            const graph = updateBlockInstanceV2(state, id, (instance) =>
-              reduceBlockInstanceValueV2(instance, logicalId, value),
-            );
+            const graph = updateBlockInstanceV2(state, id, (instance) => {
+              const control = instance.effectiveInterface.controls.find((c) => c.controlId === logicalId);
+              const port = instance.effectiveInterface.boundary.inputs.find((p) => p.portId === logicalId);
+              const targets = control
+                ? [control.binding, ...(control.mirrorBindings ?? [])]
+                : port
+                  ? blockInputPortBindingsV2(port).map((b) => ({ nodeId: b.nodeId, fieldId: b.fieldOrPortId }))
+                  : [];
+              return (
+                setBlockSharedOperationInputV2(instance, targets, value) ??
+                reduceBlockInstanceValueV2(instance, logicalId, value)
+              );
+            });
             return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
           });
         });
       },
       switchBlockRouteV1: (id, routeKey, compiledDestination) => {
+        if (get().historyTransaction)
+          throw new Error('Finish the current canvas gesture before changing this Block model.');
         get().withHistory('Switch block model route', () => {
           set((state) => {
             const root = state.nodes.find((candidate) => candidate.id === id);
@@ -1905,10 +2004,11 @@ export const useFlowStore = create<FlowStore>()(
               root.data.blockInstanceV2.previewStates.some(({ status }) => status === 'queued' || status === 'running')
             )
               throw new Error('Cannot switch this Block while its current run is queued or running.');
-            assertBlockRouteEdgesCompatibleV1(root.data.blockInstanceV2, compiledDestination, state.edges);
-            const graph = updateBlockInstanceV2(state, id, (instance) =>
-              switchBlockRouteInstanceV1(instance, routeKey, compiledDestination),
-            );
+            const destination = switchBlockRouteInstanceV1(root.data.blockInstanceV2, routeKey, compiledDestination);
+            // A restored route draft may have a customized public interface.
+            // Check the actual destination, not just its registered defaults.
+            assertBlockRouteEdgesCompatibleV1(root.data.blockInstanceV2, destination, state.edges);
+            const graph = updateBlockInstanceV2(state, id, () => destination);
             if (!graph) throw new Error(`Block V2 root ${id} could not be switched.`);
             return { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) };
           });
@@ -2222,7 +2322,10 @@ export const useFlowStore = create<FlowStore>()(
                 `Cannot remove ${impacted.length} connected Block port${impacted.length === 1 ? '' : 's'}. Disconnect the affected edge${impacted.length === 1 ? '' : 's'} first.`,
               );
             const graph = updateBlockInstanceV2(state, id, (instance) =>
-              replaceBlockEffectiveInterfaceV2(instance, value, { preserveOmittedMirrors: false }),
+              replaceBlockEffectiveInterfaceV2(instance, value, {
+                preserveOmittedMirrors: false,
+                rememberRemovedControls: isFocusedGuidance(instance),
+              }),
             );
             return graph ? { nodes: graph.nodes, edges: decorateConnectionEdges(graph.nodes, graph.edges) } : state;
           });
@@ -2231,6 +2334,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       toggleUserBlockExpanded: (id) => {
+        if (isFocusedStageNode(get().nodes.find((node) => node.id === id)?.data.blockInstanceV2)) return;
         get().withHistory('Toggle block expansion', () => {
           set((state) => {
             const block = state.nodes.find((node) => node.id === id && node.data.type === 'block');
@@ -2267,7 +2371,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       placeNodeInUserBlock: (nodeId, blockId) => {
-        get().withHistory('Move node into User Node', () => {
+        get().withHistory('Move node into Block', () => {
           set((state) => {
             const graph = placeExistingNodeInsideExpandedUserBlock(state, nodeId, blockId);
             return graph === state
@@ -2282,7 +2386,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       insertNodeInUserBlock: (blockId, suggestion) => {
-        get().withHistory('Insert node into User Node execution path', () => {
+        get().withHistory('Insert node into Block execution path', () => {
           set((state) => {
             const graph = insertNodeAtUserBlockSuggestion(state, blockId, suggestion);
             return {
@@ -2304,7 +2408,7 @@ export const useFlowStore = create<FlowStore>()(
         });
       },
       applyUserBlockDefinition: (id, definition) => {
-        get().withHistory('Apply User Node definition', () => {
+        get().withHistory('Apply Block definition', () => {
           set((state) => {
             const graph = applyUserBlockDefinitionToInstance(state, id, definition);
             return graph === state ? state : { nodes: graph.nodes, edges: graph.edges };

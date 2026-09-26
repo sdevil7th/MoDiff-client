@@ -23,6 +23,7 @@ export default function HandleField(props: FieldProps) {
   propsRef.current = props;
   const { fieldKey, isConnected, nodeId, onChange, onSignal, signal } = props;
   const suppressInitialFieldAction = props.fieldOptions?.suppressInitialFieldAction === true;
+  const suppressAutomaticSignalAction = props.fieldOptions?.suppressAutomaticSignalAction === true;
   const connectedTargetType = useFlowStore(
     useShallow((state) => {
       if (type !== 'target') return null;
@@ -59,14 +60,26 @@ export default function HandleField(props: FieldProps) {
 
   useEffect(() => {
     if (onSignal && signal?.value !== undefined) {
-      if (!suppressInitialFieldAction && !consumeAutomaticSignalFieldActionSuppression(nodeId, fieldKey, signal)) {
+      if (
+        !suppressInitialFieldAction &&
+        !suppressAutomaticSignalAction &&
+        !consumeAutomaticSignalFieldActionSuppression(nodeId, fieldKey, signal)
+      ) {
         fieldAction(propsRef.current, signal?.value, 'onSignal');
       }
       updateNodeInternals(nodeId);
     }
 
     relaySignal(nodeId, fieldKey, signal);
-  }, [fieldKey, nodeId, onSignal, signal, suppressInitialFieldAction, updateNodeInternals]);
+  }, [
+    fieldKey,
+    nodeId,
+    onSignal,
+    signal,
+    suppressInitialFieldAction,
+    suppressAutomaticSignalAction,
+    updateNodeInternals,
+  ]);
 
   return (
     <FieldFrame

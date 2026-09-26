@@ -15,6 +15,7 @@ import {
   Info,
   ListPlus,
   LoaderCircle,
+  MemoryStick,
   Package,
   PanelRightClose,
   PanelRightOpen,
@@ -59,7 +60,7 @@ import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { getDownloadPercent, hasHfDownloadFailed, isHfDownloadActive } from '../studio/modelInstall';
 import { buildOutputWorkflowPackage, buildWorkflowPackage } from '../studio/workflowPackage';
 import { cx } from '../utils/classNames';
-import type { StudioViewMode } from '../studio/types';
+import type { StudioResourceMode } from '../studio/types';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
 import { useGraphFixModule } from '../studio/useGraphFixModule';
@@ -73,11 +74,12 @@ import {
   ModiffMenuSeparator,
   ModiffMenuSurface,
   ModiffMenuTrigger,
-  ModiffSwitch,
+  ModiffTooltip,
 } from '../ui';
 import RuntimeResourceMonitor from './RuntimeResourceMonitor';
 import type { WorkflowSaveDestination } from './WorkflowSaveDialog';
 
+const ServiceExportDialog = lazy(() => import('./ServiceExportDialog'));
 const WorkflowSaveDialog = lazy(() => import('./WorkflowSaveDialog'));
 import { saveWorkflowNow } from '../studio/useWorkflowBackendSync';
 import { saveWorkflowSnapshotFile } from '../studio/workflowFileSave';
@@ -141,29 +143,6 @@ function TopBarButton({
     >
       {children && <span className="truncate">{children}</span>}
     </ModiffButton>
-  );
-}
-
-type AutoModeSwitchProps = {
-  checked: boolean;
-  disabled?: boolean;
-  unavailableReason?: string;
-  onCheckedChange: (checked: boolean) => void;
-};
-
-function AutoModeSwitch({ checked, disabled, unavailableReason, onCheckedChange }: AutoModeSwitchProps) {
-  const disabledLabel = unavailableReason || 'Auto is unavailable for this custom graph.';
-  return (
-    <ModiffSwitch
-      checked={checked}
-      disabled={disabled}
-      onCheckedChange={onCheckedChange}
-      label={<span className="text-xs font-bold text-modiff-text">Auto</span>}
-      className="h-9 flex-row-reverse px-1"
-      aria-label={disabled ? disabledLabel : checked ? 'Turn Auto off' : 'Turn Auto on'}
-      title={disabled ? disabledLabel : checked ? 'Auto is on' : 'Auto is off'}
-      data-testid="topbar-auto-switch"
-    />
   );
 }
 
@@ -242,14 +221,12 @@ function TopBar() {
     setRightPanelOpen,
     executeButtonIndex,
     runningState,
-    studioViewMode,
     setExecuteButtonIndex,
     setGalleryLibraryOpen,
     setModelManagerOpener,
     setTemplateBrowserOpen,
     setRunningState,
     setSettingsOpener,
-    setStudioViewMode,
   } = useSettingsStore();
   const { sid, isConnected, connect, disconnect } = useWebsocketStore();
   const { currentTask, taskCount, fetchSupervisorTasks } = useTaskStore();
@@ -340,7 +317,7 @@ function TopBar() {
   );
   const customGraphAutoUnavailable = topBarAutoPolicy.autoUnavailable;
   const customGraphAutoUnavailableReason = graphBindingDivergence
-    ? 'This managed graph changed. Review it in Expert before using Auto.'
+    ? 'This managed graph changed. Review its resource requirements before using automatic planning.'
     : topBarAutoPolicy.registeredBlockEligibility.reason;
   const latestWorkflowOutput = useMemo(
     () => latestOutputForWorkflow(studioOutputs, activeWorkflowTabId, { includeUnscopedFallback: false }),
@@ -350,6 +327,7 @@ function TopBar() {
     () => workflowTabs.find((tab) => tab.id === activeWorkflowTabId) ?? null,
     [activeWorkflowTabId, workflowTabs],
   );
+  const [serviceExportOpen, setServiceExportOpen] = useState(false);
   const [saveDialog, setSaveDialog] = useState<{
     destination: WorkflowSaveDestination;
     renameCurrent: boolean;
@@ -469,13 +447,16 @@ function TopBar() {
       apiGraph = lower(apiGraph);
       assertWorkflowOperationContext(context);
     }
-    return buildWorkflowPackage({
-      form: useStudioStore.getState().form,
-      graph: flow.toObject(),
+    return {
+      ...buildWorkflowPackage({
+        form: useStudioStore.getState().form,
+        graph: flow.toObject(),
+        apiGraph,
+        latestOutput: latestWorkflowOutput,
+        packageType: 'modiff-workflow-share',
+      }),
       apiGraph,
-      latestOutput: latestWorkflowOutput,
-      packageType: 'modiff-workflow-share',
-    });
+    };
   }, [exportGraph, graphBinding, latestWorkflowOutput, sid]);
 
   const handleWorkflowPackageExportClick = useCallback(async () => {
@@ -518,9 +499,9 @@ function TopBar() {
     }
   };
 
-  const handleStudioViewModeChange = (mode: StudioViewMode) => {
+  const handleResourceModeChange = (mode: StudioResourceMode) => {
+    if (mode === formResourceMode || (mode === 'auto' && customGraphAutoUnavailable)) return;
     const previousShapeKey = getStudioGraphShapeKey(useStudioStore.getState().form);
-    setStudioViewMode(mode);
     updateStudioForm({ resourceMode: mode });
     const nextForm = useStudioStore.getState().form;
     syncStudioGraphValues(nextForm);
@@ -537,10 +518,6 @@ function TopBar() {
         enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
       });
     }
-  };
-
-  const handleAutoSwitchChange = (checked: boolean) => {
-    handleStudioViewModeChange(checked ? 'auto' : 'expert');
   };
 
   const handleExecuteClick = async () => {
@@ -639,28 +616,7 @@ function TopBar() {
 
   useEffect(() => {
     if (graphBindingDivergence) detachManagedGraph();
-    if (customGraphAutoUnavailable) {
-      if (studioViewMode !== 'expert') {
-        setStudioViewMode('expert');
-      }
-      if (formResourceMode !== 'expert') {
-        updateStudioForm({ resourceMode: 'expert' });
-      }
-      return;
-    }
-    if (formResourceMode !== studioViewMode) {
-      setStudioViewMode(formResourceMode);
-    }
-  }, [
-    customGraphAutoUnavailable,
-    detachManagedGraph,
-    formResourceMode,
-    graphBinding,
-    graphBindingDivergence,
-    setStudioViewMode,
-    studioViewMode,
-    updateStudioForm,
-  ]);
+  }, [detachManagedGraph, graphBindingDivergence]);
 
   return (
     <div className="flex h-full w-full items-center justify-between gap-3 overflow-x-auto overflow-y-hidden px-4 py-2 text-modiff-text">
@@ -768,49 +724,70 @@ function TopBar() {
             >
               Open Gallery
             </ModiffMenuAction>
-            {studioViewMode === 'expert' && (
-              <>
-                <ModiffMenuSeparator />
-                <ModiffMenuAction
-                  onClick={handleRawWorkflowExportClick}
-                  data-testid="topbar-export-raw-workflow"
-                  icon={<FileJson2 size={16} />}
-                >
-                  Workflow JSON
-                </ModiffMenuAction>
-                <ModiffMenuAction
-                  disabled={!sid}
-                  onClick={handleApiExportClick}
-                  data-testid="topbar-export-api-graph"
-                  title="Executable backend API graph JSON"
-                  icon={<FileJson2 size={16} />}
-                >
-                  API graph JSON
-                </ModiffMenuAction>
-              </>
-            )}
+            <>
+              <ModiffMenuSeparator />
+              <ModiffMenuAction
+                onClick={handleRawWorkflowExportClick}
+                data-testid="topbar-export-raw-workflow"
+                icon={<FileJson2 size={16} />}
+              >
+                Workflow JSON
+              </ModiffMenuAction>
+              <ModiffMenuAction
+                disabled={!sid}
+                onClick={handleApiExportClick}
+                data-testid="topbar-export-api-graph"
+                title="Executable backend API graph JSON"
+                icon={<FileJson2 size={16} />}
+              >
+                API graph JSON
+              </ModiffMenuAction>
+              <ModiffMenuAction
+                disabled={!sid}
+                onClick={() => setServiceExportOpen(true)}
+                data-testid="topbar-export-service"
+                icon={<Package size={16} />}
+              >
+                Service package
+              </ModiffMenuAction>
+            </>
           </ModiffMenuSurface>
         </ModiffMenuRoot>
       </div>
 
       <div className="flex flex-none items-center gap-2">
-        <ModiffIconButton
-          label="Auto mode and workflow resources"
-          title="Explain Auto and assess this workflow’s resources"
-          data-testid="topbar-workflow-resources"
-          onClick={() => {
-            useSettingsStore.getState().setRightPanelTab('compatibility');
-            useSettingsStore.getState().setRightPanelOpen(true);
-          }}
+        <ModiffTooltip
+          content={
+            <div className="max-w-72 space-y-1">
+              <div className="font-semibold">Memory: {formResourceMode === 'auto' ? 'Automatic' : 'Custom'}</div>
+              <div>Automatic chooses supported placement and offload settings. Custom keeps your node settings.</div>
+              {customGraphAutoUnavailable ? <div>{customGraphAutoUnavailableReason}</div> : null}
+            </div>
+          }
         >
-          <Info size={15} />
-        </ModiffIconButton>
-        <AutoModeSwitch
-          checked={formResourceMode === 'auto'}
-          disabled={customGraphAutoUnavailable}
-          unavailableReason={customGraphAutoUnavailableReason}
-          onCheckedChange={handleAutoSwitchChange}
-        />
+          {(tooltipProps) => (
+            <ModiffButton
+              {...tooltipProps}
+              aria-label={`Memory policy: ${formResourceMode === 'auto' ? 'Automatic' : 'Custom'}. Click to switch.`}
+              aria-pressed={formResourceMode === 'auto'}
+              data-testid="topbar-resource-policy"
+              className="flex-none rounded-none border border-transparent bg-modiff-panel/60 px-2.5 text-modiff-text hover:bg-modiff-surface-hover"
+              icon={<MemoryStick size={16} />}
+              onClick={() => {
+                const next = formResourceMode === 'auto' ? 'expert' : 'auto';
+                if (next === 'auto' && customGraphAutoUnavailable) {
+                  enqueueSnackbar(customGraphAutoUnavailableReason, { variant: 'warning' });
+                  return;
+                }
+                handleResourceModeChange(next);
+              }}
+              size="normal"
+              tone="ghost"
+            >
+              {formResourceMode === 'auto' ? 'Auto' : 'Custom'}
+            </ModiffButton>
+          )}
+        </ModiffTooltip>
         <TopBarButton
           disabled={graphFixPlan.issues.length === 0}
           icon={
@@ -831,9 +808,7 @@ function TopBar() {
           }
           testId="graph-fix"
           tone={graphFixPlan.issues.length > 0 ? 'active' : 'quiet'}
-        >
-          Fix
-        </TopBarButton>
+        ></TopBarButton>
         <div className="flex items-center">
           <TopBarButton
             disabled={runDisabled}
@@ -920,6 +895,17 @@ function TopBar() {
           onClick={() => setRightPanelOpen(!isRightPanelOpen)}
           tone={isRightPanelOpen ? 'active' : 'quiet'}
         />
+        <ModiffIconButton
+          label="Workflow resources"
+          title="Assess this workflow’s resources"
+          data-testid="topbar-workflow-resources"
+          onClick={() => {
+            useSettingsStore.getState().setRightPanelTab('compatibility');
+            useSettingsStore.getState().setRightPanelOpen(true);
+          }}
+        >
+          <Info size={15} />
+        </ModiffIconButton>
         <RuntimeResourceMonitor active={Boolean(currentTask)} connected={isConnected} />
         {(activeDownloadCount > 0 || failedDownloadCount > 0) && (
           <TopBarButton
@@ -969,6 +955,9 @@ function TopBar() {
       </div>
 
       <Suspense fallback={null}>
+        {serviceExportOpen && (
+          <ServiceExportDialog getGraph={buildTopBarWorkflowPackage} onClose={() => setServiceExportOpen(false)} />
+        )}
         {saveDialog && (
           <WorkflowSaveDialog
             open

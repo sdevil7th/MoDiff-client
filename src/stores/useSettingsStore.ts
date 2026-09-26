@@ -3,10 +3,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { TemplateBrowserCategoryId } from '../studio/templateBrowser';
-import type { FocusedModelManagerTarget, StudioViewMode, WorkspacePanelTab } from '../studio/types';
+import type { FocusedModelManagerTarget, WorkspacePanelTab } from '../studio/types';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
 import type { MediaKind } from '../studio/mediaCapabilities';
+import { unifiedWorkspaceSettings } from '../studio/workspaceMode';
 
 const LEFT_PANEL_WIDTH_MIN = 240;
 const RIGHT_PANEL_WIDTH_MIN = 320;
@@ -33,7 +34,6 @@ interface SettingsState {
   rightPanelTab: WorkspacePanelTab;
 
   executeButtonIndex: number;
-  studioViewMode: StudioViewMode;
 
   activeNodeGroups: string[];
   nodeGroupBy: 'module' | 'category';
@@ -114,6 +114,7 @@ interface SettingsStateVolatile {
   mediaExportOpener: MediaExportOpener;
   workflowFocusRequest: WorkflowFocusRequest;
   runActivityPendingTaskId: string | null;
+  workflowLibraryView: 'start' | 'examples' | 'saved' | 'drafts';
   templateBrowserOpen: boolean;
   templateBrowserInitialCategory: TemplateBrowserCategoryId | null;
   galleryLibraryOpen: boolean;
@@ -121,6 +122,7 @@ interface SettingsStateVolatile {
 }
 
 interface SettingsActions {
+  setWorkflowLibraryView: (view: SettingsStateVolatile['workflowLibraryView']) => void;
   setLeftPanelOpen: (open: boolean) => void;
   setLeftPanelWidth: (width: number) => void;
   setLeftPanelTabIndex: (index: number) => void;
@@ -129,7 +131,6 @@ interface SettingsActions {
   setRightPanelTab: (tab: WorkspacePanelTab) => void;
 
   setExecuteButtonIndex: (index: number) => void;
-  setStudioViewMode: (mode: StudioViewMode) => void;
 
   setActiveNodeGroups: (group: string) => void;
   setNodeGroupBy: (by: 'module' | 'category') => void;
@@ -176,7 +177,6 @@ const defaultState: SettingsState = {
   rightPanelWidth: RIGHT_PANEL_WIDTH_MIN,
   rightPanelTab: 'studio',
   executeButtonIndex: 0,
-  studioViewMode: 'auto',
   activeNodeGroups: [],
   nodeGroupBy: 'module',
   userBlockGrouping: 'source',
@@ -195,6 +195,7 @@ const defaultVolatileState: SettingsStateVolatile = {
   mediaExportOpener: null,
   workflowFocusRequest: null,
   runActivityPendingTaskId: null,
+  workflowLibraryView: 'start',
   templateBrowserOpen: false,
   templateBrowserInitialCategory: null,
   galleryLibraryOpen: false,
@@ -211,6 +212,7 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       ...defaultVolatileState,
 
       // Actions
+      setWorkflowLibraryView: (view) => set({ workflowLibraryView: view }),
       setLeftPanelOpen: (open: boolean) => set({ isLeftPanelOpen: open }),
       setLeftPanelWidth: (width: number) => set({ leftPanelWidth: Math.max(LEFT_PANEL_WIDTH_MIN, width) }),
       setLeftPanelTabIndex: (index: number) => set({ leftPanelTabIndex: index }),
@@ -219,7 +221,6 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       setRightPanelTab: (tab: WorkspacePanelTab) => set({ rightPanelTab: tab }),
 
       setExecuteButtonIndex: (index: number) => set({ executeButtonIndex: index }),
-      setStudioViewMode: (mode: StudioViewMode) => set({ studioViewMode: mode === 'expert' ? 'expert' : 'auto' }),
 
       setActiveNodeGroups: (group: string) => {
         const current = get().activeNodeGroups;
@@ -285,12 +286,10 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
       name: SETTINGS_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       merge: (persisted, current) => {
-        const value = persisted && typeof persisted === 'object' ? (persisted as Partial<SettingsState>) : {};
-        const legacyMode = (value as { studioViewMode?: unknown }).studioViewMode;
+        const value = unifiedWorkspaceSettings(persisted) as Partial<SettingsState>;
         return {
-          ...current,
+          ...(unifiedWorkspaceSettings(current) as unknown as typeof current),
           ...value,
-          studioViewMode: legacyMode === 'manual' || legacyMode === 'expert' ? 'expert' : 'auto',
           userBlockGrouping: value.userBlockGrouping === 'workflow' ? 'workflow' : 'source',
           modelTermsAcknowledgements:
             value.modelTermsAcknowledgements && typeof value.modelTermsAcknowledgements === 'object'

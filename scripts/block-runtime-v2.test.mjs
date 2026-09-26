@@ -245,7 +245,7 @@ test('runtime public projections revalidate each call and never reuse authority 
   }
 });
 
-test('Block V2 aliases scalar upstream types without broadening ordinary graph or collection semantics', () => {
+test('Block V2 and ordinary graphs share scalar aliases while retaining collection and numeric boundaries', () => {
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('builtins.str', 'text'), true);
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('str', 'string'), true);
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('builtins.boolean', 'bool'), true);
@@ -256,8 +256,10 @@ test('Block V2 aliases scalar upstream types without broadening ordinary graph o
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('builtins.str', 'dropdown'), true);
   assert.equal(blockValueTypes.normalizeBlockValueTypeV2('list[str]'), 'list[str]');
   assert.equal(blockValueTypes.blockValueTypesAreCompatibleV2('list[str]', 'string'), false);
-  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('str', 'string'), false);
-  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('text', 'string'), false);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('str', 'string'), true);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('text', 'string'), true);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('list[str]', 'string'), false);
+  assert.equal(connectionTypeCompatibility.connectionTypesAreCompatible('int', 'float'), false);
 });
 
 test('registered Block V2 Auto authority is exact and Expert/manual readiness never requires it', () => {
@@ -582,7 +584,7 @@ test('outside LoRA connects to an undeclared internal input and survives collaps
     ),
   );
   const isolated = state.exportGraph('scope-test', current.instanceId);
-  assert.equal(isolated.nodes[outside.id], undefined, 'Run Block must exclude outside LoRA');
+  assert.ok(isolated.nodes[outside.id], 'Run Block must honor its connected outside LoRA');
   const whole = state.exportGraph('scope-test');
   assert.ok(whole.nodes[outside.id], 'whole graph must include outside LoRA');
   const reusable = persistence.reusableBlockDefinitionFromInstanceV2(
@@ -609,7 +611,7 @@ test('outside LoRA connects to an undeclared internal input and survives collaps
   });
   state = flowStore.useFlowStore.getState();
   assert.ok(state.edges.some((edge) => edge.source === moved));
-  assert.equal(state.exportGraph('scope-test', current.instanceId).nodes[moved], undefined);
+  assert.ok(state.exportGraph('scope-test', current.instanceId).nodes[moved]);
   state.removeEdges(state.edges.find((edge) => edge.source === outside.id).id);
   assert.equal(
     flowStore.useFlowStore.getState().edges.some((edge) => edge.source === outside.id),
@@ -2679,4 +2681,142 @@ test('graph identity checks reject duplicates and projection ids are delimiter-c
     /duplicate or empty edge id/u,
   );
   assert.notEqual(runtime.blockProjectionNodeIdV2('a:b', 'c'), runtime.blockProjectionNodeIdV2('a', 'b:c'));
+});
+
+test('selected Block execution retains transitive outside inputs and excludes downstream or unrelated drafts', () => {
+  for (const expanded of [false, true]) {
+    const root = runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(instance(), { expanded }));
+    const projection = runtime.materializeBlockProjectionV2(root);
+    const source = ordinaryNode('source', { text: { type: 'string', display: 'output' } });
+    const convert = ordinaryNode('convert', {
+      input: { type: 'string', display: 'input' },
+      text: { type: 'string', display: 'output' },
+    });
+    const sink = ordinaryNode('sink', { images: { type: 'list[image]', display: 'input' } });
+    const broken = runtime.createBlockRootNodeV2(instance('unrelated-broken'));
+    broken.data.blockInstanceV2.effectiveGraph.graphHash = 'invalid';
+    const nodes = [...projection.nodes, source, convert, sink, broken];
+    const edges = [
+      ...projection.edges,
+      { id: 'convert', source: source.id, sourceHandle: 'text', target: convert.id, targetHandle: 'input' },
+      { id: 'prompt', source: convert.id, sourceHandle: 'text', target: root.id, targetHandle: 'prompt' },
+      { id: 'outside-preview', source: root.id, sourceHandle: 'images', target: sink.id, targetHandle: 'images' },
+    ];
+    const before = structuredClone({ nodes, edges });
+    const execution = runtime.expandBlockGraphV2ForExecution(nodes, edges, root.id);
+    assert.ok(execution.nodes.some(({ id }) => id === source.id));
+    assert.ok(execution.nodes.some(({ id }) => id === convert.id));
+    assert.ok(!execution.nodes.some(({ id }) => id === sink.id || id.includes('unrelated-broken')));
+    assert.ok(
+      execution.edges.some(
+        (edge) =>
+          edge.source === convert.id &&
+          edge.target === runtime.blockProjectionNodeIdV2(root.id, 'generate') &&
+          edge.targetHandle === 'prompt',
+      ),
+    );
+    assert.deepEqual({ nodes, edges }, before);
+  }
+});
+
+test('selected nested Block retains sibling component dependencies and mirrored external inputs', () => {
+  const current = nestedConnectionInstance(true);
+  const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+  const target = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  const source = ordinaryNode('outside-prompt', { text: { type: 'string', display: 'output' } });
+  const nodes = [...projection.nodes, source];
+  const edges = [
+    ...projection.edges,
+    { id: 'outside', source: source.id, sourceHandle: 'text', target: current.instanceId, targetHandle: 'prompt' },
+  ];
+  const before = structuredClone({ nodes, edges });
+  const execution = runtime.expandBlockGraphV2ForExecution(nodes, edges, target.id);
+  assert.ok(execution.nodes.some((node) => node.data.blockProjectionNodeId === 'load'));
+  assert.ok(!execution.nodes.some((node) => node.data.blockProjectionNodeId === 'alternate-load'));
+  assert.ok(execution.nodes.some((node) => node.id === source.id));
+  assert.equal(execution.edges.filter((edge) => edge.source === source.id).length, 2);
+  flowStore.useFlowStore.setState({ nodes, edges });
+  const exported = flowStore.useFlowStore.getState().exportGraph('nested-dependencies', target.id);
+  assert.ok(exported.nodes[source.id]);
+  assert.ok(exported.nodes[runtime.blockProjectionNodeIdV2(current.instanceId, 'load')]);
+  assert.deepEqual({ nodes, edges }, before);
+});
+
+test('selected Block retains another Block supplying its input through the existing exporter', () => {
+  const first = runtime.createBlockRootNodeV2(instance('upstream'));
+  const second = runtime.createBlockRootNodeV2(instance('selected'));
+  const nodes = [first, second];
+  const edges = [
+    { id: 'crossing', source: first.id, sourceHandle: 'images', target: second.id, targetHandle: 'prompt' },
+  ];
+  // Execution closure preserves supplied edges; connector validation owns types.
+  flowStore.useFlowStore.setState({ nodes, edges });
+  const exported = flowStore.useFlowStore.getState().exportGraph('block-dependencies', second.id);
+  assert.ok(exported.nodes[runtime.blockProjectionNodeIdV2(first.id, 'generate')]);
+  assert.equal(exported.nodes[runtime.blockProjectionNodeIdV2(first.id, 'preview')], undefined);
+  assert.ok(exported.nodes[runtime.blockProjectionNodeIdV2(second.id, 'preview')]);
+});
+
+for (const artifactCase of ['old-url', 'old-task', 'matching', 'canonical-matching']) {
+  test(`current Block preview checks ${artifactCase} source artifact authority`, async () => {
+    const original = instance('preview-artifact-authority');
+    const graph = structuredClone(original.effectiveGraph);
+    const field = graph.nodes.find((node) => node.nodeId === 'preview').data.params.images;
+    field.type = 'url';
+    field.value = '/file?file=old.webp';
+    field.artifacts = [
+      {
+        url: artifactCase === 'old-url' ? '/file?file=old.webp' : '/file?file=current.webp',
+        ...(artifactCase === 'canonical-matching'
+          ? { taskId: 'current-task' }
+          : { task_id: artifactCase === 'matching' ? 'current-task' : 'old-task' }),
+        width: 1328,
+        height: 1328,
+        mimeType: 'image/webp',
+      },
+    ];
+    const authored = runtime.replaceBlockEffectiveGraphV2(original, graph);
+    const current = runtime.setBlockPreviewStateV2(
+      authored,
+      { nodeId: 'preview', outputPortId: 'images' },
+      { mediaReference: '/file?file=current.webp', taskId: 'current-task', status: 'complete' },
+    );
+    const before = structuredClone(current);
+    const view = runtime.blockViewModelV2(current).previewViews[0];
+    const param = Object.values(view.params)[0];
+    assert.equal(param.value, '/file?file=current.webp');
+    assert.deepEqual(param.artifacts, artifactCase.endsWith('matching') ? field.artifacts : []);
+    const { normalizeImageArtifacts } = await server.ssrLoadModule('/src/utils/imageArtifacts.ts');
+    const [media] = normalizeImageArtifacts({
+      value: param.value,
+      artifacts: param.artifacts,
+      dataType: param.type,
+      mimeType: 'image/webp',
+      nodeId: 'preview',
+      fieldKey: 'images',
+    });
+    assert.equal(new URL(media.url).searchParams.get('file'), 'current.webp');
+    assert.deepEqual(current, before, 'rendering does not rewrite the effective graph or immutable definition');
+  });
+}
+
+test('replacing an unchanged internal node preserves the complete Block instance', () => {
+  const original = instance('unchanged-node-replacement');
+  const node = original.effectiveGraph.nodes.find(({ nodeId }) => nodeId === 'generate');
+  const next = runtime.replaceBlockEffectiveGraphNodeV2(original, node.nodeId, structuredClone(node));
+  assert.deepEqual(next, original);
+});
+
+test('restoring an internal node clears structural customization while retaining public edits', () => {
+  const original = instance('restored-node-replacement', { prompt: 'my retained prompt', steps: 23 });
+  const node = original.effectiveGraph.nodes.find(({ nodeId }) => nodeId === 'generate');
+  const replacement = structuredClone(node);
+  replacement.data.action = 'GenerateReplacement';
+  const changed = runtime.replaceBlockEffectiveGraphNodeV2(original, node.nodeId, replacement);
+  assert.equal(changed.customization.state, 'structure_changed');
+  const restored = runtime.replaceBlockEffectiveGraphNodeV2(changed, node.nodeId, node);
+  assert.deepEqual(restored.effectiveGraph, original.effectiveGraph);
+  assert.deepEqual(restored.values, original.values);
+  assert.deepEqual(restored.definitionSnapshot, original.definitionSnapshot);
+  assert.equal(restored.customization.state, original.customization.state);
 });

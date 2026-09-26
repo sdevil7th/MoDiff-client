@@ -76,8 +76,9 @@ test('demo Qwen editing Block uses an outside LoRA and connected-only ports with
   const root = page.locator('[data-block-source="diffusers_catalog"][data-block-schema-version="2"]');
   await expect(root).toHaveCount(1, { timeout: 120_000 });
   const rootId = (await root.getAttribute('data-testid'))!.replace(/^user-block-/u, '');
-  const auto = page.getByTestId('topbar-auto-switch');
-  if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await auto.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await root
     .locator('.modiff-field[data-key="image"] input[type="file"]')
     .setInputFiles({ name: 'modiff-product-source.webp', mimeType: 'image/webp', buffer: sourceImage });

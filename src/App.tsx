@@ -10,7 +10,6 @@ import Workflow from './components/Workflow';
 import TopBar from './components/TopBar';
 import { useNodesStore } from './stores/useNodeStore';
 import { useWebsocketStore } from './stores/useWebsocketStore.ts';
-import TaskLauncher from './components/TaskLauncher.tsx';
 import RunSessionShelf from './components/RunSessionShelf.tsx';
 import StartupWorkspaceGate from './components/StartupWorkspaceGate.tsx';
 import WorkflowTabsBar from './components/WorkflowTabsBar.tsx';
@@ -26,6 +25,7 @@ import { openRunActivity } from './studio/runActivity.ts';
 import { useAutoResourcePlanSync } from './studio/useAutoResourcePlanSync.ts';
 import { useWorkflowBackendSync } from './studio/useWorkflowBackendSync.ts';
 
+const DeveloperWorkflowLauncher = lazy(() => import('./components/DeveloperWorkflowLauncher'));
 const GraphFixDialog = lazy(() => import('./components/GraphFixDialog.tsx'));
 const RunIssuesDialog = lazy(() => import('./components/RunIssuesDialog.tsx'));
 const TemplateBrowserDialog = lazy(() => import('./components/TemplateBrowserDialog.tsx'));
@@ -533,7 +533,11 @@ export default function App() {
           <WorkflowTabsBar />
           <div className="relative min-h-0 flex-1">
             <Workflow />
-            {nodeCount === 0 && !launcherDismissed && <TaskLauncher />}
+            {workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && (
+              <Suspense fallback={null}>
+                <DeveloperWorkflowLauncher />
+              </Suspense>
+            )}
             <RunSessionShelf />
           </div>
         </div>
@@ -558,7 +562,7 @@ export default function App() {
       <Suspense fallback={null}>
         {runIssuesDialogOpen ? <RunIssuesDialog /> : null}
         {graphFixDialogOpen ? <GraphFixDialog /> : null}
-        {templateBrowserOpen ? <TemplateBrowserDialog /> : null}
+        {templateBrowserOpen ? <TemplateBrowserDialog entry={false} /> : null}
         {galleryLibraryOpen ? <GalleryLibraryDialog /> : null}
         {mediaViewerOpener ? <MediaViewerDialog /> : null}
         {mediaExportOpener ? <MediaExportDialog /> : null}

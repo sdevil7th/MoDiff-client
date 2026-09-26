@@ -47,7 +47,8 @@ The model list is filtered by task. A model profile being visible means the clie
 - **Save** writes the active snapshot to the backend **My workflows** library. Its menu provides Save as and a JSON
   file copy; `Ctrl+S` saves the current name and `Ctrl+Shift+S` opens Save as.
 - **Export** provides a workflow package, latest-output package, and Gallery shortcut. Expert also exposes raw workflow/API graph JSON.
-- The **Auto** switch changes the resource/control surface between Auto and Expert.
+- **Auto view / Expert view** changes editing tools and node discovery. It preserves the graph and execution settings.
+- **Resources → Automatic / Expert overrides** selects this workflow's execution policy in either view.
 - **Fix** opens a review dialog only when the client has deterministic graph repairs. Inspect the proposed changes
   before applying them; the tool does not guess at model or creative intent.
 - **Run** validates and submits the current graph. While any work is active or waiting, the same one-shot action is labeled **Queue** and appends an immutable graph snapshot without interrupting the current run. Its menu also contains continuous **Auto** and **Loop** behaviors; use those only when repeated execution is intentional.
@@ -57,7 +58,7 @@ The model list is filtered by task. A model profile being visible means the clie
   evidence, not proof that the selected model will fit.
 - **Models**, **Templates**, **Settings**, **Gallery**, and the connection button open their respective tools.
 
-The Auto switch and the Run menu's Auto item have different roles: the switch selects a hardware-aware resource recipe, while the run item reruns after graph parameter edits. Prefer one-shot **Run** until you understand the repeated modes.
+The view switch controls presentation; Resources controls planning. The Run menu's **Auto** item reruns after graph parameter edits. Prefer one-shot **Run** until you understand the repeated modes.
 
 ### Left Rail
 
@@ -66,6 +67,93 @@ The Auto switch and the Run menu's Auto item have different roles: the switch se
 - **Gallery** shows generated and imported media for the active workflow.
 - **Models** summarizes supported, installed, missing, and downloading artifacts.
 - **Workflows** browses backend workflow files.
+
+The editor has one **Nodes** library. It starts with generic nodes,
+common task/media operations, graph-qualified task Blocks, enabled custom nodes
+and Saved Blocks. Generic nodes remain available before selecting a pipeline.
+**Image upscale** in the Workflows chooser creates an ordinary
+**Upscale** model node and a connected Preview. Connect a source image to run it;
+tile size, overlap and output scaling remain editable. Loading and upscaling
+stay inside the same existing action. The selected reviewed model is an initial
+choice, and the graph can be edited and saved as a reusable Block.
+
+Select a pipeline and task in **Diffusers operations**, then click **Load models**,
+**Encode prompt**, **Denoise**, **Decode latents**, or another declared operation
+to add one ordinary node with that pipeline's inputs. Whole-pipeline routes show
+a **Pipeline** label. Specialized audio, video and conditioning operations retain
+their declared entries.
+
+The picker reports execution adapters and runtime requirements separately. A
+node can be authored without an executable adapter; visibility does not mean Run
+is available. Model artifacts and resource checks still belong to the backend.
+Install required packages explicitly through Setup. Browsing a pipeline changes
+neither existing nodes nor execution settings. Leaving the destination workflow
+or changing the pipeline/task selection cancels pending insertion.
+
+Sidebar and canvas search share the same transient discovery filters and pipeline
+selection. The selection resets when the destination document is replaced. In
+common discovery, a bound operation replaces only its exact registry contract
+and aliases; distinct schemas remain separate. Older backend registries remain
+usable without an operation catalog. Saved identities and graphs do not change.
+
+Select a node or Block on the canvas to see its controls in the Studio side panel.
+The selection toolbar's **Inspect node** or **Inspect Block** opens the same inspector
+in a dialog, even when the Nodes library is closed. The editor offers:
+
+- **Parameters**: the canvas's existing controls, with the same edits and Undo.
+- **Interface**: declared input/output types, required sockets and current connections.
+  A composition shows its public sockets without expanding its internal graph.
+- **Implementation**: the underlying action, operation defaults and overrides,
+  retained settings excluded from execution, and available source/revision metadata.
+  Approved custom Python nodes expose their installed source path and inspected code
+  hash; opening the inspector grants no code permission.
+- **Docs**: descriptions and field help supplied by the node or Block.
+- **Run details**: current execution status, reported cache state and diagnostics.
+  Cached outputs do not guarantee a cache hit on the next run; earlier runs remain
+  in history.
+
+Browsing these details does not edit the graph, resolve fields or load models.
+Parameter edits update the original workflow. Escape closes the dialog and restores
+focus; selection or workflow changes close it. Run-blocked and Fix inspection actions
+focus the affected node without changing workspace or memory policy. Expand a Block
+on the canvas for structural editing; this does not edit its Python implementation.
+
+Double-click empty canvas space, or drag a connection to empty space, to search
+nodes and Saved Blocks without opening the library. Select a pipeline in this
+picker to find its bound nodes too. Searches retain old registry
+keys and labels, plus the historical **User Nodes** name. Saved Blocks show their
+saved revision; equal names do not merge separate definitions. Connection searches
+show compatible public inputs or outputs according to the originating handle.
+Selecting a result creates a fresh instance and validates the wire through the
+canvas's existing rules. For a bound node, a compatible declared value input can
+expose its editable control as a socket, just as dragging a wire onto that control
+would. Hidden, disabled, signal and binding-constant fields are not exposed. Undo removes that insertion and wire together; a rejected
+connection leaves no disconnected insertion. Search does not grant code consent.
+
+**Blocks** is the public name for both registered compositions and saved reusable
+compositions. **Saved Blocks** retains each saved name and revision. Existing
+workflow types, action names and library identities are unchanged. Historical
+Cluster/User Node terminology can still occur in older files and migration
+receipts. Use the explicit migration preview for supported historical documents;
+opening a file or switching Auto/Expert does not convert it.
+
+New ordinary Diffusers image nodes and connected workflows use the selected
+model’s reviewed dtype, size, steps and guidance when those controls apply.
+Models sharing a pipeline class retain their own starting values. These are
+editable starting values; resolving another model does not rewrite an existing
+workflow or change its memory policy.
+
+Ordinary image utilities—including Resize, Apply Mask, Merge Images, Image Grid,
+Canny Edge Detection, color inversion, Outpaint Canvas, comparison and saving—are available in the normal Nodes library in both workspaces,
+alongside text and value utilities. They do not require a pipeline selection or
+an implementation filter.
+
+**Show implementation nodes** adds underlying adapters, upstream Modular blocks,
+catalog-only tasks and component references. Check each entry's readiness.
+**Show experimental nodes** independently adds experimental entries. These options
+are available in both workspaces, apply to sidebar and canvas discovery, and stay
+selected when switching workspace. They do not change the workflow or memory
+policy. Saved Blocks remain available with either option.
 
 ### Canvas And Workflow Tabs
 
@@ -84,6 +172,14 @@ clearing site data or switching browser profiles.
 
 ### Connect And Move Across Blocks
 
+Drag an input or output onto empty canvas to add a compatible node. Dragging an
+output suggests nodes with matching inputs; dragging an input suggests matching
+outputs. Installed custom nodes participate through their declared port types,
+including controls already exposed as inputs. Search narrows those compatible
+results, and selecting a node inserts and connects it. These suggestions use the
+full executable node registry, independently of the left library's catalog tab.
+They do not install custom code or establish model-family compatibility.
+
 A compatible outside node can connect directly to an internal input, and an internal
 output can connect outside. Expanded Blocks show curved links to the visible internal
 node. Collapsed Blocks show an additional **Connected internal ports** section at the
@@ -100,7 +196,7 @@ show the available shortcuts or gestures, including **Delete / Backspace**.
 all enabled terminal branches. Outside sources are ignored even when attached to a
 configured input: the Block uses its stored fallback or reports a missing input. The
 whole-workflow Run includes connected outside sources. Move a source inside when it
-should be part of a Block-only run. This behavior applies to modern clusters and Blocks.
+should be part of a Block-only run. This behavior applies to modern Blocks.
 
 ### Save A Block Or An Internal Modular Block
 
@@ -109,16 +205,16 @@ use Save in its selection toolbar. Both open **Save block changes** in the right
 prefilled from the selected Block:
 
 - **Keep only in this workflow** retains the current local workflow snapshot;
-  it does not create or update a User Node. Use the top-bar Save as well when
+  it does not create or update a saved Block. Use the top-bar Save as well when
   you want a named backend workflow file.
-- **Save as new User Node** copies the selected Block with its current prompts
+- **Save as new Block** copies the selected Block with its current prompts
   and settings. For an internal Block it copies only that subtree and its
   explicitly configured interface. Outside nodes and wires are omitted;
   temporary connected-only sockets are not saved as reusable ports. Its parent and
   other workflow instances are unchanged.
-- **Update existing User Node** appears on a user-owned reusable Block root.
+- **Update existing Block** appears on a user-owned reusable Block root.
   Internal projections do not have independent library definitions to overwrite.
-  Insert a saved subtree from User Nodes to edit/update that definition independently.
+  Insert a saved subtree from Saved Blocks to edit/update that definition independently.
 
 Collapsed internal Blocks show their declared descendant controls. Editing the
 same prompt or parameter at the root, an intermediate Block, or its internal
@@ -155,7 +251,7 @@ save operation rather than allowing it to save a different instance.
 
 1. Choose a task or template.
 2. In Studio, select a compatible model.
-3. Keep Auto enabled unless you are deliberately testing an experimental configuration.
+3. Keep **Resources → Automatic** selected unless you are deliberately testing an experimental configuration.
 4. Enter the prompt and mode-specific media inputs.
 5. Adjust generation settings that the selected recipe permits.
 6. Use **Sync** when you want to explicitly reconcile Studio values into the managed graph. Most guided changes also synchronize automatically.
@@ -165,7 +261,7 @@ save operation rather than allowing it to save a different instance.
 
 Studio adopts a compatible existing graph when possible. If you manually change a managed graph until it no longer matches its binding, Studio treats it as a custom graph rather than silently replacing it. You can still select nodes and edit their exposed parameters from the Studio panel.
 
-For a custom graph, **Node controls** shows the selected ordinary node, Cluster Node, or User Node's declared
+For a custom graph, **Node controls** shows the selected ordinary node or Block's declared
 controls with the same values and connections as the canvas. Expand a Block and select an internal node to edit
 its controls. Edits use the normal workflow undo/redo and save behavior. **Pin inputs** keeps chosen controls in
 that workflow's panel after deselection. Pins inside collapsed Blocks remain readable; **Reveal in Block to edit**
@@ -183,9 +279,9 @@ block the selected media path; whole-workflow Run still checks all enabled paths
 
 ## Auto And Expert
 
-### Auto
+### Automatic resources
 
-Auto requests a backend plan for the current form. A ready plan can select:
+In either authoring view, **Resources → Automatic** requests a backend plan for the current form. A ready plan can select:
 
 - A specific installed model artifact or repository revision
 - Safe spatial/temporal defaults
@@ -211,7 +307,11 @@ runtime qualification.
 
 ### Expert
 
-Expert exposes model artifact, dtype, quantization, offload, device, graph, and output fields. It is intended for contributors, advanced users, and explicitly unproven paths. Expert validates obvious graph and input failures but cannot prove that an arbitrary combination fits memory or matches a model's runtime contract.
+Expert exposes model artifact, dtype, quantization, offload, device, graph, and output fields. It is intended for contributors, advanced users, and explicitly unproven paths. Opening Expert view keeps automatic resource planning enabled when that is the workflow's saved policy. To use your configured execution settings, choose **Resources → Expert overrides** explicitly. Graph and required-input validation still apply; the override policy does not prove that a combination fits memory or matches a model's runtime contract.
+
+Your editing preference is global; each workflow tab saves its own resource
+policy. Refresh and reopening preserve them independently. Switching views does
+not rebuild the graph, reset parameters, or change the graph's Undo history.
 
 See [Auto mode design](auto-mode-design.md) for the contributor-level contract.
 

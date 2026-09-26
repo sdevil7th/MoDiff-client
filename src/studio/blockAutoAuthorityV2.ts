@@ -1,7 +1,6 @@
 import config from '../../app.config';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
-import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { formatRequestError, requestJson } from '../utils/requestJson';
 import { registeredBlockAutoAuthorityStatusV2 } from './blockExecutionAuthorityV2';
@@ -119,16 +118,8 @@ function requestAuthorityOnce(instance: BlockInstanceV2) {
  */
 export async function prepareRegisteredBlockAutoAuthoritiesV2(instanceIds?: readonly string[]) {
   const studio = useStudioStore.getState();
-  // The top-bar switch is the user's explicit Auto/Expert choice. A restored
-  // workflow can briefly carry its saved `resourceMode: auto` while the
-  // persisted UI preference already renders Expert. Never issue an Auto
-  // authority request behind an visibly-off Auto switch; reconcile the form
-  // first so downstream run-readiness also validates the concrete Expert
-  // graph instead of blocking on a planner receipt.
-  if (useSettingsStore.getState().studioViewMode === 'expert') {
-    if (studio.form.resourceMode !== 'expert') studio.updateForm({ resourceMode: 'expert' });
-    return;
-  }
+  // Only the workflow's saved resource policy controls planning. Opening
+  // Expert authoring tools must not bypass a planner or rewrite this policy.
   if (studio.form.resourceMode === 'expert') return;
   const requested = instanceIds ? new Set(instanceIds) : null;
   const roots = useFlowStore

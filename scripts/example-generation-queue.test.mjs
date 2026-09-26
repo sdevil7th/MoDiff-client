@@ -61,6 +61,85 @@ function commandJob(id, source, extra = {}) {
   };
 }
 
+test('run-all records a failure then completes the next independent job without retrying', () => {
+  const workspace = tempWorkspace();
+  writeConfig(workspace.configPath, [
+    commandJob('fails', 'console.error("deliberate failure"); process.exit(7)'),
+    commandJob('succeeds', 'console.log("next model ran")'),
+  ]);
+  const result = runQueue(workspace, 'run-all', ['--budget-ms', '20000', '--json']);
+  assert.equal(result.status, 1, result.stderr);
+  const state = stateFor(workspace);
+  assert.equal(state.jobs.fails.status, 'failed_runtime');
+  assert.equal(state.jobs.succeeds.status, 'awaiting_quality');
+  assert.equal(state.activeJobId, null);
+  const resumed = runQueue(workspace, 'run-all', ['--budget-ms', '20000', '--json']);
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(stateFor(workspace).jobs.fails.attempts.length, 1);
+  assert.equal(stateFor(workspace).jobs.succeeds.attempts.length, 1);
+});
+
+test(
+  'timeout escalates when a child ignores SIGTERM and continues to the next job',
+  { skip: process.platform === 'win32' },
+  () => {
+    const workspace = tempWorkspace();
+    writeConfig(workspace.configPath, [
+      commandJob('hangs', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 100)', { timeoutMs: 500 }),
+      commandJob('next', 'process.exit(0)'),
+    ]);
+    const result = runQueue(workspace, 'run-all', ['--budget-ms', '20000'], 10_000);
+    assert.equal(result.status, 1, result.stderr);
+    const state = stateFor(workspace);
+    assert.equal(state.jobs.hangs.attempts[0].timedOut, true);
+    assert.equal(state.jobs.next.status, 'awaiting_quality');
+  },
+);
+
+test('an orphan holding inherited output pipes cannot wedge the queue', { skip: process.platform === 'win32' }, () => {
+  const workspace = tempWorkspace();
+  writeConfig(workspace.configPath, [
+    commandJob(
+      'orphan',
+      'require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 100)"], {stdio: "inherit"}).unref(); process.exit(0)',
+      { timeoutMs: 2000 },
+    ),
+  ]);
+  const result = runQueue(workspace, 'run', [], 8_000);
+  assert.equal(result.error, undefined);
+  assert.notEqual(stateFor(workspace).jobs.orphan.status, 'running');
+});
+
+test('run-all refuses an absent or unbounded budget', () => {
+  const workspace = tempWorkspace();
+  writeConfig(workspace.configPath, [commandJob('never-start', 'process.exit(0)')]);
+  for (const args of [[], ['--budget-ms', '86400001']]) {
+    const result = runQueue(workspace, 'run-all', args);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /requires --budget-ms/);
+  }
+});
+
+test('stop file finishes the active job and holds later jobs without consuming attempts', () => {
+  const workspace = tempWorkspace();
+  const stop = join(workspace.root, 'stop-after-current');
+  writeConfig(workspace.configPath, [
+    commandJob(
+      'finishes',
+      `require('node:fs').writeFileSync(${JSON.stringify(stop)}, 'hold'); console.log('completed')`,
+    ),
+    commandJob('held', 'process.exit(19)'),
+  ]);
+  const result = runQueue(workspace, 'run-all', ['--budget-ms', '20000', '--stop-file', stop, '--json']);
+  assert.equal(result.status, 0, result.stderr);
+  const state = stateFor(workspace);
+  assert.equal(state.jobs.finishes.status, 'awaiting_quality');
+  assert.equal(state.jobs.held.status, 'pending');
+  assert.equal(state.jobs.held.attempts.length, 0);
+  assert.equal(state.activeJobId, null);
+  assert.match(result.stdout, /"stopRequested": true/);
+});
+
 test('masked VACE queue uses the staged amber-vessel source contract', () => {
   const projectRoot = dirname(dirname(SCRIPT));
   const config = validateConfig(

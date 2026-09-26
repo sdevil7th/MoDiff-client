@@ -1,6 +1,11 @@
 import { useFlowStore } from '../stores/useFlowStore';
 import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
 import {
+  assertWorkflowOperationContext,
+  captureWorkflowOperationContext,
+  type WorkflowOperationContext,
+} from '../stores/useStudioStore';
+import {
   definitionForRegisteredRouteV1,
   inactiveBlockRouteDraftInstanceV1,
   registeredRouteSetForBlockV1,
@@ -24,8 +29,23 @@ async function canonicalDefinitionSha256(definition: Parameters<typeof canonical
 export async function switchRegisteredBlockRouteV1(
   instanceId: string,
   targetRouteKey: string,
-  options: { compilerTimeoutMs?: number } = {},
+  options: {
+    compilerTimeoutMs?: number;
+    signal?: AbortSignal;
+    source?: { context: WorkflowOperationContext; signature: string };
+  } = {},
 ) {
+  const source = options.source ?? {
+    context: captureWorkflowOperationContext(),
+    signature: JSON.stringify(useFlowStore.getState().toObject()),
+  };
+  const assertCurrent = () => {
+    if (options.signal?.aborted) throw new DOMException('Model change cancelled.', 'AbortError');
+    assertWorkflowOperationContext(source.context, { includeForm: false });
+    if (JSON.stringify(useFlowStore.getState().toObject()) !== source.signature)
+      throw new Error('The graph changed while preparing this model change. Review it and try again.');
+  };
+  assertCurrent();
   const root = useFlowStore.getState().nodes.find((node) => node.id === instanceId);
   if (!root?.data.blockInstanceV2) throw new Error(`Block V2 root ${instanceId} is unavailable.`);
   const resolved = registeredRouteSetForBlockV1(root.data.blockInstanceV2);
@@ -36,6 +56,7 @@ export async function switchRegisteredBlockRouteV1(
 
   const libraryStore = useHuggingFaceNodeLibraryStore.getState();
   if (!libraryStore.loaded) await libraryStore.fetchLibrary();
+  assertCurrent();
   const library = useHuggingFaceNodeLibraryStore.getState().library;
   if (!library) throw new Error(useHuggingFaceNodeLibraryStore.getState().error || 'Node library is unavailable.');
   const definition = definitionForRegisteredRouteV1(library.definitions, targetRoute);
@@ -57,9 +78,11 @@ export async function switchRegisteredBlockRouteV1(
     (await canonicalDefinitionSha256(inactiveDraft.definitionSnapshot)) === registered.compiledDefinitionCanonicalSha256
       ? inactiveDraft
       : null;
+  assertCurrent();
   let compiledDestination = exactDraft;
   if (!compiledDestination) {
     const { createHuggingFaceClusterForGraph } = await import('./huggingFaceClusterInsertion');
+    assertCurrent();
     const form = getFormDefaultsForRegisteredRoute(
       admission.studioMode as StudioMode,
       definition.pipelineClass as StudioModelType,
@@ -68,12 +91,13 @@ export async function switchRegisteredBlockRouteV1(
       definition,
       root.data.blockInstanceV2.presentation.position,
       form,
-      { compilerTimeoutMs: options.compilerTimeoutMs, insert: false },
+      { compilerTimeoutMs: options.compilerTimeoutMs, insert: false, signal: options.signal },
     );
     compiledDestination = compiledRoot.data.blockInstanceV2 ?? null;
     if (!compiledDestination) throw new Error(`Destination ${targetRoute.label} did not compile to BlockInstanceV2.`);
   }
 
+  assertCurrent();
   useFlowStore.getState().switchBlockRouteV1(instanceId, targetRouteKey, compiledDestination);
   const switched = useFlowStore.getState().nodes.find((node) => node.id === instanceId)?.data.blockInstanceV2;
   if (!switched) throw new Error(`Block V2 root ${instanceId} disappeared during route switching.`);

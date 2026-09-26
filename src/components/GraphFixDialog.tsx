@@ -120,7 +120,6 @@ export default function GraphFixDialog() {
       const settings = useSettingsStore.getState();
       setRightPanelOpen(true);
       setRightPanelTab('studio');
-      settings.setStudioViewMode('expert');
       const flow = useFlowStore.getState();
       if (options.nodeId && flow.nodes.some((node) => node.id === options.nodeId)) {
         void flow.onNodesChange(

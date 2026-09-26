@@ -1,6 +1,11 @@
 import { useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { enqueueSnackbar } from '../ui/snackbar';
-import { outputInputDisplay, outputMediaSizeLabel, outputNumericInputValue } from '../studio/resolvedExecutionInputs';
+import {
+  outputInputDisplay,
+  outputMediaSizeLabel,
+  outputModelKey,
+  outputNumericInputValue,
+} from '../studio/resolvedExecutionInputs';
 import {
   ArrowLeftRight,
   Copy,
@@ -29,7 +34,7 @@ import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils'
 import { validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
-import type { StudioImportedAsset, StudioModelType, StudioOutput } from '../studio/types';
+import type { StudioImportedAsset, StudioOutput } from '../studio/types';
 import {
   buildOutputWorkflowPackage,
   downloadJson,
@@ -40,7 +45,6 @@ import { ImageFrame, ModiffBadge, ModiffButton, ModiffChip, ModiffFileInput, Mod
 import { cx } from '../utils/classNames';
 import { imageUrlLightboxOpener } from '../utils/mediaViewer';
 
-type FilterId = 'all' | 'favorites' | StudioModelType;
 type GalleryView = 'grid' | 'inspect' | 'compare' | 'lineage';
 type GalleryAssetKind = 'generated' | 'imported';
 
@@ -156,7 +160,7 @@ function GalleryMedia({
 
 export default function OutputGalleryPanel({ modalView = false }: { modalView?: boolean }) {
   const [assetKind, setAssetKind] = useState<GalleryAssetKind>('generated');
-  const [filter, setFilter] = useState<FilterId>('all');
+  const [filter, setFilter] = useState('all');
   const [view, setView] = useState<GalleryView>('grid');
   const [selectedOutputIds, setSelectedOutputIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -181,15 +185,15 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
   const isConnected = useWebsocketStore((state) => state.isConnected);
 
   const modelFilters = useMemo(() => {
-    const byModel = new Map<StudioModelType, string>();
-    outputs.forEach((output) => byModel.set(output.modelType, output.modelLabel));
+    const byModel = new Map<string, string>();
+    outputs.forEach((output) => byModel.set(outputModelKey(output), output.modelLabel));
     return Array.from(byModel.entries());
   }, [outputs]);
 
   const filteredOutputs = useMemo(() => {
     if (filter === 'favorites') return outputs.filter((output) => output.favorite);
     if (filter === 'all') return outputs;
-    return outputs.filter((output) => output.modelType === filter);
+    return outputs.filter((output) => `model:${outputModelKey(output)}` === filter);
   }, [filter, outputs]);
   const selectedOutputs = useMemo(() => {
     const selected = selectedOutputIds
@@ -364,8 +368,8 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
             {modelFilters.map(([modelType, label]) => (
               <GalleryPill
                 key={modelType}
-                active={filter === modelType}
-                onClick={() => setFilter(modelType)}
+                active={filter === `model:${modelType}`}
+                onClick={() => setFilter(`model:${modelType}`)}
                 data-testid={`gallery-filter-${modelType}`}
               >
                 {label}

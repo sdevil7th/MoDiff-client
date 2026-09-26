@@ -1,3 +1,4 @@
+import { nodeDisplayLabel } from '../workflow/nodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { NodeProps, useStoreApi } from '@xyflow/react';
@@ -13,6 +14,8 @@ import {
 } from 'react';
 import {
   Circle,
+  CircleCheck,
+  Info,
   CircleHelp,
   Clock3,
   Copy,
@@ -54,7 +57,7 @@ import { cx } from '../utils/classNames';
 import ErrorBoundary from './ErrorBoundary';
 import NodeContent from './NodeContent';
 import { enqueueSnackbar } from '../ui/snackbar';
-import { deleteNodeCache } from '../utils/serverActions';
+import { deleteNodeCache, recomputeNodeOutputs } from '../utils/serverActions';
 import { syncManagedNodeControlChange } from '../studio/managedControlSync';
 import {
   GraphMenuAction,
@@ -110,10 +113,18 @@ function contextMenuAnchor(event: MouseEvent<HTMLDivElement>): { mouseX: number;
   return { mouseX: anchor.left, mouseY: anchor.top };
 }
 
-const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
+type NodeSurface = {
+  controls: ReactNode;
+  connectors: ReactNode;
+  actions?: ReactNode;
+  setSize: (width: number, height: number) => void;
+  testId?: string;
+};
+
+const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurface }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
-  const label = node.data.label || `${node.data.module} ${node.data.action}`;
+  const label = nodeDisplayLabel(node.data);
   const hasAudioPlayer = Object.values(node.data.params).some((param) => param.display === 'ui_audio');
   const minimumNodeWidth = hasAudioPlayer ? modiffLayout.audioPreviewNodeMinWidth : modiffLayout.nodeMinWidth;
   const setParam = useFlowStore((state) => state.setParamWithHistory);
@@ -163,6 +174,16 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     : node.data.uiState?.validationMessage || node.data.uiState?.errorMessage;
   const recentChangeLabel = node.data.uiState?.recentChangeLabel;
   const isError = validationSeverity === 'error';
+  const isStatus = validationSeverity === 'success' || validationSeverity === 'info';
+  const statusHeading = isError ? 'Node error' : isStatus ? 'Node status' : 'Node warning';
+  const StatusIcon = validationSeverity === 'success' ? CircleCheck : isStatus ? Info : TriangleAlert;
+  const statusColor = isError
+    ? 'text-modiff-red'
+    : validationSeverity === 'success'
+      ? 'text-modiff-green'
+      : isStatus
+        ? 'text-modiff-subtle-text'
+        : 'text-hf-orange';
   const isCollapsed = Boolean(node.data.uiState?.collapsed || node.data.minimized);
   const isDisabledForRun = Boolean(node.data.uiState?.disabled);
   const showDisabledForRun = isDisabledForRun && !isClusterGraphProjection;
@@ -189,11 +210,26 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
     [setParam, node.id, sid],
   );
 
+  const handleRecompute = useCallback(async () => {
+    try {
+      const result = await recomputeNodeOutputs([node.id]);
+      if (result.nodes.length) setNodeCached(node.id, false);
+      enqueueSnackbar(
+        result.nodes.length
+          ? 'Outputs will recompute on the next Run. Loaded models are retained.'
+          : 'Loaded models retained; no computed outputs to invalidate.',
+        { variant: 'success', autoHideDuration: 3500 },
+      );
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: 'error' });
+    }
+  }, [node.id, setNodeCached]);
+
   const handleClearCache = useCallback(async () => {
     try {
       await deleteNodeCache([node.id]);
       setNodeCached(node.id, false);
-      enqueueSnackbar('Cache cleared', { variant: 'success', autoHideDuration: 1500 });
+      enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
       console.error('Failed to delete cache', error);
     }
@@ -255,8 +291,11 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
   const onResizeStart = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
       beginHistoryTransaction('Resize node');
-      const initialWidth = nodeRef.current?.clientWidth || node.width || 0;
-      const initialHeight = nodeRef.current?.clientHeight || node.height || 0;
+      const initialWidth = nodeRef.current?.offsetWidth || node.width || 0;
+      const initialHeight = nodeRef.current?.offsetHeight || node.height || 0;
+      const body = nodeRef.current?.querySelector<HTMLElement>('[data-testid^="node-scroll-body-"]');
+      // Keep the fixed header/status/socket trays and a usable scrolling viewport.
+      const minimumHeight = Math.max(160, initialHeight - (body?.clientHeight ?? initialHeight) + 96);
       const startX = event.clientX;
       const startY = event.clientY;
       const zoomLevel = reactFlowStore.getState().transform[2];
@@ -266,8 +305,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           minimumNodeWidth,
           Math.min(MAX_NODE_WIDTH, initialWidth + Math.round((moveEvent.clientX - startX) / zoomLevel)),
         );
-        const newHeight = Math.max(160, initialHeight + Math.round((moveEvent.clientY - startY) / zoomLevel));
-        setNodeSize(node.id, newWidth, newHeight);
+        const newHeight = Math.max(minimumHeight, initialHeight + Math.round((moveEvent.clientY - startY) / zoomLevel));
+        if (node.surface) node.surface.setSize(newWidth, newHeight);
+        else setNodeSize(node.id, newWidth, newHeight);
         scheduleNodeLayoutSync();
       };
 
@@ -287,6 +327,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       node.id,
       node.width,
       node.height,
+      node.surface,
       minimumNodeWidth,
       reactFlowStore,
       scheduleNodeLayoutSync,
@@ -307,7 +348,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
       ref={nodeRef}
       id={node.id}
       parentNodeId={node.parentId}
-      testId={`graph-node-action-${node.data.action}`}
+      testId={node.surface?.testId ?? `graph-node-action-${node.data.action}`}
       className={cx(
         normalizeDataType(`${node.data.module}_${node.data.action}`),
         normalizeDataType(node.data.module),
@@ -328,22 +369,21 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
           {recentChangeLabel && <span className="block truncate text-xs text-hf-yellow">{recentChangeLabel}</span>}
         </div>
         <div className="nodrag flex items-center gap-1">
+          {node.surface?.actions}
           {validationMessage && (
             <>
               <ModiffIconButton
                 size="compact"
-                className={cx('nodrag', isError ? 'text-modiff-red' : 'text-hf-orange')}
+                className={cx('nodrag', statusColor)}
                 onClick={(event) => setIssueAnchor(anchorBeside(event.currentTarget))}
                 title={validationMessage}
-                label={isError ? 'Node error details' : 'Node warning details'}
+                label={`${statusHeading} details`}
               >
-                <TriangleAlert size={16} />
+                <StatusIcon size={16} />
               </ModiffIconButton>
               {issueAnchor && (
                 <NodePopover anchor={issueAnchor} onClose={() => setIssueAnchor(null)} className="max-w-[420px] p-3">
-                  <div className={cx('mb-1 text-sm font-bold', isError ? 'text-modiff-red' : 'text-hf-orange')}>
-                    {isError ? 'Node error' : 'Node warning'}
-                  </div>
+                  <div className={cx('mb-1 text-sm font-bold', statusColor)}>{statusHeading}</div>
                   <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-sm text-modiff-text">
                     {validationMessage}
                   </p>
@@ -393,16 +433,23 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             data-testid={`node-scroll-body-${node.id}`}
           >
             <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-              <NodeContent
-                nodeId={node.id}
-                params={node.data.params}
-                updateStore={handleUpdateStore}
-                module={node.data.module || ''}
-                action={node.data.action || ''}
-                mode="controls"
-                executionStatus={node.data.executionStatus}
-                progressMessage={node.data.progressMessage}
-              />
+              {node.surface?.controls ?? (
+                <NodeContent
+                  nodeId={node.id}
+                  params={node.data.params}
+                  updateStore={handleUpdateStore}
+                  updateFieldActionStore={
+                    node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+                      ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+                      : undefined
+                  }
+                  module={node.data.module || ''}
+                  action={node.data.action || ''}
+                  mode="controls"
+                  executionStatus={node.data.executionStatus}
+                  progressMessage={node.data.progressMessage}
+                />
+              )}
             </ErrorBoundary>
           </div>
 
@@ -417,8 +464,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
                 size="compact"
                 className="nodrag text-modiff-subtle-text"
                 disabled={!node.data.isCached}
-                label={node.data.isCached ? 'Clear node cache' : 'Node is not cached'}
-                title={node.data.isCached ? 'Click to clear cache' : 'Not cached'}
+                label={node.data.isCached ? 'Release node cache' : 'Node is not cached'}
+                title={node.data.isCached ? 'Release this node and its loaded components' : 'Not cached'}
                 onClick={() => {
                   void handleClearCache();
                 }}
@@ -482,17 +529,24 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
         </>
       )}
       <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-        <NodeContent
-          nodeId={node.id}
-          params={node.data.params}
-          updateStore={handleUpdateStore}
-          module={node.data.module || ''}
-          action={node.data.action || ''}
-          mode="connectors"
-          compactConnectors={isCollapsed}
-          executionStatus={node.data.executionStatus}
-          progressMessage={node.data.progressMessage}
-        />
+        {node.surface?.connectors ?? (
+          <NodeContent
+            nodeId={node.id}
+            params={node.data.params}
+            updateStore={handleUpdateStore}
+            updateFieldActionStore={
+              node.data.operationAuthoring && !node.data.blockProjectionOwnerId && !isClusterGraphProjection
+                ? (_origin, param, value, key) => useFlowStore.getState().setParam(node.id, param, value, key)
+                : undefined
+            }
+            module={node.data.module || ''}
+            action={node.data.action || ''}
+            mode="connectors"
+            compactConnectors={isCollapsed}
+            executionStatus={node.data.executionStatus}
+            progressMessage={node.data.progressMessage}
+          />
+        )}
       </ErrorBoundary>
       {contextMenu && (
         <NodeContextMenu position={contextMenu} onClose={closeContextMenu}>
@@ -571,6 +625,16 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
             Reset size
           </ContextMenuItem>
           <ContextMenuItem
+            data-testid="node-menu-recompute"
+            icon={<RefreshCcw size={15} />}
+            onClick={() => {
+              closeContextMenu();
+              void handleRecompute();
+            }}
+          >
+            Recompute on next Run
+          </ContextMenuItem>
+          <ContextMenuItem
             data-testid="node-menu-clear-cache"
             icon={<Circle size={15} />}
             onClick={() => {
@@ -578,7 +642,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType>) => {
               void handleClearCache();
             }}
           >
-            Clear cache
+            Release node cache
           </ContextMenuItem>
           <ContextMenuDivider />
           <ContextMenuItem data-testid="node-menu-copy-info" icon={<Copy size={15} />} onClick={handleCopyNodeInfo}>

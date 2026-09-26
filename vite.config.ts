@@ -180,6 +180,8 @@ const backendProxyPaths = [
   '/runtime',
   '/health',
   '/model_capabilities',
+  '/operations',
+  '/service_package',
   '/media',
   '/auto_resource',
   '/studio_outputs',
@@ -222,15 +224,6 @@ const baseConfig: UserConfig = {
   // optimized dependency files and trigger navigation during a gesture.
   cacheDir: process.env.MODIFF_VITE_CACHE_DIR || 'node_modules/.vite',
   plugins: [react(), tailwindcss(), compactProductionChunksPlugin(), shellAssetVersionPlugin()],
-  // Keep the browser's process-external recovery endpoint aligned with the
-  // backend proxy even when the caller relies on MoDiff's default 8088 port.
-  // Without these build-time values, app.config could only see the Vite
-  // frontend origin and incorrectly poll 5174 instead of the supervisor on
-  // 8089 after a page refresh.
-  define: {
-    'import.meta.env.VITE_BACKEND_PROXY_TARGET': JSON.stringify(backendProxyTarget),
-    'import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS': JSON.stringify(supervisorControlTarget),
-  },
   server: {
     proxy: backendProxy,
     hmr: process.env.MODIFF_GALLERY_STABLE !== '1',
@@ -238,7 +231,13 @@ const baseConfig: UserConfig = {
       // Playwright can emit tens of thousands of trace resources during a
       // long-running model qualification. They are neither source nor HMR
       // inputs, and watching them can exhaust the host's inotify limit.
-      ignored: ['**/artifacts/**', '**/test-results*/**', '**/playwright-report*/**', '**/blob-report/**'],
+      ignored: [
+        '**/reviews/**',
+        '**/artifacts/**',
+        '**/test-results*/**',
+        '**/playwright-report*/**',
+        '**/blob-report/**',
+      ],
     },
   },
   build: {
@@ -341,7 +340,7 @@ const loadLocalConfig = async () => {
 };
 const localConfig = await loadLocalConfig();
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const templateAssetContract = resolveTemplateAssetViteContract(
     checkedInTemplateAssetSource,
     loadEnv(mode, __dirname, 'VITE_MODIFF_TEMPLATE_ASSET_'),
@@ -357,7 +356,18 @@ export default defineConfig(({ mode }) => {
     // (and later into the backend's web bundle). Offline/local builds explicitly
     // opt back into Vite's normal public-directory copy.
     publicDir: templateAssetContract.publicDir,
-    define: templateAssetContract.runtimeDefines,
+    define: {
+      ...templateAssetContract.runtimeDefines,
+      // Vite's development origin differs from the backend. Production must
+      // derive recovery from its serving origin (or an explicit override),
+      // rather than bake the developer's proxy/default port into the bundle.
+      ...(command === 'serve'
+        ? {
+            'import.meta.env.VITE_BACKEND_PROXY_TARGET': JSON.stringify(backendProxyTarget),
+            'import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS': JSON.stringify(supervisorControlTarget),
+          }
+        : {}),
+    },
   };
   const mergedConfig = mergeConfig(mergeConfig(baseConfig, assetConfig), localConfig);
 

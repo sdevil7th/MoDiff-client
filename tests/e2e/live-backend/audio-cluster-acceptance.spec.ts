@@ -485,8 +485,9 @@ test('Audio Block preserves full-setting native edits and generates audio when a
   await ready(page);
   await page.getByTestId('workflow-tab-new').click();
   await ready(page);
-  const auto = page.getByTestId('topbar-auto-switch');
-  if ((await auto.getAttribute('aria-checked')) !== 'false') await auto.click();
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await auto.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   const search = page.getByLabel('Search nodes');
   if (!(await search.isVisible())) await page.getByTestId('left-tab-nodes').click();
   await search.fill(AUDIO_CASE.search);

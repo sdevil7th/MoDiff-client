@@ -273,6 +273,8 @@ export type BlockDefinitionV2 = {
   boundary: BlockBoundaryV2;
   controls: BlockControlV2[];
   suggestedInputs?: SuggestedInputSetV2[];
+  /** Reusable initial visibility only; excluded from execution identity. */
+  removedControlBindings?: Array<{ nodeId: string; fieldId: string }>;
   previews: BlockPreviewBindingV2[];
   ownership: {
     kind: 'registered' | 'user';
@@ -373,6 +375,8 @@ export type BlockInstanceV2 = {
     internalLayoutMode?: 'root' | 'hierarchical';
     /** Presentation-only semantic IDs of collapsed Modular Diffusers containers. */
     collapsedContainerNodeIds?: string[];
+    /** Explicitly removed dynamic control rows; not an execution disable flag. */
+    removedControlBindings?: Array<{ nodeId: string; fieldId: string }>;
     internalLayout: Record<string, { x: number; y: number; width?: number; height?: number }>;
   };
   previewStates: BlockPreviewStateV2[];
@@ -1182,6 +1186,21 @@ function ownershipAt(value: unknown, source: BlockSourceV2): BlockDefinitionV2['
   return ownership as BlockDefinitionV2['ownership'];
 }
 
+function removedControlBindingsAt(bindings: unknown) {
+  if (bindings === undefined) return;
+  const label = 'removedControlBindings';
+  if (!Array.isArray(bindings) || bindings.length > 4096) invalid(label, 'must be a bounded array.');
+  const keys = bindings.map((entry) => {
+    const binding = objectAt(entry, label);
+    keysAt(binding, label, ['nodeId', 'fieldId']);
+    textAt(binding.nodeId, `${label}.nodeId`, ID, 384);
+    textAt(binding.fieldId, `${label}.fieldId`, undefined, 384);
+    return JSON.stringify([binding.nodeId, binding.fieldId]);
+  });
+  unique(keys, label);
+  // Dynamic fields/stages may temporarily disappear; retain exact identities.
+}
+
 /** Strictly validate, hash-check, and JSON-clone a persisted V2 definition. */
 export function normalizeBlockDefinitionV2(value: unknown): BlockDefinitionV2 {
   const definition = objectAt(value, 'Block Definition V2');
@@ -1200,12 +1219,13 @@ export function normalizeBlockDefinitionV2(value: unknown): BlockDefinitionV2 {
       'previews',
       'ownership',
     ],
-    ['description', 'suggestedInputs'],
+    ['description', 'suggestedInputs', 'removedControlBindings'],
   );
   if (definition.schemaVersion !== 2) invalid('Block Definition V2', 'schemaVersion must be 2.');
   textAt(definition.definitionId, 'Block Definition V2.definitionId', ID, 384);
   textAt(definition.displayName, 'Block Definition V2.displayName', undefined, 512);
   optionalTextAt(definition.description, 'Block Definition V2.description', 4096);
+  removedControlBindingsAt(definition.removedControlBindings);
   textAt(definition.contentHash, 'Block Definition V2.contentHash', HASH, 512);
   const source = sourceAt(definition.source);
   const graph = graphAt(definition.graph);
@@ -1426,9 +1446,10 @@ export function normalizeBlockInstanceV2(value: unknown): BlockInstanceV2 {
     presentation,
     'Block Instance V2.presentation',
     ['expanded', 'position', 'size', 'internalLayout'],
-    ['internalLayoutMode', 'collapsedContainerNodeIds'],
+    ['internalLayoutMode', 'collapsedContainerNodeIds', 'removedControlBindings'],
   );
   booleanAt(presentation.expanded, 'Block Instance V2.presentation.expanded');
+  removedControlBindingsAt(presentation.removedControlBindings);
   const position = objectAt(presentation.position, 'Block Instance V2.presentation.position');
   keysAt(position, 'Block Instance V2.presentation.position', ['x', 'y']);
   finiteNumberAt(position.x, 'Block Instance V2.presentation.position.x');
@@ -1541,10 +1562,11 @@ export function normalizeBlockInstanceV2(value: unknown): BlockInstanceV2 {
           invalid(`Block route draft V1 ${draftKey}`, 'routeKey must match its inactiveDrafts key.');
         const draftDefinition = normalizeBlockDefinitionV2(draft.definitionSnapshot);
         if (
-          draftDefinition.ownership.kind !== 'registered' ||
-          draftDefinition.ownership.definitionMutable ||
-          (draftDefinition.source.kind !== 'diffusers_catalog' &&
-            draftDefinition.source.kind !== 'transformers_catalog')
+          !(routeSetId === 'diffusers.definition-switch:v1' && draftDefinition.source.kind === 'user') &&
+          (draftDefinition.ownership.kind !== 'registered' ||
+            draftDefinition.ownership.definitionMutable ||
+            (draftDefinition.source.kind !== 'diffusers_catalog' &&
+              draftDefinition.source.kind !== 'transformers_catalog'))
         )
           invalid(`Block route draft V1 ${draftKey}`, 'must contain one immutable registered definition.');
         const draftPreviews = blockInstancePreviewBindingsV2(draftDefinition, graphAt(draft.effectiveGraph)).map(
@@ -1669,6 +1691,15 @@ export function createBlockInstanceV2(
       size: options.size,
       ...(options.internalLayoutMode ? { internalLayoutMode: options.internalLayoutMode } : {}),
       ...(collapsedContainerNodeIds.length ? { collapsedContainerNodeIds } : {}),
+      ...(definition.removedControlBindings
+        ? {
+            removedControlBindings: jsonClone(
+              definition.removedControlBindings,
+              'removedControlBindings',
+              MAX_DEFINITION_BYTES,
+            ),
+          }
+        : {}),
       internalLayout: options.internalLayout ?? {},
     },
     previewStates: blockInstancePreviewBindingsV2(definition, definition.graph).map((binding) => ({

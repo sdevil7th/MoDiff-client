@@ -135,16 +135,19 @@ function applyNodeExecutionStatus(message: WebsocketMessage) {
   );
   if (!targetNodeId) return;
   const statusMessage =
-    message.status === 'running'
-      ? 'Running'
-      : message.status === 'cached'
-        ? 'Cached result reused'
-        : message.status === 'failed'
-          ? 'Failed'
-          : 'Completed';
+    message.type === 'executed' && message.message
+      ? message.message
+      : message.status === 'running'
+        ? 'Running'
+        : message.status === 'cached'
+          ? 'Cached result reused'
+          : message.status === 'failed'
+            ? 'Failed'
+            : 'Completed';
   flow.setNodeUiState(targetNodeId, {
     validationSeverity: message.status === 'failed' ? 'error' : message.status === 'running' ? 'info' : 'success',
     validationMessage: statusMessage,
+    ...(message.status === 'failed' ? {} : { errorMessage: undefined }),
   });
 }
 
@@ -391,7 +394,10 @@ function preserveCurrentParamValue(current: NodeParams | undefined, incoming: No
   // other field option from the fresh backend definition.
   const clusterFieldOptions = Object.fromEntries(
     Object.entries(current.fieldOptions ?? {}).filter(
-      ([key]) => key === 'suppressInitialFieldAction' || key.startsWith('huggingFaceCluster'),
+      ([key]) =>
+        key === 'suppressInitialFieldAction' ||
+        key === 'suppressAutomaticSignalAction' ||
+        key.startsWith('huggingFaceCluster'),
     ),
   );
   if (Object.keys(clusterFieldOptions).length > 0) {
@@ -1005,6 +1011,13 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
 
       const node = useFlowStore.getState().nodes.find((n) => n.id === message.node);
       if (!node) {
+        if (message.node.startsWith('guidance-schema-')) {
+          void import('../workflow/guidanceNodeFields').then(({ receiveGuidanceDefinition }) => {
+            if (shouldApplyWorkflowCanvasMutation(message, context))
+              receiveGuidanceDefinition(message.node!, message.params);
+          });
+          return;
+        }
         console.warn('The node is no longer in the graph');
         return;
       }

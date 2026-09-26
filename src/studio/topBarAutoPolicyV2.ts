@@ -17,7 +17,7 @@ export type TopBarAutoPolicyV2 = Readonly<{
 }>;
 
 /**
- * Derive the graph that is allowed to affect the visible Auto/Expert mode.
+ * Derive the graph eligible for automatic resource planning, independently of editing mode.
  *
  * Registered Block compilation temporarily attaches a hidden, disabled graph
  * so backend-owned dynamic fields can publish into an isolated witness. That

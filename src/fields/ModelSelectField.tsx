@@ -1,6 +1,9 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useFlowStore } from '../stores/useFlowStore';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import { operationOwnsModel } from '../workflow/operationContracts';
 import { useShallow } from 'zustand/react/shallow';
 
 import { FieldProps } from '../components/NodeContent';
@@ -8,7 +11,6 @@ import { FieldProps } from '../components/NodeContent';
 import AutocompleteField from './AutocompleteField';
 
 import { Download, Library, LoaderCircle, RefreshCw } from 'lucide-react';
-import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
@@ -19,10 +21,10 @@ import {
   indexedHubModelIsInstalled,
   parseModelSelectionFilters,
 } from '../studio/modelSelection';
-import { FieldFrame, ModiffButton } from '../ui';
+import { FieldFrame, ModiffButton, ModiffDialog, ModiffSearchInput } from '../ui';
 import { GraphIconButton } from '../ui/GraphControls';
 import { enqueueSnackbar } from '../ui/snackbar';
-import fieldAction from '../utils/fieldAction';
+import fieldAction, { fieldActionSource } from '../utils/fieldAction';
 import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 
 type HfCacheItem = {
@@ -63,7 +65,33 @@ function asModelFieldValue(value: unknown, fallbackSource: ModelSource): ModelFi
   return { source: fallbackSource, value: '' };
 }
 
+const OperationModelField = lazy(() => import('../components/OperationModelField'));
+
 export default function ModelSelectField(props: FieldProps) {
+  const root = useFlowStore((state) => state.nodes.find((n) => n.id === props.nodeId));
+  if (
+    root &&
+    (root.data.blockInstanceV2 ||
+      root.data.userBlockSnapshot ||
+      operationOwnsModel(operationAuthoring(root)?.operation))
+  )
+    return (
+      <Suspense fallback={<span role="status">Loading model choices…</span>}>
+        <OperationModelField
+          root={root}
+          field={props}
+          value={String(asModelFieldValue(props.value, 'hub').value ?? '')}
+          fallback={<RawModelSelectField {...props} />}
+        />
+      </Suspense>
+    );
+  return <RawModelSelectField {...props} />;
+}
+
+function RawModelSelectField(props: FieldProps) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [pickerError, setPickerError] = useState<string | null>(null);
   const actionTimerRef = useRef(0);
   const latestActionPropsRef = useRef(props);
   latestActionPropsRef.current = props;
@@ -125,7 +153,7 @@ export default function ModelSelectField(props: FieldProps) {
     );
   }, [currentModelId, hfCache, localModels, sourceType]);
   const currentOptions = sourceType === 'hub' ? hubOptions : localModelOptions;
-  const currentCompatible = !currentModelId || currentOptions.includes(currentModelId);
+  const pickerOptions = currentOptions.filter((id) => id.toLowerCase().includes(pickerQuery.trim().toLowerCase()));
   const installProgress = currentModelId ? hfDownloadProgress[currentModelId] : undefined;
   const installActive = isHfDownloadActive(installProgress);
 
@@ -133,12 +161,8 @@ export default function ModelSelectField(props: FieldProps) {
     clearTimeout(actionTimerRef.current);
     const scheduledAction = props.onChange;
     actionTimerRef.current = window.setTimeout(() => {
-      const liveNode = useFlowStore.getState().nodes.find(({ id }) => id === props.nodeId);
-      if (
-        liveNode?.data.module === props.module &&
-        liveNode.data.action === props.action &&
-        liveNode.data.params[props.fieldKey]?.onChange === scheduledAction
-      ) {
+      const source = fieldActionSource(props);
+      if (source?.param?.onChange === scheduledAction) {
         void fieldAction(latestActionPropsRef.current, value);
       }
     }, 250);
@@ -183,15 +207,9 @@ export default function ModelSelectField(props: FieldProps) {
   };
 
   const handleOpenModels = () => {
-    setModelManagerOpener({
-      nodeId: props.nodeId,
-      fieldKey: props.fieldKey,
-      focus: {
-        repo: currentModelId || undefined,
-        label: props.label,
-        source: 'graph',
-      },
-    });
+    setPickerError(null);
+    setPickerQuery('');
+    setPickerOpen(true);
   };
 
   return (
@@ -249,21 +267,71 @@ export default function ModelSelectField(props: FieldProps) {
             {installActive ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />}
           </GraphIconButton>
         ) : null}
-        {currentOptions.length === 0 || !currentCompatible ? (
-          <GraphIconButton
-            type="button"
-            onClick={handleOpenModels}
-            disabled={props.disabled || isLoading}
-            label={
-              currentCompatible
-                ? `Find a compatible ${props.label.toLowerCase()}`
-                : `Choose a compatible replacement for ${currentModelId}`
-            }
-          >
-            <Library size={16} />
-          </GraphIconButton>
-        ) : null}
+        <GraphIconButton
+          type="button"
+          onClick={handleOpenModels}
+          disabled={props.disabled || isLoading}
+          label="Choose model"
+        >
+          <Library size={16} />
+        </GraphIconButton>
       </div>
+      {pickerOpen ? (
+        <ModiffDialog open title={`Choose model for ${props.label}`} onClose={() => setPickerOpen(false)}>
+          <div className="space-y-3">
+            <ModiffSearchInput
+              aria-label="Search installed models"
+              placeholder="Search by repository ID"
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+              onClear={() => setPickerQuery('')}
+            />
+            {pickerError ? <p role="alert">{pickerError}</p> : null}
+            <div className="max-h-80 space-y-2 overflow-y-auto overscroll-contain">
+              {pickerOptions.map((id) => (
+                <ModiffButton
+                  key={id}
+                  className="h-auto w-full"
+                  align="left"
+                  onClick={() => {
+                    if (!fieldActionSource(props)) {
+                      setPickerError('This node or workflow changed. Reopen its model picker.');
+                      return;
+                    }
+                    handleFieldChange(props.fieldKey, id);
+                    setPickerOpen(false);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 break-all">{id}</span>
+                  <span className="ml-auto shrink-0 text-xs text-modiff-subtle-text">Downloaded</span>
+                </ModiffButton>
+              ))}
+            </div>
+            {!pickerOptions.length ? (
+              <p role="status">
+                {currentOptions.length
+                  ? 'No compatible installed models match this search.'
+                  : 'No installed models match this input. For a component loader, select its model type first. Check the model files in Models if a compatible model is missing.'}
+              </p>
+            ) : null}
+            <ModiffButton
+              onClick={async () => {
+                await handleRefresh();
+              }}
+            >
+              Refresh models
+            </ModiffButton>
+            <ModiffButton
+              onClick={() => {
+                setPickerOpen(false);
+                setModelManagerOpener({ nodeId: null, fieldKey: null });
+              }}
+            >
+              Manage model files
+            </ModiffButton>
+          </div>
+        </ModiffDialog>
+      ) : null}
     </FieldFrame>
   );
 }

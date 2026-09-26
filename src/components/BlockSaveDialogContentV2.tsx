@@ -11,6 +11,7 @@ import {
 import { resolveCompositeBlockCapabilitiesV2 } from '../studio/compositeBlockCapabilitiesV2';
 import { ModiffButton, ModiffInput, ModiffFieldShell } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
 /** Mounted on open so the target and workflow context cannot drift behind the dialog. */
 export default function BlockSaveDialogContentV2({
@@ -28,13 +29,11 @@ export default function BlockSaveDialogContentV2({
   const ownerId = selected?.data.blockInstanceV2 ? nodeId : selected?.data.blockProjectionOwnerId;
   const instance = useFlowStore((state) => state.nodes.find((node) => node.id === ownerId)?.data.blockInstanceV2);
   const nested = Boolean(selected && !selected.data.blockInstanceV2);
+  const noun = !nested && isFocusedStageNode(instance) ? 'node' : 'Block';
   const [name, setName] = useState(() => {
     const title =
       useStudioStore.getState().workflowTabs.find((tab) => tab.id === context.workflowTabId)?.title || 'Workflow';
-    return contextualDefinitionName(
-      selected?.data.label || instance?.definitionSnapshot.displayName || 'User Node',
-      title,
-    );
+    return contextualDefinitionName(selected?.data.label || instance?.definitionSnapshot.displayName || 'Block', title);
   });
   const invalidName = !name.trim() || name.trim().length > 512;
   const capabilities = instance
@@ -51,17 +50,17 @@ export default function BlockSaveDialogContentV2({
     submitting.current = true;
     setBusy(choice);
     try {
-      if (choice !== 'workflow' && invalidName) throw new Error('Enter a User Node name (up to 512 characters).');
+      if (choice !== 'workflow' && invalidName) throw new Error(`Enter a ${noun} name (up to 512 characters).`);
       const result = await persistBlockSelectionV2Choice({ nodeId, choice, context, displayName: name.trim() });
       enqueueSnackbar(
         choice === 'workflow'
           ? 'Changes kept only in this workflow.'
-          : `${choice === 'new' ? 'Saved new' : 'Updated'} User Node: ${result.definition?.displayName ?? 'User Node'}`,
+          : `${choice === 'new' ? 'Saved new' : 'Updated'} ${noun}: ${result.definition?.displayName ?? noun}`,
         { variant: 'success', autoHideDuration: 3200 },
       );
       onClose();
     } catch (error) {
-      enqueueSnackbar(error instanceof Error ? error.message : 'Could not save the Block changes.', {
+      enqueueSnackbar(error instanceof Error ? error.message : `Could not save the ${noun} changes.`, {
         variant: 'error',
         autoHideDuration: 6000,
       });
@@ -76,7 +75,7 @@ export default function BlockSaveDialogContentV2({
       onClose={() => {
         if (!submitting.current) onClose();
       }}
-      title="Save block changes"
+      title={`Save ${noun.toLowerCase()} changes`}
       testId={`save-user-block-choices-${nodeId}`}
       footer={
         <>
@@ -97,7 +96,7 @@ export default function BlockSaveDialogContentV2({
               loading={busy === 'new'}
               onClick={() => void save('new')}
             >
-              Save as new User Node
+              Save as new {noun}
             </ModiffButton>
           ) : null}
           {!nested && capabilities?.updateReusableDefinition ? (
@@ -106,7 +105,7 @@ export default function BlockSaveDialogContentV2({
               loading={busy === 'update'}
               onClick={() => void save('update')}
             >
-              Update existing User Node
+              Update existing {noun}
             </ModiffButton>
           ) : null}
         </>
@@ -114,7 +113,11 @@ export default function BlockSaveDialogContentV2({
     >
       <div className="grid gap-2 text-sm text-modiff-subtle-text">
         <p className="font-semibold text-modiff-text">{selected?.data.label || 'Block'}</p>
-        <ModiffFieldShell label="User Node name" required error={invalidName ? 'Enter a name.' : undefined}>
+        <ModiffFieldShell
+          label={noun === 'node' ? 'Node name' : 'Block name'}
+          required
+          error={invalidName ? 'Enter a name.' : undefined}
+        >
           <ModiffInput
             value={name}
             onChange={(event) => setName(event.currentTarget.value)}
@@ -128,7 +131,7 @@ export default function BlockSaveDialogContentV2({
         <p>
           {nested
             ? 'Only this Block and its contents are saved. Outside nodes and their connections stay in this workflow.'
-            : 'Outside nodes and their connections stay in this workflow. Temporary connected sockets are not added to the saved User Node.'}
+            : `Outside nodes and their connections stay in this workflow. Temporary connected sockets are not added to the saved ${noun}.`}
         </p>
       </div>
     </EditorPanel>

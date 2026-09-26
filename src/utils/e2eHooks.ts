@@ -38,6 +38,7 @@ import { arrangeGraphNodes, waitForGraphNodeMeasurements } from '../workflow/gra
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 import type {
   StudioFormState,
+  StudioMode,
   StudioGraphBinding,
   StudioImportedAsset,
   StudioGraphRole,
@@ -124,7 +125,7 @@ type ModiffE2EHooks = {
   setWebsocketConnection: (connection: { sid?: string | null; isConnected?: boolean }) => void;
   setStudioFormForTest: (form: Partial<StudioFormState>) => void;
   bindManagedGraphForTest: (form: Partial<StudioFormState>, nodes: Partial<Record<StudioGraphRole, string>>) => boolean;
-  startManagedGraphFinalizationForTest: () => Promise<void>;
+  startManagedGraphFinalizationForTest: (mode?: StudioMode) => Promise<void>;
   waitForManagedGraphFinalizationForTest: () => Promise<void>;
   startStudioRunForTest: (identity: { clientRunId: string; runInputHash: string; taskId?: string | null }) => {
     clientRunId: string;
@@ -1002,7 +1003,9 @@ export function installE2EHooks() {
           historyFuture: useFlowStore.getState().historyFuture.length,
         },
         studio: {
+          workflowCanvasEpoch: useStudioStore.getState().workflowCanvasEpoch,
           workflowCanvasHydrated: useStudioStore.getState().workflowCanvasHydrated,
+          launcherDismissed: useStudioStore.getState().launcherDismissed,
           form: useStudioStore.getState().form,
           graphBinding: useStudioStore.getState().graphBinding,
           graphFinalization: useStudioStore.getState().graphFinalization,
@@ -1035,7 +1038,6 @@ export function installE2EHooks() {
         settings: {
           rightPanelOpen: useSettingsStore.getState().isRightPanelOpen,
           rightPanelTab: useSettingsStore.getState().rightPanelTab,
-          studioViewMode: useSettingsStore.getState().studioViewMode,
         },
         runIssues: {
           issues: useRunIssueStore.getState().issues,
@@ -1124,7 +1126,8 @@ export function installE2EHooks() {
       useStudioStore.getState().setLauncherDismissed(true);
     },
     bindManagedGraphForTest,
-    startManagedGraphFinalizationForTest: () => {
+    startManagedGraphFinalizationForTest: (mode?: StudioMode) => {
+      if (mode) useStudioStore.getState().selectMode(mode);
       managedGraphFinalizationForTest = createOrUpdateStudioGraph().then(() => undefined);
       return managedGraphFinalizationForTest;
     },

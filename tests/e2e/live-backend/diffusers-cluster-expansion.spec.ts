@@ -426,8 +426,9 @@ test('live FLUX.2 Klein Clusters persist, expand equivalently, and qualify text 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await ensureOptionalRuntime(page);
   await ensureModelInstalledThroughFrontend(page, evidenceRoot);
 

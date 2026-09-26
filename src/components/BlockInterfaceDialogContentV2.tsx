@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import type { BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { blockValueTypesAreCompatibleV2 } from '../studio/blockValueTypeCompatibilityV2';
 import { blockContainerInterfaceEdgeImpactsV1 } from '../studio/blockContainerEditingV1';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import {
   blockInterfaceDraftV2,
   blockInterfaceScopeNodeIdsV2,
@@ -242,7 +243,7 @@ export default function BlockInterfaceDialogContentV2({
   return (
     <EditorPanel
       onClose={() => onClose()}
-      title="Configure Block interface"
+      title={isFocusedStageNode(snapshot) && !subtreeId ? 'Configure node interface' : 'Configure Block interface'}
       testId={`configure-block-v2-${nodeId}`}
       footer={
         <>

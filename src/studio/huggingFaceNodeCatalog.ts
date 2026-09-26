@@ -7,6 +7,8 @@ import type {
 import { registeredBlockV2Route } from './registeredBlockV2Routes';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
 import type { HuggingFaceModularConditionalSnapshot } from './huggingFaceModularConditionals';
+import type { NodeCatalogView } from './nodeCatalog';
+import { builtinNodeDisplayLabel } from '../workflow/nodePresentation';
 
 export type HuggingFaceCatalogSectionId =
   | 'diffusers_cluster_nodes'
@@ -49,10 +51,10 @@ export type HuggingFaceCatalogSection = {
 };
 
 const SECTION_LABELS: Record<HuggingFaceCatalogSectionId, string> = {
-  diffusers_cluster_nodes: 'Diffusers Cluster Nodes',
-  transformers_cluster_nodes: 'Transformers Cluster Nodes',
-  modular_diffusers_block_nodes: 'Modular Diffusers Block Nodes',
-  diffusers_component_nodes: 'Diffusers Component Nodes',
+  diffusers_cluster_nodes: 'Diffusers Blocks',
+  transformers_cluster_nodes: 'Transformers Blocks',
+  modular_diffusers_block_nodes: 'Modular Diffusers implementation',
+  diffusers_component_nodes: 'Diffusers components',
 };
 
 function words(value: string) {
@@ -118,7 +120,7 @@ function definitionSearchText(definition: HuggingFaceNodeLibraryDefinition) {
 }
 
 export function huggingFaceClusterDisplayLabel(definition: HuggingFaceNodeLibraryDefinition) {
-  if (definition.provider === 'transformers') return definition.label.replace(/\bPipeline\b/giu, 'Cluster');
+  if (definition.provider === 'transformers') return definition.label.replace(/\bPipeline\b/giu, 'Block');
   const declaredWorkflowLabel = definition.label.split('—').slice(1).join('—').trim();
   const declaredFamilyLabel = definition.label.split('—')[0]?.trim() || '';
   // Prefer a publisher-reviewed human family name when one was supplied.
@@ -130,7 +132,7 @@ export function huggingFaceClusterDisplayLabel(definition: HuggingFaceNodeLibrar
       : words(definition.pipelineClass);
   const workflowLabel = (declaredWorkflowLabel || words(definition.workflowId)).replace(
     /\b(?:Modular\s+)?Pipeline\b/giu,
-    'Cluster',
+    'Block',
   );
   return `${familyLabel} — ${workflowLabel}`;
 }
@@ -155,7 +157,7 @@ function clusterEntries(
         label: huggingFaceClusterDisplayLabel(definition),
         description:
           definition.description ||
-          `Cluster Node containing the reviewed ${definition.pipelineClass} ${definition.workflowId} workflow.`,
+          `Block containing the reviewed ${definition.pipelineClass} ${definition.workflowId} workflow.`,
         detail: `${words(definition.taskId)} · ${definition.steps.length} block${definition.steps.length === 1 ? '' : 's'}`,
         searchText: definitionSearchText(definition),
         groupPath: [definitionModality(definition), titleWords(definition.taskId), definitionFamilyLabel(definition)],
@@ -279,7 +281,7 @@ function selectedWorkflowBlockEntries(library: HuggingFaceNodeLibrary): HuggingF
           return {
             id: `modular-placement:${definition.id}:${placement.path.join('/')}`,
             kind: 'block' as const,
-            label: words(block.className),
+            label: compositeBlockLabel(definition, placement, words(block.className)),
             description,
             detail: `${words(definition.pipelineClass)} · ${words(definition.workflowId)} · ${placement.legacyPath}`,
             searchText: [block.className, block.kind, placement.legacyPath, ...definitionIds].join(' ').toLowerCase(),
@@ -301,6 +303,24 @@ function selectedWorkflowBlockEntries(library: HuggingFaceNodeLibrary): HuggingF
       ),
     library,
   );
+}
+
+/** Composite placements name ordinary runtime nodes through the reviewed adapter
+ * contract. Keep those names consistent with canvas/search, without guessing from
+ * prose descriptions or confusing Load Image with Load Image Pipeline. */
+function compositeBlockLabel(
+  definition: HuggingFaceNodeLibraryDefinition,
+  placement: HuggingFaceNodeLibraryBlockPlacement,
+  fallback: string,
+) {
+  if (!placement.blockDefinitionId.startsWith('diffusers.composite-block:')) return fallback;
+  const identities = new Set(
+    definition.graphAdapterContracts.flatMap((contract) => {
+      const index = contract.actionSequence.indexOf(placement.legacyPath);
+      return index < 0 ? [] : [contract.upstreamBlockSequence[index]!];
+    }),
+  );
+  return identities.size === 1 ? builtinNodeDisplayLabel([...identities][0]!, fallback) : fallback;
 }
 
 function unprunedBlockEntries(
@@ -394,7 +414,7 @@ function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEn
         kind: 'component' as const,
         label,
         description,
-        detail: `${component.creationMethod || 'runtime'} · ${definitionIds.length} cluster${definitionIds.length === 1 ? '' : 's'}`,
+        detail: `${component.creationMethod || 'runtime'} · ${definitionIds.length} Block${definitionIds.length === 1 ? '' : 's'}`,
         searchText: [component.name, component.type, component.creationMethod, ...component.reuseKey]
           .join(' ')
           .toLowerCase(),
@@ -447,10 +467,22 @@ export function buildHuggingFaceCatalogSections(
 export function filterHuggingFaceCatalogSections(
   sections: HuggingFaceCatalogSection[],
   search: string,
+  view: NodeCatalogView = 'advanced',
 ): HuggingFaceCatalogSection[] {
+  const visibleSections =
+    view === 'common' || view === 'experimental'
+      ? sections
+          .map((section) => ({
+            ...section,
+            entries: section.entries.filter(
+              (entry) => entry.kind === 'cluster' && entry.insertable && entry.readiness === 'graph_qualified',
+            ),
+          }))
+          .filter((section) => section.entries.length > 0)
+      : sections;
   const query = search.trim().toLowerCase();
-  if (!query) return sections;
-  return sections
+  if (!query) return visibleSections;
+  return visibleSections
     .map((section) => ({
       ...section,
       entries: section.entries.filter((entry) =>

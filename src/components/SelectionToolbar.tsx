@@ -1,6 +1,9 @@
 import { moveBlockSelectionPreparedV2, topLevelBlockSelectionV2 } from '../studio/blockSelectionMovesV2';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import {
   forwardRef,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -43,8 +46,10 @@ import { cx } from '../utils/classNames';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { GraphIconButton } from '../ui/GraphControls';
 import { ModiffMenuAction, ModiffMenuRoot, ModiffMenuSurface, ModiffMenuTrigger } from '../ui';
-import { deleteNodeCache } from '../utils/serverActions';
+import { deleteNodeCache, recomputeNodeOutputs } from '../utils/serverActions';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
+
+const NodeInspectorDialog = lazy(() => import('./NodeInspectorDialog'));
 
 const TOOLBAR_MARGIN = 8;
 const TOOLBAR_SELECTION_GAP = 12;
@@ -109,6 +114,7 @@ export function SelectionToolbar({
   const viewport = useViewport();
   const { flowToScreenPosition, getNodesBounds } = useReactFlow<CustomNodeType>();
   const [saveNodeId, setSaveNodeId] = useState<string | null>(null);
+  const [inspectNodeId, setInspectNodeId] = useState<string | null>(null);
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const removeNodes = useFlowStore((state) => state.removeNodes);
@@ -129,6 +135,11 @@ export function SelectionToolbar({
     [selectedNodes],
   );
   const singleNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  useEffect(() => {
+    // The toolbar disappears on deselection before its dialog can invalidate
+    // itself. Clear its owner here so selecting that node again cannot reopen it.
+    if (inspectNodeId && singleNode?.id !== inspectNodeId) setInspectNodeId(null);
+  }, [inspectNodeId, singleNode?.id]);
   const replacementSource =
     selectedNodes.length === 2
       ? selectedNodes.find((node) => node.data.type === 'custom' && !node.parentId && !node.data.blockProjectionOwnerId)
@@ -160,7 +171,8 @@ export function SelectionToolbar({
     !singleProjectedModular && singleNode?.data.type !== 'group' && singleNode?.data.type !== 'loop'
       ? singleNode
       : null;
-  const isUserBlock = singleActionNode?.data.type === 'block';
+  const isEncodingNode = isFocusedStageNode(singleActionNode?.data.blockInstanceV2);
+  const isUserBlock = !isEncodingNode && singleActionNode?.data.type === 'block';
   const isHuggingFaceCluster = singleActionNode?.data.huggingFaceClusterRole === 'root';
   const isCompositeNode = Boolean(isUserBlock || isHuggingFaceCluster);
   const isCompositeExpanded =
@@ -178,7 +190,7 @@ export function SelectionToolbar({
   const validationMessage =
     singleActionNode?.data.uiState?.validationMessage || singleActionNode?.data.uiState?.errorMessage;
   const showSingleNodeActions = Boolean(singleActionNode);
-  const showCollapseToggle = singleActionNode?.data.type === 'custom' || isCompositeNode;
+  const showCollapseToggle = !isEncodingNode && (singleActionNode?.data.type === 'custom' || isCompositeNode);
   const showCreateBlock =
     selectedActionNodes.length > 0 &&
     !singleProjectedModular &&
@@ -319,12 +331,28 @@ export function SelectionToolbar({
     resetNodeSize(singleActionNode.id);
   }, [resetNodeSize, singleActionNode]);
 
+  const handleRecompute = useCallback(async () => {
+    if (!singleActionNode) return;
+    try {
+      const result = await recomputeNodeOutputs([singleActionNode.id]);
+      if (result.nodes.length) setNodeCached(singleActionNode.id, false);
+      enqueueSnackbar(
+        result.nodes.length
+          ? 'Outputs will recompute on the next Run. Loaded models are retained.'
+          : 'Loaded models retained; no computed outputs to invalidate.',
+        { variant: 'success', autoHideDuration: 3500 },
+      );
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: 'error' });
+    }
+  }, [singleActionNode, setNodeCached]);
+
   const handleClearCache = useCallback(async () => {
     if (!singleActionNode) return;
     try {
       await deleteNodeCache([singleActionNode.id]);
       setNodeCached(singleActionNode.id, false);
-      enqueueSnackbar('Cache cleared', { variant: 'success', autoHideDuration: 1500 });
+      enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       enqueueSnackbar(message, { variant: 'error', autoHideDuration: 2600 });
@@ -458,6 +486,16 @@ export function SelectionToolbar({
         </>
       )}
 
+      {singleNode ? (
+        <ToolbarActionButton
+          label={singleNode.data.blockInstanceV2 && !isEncodingNode ? 'Inspect Block' : 'Inspect node'}
+          onClick={() => setInspectNodeId(singleNode.id)}
+          data-testid="selection-toolbar-inspect-node"
+        >
+          <Blocks size={16} />
+        </ToolbarActionButton>
+      ) : null}
+
       {showSingleNodeActions && (
         <>
           <ToolbarDivider />
@@ -469,7 +507,7 @@ export function SelectionToolbar({
             <Files size={16} />
           </ToolbarActionButton>
           <ToolbarActionButton
-            label={singleActionNode?.data.blockInstanceV2 ? 'Run Block' : 'Run from node'}
+            label={singleActionNode?.data.blockInstanceV2 && !isEncodingNode ? 'Run Block' : 'Run from node'}
             onClick={() => {
               void handleRunFromNode();
             }}
@@ -483,10 +521,10 @@ export function SelectionToolbar({
                 isCompositeNode
                   ? isCompositeExpanded
                     ? isHuggingFaceCluster
-                      ? 'Collapse Cluster Node'
+                      ? 'Collapse Block'
                       : 'Collapse block'
                     : isHuggingFaceCluster
-                      ? 'Expand Cluster Node to view internal nodes'
+                      ? 'Expand Block to view internal nodes'
                       : 'Expand block to edit internal nodes'
                   : isCollapsed
                     ? 'Expand node'
@@ -552,6 +590,9 @@ export function SelectionToolbar({
                 <ModiffMenuAction icon={<Power size={15} />} onClick={handleToggleDisabled}>
                   {isDisabledForRun ? 'Enable for run' : 'Disable for run'}
                 </ModiffMenuAction>
+                <ModiffMenuAction icon={<RefreshCcw size={15} />} onClick={() => void handleRecompute()}>
+                  Recompute on next Run
+                </ModiffMenuAction>
                 <ModiffMenuAction
                   icon={<Circle size={15} />}
                   disabled={!singleActionNode.data.isCached}
@@ -559,7 +600,7 @@ export function SelectionToolbar({
                     void handleClearCache();
                   }}
                 >
-                  Clear cache
+                  Release node cache
                 </ModiffMenuAction>
                 <ModiffMenuAction
                   icon={<RefreshCcw size={15} />}
@@ -572,11 +613,11 @@ export function SelectionToolbar({
                 >
                   {isCompositeExpanded
                     ? isHuggingFaceCluster
-                      ? 'Fit Cluster Node to contents'
+                      ? 'Fit Block to contents'
                       : 'Fit block to contents'
                     : isCompositeNode
                       ? isHuggingFaceCluster
-                        ? 'Reset Cluster Node size'
+                        ? 'Reset Block size'
                         : 'Reset block size'
                       : 'Reset automatic size'}
                 </ModiffMenuAction>
@@ -593,6 +634,11 @@ export function SelectionToolbar({
       )}
       {saveNodeId ? (
         <BlockSaveDialogV2 key={saveNodeId} nodeId={saveNodeId} onClose={() => setSaveNodeId(null)} />
+      ) : null}
+      {inspectNodeId ? (
+        <Suspense fallback={null}>
+          <NodeInspectorDialog key={inspectNodeId} nodeId={inspectNodeId} onClose={() => setInspectNodeId(null)} />
+        </Suspense>
       ) : null}
     </div>
   );

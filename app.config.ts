@@ -3,11 +3,11 @@
 const serverAddress = import.meta.env.VITE_SERVER_ADDRESS || window.location.origin;
 
 function backendAddress() {
-  if (import.meta.env.VITE_BACKEND_PROXY_TARGET) {
-    return import.meta.env.VITE_BACKEND_PROXY_TARGET;
-  }
   if (!import.meta.env.DEV) {
     return serverAddress;
+  }
+  if (import.meta.env.VITE_BACKEND_PROXY_TARGET) {
+    return import.meta.env.VITE_BACKEND_PROXY_TARGET;
   }
   try {
     const url = new URL(serverAddress);

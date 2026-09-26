@@ -27,7 +27,6 @@ export default function WorkspacePanel() {
   const blockEditor = useBlockEditorStore((state) => state.target);
   const rightPanelTab = useSettingsStore((state) => state.rightPanelTab);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const appModeConfigs = useStudioStore((state) => state.appModeConfigs);
   const hasAppOutputNode = useFlowStore((state) =>
     state.nodes.some((node) => /preview|save|output|video|audio|image/i.test(`${node.data?.label ?? ''} ${node.id}`)),
@@ -40,10 +39,7 @@ export default function WorkspacePanel() {
       tab.value === 'setup' ||
       (tab.value === 'compatibility' && rightPanelTab === 'compatibility'),
   );
-  const overflowTabs =
-    studioViewMode === 'expert'
-      ? tabs.filter((tab) => tab.value === 'app' && (appModeConfigs.length > 0 || hasAppOutputNode))
-      : [];
+  const overflowTabs = tabs.filter((tab) => tab.value === 'app' && (appModeConfigs.length > 0 || hasAppOutputNode));
   const activeOverflowTab = overflowTabs.find((tab) => tab.value === rightPanelTab);
   const visibleTabs = activeOverflowTab ? [...primaryTabs, activeOverflowTab] : primaryTabs;
   const activeTab = visibleTabs.some((tab) => tab.value === rightPanelTab) ? rightPanelTab : 'studio';

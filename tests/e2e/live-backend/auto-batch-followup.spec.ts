@@ -96,7 +96,7 @@ test('custom Qwen with a legacy control Block supports atomic mixed moves and gr
   await expect.poll(async () => (await inspect(page)).nodes.filter((item) => item.data.blockInstanceV2).length).toBe(2);
   await root.getByLabel('Collapse block', { exact: true }).click();
   await page.getByTestId('arrange-graph').click();
-  const mode = page.getByTestId('topbar-auto-switch');
+  const mode = page.getByRole('radio', { name: 'Creator', exact: true });
   if ((await mode.getAttribute('aria-checked')) !== 'true') await mode.click();
   await expect(mode).toHaveAttribute('aria-checked', 'true');
   const before = await inspect(page);
@@ -138,7 +138,7 @@ test('saved custom Qwen repeats in Auto and remains plannable with a warm runtim
   await page.getByTestId('saved-workflow-Mq5kON_wvsYfwJSOMRAGF').getByRole('button').first().click();
   const rootId = '07173354-cc7a-4538-a143-d6321dbb5b09';
   await expect(page.getByTestId(`user-block-${rootId}`)).toBeVisible();
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'true');
   await retainRun(page, 'Qwen Demo 06 — Custom Blocks in Auto', rootId);
   const response = page.waitForResponse((item) => new URL(item.url()).pathname === '/auto_resource/workflow');
   await page.getByTestId('topbar-workflow-resources').click();

@@ -1,7 +1,9 @@
 import type { Edge } from '@xyflow/react';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
+import { remapOperationAuthoring } from '../workflow/operationSharedInputs';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from './blockCrossingConnectionsV2';
 import {
   blockGraphHashV2,
@@ -32,6 +34,7 @@ import {
 } from './blockValueTypeCompatibilityV2';
 import {
   blockContainerControlTargetsV1,
+  blockContainerFieldV1,
   blockContainerFieldValueV1,
   blockContainerInterfaceV1,
   blockContainerPortTargetsV1,
@@ -283,6 +286,8 @@ function rootNodeForNormalizedInstanceV2(
   instance: BlockInstanceV2,
   options: { selected?: boolean } = {},
 ): CustomNodeType {
+  if (isFocusedStageNode(instance) && instance.presentation.expanded)
+    instance = { ...instance, presentation: { ...instance.presentation, expanded: false } };
   const definition = instance.definitionSnapshot;
   const size = instance.presentation.expanded
     ? expandedSizeForNormalizedInstanceV2(instance)
@@ -475,7 +480,21 @@ function previewViewsForNormalizedInstanceV2(
           label: base?.label ?? 'Preview',
           type: base?.type ?? binding.mediaType,
           display: PREVIEW_DISPLAY_V2[binding.mediaType],
-          ...(preview.mediaReference === undefined ? {} : { value: preview.mediaReference }),
+          ...(preview.mediaReference === undefined
+            ? {}
+            : {
+                value: preview.mediaReference,
+                // A saved source field can retain artifacts from an earlier run.
+                // Its URL must not override the current instance's media reference.
+                artifacts: Array.isArray(base?.artifacts)
+                  ? base.artifacts.filter(
+                      (artifact: unknown) =>
+                        isRecord(artifact) &&
+                        artifact.url === preview.mediaReference &&
+                        (!preview.taskId || (artifact.taskId ?? artifact.task_id) === preview.taskId),
+                    )
+                  : [],
+              }),
           fieldOptions: {
             ...(isRecord(base?.fieldOptions) ? cloneJson(base.fieldOptions) : {}),
             blockPreviewBindingV2: {
@@ -718,9 +737,9 @@ export function replaceBlockEffectiveGraphV2(
 export function replaceBlockEffectiveInterfaceV2(
   instanceValue: BlockInstanceV2,
   value: { boundary: BlockBoundaryV2; controls: BlockControlV2[] },
-  options: { preserveOmittedMirrors?: boolean } = {},
+  options: { preserveOmittedMirrors?: boolean; rememberRemovedControls?: boolean } = {},
 ): BlockInstanceV2 {
-  const instance = normalizeBlockInstanceV2(instanceValue);
+  let instance = normalizeBlockInstanceV2(instanceValue);
   const boundary: BlockBoundaryV2 = {
     ...value.boundary,
     inputs: value.boundary.inputs.map((port) => {
@@ -795,6 +814,36 @@ export function replaceBlockEffectiveInterfaceV2(
     )
       throw new Error(`Cannot remove or rebind sealed Block V2 control ${controlId}.`);
   });
+  if (options.rememberRemovedControls) {
+    const key = (b: { nodeId: string; fieldId: string }) => JSON.stringify([b.nodeId, b.fieldId]);
+    const retained = new Set(controls.flatMap(controlBindingTargetsV2).map(key));
+    const removed = instance.effectiveInterface.controls.flatMap((control) =>
+      controlBindingTargetsV2(control).filter((binding) => !retained.has(key(binding))),
+    );
+    const bindings = new Map(
+      [...(instance.presentation.removedControlBindings ?? []), ...removed].map((binding) => [key(binding), binding]),
+    );
+    retained.forEach((id) => bindings.delete(id));
+    if (removed.length) {
+      // The disappearing row may own an override. Bake its currently consumed
+      // value into the same leaf before pruning the public control value.
+      const graph = cloneJson(instance.effectiveGraph);
+      for (const binding of removed) {
+        const value = blockContainerFieldValueV1(instance, binding.nodeId, binding.fieldId);
+        if (value !== undefined) {
+          const field = blockContainerFieldV1(
+            graph.nodes.find((n) => n.nodeId === binding.nodeId),
+            binding.fieldId,
+          )!;
+          field.value = cloneJson(value);
+        }
+      }
+      instance = replaceBlockEffectiveGraphV2(instance, graph);
+    }
+    instance.presentation = { ...instance.presentation };
+    if (bindings.size) instance.presentation.removedControlBindings = [...bindings.values()];
+    else delete instance.presentation.removedControlBindings;
+  }
   const effectiveInterfaceHash = blockInterfaceHashV2(interfaceValue);
   const allowedValues = new Set([
     ...boundary.inputs.map(({ portId }) => portId),
@@ -1012,6 +1061,8 @@ export function replaceBlockEffectiveGraphNodeV2(
     ...(preservesProtectedIdentity ? { ...candidate, nodeId: replacedNodeId } : candidate),
     ...(replaced.containerInterface ? { containerInterface: cloneJson(replaced.containerInterface) } : {}),
   };
+  // An identical replacement preserves previews, authority and customization.
+  if (canonicalBlockStringifyV2(replacement) === canonicalBlockStringifyV2(replaced)) return instance;
   const replacementParams = sourceParams(replacement);
   const requireReplacementField = (fieldId: string, valueType: unknown, direction: 'input' | 'output' | 'control') => {
     const param = replacementParams[fieldId];
@@ -1145,7 +1196,7 @@ export function replaceBlockEffectiveGraphNodeV2(
       : state,
   );
 
-  return normalizeBlockInstanceV2({
+  const next: BlockInstanceV2 = {
     ...instance,
     effectiveGraph,
     effectiveInterface: {
@@ -1174,7 +1225,10 @@ export function replaceBlockEffectiveGraphNodeV2(
       effectiveGraphHash: effectiveGraph.graphHash,
       state: 'structure_changed',
     },
-  });
+  };
+  // Restoring the definition node can remove the last structural edit.
+  next.customization.state = parameterCustomizationState(next);
+  return normalizeBlockInstanceV2(next);
 }
 
 function blockNodeDeletionReferencesV2(instance: BlockInstanceV2, nodeId: string, removed: ReadonlySet<string>) {
@@ -1287,7 +1341,7 @@ function projectedBindingValues(instance: BlockInstanceV2) {
   return values;
 }
 
-function runtimeNodeType(node: BlockGraphNodeV2): Exclude<NodeData['type'], 'block' | 'cluster'> {
+export function runtimeNodeType(node: BlockGraphNodeV2): Exclude<NodeData['type'], 'block' | 'cluster'> {
   const supported = new Set(['custom', 'any', 'group', 'loop']);
   if (!supported.has(node.nodeType))
     throw new Error(`Cannot project Block V2 node ${node.nodeId}: unsupported node type ${node.nodeType}.`);
@@ -1365,9 +1419,38 @@ function projectedNodeData(
     resizable: true,
     ...(typeof raw.description === 'string' ? { description: raw.description } : {}),
     ...(typeof raw.skipParamsCheck === 'boolean' ? { skipParamsCheck: raw.skipParamsCheck } : {}),
+    ...(raw.operationAuthoring
+      ? {
+          operationAuthoring: remapOperationAuthoring(raw.operationAuthoring, (id) =>
+            instance.effectiveGraph.nodes.some((member) => member.nodeId === id)
+              ? blockProjectionNodeIdV2(instance.instanceId, id)
+              : id,
+          ),
+        }
+      : {}),
     blockProjectionOwnerId: instance.instanceId,
     blockProjectionNodeId: graphNode.nodeId,
     blockProjectionKind: 'internal',
+  };
+}
+
+/** Complete authoring view, including hidden members; not an execution or readiness check. */
+export function blockOperationGraphV2(instance: BlockInstanceV2): BlockFlowGraphV2 {
+  const values = projectedBindingValues(instance);
+  return {
+    nodes: instance.effectiveGraph.nodes.map((node) => ({
+      id: blockProjectionNodeIdV2(instance.instanceId, node.nodeId),
+      type: runtimeNodeType(node),
+      position: { x: 0, y: 0 },
+      data: projectedNodeData(instance, node, values),
+    })),
+    edges: instance.effectiveGraph.edges.map((edge) => ({
+      id: edge.edgeId,
+      source: blockProjectionNodeIdV2(instance.instanceId, edge.sourceNodeId),
+      sourceHandle: edge.sourcePortId,
+      target: blockProjectionNodeIdV2(instance.instanceId, edge.targetNodeId),
+      targetHandle: edge.targetPortId,
+    })),
   };
 }
 
@@ -2426,7 +2509,7 @@ export function materializeBlockProjectionV2(rootValue: CustomNodeType): BlockFl
     ...rootNodeForNormalizedInstanceV2(instance),
     ...(rootValue.selected === undefined ? {} : { selected: rootValue.selected }),
   };
-  if (!instance.presentation.expanded) return { nodes: [root], edges: [] };
+  if (!instance.presentation.expanded || isFocusedStageNode(instance)) return { nodes: [root], edges: [] };
   return {
     nodes: [root, ...projectedChildren(instance, false)],
     edges: projectedInternalEdges(instance),
@@ -2723,11 +2806,38 @@ export function expandBlockGraphV2ForExecution(
       : new Set(selectedInstance.effectiveGraph.nodes.map(({ nodeId }) => nodeId))
     : undefined;
   if (selectedOwnerId) {
-    nodesValue = nodesValue.filter(
-      (node) => node.id === selectedOwnerId || node.data.blockProjectionOwnerId === selectedOwnerId,
-    );
+    // A selected Block still consumes its wired inputs. Retain upstream owners
+    // before validating/expanding, while unrelated drafts stay out of the run.
+    const ownerById = new Map(nodesValue.map((node) => [node.id, node.data.blockProjectionOwnerId ?? node.id]));
+    const retainedOwners = new Set([selectedOwnerId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of edgesValue) {
+        const source = ownerById.get(edge.source);
+        const target = ownerById.get(edge.target);
+        if (source && target && retainedOwners.has(target) && !retainedOwners.has(source)) {
+          retainedOwners.add(source);
+          changed = true;
+        }
+      }
+    }
+    nodesValue = nodesValue.filter((node) => retainedOwners.has(node.data.blockProjectionOwnerId ?? node.id));
     const retained = new Set(nodesValue.map(({ id }) => id));
     edgesValue = edgesValue.filter((edge) => retained.has(edge.source) && retained.has(edge.target));
+  }
+  if (selectedInstance && selectedSemanticIds) {
+    // Nested selection can depend on siblings elsewhere in the same owner.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of selectedInstance.effectiveGraph.edges) {
+        if (selectedSemanticIds.has(edge.targetNodeId) && !selectedSemanticIds.has(edge.sourceNodeId)) {
+          selectedSemanticIds.add(edge.sourceNodeId);
+          changed = true;
+        }
+      }
+    }
   }
   if (!containsBlockV2RuntimeData(nodesValue, edgesValue))
     return { nodes: cloneJson(nodesValue), edges: cloneJson(edgesValue) };
@@ -2851,9 +2961,20 @@ export function expandBlockGraphV2ForExecution(
     const included = new Set(
       [...selectedSemanticIds].map((nodeId) => blockProjectionNodeIdV2(selectedOwnerId!, nodeId)),
     );
+    const allEdges = [...translatedEdges, ...internalEdges];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of allEdges) {
+        if (included.has(edge.target) && !included.has(edge.source)) {
+          included.add(edge.source);
+          changed = true;
+        }
+      }
+    }
     return {
-      nodes: executionNodes.filter(({ id }) => included.has(id)),
-      edges: internalEdges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
+      nodes: [...externalNodes, ...executionNodes].filter(({ id }) => included.has(id)),
+      edges: allEdges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
     };
   }
   return { nodes: [...externalNodes, ...executionNodes], edges: [...translatedEdges, ...internalEdges] };

@@ -3,6 +3,8 @@ import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
+import { connectionTypes, connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
+import { nodeConnectionSemanticsAreCompatible } from '../workflow/nodeConnectionMatching';
 import { expandBlockGraphV2ForExecution } from './blockRuntimeV2';
 import { inspectBlockSeedBindingsV2 } from './blockSeedRepairV2';
 import { inspectBlockDerivedControlsV2 } from './blockDerivedControlRepairV2';
@@ -149,26 +151,12 @@ function nodesWithLiveContracts(nodes: CustomNodeType[], registry: Record<string
 }
 
 function normalizedTypes(param?: Pick<NodeParams, 'type'>) {
-  const raw = Array.isArray(param?.type) ? param?.type : [param?.type ?? 'any'];
-  return Array.from(
-    new Set(
-      raw
-        .map((value) =>
-          String(value || 'any')
-            .trim()
-            .toLowerCase(),
-        )
-        .filter(Boolean)
-        .map((value) => (value === 'integer' ? 'int' : value)),
-    ),
-  );
+  const types = connectionTypes(param?.type);
+  return types.length ? types : ['any'];
 }
 
 export function graphSocketTypesAreCompatible(source?: Pick<NodeParams, 'type'>, target?: Pick<NodeParams, 'type'>) {
-  const sourceTypes = normalizedTypes(source);
-  const targetTypes = normalizedTypes(target);
-  if (sourceTypes.includes('any') || targetTypes.includes('any')) return true;
-  return sourceTypes.some((type) => targetTypes.includes(type));
+  return connectionTypesAreCompatible(source?.type, target?.type);
 }
 
 function inputFields(node: Pick<CustomNodeType, 'data'>) {
@@ -191,7 +179,7 @@ function usableValue(value: unknown) {
 }
 
 function inputIsRequired(key: string, param: NodeParams, skipParamsCheck = false) {
-  if (param.disabled || param.spawn) return false;
+  if (param.hidden || param.disabled || param.spawn) return false;
   if (usableValue(param.value ?? param.default)) return false;
   if (param.required === false) return false;
   if (param.required === true) return true;
@@ -336,10 +324,11 @@ function existingConnectionCandidates(
       outputFields(source).map(([sourceHandle, sourceParam]) => ({ source, sourceHandle, sourceParam })),
     )
     .filter(
-      ({ source, sourceParam }) =>
+      ({ source, sourceHandle, sourceParam }) =>
         source.id !== target.id &&
         graphFixConnectionScopeIsAllowed(source, target) &&
         graphSocketTypesAreCompatible(sourceParam, targetParam) &&
+        nodeConnectionSemanticsAreCompatible(source.data, sourceHandle, target.data, targetHandle) &&
         !graphHasPath(context.edges, target.id, source.id),
     )
     .map(({ source, sourceHandle, sourceParam }) => ({
@@ -352,7 +341,7 @@ function existingConnectionCandidates(
         issueId,
         title: `Connect ${source.data.label || source.data.action}`,
         description: `Use its ${fieldLabel(source, sourceHandle)} output for ${fieldLabel(target, targetHandle)}.`,
-        confidence: 'safe' as const,
+        confidence: exactTypeScore(sourceParam, targetParam) === 100 ? ('safe' as const) : ('choice' as const),
         targetNodeId: target.id,
         targetHandle,
         operations: [
@@ -382,11 +371,12 @@ function registryProducerCandidates(
     .flatMap(([key, data]) =>
       outputFields({ data }).map(([sourceHandle, sourceParam]) => ({ key, data, sourceHandle, sourceParam })),
     )
-    .filter(({ data, sourceParam }) =>
+    .filter(({ data, sourceHandle, sourceParam }) =>
       Boolean(
         data.type !== 'group' &&
         data.type !== 'loop' &&
         graphSocketTypesAreCompatible(sourceParam, targetParam) &&
+        nodeConnectionSemanticsAreCompatible(data, sourceHandle, target.data, targetHandle) &&
         !graphNodeIsOutputLike({ data }),
       ),
     )
@@ -458,9 +448,36 @@ function bridgeCandidates(
 ) {
   if (source.data.blockProjectionOwnerId || target.data.blockProjectionOwnerId) return [];
   return Object.entries(context.registry)
-    .flatMap(([key, data]) =>
-      inputFields({ data }).flatMap(([bridgeInput, bridgeInputParam]) =>
-        outputFields({ data }).map(([bridgeOutput, bridgeOutputParam]) => ({
+    .flatMap(([key, data]) => {
+      if (data.type === 'group' || data.type === 'loop') return [];
+      // The registry includes large generated interfaces. Never materialize
+      // their input × output Cartesian product just to keep three repairs.
+      // Scores are additive, so only the top three compatible ports on each
+      // side can contribute to the top three pairs (stable order breaks ties).
+      const inputs = inputFields({ data })
+        .filter(
+          ([handle, param]) =>
+            graphSocketTypesAreCompatible(sourceParam, param) &&
+            nodeConnectionSemanticsAreCompatible(source.data, sourceHandle, data, handle),
+        )
+        .map(([handle, param], order) => ({ handle, param, order, score: exactTypeScore(sourceParam, param) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+      if (!inputs.length) return [];
+      const outputs = outputFields({ data })
+        .filter(
+          ([handle, param]) =>
+            graphSocketTypesAreCompatible(param, targetParam) &&
+            nodeConnectionSemanticsAreCompatible(data, handle, target.data, targetHandle),
+        )
+        .map(([handle, param], order) => ({ handle, param, order, score: exactTypeScore(param, targetParam) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+      // Preserve the old input-major ordering among equal total scores.
+      inputs.sort((a, b) => a.order - b.order);
+      outputs.sort((a, b) => a.order - b.order);
+      return inputs.flatMap(({ handle: bridgeInput, param: bridgeInputParam }) =>
+        outputs.map(({ handle: bridgeOutput, param: bridgeOutputParam }) => ({
           key,
           data,
           bridgeInput,
@@ -468,15 +485,8 @@ function bridgeCandidates(
           bridgeOutput,
           bridgeOutputParam,
         })),
-      ),
-    )
-    .filter(
-      ({ data, bridgeInputParam, bridgeOutputParam }) =>
-        data.type !== 'group' &&
-        data.type !== 'loop' &&
-        graphSocketTypesAreCompatible(sourceParam, bridgeInputParam) &&
-        graphSocketTypesAreCompatible(bridgeOutputParam, targetParam),
-    )
+      );
+    })
     .map(({ key, data, bridgeInput, bridgeInputParam, bridgeOutput, bridgeOutputParam }) => {
       const ref = `@${candidateId(issueId, key, bridgeInput, bridgeOutput)}`;
       return {
@@ -534,10 +544,11 @@ function outputCandidates(issueId: string, context: GraphFixContext, existingOut
     inputFields(target).flatMap(([targetHandle, targetParam]) =>
       terminalOutputs
         .filter(
-          ({ source, sourceParam }) =>
+          ({ source, sourceHandle, sourceParam }) =>
             source.id !== target.id &&
             graphFixConnectionScopeIsAllowed(source, target) &&
             graphSocketTypesAreCompatible(sourceParam, targetParam) &&
+            nodeConnectionSemanticsAreCompatible(source.data, sourceHandle, target.data, targetHandle) &&
             !graphHasPath(context.edges, target.id, source.id),
         )
         .map(({ source, sourceHandle, sourceParam }) => ({
@@ -574,8 +585,10 @@ function outputCandidates(issueId: string, context: GraphFixContext, existingOut
       inputFields({ data }).flatMap(([targetHandle, targetParam]) =>
         terminalOutputs
           .filter(
-            ({ source, sourceParam }) =>
-              !source.data.blockProjectionOwnerId && graphSocketTypesAreCompatible(sourceParam, targetParam),
+            ({ source, sourceHandle, sourceParam }) =>
+              !source.data.blockProjectionOwnerId &&
+              graphSocketTypesAreCompatible(sourceParam, targetParam) &&
+              nodeConnectionSemanticsAreCompatible(source.data, sourceHandle, data, targetHandle),
           )
           .map(({ source, sourceHandle, sourceParam }) => {
             const ref = `@${candidateId(issueId, key, source.id)}`;
@@ -814,7 +827,10 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
       });
       return;
     }
-    if (!graphSocketTypesAreCompatible(sourceParam, targetParam)) {
+    if (
+      !graphSocketTypesAreCompatible(sourceParam, targetParam) ||
+      !nodeConnectionSemanticsAreCompatible(source.data, sourceHandle, target.data, targetHandle)
+    ) {
       const issueId = candidateId('type-mismatch', edge.id);
       const candidates: GraphFixCandidate[] = bridgeCandidates(
         issueId,
@@ -841,7 +857,9 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
         id: issueId,
         kind: 'type_mismatch',
         title: `${fieldLabel(source, sourceHandle)} cannot connect to ${fieldLabel(target, targetHandle)}`,
-        description: `The sockets use incompatible types: ${normalizedTypes(sourceParam).join(' or ')} and ${normalizedTypes(targetParam).join(' or ')}.`,
+        description: graphSocketTypesAreCompatible(sourceParam, targetParam)
+          ? 'The selected model or component does not satisfy the receiving socket’s declared capabilities.'
+          : `The sockets use incompatible types: ${normalizedTypes(sourceParam).join(' or ')} and ${normalizedTypes(targetParam).join(' or ')}.`,
         targetNodeId: target.id,
         targetHandle,
         candidates: candidates.slice(0, 3),
@@ -900,8 +918,8 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
 
   const seenReadinessKeys = new Set<string>();
   (context.readinessIssues ?? []).forEach((readiness) => {
-    if (readiness.code === 'block_media_input_missing') {
-      const issueId = candidateId(readiness.code, readiness.nodeId, readiness.fieldId);
+    if (readiness.code === 'block_media_input_missing' || readiness.code === 'operation_media_input_missing') {
+      const issueId = candidateId(readiness.code, readiness.id);
       issues.push({
         id: issueId,
         kind: 'missing_media',

@@ -15,6 +15,9 @@ export default function TextareaField(props: FieldProps) {
   const [isFocused, setIsFocused] = useState(false);
   const skipNextCommitRef = useRef(false);
   const { fieldKey, updateStore } = props;
+  const attribution = props.fieldOptions?.exampleAttribution;
+  const source = props.fieldOptions?.exampleSource;
+  const exampleSource = typeof source === 'string' && /^https:\/\//u.test(source) ? source : null;
 
   const updateOverflow = useCallback(() => {
     const textarea = textareaRef.current;
@@ -91,6 +94,17 @@ export default function TextareaField(props: FieldProps) {
           className="min-h-20 max-h-72 w-full max-w-full resize-y rounded-modiff-compact border border-transparent bg-modiff-bg p-2 text-sm text-modiff-text outline-none focus:border-modiff-focus disabled:cursor-not-allowed disabled:opacity-50"
         />
       </ModiffFieldShell>
+      {typeof attribution === 'string' ? (
+        <p className="mt-1 text-xs text-modiff-subtle-text">
+          {exampleSource ? (
+            <a href={exampleSource} target="_blank" rel="noopener noreferrer" className="underline">
+              {attribution}
+            </a>
+          ) : (
+            attribution
+          )}
+        </p>
+      ) : null}
     </FieldFrame>
   );
 }

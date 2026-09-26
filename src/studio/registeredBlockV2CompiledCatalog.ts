@@ -83,10 +83,12 @@ export async function fetchRegisteredBlockV2CompiledCatalogEntry(
   source: HuggingFaceNodeLibraryDefinition,
   admission: HuggingFaceNodeLibraryExecutionAdmission,
   route: RegisteredBlockV2Route,
+  signal?: AbortSignal,
 ) {
   const query = new URLSearchParams({ definition_id: source.id, admission_id: admission.id });
   const entry = await requestJson(`${config.serverAddress}/huggingface/registered-block-v2?${query}`, {
     timeoutMs: 30_000,
+    signal,
     parse: parseEntry,
   });
   const definitionSource = entry.definition.source;

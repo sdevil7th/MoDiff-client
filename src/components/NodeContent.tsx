@@ -25,6 +25,7 @@ import { EncodeImageSummary } from './EncodeImageSummary';
 import { blockControlConnectionNotesV2 } from '../studio/blockControlConnectionsV2';
 import { FieldFrame } from '../ui/FieldFrame';
 import { PreviewEmptyState } from '../ui/PreviewFrame';
+import { operationOwnsModel } from '../workflow/operationContracts';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -210,7 +211,14 @@ const NodeContent = memo(function NodeContent({
     const connectionType = data.type || 'string';
     const options = liveFieldOptions(module, key, display, data.options || []);
     const fieldType = getFieldType(display, dataType, options);
-    const hidden = data.hidden || false;
+    // A managed model choice already resolves the repository, implementation
+    // route and pipeline class atomically. Keep model_type in the persisted
+    // execution contract, but do not offer it as a second, conflicting choice.
+    // Raw implementation nodes have no operation owner and retain the field for
+    // low-level/custom contract authoring.
+    const derivedPipelineType =
+      key === 'model_type' && operationOwnsModel(graphNode?.data.operationAuthoring?.operation);
+    const hidden = Boolean(data.hidden || derivedPipelineType);
     const configuredValue = data.value ?? data.default;
     const fileBackedLoaderPreview =
       (fieldType === 'ui_audio' || fieldType === 'ui_video') &&
@@ -283,9 +291,7 @@ const NodeContent = memo(function NodeContent({
         resetAutoFieldOverride(nodeId, key);
       },
       surface:
-        studioResourceMode === 'auto' &&
-        (controlledStudioNode || data.fieldOptions?.controlTier === 'advanced') &&
-        !isPreviewFieldType(fieldType)
+        (controlledStudioNode || data.fieldOptions?.controlTier === 'advanced') && !isPreviewFieldType(fieldType)
           ? classification.surface
           : ('main' as const),
     };
@@ -329,11 +335,15 @@ const NodeContent = memo(function NodeContent({
   }
 
   const renderFields = mode === 'controls' ? controls : [...controls, ...connectors];
+  // Keep field ownership stable across presentations. Moving a control between
+  // parents remounts its initialization hook and can repeat backend actions.
   const mainFields = renderFields.filter(({ surface }) => surface === 'main');
   const advancedFields = renderFields.filter(({ surface }) => surface === 'advanced');
 
   const orderedMainFields = orderedFieldElements(mainFields);
   const orderedAdvancedFields = orderedFieldElements(advancedFields);
+  const orderedInternalFields = orderedFieldElements(renderFields.filter(({ surface }) => surface === 'hidden'));
+  const collapseAdvanced = true;
   const encodeImageSummary =
     /ModularDiffusers/.test(module) && action === 'ImageEncode' ? (
       <EncodeImageSummary
@@ -349,13 +359,22 @@ const NodeContent = memo(function NodeContent({
       {encodeImageSummary}
       {resolutionNotice}
       {orderedMainFields}
+      {orderedInternalFields.length > 0 && (
+        <div className={collapseAdvanced ? 'hidden' : 'contents'}>{orderedInternalFields}</div>
+      )}
       {orderedAdvancedFields.length > 0 ? (
         <ModiffDisclosure
           label="Advanced"
-          data-testid={`node-advanced-controls-${nodeId}`}
-          className="rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40"
+          data-testid={collapseAdvanced ? `node-advanced-controls-${nodeId}` : undefined}
+          collapsible={collapseAdvanced}
+          unmount={false}
+          className={
+            collapseAdvanced ? 'rounded-modiff-compact border border-modiff-border-subtle bg-modiff-bg/40' : 'contents'
+          }
           buttonClassName="min-h-7 text-xs"
-          panelClassName="grid min-w-0 grid-cols-1 gap-2 border-t border-modiff-border-subtle p-2"
+          panelClassName={
+            collapseAdvanced ? 'grid min-w-0 grid-cols-1 gap-2 border-t border-modiff-border-subtle p-2' : 'contents'
+          }
         >
           {orderedAdvancedFields}
         </ModiffDisclosure>

@@ -6,8 +6,53 @@ MoDiff Client is the graph-first web interface for the MoDiff generative-media b
 
 The client is built with React 19, TypeScript, Vite, Tailwind CSS, Headless UI, Zustand, Lucide React, and [`@xyflow/react`](https://reactflow.dev/).
 
+For Qwen-Image 2.1, use the generic image nodes in Workflows. The backend's
+[integration guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/qwen-image-21.md)
+explains attention-context reuse, runtime requirements and current qualification limits.
+
+The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/image-demo.md) lists the tested workflows, settings,
+measured reuse behavior and remaining qualification work.
+
 > [!IMPORTANT]
 > MoDiff is under active development. It is designed for a trusted, local, single-user environment and has not been hardened as an internet-facing multi-user service. Model support depends on the backend version, installed packages, model access terms, hardware, and available disk space. The UI keeps unsupported or unproven paths visibly blocked instead of treating every listed model as runnable.
+
+## Developer setup with uv and npm
+
+Install Git, [uv `0.11.26`](https://docs.astral.sh/uv/getting-started/installation/),
+Node.js `24.12.0`, and npm `11.6.2`. uv can provision Python 3.12.
+Use two terminals for the backend and the editable frontend.
+
+**Terminal 1 — backend:** clone both repositories into the same parent directory,
+then start the backend. These commands work in Linux shells and Windows PowerShell.
+
+```text
+git clone https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+cd MoDiff
+uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
+uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
+uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
+uv run --no-project --no-sync --python 3.12 -m modiff.dev run
+```
+
+The CPU profile is for API/UI development. For NVIDIA inference, replace `cpu`
+with `nvidia` in both `plan` and `setup`; other accelerators are covered in the
+[full setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md). Setup preserves an existing `.venv` and
+does not download model weights. Use the guide for deliberate environment repair;
+ordinary `uv sync` is not supported.
+
+**Terminal 2 — frontend:** from the same parent directory, run:
+
+```text
+cd MoDiff-client
+npm ci
+npm run dev
+```
+
+Keep the backend running at <http://127.0.0.1:8088> and open the URL printed by
+Vite for the editable frontend. Press `Ctrl+C` in each terminal to stop it.
+See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md) for accelerator prerequisites,
+optional runtimes, repair, and bundled-app setup.
 
 ## Install and run MoDiff
 
@@ -57,12 +102,17 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 - Build and inspect backend-native graphs on a visual canvas.
 - Start guided text-to-image, editing, inpainting, outpainting, control, layered-image, video, and advanced workflows.
 - Browse curated templates and proof-backed Gallery examples.
-- Use **Auto** to select a known hardware-aware recipe, or **Expert** to expose lower-level graph and runtime controls.
+- Use one developer-first editor: start from Workflows or Templates; select **Memory: Automatic / Custom** independently.
 - Discover local and Hugging Face model artifacts and start supported downloads from the UI.
 - Follow queue state, step progress, failures, and accelerator cleanup actions.
 - Keep multiple local workflow tabs and restore a generated output with its form and graph context.
 - Export a workflow package, an output package, or raw graph JSON where available.
 - Add backend-defined nodes and custom React fields without creating a separate execution system.
+
+In the editor, **Export → Service package** exposes named scalar inputs and
+persisted preview outputs for the same lowered API graph. See the backend's
+[service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
+for the CLI, environment manifest and model-free example.
 
 ## Repository Pairing
 
@@ -88,8 +138,8 @@ Client development requires:
 Integrated development also requires:
 
 - A sibling MoDiff backend checkout, or its path passed to the launcher
-- The backend's managed Python 3.12 environment, installed with its reviewed
-  `install.ps1` or `install.sh` profile
+- The backend's managed Python 3.12 environment, installed through the uv commands
+  in the [quick start](#developer-setup-with-uv-and-npm) or its reviewed `install.ps1` / `install.sh` profile
 - Sufficient RAM, accelerator memory, and disk space for the model being used
 - Hugging Face authorization for gated model repositories, when applicable
 
@@ -102,14 +152,10 @@ npm --version
 
 For backend and accelerator prerequisites, follow the backend README first. Platform-specific client notes are available for [Windows](docs/windows-support.md), [Ubuntu Linux](docs/linux-support.md), and [Apple Silicon macOS](docs/macos-support.md).
 
-## Development quick start
+## Optional development launchers
 
-Clone the backend and client into the sibling layout shown above:
-
-```bash
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
-```
+Use the [uv/npm quick start](#developer-setup-with-uv-and-npm) for direct commands.
+For contributor test dependencies and checks, follow [CONTRIBUTING](CONTRIBUTING.md).
 
 For an editable two-process development session, run the client repository's
 development installer. It installs the backend in backend-only mode, adds the
@@ -188,9 +234,9 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
    runtime profile is usable and resolve any environment or model-cache repair
    blocker before starting a model download.
 2. On the empty canvas, choose **Text to image** or click **Browse recipes**.
-   Prefer a lightweight image recipe that Auto marks ready for the detected
+   Prefer a lightweight image recipe that Automatic memory marks ready for the detected
    device; a large video or audio model is not a useful first smoke test.
-3. Open the right-side **Studio** panel and keep the resource-mode **Auto**
+3. Open the right-side **Studio** panel and keep the memory setting **Automatic**
    switch enabled for the first run.
 4. Enter a prompt or select a template. Studio creates or reconciles the visible
    graph; the canvas remains the workflow that will execute.
@@ -216,9 +262,9 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
 
 See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas, workflow tabs, Gallery behavior, setup, failure recovery, and a manual verification checklist.
 
-## Auto And Expert
+## Workspace And Memory
 
-**Auto** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
+**Memory → Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
 
 The backend planner is the compatibility authority. Template cards, Setup,
 Models, and Run readiness render the same structured assessment and do not
@@ -227,12 +273,13 @@ show **Checking compatibility** instead of guessing from a device label or a
 dedicated-VRAM number. This is important for Apple unified memory, AMD shared
 memory, and Intel integrated/XPU devices.
 
-This resource-mode Auto switch is separate from the **Auto** item inside the
-Run menu. Resource Auto selects a hardware-aware recipe. Run-menu Auto repeats
-execution after graph parameter changes; keep it off when you want a single
-generation.
+There is one developer-first workspace. Technical inspection and exports are
+always available. Each workflow saves its own **Memory: Automatic / Custom**
+policy; choose Custom explicitly to use your configured settings.
+The Run menu's **Auto** item separately repeats execution after parameter changes;
+keep it off when you want a single generation.
 
-**Expert** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Expert is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
+**Memory → Custom** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Custom memory is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
 
 Important model-support rules:
 
@@ -268,17 +315,85 @@ unqualified until a retained real-run receipt proves them.
 
 The durable planner contract and model-onboarding checklist are documented in [Auto mode design](docs/auto-mode-design.md).
 
+## Working in the editor
+
+Start with **Workflows** for connected task stages or choose **Templates** for a
+prepared example. The same canvas exposes node parameters, implementation, docs,
+and developer exports. Advanced controls can be expanded without changing modes.
+Creating a workflow does not download weights.
+
+Select **Add image / audio input** on the model loader, or drag a media output
+onto an operation. Choose a supported role from the dropdown. The existing graph
+adapts atomically, retaining prompts and custom branches and adding required
+encoding stages. Saved Blocks use durable crossing sockets. Unsupported changes
+report why; they do not silently switch models. Undo restores the whole edit.
+Video attachment simplification is deferred.
+
+The workflow sidebar separates **Example workflows** and **My workflows**, each
+with its own bounded list. Existing saved documents are retained. Raw implementation
+loaders are named **Load Image Pipeline**, **Load Modular Components** and **Load
+Model Component** to distinguish their contracts. Generic authored workflows retain
+**Load Models**. New operation prompts include task examples, with a creator-source
+link where the example was adapted from official guidance. Whole-pipeline routes
+remain explicit; they do not imply independently replaceable denoising nodes.
+
+The shared **Nodes** library includes generic nodes, enabled custom nodes and
+**Saved Blocks**. Select a pipeline and task to browse its bound operations. Use
+**Show implementation nodes** for underlying adapters and upstream Diffusers
+blocks, and **Show experimental nodes** when needed. Double-click empty canvas
+space to search, or drag from a socket to see compatible nodes and Blocks.
+Distinct saved revisions stay separate. Catalog entries show their readiness;
+browsing them does not install or enable anything.
+
+A **Block** is an editable graph composition. Expand it to work on its nodes;
+**Saved Blocks** are reusable definitions. An upstream Python block can be an
+ordinary implementation node or a container represented by a graph Block.
+Use **Inspect node / Inspect Block → Implementation** to see its source.
+Use **Configure Block interface** to expose inputs, outputs and editable controls.
+A nested Block's interface editor also selects its collapsed previews. These edits
+belong to the workflow instance; **Save block changes** is the explicit action for
+reusing them in Saved Blocks. Expand or collapse a Block without changing its
+connections, and use Undo/Redo for graph edits in either workspace.
+
+Changing workspace preserves the graph, nested expansion, public connections and
+preview configuration. Loaded-model and active-run qualification must meet the
+[workbench acceptance criteria](docs/workbench-acceptance.md).
+
+For the current task browser, picker behavior and qualification limits, see
+[Workflow authoring and model selection](docs/workflow-authoring-ux.md).
+
+## Custom nodes
+
+**Nodes → Add custom node** opens Local, Hugging Face and Git. Intentional Add/Load
+validates and enables trusted code in one action; revisions are pinned internally.
+Drop a structured Python node file on the canvas to import and insert it. Files
+and packages in backend `custom/` appear automatically without executing; use
+Manage nodes to Load, Reload or Disable them. The permanent **Custom nodes**
+category lists loaded and detected sources. Dependencies are not auto-installed.
+Python runs with backend permissions, not in a sandbox. Automatic memory accepts
+declared data nodes and connected supported components; unmanaged custom models
+require Custom memory. See the backend custom-node guide for contracts and examples.
+
+Approved Modular blocks that omit model ports receive a **Models** input when
+their Python contract requires components. Connect **Load Models → Pipeline
+Components** to reuse compatible loaded weights. This does not download missing
+block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/custom-nodes.md)
+for the VAE reconstruction example and component requirements.
+Blocks with official component types also expose **Load Models — [block name]**
+after approval. Select pinned, downloaded sources for its components, use **Custom**
+memory policy, and connect its Pipeline Components output to the custom block.
+
 ## Interface Map
 
-| Area       | Purpose                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| Top bar    | Connection state, New, Auto/Expert, Run mode, Run/Stop, Export, model manager, and settings |
-| Left rail  | Nodes, templates, generated/imported Gallery media, models, and backend workflow files      |
-| Canvas     | Visual graph editing, connections, node actions, and workflow tabs                          |
-| Studio     | Guided task, model, prompt, input, generation, and graph controls                           |
-| Queue      | Current and recent task state, progress, cancellation, and failures                         |
-| Setup      | Backend runtime, capability metadata, model/cache diagnostics, and installation status      |
-| Run as app | Expert-only simplified controls for graphs with a usable output surface                     |
+| Area       | Purpose                                                                                |
+| ---------- | -------------------------------------------------------------------------------------- |
+| Top bar    | Connection state, New, Memory, Run mode, Run/Stop, Export, model manager, and settings |
+| Left rail  | Nodes, templates, generated/imported Gallery media, models, and backend workflow files |
+| Canvas     | Visual graph editing, connections, node actions, and workflow tabs                     |
+| Studio     | Guided task, model, prompt, input, generation, and graph controls                      |
+| Queue      | Current and recent task state, progress, cancellation, and failures                    |
+| Setup      | Backend runtime, capability metadata, model/cache diagnostics, and installation status |
+| Run as app | Expert-only simplified controls for graphs with a usable output surface                |
 
 Workflow tabs are stored locally in the browser. Each tab preserves its visual graph, viewport, Studio form, graph binding, and template/Gallery provenance where available.
 
@@ -444,3 +559,63 @@ font software redistributed with the client are in
 distribution also ships a generated, lock-derived
 [dependency license inventory](public/THIRD_PARTY_LICENSES.txt); regenerate it
 with `npm run licenses:generate` after dependency changes.
+
+### Authoring with generic nodes
+
+In **Nodes**, select a pipeline and task. Use **Preview connected starter** to
+inspect its ordinary nodes, required inputs and upstream implementation, then add
+it to the canvas. You can also insert nodes individually by click, drag or canvas
+search and connect their ports. Connect the final result to a Preview, Save or Export node before running.
+
+To change a graph of generic nodes, select its loader and open **Inspect node →
+Parameters → Change model / task**. Choose the replacement pipeline/task, then
+**Preview model / task change**. The same controls are available in the Studio
+inspector. Review retained settings and connections before applying. The Nodes
+library also retains its existing **Graph to change** entry point. Compatible prompt and parameter overrides survive;
+new defaults come from the selected backend contract. Undo restores the whole
+change. When nodes share a seed, editing either control updates both; random mode
+uses one draw per run for that group. Select a node and choose **Inspect node**
+(**Inspect Block** for a composition), or use its controls in the Studio side panel.
+Both workspaces provide Parameters, Interface, Implementation, Docs and Run details.
+Implementation includes defaults, connected fallbacks, overrides and unsupported
+settings retained outside execution. Metadata inspection does not load models or
+execute custom source.
+
+A Block containing generic nodes exposes **Change model / task** directly on its
+controls. Select a loader when it contains several independent graphs. Expanded
+loaders offer the same action in their inspector. Preview and Apply update only
+that workflow instance, preserving its saved definition, compatible public
+controls, nested ownership and outside connections. Undo restores the entire edit.
+Outside input wires keep their source and identity during compatible task changes.
+If the new task declares another consumer of a shared input, the preview proposes
+an additional wire from the same outside source. Existing image connections take
+precedence over starter defaults. Incompatible public bindings, conflicting bound
+values, competing sources and sealed controls stop the preview with an explanation;
+edit the interface or connection before retrying. Existing upstream Modular
+compositions retain their composition editing path.
+
+Generic nodes keep their operation metadata inside Blocks and after reuse. Shared
+seed controls update together, including hidden members; random seeds are drawn
+once per connected group and independently for separate Block instances. Sealed
+controls still reject edits, and conflicting shared values must be resolved before Run.
+
+Existing Blocks with a model-route selector keep separate workflow drafts when
+switching. You can cancel while the destination loads. A newer graph edit or
+workflow change cancels the pending switch; connected outputs are checked against
+the actual restored interface before applying.
+
+These controls use the same saved canvas graph. Existing Blocks
+keep their current structure and composition inspector. A graph of generic nodes can
+still require runtime installation, model files, conditioning or resource setup;
+authoring support alone does not qualify model execution.
+
+To repeat computation, open a node's context menu or **More node actions** and
+choose **Recompute on next Run**. This retains loaded models and current previews;
+the next Run recomputes the selected results and affected descendants. **Release
+node cache** releases that node and cached consumers holding its pipelines or
+state. Other model owners keep their shared components and hooks. Neither action deletes downloaded model files. For a Block,
+recomputation includes its cached descendants while retaining model owners.
+Node status explains whether inputs changed, results were invalidated, or cached
+results were reused. Automatic resource management retains independent model
+owners when their combined memory estimate fits; otherwise it uses the existing
+release schedule where safe.

@@ -1,0 +1,214 @@
+import { operationOwnsModel } from '../workflow/operationContracts';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
+import { lazy, Suspense, useState } from 'react';
+import type { CustomNodeType } from '../stores/useFlowStore';
+import { useNodesStore } from '../stores/useNodeStore';
+import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
+import { operationAuthoring } from '../workflow/operationAuthoring';
+import { workflowChoices } from '../workflow/workflowChoices';
+import { ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
+import OperationGraphControls from './OperationGraphControls';
+import { visualOperationGroup } from '../workflow/visualOperationGroups';
+const VisualStageControls = lazy(() => import('./VisualStageControls'));
+const OperationModelPicker = lazy(() => import('./OperationModelPicker'));
+
+const LegacyOperationOwnerControls = lazy(() => import('./LegacyOperationOwnerControls'));
+
+const BlockModelTaskControls = lazy(() => import('./BlockModelTaskControls'));
+
+/** Local target choices never change library browsing or the authored graph. */
+export default function OperationOwnerControls({ node }: { node: CustomNodeType }) {
+  if (isFocusedStageNode(node.data.blockInstanceV2)) return null;
+  if (visualOperationGroup(node))
+    return (
+      <Suspense fallback={null}>
+        <VisualStageControls node={node} />
+      </Suspense>
+    );
+  if (node.data.blockInstanceV2) return <BlockOwnerChoices node={node} />;
+  if (node.data.userBlockSnapshot || node.data.userBlockId)
+    return (
+      <ModiffDisclosure label="Change model / task" panelClassName="grid gap-2 py-2">
+        <Suspense fallback={<p role="status">Loading model/task controls…</p>}>
+          <LegacyOperationOwnerControls nodeId={node.id} />
+        </Suspense>
+      </ModiffDisclosure>
+    );
+  const hint = operationAuthoring(node);
+  if (
+    !hint ||
+    !hint.operation.pipelineClass ||
+    !hint.operation.task ||
+    !operationOwnsModel(hint.operation) ||
+    (node.parentId && !node.data.blockProjectionOwnerId)
+  )
+    return null;
+  return (
+    <>
+      <Suspense fallback={null}>
+        <VisualStageControls node={node} />
+      </Suspense>
+      <OwnerChoices
+        key={`${node.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
+        ownerId={node.data.blockProjectionNodeId ?? node.id}
+        blockId={node.data.blockProjectionOwnerId}
+        pipelineClass={hint.operation.pipelineClass}
+        currentTask={hint.operation.task}
+      />
+    </>
+  );
+}
+
+export function BlockOwnerChoices({
+  node,
+  ownerBlockId = node.id,
+  inline = false,
+}: {
+  node: CustomNodeType;
+  ownerBlockId?: string;
+  inline?: boolean;
+}) {
+  const loaders = blockOperationGraphV2(node.data.blockInstanceV2!).nodes.filter((candidate) =>
+    operationOwnsModel(operationAuthoring(candidate)?.operation),
+  );
+  const [choice, setChoice] = useState('');
+  const loader = loaders.find((candidate) => candidate.data.blockProjectionNodeId === choice) ?? loaders[0];
+  const hint = loader ? operationAuthoring(loader) : null;
+  if (!loader || !hint?.operation.pipelineClass || !hint.operation.task)
+    return node.data.blockInstanceV2!.effectiveGraph.nodes.some((n) => n.modularDiffusers) ||
+      node.data.blockInstanceV2!.routeSelection?.routeSetId === 'diffusers.definition-switch:v1' ? (
+      <Suspense fallback={<p role="status">Loading model/task controls…</p>}>
+        <BlockModelTaskControls node={node} />
+      </Suspense>
+    ) : null;
+  return (
+    <div className="grid gap-2">
+      {loaders.length > 1 ? (
+        <ModiffFieldShell label="Loader to change">
+          <ModiffSelect
+            aria-label="Block loader to change"
+            value={loader.data.blockProjectionNodeId!}
+            onValueChange={setChoice}
+            options={loaders.map((candidate) => ({
+              value: candidate.data.blockProjectionNodeId!,
+              label: `${candidate.data.label} · ${candidate.data.operationAuthoring!.operation.pipelineClass} · ${candidate.data.blockProjectionNodeId}`,
+            }))}
+          />
+        </ModiffFieldShell>
+      ) : null}
+      <Suspense fallback={<p role="status">Loading model choices…</p>}>
+        <OperationModelPicker
+          node={{ ...loader, data: { ...loader.data, blockProjectionOwnerId: ownerBlockId } }}
+          value={(() => {
+            const value = loader.data.params.repo_id?.value ?? loader.data.params.model_id?.value;
+            return typeof value === 'string'
+              ? value
+              : value && typeof value === 'object' && 'value' in value
+                ? String(value.value ?? '')
+                : '';
+          })()}
+        />
+      </Suspense>
+      <OwnerChoices
+        key={`${loader.id}:${hint.operation.pipelineClass}:${hint.operation.task}`}
+        ownerId={loader.data.blockProjectionNodeId!}
+        blockId={ownerBlockId}
+        inline={inline}
+        pipelineClass={hint.operation.pipelineClass}
+        currentTask={hint.operation.task}
+      />
+      <Suspense fallback={null}>
+        <VisualStageControls node={{ ...loader, data: { ...loader.data, blockProjectionOwnerId: ownerBlockId } }} />
+      </Suspense>
+    </div>
+  );
+}
+
+function OwnerChoices({
+  ownerId,
+  blockId,
+  pipelineClass,
+  currentTask,
+  inline = false,
+}: {
+  ownerId: string;
+  blockId?: string;
+  pipelineClass: string;
+  currentTask: string;
+  inline?: boolean;
+}) {
+  const support = useNodesStore((state) => state.pipelineSupport);
+  const models = useNodesStore((state) => state.studioModelCapabilities);
+  const descriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const [pipeline, setPipeline] = useState(pipelineClass);
+  const [task, setTask] = useState(currentTask);
+  const [profileId, setProfileId] = useState('');
+  const pipelines = support.filter((p) => p.tasks.some((t) => t.operationIds.length));
+  const entry = pipelines.find((p) => p.pipelineClass === pipeline);
+  const tasks = entry?.tasks.filter((t) => t.operationIds.length) ?? [];
+  const selected = tasks.find((t) => t.task === task);
+  const profiles = workflowChoices(
+    entry && selected ? [{ ...entry, tasks: [selected] }] : [],
+    models,
+    [],
+    [],
+    null,
+    descriptors,
+  ).flatMap((choice) =>
+    choice.profileId ? [{ value: choice.profileId, label: `${choice.label} · ${choice.repo}` }] : [],
+  );
+  return (
+    <ModiffDisclosure label="Change model / task" collapsible={!inline} panelClassName="grid gap-2 py-2">
+      <p className="text-xs text-modiff-subtle-text">
+        Review changes to this node and its connected nodes. Model files and resources are checked when you run.
+      </p>
+      <ModiffFieldShell label="Pipeline">
+        <ModiffSelect
+          aria-label="Replacement pipeline"
+          value={pipeline}
+          onValueChange={(value) => {
+            const next = pipelines.find((p) => p.pipelineClass === value)?.tasks.filter((t) => t.operationIds.length);
+            setPipeline(value);
+            setProfileId('');
+            setTask(next?.find((t) => t.task === task)?.task ?? next?.[0]?.task ?? '');
+          }}
+          options={pipelines.map((p) => ({ value: p.pipelineClass, label: p.pipelineClass }))}
+        />
+      </ModiffFieldShell>
+      <ModiffFieldShell label="Task">
+        <ModiffSelect
+          aria-label="Replacement task"
+          value={selected?.task ?? ''}
+          onValueChange={(value) => {
+            setTask(value);
+            setProfileId('');
+          }}
+          options={tasks.map((t) => ({ value: t.task, label: t.task.replace(/_/gu, ' ') }))}
+        />
+      </ModiffFieldShell>
+      {profiles.length ? (
+        <ModiffFieldShell label="Model">
+          <ModiffSelect
+            aria-label="Replacement model"
+            value={profileId}
+            onValueChange={setProfileId}
+            options={[{ value: '', label: 'Keep compatible model selection' }, ...profiles]}
+          />
+        </ModiffFieldShell>
+      ) : null}
+      {selected ? (
+        <OperationGraphControls
+          pipeline={pipeline}
+          task={selected.task}
+          ownerId={ownerId}
+          blockId={blockId}
+          executionProfileId={profiles.some((profile) => profile.value === profileId) ? profileId : undefined}
+        />
+      ) : (
+        <p role="status" className="text-xs text-modiff-subtle-text">
+          Select an available pipeline and task to preview a change.
+        </p>
+      )}
+    </ModiffDisclosure>
+  );
+}

@@ -5,7 +5,7 @@ const COMMON = {
   provider: 'diffusers',
   surface: 'diffusers_cluster_nodes',
   definitionKind: 'studio_execution_composite',
-  libraryRevision: '2f7e0154a9db246e95c9ede43edba7db5b130805',
+  libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
   pipelineClass: 'AceStepAudioPipeline',
   artifact: {
     repo: 'ACE-Step/acestep-v15-xl-turbo-diffusers',
@@ -61,7 +61,7 @@ const COMMON = {
 const ROUTES = [
   {
     definitionId: 'diffusers.composite:AceStepAudioPipeline:audio_continuation',
-    definitionContentHash: 'sha256:5f92f7e5112add3a45324fc041817b8e757049f0a19a55147458d90610733d05',
+    definitionContentHash: 'sha256:80ab3a1bc90954766a09a7ec28f5505b920734caa140077e0e2a1f936b08b81e',
     workflowId: 'audio_continuation',
     admissionId: 'diffusers.cluster-admission:AceStepAudioPipeline:audio_continuation:mode:audio_continuation',
     studioMode: 'audio_continuation',
@@ -71,8 +71,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:audio-continuation:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-c4a770ed',
-    compiledDefinitionCanonicalSha256: 'sha256:7fd1ec80c25270e562d15daeb468ecf8d017ca5d869dcf44c5085eda165a0b4a',
+    compiledDefinitionContentHash: 'block-definition-v2-a122f3ae',
+    compiledDefinitionCanonicalSha256: 'sha256:518e7bd06f19fa048bc80259489a6f297dfb75752626a750f617b42213f202a3',
     boundary: {
       inputs: [
         {
@@ -126,7 +126,7 @@ const ROUTES = [
   },
   {
     definitionId: 'diffusers.composite:AceStepAudioPipeline:audio_repaint',
-    definitionContentHash: 'sha256:8ed4443ec5891a44742be073481e1b3583d2255dd864342d3a6c408bb2ac5571',
+    definitionContentHash: 'sha256:e6d4727615e851313d8b74489322fd200c5017df9facbe20b1ac963e6be837c8',
     workflowId: 'audio_repaint',
     admissionId: 'diffusers.cluster-admission:AceStepAudioPipeline:audio_repaint:mode:audio_repaint',
     studioMode: 'audio_repaint',
@@ -136,8 +136,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:audio-repaint:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-4c7c42b8',
-    compiledDefinitionCanonicalSha256: 'sha256:8e7fff1e7436abfc04779d501aa0a0e8d289123589322eeb089e2021ba4efca1',
+    compiledDefinitionContentHash: 'block-definition-v2-4aa91148',
+    compiledDefinitionCanonicalSha256: 'sha256:20cc7c0bfa6c2615425c88e764dc8bfd0ab8fb4206e9bad2f27cd7b37ac8590e',
     boundary: {
       inputs: [
         {
@@ -196,7 +196,7 @@ const ROUTES = [
   },
   {
     definitionId: 'diffusers.composite:AceStepAudioPipeline:audio_variation',
-    definitionContentHash: 'sha256:4b8c7305287bc624e0bbc399e1a52f5b525ae71ad02927a52ace2de260cd0c7e',
+    definitionContentHash: 'sha256:42b7b64e240ed549787cd28948d15ec35c6534ff484800bb7630dc25e7d5fd78',
     workflowId: 'audio_variation',
     admissionId: 'diffusers.cluster-admission:AceStepAudioPipeline:audio_variation:mode:audio_variation',
     studioMode: 'audio_variation',
@@ -206,8 +206,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:audio-variation:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-d1a6e998',
-    compiledDefinitionCanonicalSha256: 'sha256:feba82d8cb795c6413a73496af8ee481d119ad6acdbbfc282288547db458227a',
+    compiledDefinitionContentHash: 'block-definition-v2-605c81eb',
+    compiledDefinitionCanonicalSha256: 'sha256:b82bfab972e24e5e081efc39c141e48da7ceaf47193dfa3cdab2a01ec8748321',
     boundary: {
       inputs: [
         {
@@ -266,7 +266,7 @@ const ROUTES = [
   },
   {
     definitionId: 'diffusers.composite:AceStepAudioPipeline:text_to_audio',
-    definitionContentHash: 'sha256:270723097c6abbf1885ab5df7a1d29ad2b43698a46d73d733416b4241417b671',
+    definitionContentHash: 'sha256:a1a4c1cf4f0ff47fde86b7824b9cb4db7c36b651c8a0026085e9142da7a00cfa',
     workflowId: 'text_to_audio',
     admissionId: 'diffusers.cluster-admission:AceStepAudioPipeline:text_to_audio:mode:text_to_audio',
     studioMode: 'text_to_audio',
@@ -276,8 +276,8 @@ const ROUTES = [
       executionProfileId: 'ace-step-audio:direct',
       id: 'ace-step-v1.5-xl-turbo:text-to-audio:v1',
     },
-    compiledDefinitionContentHash: 'block-definition-v2-1e00bd83',
-    compiledDefinitionCanonicalSha256: 'sha256:9bd4af205c7f00fdb3fa6dea1514da68a20b0fc9955496a3b72b538c0707b65d',
+    compiledDefinitionContentHash: 'block-definition-v2-12928a8a',
+    compiledDefinitionCanonicalSha256: 'sha256:e4648f5fb334813a41b2a736ff2ab37d9bbc5efd9517d675a5d542f4434f1760',
     boundary: {
       inputs: [
         {
@@ -327,11 +327,11 @@ const ROUTES = [
 const SOUND_ROUTES = [
   {
     definitionId: 'diffusers.composite:AudioLDM2Pipeline:text_to_audio',
-    definitionContentHash: 'sha256:7fc6ba194301c190a632c36bd0c13507688dadc79069433e3452f679b3972985',
+    definitionContentHash: 'sha256:314617cbd715517a489a6ff3530dcb1f6f9bb3e257af913e12b5994a611020e2',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: '2f7e0154a9db246e95c9ede43edba7db5b130805',
+    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
     pipelineClass: 'AudioLDM2Pipeline',
     workflowId: 'text_to_audio',
     admissionId: 'diffusers.cluster-admission:AudioLDM2Pipeline:text_to_audio:mode:text_to_audio',
@@ -354,8 +354,8 @@ const SOUND_ROUTES = [
         valueSource: 'pipelineClass',
       },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-831c318e',
-    compiledDefinitionCanonicalSha256: 'sha256:17d719a524ad0d8868bf39646c946860ba2c4a60ff4c5c9e1a5a620cb11f0f2e',
+    compiledDefinitionContentHash: 'block-definition-v2-ccbbada5',
+    compiledDefinitionCanonicalSha256: 'sha256:58b7b3f4300b7b598cbe2d8f289095ca7415ef0b6ab3da080f2d33d8447d3602',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -441,11 +441,11 @@ const SOUND_ROUTES = [
   },
   {
     definitionId: 'diffusers.composite:LongCatAudioDiTPipeline:text_to_audio',
-    definitionContentHash: 'sha256:d896adaadbdeda8bc1bbf0754a43a7485064b4f6f9066a2ad8ef872ac457ff94',
+    definitionContentHash: 'sha256:17ec5906b4991f2eb620c6eeb535f789109538a2b84a6f9374bfcdfbe99a231f',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: '2f7e0154a9db246e95c9ede43edba7db5b130805',
+    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
     pipelineClass: 'LongCatAudioDiTPipeline',
     workflowId: 'text_to_audio',
     admissionId: 'diffusers.cluster-admission:LongCatAudioDiTPipeline:text_to_audio:mode:text_to_audio',
@@ -468,8 +468,8 @@ const SOUND_ROUTES = [
         valueSource: 'pipelineClass',
       },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-96e4c758',
-    compiledDefinitionCanonicalSha256: 'sha256:3f2a75b05c9d76637745c82adbec3bb4f37fff0ee4e1ffd56864bfc103c63ee5',
+    compiledDefinitionContentHash: 'block-definition-v2-d01a4269',
+    compiledDefinitionCanonicalSha256: 'sha256:7f790866397ef4fe361e88d19c9b30240a28755b6c65249bc3ed53ac7948e991',
     controlFanOuts: [
       {
         source: 'dtype',

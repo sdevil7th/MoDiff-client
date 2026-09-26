@@ -1,4 +1,15 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react';
 import { ListChecks, Maximize2, Minimize2, Save, Settings2 } from 'lucide-react';
 import { type NodeProps, useStoreApi, useUpdateNodeInternals } from '@xyflow/react';
 
@@ -38,7 +49,10 @@ import {
 import NodeContent from './NodeContent';
 import { enqueueSnackbar } from '../ui/snackbar';
 
+const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
+
 const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
+  const currentNode = useFlowStore((state) => state.nodes.find((candidate) => candidate.id === node.id));
   const nodeRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const connectorRef = useRef<HTMLDivElement>(null);
@@ -177,14 +191,14 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
         setSaveChoicesOpen(false);
         enqueueSnackbar(
           choice === 'update'
-            ? 'Reusable User Node updated. Existing workflow instances keep their embedded snapshots.'
+            ? 'Reusable Block updated. Existing workflow instances keep their embedded snapshots.'
             : choice === 'new'
-              ? `Saved as new User Node: ${saved.name}`
+              ? `Saved as new Block: ${saved.name}`
               : 'Changes kept only in this workflow.',
           { variant: 'success', autoHideDuration: 3200 },
         );
       } catch (error) {
-        enqueueSnackbar(error instanceof Error ? error.message : 'Could not save the User Node changes.', {
+        enqueueSnackbar(error instanceof Error ? error.message : 'Could not save the Block changes.', {
           variant: 'error',
           autoHideDuration: 4200,
         });
@@ -336,8 +350,8 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
                 size="compact"
                 label={
                   compositionReport.valid
-                    ? 'Inspect User Node composition'
-                    : `Inspect User Node composition: ${compositionReport.issues.length} issue${compositionReport.issues.length === 1 ? '' : 's'}`
+                    ? 'Inspect Block composition'
+                    : `Inspect Block composition: ${compositionReport.issues.length} issue${compositionReport.issues.length === 1 ? '' : 's'}`
                 }
                 onClick={() => setCompositionOpen(true)}
                 data-testid={`user-block-composition-${node.id}`}
@@ -348,7 +362,7 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
             <ModiffIconButton
               className="nodrag nowheel"
               size="compact"
-              label="Save User Node changes"
+              label="Save Block changes"
               onClick={() => setSaveChoicesOpen(true)}
               data-testid={`user-block-save-choices-${node.id}`}
             >
@@ -384,6 +398,9 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
         }
         controls={
           <div className="grid gap-2" data-testid={`user-block-disclosures-${node.id}`}>
+            <Suspense fallback={<p role="status">Loading model controls…</p>}>
+              {currentNode ? <OperationOwnerControls node={currentNode} /> : null}
+            </Suspense>
             {contentGroups.map((group) => (
               <section key={group.id} data-block-source-node={group.id}>
                 {Object.keys(group.controlParams).length > 0 ? (
@@ -438,7 +455,7 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
       <ModiffDialog
         open={compositionOpen}
         onClose={() => setCompositionOpen(false)}
-        title="User Node composition"
+        title="Block composition"
         testId={`user-block-composition-dialog-${node.id}`}
         panelClassName="max-w-2xl"
         footer={<ModiffButton onClick={() => setCompositionOpen(false)}>Close</ModiffButton>}
@@ -583,7 +600,7 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
         onClose={() => {
           if (!savingChoice) setSaveChoicesOpen(false);
         }}
-        title="Save User Node changes"
+        title="Save Block changes"
         testId={`save-user-block-choices-${node.id}`}
         panelClassName="max-w-lg"
         footer={
@@ -592,10 +609,10 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
               Keep only in this workflow
             </ModiffButton>
             <ModiffButton disabled={savingChoice} onClick={() => void handleDefinitionChoice('new')}>
-              Save as new User Node
+              Save as new Block
             </ModiffButton>
             <ModiffButton tone="primary" disabled={savingChoice} onClick={() => void handleDefinitionChoice('update')}>
-              Update existing User Node
+              Update existing Block
             </ModiffButton>
           </>
         }
@@ -605,7 +622,7 @@ const UserBlockNode = memo((node: NodeProps<CustomNodeType>) => {
           <p>
             Updating changes the reusable library definition but does not silently rewrite other workflow instances.
             Saving as new defaults to{' '}
-            <strong>{contextualUserNodeName(effectiveDefinition?.name || 'User Node', workflowTitle)}</strong>.
+            <strong>{contextualUserNodeName(effectiveDefinition?.name || 'Block', workflowTitle)}</strong>.
           </p>
         </div>
       </ModiffDialog>

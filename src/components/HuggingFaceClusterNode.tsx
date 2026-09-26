@@ -246,7 +246,7 @@ const HuggingFaceClusterNode = memo((node: NodeProps<CustomNodeType>) => {
         if (!active) return;
         setGraphProjectionState('error');
         setGraphProjectionMessage(
-          error instanceof Error ? error.message : 'Could not materialize the reviewed Cluster graph.',
+          error instanceof Error ? error.message : 'Could not materialize the reviewed Block graph.',
         );
       });
 
@@ -332,13 +332,13 @@ const HuggingFaceClusterNode = memo((node: NodeProps<CustomNodeType>) => {
     setForking(true);
     customizeHuggingFaceClusterInstance(node.id)
       .then(() => {
-        enqueueSnackbar('Cluster is now an editable User Node for this workflow.', {
+        enqueueSnackbar('Created an editable Block copy for this workflow.', {
           variant: 'success',
           autoHideDuration: 2400,
         });
       })
       .catch((error: unknown) => {
-        enqueueSnackbar(error instanceof Error ? error.message : 'Could not customize the Cluster as a User Node.', {
+        enqueueSnackbar(error instanceof Error ? error.message : 'Could not create an editable Block copy.', {
           variant: 'error',
           autoHideDuration: 4200,
         });
@@ -351,7 +351,7 @@ const HuggingFaceClusterNode = memo((node: NodeProps<CustomNodeType>) => {
       if (expanded) return;
       event.preventDefault();
       event.stopPropagation();
-      beginHistoryTransaction('Resize Cluster Node');
+      beginHistoryTransaction('Resize Block');
       const initialWidth = nodeRef.current?.clientWidth || node.width || HUGGING_FACE_CLUSTER_COLLAPSED_WIDTH;
       const initialHeight = nodeRef.current?.clientHeight || node.height || HUGGING_FACE_CLUSTER_COLLAPSED_HEIGHT;
       const startX = event.clientX;
@@ -436,10 +436,10 @@ const HuggingFaceClusterNode = memo((node: NodeProps<CustomNodeType>) => {
         <ModiffIconButton
           className="nodrag nowheel"
           size="compact"
-          label="Customize as User Node"
+          label="Customize as Block"
           title={
             selectedAdmissionId
-              ? 'Make this workflow instance structurally editable while leaving the first-party Cluster unchanged.'
+              ? 'Make this workflow instance structurally editable while leaving the first-party Block unchanged.'
               : 'Select a reviewed workflow mode before customizing.'
           }
           disabled={!definition || !selectedAdmissionId || forking}
@@ -450,7 +450,7 @@ const HuggingFaceClusterNode = memo((node: NodeProps<CustomNodeType>) => {
         <ModiffIconButton
           className="nodrag nowheel"
           size="compact"
-          label={expanded ? `Collapse ${providerLabel} Cluster Node` : `Expand ${providerLabel} Cluster Node`}
+          label={expanded ? `Collapse ${providerLabel} Block` : `Expand ${providerLabel} Block`}
           title={definition ? undefined : 'The exact reviewed library definition is unavailable.'}
           disabled={!definition}
           onClick={handleToggle}
@@ -524,7 +524,7 @@ const HuggingFaceClusterNode = memo((node: NodeProps<CustomNodeType>) => {
           </div>
         </>
       )}
-      {!expanded ? <NodeResizeGrip label="Drag to resize Cluster Node" onMouseDown={handleResizeStart} /> : null}
+      {!expanded ? <NodeResizeGrip label="Drag to resize Block" onMouseDown={handleResizeStart} /> : null}
     </div>
   );
 });

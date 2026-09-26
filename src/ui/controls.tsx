@@ -527,7 +527,7 @@ export function ModiffCombobox({
         anchor="bottom start"
         portal
         modal={false}
-        className="z-[100] max-h-72 w-[var(--input-width)] min-w-40 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-modiff-control text-modiff-text shadow-modiff-node outline-none empty:invisible"
+        className="z-[100] max-h-72 [--anchor-max-height:18rem] overscroll-contain nowheel w-[var(--input-width)] min-w-40 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-modiff-control text-modiff-text shadow-modiff-node outline-none empty:invisible"
       >
         {visibleOptions.length === 0 ? (
           <div className="px-2 py-2 text-modiff-metadata text-modiff-subtle-text">{emptyMessage}</div>
@@ -610,6 +610,8 @@ export type ModiffSelectProps = {
   onValueChange: (value: string) => void;
   options: readonly ModiffSelectOption[];
   optionsClassName?: string;
+  /** Portal menus must sit above their owning canvas popover. */
+  layer?: 'panel' | 'popover';
   placeholder?: ReactNode;
   readOnly?: boolean;
   required?: boolean;
@@ -634,6 +636,7 @@ export function ModiffSelect({
   onValueChange,
   options,
   optionsClassName,
+  layer = 'panel',
   placeholder = 'Select…',
   readOnly,
   required,
@@ -745,7 +748,8 @@ export function ModiffSelect({
           modal={false}
           transition
           className={cx(
-            'z-[100] max-h-72 w-[var(--button-width)] min-w-32 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:pointer-events-none data-[closed]:scale-95 data-[closed]:opacity-0',
+            'max-h-72 [--anchor-max-height:18rem] overscroll-contain nowheel w-[var(--button-width)] min-w-32 overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:pointer-events-none data-[closed]:scale-95 data-[closed]:opacity-0',
+            layer === 'popover' ? 'z-[120]' : 'z-[100]',
             optionsClassName,
           )}
         >
@@ -909,7 +913,7 @@ export function ModiffMultiSelect({
           modal={false}
           transition
           className={cx(
-            'z-[100] max-h-72 min-w-[var(--button-width)] overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0',
+            'z-[100] max-h-72 [--anchor-max-height:18rem] overscroll-contain nowheel min-w-[var(--button-width)] overflow-auto rounded-modiff-panel border border-modiff-border-subtle bg-modiff-surface p-1 font-sans text-sm text-modiff-text shadow-modiff-node outline-none transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0',
             optionsClassName,
           )}
         >
@@ -1145,6 +1149,7 @@ export type ModiffRadioGroupProps = {
   readOnly?: boolean;
   required?: boolean;
   value: string;
+  variant?: 'default' | 'segmented';
 };
 
 export function ModiffRadioGroup({
@@ -1163,6 +1168,7 @@ export function ModiffRadioGroup({
   readOnly,
   required,
   value,
+  variant = 'default',
 }: ModiffRadioGroupProps) {
   const field = useModiffFieldControl({
     ariaDescribedBy,
@@ -1191,7 +1197,9 @@ export function ModiffRadioGroup({
       form={form}
       name={name}
       className={cx(
-        'grid gap-2',
+        variant === 'segmented'
+          ? 'flex rounded-modiff-compact border border-modiff-border bg-modiff-bg p-0.5'
+          : 'grid gap-2',
         field.readOnly && 'cursor-default',
         field.invalid && 'rounded-modiff-compact ring-1 ring-modiff-invalid/60',
         className,
@@ -1204,12 +1212,16 @@ export function ModiffRadioGroup({
           disabled={option.disabled}
           className={cx(
             'group nodrag flex items-center gap-2 text-modiff-control text-modiff-text outline-none data-[active]:text-hf-yellow data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+            variant === 'segmented' &&
+              'rounded-modiff-compact px-2 py-1.5 font-semibold data-[checked]:bg-hf-yellow/15 data-[checked]:text-hf-yellow focus-visible:ring-2 focus-visible:ring-modiff-focus/35',
             field.readOnly ? 'cursor-default' : 'cursor-pointer',
           )}
         >
-          <span className="grid size-4 shrink-0 place-items-center rounded-full border border-modiff-border-subtle bg-modiff-bg transition group-data-[active]:bg-modiff-surface-pressed group-data-[checked]:border-hf-yellow group-focus-visible:ring-2 group-focus-visible:ring-modiff-focus/35">
-            <span className="size-2 rounded-full bg-hf-yellow opacity-0 group-data-[checked]:opacity-100" />
-          </span>
+          {variant === 'default' && (
+            <span className="grid size-4 shrink-0 place-items-center rounded-full border border-modiff-border-subtle bg-modiff-bg transition group-data-[active]:bg-modiff-surface-pressed group-data-[checked]:border-hf-yellow group-focus-visible:ring-2 group-focus-visible:ring-modiff-focus/35">
+              <span className="size-2 rounded-full bg-hf-yellow opacity-0 group-data-[checked]:opacity-100" />
+            </span>
+          )}
           <span className="min-w-0">{option.label}</span>
         </Radio>
       ))}
@@ -1599,12 +1611,15 @@ export type ModiffDisclosureProps = {
   buttonClassName?: string;
   children: ReactNode;
   className?: string;
+  /** Keep the same panel mounted when switching to an always-visible presentation. */
+  collapsible?: boolean;
   defaultOpen?: boolean;
   disabled?: boolean;
   id?: string;
   label: ReactNode;
   onOpenChange?: (open: boolean) => void;
   panelClassName?: string;
+  unmount?: boolean;
 };
 
 export function ModiffDisclosure({
@@ -1614,12 +1629,14 @@ export function ModiffDisclosure({
   buttonClassName,
   children,
   className,
+  collapsible = true,
   defaultOpen = false,
   disabled,
   id,
   label,
   onOpenChange,
   panelClassName,
+  unmount = true,
 }: ModiffDisclosureProps) {
   const field = useModiffFieldControl({ ariaDescribedBy, disabled, id });
   return (
@@ -1627,6 +1644,7 @@ export function ModiffDisclosure({
       {({ open }) => (
         <>
           <DisclosureButton
+            hidden={!collapsible}
             id={field.id}
             aria-label={ariaLabel}
             aria-describedby={field.ariaDescribedBy}
@@ -1644,7 +1662,9 @@ export function ModiffDisclosure({
               aria-hidden="true"
             />
           </DisclosureButton>
-          <DisclosurePanel className={panelClassName}>{children}</DisclosurePanel>
+          <DisclosurePanel static={!collapsible} unmount={unmount} className={panelClassName}>
+            {children}
+          </DisclosurePanel>
         </>
       )}
     </Disclosure>

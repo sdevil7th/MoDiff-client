@@ -421,6 +421,7 @@ export function reviewedModularGraphV2(
   const normalized = (value: string) => value.replace(/[^a-z0-9]/giu, '').toLowerCase();
   const actionFamily = (action: string) => {
     const value = action.toLowerCase();
+    if (value.includes('prompt_enhancer')) return 'prompt_enhancer';
     if (value.includes('text_encoder') || value.includes('textencode') || value === 'semantic_generator')
       return 'text_encoder';
     if (value.includes('image_encoder') && !value.includes('vae')) return 'image_encoder';
@@ -436,6 +437,7 @@ export function reviewedModularGraphV2(
     return value.replace(/^workflow_/u, '');
   };
   const sourceRoleAliases: Readonly<Record<string, readonly string[]>> = {
+    prompt_enhancer: ['promptEnhance'],
     text_encoder: ['prompt'],
     semantic_generator: ['prompt'],
     image_encoder: ['imageEmbeddings', 'imageEncode'],

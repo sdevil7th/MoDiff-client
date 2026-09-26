@@ -134,6 +134,7 @@ export function updateGraphNodeControl(
     if (key === undefined || key === 'value') flow.setBlockInstanceValueV2(nodeId, param, value as BlockJsonValue);
     return;
   }
-  flow.setParamWithHistory(nodeId, param, value, key);
+  if (fieldActionOrigin !== undefined) flow.setParam(nodeId, param, value, key);
+  else flow.setParamWithHistory(nodeId, param, value, key);
   syncManagedNodeControlChange(nodeId, param, value, key);
 }

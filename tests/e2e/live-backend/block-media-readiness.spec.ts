@@ -51,8 +51,9 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
   const root = page.locator('[data-block-source="diffusers_catalog"][data-block-schema-version="2"]');
   await expect(root).toHaveCount(1, { timeout: 60_000 });
   const rootId = (await root.getAttribute('data-testid'))!.replace(/^user-block-/u, '');
-  const auto = page.getByTestId('topbar-auto-switch');
-  if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await auto.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   const inspect = () =>
     page.evaluate(async (id) => {
       const { useFlowStore } = await import('/src/stores/useFlowStore.ts');

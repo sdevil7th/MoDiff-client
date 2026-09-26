@@ -7,7 +7,6 @@ import { normalizeImageArtifacts, type ImageArtifact } from '../utils/imageArtif
 import { enqueueSnackbar } from '../ui/snackbar';
 import { GraphControlButton, GraphIconButton } from '../ui/GraphControls';
 import { ModiffMenuAction, ModiffMenuRoot, ModiffMenuSurface, ModiffMenuTrigger } from '../ui/menus';
-import { cx } from '../utils/classNames';
 import type { PreviewHistoryStripProps } from './PreviewHistoryStrip';
 
 function outputUrl(output: StudioOutput) {
@@ -56,10 +55,8 @@ async function copyUrl(url: string) {
 
 export default function PreviewHistoryStripContent({
   history,
-  onSelectImage,
-  selectedUrl,
   audioDownloadSampleRate,
-}: Pick<PreviewHistoryStripProps, 'onSelectImage' | 'selectedUrl' | 'audioDownloadSampleRate'> & {
+}: Pick<PreviewHistoryStripProps, 'audioDownloadSampleRate'> & {
   history: StudioOutput[];
 }) {
   const restoreWorkflowFromOutput = useStudioStore((state) => state.restoreWorkflowFromOutput);
@@ -178,17 +175,8 @@ export default function PreviewHistoryStripContent({
             >
               <GraphControlButton
                 type="button"
-                className={cx(
-                  'block h-16 w-full overflow-hidden border-2 border-transparent text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-modiff-focus',
-                  selectedUrl === url && 'border-hf-yellow',
-                )}
-                aria-pressed={type === 'image' && onSelectImage ? selectedUrl === url : undefined}
-                onClick={() => {
-                  if (type === 'image' && onSelectImage) {
-                    onSelectImage(url);
-                  }
-                  openOutput(output);
-                }}
+                className="block h-16 w-full overflow-hidden border-2 border-transparent text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-modiff-focus"
+                onClick={() => openOutput(output)}
                 title={`${outputLabel(output)} from ${new Date(output.createdAt).toLocaleTimeString()}`}
               >
                 {type === 'image' ? (

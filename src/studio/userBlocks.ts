@@ -596,6 +596,36 @@ export function collapsedUserBlockPreviewTarget(
   return null;
 }
 
+/** Resolve a collapsed legacy control through its declared exposed binding. */
+export function collapsedUserBlockFieldSource(nodes: CustomNodeType[], nodeId: string, fieldKey: string) {
+  const root = nodes.find((node) => node.id === nodeId);
+  const definition = root?.data.userBlockSnapshot;
+  if (!root || root.data.type !== 'block' || root.data.uiState?.blockExpanded || !definition) return null;
+  const bindings = definition.exposedParams.filter((input) => input.id === fieldKey);
+  const binding = bindings.length === 1 ? bindings[0] : undefined;
+  if (!binding?.nodeId || !binding.paramKey || !root.data.params[fieldKey]) return null;
+  const children = materializedBlockChildren({ nodes, edges: [] }, root, definition);
+  const matches = children.filter((child) => child.id === instanceChildId(root.id, binding.nodeId!));
+  const node = matches.length === 1 ? matches[0] : undefined;
+  if (!node?.data.params[binding.paramKey]) return null;
+  return { node, fieldKey: binding.paramKey, param: root.data.params[fieldKey] };
+}
+
+/** Only exposed fields may receive metadata on behalf of a hidden legacy child. */
+export function collapsedUserBlockFieldTarget(nodes: CustomNodeType[], runtimeNodeId: string, fieldKey: string) {
+  const matches = nodes.flatMap((root) => {
+    const definition = root.data.userBlockSnapshot;
+    if (root.data.type !== 'block' || root.data.uiState?.blockExpanded || !definition) return [];
+    return definition.exposedParams.flatMap((input) => {
+      if (!input.nodeId || input.paramKey !== fieldKey || instanceChildId(root.id, input.nodeId) !== runtimeNodeId)
+        return [];
+      const source = collapsedUserBlockFieldSource(nodes, root.id, input.id);
+      return source ? [{ nodeId: root.id, fieldKey: input.id }] : [];
+    });
+  });
+  return matches.length === 1 ? matches[0]! : null;
+}
+
 export type BlockPreviewTargetV2 = {
   rootId: string;
   nodeId: string;

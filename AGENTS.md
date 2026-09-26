@@ -39,7 +39,12 @@ These rules apply to Codex, Copilot-style agents, and any AI tool editing this r
 
 - Keep Zustand. Use typed selectors and `useShallow` when reading multiple values.
 - Treat network, websocket, localStorage, and backend dynamic-node data as `unknown` until narrowed by guards.
-- Preserve MoDiff localStorage keys and legacy migrations.
+- Preserve workflow data and active layout. Remove obsolete workspace-mode state; memory policy is independent.
+
+## Custom extensions
+
+- Intentional Add/Load/Reload authorizes hash-bound custom code in one action. Discovery and workflow import never authorize execution. Refresh registry state after success or failure; do not add a separate approval wizard.
+- Render declared extension fields using the existing registry, node factory and typed suggestions. Never give a workflow import permission to install or execute new source.
 
 ## Required Checks
 

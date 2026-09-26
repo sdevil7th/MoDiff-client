@@ -1589,7 +1589,8 @@ test('both composite generations use one shared frame and V2 stays on the block 
     path.join(ROOT, 'src', 'components', 'BlockSaveDialogContentV2.tsx'),
     'utf8',
   );
-  assert.match(saveDialogSource, /Save as new User Node/);
+  assert.match(saveDialogSource, /Save as new \{noun\}/);
+  assert.match(saveDialogSource, /isFocusedStageNode\(instance\) \? 'node' : 'Block'/);
   assert.match(v2Source, /headerRef\.current\?\.offsetHeight/);
   assert.match(v2Source, /connectorRef\.current\?\.offsetHeight/);
   assert.match(v2Source, /headerHeight \+ connectorHeight \+ 96 \+ 4/);
@@ -1680,12 +1681,14 @@ test('V2 public sockets connect in both directions without mirroring connector s
   const outboundDrop = workflowConnections.captureWorkflowDropHandle(block, 'image', 'source');
   assert.deepEqual(inboundDrop, {
     nodeId: block.id,
+    node: block.data,
     handleId: 'prompt',
     handleType: 'target',
     dataType: 'string',
   });
   assert.deepEqual(outboundDrop, {
     nodeId: block.id,
+    node: block.data,
     handleId: 'image',
     handleType: 'source',
     dataType: 'image',

@@ -1,3 +1,4 @@
+import { huggingFaceCatalogAdmission } from './huggingFaceCatalogAdmission';
 import { useHuggingFaceModularConditionalStore } from '../stores/useHuggingFaceModularConditionalStore';
 import { useHuggingFaceNodeLibraryStore } from '../stores/useHuggingFaceNodeLibraryStore';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
@@ -552,28 +553,10 @@ export async function createHuggingFaceClusterForGraph(
   definition: HuggingFaceNodeLibraryDefinition,
   position: { x: number; y: number },
   studioForm: StudioFormState,
-  options: { compilerTimeoutMs?: number; insert?: boolean } = {},
+  options: { compilerTimeoutMs?: number; insert?: boolean; signal?: AbortSignal } = {},
 ): Promise<CustomNodeType> {
-  const admissions = definition.executionAdmissions.filter(
-    (admission) =>
-      admission.status === 'admitted' &&
-      admission.claim === 'static_graph_contract_compatible' &&
-      admission.executable === false &&
-      admission.publication.readiness === 'graph_qualified' &&
-      admission.publication.insertable &&
-      admission.reasons.length === 0,
-  );
-  const matchingAdmission = admissions.find(
-    (admission) => studioForm.modelType === definition.pipelineClass && studioForm.mode === admission.studioMode,
-  );
-  // A graph-library row must remain insertable on a genuinely empty graph.
-  // Multi-mode definitions expose their reviewed admissions in a stable,
-  // publisher-owned order; the first exact registered admission is the
-  // deterministic default when no task/model selection asks for another.
-  // This never infers an admission by family name: the exact route ledger is
-  // still checked immediately below and fails closed on missing/stale pins.
-  const selectedAdmission = matchingAdmission ?? admissions[0];
-  const route = registeredBlockV2Route(definition, selectedAdmission);
+  const { admission: selectedAdmission, route } = huggingFaceCatalogAdmission(definition, studioForm);
+  if (options.signal?.aborted) throw new DOMException('Insertion cancelled.', 'AbortError');
 
   if (definition.provider === 'diffusers' && !useHuggingFaceModularConditionalStore.getState().loaded) {
     await useHuggingFaceModularConditionalStore.getState().fetchSnapshot();
@@ -633,7 +616,12 @@ export async function createHuggingFaceClusterForGraph(
   );
 
   if (selectedAdmission && route) {
-    const compiled = await fetchRegisteredBlockV2CompiledCatalogEntry(definition, selectedAdmission, route);
+    const compiled = await fetchRegisteredBlockV2CompiledCatalogEntry(
+      definition,
+      selectedAdmission,
+      route,
+      options.signal,
+    );
     const acceptedValueIds = new Set([
       ...compiled.definition.controls.map(({ controlId }) => controlId),
       ...compiled.definition.boundary.inputs.map(({ portId }) => portId),

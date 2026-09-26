@@ -45,6 +45,38 @@ function edge(id, source, sourceHandle, target, targetHandle) {
   return { id, source, sourceHandle, target, targetHandle, type: 'default' };
 }
 
+test('conditional hidden inputs are not missing prerequisites and wildcard outputs are not direct repairs', () => {
+  const preview = node(
+    'preview',
+    definition('modules.Image', 'Preview', 'Preview Image', {
+      image: { display: 'input', type: ['image', 'latent'] },
+      vae: { display: 'input', type: 'pipeline', hidden: true },
+    }),
+  );
+  const source = node(
+    'image',
+    definition('modules.Image', 'Load', 'Load Image', {
+      image: { display: 'output', type: 'image' },
+    }),
+  );
+  const arbitrary = node(
+    'data',
+    definition('modules.Text', 'ProcessText', 'Process Text/Data', {
+      output: { display: 'output', type: 'any' },
+    }),
+  );
+  const context = {
+    nodes: [preview, source, arbitrary],
+    edges: [edge('image', 'image', 'image', 'preview', 'image')],
+    registry: {},
+  };
+  assert.equal(graphFixer.buildGraphFixPlan(context).issues.length, 0);
+  preview.data.params.vae.hidden = false;
+  const issues = graphFixer.buildGraphFixPlan(context).issues.filter((i) => i.targetHandle === 'vae');
+  assert.equal(issues.length, 1, 'An unresolved visible input still needs a manual diagnostic.');
+  assert.ok(issues[0].candidates.every((c) => c.confidence !== 'safe'));
+});
+
 function blockV2Node(instanceId = 'v2-image-block', referenceDisplay = 'input') {
   const semanticGraph = {
     nodes: [
@@ -155,6 +187,26 @@ test('a missing required Block media input offers targeted navigation, never an 
   assert.equal(issue.candidates.length, 1);
   assert.deepEqual(issue.candidates[0].operations, [{ kind: 'external', action: 'inspect_node', nodeId: root.id }]);
   assert.deepEqual(root, before);
+});
+
+test('distinct required media findings inside a collapsed Block retain unique Fix identities', () => {
+  const root = blockV2Node();
+  const readinessIssues = ['image', 'mask_image'].map((field) => ({
+    id: `operation-media-input-missing:internal-encode:${field}`,
+    code: 'operation_media_input_missing',
+    category: 'asset',
+    severity: 'error',
+    blocking: true,
+    nodeId: root.id,
+    action: 'inspect_node',
+    message: `Connect ${field} before running.`,
+  }));
+  const plan = graphFixer.buildGraphFixPlan({ nodes: [root], edges: [], registry: {}, readinessIssues });
+  const issues = plan.issues.filter((i) => i.kind === 'missing_media');
+  assert.equal(issues.length, 2);
+  assert.equal(new Set(issues.map((i) => i.id)).size, 2);
+  assert.equal(new Set(issues.flatMap((i) => i.candidates.map((c) => c.id))).size, 2);
+  assert.ok(issues.every((i) => i.targetNodeId === root.id && i.targetHandle === undefined));
 });
 
 test('editable Block boundary controls do not receive mandatory connection repairs for blank values', () => {
@@ -457,6 +509,99 @@ test('ranks a typed bridge for an incompatible connection', () => {
     result.edges.some((item) => item.id === 'wrong'),
     false,
   );
+});
+
+test('Fix uses the same text aliases as a custom prompt wire on the canvas', () => {
+  for (const type of ['str', 'string', 'text']) {
+    const source = node(
+      'prompt',
+      definition('custom.Prompt', 'Make', 'Prompt', {
+        prompt: { display: 'output', type },
+      }),
+    );
+    const target = node(
+      'preview',
+      definition('modules.Text', 'Preview', 'Preview text', {
+        prompt: { display: 'input', type: 'text', required: true },
+      }),
+    );
+    const context = {
+      nodes: [source, target],
+      edges: [edge('prompt', 'prompt', 'prompt', 'preview', 'prompt')],
+      registry: {},
+    };
+    assert.equal(graphFixer.buildGraphFixPlan(context).issues.length, 0);
+  }
+});
+
+test('Fix rejects known incompatible component roles both in suggestions and at materialization', () => {
+  const source = node(
+    'source',
+    definition('modules.Test', 'Load', 'Load video VAE', {
+      vae: { display: 'output', type: 'model', connectionRole: 'video_vae' },
+    }),
+  );
+  const target = node(
+    'preview',
+    definition('modules.Test', 'Preview', 'Preview image', {
+      vae: { display: 'input', type: 'model', required: true, signalCompatibility: { role: 'image_vae' } },
+    }),
+  );
+  const context = { nodes: [source, target], edges: [], registry: {} };
+  const suggestions = graphFixer.buildGraphFixPlan(context).issues.flatMap((issue) => issue.candidates);
+  assert.ok(!suggestions.some((candidate) => candidate.operations.some((op) => op.kind === 'connect')));
+  const wrong = graphFixer.buildGraphFixPlan({ ...context, edges: [edge('wrong', 'source', 'vae', 'preview', 'vae')] });
+  assert.match(wrong.issues.find((issue) => issue.kind === 'type_mismatch').description, /capabilities/);
+  assert.throws(
+    () =>
+      graphFixer.materializeGraphFixes(context, [
+        {
+          operations: [
+            {
+              kind: 'connect',
+              source: { nodeId: 'source', handle: 'vae' },
+              target: { nodeId: 'preview', handle: 'vae' },
+            },
+          ],
+        },
+      ]),
+    /capabilities/,
+  );
+});
+
+test('large generated interfaces do not expand every input/output pair for bridge suggestions', () => {
+  const source = node('source', imageSource);
+  const preview = node(
+    'preview',
+    definition('modules.Video', 'Preview', 'Preview video', {
+      video: { display: 'input', type: 'video', required: true },
+    }),
+  );
+  let typeReads = 0;
+  const params = {};
+  for (let index = 0; index < 1500; index++) {
+    for (const display of ['input', 'output']) {
+      params[`${display}${index}`] = {
+        display,
+        get type() {
+          typeReads++;
+          return display === 'input' ? 'image' : 'video';
+        },
+      };
+    }
+  }
+  const plan = graphFixer.buildGraphFixPlan({
+    nodes: [source, preview],
+    edges: [edge('wrong', 'source', 'image', 'preview', 'video')],
+    registry: { 'modules.Test.Wide': definition('modules.Test', 'Wide', 'Wide converter', params) },
+  });
+  const mismatch = plan.issues.find((issue) => issue.kind === 'type_mismatch');
+  assert.equal(mismatch.candidates.length, 3);
+  assert.deepEqual(
+    mismatch.candidates.map((candidate) => candidate.operations[3].source.handle),
+    ['output0', 'output1', 'output2'],
+  );
+  assert.ok(typeReads < 100_000, `Port reads must stay linear, got ${typeReads}.`);
 });
 
 test('routes missing models to the chooser without mutating the graph', () => {

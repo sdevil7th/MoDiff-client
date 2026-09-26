@@ -209,7 +209,7 @@ test('deployed Qwen Block uses progressive shared Block frames', async ({ page }
     has: page.getByRole('button', { name: 'Save changes to Qwen Image Text Encoder Step', exact: true }),
   });
   await expect(textStep).toHaveCount(1);
-  const auto = page.getByTestId('topbar-auto-switch');
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
   if ((await auto.getAttribute('aria-checked')) !== 'true') await auto.click();
   const advanced = textStep.getByRole('button', { name: 'Advanced', exact: true });
   await advanced.click();

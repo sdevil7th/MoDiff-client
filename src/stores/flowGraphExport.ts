@@ -1,10 +1,12 @@
-import { type Edge, getIncomers, getOutgoers, type Node } from '@xyflow/react';
+import { sharedOperationInput, assertSharedOperationInput } from '../workflow/operationSharedInputs';
+import { type Edge, getIncomers, getOutgoers } from '@xyflow/react';
 import type { ApiGraphExport, NodeParamValue } from '../types/api';
 import { studioOffloadPlanConflict } from '../studio/deviceOffload';
-import type { NodeData, NodeParams } from './useNodeStore';
+import type { NodeParams } from './useNodeStore';
+import type { CustomNodeType } from './useFlowStore';
 import { lowerReviewedLoopConnectionsV2 } from '../studio/reviewedLoopConnectionsV2';
 
-export type FlowGraphNode = Node<NodeData, NodeData['type']>;
+export type FlowGraphNode = CustomNodeType;
 
 type SetNodeParam = <K extends keyof NodeParams = 'value'>(
   id: string,
@@ -34,6 +36,7 @@ function resolveRandomFieldValue(
   paramData: NodeParams,
   setParam: SetNodeParam,
   sharedRandomValues: Map<string, number>,
+  operationSharedKey?: string,
 ) {
   const randomValue = isRecord(paramData.value) ? paramData.value : null;
   const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : paramData.value;
@@ -47,9 +50,10 @@ function resolveRandomFieldValue(
   const maximum = Number.isSafeInteger(paramData.max) ? Number(paramData.max) : 0xffff_ffff;
   // Studio exposes one seed control for the entire managed workflow. Resolve
   // that random seed once per export so every route-bound encoder, ControlNet,
-  // and denoiser receives the same concrete value. Manual graph nodes remain
-  // independently random as before.
-  const sharedKey = node.data.studioOwned === true && paramName === 'seed' ? 'managed-studio-seed' : null;
+  // and denoiser receives the same concrete value. Unbound manual nodes remain
+  // independently random. Operation starters scope shared inputs to one loader.
+  const sharedKey =
+    operationSharedKey ?? (node.data.studioOwned === true && paramName === 'seed' ? 'managed-studio-seed' : null);
   const sharedValue = sharedKey ? sharedRandomValues.get(sharedKey) : undefined;
   if (sharedValue !== undefined && (sharedValue < minimum || sharedValue > maximum)) {
     throw new Error('Managed Studio seed fields have incompatible random bounds.');
@@ -213,14 +217,20 @@ export function buildApiGraphExport({
         return;
       }
 
+      const bindings = node.data.operationAuthoring?.sharedInputs;
+      const shared =
+        Array.isArray(bindings) && bindings.some((b) => b?.field === paramName)
+          ? sharedOperationInput(filteredExecutableNodes, edges, node.id, paramName)
+          : null;
+      if (shared) assertSharedOperationInput(shared, edges);
+      const fieldValue = paramData.value ?? paramData.default;
       const randomField =
         paramData.display === 'random'
           ? randomizeSeeds
-            ? resolveRandomFieldValue(node, paramName, paramData, setParam, sharedRandomValues)
+            ? resolveRandomFieldValue(node, paramName, paramData, setParam, sharedRandomValues, shared?.key)
             : {
                 isRandom: false,
-                value:
-                  isRecord(paramData.value) && 'value' in paramData.value ? paramData.value.value : paramData.value,
+                value: isRecord(fieldValue) && 'value' in fieldValue ? fieldValue.value : fieldValue,
               }
           : null;
       // The executable graph contains values, not the full registry schema.

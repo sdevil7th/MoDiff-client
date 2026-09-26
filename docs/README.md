@@ -4,13 +4,16 @@ This directory contains durable user, operator, and contributor documentation fo
 
 ## Start Here
 
+[Developer-first node authoring](developer-first-node-ux.md) covers the unified
+editor, custom imports, matching sockets and supported image/audio attachments.
+
 | Guide                                           | Audience            | What it covers                                                                                |
 | ----------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
 | [Project README](../README.md)                  | Everyone            | Project scope, prerequisites, quick start, first workflow, validation, and support boundaries |
 | [Studio user guide](studio-user-flow.md)        | Users and testers   | Tasks, interface areas, Auto performance, models, Gallery, export, failures, and smoke tests  |
 | [Troubleshooting](troubleshooting.md)           | Users and operators | Preflight, ports, slow/stalled runs, model downloads, browser state, and runtime recovery     |
 | [Privacy and security](privacy-and-security.md) | Users and deployers | Stored data, network activity, exports, trust boundaries, cleanup, and safe issue reports     |
-| [Windows support](windows-support.md)           | Windows users       | PowerShell launchers, backend setup, CUDA notes, process cleanup, and platform smoke tests    |
+| [Windows support](windows-support.md)           | Windows users       | uv/npm developer setup, PowerShell launchers, CUDA notes, cleanup, and platform smoke tests   |
 | [Ubuntu Linux support](linux-support.md)        | Linux users         | Native prerequisites, backend setup, launcher behavior, and platform smoke tests              |
 | [Apple Silicon macOS support](macos-support.md) | macOS users         | Native prerequisites, MPS caveats, backend setup, and platform smoke tests                    |
 
@@ -28,6 +31,13 @@ This directory contains durable user, operator, and contributor documentation fo
 | [Template quality schema](template-quality-review.schema.json) | Gallery maintainers             | Machine-readable quality-review record used by the Gallery verification tooling             |
 
 ## Required Engineering Procedure
+
+The [workbench acceptance guide](workbench-acceptance.md) consolidates model
+coverage, native-stage exceptions, preservation, custom-node and integrated
+qualification requirements. Retired implementation plans remain in Git history;
+their removal does not close outstanding acceptance gates. Use
+[developer-first authoring](developer-first-node-ux.md) and
+[workflow authoring](workflow-authoring-ux.md) for current behavior.
 
 See the [frontend style guide](frontend-style-guide.md#field-components) for
 numeric-field containment and [library accessibility](frontend-style-guide.md#accessibility)
@@ -48,3 +58,6 @@ node/Block, hierarchy, execution, qualification or cross-machine integration wor
 - Link security-sensitive reports to [SECURITY.md](../SECURITY.md) and keep secrets out of public issues.
 
 If a guide and the application disagree, treat the implementation and automated checks as the immediate source of truth, then update the guide in the same change.
+
+- [Workflow authoring and model selection](workflow-authoring-ux.md)
+- [Serial image generation and modification campaigns](image-prototyping-campaign.md)

@@ -139,6 +139,7 @@ const NODE_KEYS = {
   qwenOutpaintCanvas: QWEN_OUTPAINT_CANVAS_NODE_KEY,
   outpaintCanvas: QWEN_OUTPAINT_CANVAS_NODE_KEY,
   qwenInpaint: QWEN_INPAINT_GENERATE_NODE_KEY,
+  promptEnhance: 'modules.ModularDiffusers.WorkflowErniePromptEnhance',
   prompt: 'modules.ModularDiffusers.EncodePrompt',
   beforeEncode: 'modules.ModularDiffusers.WorkflowMiniMaxH3BeforeEncode',
   textEncode: 'modules.ModularDiffusers.WorkflowIdeogram4TextEncode',
@@ -227,6 +228,7 @@ const NODE_POSITIONS: Record<StudioGraphRole, { x: number; y: number }> = {
   qwenOutpaintCanvas: { x: -520, y: 300 },
   outpaintCanvas: { x: -520, y: 300 },
   qwenInpaint: { x: -120, y: -80 },
+  promptEnhance: { x: -360, y: -160 },
   prompt: { x: -160, y: -160 },
   beforeEncode: { x: -360, y: 220 },
   textEncode: { x: 20, y: -160 },
@@ -773,6 +775,8 @@ const GRAPH_PROOF_PARAM_KEYS: Array<keyof NodeParams> = [
   'isInput',
   'spawn',
   'optionsSource',
+  'connectionRole',
+  'signalCompatibility',
   'min',
   'max',
   'step',
@@ -786,6 +790,8 @@ const REVIEWED_EXECUTION_PARAM_KEYS = [
   'isInput',
   'spawn',
   'optionsSource',
+  'connectionRole',
+  'signalCompatibility',
   'dataSource',
 ] as const satisfies readonly (keyof NodeParams)[];
 
@@ -3438,6 +3444,7 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
         } as Partial<Record<StudioMode, string>>
       )[spec.mode] ?? 'text2image',
     semanticGeneratorBlock: 'semantic_generator',
+    workflowPromptEnhancerBlock: 'prompt_enhancer',
     workflowTextEncoderBlock: 'text_encoder',
     workflowImageEncoderBlock: 'vae_encoder',
     workflowDenoiseBlock: 'denoise',

@@ -1500,8 +1500,9 @@ test('live current-V2 Qwen Block saves a connected structural customization as a
   await waitForWorkspaceStartup(page);
   const launcher = page.getByTestId('task-launcher');
   if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Close', exact: true }).click();
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) === 'true') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) === 'true')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await page.getByTestId('topbar-new-workflow').click();
   const advanced = page.getByRole('button', { name: /Advanced workflow/u });
@@ -2834,8 +2835,9 @@ test('live selected Wan Animate 2 exact snapshot installs through Model Manager'
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
 
   const transformersRuntimeId = 'huggingface-transformers-main-96fe6dce-peft-0.20.0';
@@ -2996,8 +2998,9 @@ test('live selected Wan Animate 2 Cluster persists a bounded configuration and g
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await page.evaluate(async () => {
     const [{ useNodesStore }, { useHuggingFaceNodeLibraryStore }] = await Promise.all([
@@ -3515,8 +3518,9 @@ test('live LTX2 Cluster shows upstream conditional alternatives and persists the
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 90_000 });
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
 
   const loaded = await page.evaluate(async () => {
     const [{ useNodesStore }, { useHuggingFaceNodeLibraryStore }, { useHuggingFaceModularConditionalStore }] =
@@ -3849,8 +3853,9 @@ test('newly unblocked Diffusers Cluster preserves parameters and executes the sa
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await page.evaluate(async () => {
     const [{ useNodesStore }, { useHuggingFaceNodeLibraryStore }, { useHuggingFaceModularConditionalStore }] =
@@ -4530,8 +4535,9 @@ test('live MiniMax Music 3 Cluster installs in the frontend, persists internal e
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await startCleanWorkflow(page);
 
@@ -6269,8 +6275,9 @@ test('live Qwen Image Cluster persists internal edits, customizes as User Nodes,
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await waitForWorkspaceStartup(page);
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await startCleanWorkflow(page);
   await page.evaluate(async () => {
@@ -6777,9 +6784,7 @@ test('live Qwen Image Cluster persists internal edits, customizes as User Nodes,
   }
 });
 
-test('live equivalent Diffusers Cluster prepares its sealed standard executor through the frontend', async ({
-  page,
-}) => {
+test('live ERNIE Cluster prepares its sealed native Modular executor through the frontend', async ({ page }) => {
   const runHeavyGeneration = process.env.MODIFF_RUN_HEAVY_DIFFUSERS === '1';
   test.setTimeout((runHeavyGeneration ? 35 : 5) * 60 * 1000);
   await page.addInitScript(() => {
@@ -6789,8 +6794,9 @@ test('live equivalent Diffusers Cluster prepares its sealed standard executor th
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 90_000 });
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await page.evaluate(async () => {
     const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
     await Promise.all([
@@ -6853,27 +6859,30 @@ test('live equivalent Diffusers Cluster prepares its sealed standard executor th
         params: Object.fromEntries(Object.entries(node.params).map(([key, field]) => [key, field.value])),
       }));
   });
-  expect(execution).toHaveLength(5);
+  expect(execution).toHaveLength(6);
   expect(execution.every((node) => node.disabled === false)).toBe(true);
-  const loader = execution.find((node) => node.role === 'diffusersImagePipeline');
+  const loader = execution.find((node) => node.role === 'models');
   expect(loader).toMatchObject({
-    module: 'modules.DiffusersImage',
-    action: 'LoadPipeline',
+    module: 'modules.ModularDiffusers',
+    action: 'ModelsLoader',
     params: {
-      model_id: { source: 'hub', value: 'baidu/ERNIE-Image-Turbo' },
-      pipeline_class: 'ErnieImagePipeline',
-      execution_profile_id: 'ernie-image:equivalent-standard',
-      mode: 'text_to_image',
+      model_type: 'ErnieImageModularPipeline',
+      repo_id: { source: 'hub', value: 'baidu/ERNIE-Image-Turbo' },
       revision: 'bc68c81e2a1730a394d5fc9fae70713dee940140',
+      workflow_id: 'text2image',
     },
   });
-  expect(execution.find((node) => node.role === 'diffusersImageGenerate')?.params.prompt).toBe(
+  expect(execution.find((node) => node.role === 'promptEnhance')).toMatchObject({
+    module: 'modules.ModularDiffusers',
+    action: 'WorkflowErniePromptEnhance',
+  });
+  expect(execution.find((node) => node.role === 'promptEnhance')?.params.prompt).toBe(
     'A tiny brass observatory under a clear night sky',
   );
   const outputDirectory = process.env.MODIFF_REVIEW_OUTPUT_DIR;
   if (outputDirectory) {
     await page.screenshot({
-      path: `${outputDirectory}/diffusers-ernie-equivalent-cluster-prepared.png`,
+      path: `${outputDirectory}/diffusers-ernie-native-cluster-prepared.png`,
       fullPage: true,
     });
   }
@@ -6936,7 +6945,7 @@ test('live equivalent Diffusers Cluster prepares its sealed standard executor th
   void output;
   if (outputDirectory) {
     await page.screenshot({
-      path: `${outputDirectory}/diffusers-ernie-equivalent-cluster-generated.png`,
+      path: `${outputDirectory}/diffusers-ernie-native-cluster-generated.png`,
       fullPage: true,
     });
   }
@@ -7416,8 +7425,9 @@ test('live Whisper speech Clusters transcribe and translate an official speech f
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 90_000 });
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await page.evaluate(async () => {
     const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
@@ -7793,8 +7803,9 @@ test('live Wav2Vec2 CTC Cluster installs through the frontend, survives refresh,
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 90_000 });
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await page.evaluate(async () => {
     const [{ useNodesStore }, { useSettingsStore }] = await Promise.all([
@@ -8321,8 +8332,9 @@ test('live Model Manager explicitly evicts completed-proof and deferred local mo
     })
     .toBe(true);
 
-  const autoToggle = page.getByTestId('topbar-auto-switch');
-  if ((await autoToggle.getAttribute('aria-checked')) !== 'false') await autoToggle.click();
+  const autoToggle = page.getByRole('radio', { name: 'Creator', exact: true });
+  if ((await autoToggle.getAttribute('aria-checked')) !== 'false')
+    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   await expect(autoToggle).toHaveAttribute('aria-checked', 'false');
   await page.getByTestId('topbar-models').click();
   const dialog = page.getByTestId('model-manager-dialog');

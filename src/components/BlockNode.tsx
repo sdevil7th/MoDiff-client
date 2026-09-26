@@ -4,6 +4,8 @@ import type { NodeProps } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { BlockNodeV2 } from './BlockNodeV2';
 import NodeContent from './NodeContent';
+import EncodingNode from './EncodingNodeRenderer';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
 const LegacyUserBlockNode = lazy(() => import('./LegacyUserBlockNode'));
 
@@ -32,9 +34,10 @@ const PendingBlockInsertionNode = memo((node: NodeProps<CustomNodeType>) => {
 
 PendingBlockInsertionNode.displayName = 'PendingBlockInsertionNode';
 
-/** One canvas type; source identity never selects a different V2 renderer. */
+/** Generic composites use the Block renderer; encoding has a dedicated node surface. */
 const BlockNode = memo((node: NodeProps<CustomNodeType>) => {
   if (node.data.blockInsertionPendingV2) return <PendingBlockInsertionNode {...node} />;
+  if (isFocusedStageNode(node.data.blockInstanceV2)) return <EncodingNode {...node} />;
   if (node.data.blockInstanceV2) return <BlockNodeV2 {...node} />;
   return (
     <Suspense
@@ -44,7 +47,7 @@ const BlockNode = memo((node: NodeProps<CustomNodeType>) => {
           className="flex h-full flex-col rounded-modiff-panel border border-modiff-border bg-modiff-surface text-sm text-modiff-subtle-text"
         >
           <div role="status" className="min-h-24 flex-1 p-3">
-            Loading saved User Node…
+            Loading saved Block…
           </div>
           {!node.data.uiState?.blockExpanded ? (
             <NodeContent

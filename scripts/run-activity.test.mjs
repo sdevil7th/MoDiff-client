@@ -269,8 +269,45 @@ test('the browser crash checkpoint remains bounded and always retains the active
   const checkpoint = studioStoreModule.workflowTabsForLocalCheckpoint(tabs, 'workflow-2');
 
   assert.equal(checkpoint.length, 12);
-  assert.equal(checkpoint[0].id, 'workflow-2');
+  assert.ok(checkpoint.some((tab) => tab.id === 'workflow-2'));
+  assert.deepEqual(
+    checkpoint,
+    tabs.filter((tab) => checkpoint.includes(tab)),
+  );
   assert.equal(new Set(checkpoint.map((tab) => tab.id)).size, checkpoint.length);
+  const duplicateIds = tabs.map((tab) => ({ ...tab, id: 'duplicate' }));
+  assert.equal(studioStoreModule.workflowTabsForLocalCheckpoint(duplicateIds, null).length, 12);
+  assert.equal(studioStoreModule.workflowTabsForLocalCheckpoint(Array(40).fill(tabs[0]), null).length, 12);
+});
+
+test('reordering tabs changes only their order and persists that order', () => {
+  const store = studioStoreModule.useStudioStore;
+  store.getState().ensureWorkflowTabs();
+  store.getState().createWorkflowTab('Reorder A');
+  store.getState().createWorkflowTab('Reorder B');
+  const before = store.getState();
+  const flow = flowStoreModule.useFlowStore.getState();
+  const source = before.workflowTabs.at(-1);
+  const target = before.workflowTabs[0];
+  before.moveWorkflowTab(source.id, target.id, 'before');
+  const after = store.getState();
+  assert.deepEqual(after.workflowTabs, [source, ...before.workflowTabs.slice(0, -1)]);
+  for (const key of Object.keys(before)) {
+    if (key !== 'workflowTabs') assert.equal(after[key], before[key], key);
+  }
+  assert.equal(flowStoreModule.useFlowStore.getState(), flow);
+  assert.deepEqual(
+    JSON.parse(localStorage.getItem('modiff.studio')).state.workflowTabs.map((tab) => tab.id),
+    after.workflowTabs.map((tab) => tab.id),
+  );
+  after.moveWorkflowTab(source.id, target.id, 'after');
+  assert.equal(store.getState().workflowTabs[1], source);
+  const unchanged = store.getState();
+  unchanged.moveWorkflowTab(source.id, target.id, 'after');
+  unchanged.moveWorkflowTab('missing', target.id, 'before');
+  unchanged.moveWorkflowTab(source.id, 'removed', 'before');
+  unchanged.moveWorkflowTab(source.id, source.id, 'before');
+  assert.equal(store.getState(), unchanged);
 });
 
 test('an open originating workflow is selected and its run node is requested for focus', async () => {

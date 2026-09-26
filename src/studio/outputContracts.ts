@@ -412,6 +412,7 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
     stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType);
   const profile = STUDIO_MODEL_PROFILES[modelType];
   const formSnapshot = registeredBlockRun?.form ?? coerceStudioFormState(value.formSnapshot);
+  const settings = registeredBlockRun ? formSnapshot : value;
 
   return applyResolvedExecutionInputs(
     {
@@ -433,20 +434,14 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
       runId: optionalString(value.runId),
       taskId: optionalNullableString(value.taskId),
       sid: optionalNullableString(value.sid),
-      prompt: registeredBlockRun ? formSnapshot.prompt : stringValue(value.prompt, formSnapshot.prompt),
-      negativePrompt: registeredBlockRun
-        ? formSnapshot.negativePrompt
-        : stringValue(value.negativePrompt, formSnapshot.negativePrompt),
-      seed: registeredBlockRun ? formSnapshot.seed : numberValue(value.seed, formSnapshot.seed),
-      width: registeredBlockRun ? formSnapshot.width : numberValue(value.width, formSnapshot.width),
-      height: registeredBlockRun ? formSnapshot.height : numberValue(value.height, formSnapshot.height),
-      steps: registeredBlockRun ? formSnapshot.steps : numberValue(value.steps, formSnapshot.steps),
-      guidanceScale: registeredBlockRun
-        ? formSnapshot.guidanceScale
-        : numberValue(value.guidanceScale, formSnapshot.guidanceScale),
-      referenceImages: registeredBlockRun
-        ? formSnapshot.referenceImages
-        : stringArrayValue(value.referenceImages, formSnapshot.referenceImages),
+      prompt: stringValue(settings.prompt, formSnapshot.prompt),
+      negativePrompt: stringValue(settings.negativePrompt, formSnapshot.negativePrompt),
+      seed: numberValue(settings.seed, formSnapshot.seed),
+      width: numberValue(settings.width, formSnapshot.width),
+      height: numberValue(settings.height, formSnapshot.height),
+      steps: numberValue(settings.steps, formSnapshot.steps),
+      guidanceScale: numberValue(settings.guidanceScale, formSnapshot.guidanceScale),
+      referenceImages: stringArrayValue(settings.referenceImages, formSnapshot.referenceImages),
       sourceOutputId: optionalString(value.sourceOutputId),
       formSnapshot,
       graphSnapshot: coerceStudioGraphSnapshot(value.graphSnapshot),

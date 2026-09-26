@@ -1,3 +1,10 @@
+import { bindEncodingInputCapabilities, bindEncodingRouteResolver } from '../workflow/encodingOptionalInput';
+import {
+  parseExtensionInfo,
+  type ExtensionInfo,
+  type ExtensionSource,
+  type ExtensionImport,
+} from '../studio/customExtensions';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { create } from 'zustand';
@@ -15,6 +22,10 @@ import {
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
+import type { OperationAuthoring } from '../workflow/operationAuthoring';
+import type { OperationContract } from '../workflow/operationContracts';
+import type { PipelineSupport } from '../workflow/operationCatalog';
+import type { WorkflowModelDescriptor } from '../workflow/workflowChoices';
 import {
   buildTaskTemplateSkeleton,
   parseTaskTemplateContracts,
@@ -86,7 +97,11 @@ export type NodeData = {
     errorMessage?: string;
     recentChangeLabel?: string;
     recentChangeAt?: number;
+    /** Transient backend encoding diagnostics, never authored graph values. */
+    encodingSummaries?: Record<string, { graphHash: string; value: string }>;
   };
+  /** Authoring hints only; runtime still consumes params and ordinary edges. */
+  operationAuthoring?: OperationAuthoring;
   studioRole?: string;
   studioOwned?: boolean;
   studioAuxiliary?: boolean;
@@ -186,6 +201,13 @@ export type NodeParams = {
   step?: number;
   onChange?: unknown;
   onSignal?: unknown;
+  connectionRole?: string;
+  signalCompatibility?: {
+    required?: boolean;
+    values?: Record<string, unknown>;
+    action?: string;
+    role?: string | string[];
+  };
   signal?: NodeParamSignal;
   dataSource?: string;
   fieldOptions?: Record<string, unknown>;
@@ -292,27 +314,10 @@ export type HfInstallResult = {
   repo_id?: string;
 };
 
-export type CustomModuleInfo = {
-  name: string;
-  moduleKey: string;
-  source: 'custom';
-  enabled: boolean;
-  status: 'enabled' | 'disabled';
-  path: string;
-  hasInit: boolean;
-  hasMain: boolean;
-  nodeCount: number;
-  nodes: string[];
-  hasGit: boolean;
-  canUpdate: boolean;
-  canDisable: boolean;
-  canEnable: boolean;
-  remote?: string;
-  branch?: string;
-  commit?: string;
-};
+export type CustomModuleInfo = ExtensionInfo;
 
 export type CustomModuleActionResult = {
+  root?: string;
   error?: boolean | string;
   message?: string;
   module?: CustomModuleInfo | null;
@@ -426,6 +431,10 @@ type NodesStore = {
   localModels: unknown[];
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
   studioModelCapabilities: StudioModelProfile[];
+  operationContracts: OperationContract[];
+  pipelineSupport: PipelineSupport[];
+  workflowModelDescriptors: WorkflowModelDescriptor[];
+  resolveOperation: (operation: OperationContract, signal?: AbortSignal) => Promise<NodeData>;
   studioModelCapabilitiesAuthoritative: boolean;
   studioExecutionSpecInvalid: boolean;
   studioTaskTemplateContracts: StudioTaskTemplateContract[];
@@ -436,6 +445,7 @@ type NodesStore = {
   optionalRuntimeCatalog: OptionalRuntimeCatalog | null;
   hfDownloadProgress: Record<string, HfDownloadProgress>;
   customModules: CustomModuleInfo[];
+  customModuleRoot: string | null;
   customModuleError: string | null;
   discoveryRequests: Record<DiscoveryRequestKey, DiscoveryRequestState>;
   setHfDownloadProgress: (progress: HfDownloadProgress) => void;
@@ -450,9 +460,10 @@ type NodesStore = {
   ) => Promise<HfInstallResult>;
   fetchCustomModules: () => Promise<void>;
   refreshCustomModules: () => Promise<CustomModuleActionResult>;
-  installCustomModule: (source: string, name?: string) => Promise<CustomModuleActionResult>;
+  installCustomModule: (source: ExtensionSource) => Promise<CustomModuleActionResult>;
+  addCustomModule: (source: ExtensionImport) => Promise<CustomModuleActionResult>;
   updateCustomModule: (name: string) => Promise<CustomModuleActionResult>;
-  setCustomModuleEnabled: (name: string, enabled: boolean) => Promise<CustomModuleActionResult>;
+  setCustomModuleEnabled: (name: string, enabled: boolean, codeHash?: string) => Promise<CustomModuleActionResult>;
   fetchRuntimeStatus: () => Promise<void>;
   fetchOptionalRuntimes: () => Promise<void>;
   setRuntimeResources: (snapshot: RuntimeResourceSnapshot | null) => void;
@@ -599,11 +610,11 @@ function notifyHfDownloadTransition(previous: HfDownloadProgress | undefined, ne
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function payloadRecord(value: unknown, fallbackMessage: string) {
+export function payloadRecord(value: unknown, fallbackMessage: string) {
   if (!isRecord(value)) throw new Error(fallbackMessage);
   if (value.error) {
     throw new Error(
@@ -617,7 +628,7 @@ function payloadRecord(value: unknown, fallbackMessage: string) {
   return value;
 }
 
-function parseNodesResponse(value: unknown) {
+export function parseNodesResponse(value: unknown) {
   const payload = payloadRecord(value, 'The node registry response is invalid.');
   if (!isRecord(payload.nodes)) throw new Error('The node registry response has no nodes object.');
   Object.entries(payload.nodes).forEach(([key, definition]) => {
@@ -1018,25 +1029,20 @@ function parseHfDownloadStatus(value: unknown) {
   });
 }
 
-function parseCustomModuleInfo(value: unknown, index: number) {
-  if (!isRecord(value) || typeof value.name !== 'string' || typeof value.moduleKey !== 'string') {
-    throw new Error(`Custom module entry ${index + 1} is invalid.`);
-  }
-  return value as CustomModuleInfo;
-}
-
 function parseCustomModules(value: unknown, fallbackMessage: string) {
   const payload = payloadRecord(value, fallbackMessage);
   if (!Array.isArray(payload.modules)) throw new Error('The custom-module response has no modules array.');
   return {
     ...payload,
-    modules: payload.modules.map(parseCustomModuleInfo),
+    modules: payload.modules.map(parseExtensionInfo),
+    ...(payload.module !== undefined && payload.module !== null ? { module: parseExtensionInfo(payload.module) } : {}),
   } as CustomModuleActionResult & { modules: CustomModuleInfo[] };
 }
 
 function applyCustomModuleResult(set: NodesStoreSet, get: NodesStoreGet, data: CustomModuleActionResult) {
   set({
     customModules: data.modules ?? [],
+    customModuleRoot: typeof data.root === 'string' ? data.root : get().customModuleRoot,
     customModuleError: null,
     instance: typeof data.instance === 'string' ? data.instance : get().instance,
   });
@@ -1049,6 +1055,8 @@ async function runCustomModuleAction(
   init: Omit<RequestInit, 'signal'>,
   fallbackMessage: string,
 ): Promise<CustomModuleActionResult> {
+  const pendingRead = discoveryRequestGate.begin('customModules');
+  pendingRead.finish();
   try {
     const data = await requestJson<CustomModuleActionResult & { modules: CustomModuleInfo[] }>(url, {
       ...init,
@@ -1056,9 +1064,10 @@ async function runCustomModuleAction(
       parse: (value) => parseCustomModules(value, fallbackMessage),
     });
     applyCustomModuleResult(set, get, data);
-    await get().fetchNodes();
+    await Promise.all([get().fetchNodes(), get().fetchCustomModules()]);
     return data;
   } catch (error) {
+    await Promise.all([get().fetchNodes(), get().fetchCustomModules()]);
     set({ customModuleError: formatRequestError(error, fallbackMessage) });
     throw error;
   }
@@ -1073,6 +1082,9 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   localModels: [],
   modelCacheDiagnostics: null,
   studioModelCapabilities: [],
+  operationContracts: [],
+  pipelineSupport: [],
+  workflowModelDescriptors: [],
   studioModelCapabilitiesAuthoritative: false,
   studioExecutionSpecInvalid: false,
   studioTaskTemplateContracts: [],
@@ -1083,6 +1095,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
   optionalRuntimeCatalog: null,
   hfDownloadProgress: {},
   customModules: [],
+  customModuleRoot: null,
   customModuleError: null,
   discoveryRequests: initialDiscoveryRequests(),
   setRuntimeResources: (runtimeResources) => set({ runtimeResources }),
@@ -1265,7 +1278,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           timeoutMs: 120_000,
           parse: (value) => parseCustomModules(value, 'Could not read custom modules.'),
         }),
-      (data) => ({ customModules: data.modules, customModuleError: null }),
+      (data) => ({
+        customModules: data.modules,
+        customModuleRoot: typeof data.root === 'string' ? data.root : get().customModuleRoot,
+        customModuleError: null,
+      }),
       (message) => ({ customModuleError: message }),
       'Could not read custom modules.',
     );
@@ -1279,7 +1296,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       'Could not refresh custom modules.',
     );
   },
-  installCustomModule: async (source, name) => {
+  installCustomModule: async (source) => {
     return runCustomModuleAction(
       set,
       get,
@@ -1287,7 +1304,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, name }),
+        body: JSON.stringify(source),
       },
       'Could not install custom module.',
     );
@@ -1301,13 +1318,29 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       `Could not update ${name}.`,
     );
   },
-  setCustomModuleEnabled: async (name, enabled) => {
+  addCustomModule: async (source) =>
+    runCustomModuleAction(
+      set,
+      get,
+      `${config.serverAddress}/custom_modules/add`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...source, consent: true }),
+      },
+      'Node import failed.',
+    ),
+  setCustomModuleEnabled: async (name, enabled, codeHash) => {
     const action = enabled ? 'enable' : 'disable';
     return runCustomModuleAction(
       set,
       get,
       `${config.serverAddress}/custom_modules/${encodeURIComponent(name)}/${action}`,
-      { method: 'POST' },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(enabled ? { codeHash, consent: true } : {}),
+      },
       `Could not ${action} ${name}.`,
     );
   },
@@ -1432,6 +1465,11 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     );
   },
 
+  resolveOperation: async (operation, signal) => {
+    const { resolveOperation } = await import('../workflow/operationResolution');
+    return resolveOperation(operation, signal);
+  },
+
   fetchStudioModelCapabilities: async () => {
     if (inFlightStudioCapabilitiesDiscovery) {
       await inFlightStudioCapabilitiesDiscovery;
@@ -1440,22 +1478,70 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     const request = runDiscoveryRequest(
       'capabilities',
       set,
-      (signal) =>
-        requestJson(`${config.serverAddress}/model_capabilities`, {
+      async (signal) => {
+        const [
+          { parseOperationContracts },
+          { parsePipelineSupport },
+          { parseWorkflowModelDescriptors },
+          { optionalEncodingRoute },
+        ] = await Promise.all([
+          import('../workflow/operationContracts'),
+          import('../workflow/operationCatalog'),
+          import('../workflow/workflowChoices'),
+          import('../workflow/encodingImageRoute'),
+        ]);
+        bindEncodingRouteResolver(optionalEncodingRoute);
+        return requestJson(`${config.serverAddress}/model_capabilities`, {
           method: 'GET',
           signal,
           timeoutMs: 120_000,
-          parse: parseStudioModelCapabilities,
-        }),
-      ({ authoritative, capabilities, taskTemplateContracts }) => ({
+          parse: (value) => {
+            const capabilities = parseStudioModelCapabilities(value);
+            const payload = payloadRecord(value, 'Invalid model-capabilities response.');
+            const operationContracts = parseOperationContracts(
+              payload.operationContracts,
+              payload.operationContractSchemaVersion,
+            );
+            const pipelineSupport = parsePipelineSupport(
+              payload.pipelineSupport,
+              payload.pipelineSupportSchemaVersion,
+              operationContracts,
+            );
+            return {
+              ...capabilities,
+              operationContracts,
+              pipelineSupport,
+              workflowModelDescriptors: parseWorkflowModelDescriptors(
+                payload,
+                pipelineSupport,
+                capabilities.capabilities,
+              ),
+            };
+          },
+        });
+      },
+      ({
+        authoritative,
+        capabilities,
+        taskTemplateContracts,
+        operationContracts,
+        pipelineSupport,
+        workflowModelDescriptors,
+      }) => ({
+        operationContracts,
+        pipelineSupport,
+        workflowModelDescriptors,
         studioModelCapabilities: capabilities,
         studioModelCapabilitiesAuthoritative: authoritative,
         studioExecutionSpecInvalid: false,
         studioTaskTemplateContracts: taskTemplateContracts,
         studioTaskTemplateSkeletons: taskTemplateContracts.map(buildTaskTemplateSkeleton),
       }),
-      (message) =>
-        message.includes('Studio execution specification')
+      (message) => ({
+        operationContracts: [],
+        pipelineSupport: [],
+        workflowModelDescriptors: [],
+        ...(message.includes('Studio execution specification')
           ? {
               studioModelCapabilities: [],
               studioModelCapabilitiesAuthoritative: false,
@@ -1463,7 +1549,8 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
               studioTaskTemplateContracts: [],
               studioTaskTemplateSkeletons: [],
             }
-          : {},
+          : {}),
+      }),
       'Could not read model capabilities.',
     );
     inFlightStudioCapabilitiesDiscovery = request;
@@ -1490,3 +1577,5 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     await Promise.all([get().refreshModelIndexes(false, { invalidateAutoPlans: false }), get().fetchCustomModules()]);
   },
 }));
+
+bindEncodingInputCapabilities(() => useNodesStore.getState());

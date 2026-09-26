@@ -3,6 +3,7 @@ import type { NodeParams } from '../stores/useNodeStore';
 import { blockConnectorParamsV2 } from './blockRuntimeV2';
 import { normalizeBlockValueTypeV2 } from './blockValueTypeCompatibilityV2';
 import { blockCrossingParamV2, parseBlockCrossingHandleV2 } from './blockCrossingConnectionsV2';
+import { currentOptionalEncodingPorts } from '../workflow/encodingOptionalInput';
 
 // BlockInstanceV2 is an immutable, copy-on-write document. Registered route
 // sets can contain several complete inactive definition drafts, so validating
@@ -41,11 +42,16 @@ export function nodeConnectorParams(node: Pick<CustomNodeType, 'data'>): Record<
     return params;
   }
   const cached = blockConnectorParamsByInstance.get(node.data.blockInstanceV2);
-  if (cached) return cached;
-  const { inputs, outputs } = blockConnectorParamsV2(node.data.blockInstanceV2);
-  const params = { ...inputs, ...outputs };
-  blockConnectorParamsByInstance.set(node.data.blockInstanceV2, params);
-  return params;
+  const params =
+    cached ??
+    (() => {
+      const { inputs, outputs } = blockConnectorParamsV2(node.data.blockInstanceV2);
+      const result = { ...inputs, ...outputs };
+      blockConnectorParamsByInstance.set(node.data.blockInstanceV2, result);
+      return result;
+    })();
+  const optional = currentOptionalEncodingPorts(node.data.blockInstanceV2);
+  return Object.keys(optional).length ? { ...params, ...optional } : params;
 }
 
 export function nodeConnectorParam(

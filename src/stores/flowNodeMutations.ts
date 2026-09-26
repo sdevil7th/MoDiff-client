@@ -16,6 +16,9 @@ import {
 } from '../studio/blockRuntimeV2';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
+import { collapsedUserBlockFieldTarget } from '../studio/userBlocks';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import { workflowTaskCategory } from '../workflow/workflowTaskBrowser';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -52,11 +55,13 @@ export function clearFlowWorkflow(set: FlowStoreSet, get: FlowStoreGet) {
 }
 
 export function readNodeParam<K extends keyof NodeParams>(id: string, param: string, key: K, get: FlowStoreGet) {
-  const node = get().nodes.find((item) => item.id === id);
+  const nodes = get().nodes;
+  const target = nodes.some((item) => item.id === id) ? null : collapsedUserBlockFieldTarget(nodes, id, param);
+  const node = nodes.find((item) => item.id === (target?.nodeId ?? id));
   if (!node) {
     return null;
   }
-  return (nodeConnectorParam(node, param)?.[key] ?? null) as NodeParams[K] | null;
+  return (nodeConnectorParam(node, target?.fieldKey ?? param)?.[key] ?? null) as NodeParams[K] | null;
 }
 
 export function writeNodeParam<K extends keyof NodeParams = 'value'>(
@@ -65,10 +70,74 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
   value: NodeParams[K],
   key: K | undefined,
   set: FlowStoreSet,
+  authored = false,
 ) {
   const paramKey = (key ?? 'value') as keyof NodeParams;
   set((state) => {
-    const node = state.nodes.find((item) => item.id === id);
+    // Collapsed encoding stages have no canvas leaf to receive hidden runtime
+    // diagnostics. Keep this bounded UI-only receipt on their existing owner;
+    // never rewrite the effective graph, reusable definition or public values.
+    if (paramKey === 'value' && param === 'encode_summary' && typeof value === 'string' && value.length <= 16384) {
+      const owners = state.nodes.filter((candidate) => {
+        const instance = candidate.data.blockInstanceV2;
+        return (
+          instance?.definitionSnapshot.source.provider === 'modiff.visual-stages.v1/inputs' &&
+          instance.effectiveGraph.nodes.some((stage) => {
+            const data = stage.data as unknown as NodeData;
+            const task = data.operationAuthoring?.operation.task;
+            return (
+              blockProjectionNodeIdV2(instance.instanceId, stage.nodeId) === id &&
+              data.action === 'ImageEncode' &&
+              data.module === 'modules.ModularDiffusers' &&
+              task &&
+              workflowTaskCategory(task) === 'Image'
+            );
+          })
+        );
+      });
+      if (owners.length === 1) {
+        const owner = owners[0]!;
+        const receipt = { graphHash: owner.data.blockInstanceV2!.effectiveGraph.graphHash, value };
+        if (deepEqual(owner.data.uiState?.encodingSummaries?.[id], receipt)) return state;
+        return {
+          nodes: state.nodes.map((node) =>
+            node.id === owner.id
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    uiState: {
+                      ...node.data.uiState,
+                      encodingSummaries: {
+                        ...Object.fromEntries(
+                          Object.entries(node.data.uiState?.encodingSummaries ?? {}).filter(
+                            ([, prior]) => prior.graphHash === receipt.graphHash,
+                          ),
+                        ),
+                        [id]: receipt,
+                      },
+                    },
+                  },
+                }
+              : node.id === id
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      params: { ...node.data.params, [param]: { ...node.data.params[param], value } },
+                    },
+                  }
+                : node,
+          ),
+        };
+      }
+    }
+    const target = state.nodes.some((item) => item.id === id)
+      ? null
+      : collapsedUserBlockFieldTarget(state.nodes, id, param);
+    const targetId = target?.nodeId ?? id;
+    const targetParam = target?.fieldKey ?? param;
+    const node = state.nodes.find((item) => item.id === targetId);
     if (!node) {
       return state;
     }
@@ -77,22 +146,27 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
     if (node.data.blockInstanceV2) {
       return state;
     }
-    const currentValue = node.data.params[param]?.[paramKey];
-    if (deepEqual(currentValue, value)) {
+    const currentValue = node.data.params[targetParam]?.[paramKey];
+    const hint = authored && paramKey === 'value' ? operationAuthoring(node) : null;
+    const markAuthored = hint && !hint.authored?.includes(targetParam);
+    if (deepEqual(currentValue, value) && !markAuthored) {
       return state;
     }
 
     return {
       nodes: state.nodes.map((item) =>
-        item.id === id
+        item.id === targetId
           ? {
               ...item,
               data: {
                 ...item.data,
+                ...(markAuthored
+                  ? { operationAuthoring: { ...hint, authored: [...(hint.authored ?? []), targetParam] } }
+                  : {}),
                 params: {
                   ...item.data.params,
-                  [param]: {
-                    ...item.data.params[param],
+                  [targetParam]: {
+                    ...item.data.params[targetParam],
                     [paramKey]: value,
                   },
                 },
@@ -732,7 +806,8 @@ export function resetFlowExecutionProgress(set: FlowStoreSet, taskId?: string | 
         node.data.progressMessage ||
         node.data.executionProgress ||
         node.data.activeTaskId ||
-        node.data.attemptIndex !== undefined)
+        node.data.attemptIndex !== undefined ||
+        (!taskId && node.data.uiState?.encodingSummaries))
         ? {
             ...node,
             data: {
@@ -744,6 +819,10 @@ export function resetFlowExecutionProgress(set: FlowStoreSet, taskId?: string | 
               executionPhase: undefined,
               progressMessage: undefined,
               executionProgress: undefined,
+              uiState:
+                !taskId && node.data.uiState
+                  ? { ...node.data.uiState, encodingSummaries: undefined }
+                  : node.data.uiState,
             },
           }
         : node,

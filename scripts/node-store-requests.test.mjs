@@ -7,6 +7,9 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let nodesStoreModule;
+let extensionsModule;
+let sourceResolutionModule;
+let operationContractsModule;
 let optionalRuntimesModule;
 let requestModule;
 let runReadinessModule;
@@ -45,9 +48,12 @@ before(async () => {
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
+  extensionsModule = await server.ssrLoadModule('/src/studio/customExtensions.ts');
+  sourceResolutionModule = await server.ssrLoadModule('/src/studio/extensionSourceResolution.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  operationContractsModule = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   optionalRuntimesModule = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
   runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
   stableHashModule = await server.ssrLoadModule('/src/studio/stableHash.ts');
@@ -64,6 +70,8 @@ beforeEach(() => {
     localModels: [],
     modelCacheDiagnostics: null,
     studioModelCapabilities: [],
+    operationContracts: [],
+    pipelineSupport: [],
     studioModelCapabilitiesAuthoritative: false,
     runtimeStatus: null,
     runtimeError: null,
@@ -107,6 +115,10 @@ function customModule(name, enabled = true) {
     enabled,
     status: enabled ? 'enabled' : 'disabled',
     path: `C:/custom/${name}`,
+    codeHash: 'sha256:' + 'a'.repeat(64),
+    dependencies: [],
+    files: [],
+    preview: null,
     hasInit: true,
     hasMain: false,
     nodeCount: 0,
@@ -1285,13 +1297,16 @@ test('a malformed capability refresh preserves the last authoritative runtime co
 
 test('concurrent model-capability callers join one authoritative discovery request', async () => {
   const calls = [];
+  const requested = deferred();
   globalThis.fetch = () => {
     const call = deferred();
     calls.push(call);
+    requested.resolve();
     return call.promise;
   };
   const first = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
   const second = nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  await requested.promise;
   assert.equal(calls.length, 1);
   calls[0].resolve(
     jsonResponse({
@@ -1302,6 +1317,7 @@ test('concurrent model-capability callers join one authoritative discovery reque
     }),
   );
   await Promise.all([first, second]);
+  assert.equal(calls.length, 1);
   const state = nodesStoreModule.useNodesStore.getState();
   assert.equal(state.discoveryRequests.capabilities.status, 'success');
   assert.equal(state.studioModelCapabilitiesAuthoritative, true);
@@ -2079,7 +2095,7 @@ test('custom-module discovery validates entries and recovers without sticky glob
   await nodesStoreModule.useNodesStore.getState().fetchCustomModules();
   let state = nodesStoreModule.useNodesStore.getState();
   assert.equal(state.discoveryRequests.customModules.status, 'error');
-  assert.match(state.customModuleError, /entry 1 is invalid/);
+  assert.match(state.customModuleError, /invalid custom extension record/);
   assert.equal(state.error, null);
 
   globalThis.fetch = async () => jsonResponse({ modules: [customModule('recovered')] });
@@ -2096,7 +2112,12 @@ test('custom-module mutations use normalized errors and never erase the last val
   globalThis.fetch = async () => jsonResponse({ error: true, message: 'Source is not trusted.' }, 403);
 
   await assert.rejects(
-    nodesStoreModule.useNodesStore.getState().installCustomModule('https://example.invalid/module.git'),
+    nodesStoreModule.useNodesStore.getState().installCustomModule({
+      kind: 'git',
+      source: 'https://example.invalid/module.git',
+      name: 'Example',
+      revision: 'a'.repeat(40),
+    }),
     (error) => error.kind === 'http' && error.status === 403 && error.message === 'Source is not trusted.',
   );
 
@@ -2113,18 +2134,24 @@ test('successful custom-module mutations validate the payload and refresh the no
     if (String(url).endsWith('/custom_modules/install')) {
       return jsonResponse({ error: false, modules: [installed], instance: 'modules-v2' });
     }
+    if (String(url).endsWith('/custom_modules')) return jsonResponse({ modules: [installed] });
     return jsonResponse({ nodes: {}, instance: 'nodes-v2' });
   };
 
-  await nodesStoreModule.useNodesStore
-    .getState()
-    .installCustomModule('https://example.invalid/installed.git', 'installed');
+  await nodesStoreModule.useNodesStore.getState().installCustomModule({
+    kind: 'git',
+    source: 'https://example.invalid/installed.git',
+    name: 'installed',
+    revision: 'a'.repeat(40),
+  });
 
   const state = nodesStoreModule.useNodesStore.getState();
   assert.equal(calls[0].init.method, 'POST');
   assert.deepEqual(JSON.parse(calls[0].init.body), {
+    kind: 'git',
     source: 'https://example.invalid/installed.git',
     name: 'installed',
+    revision: 'a'.repeat(40),
   });
   assert.match(calls[1].url, /\/nodes$/);
   assert.equal(state.customModules[0].name, 'installed');
@@ -2263,4 +2290,388 @@ test('download reconciliation clears stale active installs and refreshes model i
   assert.equal(progress['public/completed-model'], undefined);
   assert.equal(progress['public/retained-error'].status, 'error');
   assert.equal(refreshCount, 1);
+});
+
+function parseOperationPayload(payload) {
+  return {
+    ...nodesStoreModule.parseStudioModelCapabilities(payload),
+    operationContracts: operationContractsModule.parseOperationContracts(
+      payload.operationContracts,
+      payload.operationContractSchemaVersion,
+    ),
+  };
+}
+
+function operationCapabilityPayload() {
+  return {
+    schemaVersion: 2,
+    capabilities: [],
+    operationContractSchemaVersion: 2,
+    operationContracts: [
+      {
+        pipelineClass: 'FutureModularPipeline',
+        task: null,
+        operationId: 'diffusion.denoise',
+        nodeKey: 'modules.ModularDiffusers.Denoise',
+        nodeType: 'denoise',
+        blockName: 'denoise',
+        decomposition: 'block',
+        support: 'declared',
+        ports: [
+          {
+            name: 'embeddings',
+            semanticName: 'embeddings',
+            direction: 'input',
+            roles: ['value'],
+            types: ['embeddings'],
+            required: true,
+            hidden: false,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+test('operation discovery accepts new backend pipelines without a client model-family branch', () => {
+  const payload = operationCapabilityPayload();
+  const parsed = parseOperationPayload(payload);
+  assert.deepEqual(parsed.operationContracts, payload.operationContracts);
+  assert.deepEqual(parsed.capabilities, []);
+  assert.deepEqual(parseOperationPayload({ capabilities: [] }).operationContracts, []);
+});
+
+test('operation discovery rejects malformed, ambiguous and unsupported declarations', () => {
+  const mutations = [
+    (p) => {
+      p.operationContractSchemaVersion = 3;
+    },
+    (p) => {
+      delete p.operationContractSchemaVersion;
+    },
+    (p) => {
+      p.operationContracts = null;
+    },
+    (p) => {
+      p.operationContracts.push(structuredClone(p.operationContracts[0]));
+    },
+    (p) => {
+      p.operationContracts[0].support = 'runnable';
+    },
+    (p) => {
+      p.operationContracts[0].pipelineClass = '__proto__';
+    },
+    (p) => {
+      p.operationContracts[0].pipelineClass = 'Pipeline\n';
+    },
+    (p) => {
+      p.operationContracts[0].nodeKey = 'https://example.com/node';
+    },
+    (p) => {
+      p.operationContracts[0].blockName = null;
+    },
+    (p) => {
+      p.operationContracts[0].unknown = true;
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].types = [];
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].types = ['embeddings', 'embeddings'];
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].direction = 'output';
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].required = 'true';
+    },
+    (p) => {
+      p.operationContracts[0].ports.push(structuredClone(p.operationContracts[0].ports[0]));
+    },
+  ];
+  for (const mutate of mutations) {
+    const payload = operationCapabilityPayload();
+    mutate(payload);
+    assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+  }
+});
+
+test('capability refresh replaces operation declarations and clears them on invalid responses', async () => {
+  const payload = operationCapabilityPayload();
+  globalThis.fetch = async () => new Response(JSON.stringify(payload), { status: 200 });
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().operationContracts, payload.operationContracts);
+  payload.operationContracts[0].support = 'runnable';
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().operationContracts, []);
+  assert.equal(nodesStoreModule.useNodesStore.getState().discoveryRequests.capabilities.status, 'error');
+});
+
+test('operation ports preserve combined bundle roles and independent input/output names', () => {
+  const payload = operationCapabilityPayload();
+  const contract = payload.operationContracts[0];
+  contract.ports[0].roles = ['value', 'component'];
+  contract.ports.push({
+    ...structuredClone(contract.ports[0]),
+    direction: 'output',
+    roles: ['value'],
+    required: false,
+  });
+  const parsed = parseOperationPayload(payload).operationContracts[0];
+  assert.deepEqual(parsed.ports, contract.ports);
+  parsed.ports[0].roles.push('value');
+  assert.deepEqual(contract.ports[0].roles, ['value', 'component']);
+  contract.ports[0].roles = ['component', 'component'];
+  assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+});
+
+test('operation contract size limits apply to every discovery boundary', () => {
+  for (const mutate of [
+    (p) => {
+      p.operationContracts = Array(4097).fill(p.operationContracts[0]);
+    },
+    (p) => {
+      p.operationContracts[0].ports = Array(129).fill(p.operationContracts[0].ports[0]);
+    },
+    (p) => {
+      p.operationContracts[0].ports[0].types = Array(17).fill('int');
+    },
+    (p) => {
+      p.operationContracts[0].pipelineClass = 'P'.repeat(129);
+    },
+  ]) {
+    const payload = operationCapabilityPayload();
+    mutate(payload);
+    assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+  }
+});
+
+test('operation discovery normalizes the previous stage-only schema', () => {
+  const payload = operationCapabilityPayload();
+  const expected = structuredClone(payload.operationContracts);
+  payload.operationContractSchemaVersion = 1;
+  delete payload.operationContracts[0].task;
+  delete payload.operationContracts[0].ports[0].hidden;
+  assert.deepEqual(parseOperationPayload(payload).operationContracts, expected);
+});
+
+test('task-scoped pipeline operations retain handles and hidden inputs without declaring stages', () => {
+  const payload = operationCapabilityPayload();
+  const base = {
+    pipelineClass: 'FutureImagePipeline',
+    task: 'text_to_image',
+    operationId: 'diffusion.load_models',
+    nodeKey: 'modules.DiffusersImage.LoadPipeline',
+    nodeType: 'loader',
+    blockName: null,
+    decomposition: 'loader',
+    support: 'declared',
+    ports: [
+      {
+        name: 'pipeline',
+        semanticName: 'pipeline',
+        direction: 'output',
+        roles: ['pipeline'],
+        types: ['image_diffusion_pipeline'],
+        required: false,
+        hidden: false,
+      },
+    ],
+  };
+  payload.operationContracts = [
+    base,
+    { ...structuredClone(base), task: 'edit_image' },
+    {
+      ...structuredClone(base),
+      operationId: 'diffusion.generate_image',
+      nodeType: 'pipeline',
+      decomposition: 'pipeline',
+      nodeKey: 'modules.DiffusersImage.Generate',
+      ports: [{ ...base.ports[0], direction: 'input', required: true, hidden: true }],
+    },
+  ];
+  assert.deepEqual(parseOperationPayload(payload).operationContracts, payload.operationContracts);
+  for (const mutate of [
+    (p) => {
+      p.task = null;
+    },
+    (p) => {
+      p.task = '__proto__';
+    },
+    (p) => {
+      p.nodeType = 'denoise';
+    },
+    (p) => {
+      p.blockName = 'denoise';
+    },
+    (p) => {
+      p.ports[0].hidden = 'false';
+    },
+    (p) => {
+      p.ports[0].roles = ['pipeline', 'value'];
+    },
+    (p) => {
+      p.ports[0].required = true;
+    },
+  ]) {
+    const invalid = structuredClone(payload);
+    mutate(invalid.operationContracts[0]);
+    assert.throws(() => parseOperationPayload(invalid), /operation contract/i);
+  }
+  payload.operationContractSchemaVersion = 1;
+  assert.throws(() => parseOperationPayload(payload), /operation contract/i);
+});
+
+function boundOperationPayload() {
+  const payload = operationCapabilityPayload();
+  payload.operationContractSchemaVersion = 3;
+  const op = payload.operationContracts[0];
+  Object.assign(op, {
+    task: 'text_to_image',
+    workflowId: 'text2image',
+    binding: { pipelineClass: op.pipelineClass, values: { pipeline_class: op.pipelineClass } },
+  });
+  op.ports[0].semantics = {
+    kind: 'conditioning',
+    scope: op.pipelineClass,
+    state: null,
+    owner: 'same_loader',
+    members: [],
+  };
+  payload.pipelineSupportSchemaVersion = 1;
+  payload.pipelineSupport = [
+    {
+      pipelineClass: op.pipelineClass,
+      coverage: 'local-adapter',
+      reason: 'Existing adapter',
+      equivalentTo: [],
+      upstreamTasks: [],
+      tasks: [
+        {
+          task: op.task,
+          execution: 'declared',
+          decomposition: 'stages',
+          operationIds: [op.operationId],
+          executionProfileIds: [],
+          dependencies: 'unknown',
+          runtimeRequirements: [],
+        },
+      ],
+    },
+  ];
+  return payload;
+}
+
+test('operation capability refresh stores support atomically and rejects stale references', async () => {
+  const payload = boundOperationPayload();
+  globalThis.fetch = async () => jsonResponse(payload);
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().pipelineSupport, payload.pipelineSupport);
+  payload.pipelineSupport[0].tasks[0].operationIds = ['diffusion.absent'];
+  await nodesStoreModule.useNodesStore.getState().fetchStudioModelCapabilities();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().pipelineSupport, []);
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().operationContracts, []);
+});
+
+test('operation resolution uses the exact backend binding without a template or install request', async () => {
+  const op = boundOperationPayload().operationContracts[0];
+  const node = {
+    module: 'modules.ModularDiffusers',
+    action: 'Denoise',
+    type: 'custom',
+    label: 'Denoise',
+    category: 'Diffusion',
+    params: { pipeline_class: { type: 'string', value: op.pipelineClass } },
+  };
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls++;
+    assert.match(String(url), /\/operations\/resolve$/);
+    assert.equal(options.method, 'POST');
+    assert.deepEqual(JSON.parse(options.body), {
+      pipelineClass: op.pipelineClass,
+      task: 'text_to_image',
+      operationId: op.operationId,
+    });
+    return jsonResponse({ schemaVersion: 1, operation: op, node });
+  };
+  assert.deepEqual(await nodesStoreModule.useNodesStore.getState().resolveOperation(op), node);
+  assert.equal(calls, 1);
+  node.params.pipeline_class.value = 'WrongPipeline';
+  await assert.rejects(nodesStoreModule.useNodesStore.getState().resolveOperation(op), /binding/i);
+  node.params.pipeline_class.value = op.pipelineClass;
+  node.action = 'OtherAction';
+  await assert.rejects(nodesStoreModule.useNodesStore.getState().resolveOperation(op), /binding/i);
+  op.task = 'different_task';
+  await assert.rejects(
+    nodesStoreModule.useNodesStore.getState().resolveOperation({ ...op, task: 'text_to_image' }),
+    /selection/i,
+  );
+});
+
+test('extension approval parser rejects malformed identity, dependency and preview data', () => {
+  const valid = customModule('Example');
+  assert.equal(extensionsModule.parseExtensionInfo(valid).name, 'Example');
+  for (const invalid of [
+    { ...valid, moduleKey: 'modules.Text.ProcessText' },
+    { ...valid, codeHash: 'mutable' },
+    { ...valid, revision: {} },
+    { ...valid, kind: [] },
+    { ...valid, codeHash: null },
+    { ...valid, status: 'disabled' },
+    { ...valid, dependencies: [{ requirement: 'foo', status: 'installed' }] },
+    { ...valid, files: [{ name: 'main.py', bytes: -1, sha256: 'a'.repeat(64) }] },
+    { ...valid, preview: { kind: 'python', diagnostics: [], nodes: { Echo: { label: 'Echo', params: [] } } } },
+  ])
+    assert.throws(() => extensionsModule.parseExtensionInfo(invalid));
+});
+
+test('enable sends the reviewed code hash and preserves boolean consent', async () => {
+  let submitted;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).endsWith('/enable')) submitted = JSON.parse(init.body);
+    return jsonResponse(
+      String(url).endsWith('/nodes') ? { nodes: {}, instance: 'enabled' } : { modules: [customModule('Example')] },
+    );
+  };
+  await nodesStoreModule.useNodesStore.getState().setCustomModuleEnabled('Example', true, 'sha256:' + 'b'.repeat(64));
+  assert.deepEqual(submitted, { codeHash: 'sha256:' + 'b'.repeat(64), consent: true });
+});
+
+test('Hub extension resolution accepts only a pinned source identity and preserves cancellation', async () => {
+  const valid = { kind: 'hub', source: 'example/block', requestedRevision: 'main', revision: 'a'.repeat(40) };
+  assert.deepEqual(sourceResolutionModule.parseResolvedExtensionSource({ error: false, source: valid }), valid);
+  const underscored = { ...valid, source: '_owner/_block' };
+  assert.deepEqual(sourceResolutionModule.parseResolvedExtensionSource({ source: underscored }), underscored);
+  for (const invalid of [
+    { ...valid, revision: 'main' },
+    { ...valid, kind: 'local' },
+    { ...valid, source: 'https://evil.test/source' },
+    { ...valid, requestedRevision: null },
+  ])
+    assert.throws(() => sourceResolutionModule.parseResolvedExtensionSource({ source: invalid }));
+  const controller = new AbortController();
+  let called = false;
+  globalThis.fetch = async (url, init) => {
+    called = true;
+    assert.match(String(url), /custom_modules\/resolve$/);
+    assert.equal(init.method, 'POST');
+    assert.deepEqual(JSON.parse(init.body), { source: 'https://huggingface.co/example/block', revision: 'main' });
+    return new Response(JSON.stringify({ source: valid }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  assert.deepEqual(
+    await sourceResolutionModule.resolveExtensionSource(
+      'https://huggingface.co/example/block',
+      'main',
+      controller.signal,
+    ),
+    valid,
+  );
+  assert.ok(called);
+  controller.abort();
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(init.signal.aborted, true);
+    throw new DOMException('Aborted', 'AbortError');
+  };
+  await assert.rejects(sourceResolutionModule.resolveExtensionSource('example/block', 'main', controller.signal));
 });

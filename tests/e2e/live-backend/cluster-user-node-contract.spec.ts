@@ -298,7 +298,7 @@ async function clearFinishedSessionActivity(page: Page) {
 }
 
 async function ensureExpertMode(page: Page) {
-  const auto = page.getByTestId('topbar-auto-switch');
+  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
   const deadline = Date.now() + 300_000;
   let lastError = '';
   while (Date.now() < deadline) {
@@ -306,7 +306,7 @@ async function ensureExpertMode(page: Page) {
     await dismissTaskLauncher(page);
     if ((await auto.getAttribute('aria-checked')) === 'false') return;
     try {
-      await auto.click({ timeout: 2_000 });
+      await page.getByRole('radio', { name: 'Developer', exact: true }).click({ timeout: 2_000 });
       await expect(auto).toHaveAttribute('aria-checked', 'false', { timeout: 2_000 });
       return;
     } catch (error) {
@@ -314,7 +314,7 @@ async function ensureExpertMode(page: Page) {
       await page.waitForTimeout(500);
     }
   }
-  throw new Error(`Could not enter Expert mode after startup recovery: ${lastError}`);
+  throw new Error(`Could not enter Developer workspace after startup recovery: ${lastError}`);
 }
 
 async function optionalRuntimeStatus(page: Page) {
@@ -3576,8 +3576,9 @@ test('production Qwen demo imports, saves one editable User Node and runs from t
     await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
     await dismissRecoveredRunFailure(page);
     await dismissTaskLauncher(page);
-    const auto = page.getByTestId('topbar-auto-switch');
-    if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+    const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+    if ((await auto.getAttribute('aria-checked')) === 'true')
+      await page.getByRole('radio', { name: 'Developer', exact: true }).click();
     await expect(auto).toHaveAttribute('aria-checked', 'false');
   };
   await page.goto(process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
@@ -3774,8 +3775,9 @@ test('production Qwen removes an added upstream step, undoes, reconnects and exe
     await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
     await dismissRecoveredRunFailure(page);
     await dismissTaskLauncher(page);
-    const auto = page.getByTestId('topbar-auto-switch');
-    if ((await auto.getAttribute('aria-checked')) === 'true') await auto.click();
+    const auto = page.getByRole('radio', { name: 'Creator', exact: true });
+    if ((await auto.getAttribute('aria-checked')) === 'true')
+      await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   };
   await page.goto(process.env.MODIFF_NESTED_FRONTEND_URL ?? LIVE_BACKEND_URL, { waitUntil: 'domcontentloaded' });
   await ready();
@@ -6432,7 +6434,7 @@ test('exact MiniMax Music 3 catalog drag is one durable V2 Block and runs persis
   expect(runtimeExpectation.runtimeHints.optimizationQualificationForm).toEqual(runtimeExpectation.form);
 
   await restoredRoot.locator('header').first().click();
-  await expect(page.getByTestId('topbar-auto-switch')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveAttribute('aria-checked', 'false');
   const preSubmissionControl = await waitForResponsiveLiveControlPlane(page);
   await writeFile(
     `${evidenceRoot}/pre-submission-control.json`,
@@ -6830,7 +6832,7 @@ test('one current exact Qwen V2 Block receives visible Auto authority without ch
   });
   const beforeValuesJson = JSON.stringify(beforeAuto.values);
 
-  const autoSwitch = page.getByTestId('topbar-auto-switch');
+  const autoSwitch = page.getByRole('radio', { name: 'Creator', exact: true });
   await expect(autoSwitch).toBeEnabled();
   await autoSwitch.click();
   await expect(autoSwitch).toHaveAttribute('aria-checked', 'true');

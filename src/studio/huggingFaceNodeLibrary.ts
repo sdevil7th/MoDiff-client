@@ -342,6 +342,7 @@ const SEALED_EXECUTION_BINDING_SOURCES = new Set([
   'defaultWorkflow',
   'workflowId',
   'semanticGeneratorBlock',
+  'workflowPromptEnhancerBlock',
   'workflowBeforeEncodeBlock',
   'workflowTextEncoderBlock',
   'workflowImageEncoderBlock',

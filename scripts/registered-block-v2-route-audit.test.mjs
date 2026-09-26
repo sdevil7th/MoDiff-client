@@ -39,6 +39,7 @@ import os
 from copy import deepcopy
 from importlib import import_module
 from types import MethodType, SimpleNamespace
+from unittest.mock import patch
 
 # Catalog reproduction is a static contract audit. Its reviewed device defaults
 # and option labels must not depend on the runner's hardware or optional packages.
@@ -61,7 +62,12 @@ diffusers_profiles.optional_runtime_target = lambda **kwargs: runtime_target(
     machine=kwargs.get("machine") or "x86_64",
 )
 
-from modules import MODULE_MAP
+from modiff.custom_extensions import ExtensionStore
+# This is the built-in catalog. The child process has no pytest isolation and
+# must not import, execute or disable the operator's installed custom sources.
+with patch.object(ExtensionStore, "load_enabled", return_value=None):
+    from modules import MODULE_MAP
+assert not any(key.startswith("custom.") for key in MODULE_MAP)
 from modiff.huggingface_cluster_promotions import build_post_promotion_node_library_candidate
 from modiff.huggingface_node_library import build_huggingface_node_library
 from modiff.modular_conditional_contracts import reviewed_modular_conditional_snapshot
@@ -947,7 +953,7 @@ const REVIEWED_TERMINAL_OUTPUTS = new Map([
   ]),
   [
     'diffusers.modular:ErnieImageModularPipeline:text2image',
-    [{ portId: 'images', role: 'diffusersImageGenerate', fieldId: 'images', mediaType: 'image' }],
+    [{ portId: 'images', role: 'decode', fieldId: 'images', adaptation: 'direct_media', mediaType: 'image' }],
   ],
 ]);
 
@@ -1283,6 +1289,20 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
                   });
                 })();
             const exactRoute = {
+              definitionId: definition.id,
+              definitionContentHash: definition.contentHash,
+              provider: definition.provider,
+              surface: definition.surface,
+              definitionKind: definition.definitionKind,
+              libraryRevision: definition.libraryRevision,
+              pipelineClass: definition.pipelineClass,
+              workflowId: definition.workflowId,
+              admissionId: admission.id,
+              studioMode: admission.studioMode,
+              adapterContractId: admission.adapterContractId,
+              studioExecutionSpec: structuredClone(admission.studioExecutionSpec),
+              artifact: admission.artifact,
+              dynamicFieldActions: admission.dynamicFieldActions,
               boundary: { inputs, outputs },
               controlFanOuts,
               ...(definition.provider === 'diffusers' &&
@@ -1301,26 +1321,11 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
                 snapshot.registries[executionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
             });
             routeCandidates.push({
-              definitionId: definition.id,
-              definitionContentHash: definition.contentHash,
-              provider: definition.provider,
-              surface: definition.surface,
-              definitionKind: definition.definitionKind,
-              libraryRevision: definition.libraryRevision,
-              pipelineClass: definition.pipelineClass,
-              workflowId: definition.workflowId,
-              admissionId: admission.id,
-              studioMode: admission.studioMode,
-              adapterContractId: admission.adapterContractId,
-              studioExecutionSpec: admission.studioExecutionSpec,
-              artifact: admission.artifact,
-              dynamicFieldActions: admission.dynamicFieldActions,
+              ...exactRoute,
               compiledDefinitionContentHash: exact.definition.contentHash,
               compiledDefinitionCanonicalSha256: `sha256:${createHash('sha256')
                 .update(blockSchema.canonicalBlockStringifyV2(blockSchema.canonicalBlockDefinitionV2(exact.definition)))
                 .digest('hex')}`,
-              controlFanOuts,
-              boundary: { inputs, outputs },
             });
           } catch (candidateError) {
             routeCandidates.push({
@@ -1409,7 +1414,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
       definition.integrationStatus !== 'equivalent_standard_route',
   );
   if (process.env.MODIFF_ROUTE_CANDIDATES_ONLY !== '1')
-    assert.equal(exactModularSuccesses.length, 72, 'the complete currently admitted exact Modular route set drifted');
+    assert.equal(exactModularSuccesses.length, 73, 'the complete currently admitted exact Modular route set drifted');
   exactModularSuccesses.forEach(({ definition, compiledDefinition }) => {
     const exactSteps = compiledDefinition.graph.nodes.filter(
       (node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === 'ReviewedModularWorkflowStep',
@@ -1616,7 +1621,11 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
   const qwenLayeredAdmission = qwenLayeredDefinition?.executionAdmissions.find(
     ({ id }) => id === 'diffusers.cluster-admission:QwenImageLayeredModularPipeline:default:mode:layer_decomposition',
   );
-  const qwenLayeredRoute = routeModule.registeredBlockV2Route(qwenLayeredDefinition, qwenLayeredAdmission);
+  const qwenLayeredCompiled = compilerSuccesses.get(compilerRouteKey(qwenLayeredDefinition, qwenLayeredAdmission));
+  const qwenLayeredRoute =
+    process.env.MODIFF_GENERATE_ROUTE_CANDIDATES === '1'
+      ? qwenLayeredCompiled?.routeCandidate
+      : routeModule.registeredBlockV2Route(qwenLayeredDefinition, qwenLayeredAdmission);
   assert.ok(qwenLayeredRoute, 'the exact Qwen Layered route was not audited');
   assert.deepEqual(
     qwenLayeredRoute.controlFanOuts.find(({ source }) => source === 'resolution'),
@@ -1628,7 +1637,6 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
     },
     'one public Layered resolution must feed both upstream Modular Diffusers consumers',
   );
-  const qwenLayeredCompiled = compilerSuccesses.get(compilerRouteKey(qwenLayeredDefinition, qwenLayeredAdmission));
   if (process.env.MODIFF_ROUTE_CANDIDATES_ONLY !== '1') {
     assert.ok(qwenLayeredCompiled, 'the exact Qwen Layered route did not compile');
     assert.deepEqual(

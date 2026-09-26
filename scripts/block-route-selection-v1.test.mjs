@@ -448,3 +448,48 @@ test('route drafts reject recursion, mutable definitions, active-key duplication
   };
   assert.throws(() => schema.normalizeBlockInstanceV2(mutable), /registered and immutable/u);
 });
+
+test('definition changes retain edited upstream and user drafts across tasks without changing their saved baselines', () => {
+  const { qwenInstance, fluxInstance } = fixtures();
+  const userDefinition = {
+    ...qwenInstance.definitionSnapshot,
+    definitionId: 'user:edited-upstream',
+    source: { kind: 'user' },
+    ownership: { kind: 'user', definitionMutable: true },
+  };
+  userDefinition.contentHash = schema.blockDefinitionContentHashV2(userDefinition);
+  const current = instance(userDefinition);
+  current.values.prompt = 'My custom composition prompt';
+  const before = structuredClone(current);
+  const changed = routes.switchBlockDefinitionV2(current, fluxInstance);
+  assert.equal(changed.instanceId, current.instanceId);
+  assert.equal(changed.values.prompt, current.values.prompt);
+  assert.deepEqual(
+    changed.routeSelection.inactiveDrafts[userDefinition.definitionId].effectiveGraph,
+    current.effectiveGraph,
+  );
+  const restored = routes.restoreBlockDefinitionDraftV2(
+    schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(changed))),
+    userDefinition.definitionId,
+  );
+  assert.deepEqual(restored.effectiveGraph, current.effectiveGraph);
+  assert.deepEqual(restored.effectiveInterface, current.effectiveInterface);
+  assert.deepEqual(restored.values, current.values);
+  assert.deepEqual(restored.definitionSnapshot, current.definitionSnapshot);
+  assert.deepEqual(current, before);
+  assert.equal(routes.registeredRouteSetForBlockV1(restored), null);
+});
+
+test('definition changes preserve historical route drafts under exact definition identities', () => {
+  const { qwenInstance, fluxInstance, sdxlInstance } = fixtures();
+  const legacy = routes.switchBlockRouteInstanceV1(qwenInstance, 'flux-1-dev', fluxInstance);
+  const changed = routes.switchBlockDefinitionV2(legacy, sdxlInstance);
+  assert.deepEqual(
+    Object.keys(changed.routeSelection.inactiveDrafts).sort(),
+    [qwenInstance.definitionRef.definitionId, fluxInstance.definitionRef.definitionId].sort(),
+  );
+  const restored = routes.restoreBlockDefinitionDraftV2(changed, qwenInstance.definitionRef.definitionId);
+  assert.deepEqual(restored.effectiveGraph, qwenInstance.effectiveGraph);
+  const busy = { ...qwenInstance, previewStates: qwenInstance.previewStates.map((s) => ({ ...s, status: 'running' })) };
+  assert.throws(() => routes.switchBlockDefinitionV2(busy, fluxInstance), /finish/i);
+});

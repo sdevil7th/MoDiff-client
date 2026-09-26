@@ -697,12 +697,12 @@ test('mocked review component shows exact paths and keeps apply gated by both ex
 test('registered compiler preview and visible generator explain the read-only exact-supplement flow', () => {
   const preview = api.parseCompositeMigrationPreviewResponse(compiledPreviewResponse());
   const details = renderToStaticMarkup(React.createElement(components.CompositeMigrationPreviewDetails, { preview }));
-  assert.match(details, /1 registered Clusters compiled/u);
+  assert.match(details, /1 registered Blocks compiled/u);
   assert.match(details, new RegExp(HASH_C, 'u'));
   assert.match(details, /user-workflows\/mixed-workflow\.json/u);
 
   const card = renderToStaticMarkup(React.createElement(components.CompositeMigrationCard));
-  assert.match(card, /Registered Cluster compiler supplement/u);
+  assert.match(card, /Registered Block compiler supplement/u);
   assert.match(card, /Recovery journals/u);
   const source = readFileSync(path.join(ROOT, 'src/components/CompositeMigrationCard.tsx'), 'utf8');
   assert.match(source, /Generate exact supplement/u);

@@ -110,6 +110,13 @@ If direct requests work but proxied requests do not:
 
 If using direct server mode, `VITE_SERVER_ADDRESS` must include the protocol and must point to the backend, not the Vite port.
 
+The production bundle derives its supervisor address from the backend address,
+using the adjacent port (for example, backend `8096`, supervisor `8097`). Vite's
+development proxy settings do not select the production recovery endpoint.
+Set `VITE_SUPERVISOR_CONTROL_ADDRESS` explicitly at build time only when the
+supervisor uses a different address. This endpoint must stay available while
+the model worker is restarting so Stop and queue recovery can work.
+
 ## Registry Or Studio Nodes Are Missing
 
 Studio builds from the live `/nodes` registry. A client profile does not create backend support by itself.

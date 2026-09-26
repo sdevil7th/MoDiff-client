@@ -1,4 +1,5 @@
-import type { StudioOutput } from './types';
+import type { StudioMode, StudioModelType, StudioOutput } from './types';
+import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS } from './modelProfiles';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
 type InputField = {
@@ -25,6 +26,8 @@ export type ResolvedExecutionInputs = {
   unavailableFields: string[];
   uncapturedNodeIds: string[];
   truncated: boolean;
+  /** Backend recognition of concrete graph contracts, separate from consumed values. */
+  graphTasks?: { loaderId: string; pipelineClass: string; task: string | null }[];
 };
 
 const inputNames: Record<string, string> = {
@@ -45,6 +48,8 @@ const inputNames: Record<string, string> = {
   num_frames: 'numFrames',
   fps: 'fps',
   frame_rate: 'fps',
+  audio_duration: 'audioDuration',
+  sample_rate: 'sampleRate',
   strength: 'strength',
   repo_id: 'repo',
   model_id: 'repo',
@@ -63,6 +68,10 @@ const inputNames: Record<string, string> = {
   control_guidance_end: 'controlGuidanceEnd',
   prompt_embeds_scale: 'reduxPromptEmbedsScale',
   pooled_prompt_embeds_scale: 'reduxPooledPromptEmbedsScale',
+  processing_resolution: 'processingResolution',
+  match_input_resolution: 'matchInputResolution',
+  depth_convention: 'depthConvention',
+  use_kv_cache: 'attentionContextReuse',
 };
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
@@ -200,11 +209,52 @@ export function coerceResolvedExecutionInputs(
     )
   )
     return undefined;
+  let graphTasks: ResolvedExecutionInputs['graphTasks'];
+  if (value.graphTasks !== undefined) {
+    if (
+      !Array.isArray(value.graphTasks) ||
+      value.graphTasks.length > 256 ||
+      value.truncated ||
+      value.uncapturedNodeIds.length > 0
+    )
+      return undefined;
+    const owners = new Set<string>();
+    graphTasks = [];
+    for (const item of value.graphTasks) {
+      if (
+        !record(item) ||
+        !text(item.loaderId) ||
+        !text(item.pipelineClass) ||
+        !(item.task === null || (text(item.task) && /^[a-z][a-z0-9_]*$/u.test(item.task))) ||
+        owners.has(item.loaderId)
+      )
+        return undefined;
+      const owner = value.nodes.find((node) => record(node) && node.nodeId === item.loaderId);
+      if (
+        !record(owner) ||
+        owner.module !== 'modules.ModularDiffusers' ||
+        owner.action !== 'ModelsLoader' ||
+        !record(owner.fields) ||
+        !record(owner.fields.model_type) ||
+        owner.fields.model_type.value !== item.pipelineClass
+      )
+        return undefined;
+      owners.add(item.loaderId);
+      graphTasks.push({ loaderId: item.loaderId, pipelineClass: item.pipelineClass, task: item.task });
+    }
+  }
+  if (graphTasks) {
+    const loaders = value.nodes.filter(
+      (node) => record(node) && node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+    );
+    if (loaders.length !== graphTasks.length) return undefined;
+  }
   // Shared backend bounds plus envelope/summary overhead. JSON input only;
   // never stringify live model objects or retain unknown extension fields.
   if (JSON.stringify(value).length > 800_000) return undefined;
   return JSON.parse(
     JSON.stringify({
+      ...(graphTasks ? { graphTasks } : {}),
       schemaVersion: 1,
       source: 'backend-execution',
       taskId: value.taskId,
@@ -249,16 +299,35 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
     promptSettingsHash: undefined,
     exactTemplateCompatible: false,
   };
+  const tasks = new Set(receipt.graphTasks?.map((item) => item.task));
+  const task = [...tasks][0];
+  if (tasks.size === 1 && task && hasOwn(STUDIO_MODE_DESCRIPTIONS, task)) next.mode = task as StudioMode;
+  const model = outputModelKey(next);
+  if (hasOwn(STUDIO_MODEL_LABELS, model)) {
+    next.modelType = model as StudioModelType;
+    next.modelLabel = STUDIO_MODEL_LABELS[next.modelType];
+  } else next.modelLabel = model === 'uncaptured-model' ? 'Model not uniquely captured' : model;
   for (const key of ['prompt', 'negativePrompt', 'repo'] as const) {
     if (typeof receipt.summary[key] === 'string') next[key] = receipt.summary[key];
     else if (resolvedInputUnavailable(receipt, key)) next[key] = '';
   }
   for (const key of ['seed', 'width', 'height', 'steps', 'guidanceScale'] as const) {
-    if (typeof receipt.summary[key] === 'number') next[key] = receipt.summary[key];
+    const value = outputNumericInputValue(next, key);
+    if (value !== undefined) next[key] = value;
   }
   if (next.provenance)
     next.provenance = { ...next.provenance, promptSettingsHash: undefined, exactTemplateCompatible: false };
   return next;
+}
+
+/** A custom or ambiguous captured model must not inherit the form's filter. */
+export function outputModelKey(output: StudioOutput): string {
+  const receipt = output.resolvedExecutionInputs;
+  if (!receipt) return output.modelType;
+  const model = receipt.summary.modelType;
+  return !resolvedInputUnavailable(receipt, 'modelType') && typeof model === 'string' && model.trim()
+    ? model
+    : 'uncaptured-model';
 }
 
 export function resolvedInputUnavailable(receipt: ResolvedExecutionInputs, key: string): boolean {
@@ -284,8 +353,15 @@ export function outputNumericInputValue(
 ): number | undefined {
   const receipt = output.resolvedExecutionInputs;
   if (receipt) {
-    const value = receipt.summary[key];
-    return !resolvedInputUnavailable(receipt, key) && typeof value === 'number' && Number.isFinite(value)
+    const raw = receipt.summary[key];
+    // Native controls may capture decimal strings. Normalize only presentation;
+    // retain the exact receipt and its ambiguity checks, never form fallbacks.
+    const value =
+      typeof raw === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(raw.trim()) ? Number(raw) : raw;
+    return !resolvedInputUnavailable(receipt, key) &&
+      typeof value === 'number' &&
+      Number.isFinite(value) &&
+      Math.abs(value) <= Number.MAX_SAFE_INTEGER
       ? value
       : undefined;
   }

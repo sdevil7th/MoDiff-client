@@ -45,7 +45,7 @@ The backend may use official model libraries maintained and published by Hugging
 
 - `src/main.tsx` mounts the app inside `ModiffSnackbarProvider`, `WebsocketProvider`, and `ReactFlowProvider`.
 - `src/App.tsx` owns the top bar, left rail/panels, central canvas, workflow tabs, right workspace, and app-level Gallery/issues dialogs.
-- `src/components/TopBar.tsx` owns New, workflow Save/Save as, Export, graph-fix review, Auto/Expert, Run mode,
+- `src/components/TopBar.tsx` owns New, workflow Save/Save as, Export, graph-fix review, Memory, Run mode,
   context-aware Run/Queue, Stop, runtime-resource status, model/template/settings/Gallery openers, progress, and connection controls.
 - `src/components/Workflow.tsx` owns the React Flow canvas, graph/node drops, node search, connections, selection, and canvas-level dialogs.
 - `src/components/WorkflowTabsBar.tsx` presents local workflow snapshots managed by `useStudioStore`.
@@ -87,7 +87,174 @@ Mutation logic is split into:
 
 The store persists only nodes, edges, and viewport under `modiff.flow`. Runtime, history, and in-flight state are not persisted. A legacy `reactflow` key is migrated when present.
 
+Encode Inputs uses the ordinary node surface. Supported inactive image-encoding
+sockets are derived read-only from backend operation contracts. Connecting one
+uses `encodingNodeConnection` and the existing route planner to materialize real
+stage endpoints and commit the selected wire in one history transaction; it does
+not open the general media-attachment dialog. The smallest admitted extension
+must retain existing operations and cannot introduce another required media role.
+Default-backed creative values are preserved as well as explicit edits. Lazy
+socket handles never enter persistence or API export, and displaying them alone
+does not add an executable image stage. Existing real sockets use ordinary wiring.
+
 Connections are validated against handle/input rules. A normal input accepts one incoming edge unless the backend definition exposes spawn/multi-input behavior. `exportGraph(sid, targetNodeId?)` converts the visible graph into the backend graph payload.
+
+`nodeConnectionMatching` shares direction and type matching between the drag-to-add
+popup and the inserted connection. It uses the same normalized type compatibility
+as ordinary wires, includes `isInput` controls, and respects direction even when
+the dragged port is untyped. Suggestions retain installed custom nodes and
+deduplicate exact registry aliases while excluding structural groups/loops.
+The popup ranks likely continuations from the origin node, handle direction and
+declared type (for example, Preview Image after an image output), then presents
+built-in/Block and enabled custom-node results in independently collapsible,
+independently scrolling sections under one shared search.
+The popup searches the executable registry independently of the left library's
+view. For every backend pipeline contract that publishes an `actions` map, it
+also checks the loader's current task signal before suggesting or accepting a
+consumer whose connector declares `signalCompatibility.action`; a text-to-image
+pipeline therefore cannot be wired to unconditional generation, and a video-only
+pipeline cannot be wired to a video-plus-audio action.
+Component inputs can declare a generic signal-driven options map through
+`onSignal: { action: "value", prop: "options", data: ... }`. The same map is an
+executable compatibility contract for suggestions, direct connections and
+reconnections: a source signal with no non-empty option set is rejected. This
+also applies to custom nodes that publish the declaration, without client-side
+knowledge of Scheduler, Guider, Layers, or model-family names. When a valid
+signal changes a single-select field's options, an invalid previous value moves
+to the first allowed option; multi-select fields retain only allowed values. A
+later source-model change that makes an existing component connection invalid
+disconnects that edge and reports the reason before execution.
+The more general `signalCompatibility` connector metadata supports exact
+string-signal allowlists and structured action contracts. Built-in Modular stage
+nodes derive those allowlists from the backend registry, and custom nodes can use
+the same declaration. `connectionRole` plus `signalCompatibility.role` separates
+same-type components such as denoiser, VAE and scheduler even when they share a
+pipeline identity. `required: true` rejects a broad same-type producer that
+does not declare a semantic signal; an empty declared value remains pending until
+model selection publishes its identity. Pipeline-transform nodes relay the
+structured signal so compatibility and dynamic fields survive a chain.
+It cannot infer tensor shape, image-channel, model-weight or arbitrary custom-code
+semantics from a nominal type, so runtime validation remains authoritative. New
+node data is cloned so edits cannot mutate a registry definition. Catalog
+enumeration stays in the popup's lazy `nodeConnectionSearch` module, outside
+canvas startup.
+
+Expert's Stages panel also resolves connected starters from `POST /operations/starter`.
+The backend supplies ordinary node schemas and reviewed connections; the client
+assigns canvas IDs through the normal node factory. The result is a normal graph,
+with no template receipt or additional execution representation. Users can build
+the same stages manually with native typed wires and add an output Preview, Save
+or Export node. Plain scalar aliases such as `text`/`string` and `bool`/`boolean`
+match in native connections; media collections and model objects remain distinct.
+
+`operationAuthoring` is a versioned, advisory annotation on those ordinary nodes.
+It stores the selected operation, initial visible defaults and retained unsupported
+settings. It does not grant execution permission or replace node params.
+Backend-declared `sharedInputs` bind seed controls of stages that continue one
+generator. `operationSharedInputs` validates their loader scope and membership;
+ordinary parameter edits update the group under one history transaction. Export
+uses one random draw per group and rejects inconsistent literals or input sources.
+New stages inherit the existing shared value; a connected custom source is wired
+to every member. Distinct loader branches remain independent. No additional
+execution representation or model-family dispatch is introduced. The lazy
+`operationAuthoring` planner walks one loader's connected canonical stages,
+retains compatible user overrides and custom branches, and previews incompatible
+wires and retained settings. Required conditioning comes from the exact upstream
+task; instruction editing and image-to-image remain distinct choices.
+Changing a Python action or its bound pipeline assigns a fresh runtime ID and
+reconnects compatible edges; generic Python instances can retain pipeline-specific
+state even when the action name is unchanged. Same-binding actions retain their
+IDs, and all adapted stages retain their positions. Exact model round trips
+recover archived IDs. Unmatched canonical
+stages remain disabled with their saved data. Existing nested Blocks are left
+intact and use their composition inspector and structural editing commands.
+
+Resolved dynamic `layerconfig` fields may use dotted module paths with numeric
+indices only when the backend also declares the path as a selectable option.
+Reserved/empty path segments, undeclared paths, operation ports and ordinary
+parameter names remain subject to strict validation.
+
+Backend-resolved operation schemas suppress mount-time selector initialization
+and automatic signal actions that would replace exact-profile metadata with
+generic family defaults. Signal transport, connection-driven control visibility
+and explicit user actions remain active. Derived field-action updates are not
+marked as authored user choices; this prevents automatic option normalization
+from pinning a default guider across subsequent model changes.
+
+The change applies through `operationGraphTransaction`, using the existing history
+transaction, rollback and connection reconciliation. It rejects concurrent canvas
+edits, tab changes, active gestures and ambiguous/shared loader ownership. The
+model-picker preview excludes only the derived `hidden`/`disabled` parameter
+availability flags on ordinary operation nodes from its comparison; values,
+authored markers, contracts, bindings, wires and layout remain protected.
+Untouched siblings keep their latest availability metadata when committing.
+One Undo/Redo restores the complete edit. Imported hints are validated before use;
+legacy graphs are not converted on open. Stage inspection shows defaults,
+overrides, connected fallbacks and retained settings separately. Retained settings
+are not automatically restored or included in execution parameters.
+
+`workflow/visualOperationGroups` composes backend-declared encoder and guidance
+roles into workflow-local V2 Blocks. A user-source provider marker identifies the
+presentation recipe; it grants no authority. The existing effective graph is the
+only executable content. Authoring adapters resolve current public bindings to
+ordinary leaves, invoke the existing operation/media planner, then restore the
+visual grouping while retaining the immutable definition snapshot. No library
+write occurs. Task/model replacement keeps fresh runtime IDs where required;
+collapse/expand does not invalidate execution identity. Shared input edits and
+export resolve the same connected loader scope across group boundaries.
+
+New eligible starters opt into grouping; saved workflows require an explicit
+group action. Complex manually nested/mirrored interfaces fail closed during
+automatic adaptation, with an explicit editing instruction instead of data loss.
+
+Approved image Encode Inputs and image/audio Guidance compositions render through
+the ordinary node shell, not the expandable Block frame. Their canonical V2 data
+still owns values, interfaces and execution. Inspection is read-only; Separate
+stages is an explicit undoable structural edit. The interface inspector includes
+visible optional encoding sockets and labels their deferred stage preparation.
+
+Guidance interface edits record explicitly removed field bindings in optional
+`presentation.removedControlBindings` on the instance. The bounded, unique
+`{nodeId, fieldId}` list is visibility metadata, not an execution toggle. Removing
+a control materializes its current consumed value on the original stage before
+pruning its public override; re-exposing the binding clears the removal. Metadata
+refresh/regrouping retains the list, while historical omissions without a removal
+record still use the read-only field fallback. Reusable-node saves copy the list
+to optional definition `removedControlBindings`, used as initial presentation on
+insertion. Both runtimes validate these fields; presentation metadata is excluded
+from execution hashes. No document is rewritten merely by viewing its controls.
+
+`workflowDraft` completes fresh image/audio starters with ordinary registered
+loaders for typed required media inputs before grouping. It reuses sources only
+for equal media roles, keeps masks separate from alpha-mask outputs, and reports
+missing/incompatible loader definitions. It does not touch existing documents,
+invent media for text-only routes, or infer a tensor from a path-only field.
+
+Readiness also checks required file pickers in the selected executable closure.
+A connected loader output does not satisfy an empty required source file. Current
+registry declarations cover historical loader snapshots without modifying their
+saved values; enabled incoming file connections remain valid suppliers. The same
+inspection feeds canvas readiness and Run admission.
+
+Saved ordinary-node Blocks retain their legacy format until an explicit edit
+requires conversion. Their model/task chooser prepares a read-only candidate
+through the existing legacy instance adapter. Preview and cancellation never
+rewrite the graph or library. Apply commits conversion and model replacement in
+one canvas transaction; Undo restores the original format. The current embedded
+values, typed interfaces and unrelated instances survive. Editable exposed
+controls follow the reviewed replacement only when every mirrored target agrees;
+sealed controls and bindings outside the selected loader scope remain protected.
+This path shares the ordinary operation planner and existing backend executor.
+
+Required media readiness also checks generic operation ports in the resolved
+execution scope, including internal nodes without public Block ports. Current
+backend declarations refresh matching saved operation requirements without
+rewriting their snapshots. Missing required media remains blocking under either
+memory policy; Fix opens the affected visible node or owning Block. Optional
+media, blank prompts, tensor/state inputs and unrelated execution scopes are not
+inferred to be missing. A compatible enabled incoming connection satisfies this
+presence check; file existence and actual runtime objects still belong to backend
+validation.
 
 `blockControlConnectionsV2` resolves root and nested control aliases against the
 owning effective graph and external public-input wires. Connected body controls
@@ -527,6 +694,21 @@ retained for exact backend composition lowering. Upstream Python identifiers
 may begin with `_`; public connector/control IDs remain on the stricter public
 ID grammar.
 
+Canvas search shares these catalog entries, filters and factories with the Nodes
+library. Registered task Blocks appear in normal search; upstream implementation
+entries and catalog-only structural Blocks require Show implementation nodes.
+Typed suggestions load `/huggingface/registered-block-interfaces` and match only
+compiled public ports whose complete route pins agree. Upstream leaf suggestions
+use the ordinary node factory's declared sockets; containers without public
+sockets remain available through plain search. No internal socket is guessed.
+
+Selection resolves asynchronously before a single add-and-connect history
+transaction. Full definition/hash validation and the existing canvas connector
+validation run before commit. Failure retains the search and original wire for
+retry; Escape, a changed discovery selection or a replaced workflow cancels
+insertion. Metadata requests are shared across library/picker/factory callers,
+and failures offer Retry catalog without installing or enabling any runtime.
+
 Fresh registered insertion fetches one build-time compiled, hash-pinned entry
 from `/huggingface/registered-block-v2`. The entry is generated from the live
 backend node schemas, schema-v6 definition/admission, route ledger, and exact
@@ -569,7 +751,94 @@ executable. It is never an automatic definition update or silent graph reset.
 - `/model_capabilities` Studio profile compatibility
 - `/hf_download` install/repair tasks
 
+The additive `operationContracts` catalog on `/model_capabilities` describes the
+existing generic Modular stages and task-scoped standard image/video/audio/3D
+adapters. `src/workflow/operationContracts.ts` validates versions 1, 2 and 3,
+bounded identifiers/arrays, unique `(pipelineClass, operationId, task)` operations
+and ports, and explicit declaration/decomposition states before `useNodesStore`
+retains them. Version 1 is normalized with null tasks and visible ports. The parser loads on demand when capability discovery starts, keeping
+it out of the static startup module graph. Unlike Studio model profiles, pipeline names are not narrowed through
+a frontend family union. Older backends without this catalog produce an empty
+list; failed discovery clears these declarations instead of reusing stale data.
+
+Version 3 also accepts `integrated` model operations: one existing action owns
+and executes the model. Shared `operationOwnsModel` handling selects that node
+for starter validation, model changes, inspection and Block ownership. The
+browser does not split it into artificial loading/compute nodes or identify its
+model family. Backend support describes it as a complete pipeline call; its
+ordinary node schema retains the exact artifact selector and required media.
+Identical internal-node replacements preserve the Block instance; restoring the
+definition node recomputes customization from the remaining graph, interface and
+public value edits. Neither operation changes the saved definition.
+
+Each port retains its pipeline scope, original semantic name, direction, declared
+types, requiredness, visibility and value/component/pipeline roles. A conditioning
+bundle can have both value and component roles on one socket. Whole-pipeline
+actions and loaders are distinguished from Modular blocks/bundles; their task
+identity preserves conditioning requirements and specialized outputs. Hidden
+fields are presentation metadata, not execution permission. These are adapter
+declarations, not compatibility verdicts,
+runtime readiness, installation consent or graph recipes. Existing dynamic field
+signals, graph validation, optional-runtime and resource planning remain their
+respective authorities. Version 3 adds exact executable bindings and the task
+support inventory. The Nodes library uses these contracts for ordinary node
+insertion and reviewed starter/model/task changes.
+
+`runtimeCatalogNodes` suppresses only the exact canonical registry contract and
+its aliases when a bound operation covers the selected pipeline/task. No selection
+or incomplete support preserves registry discovery. Distinct schemas remain
+accessible; implementation filters expose covered entries too. Alias search never
+changes runtime identities or migrates saved graphs.
+
+The shared node/Block inspector serves the side panel and canvas dialog in the
+unified editor. Parameters reuse canvas controls; Interface, Implementation, Docs and
+Run details read declared contracts and current workflow state. Opening inspection
+does not trigger field actions or enable custom source.
+
+Bound library drag insertion carries a transient, single-use gesture token; it
+never serializes trusted node metadata into the drop payload. The backend resolver
+supplies the exact selected contract. Workflow, selection, catalog and destination
+changes invalidate a pending resolution. The ordinary node factory and existing
+Block adoption transaction retain ownership, persistence and Undo behavior.
+Resolution code loads on demand; importing a drop payload grants no source consent.
+
+Registered composition labels use Blocks; the reusable group displays Saved Blocks.
+The persisted `User Nodes` group key, runtime categories and legacy `cluster`/`block`
+identities remain unchanged. Names in saved definitions are never rewritten.
+Distinct workflow stages and historical renderers remain compatibility paths;
+`DiffusersVideo.GenerateLTX2` is already a hidden subclass of `GenerateVideoAudio`,
+with the exact inherited callable and field contract verified in backend tests.
+No further backend implementation is removed without execution equivalence.
+
 Registry keys use `module.action`. Node creation and Studio graph reconciliation must verify the live key and parameter schema before wiring a node.
+
+Node discovery uses a shared `NodeCatalogView` policy. The editor starts with
+`common`: generic nodes, utilities, enabled custom nodes, graph-qualified
+task Blocks and Saved Blocks. Independent implementation and experimental filters
+add entries without hiding common ones. `useNodeDiscoveryStore` shares transient
+filters and pipeline/task selection between the library and canvas search. Selection
+is scoped to the current workflow/canvas epoch; it does not adapt existing nodes.
+Saved revisions remain distinct. Upstream implementation blocks and component
+references remain available through the implementation filter.
+
+Obsolete workspace-mode and per-mode layout preferences are stripped once during
+settings hydration. Active panels and documents are retained; there is no mode switch.
+The workflow's `useStudioStore.form.resourceMode` independently owns execution
+planning, including registered-Block authority preparation and selected-node Run.
+The top-bar Memory control is independent of editor presentation. Managed resource-policy
+edits use the existing form/graph synchronization; presentation changes never call
+that path. `NodeContent` exposes developer controls and uses resource policy for
+Auto-managed/override indicators. Field groups keep their mounted identity across disclosure toggles, so revealing
+an unchanged advanced control cannot repeat its initial backend schema action.
+The permanently disabled
+Studio resource header and its unused refresh handler were removed; the top bar
+is the single policy selector.
+
+Both storage keys and legacy normalizers remain unchanged. A restored workflow
+keeps its own resource settings while tabs share the global editing preference.
+Graph Fix and Run Issues may open Expert tools without changing execution policy.
+Older clients can read the same workflow fields but still couple their controls;
+independent behavior requires the matching updated client bundle.
 
 An optional runtime requirement is discovery data, not permission to mutate the Python environment. Template browsing/opening, registry refresh, and Auto planning must remain non-installing. Installation begins only from an explicit user action against a reviewed backend runtime profile, and the client keeps Run blocked until a later backend status confirms the compatible installation.
 
@@ -586,6 +855,11 @@ full integrity verification. No template, discovery, or planning path invokes
 these mutations automatically.
 
 Model visibility, artifact presence, and Auto readiness are separate concepts.
+Explicit operation-authored graphs remain workflow-owned through save and restore,
+even when their shape matches a legacy five-node template. Canonical legacy
+adoption must not attach a Studio binding or reset their memory policy. Alternate
+model implementations show their backend profile identity as well as pipeline
+class, so variants sharing one class and repository remain distinguishable.
 User Nodes offer source/family and saved-workflow-context library views. Context is display-only,
 derived from the existing `name — workflow` save convention; it is not `source.workflow`, which names
 the upstream execution route. Legacy names without that convention appear under an explicit fallback.
@@ -648,6 +922,11 @@ reject late or unrelated updates that would overwrite another workflow tab,
 replacement canvas, or newer attempt. Identity-less legacy field messages are
 accepted only when a single open workflow leaves no tab ambiguity.
 
+Queue snapshot recovery uses the same workflow ownership check as live node
+progress before resolving a canvas target by ID or label. Background tasks stay
+visible in Session activity without marking a similarly named node in another
+draft as running; navigating to the owning workflow restores its progress.
+
 Rendered canvas fields retain the workflow context that owns their immutable
 parameter schema. Before dispatch, a field action must still match that context
 and a live node, module/action pair, and field. Delayed option updates and errors
@@ -678,6 +957,13 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 `src/studio/workflowFileSave.ts` and the workflow request helpers persist named snapshots through the backend workflow
 API. Local tabs remain the editing surface; a successful explicit Save creates or replaces a backend library file,
 while Save JSON copy is a browser download.
+
+Tab arrangement is browser-local presentation. `moveWorkflowTab` resolves source
+and destination IDs against current state and changes only the array order.
+Pointer previews stay outside the store until drop; structural tab changes cancel
+an in-flight gesture. Backend document-sync signatures are order-independent.
+The bounded local checkpoint selects active/dirty/recent tabs but preserves their
+original relative order, both when writing and restoring older checkpoints.
 
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
 
@@ -826,6 +1112,16 @@ receipts do not replace that executable resource plan. A rejected plan prevents
 submission; it cannot silently fall through to Expert. Planning preserves the
 instance's creative settings and immutable source definition.
 
+The Workflows library renders at most 50 saved rows per page. Search covers the
+complete summary inventory and returns to the first page; paging never deletes
+workflows or fetches their full documents. This bounds action-menu rendering even
+when thousands of saved workflows exist.
+
+A rejected or unavailable workflow memory plan opens the existing **Run blocked**
+dialog with the backend explanation and a fresh-Run recovery path. This feedback
+stays visible until dismissed; it does not fabricate a task or failed generation.
+Late responses cannot open it after a workflow, graph or memory-policy change.
+
 Session activity merges queue history by execution timestamps before applying
 its 30-entry limit, retaining running work ahead of waiting tasks and finished history. Repeated or
 reordered history snapshots must not evict a new submission or promote old runs.
@@ -842,7 +1138,7 @@ from its immutable graph snapshot and exact preview-node ownership, including
 outputs previously mislabeled using unrelated Studio state.
 
 A Studio-owned run carries its exact resource receipt in both Auto and Expert
-mode. Expert mode removes Auto admission requirements; it does not remove the
+mode. The Expert overrides resource policy removes Auto admission requirements; it does not remove the
 executed model, dtype, quantization, placement, or offload provenance. A raw or
 imported graph without a Studio run context still receives correlation and
 workflow-origin metadata only, so the client never labels an arbitrary manual
@@ -869,6 +1165,14 @@ being filled from the current filesystem or a later backend response.
 - `src/utils/useInitialFieldAction.ts` handles required initial dynamic-field synchronization.
 
 Fields must preserve `data-key`, `modiff-field`, `nodrag`, `nowheel`, hidden, disabled, and backend-action contracts. Backend-provided styles are sanitized to safe layout properties by `src/theme/modiffStyle.ts`; visual styling from dynamic payloads is not trusted.
+
+The backend isolates reviewed nonqueued generic Modular loader/schema callbacks
+from live model owners. Their existing `/fields/action` and WebSocket messages
+are unchanged; no client model-family dispatch or extra execution path is needed.
+Custom and model-changing callbacks still require the backend's model lease.
+Both paths retain workflow/canvas/form ownership checks. Aborting a stale browser
+request frees its HTTP connection but does not cancel its Python thread; the
+backend drains that work before releasing its relevant lease or changing code.
 
 Managed dynamic fields may opt into the versioned `fieldOptions.studioBinding`
 contract. Version 1 is intentionally small: an `identity` binding reads only
@@ -901,6 +1205,15 @@ connected pipeline remains the runtime authority. Native-rate and waveform-count
 constants are explicitly parsed and pinned, not inferred from a family label.
 
 Backend-issued execution identities are opaque client values. The durable copy lives in a normal hidden parameter, so workflow snapshots, exports, and run-input hashes include it. A matching output `signal` may carry the identity across connected generic nodes while the graph is live; signal values are deliberately removed from durable snapshots and must be reconstructed by the backend after restore. The client transports and reconciles these values but does not parse repository names, pipeline classes, or identity fields to select behavior.
+
+Collapsed legacy Saved Block controls in the canvas and inspector resolve backend field actions through their
+explicit exposed-field binding. Requests use the existing internal runtime node
+identity and raw parameter names, with current instance values. Value, visibility
+and parameter replies map back only to that instance's declared exposed fields;
+unexposed or ambiguous targets remain inert. The saved definition and peer instances
+are unchanged, and ordinary/expanded nodes retain direct routing. This does not
+convert the legacy Block or add support for replacing its complete dynamic schema.
+Workflow, canvas, form and session ownership checks still apply to the replies.
 
 Generic model selectors coalesce free-form repository edits through a short bounded debounce. Backend `onChange` work runs for the initial value and the latest repository selection or source switch; it must not run once per keystroke.
 Their compatible choices come only from backend declarations. Hub entries apply the declared class/id filters. The current local-model index contains paths but no class metadata, so local ID-only filters remain usable while any declared local class filter fails closed with no candidates until the backend publishes metadata that can evaluate it. The generic model selector does not infer a model family from repository names, connected nodes, or the current Studio profile, and it does not rewrite backend repository defaults.
@@ -945,6 +1258,17 @@ The lightbox retains the image URL sanitizer; raw base64 node-field values use
 their separate encoded-image input contract.
 
 Workflow packages are JSON. Image packages can also embed the `modiff.workflow` metadata key in PNG text chunks. Imported packages must be parsed/coerced at the boundary before they affect stores.
+
+Expert's **Export → Service package** lazily loads `ServiceExportDialog`. It reuses
+TopBar's existing Block/Modular lowering, checks the captured workflow context,
+and asks the backend `/service_package` boundary for supported scalar inputs and
+persisted preview outputs. Names refer to exact lowered node/field identities;
+there is no second graph representation or client-owned model dispatch. The
+backend owns portability checks, observed dependency/model/custom-code manifests,
+and execution-time validation. `studio/servicePackage.ts` narrows responses before
+showing candidates or downloading JSON. Auto keeps its existing compact menu.
+Service packages run through the existing backend queue; they are not standalone
+Diffusers Python or an alternative graph import format.
 
 ## Templates And Gallery Assets
 
@@ -1085,3 +1409,25 @@ URL. A ready backend current-output slot for the same workflow/node/field can re
 completion missed while the browser was closed. A merely newer output from the same
 node is insufficient. Snapshots, saves and reloads retain these durable references
 without changing graph values or execution ownership.
+
+### Recognized graph tasks in output history
+
+`resolvedExecutionInputs` can carry backend `graphTasks` alongside captured call
+arguments. The client validates each owner against the receipt's captured Modular
+loader and model identity. A unique supported task updates the output label while
+leaving its saved form untouched. Legacy receipts remain readable; incomplete or
+ambiguous graph recognition does not invent a task. This metadata grants no
+execution or resource authority and adds no frontend model-family dispatch.
+
+History model labels and Gallery filters also use the validated captured model
+identity. Registered identities reuse existing display labels; custom pipeline
+identities remain distinct, and missing or ambiguous evidence is explicitly
+uncaptured. Legacy outputs without receipts keep their historical labels. Finite,
+safe decimal strings from native controls can be displayed as numbers without
+rewriting the receipt or saved form. This presentation conversion never merges
+conflicting captures or fills missing values from form defaults.
+
+Block preview projections retain source-field artifact metadata only when its
+URL and available task identity match the current instance media reference.
+Older cached artifacts stay in the immutable source snapshot but cannot override
+a newer rendered output, including after save/reload or explicit legacy conversion.

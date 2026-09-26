@@ -51,6 +51,12 @@ Required client versions:
 - Node.js `24.12.0` (`.nvmrc`)
 - npm `11.6.2` (`packageManager` and `engines` in `package.json`)
 
+For setup without repository launchers, use the backend's
+[uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
+and run `npm ci`, then `npm run dev`, in this client checkout. See the
+[Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm) for the
+two-terminal flow. The same uv commands work on Linux.
+
 For integrated development with sibling repositories, install the reviewed
 backend profile, backend test requirements, and exact client lockfile through
 the development installer:
@@ -274,6 +280,10 @@ npm run gallery:coverage
 
 Do not publish a local artifact, private input, personal path, access token, or source revision through a Gallery bundle.
 
+## Custom extension changes
+
+Keep Add custom node, the strict response parser and backend hash-bound imports in sync. Intentional Add/Load/Reload is consent; discovery and graph import are not. Test import failure, changed source, missing dependencies, typed search and registry refresh. Use the normal graph executor. See the backend `docs/custom-nodes.md`.
+
 ## Testing
 
 Run the complete local CI-equivalent gate before requesting review:
@@ -296,7 +306,13 @@ device/package probes to reproduce the reviewed catalog on any host. Backend
 schemas, field actions, capability generation, and compiler validation remain real;
 the audit checks the existing definition hashes and complete decoded catalog bytes
 (gzip packaging varies across operating systems and zlib versions). This
-is contract evidence, not live hardware or model qualification.
+is contract evidence, not live hardware or model qualification. Python catalog and
+starter-fixture subprocesses suppress custom-extension discovery: they must not
+execute or change the operator’s installed source approvals.
+
+Mocked operation-authoring tests generate backend starter schemas once per test
+worker and use deep copies per scenario. Keep source contracts fixed during a
+run; never share mutable fixture objects or reuse this cache across test runs.
 
 Run the mocked browser gate for behavior or layout-sensitive changes:
 

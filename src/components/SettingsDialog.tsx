@@ -185,8 +185,8 @@ const SettingsDialog = ({ opener, onClose }: { opener: boolean | null; onClose: 
             <h3 className="text-base font-semibold text-modiff-text">MoDiff</h3>
             <p>A graph workspace for generating images, video and audio with modular model workflows.</p>
             <p>
-              Use a Cluster as one node, or expand it to inspect and customize its connected blocks. Save workflow
-              changes to keep prompts, parameters and layout.
+              Use a Block as one node, or expand it to inspect and customize its connected blocks. Save workflow changes
+              to keep prompts, parameters and layout.
             </p>
             <p>
               Models manages local artifacts and Hugging Face downloads. Setup contains runtime diagnostics and recovery

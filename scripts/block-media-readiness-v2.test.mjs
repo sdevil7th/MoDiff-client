@@ -147,3 +147,215 @@ test('an unexposed nested required file is diagnosed, and only the missing mirro
   f.instance.effectiveGraph.nodes = [];
   assert.equal(inspect(f.roots, f.graph).length, 1);
 });
+
+async function operationFixtures() {
+  const { spawnSync } = await import('node:child_process');
+  const backend = path.resolve('..', 'MoDiff');
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.resolve('scripts/operation-starter-fixtures.py');
+  const result = spawnSync(
+    process.platform === 'win32' ? python : path.join(backend, 'scripts/with-runtime-env.sh'),
+    process.platform === 'win32' ? [script] : [python, script],
+    { cwd: backend, encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+function operationGraph(starter) {
+  return {
+    nodes: starter.nodes.map(({ node, operation }) => ({
+      id: operation.operationId,
+      data: {
+        ...structuredClone(node),
+        operationAuthoring: { schemaVersion: 1, operation: structuredClone(operation), defaults: {}, retained: [] },
+      },
+    })),
+    edges: starter.edges.map((e, i) => ({ ...e, id: `edge-${i}` })),
+  };
+}
+
+let starters;
+test('ordinary required media pickers block connected empty loaders and retain historical snapshots', () => {
+  for (const media of ['image', 'audio']) {
+    const file = { display: 'filebrowser', type: 'str', required: true, fieldOptions: { fileTypes: [media] } };
+    const loader = {
+      id: 'loader',
+      data: { module: 'custom.Media', action: 'Load', label: 'Load media', params: { file: { ...file } } },
+    };
+    const consumer = { id: 'consumer', data: { params: {} } };
+    const graph = {
+      nodes: [loader, consumer],
+      edges: [{ source: 'loader', sourceHandle: media, target: 'consumer', targetHandle: media }],
+    };
+    const before = structuredClone(graph);
+    assert.equal(inspect(graph.nodes, graph)[0]?.code, 'media_file_input_missing');
+    assert.deepEqual(graph, before);
+    delete loader.data.params.file.required;
+    const registry = { 'custom.Media.Load': { params: { file } } };
+    assert.equal(inspect(graph.nodes, graph, [], registry)[0]?.nodeId, 'loader');
+    loader.data.params.file.value = ['@data/example'];
+    assert.equal(inspect(graph.nodes, graph, [], registry).length, 0);
+    loader.data.params.file.value = [];
+    graph.edges.push({ source: 'consumer', sourceHandle: 'path', target: 'loader', targetHandle: 'file' });
+    assert.equal(inspect(graph.nodes, graph, [], registry).length, 0);
+    consumer.data.uiState = { disabled: true };
+    assert.equal(inspect(graph.nodes, graph, [], registry).length, 1);
+    assert.equal(inspect(graph.nodes, { nodes: [consumer], edges: [] }, [], registry).length, 0);
+  }
+});
+
+test('backend-declared required media on ordinary generic nodes blocks before execution, without demanding optional masks or blank prompts', async () => {
+  starters = await operationFixtures();
+  for (const starter of starters) {
+    const graph = operationGraph(starter);
+    const before = structuredClone(graph);
+    const expected = starter.requiredInputs.filter(({ operationId, field }) =>
+      starter.nodes
+        .find((n) => n.operation.operationId === operationId)
+        .operation.ports.some((p) => p.name === field && p.required && p.semantics?.kind === 'media'),
+    );
+    const issues = inspect(graph.nodes, graph);
+    assert.deepEqual(
+      issues
+        .map((i) => ({ operationId: i.nodeId, field: i.fieldId }))
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      expected.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      `${starter.pipelineClass}/${starter.task}`,
+    );
+    assert.ok(issues.every((i) => i.blocking && i.code === 'operation_media_input_missing'));
+    assert.deepEqual(graph, before);
+  }
+});
+
+test('required operation media honors enabled compatible sources, exact selected scope and visible Block owners', () => {
+  const starter = starters.find((s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'inpaint');
+  const graph = operationGraph(starter);
+  const issues = inspect(graph.nodes, graph);
+  assert.equal(issues.length, 2);
+  const target = graph.nodes.find((n) => n.id === issues[0].nodeId);
+  const source = { id: 'image-source', data: { params: { image: { display: 'output', type: 'image' } } } };
+  graph.nodes.push(source);
+  for (const issue of issues)
+    graph.edges.push({
+      id: issue.fieldId,
+      source: source.id,
+      sourceHandle: 'image',
+      target: issue.nodeId,
+      targetHandle: issue.fieldId,
+    });
+  assert.equal(inspect(graph.nodes, graph).length, 0);
+  source.data.uiState = { disabled: true };
+  assert.equal(inspect(graph.nodes, graph).length, 2, 'disabled producer cannot satisfy required media');
+  delete source.data.uiState;
+  source.data.params.image.type = 'string';
+  assert.equal(inspect(graph.nodes, graph).length, 2, 'incompatible wire cannot satisfy required media');
+  source.data.params.image.type = 'image';
+  source.data.params.image.display = 'input';
+  assert.equal(inspect(graph.nodes, graph).length, 2, 'input handles cannot supply another input');
+  assert.equal(
+    inspect(graph.nodes, { nodes: [], edges: [] }).length,
+    0,
+    'other selected execution scopes remain runnable',
+  );
+  graph.edges = [];
+  const nestedId = projectionId('root', target.id);
+  const root = {
+    id: 'root',
+    data: {
+      blockInstanceV2: {
+        instanceId: 'root',
+        effectiveInterface: { boundary: { inputs: [] } },
+        effectiveGraph: { nodes: [{ nodeId: target.id }] },
+      },
+    },
+  };
+  const leaf = { ...target, id: nestedId };
+  const nested = { nodes: [leaf], edges: [] };
+  const hidden = inspect([root], nested);
+  assert.equal(hidden.length, 2);
+  assert.ok(hidden.every((i) => i.nodeId === root.id && i.fieldId === undefined));
+  assert.ok(hidden.every((i) => i.details.includes(target.id)));
+  const visible = inspect([root, leaf], nested);
+  assert.ok(visible.every((i) => i.nodeId === nestedId && i.fieldId));
+  leaf.data.uiState = { disabled: true };
+  assert.equal(inspect([root], nested).length, 0);
+});
+
+test('missing operation media ignores invalid imported hints and accepts present literals without rewriting them', () => {
+  const graph = operationGraph(
+    starters.find((s) => s.pipelineClass === 'FluxKontextModularPipeline' && s.task === 'edit_image'),
+  );
+  const initial = inspect(graph.nodes, graph);
+  assert.ok(initial.length > 0);
+  for (const issue of initial)
+    graph.nodes.find((n) => n.id === issue.nodeId).data.params[issue.fieldId].value = ['@data/images/reference.webp'];
+  const before = structuredClone(graph);
+  assert.equal(inspect(graph.nodes, graph).length, 0);
+  assert.deepEqual(graph, before);
+  const invalid = structuredClone(before);
+  for (const n of invalid.nodes) {
+    n.data.operationAuthoring.operation.nodeKey = 'unrelated.Action';
+    for (const p of Object.values(n.data.params)) delete p.value;
+  }
+  assert.equal(inspect(invalid.nodes, invalid).length, 0);
+});
+
+test('current backend declarations refresh stale saved requirements without changing graph values', () => {
+  const starter = starters.find((s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'inpaint');
+  const graph = operationGraph(starter);
+  const current = structuredClone(starter.nodes.map((n) => n.operation));
+  for (const node of graph.nodes)
+    for (const port of node.data.operationAuthoring.operation.ports)
+      if (port.name === 'mask_image') port.required = false;
+  const before = structuredClone(graph);
+  assert.equal(inspect(graph.nodes, graph).length, 1);
+  assert.equal(inspect(graph.nodes, graph, current).length, 2);
+  assert.deepEqual(graph, before);
+});
+
+test('connected built-in loaders need files only when supplying declared required media', () => {
+  const starter = starters.find((s) => s.pipelineClass === 'FluxKontextModularPipeline' && s.task === 'edit_image');
+  for (const [module, media] of [
+    ['modules.Image', 'image'],
+    ['modules.Audio', 'audio'],
+  ]) {
+    const graph = operationGraph(starter);
+    const target = graph.nodes.find((node) =>
+      node.data.operationAuthoring.operation.ports.some((p) => p.required && p.semantics?.kind === 'media'),
+    );
+    const port = target.data.operationAuthoring.operation.ports.find(
+      (p) => p.required && p.semantics?.kind === 'media',
+    );
+    target.data.params[port.name].type = media;
+    const loader = {
+      id: 'source',
+      data: {
+        module,
+        action: 'Load',
+        label: `Load ${media}`,
+        params: {
+          file: { display: 'filebrowser', type: 'str', value: [] },
+          output: { display: 'output', type: media },
+        },
+      },
+    };
+    graph.nodes.push(loader);
+    graph.edges.push({ source: loader.id, sourceHandle: 'output', target: target.id, targetHandle: port.name });
+    const before = structuredClone(graph);
+    const missing = () => inspect(graph.nodes, graph).filter((i) => i.code === 'media_file_input_missing');
+    assert.equal(missing().length, 1);
+    assert.equal(missing()[0].nodeId, 'source');
+    assert.deepEqual(graph, before);
+    loader.data.params.file.value = ['@data/selected'];
+    assert.equal(missing().length, 0);
+    loader.data.params.file.value = [];
+    port.required = false;
+    assert.equal(missing().length, 0, 'preserve empty optional branches');
+    port.required = true;
+    loader.data.module = 'custom.GeneratedMedia';
+    assert.equal(missing().length, 0, 'do not infer arbitrary custom execution from a file widget');
+  }
+});

@@ -1,9 +1,11 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback } from 'react';
 import config from '../../app.config';
 
 import {
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   FileJson2,
@@ -16,6 +18,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  ModiffButton,
   ModiffIconButton,
   ModiffInput,
   ModiffMenuAction,
@@ -42,6 +45,8 @@ import {
   saveDetachedWorkflowNow,
 } from '../studio/useWorkflowBackendSync';
 
+const DeveloperWorkflowLauncher = lazy(() => import('./DeveloperWorkflowLauncher'));
+
 export interface GraphData {
   isDir: boolean;
   path: string;
@@ -56,6 +61,7 @@ export interface GraphData {
 }
 
 const graphListRequestGate = createLatestRequestGate<'graphs'>();
+const SAVED_WORKFLOWS_PAGE_SIZE = 50;
 
 type SavedWorkflowSummary = Omit<WorkflowTab, 'snapshot'> & { snapshot?: WorkflowTab['snapshot'] };
 
@@ -99,6 +105,7 @@ function backendWorkflowSummary(value: unknown): SavedWorkflowSummary | null {
     createdAt: typeof value.createdAt === 'number' ? value.createdAt : Date.now(),
     updatedAt: typeof value.updatedAt === 'number' ? value.updatedAt : Date.now(),
     dirty: false,
+    intent: value.intent === 'draft' ? 'draft' : 'saved',
     source: typeof value.source === 'string' ? (value.source as WorkflowTab['source']) : 'manual',
     sourceLabel: typeof value.sourceLabel === 'string' ? value.sourceLabel : undefined,
     backendRevision: typeof value.revision === 'number' ? value.revision : 0,
@@ -110,40 +117,25 @@ function parseGraphList(value: unknown) {
   return value.map(parseGraphEntry);
 }
 
-const MODIFF_EXAMPLE_ROOTS = new Set(['modiff', 'modular_diffusers']);
-
-function mergeMoDiffExampleRoots(graphs: GraphData[]) {
-  const exampleRoots = graphs.filter((node) => node.isDir && MODIFF_EXAMPLE_ROOTS.has(node.name));
-  if (exampleRoots.length === 0) return graphs;
-
-  const mergedRoot: GraphData = {
-    isDir: true,
-    path: 'modiff_examples',
-    name: 'MoDiff Examples',
-    children: exampleRoots.flatMap((node) => node.children ?? []),
-  };
-  const firstIndex = graphs.findIndex((node) => node.isDir && MODIFF_EXAMPLE_ROOTS.has(node.name));
-  const rest = graphs.filter((node) => !(node.isDir && MODIFF_EXAMPLE_ROOTS.has(node.name)));
-  return [...rest.slice(0, Math.max(firstIndex, 0)), mergedRoot, ...rest.slice(Math.max(firstIndex, 0))];
-}
-
 function workflowTestId(value: string) {
   return value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 function GraphList() {
+  const libraryTab = useSettingsStore((s) => s.workflowLibraryView);
+  const setLibraryTab = useSettingsStore((s) => s.setWorkflowLibraryView);
   const [isLoading, setIsLoading] = useState(false);
   const [graphs, setGraphs] = useState<GraphData[]>([]);
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflowSummary[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const [savedPage, setSavedPage] = useState(0);
   const [mediaFilter, setMediaFilter] = useState('all');
   const [modelFilter, setModelFilter] = useState('all');
   const [modeFilter, setModeFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
   const [readinessFilter, setReadinessFilter] = useState('all');
   const edgeType = useSettingsStore((state) => state.edgeType);
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setAlertOpener = useSettingsStore((state) => state.setAlertOpener);
@@ -198,10 +190,7 @@ function GraphList() {
     });
   };
 
-  const visibleGraphs = useMemo(
-    () => (studioViewMode === 'expert' ? graphs : mergeMoDiffExampleRoots(graphs)),
-    [graphs, studioViewMode],
-  );
+  const visibleGraphs = graphs;
 
   const allWorkflowFiles = useMemo(() => {
     const getAllFiles = (nodes: GraphData[]): GraphData[] => {
@@ -243,9 +232,17 @@ function GraphList() {
     workflowTabs.forEach((tab) => byId.set(tab.id, tab));
     return [...byId.values()].sort((left, right) => right.updatedAt - left.updatedAt);
   }, [savedWorkflows, workflowTabs]);
-  const visibleSavedWorkflowRows = savedWorkflowRows.filter((tab) =>
-    tab.title.toLowerCase().includes(search.trim().toLowerCase()),
+  const visibleSavedWorkflowRows = savedWorkflowRows.filter(
+    (tab) =>
+      (libraryTab === 'drafts' ? tab.intent === 'draft' : tab.intent !== 'draft') &&
+      tab.title.toLowerCase().includes(search.trim().toLowerCase()),
   );
+  // Each row owns an accessible action menu. Mounting an unbounded library
+  // makes unrelated graph edits and run feedback expensive to render.
+  const lastSavedPage = Math.max(0, Math.ceil(visibleSavedWorkflowRows.length / SAVED_WORKFLOWS_PAGE_SIZE) - 1);
+  const currentSavedPage = Math.min(savedPage, lastSavedPage);
+  const savedOffset = currentSavedPage * SAVED_WORKFLOWS_PAGE_SIZE;
+  const savedPageRows = visibleSavedWorkflowRows.slice(savedOffset, savedOffset + SAVED_WORKFLOWS_PAGE_SIZE);
   const filteredGraphs = useMemo(() => {
     if (!filtersActive) return visibleGraphs;
     return allWorkflowFiles.filter(
@@ -494,149 +491,224 @@ function GraphList() {
           </div>
         </div>
       </header>
-      <div className="flex items-center gap-2 p-2">
-        <ModiffSearchInput
-          aria-label="Search workflows"
-          className="min-w-0 flex-1"
-          placeholder="Search workflows"
-          value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          onClear={() => setSearch('')}
-        />
-        <ModiffIconButton
-          label="Reload workflows"
-          disabled={isLoading}
-          className="text-hf-yellow hover:text-hf-orange"
-          onClick={() => {
-            void fetchGraphs();
-            void fetchSavedWorkflows();
-            setExpanded(new Set());
-            setSearch('');
-            setMediaFilter('all');
-            setModelFilter('all');
-            setModeFilter('all');
-            setTierFilter('all');
-            setReadinessFilter('all');
-          }}
-        >
-          {isLoading ? <LoaderCircle size={18} className="animate-spin" /> : <RotateCcw size={17} />}
-        </ModiffIconButton>
+      <div className="flex flex-wrap gap-2 p-2">
+        <ModiffButton aria-pressed={libraryTab === 'start'} onClick={() => setLibraryTab('start')}>
+          Start
+        </ModiffButton>
+        <ModiffButton aria-pressed={libraryTab === 'examples'} onClick={() => setLibraryTab('examples')}>
+          Example workflows
+        </ModiffButton>
+        <ModiffButton aria-pressed={libraryTab === 'saved'} onClick={() => setLibraryTab('saved')}>
+          My workflows
+        </ModiffButton>
+        <ModiffButton aria-pressed={libraryTab === 'drafts'} onClick={() => setLibraryTab('drafts')}>
+          Recovery drafts
+        </ModiffButton>
       </div>
-      <section className="min-w-0 overflow-hidden border-b border-modiff-border px-2 pb-2" data-testid="my-workflows">
-        <h3 className="text-modiff-label mb-1 px-1 font-semibold uppercase text-modiff-subtle-text">My workflows</h3>
-        <div className="grid gap-1">
-          {visibleSavedWorkflowRows.map((tab) => (
-            <div
-              key={tab.id}
-              className={`group flex min-h-8 min-w-0 items-center gap-1 overflow-hidden rounded-modiff-compact px-2 text-xs ${tab.id === activeWorkflowTabId ? 'bg-hf-yellow/10 text-hf-yellow' : 'text-modiff-text hover:bg-modiff-surface-hover/50'}`}
-              data-testid={`saved-workflow-${tab.id}`}
+      {libraryTab === 'start' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <Suspense fallback={<p role="status">Loading tasks…</p>}>
+            <DeveloperWorkflowLauncher embedded />
+          </Suspense>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 p-2">
+            <ModiffSearchInput
+              aria-label="Search workflows"
+              className="min-w-0 flex-1"
+              placeholder="Search workflows"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.currentTarget.value);
+                setSavedPage(0);
+              }}
+              onClear={() => {
+                setSearch('');
+                setSavedPage(0);
+              }}
+            />
+            <ModiffIconButton
+              label="Reload workflows"
+              disabled={isLoading}
+              className="text-hf-yellow hover:text-hf-orange"
+              onClick={() => {
+                void fetchGraphs();
+                void fetchSavedWorkflows();
+                setExpanded(new Set());
+                setSearch('');
+                setSavedPage(0);
+                setMediaFilter('all');
+                setModelFilter('all');
+                setModeFilter('all');
+                setTierFilter('all');
+                setReadinessFilter('all');
+              }}
             >
-              <FileJson2 size={14} className="shrink-0" />
-              {renamingTabId === tab.id ? (
-                <ModiffInput
-                  autoFocus
-                  value={renameValue}
-                  onChange={(event) => setRenameValue(event.target.value)}
-                  onBlur={() => {
-                    void renameSavedWorkflow(tab, renameValue);
-                    setRenamingTabId(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') event.currentTarget.blur();
-                    if (event.key === 'Escape') setRenamingTabId(null);
-                  }}
-                  controlSize="compact"
-                  className="nodrag nowheel min-w-0 flex-1 border-hf-yellow"
-                />
-              ) : (
-                <GraphControlButton
-                  type="button"
-                  className="min-h-7 min-w-0 flex-1 truncate text-left"
-                  onClick={() => void openSavedWorkflow(tab)}
-                >
-                  {tab.dirty ? '* ' : ''}
-                  {tab.title}
-                </GraphControlButton>
-              )}
-              <ModiffMenuRoot className="shrink-0">
-                <ModiffMenuTrigger>
+              {isLoading ? <LoaderCircle size={18} className="animate-spin" /> : <RotateCcw size={17} />}
+            </ModiffIconButton>
+          </div>
+          {libraryTab !== 'examples' ? (
+            <section
+              className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2"
+              data-testid="my-workflows"
+            >
+              <h3 className="text-modiff-label mb-1 px-1 font-semibold uppercase text-modiff-subtle-text">
+                {libraryTab === 'drafts' ? 'Recovery drafts — open and Save to keep in My workflows' : 'My workflows'}
+              </h3>
+              {lastSavedPage > 0 && (
+                <div className="mb-1 flex min-w-0 items-center justify-between gap-1 text-xs text-modiff-subtle-text">
                   <ModiffIconButton
                     size="compact"
-                    label={`Actions for ${tab.title}`}
-                    className="text-modiff-subtle-text hover:text-hf-yellow"
+                    label="Previous saved workflows"
+                    disabled={currentSavedPage === 0}
+                    onClick={() => setSavedPage(currentSavedPage - 1)}
                   >
-                    <MoreHorizontal size={14} />
+                    <ChevronLeft size={14} />
                   </ModiffIconButton>
-                </ModiffMenuTrigger>
-                <ModiffMenuSurface anchor="bottom end" className="min-w-40">
-                  <ModiffMenuAction
-                    icon={<Pencil size={13} />}
-                    onClick={() => {
-                      setRenamingTabId(tab.id);
-                      setRenameValue(tab.title);
-                    }}
+                  <span>
+                    {savedOffset + 1}–{savedOffset + savedPageRows.length} of {visibleSavedWorkflowRows.length}
+                  </span>
+                  <ModiffIconButton
+                    size="compact"
+                    label="Next saved workflows"
+                    disabled={currentSavedPage === lastSavedPage}
+                    onClick={() => setSavedPage(currentSavedPage + 1)}
                   >
-                    Rename
-                  </ModiffMenuAction>
-                  <ModiffMenuAction icon={<Copy size={13} />} onClick={() => void duplicateSavedWorkflow(tab.id)}>
-                    Duplicate
-                  </ModiffMenuAction>
-                  <ModiffMenuAction icon={<Download size={13} />} onClick={() => void exportSavedWorkflow(tab.id)}>
-                    Export
-                  </ModiffMenuAction>
-                  <ModiffMenuAction
-                    tone="danger"
-                    icon={<Trash2 size={13} />}
-                    onClick={() => deleteSavedWorkflow(tab.id)}
+                    <ChevronRight size={14} />
+                  </ModiffIconButton>
+                </div>
+              )}
+              <div className="grid gap-1">
+                {savedPageRows.map((tab) => (
+                  <div
+                    key={tab.id}
+                    className={`group flex min-h-8 min-w-0 items-center gap-1 overflow-hidden rounded-modiff-compact px-2 text-xs ${tab.id === activeWorkflowTabId ? 'bg-hf-yellow/10 text-hf-yellow' : 'text-modiff-text hover:bg-modiff-surface-hover/50'}`}
+                    data-testid={`saved-workflow-${tab.id}`}
                   >
-                    Delete
-                  </ModiffMenuAction>
-                </ModiffMenuSurface>
-              </ModiffMenuRoot>
-            </div>
-          ))}
-        </div>
-      </section>
-      <div className="grid grid-cols-2 gap-1 px-2 pb-2">
-        {[
-          ['Media', mediaFilter, setMediaFilter, filterOptions.media],
-          ['Model', modelFilter, setModelFilter, filterOptions.models],
-          ['Mode', modeFilter, setModeFilter, filterOptions.modes],
-          ['Tier', tierFilter, setTierFilter, ['supported', 'experimental']],
-          ['Readiness', readinessFilter, setReadinessFilter, ['graph-qualified', 'runtime-qualified', 'unqualified']],
-        ].map(([label, value, setter, options]) => (
-          <div key={String(label)} className="min-w-0 text-modiff-label uppercase text-modiff-subtle-text">
-            <span>{String(label)}</span>
-            <ModiffSelect
-              aria-label={`Filter workflows by ${String(label).toLowerCase()}`}
-              value={String(value)}
-              onValueChange={setter as (next: string) => void}
-              options={[
-                { value: 'all', label: 'All' },
-                ...(options as string[]).sort().map((option) => ({
-                  value: option,
-                  label: option.replace(/_/g, ' '),
-                })),
-              ]}
-              size="compact"
-              className="mt-0.5 w-full normal-case"
-            />
-          </div>
-        ))}
-      </div>
+                    <FileJson2 size={14} className="shrink-0" />
+                    {renamingTabId === tab.id ? (
+                      <ModiffInput
+                        autoFocus
+                        value={renameValue}
+                        onChange={(event) => setRenameValue(event.target.value)}
+                        onBlur={() => {
+                          void renameSavedWorkflow(tab, renameValue);
+                          setRenamingTabId(null);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur();
+                          if (event.key === 'Escape') setRenamingTabId(null);
+                        }}
+                        controlSize="compact"
+                        className="nodrag nowheel min-w-0 flex-1 border-hf-yellow"
+                      />
+                    ) : (
+                      <GraphControlButton
+                        type="button"
+                        className="min-h-7 min-w-0 flex-1 truncate text-left"
+                        onClick={() => void openSavedWorkflow(tab)}
+                      >
+                        {tab.dirty ? '* ' : ''}
+                        {tab.title}
+                      </GraphControlButton>
+                    )}
+                    <ModiffMenuRoot className="shrink-0">
+                      <ModiffMenuTrigger>
+                        <ModiffIconButton
+                          size="compact"
+                          label={`Actions for ${tab.title}`}
+                          className="text-modiff-subtle-text hover:text-hf-yellow"
+                        >
+                          <MoreHorizontal size={14} />
+                        </ModiffIconButton>
+                      </ModiffMenuTrigger>
+                      <ModiffMenuSurface anchor="bottom end" className="min-w-40">
+                        <ModiffMenuAction
+                          icon={<Pencil size={13} />}
+                          onClick={() => {
+                            setRenamingTabId(tab.id);
+                            setRenameValue(tab.title);
+                          }}
+                        >
+                          Rename
+                        </ModiffMenuAction>
+                        <ModiffMenuAction icon={<Copy size={13} />} onClick={() => void duplicateSavedWorkflow(tab.id)}>
+                          Duplicate
+                        </ModiffMenuAction>
+                        <ModiffMenuAction
+                          icon={<Download size={13} />}
+                          onClick={() => void exportSavedWorkflow(tab.id)}
+                        >
+                          Export
+                        </ModiffMenuAction>
+                        <ModiffMenuAction
+                          tone="danger"
+                          icon={<Trash2 size={13} />}
+                          onClick={() => deleteSavedWorkflow(tab.id)}
+                        >
+                          Delete
+                        </ModiffMenuAction>
+                      </ModiffMenuSurface>
+                    </ModiffMenuRoot>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <>
+              <div className="grid shrink-0 grid-cols-2 gap-1 px-2 pb-2">
+                {[
+                  ['Media', mediaFilter, setMediaFilter, filterOptions.media],
+                  ['Model', modelFilter, setModelFilter, filterOptions.models],
+                  ['Mode', modeFilter, setModeFilter, filterOptions.modes],
+                  ['Tier', tierFilter, setTierFilter, ['supported', 'experimental']],
+                  [
+                    'Readiness',
+                    readinessFilter,
+                    setReadinessFilter,
+                    ['graph-qualified', 'runtime-qualified', 'unqualified'],
+                  ],
+                ].map(([label, value, setter, options]) => (
+                  <div key={String(label)} className="min-w-0 text-modiff-label uppercase text-modiff-subtle-text">
+                    <span>{String(label)}</span>
+                    <ModiffSelect
+                      aria-label={`Filter workflows by ${String(label).toLowerCase()}`}
+                      value={String(value)}
+                      onValueChange={setter as (next: string) => void}
+                      options={[
+                        { value: 'all', label: 'All' },
+                        ...(options as string[]).sort().map((option) => ({
+                          value: option,
+                          label: option.replace(/_/g, ' '),
+                        })),
+                      ]}
+                      size="compact"
+                      className="mt-0.5 w-full normal-case"
+                    />
+                  </div>
+                ))}
+              </div>
 
-      {isLoading ? (
-        <div className="text-center text-sm text-modiff-subtle-text">Loading...</div>
-      ) : (
-        <div className="select-none" data-testid="workflow-list">
-          {filteredGraphs.length > 0 ? (
-            filteredGraphs.map((item) => renderDir(item, 0))
-          ) : visibleSavedWorkflowRows.length === 0 ? (
-            <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
-              No saved, imported, or example workflows found.
-            </div>
-          ) : null}
-        </div>
+              {isLoading ? (
+                <div className="text-center text-sm text-modiff-subtle-text">Loading...</div>
+              ) : (
+                <div
+                  className="min-h-0 flex-1 select-none overflow-y-auto overscroll-contain"
+                  data-testid="workflow-list"
+                >
+                  {filteredGraphs.length > 0 ? (
+                    filteredGraphs.map((item) => renderDir(item, 0))
+                  ) : visibleSavedWorkflowRows.length === 0 ? (
+                    <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
+                      No saved, imported, or example workflows found.
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </>
+          )}
+        </>
       )}
     </div>
   );

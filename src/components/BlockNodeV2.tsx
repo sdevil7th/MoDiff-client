@@ -16,6 +16,7 @@ import { useShallow } from 'zustand/react/shallow';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useFlowStore } from '../stores/useFlowStore';
+import { captureWorkflowOperationContext } from '../stores/useStudioStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import type { BlockJsonValue } from '../studio/blockSchemaV2';
 import { blockExpandedProjectionSizeV2, blockProjectedChildCountV2, blockViewModelV2 } from '../studio/blockRuntimeV2';
@@ -30,7 +31,9 @@ import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
+import { visualOperationGroup } from '../workflow/visualOperationGroups';
 
+const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
 const BlockDetailDialogV2 = lazy(() => import('./BlockDetailDialogV2'));
 
 /**
@@ -46,6 +49,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   const [interfaceOpen, setInterfaceOpen] = useState(false);
   const [saveChoicesOpen, setSaveChoicesOpen] = useState(false);
   const [routeSwitchBusy, setRouteSwitchBusy] = useState(false);
+  const routeSwitchRequest = useRef<AbortController | null>(null);
   const [pendingRouteKey, setPendingRouteKey] = useState<string | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const reactFlowStore = useStoreApi();
@@ -169,16 +173,22 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   }, [compactInternalLayout, node.id, scheduleNodeLayoutSync, setPresentation, updateNodeInternals]);
   const performRouteSwitch = useCallback(
     async (routeKey: string, saveActiveRoute = false) => {
-      if (routeSwitchBusy) return;
+      if (routeSwitchRequest.current) return;
+      const controller = new AbortController();
+      routeSwitchRequest.current = controller;
+      const source = {
+        context: captureWorkflowOperationContext(),
+        signature: JSON.stringify(useFlowStore.getState().toObject()),
+      };
       setRouteSwitchBusy(true);
       try {
         const saved = saveActiveRoute ? await saveBlockInstanceV2AsNewUserDefinition({ instanceId: node.id }) : null;
         const { switchRegisteredBlockRouteV1 } = await import('../studio/registeredBlockRouteSwitchV1');
-        const switched = await switchRegisteredBlockRouteV1(node.id, routeKey);
+        const switched = await switchRegisteredBlockRouteV1(node.id, routeKey, { source, signal: controller.signal });
         setPendingRouteKey(null);
         enqueueSnackbar(
           saved
-            ? `Saved User Node ${saved.displayName}, then switched to ${switched.definitionSnapshot.displayName}.`
+            ? `Saved Block ${saved.displayName}, then switched to ${switched.definitionSnapshot.displayName}.`
             : `Model route changed to ${switched.definitionSnapshot.displayName}.`,
           {
             variant: 'success',
@@ -186,16 +196,22 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
           },
         );
       } catch (error) {
+        if (controller.signal.aborted) return;
         enqueueSnackbar(error instanceof Error ? error.message : 'Could not save and switch this model route.', {
           variant: 'error',
           autoHideDuration: 6200,
         });
       } finally {
-        setRouteSwitchBusy(false);
+        if (routeSwitchRequest.current === controller) {
+          routeSwitchRequest.current = null;
+          setRouteSwitchBusy(false);
+        }
       }
     },
-    [node.id, routeSwitchBusy],
+    [node.id],
   );
+
+  useEffect(() => () => routeSwitchRequest.current?.abort(), []);
 
   useEffect(() => {
     updateNodeInternals(node.id);
@@ -400,6 +416,9 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
         }
         controls={
           <>
+            <Suspense fallback={null}>
+              <OperationOwnerControls node={{ ...node, position: view.position }} />
+            </Suspense>
             {registeredRouteSet ? (
               <ModiffFieldShell className="mb-3" label={registeredRouteSet.routeSet.label}>
                 <ModiffSelect
@@ -446,14 +465,38 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
                 />
               </ModiffFieldShell>
             ) : null}
-            <NodeContent
-              nodeId={node.id}
-              params={view.controlParams}
-              updateStore={updateStore}
-              module={view.source.library ?? view.source.provider ?? 'MoDiff'}
-              action="BlockV2"
-              mode="controls"
-            />
+            {visualOperationGroup({ ...node, position: view.position }) === 'inputs' ? (
+              [...new Set(instance!.effectiveInterface.controls.map((control) => control.group ?? 'Settings'))].map(
+                (group) => (
+                  <section key={group} aria-label={`${group} encoding controls`} className="mb-3">
+                    <h4 className="mb-2 text-sm font-semibold text-modiff-subtle-text">{group}</h4>
+                    <NodeContent
+                      nodeId={node.id}
+                      params={Object.fromEntries(
+                        Object.entries(view.controlParams).filter(
+                          ([id]) =>
+                            (instance!.effectiveInterface.controls.find((control) => control.controlId === id)?.group ??
+                              'Settings') === group,
+                        ),
+                      )}
+                      updateStore={updateStore}
+                      module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+                      action="BlockV2"
+                      mode="controls"
+                    />
+                  </section>
+                ),
+              )
+            ) : (
+              <NodeContent
+                nodeId={node.id}
+                params={view.controlParams}
+                updateStore={updateStore}
+                module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+                action="BlockV2"
+                mode="controls"
+              />
+            )}
             {view.previewViews.map((preview) => (
               <div
                 key={preview.previewId}
@@ -500,7 +543,10 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
             mode="route"
             nodeId={node.id}
             busy={routeSwitchBusy}
-            onClose={() => setPendingRouteKey(null)}
+            onClose={() => {
+              routeSwitchRequest.current?.abort();
+              setPendingRouteKey(null);
+            }}
             onSwitch={(save) => void performRouteSwitch(pendingRouteKey, save)}
           />
         </Suspense>

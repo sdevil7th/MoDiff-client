@@ -83,6 +83,8 @@ import {
 import { ImageCompareFrame } from '../ui/ImageCompareFrame';
 import { cx } from '../utils/classNames';
 import { requestJson } from '../utils/requestJson';
+import { prepareWorkflowForManualInsertion } from '../studio/manualGraphInsertion';
+import WorkflowEntryActions from './WorkflowEntryActions';
 import { TemplateUsageTermsDialog } from './TemplateUsageTermsDialog';
 
 const difficultyOptions: Array<TemplateBrowserFilter['difficulty']> = [
@@ -300,9 +302,14 @@ function showcasePriority(templateId: string) {
   return index === -1 ? SHOWCASE_TEMPLATE_PRIORITY.length : index;
 }
 
-export default function TemplateBrowserDialog() {
-  const open = useSettingsStore((state) => state.templateBrowserOpen);
-  const setOpen = useSettingsStore((state) => state.setTemplateBrowserOpen);
+export default function TemplateBrowserDialog({ entry = false }: { entry?: boolean }) {
+  const browserOpen = useSettingsStore((state) => state.templateBrowserOpen);
+  const setBrowserOpen = useSettingsStore((state) => state.setTemplateBrowserOpen);
+  const open = entry || browserOpen;
+  const setOpen = (next: boolean) => {
+    if (!next && entry) prepareWorkflowForManualInsertion({ revealWorkspace: false });
+    setBrowserOpen(next);
+  };
   const initialCategory = useSettingsStore((state) => state.templateBrowserInitialCategory);
   const clearInitialCategory = useSettingsStore((state) => state.clearTemplateBrowserInitialCategory);
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
@@ -333,6 +340,8 @@ export default function TemplateBrowserDialog() {
       return status === 'idle' || status === 'loading';
     }),
   );
+  const filtersId = useId();
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [manifest, setManifest] = useState<TemplateGalleryManifest | null>(null);
   const [manifestStartupFailed, setManifestStartupFailed] = useState(false);
   const [autoPlansStartupFailed, setAutoPlansStartupFailed] = useState(false);
@@ -354,6 +363,13 @@ export default function TemplateBrowserDialog() {
     difficulty: 'all',
     sort: 'recommended',
   });
+
+  const activeFilterCount = [
+    filter.modelType !== 'all',
+    filter.mode !== 'all',
+    filter.difficulty !== 'all',
+    filter.sort !== 'recommended',
+  ].filter(Boolean).length;
 
   useEffect(() => {
     if (!open || !initialCategory) return;
@@ -764,17 +780,22 @@ export default function TemplateBrowserDialog() {
       <ModiffDialog
         open={open}
         onClose={() => setOpen(false)}
-        testId="template-browser-dialog"
+        testId={entry ? 'task-launcher' : 'template-browser-dialog'}
         title={
           <span className="inline-flex items-center gap-2">
             <WandSparkles size={18} className="text-hf-yellow" />
             Templates
           </span>
         }
-        panelClassName="!h-[80vh] !w-[82vw] !max-h-[80vh] !max-w-[82vw]"
-        bodyClassName="!h-[calc(80vh-49px)] !max-h-[calc(80vh-49px)] overflow-hidden p-0"
+        panelClassName="!h-[90dvh] !w-[96vw] !max-h-[90dvh] !max-w-[96vw] sm:!h-[80vh] sm:!w-[82vw] sm:!max-h-[80vh] sm:!max-w-[82vw]"
+        bodyClassName="!h-[calc(90dvh-49px)] !max-h-[calc(90dvh-49px)] sm:!h-[calc(80vh-49px)] sm:!max-h-[calc(80vh-49px)] flex flex-col overflow-hidden p-0"
       >
-        <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[190px_minmax(0,1fr)] lg:grid-rows-1">
+        {entry ? (
+          <div className="shrink-0 border-b border-modiff-border p-3">
+            <WorkflowEntryActions />
+          </div>
+        ) : null}
+        <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[190px_minmax(0,1fr)] lg:grid-rows-1">
           <aside className="min-h-0 overflow-x-auto border-b border-modiff-border bg-modiff-bg p-2 lg:overflow-y-auto lg:border-b-0 lg:border-r lg:p-3">
             <div className="flex min-w-max gap-1 lg:grid lg:min-w-0" role="group" aria-label="Template categories">
               {visibleCategories.map((category) => {
@@ -816,7 +837,7 @@ export default function TemplateBrowserDialog() {
 
           <section className="@container grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] bg-modiff-surface">
             <div className="border-b border-modiff-border bg-modiff-panel p-3" data-testid="template-browser-header">
-              <h1 className="mb-2 text-xl font-bold tracking-tight text-modiff-text">
+              <h1 className="mb-2 hidden text-xl font-bold tracking-tight text-modiff-text sm:block">
                 {filter.category === 'recommended' ? 'Recommended templates' : categoryLabel(filter.category)}
               </h1>
               <div className="flex flex-wrap items-end gap-2">
@@ -830,50 +851,65 @@ export default function TemplateBrowserDialog() {
                   controlSize="prominent"
                   className="min-w-52 flex-1"
                 />
-                <TemplateFilterSelect
-                  label="Model"
-                  value={filter.modelType}
-                  onValueChange={(value) =>
-                    setFilter((current) => ({ ...current, modelType: value as StudioModelType | 'all' }))
-                  }
-                  options={[
-                    { value: 'all', label: 'All models' },
-                    ...getCatalogModelProfiles({ currentModelType: form.modelType, includeWorkflowOnly: true }).map(
-                      (profile) => ({
-                        value: profile.modelType,
-                        label: profile.label,
-                      }),
-                    ),
-                  ]}
-                />
-                <TemplateFilterSelect
-                  label="Operation"
-                  value={filter.mode ?? 'all'}
-                  onValueChange={(value) => setFilter((current) => ({ ...current, mode: value as StudioMode | 'all' }))}
-                  options={[
-                    { value: 'all', label: 'All operations' },
-                    ...templateModeOptions.map((mode) => ({ value: mode, label: STUDIO_MODE_LABELS[mode] })),
-                  ]}
-                />
-                <TemplateFilterSelect
-                  label="Level"
-                  value={filter.difficulty}
-                  onValueChange={(value) =>
-                    setFilter((current) => ({ ...current, difficulty: value as TemplateBrowserFilter['difficulty'] }))
-                  }
-                  options={difficultyOptions.map((difficulty) => ({
-                    value: difficulty,
-                    label: formatDifficulty(difficulty),
-                  }))}
-                />
-                <TemplateFilterSelect
-                  label="Sort"
-                  value={filter.sort}
-                  onValueChange={(value) =>
-                    setFilter((current) => ({ ...current, sort: value as TemplateBrowserFilter['sort'] }))
-                  }
-                  options={sortOptions}
-                />
+                <ModiffButton
+                  className="sm:hidden"
+                  aria-expanded={filtersExpanded}
+                  aria-controls={filtersId}
+                  onClick={() => setFiltersExpanded((value) => !value)}
+                >
+                  Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
+                </ModiffButton>
+                <div
+                  id={filtersId}
+                  className={cx('flex-wrap items-end gap-2 sm:contents', filtersExpanded ? 'flex' : 'hidden')}
+                >
+                  <TemplateFilterSelect
+                    label="Model"
+                    value={filter.modelType}
+                    onValueChange={(value) =>
+                      setFilter((current) => ({ ...current, modelType: value as StudioModelType | 'all' }))
+                    }
+                    options={[
+                      { value: 'all', label: 'All models' },
+                      ...getCatalogModelProfiles({ currentModelType: form.modelType, includeWorkflowOnly: true }).map(
+                        (profile) => ({
+                          value: profile.modelType,
+                          label: profile.label,
+                        }),
+                      ),
+                    ]}
+                  />
+                  <TemplateFilterSelect
+                    label="Operation"
+                    value={filter.mode ?? 'all'}
+                    onValueChange={(value) =>
+                      setFilter((current) => ({ ...current, mode: value as StudioMode | 'all' }))
+                    }
+                    options={[
+                      { value: 'all', label: 'All operations' },
+                      ...templateModeOptions.map((mode) => ({ value: mode, label: STUDIO_MODE_LABELS[mode] })),
+                    ]}
+                  />
+                  <TemplateFilterSelect
+                    label="Level"
+                    value={filter.difficulty}
+                    onValueChange={(value) =>
+                      setFilter((current) => ({ ...current, difficulty: value as TemplateBrowserFilter['difficulty'] }))
+                    }
+                    options={difficultyOptions.map((difficulty) => ({
+                      value: difficulty,
+                      label: formatDifficulty(difficulty),
+                    }))}
+                  />
+                  <TemplateFilterSelect
+                    label="Sort"
+                    value={filter.sort}
+                    onValueChange={(value) =>
+                      setFilter((current) => ({ ...current, sort: value as TemplateBrowserFilter['sort'] }))
+                    }
+                    options={sortOptions}
+                  />
+                </div>
               </div>
             </div>
 

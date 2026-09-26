@@ -15,7 +15,15 @@ import {
   blockContainerInterfaceV1,
   blockContainerPortTargetsV1,
 } from './blockContainerInterfaceV1';
-import { replaceBlockEffectiveGraphV2, setBlockInstanceValueV2 } from './blockRuntimeV2';
+import {
+  blockOperationGraphV2,
+  blockProjectionNodeIdV2,
+  replaceBlockEffectiveGraphV2,
+  setBlockInstanceValueV2,
+} from './blockRuntimeV2';
+import { sharedOperationInput } from '../workflow/operationSharedInputs';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import type { NodeData } from '../stores/useNodeStore';
 
 function sameBindings(
   a: { binding: unknown; mirrorBindings?: unknown },
@@ -100,7 +108,7 @@ export function setBlockContainerControlValueV1(
   controlId: string,
   value: BlockJsonValue | undefined,
 ) {
-  let instance = normalizeBlockInstanceV2(instanceValue);
+  const instance = normalizeBlockInstanceV2(instanceValue);
   const control = blockContainerInterfaceV1(instance, ownerNodeId).controls.find(
     (entry) => entry.controlId === controlId,
   );
@@ -116,6 +124,61 @@ export function setBlockContainerControlValueV1(
   )
     return instance;
   if (control.sealed) throw new Error(`Cannot change sealed internal control ${control.label}.`);
+  return setBlockSharedOperationInputV2(instance, targets, value) ?? setBlockFieldValuesV1(instance, targets, value);
+}
+
+/** Shared generic inputs use the same canonical field/value writers as public controls. */
+export function setBlockSharedOperationInputV2(
+  instance: BlockInstanceV2,
+  targets: Array<{ nodeId: string; fieldId: string }>,
+  value: BlockJsonValue | undefined,
+): BlockInstanceV2 | null {
+  if (
+    !targets.some(
+      (target) => instance.effectiveGraph.nodes.find((n) => n.nodeId === target.nodeId)?.data.operationAuthoring,
+    )
+  )
+    return null;
+  const graph = blockOperationGraphV2(instance);
+  const expanded = [...targets];
+  let found = false;
+  for (const target of targets) {
+    const group = sharedOperationInput(
+      graph.nodes,
+      graph.edges,
+      blockProjectionNodeIdV2(instance.instanceId, target.nodeId),
+      target.fieldId,
+    );
+    if (!group) continue;
+    found = true;
+    for (const member of group.members) {
+      const nodeId = member.node.data.blockProjectionNodeId!;
+      if (!expanded.some((t) => t.nodeId === nodeId && t.fieldId === member.field))
+        expanded.push({ nodeId, fieldId: member.field });
+    }
+  }
+  return found ? setBlockFieldValuesV1(instance, expanded, value) : null;
+}
+
+export function setBlockFieldValuesV1(
+  instance: BlockInstanceV2,
+  targets: Array<{ nodeId: string; fieldId: string }>,
+  value: BlockJsonValue | undefined,
+) {
+  const controls = [
+    ...instance.effectiveInterface.controls,
+    ...instance.effectiveGraph.nodes.flatMap((n) => n.containerInterface?.controls ?? []),
+  ];
+  if (
+    controls.some(
+      (control) =>
+        control.sealed &&
+        blockContainerControlTargetsV1(control).some((b) =>
+          targets.some((t) => t.nodeId === b.nodeId && t.fieldId === b.fieldId),
+        ),
+    )
+  )
+    throw new Error('Cannot change a shared input bound to a sealed Block control.');
   const rootIds = new Set<string>();
   const directTargets: typeof targets = [];
   for (const target of targets) {
@@ -149,14 +212,30 @@ export function setBlockContainerControlValueV1(
   if (!directTargets.length) return instance;
   const graph = structuredClone(instance.effectiveGraph);
   for (const { nodeId, fieldId } of directTargets) {
-    const field = blockContainerFieldV1(
-      graph.nodes.find((node) => node.nodeId === nodeId),
-      fieldId,
-    );
+    const node = graph.nodes.find((node) => node.nodeId === nodeId);
+    const field = blockContainerFieldV1(node, fieldId);
     if (!field) throw new Error('An internal control target no longer exists.');
     if (field.disabled) throw new Error(`Cannot change disabled internal field ${nodeId}.${fieldId}.`);
     if (value === undefined) delete field.value;
     else field.value = structuredClone(value);
+    if (node) {
+      const hint = operationAuthoring({
+        id: nodeId,
+        type: 'custom',
+        data: node.data as unknown as NodeData,
+        position: { x: 0, y: 0 },
+      });
+      if (hint)
+        node.data.operationAuthoring = JSON.parse(
+          JSON.stringify({
+            ...hint,
+            authored:
+              value === undefined
+                ? (hint.authored ?? []).filter((name) => name !== fieldId)
+                : [...new Set([...(hint.authored ?? []), fieldId])],
+          }),
+        );
+    }
   }
   return replaceBlockEffectiveGraphV2(instance, graph);
 }

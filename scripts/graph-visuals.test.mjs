@@ -495,7 +495,13 @@ test('every declared concrete backend connection type has a non-neutral stable c
     assert.ok(contrastRatio(color, '#0B0F19') >= 3, `${type} must remain legible on the graph canvas`);
     return color;
   });
-  assert.equal(new Set(colors).size, colors.length, 'concrete connection types must have pairwise-distinct colors');
+  assert.equal(
+    new Set(colors).size,
+    new Set(concreteTypes.flatMap((type) => connectionTypes.connectionTypes(type))).size,
+    'distinct normalized connection types must have pairwise-distinct colors',
+  );
+  for (const alias of ['str', 'text'])
+    assert.equal(connectionTypes.connectionColor(alias), connectionTypes.connectionColor('string'));
   const primitiveColor = connectionTypes.connectionColor('primitive');
   assert.notEqual(primitiveColor, connectionTypes.NEUTRAL_CONNECTION_COLOR);
   assert.equal(colors.includes(primitiveColor), false);
@@ -552,7 +558,7 @@ test('union connections resolve their exact payload and decorate stroke plus arr
   assert.equal(connectionTypes.connectionTypesAreCompatible(['image', 'video'], 'video'), true);
   assert.equal(connectionTypes.connectionTypesAreCompatible('image', 'audio'), false);
   assert.equal(connectionTypes.connectionTypesAreCompatible('Text', 'text'), true);
-  assert.equal(connectionTypes.connectionTypesAreCompatible('str', 'string'), false);
+  assert.equal(connectionTypes.connectionTypesAreCompatible('str', 'string'), true);
   assert.equal(connectionTypes.resolveConnectionType('any', 'audio'), 'audio');
   assert.deepEqual(connectionTypes.connectionTypes([' IMAGE ', 'image', 'DEFAULT', 'missing', 'Any', 'ANY']), [
     'any',
@@ -781,6 +787,23 @@ test('graph fields and overlays use graph-safe controls without losing specializ
   assert.match(nodeContent, /runtimeOptionValues\(options, \{ includeDisabled: true \}\)\.length > 0/);
   const workflow = fs.readFileSync(path.join(ROOT, 'src', 'components', 'Workflow.tsx'), 'utf8');
   assert.match(workflow, /connectionColor\(connectionDataType\)/);
+});
+
+test('workflow dirty state uses an overlaid marker that never changes tab title width', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'components', 'WorkflowTabsBar.tsx'), 'utf8');
+  assert.match(source, /aria-label=\{`\$\{tab\.title\}\$\{tab\.dirty \? ' \(unsaved changes\)' : ''\}`\}/);
+  assert.match(source, /absolute left-0 top-1\/2/);
+  assert.match(source, /tab\.dirty \? 'opacity-100' : 'opacity-0'/);
+  assert.doesNotMatch(source, /\{tab\.dirty \? '\* ' : ''\}/);
+});
+
+test('opening preview history is read-only and cannot replace the latest node image', () => {
+  const imageField = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'UIImageField.tsx'), 'utf8');
+  const historyStrip = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'PreviewHistoryStripContent.tsx'), 'utf8');
+  assert.doesNotMatch(imageField, /selectedAfterUrl|onSelectImage/);
+  assert.match(imageField, /const displayImages = images/);
+  assert.doesNotMatch(historyStrip, /onSelectImage|selectedUrl/);
+  assert.match(historyStrip, /onClick=\{\(\) => openOutput\(output\)\}/);
 });
 
 test('layered layout is deterministic, separates ranks, and avoids sibling overlap', () => {
@@ -8259,7 +8282,6 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   const bridgeSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'graphBridge.ts'), 'utf8');
   const e2eHooksSource = fs.readFileSync(path.join(ROOT, 'src', 'utils', 'e2eHooks.ts'), 'utf8');
   const runActionsSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'useStudioRunActions.ts'), 'utf8');
-  const studioPanelSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'StudioPanel.tsx'), 'utf8');
   const topBarSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'TopBar.tsx'), 'utf8');
   const handleFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'HandleField.tsx'), 'utf8');
   const numberFieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'NumberField.tsx'), 'utf8');
@@ -8273,17 +8295,13 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
   const autoRunPreparation = runActionsSource.match(
     /export async function ensureStudioAutoPlanReadyForRun[\s\S]*?\n\}\n\ntype MissingInstallTarget/,
   )?.[0];
-  const resourceModeChange = runActionsSource.match(
-    /const handleResourceModeChange = useCallback\([\s\S]*?\n  \);/,
-  )?.[0];
   const topBarResourceModeChange = topBarSource.match(
-    /const handleStudioViewModeChange = \(mode: StudioViewMode\) => \{[\s\S]*?\n  \};/,
+    /const handleResourceModeChange = \(mode: StudioResourceMode\) => \{[\s\S]*?\n  \};/,
   )?.[0];
 
   assert.ok(createGraph);
   assert.ok(waitForFinalization);
   assert.ok(autoRunPreparation);
-  assert.ok(resourceModeChange);
   assert.ok(topBarResourceModeChange);
   assert.equal((createGraph.match(/await waitForStudioGraphFinalization/g) ?? []).length, 1);
   assert.match(createGraph, /finalizationTimeout = 15_000/);
@@ -8322,12 +8340,7 @@ test('managed graph entry points wait for finalization and Auto only rebuilds wh
     autoRunPreparation,
     /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*await createOrUpdateStudioGraph\(nextForm, context\)/,
   );
-  assert.match(
-    studioPanelSource,
-    /previousShapeKey !== getStudioGraphShapeKey\(nextForm\)[\s\S]*createOrUpdateStudioGraph\(nextForm, context\)/,
-  );
-  assert.match(resourceModeChange, /updateAndSync\(\{ resourceMode \}\)/);
-  assert.doesNotMatch(resourceModeChange, /syncStudioGraphValues/);
+  assert.doesNotMatch(topBarResourceModeChange, /setStudioViewMode/);
   assert.match(topBarResourceModeChange, /previousShapeKey = getStudioGraphShapeKey/);
   assert.match(
     topBarResourceModeChange,

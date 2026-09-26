@@ -1,6 +1,7 @@
+import { DetailLine } from '../ui/DetailLine';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -58,7 +59,6 @@ import {
   ModiffDialog,
   ModiffDisclosure,
   ModiffIconButton,
-  ModiffInput,
   ModiffPasswordInput,
   ModiffSearchInput,
   ModiffTabs,
@@ -110,6 +110,8 @@ const inventoryViews = [
   { value: 'downloads', label: 'Downloads' },
 ] as const;
 type InventoryView = (typeof inventoryViews)[number]['value'];
+
+const CustomExtensionsPanel = lazy(() => import('./CustomExtensionsPanel'));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -179,28 +181,6 @@ function StatusPill({
       title={title}
       tone={pillTone(tone)}
     />
-  );
-}
-
-function DetailLine({
-  children,
-  tone = 'muted',
-}: {
-  children: ReactNode;
-  tone?: 'muted' | 'success' | 'warning' | 'error';
-}) {
-  return (
-    <p
-      className={cx(
-        'break-words text-xs leading-5',
-        tone === 'muted' && 'text-modiff-subtle-text',
-        tone === 'success' && 'text-modiff-green',
-        tone === 'warning' && 'text-hf-orange',
-        tone === 'error' && 'text-modiff-red',
-      )}
-    >
-      {children}
-    </p>
   );
 }
 
@@ -287,7 +267,7 @@ function compactHealthBadge(label: string) {
   if (label === 'Not suitable locally' || label === 'Will not work on this machine') return 'Blocked';
   if (label === 'Repair required') return 'Repair';
   if (label === 'Failed here before') return 'Failed';
-  if (label === 'Expert only') return 'Expert';
+  if (label === 'Expert only') return 'Custom memory';
   if (label === 'Needs setup') return 'Install';
   if (label === 'Install model' || label === 'Install Auto artifact') return 'Install';
   return label;
@@ -489,7 +469,6 @@ function ModelManagerDialog({
   opener: { nodeId: string | null; fieldKey: string | null; focus?: FocusedModelManagerTarget } | null;
 }) {
   const { setAlertOpener } = useSettingsStore();
-  const studioViewMode = useSettingsStore((state) => state.studioViewMode);
   const sid = useWebsocketStore((state) => state.sid);
   const compactHfCache = useNodesStore((state) => state.hfCache);
   const localModels = useNodesStore((state) => state.localModels);
@@ -503,13 +482,7 @@ function ModelManagerDialog({
   const installHfModel = useNodesStore((state) => state.installHfModel);
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
   const reconcileHfDownloadProgress = useNodesStore((state) => state.reconcileHfDownloadProgress);
-  const customModules = useNodesStore((state) => state.customModules);
-  const customModuleError = useNodesStore((state) => state.customModuleError);
   const fetchCustomModules = useNodesStore((state) => state.fetchCustomModules);
-  const refreshCustomModules = useNodesStore((state) => state.refreshCustomModules);
-  const installCustomModule = useNodesStore((state) => state.installCustomModule);
-  const updateCustomModule = useNodesStore((state) => state.updateCustomModule);
-  const setCustomModuleEnabled = useNodesStore((state) => state.setCustomModuleEnabled);
   const graphNodes = useFlowStore((state) => state.nodes);
   const setNodeUiState = useFlowStore((state) => state.setNodeUiState);
   const studioForm = useStudioStore((state) => state.form);
@@ -529,16 +502,13 @@ function ModelManagerDialog({
     setInventoryView(view);
     inventoryPanelRef.current?.closest('[data-dialog-scroll-body]')?.scrollTo(0, 0);
   };
-  const [customModuleSource, setCustomModuleSource] = useState('');
-  const [customModuleName, setCustomModuleName] = useState('');
-  const [customModuleAction, setCustomModuleAction] = useState<string | null>(null);
   const [hfTokenEditorOpen, setHfTokenEditorOpen] = useState(false);
   const [hfAccessRepo, setHfAccessRepo] = useState<string | null>(null);
   const [hfToken, setHfToken] = useState('');
   const [hfTokenSaving, setHfTokenSaving] = useState(false);
   const [hfTokenError, setHfTokenError] = useState<string | null>(null);
   const modelUsageTerms = useModelUsageTermsGate();
-  const expertMode = studioViewMode === 'expert';
+  const expertMode = true;
   const focus = opener?.focus;
   const activeInstallCount = Object.values(hfDownloadProgress).filter(isHfDownloadActive).length;
   const visibleDownloads = Object.entries(hfDownloadProgress).filter(
@@ -930,67 +900,6 @@ function ModelManagerDialog({
     }
   };
 
-  const handleInstallCustomModule = async () => {
-    const source = customModuleSource.trim();
-    if (!source) {
-      enqueueSnackbar('Add a Git URL or local folder path before installing.', {
-        variant: 'error',
-        autoHideDuration: 3000,
-      });
-      return;
-    }
-    setCustomModuleAction('install');
-    try {
-      const result = await installCustomModule(source, customModuleName.trim() || undefined);
-      enqueueSnackbar(result.message || 'Custom module installed', { variant: 'success', autoHideDuration: 2500 });
-      setCustomModuleSource('');
-      setCustomModuleName('');
-    } catch (error) {
-      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 7000 });
-    } finally {
-      setCustomModuleAction(null);
-    }
-  };
-
-  const handleRefreshCustomModules = async () => {
-    setCustomModuleAction('refresh');
-    try {
-      const result = await refreshCustomModules();
-      enqueueSnackbar(result.message || 'Custom modules refreshed', { variant: 'success', autoHideDuration: 2200 });
-    } catch (error) {
-      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 7000 });
-    } finally {
-      setCustomModuleAction(null);
-    }
-  };
-
-  const handleUpdateCustomModule = async (name: string) => {
-    setCustomModuleAction(`${name}:update`);
-    try {
-      const result = await updateCustomModule(name);
-      enqueueSnackbar(result.message || `${name} updated`, { variant: 'success', autoHideDuration: 2600 });
-    } catch (error) {
-      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 7000 });
-    } finally {
-      setCustomModuleAction(null);
-    }
-  };
-
-  const handleToggleCustomModule = async (name: string, enabled: boolean) => {
-    setCustomModuleAction(`${name}:${enabled ? 'enable' : 'disable'}`);
-    try {
-      const result = await setCustomModuleEnabled(name, enabled);
-      enqueueSnackbar(result.message || `${name} ${enabled ? 'enabled' : 'disabled'}`, {
-        variant: 'success',
-        autoHideDuration: 2600,
-      });
-    } catch (error) {
-      enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 7000 });
-    } finally {
-      setCustomModuleAction(null);
-    }
-  };
-
   const copyEnvironmentSnapshot = () => {
     const snapshot = {
       schemaVersion: 1,
@@ -1047,9 +956,6 @@ function ModelManagerDialog({
     setHfToken('');
     setHfTokenError(null);
     setHfCache([]);
-    setCustomModuleSource('');
-    setCustomModuleName('');
-    setCustomModuleAction(null);
   };
 
   useEffect(() => {
@@ -1424,7 +1330,7 @@ function ModelManagerDialog({
                       <Settings size={15} className="text-hf-yellow" />
                       Diagnostics
                     </span>
-                    <StatusPill tone="default">Expert</StatusPill>
+                    <StatusPill tone="default">Developer</StatusPill>
                   </span>
                 }
                 buttonClassName="p-0"
@@ -1584,153 +1490,9 @@ function ModelManagerDialog({
                   )}
                 </section>
 
-                <section className="grid gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-xs font-bold uppercase text-modiff-subtle-text">Custom modules</h3>
-                    <StatusPill tone={customModules.length > 0 ? 'success' : 'default'}>
-                      {customModules.length} module(s)
-                    </StatusPill>
-                    <ModiffButton
-                      className="h-8 px-2 text-xs"
-                      disabled={customModuleAction !== null}
-                      icon={
-                        customModuleAction === 'refresh' ? (
-                          <LoaderCircle size={14} className="animate-spin" />
-                        ) : (
-                          <RefreshCw size={14} />
-                        )
-                      }
-                      onClick={() => {
-                        void handleRefreshCustomModules();
-                      }}
-                    >
-                      Refresh
-                    </ModiffButton>
-                  </div>
-                  <div className="grid gap-2 rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2">
-                    <ModiffInput
-                      aria-label="Custom module Git URL or local folder path"
-                      value={customModuleSource}
-                      onChange={(event) => setCustomModuleSource(event.target.value)}
-                      placeholder="Git URL or local folder path"
-                      disabled={customModuleAction !== null}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <ModiffInput
-                        aria-label="Custom module folder name"
-                        value={customModuleName}
-                        onChange={(event) => setCustomModuleName(event.target.value)}
-                        placeholder="Folder name (optional)"
-                        disabled={customModuleAction !== null}
-                        className="min-w-40 flex-1"
-                      />
-                      <ModiffButton
-                        tone="primary"
-                        icon={
-                          customModuleAction === 'install' ? (
-                            <LoaderCircle size={14} className="animate-spin" />
-                          ) : (
-                            <Download size={14} />
-                          )
-                        }
-                        disabled={customModuleAction !== null || !customModuleSource.trim()}
-                        onClick={() => {
-                          void handleInstallCustomModule();
-                        }}
-                      >
-                        Install
-                      </ModiffButton>
-                    </div>
-                    <DetailLine tone={customModuleError ? 'warning' : 'muted'}>
-                      {customModuleError ||
-                        'Installs are limited to the backend custom module folder. Disable moves a module to custom/.disabled instead of deleting it.'}
-                    </DetailLine>
-                  </div>
-                  <div className="grid gap-1">
-                    {customModules.length === 0 ? (
-                      <DetailLine tone="muted">No custom modules are registered yet.</DetailLine>
-                    ) : (
-                      customModules.map((module) => {
-                        const updateBusy = customModuleAction === `${module.name}:update`;
-                        const toggleBusy =
-                          customModuleAction === `${module.name}:${module.enabled ? 'disable' : 'enable'}`;
-                        return (
-                          <div
-                            key={`${module.name}-${module.enabled ? 'enabled' : 'disabled'}`}
-                            className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <StatusPill tone={module.enabled ? 'success' : 'warning'}>
-                                {module.enabled ? 'Enabled' : 'Disabled'}
-                              </StatusPill>
-                              <StatusPill tone={module.nodeCount > 0 ? 'success' : 'warning'}>
-                                {module.nodeCount} node(s)
-                              </StatusPill>
-                              {module.hasGit ? <StatusPill tone="default">Git</StatusPill> : null}
-                              <span className="min-w-0 flex-1 break-all text-xs font-semibold text-modiff-subtle-text">
-                                {module.moduleKey}
-                              </span>
-                            </div>
-                            <DetailLine tone={module.enabled && module.nodeCount === 0 ? 'warning' : 'muted'}>
-                              {module.path}
-                              {module.remote ? ` | ${module.remote}` : ''}
-                              {module.branch ? ` | ${module.branch}` : ''}
-                            </DetailLine>
-                            {module.nodes.length > 0 ? (
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {module.nodes.slice(0, 8).map((nodeName) => (
-                                  <span
-                                    key={nodeName}
-                                    className="rounded-modiff-compact border border-modiff-border bg-modiff-panel px-1.5 py-0.5 text-xs text-modiff-subtle-text"
-                                  >
-                                    {nodeName}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <ModiffButton
-                                tone="secondary"
-                                icon={
-                                  updateBusy ? (
-                                    <LoaderCircle size={14} className="animate-spin" />
-                                  ) : (
-                                    <RefreshCw size={14} />
-                                  )
-                                }
-                                disabled={customModuleAction !== null || !module.canUpdate}
-                                onClick={() => {
-                                  void handleUpdateCustomModule(module.name);
-                                }}
-                              >
-                                Update
-                              </ModiffButton>
-                              <ModiffButton
-                                tone={module.enabled ? 'danger' : 'secondary'}
-                                icon={
-                                  toggleBusy ? <LoaderCircle size={14} className="animate-spin" /> : <Power size={14} />
-                                }
-                                disabled={customModuleAction !== null}
-                                onClick={() => {
-                                  void handleToggleCustomModule(module.name, !module.enabled);
-                                }}
-                              >
-                                {module.enabled ? 'Disable' : 'Enable'}
-                              </ModiffButton>
-                              <ModiffButton
-                                tone="secondary"
-                                icon={<Copy size={14} />}
-                                onClick={() => copyMissingNodeKey(module.name, module.moduleKey)}
-                              >
-                                Copy key
-                              </ModiffButton>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </section>
+                <Suspense fallback={null}>
+                  <CustomExtensionsPanel />
+                </Suspense>
 
                 <section className="grid gap-1">
                   <div className="flex items-center justify-between gap-2">

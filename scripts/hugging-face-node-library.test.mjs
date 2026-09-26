@@ -30,6 +30,154 @@ let nodeCatalogModule;
 let nodeListModule;
 let nodeStoreModule;
 let originalFetch;
+
+test('canonical discovery only hides exact aliases for the selected pipeline and task', () => {
+  const canonical = { module: 'modules.ModularDiffusers', action: 'EncodePrompt', label: 'Encode Prompt', params: {} };
+  const nodes = {
+    'modules.ModularDiffusers.EncodePrompt': canonical,
+    'alias.encode': { ...canonical, label: 'Old prompt encoder' },
+    'distinct.encode': { ...canonical, params: { text: { type: 'string' } } },
+    'custom.prompt': { module: 'custom.prompt', action: 'Encode', label: 'Encode Prompt', params: {} },
+  };
+  const binding = {
+    pipelineClass: 'FuturePipeline',
+    task: 'text_to_image',
+    operationId: 'diffusion.encode_prompt',
+    nodeKey: 'modules.ModularDiffusers.EncodePrompt',
+    binding: { pipelineClass: 'FuturePipeline', values: {} },
+  };
+  const support = [
+    { pipelineClass: 'FuturePipeline', tasks: [{ task: binding.task, operationIds: [binding.operationId] }] },
+  ];
+  const selection = { pipeline: binding.pipelineClass, task: binding.task };
+  const select = nodeCatalogModule.runtimeCatalogNodes;
+  const before = JSON.stringify(nodes);
+  assert.equal(
+    select(nodes, [binding], support, 'common'),
+    nodes,
+    'Generic nodes remain available before selecting a pipeline.',
+  );
+  for (const view of ['common', 'experimental']) {
+    assert.deepEqual(Object.keys(select(nodes, [binding], support, view, selection)), [
+      'distinct.encode',
+      'custom.prompt',
+    ]);
+    for (const contracts of [[], [{ ...binding, binding: undefined }], [{ ...binding, task: null }]])
+      assert.deepEqual(select(nodes, contracts, support, view, selection), nodes);
+    for (const invalid of [
+      { pipeline: 'OtherPipeline', task: binding.task },
+      { ...selection, task: 'image_to_image' },
+    ])
+      assert.deepEqual(select(nodes, [binding], support, view, invalid), nodes);
+  }
+  for (const view of ['advanced', 'all']) assert.equal(select(nodes, [binding], support, view, selection), nodes);
+  const aliasesOnly = { 'alias.encode': nodes['alias.encode'] };
+  assert.deepEqual(
+    select(aliasesOnly, [binding], support, 'common', selection),
+    aliasesOnly,
+    'Never guess which schema a missing canonical key refers to.',
+  );
+  assert.deepEqual(select(nodes, [binding], [], 'common', selection), nodes);
+  assert.equal(JSON.stringify(nodes), before);
+});
+
+test('one common catalog includes generic nodes, utilities and custom nodes with additive discovery options', () => {
+  const entry = (module, action, extra = {}) =>
+    nodeCatalogModule.getNodeCatalogEntry({ module, action, label: action, category: 'Test', params: {}, ...extra });
+  const matches = nodeCatalogModule.nodeCatalogEntryMatchesView;
+  for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents', 'ImageEncode']) {
+    for (const view of ['common', 'advanced', 'experimental', 'all'])
+      assert.equal(matches(entry('modules.ModularDiffusers', action), view), true, action);
+  }
+  for (const action of ['ReviewedModularWorkflowStep', 'WorkflowKrea2Denoise', 'DynamicBlockNode']) {
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'common'), false);
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'experimental'), false);
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'advanced'), true);
+    assert.equal(matches(entry('modules.ModularDiffusers', action), 'all'), true);
+  }
+  for (const module of ['modules.Primitive', 'modules.Text', 'custom.my_nodes'])
+    assert.equal(matches(entry(module, 'TextValue'), 'common'), true);
+  assert.equal(matches(entry('modules.Image', 'Preview'), 'common'), true);
+  for (const action of ['Resize', 'Save', 'Compare', 'ApplyMask', 'Merge', 'ImageGrid', 'SplitImageGrid']) {
+    for (const view of ['common', 'experimental', 'advanced', 'all'])
+      assert.equal(matches(entry('modules.Image', action), view), true, `${action} in ${view}`);
+    assert.equal(matches(entry('modules.Image', action, { type: 'group' }), 'common'), false);
+  }
+  for (const [module, actions] of [
+    ['modules.ImageFilters', ['Canny', 'UnsharpMask', 'GuidedBlur', 'AdaptiveSharpening', 'GaussianBlur']],
+    ['modules.Color', ['Invert']],
+    ['modules.DiffusersImage', ['OutpaintCanvas']],
+  ]) {
+    for (const action of actions) {
+      for (const view of ['common', 'experimental', 'advanced', 'all'])
+        assert.equal(matches(entry(module, action), view), true, `${module}.${action} in ${view}`);
+      assert.equal(matches(entry(module, action, { type: 'group' }), 'common'), false);
+    }
+  }
+  assert.equal(matches(entry('modules.ImageFiltersExperimental', 'Canny'), 'common'), false);
+  assert.equal(matches(entry('modules.DiffusersImage', 'UnreviewedInternal'), 'common'), false);
+  for (const view of ['common', 'advanced', 'experimental', 'all'])
+    assert.equal(matches(entry('modules.ModularDiffusers', 'Denoise', { type: 'group' }), view), false);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'common'), false);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'advanced'), false);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'experimental'), true);
+  assert.equal(matches(entry('modules.Experiments', 'SD3Loader'), 'all'), true);
+});
+
+test('workbench catalog scope filters HF internals and catalog-only blocks before search', () => {
+  const sections = [
+    {
+      id: 'diffusers_cluster_nodes',
+      label: 'Diffusers Blocks',
+      entries: [
+        {
+          id: 'ready',
+          kind: 'cluster',
+          readiness: 'graph_qualified',
+          insertable: true,
+          label: 'Ready task',
+          searchText: '',
+        },
+        {
+          id: 'draft',
+          kind: 'cluster',
+          readiness: 'catalog_only',
+          insertable: true,
+          label: 'Draft task',
+          searchText: '',
+        },
+        {
+          id: 'blocked',
+          kind: 'cluster',
+          readiness: 'graph_qualified',
+          insertable: false,
+          label: 'Blocked task',
+          searchText: '',
+        },
+      ],
+    },
+    {
+      id: 'modular_diffusers_block_nodes',
+      label: 'Modular blocks',
+      entries: [{ id: 'internal', kind: 'block', label: 'Denoise internals', searchText: '', insertable: true }],
+    },
+    {
+      id: 'diffusers_component_nodes',
+      label: 'Components',
+      entries: [{ id: 'component', kind: 'component', label: 'VAE reference', searchText: '', insertable: false }],
+    },
+  ];
+  const before = JSON.stringify(sections);
+  const filter = libraryCatalogModule.filterHuggingFaceCatalogSections;
+  const ids = (view, query = '') => filter(sections, query, view).flatMap(({ entries }) => entries.map(({ id }) => id));
+  assert.deepEqual(ids('common'), ['ready']);
+  assert.deepEqual(ids('common', 'Draft'), []);
+  assert.deepEqual(ids('experimental'), ['ready']);
+  assert.deepEqual(ids('advanced'), ['ready', 'draft', 'blocked', 'internal', 'component']);
+  assert.deepEqual(ids('advanced', 'Denoise'), ['internal']);
+  assert.equal(JSON.stringify(sections), before, 'Discovery must not mutate catalog contracts.');
+});
+
 test('runtime node search requires every keyword and preserves exact registry keys and aliases', () => {
   const entry = nodeCatalogModule.getNodeCatalogEntry(
     {
@@ -63,7 +211,7 @@ test('catalog keyword search handles spacing, punctuation and word order without
   const sections = [
     {
       id: 'modular_diffusers_block_nodes',
-      label: 'Modular Diffusers Block Nodes',
+      label: 'Modular Diffusers implementation',
       entries: [
         {
           id: 'text-inputs',
@@ -159,6 +307,14 @@ test('User Node library groups saved context and actual revisions without changi
     'Qwen Image — Text To Image',
   ]);
   assert.equal(library.storedUserBlockRevision(definition), 'Revision 1234567890ab');
+  assert.equal(
+    library.storedUserBlockRevision({ ...definition, contentHash: 'block-definition-v2-2116b7a1' }),
+    'Revision 2116b7a1',
+  );
+  assert.equal(
+    library.storedUserBlockRevision({ ...definition, contentHash: 'block-definition-v2-28772675' }),
+    'Revision 28772675',
+  );
   assert.deepEqual(library.uniqueStoredUserBlocks([definition, second, definition]).map(library.storedUserBlockId), [
     'copy-one',
     'copy-two',
@@ -1467,6 +1623,36 @@ test('ordinary composite sequences retain repeated classes at distinct action pl
   const wrongLength = structuredClone(body);
   wrongLength.definitions.at(-1).graphAdapterContracts[0].upstreamBlockSequence.pop();
   assert.throws(() => libraryModule.parseHuggingFaceNodeLibrary(wrongLength));
+});
+
+test('composite catalog names distinguish media loading from pipeline loading by runtime identity', () => {
+  for (const [identity, expected] of [
+    ['modules.Image.Load', 'Load Image'],
+    ['modules.Audio.Load', 'Load Audio'],
+    ['modules.DiffusersImage.LoadPipeline', 'Load Image Pipeline'],
+    ['modules.DiffusersAudio.LoadPipeline', 'Load Audio Pipeline'],
+  ]) {
+    const body = payloadWithStandardDiffusersComposite();
+    const definition = body.definitions.at(-1);
+    const adapter = definition.graphAdapterContracts[0];
+    adapter.upstreamBlockSequence = adapter.actionSequence.map(() => identity);
+    const parsed = libraryModule.parseHuggingFaceNodeLibrary(body);
+    const entries = libraryCatalogModule
+      .buildHuggingFaceCatalogSections(parsed)
+      .find((section) => section.id === 'modular_diffusers_block_nodes').entries;
+    const paths = definition.blockPlacements
+      .map((placement) => placement.legacyPath)
+      .filter((path) => adapter.actionSequence.includes(path));
+    assert.ok(paths.length > 0);
+    for (const path of paths) {
+      const entry = entries.find((candidate) =>
+        candidate.modularBlockContexts?.some(
+          (context) => context.definitionId === definition.id && context.placement.legacyPath === path,
+        ),
+      );
+      assert.equal(entry?.label, expected, `${identity} at ${path}`);
+    }
+  }
 });
 
 test('unregistered publications remain structurally insertable while execution receipts stay sealed', () => {
@@ -2821,7 +3007,7 @@ test('Cluster customization persists before replacement and leaves the original 
       module: 'modiff.hugging_face_cluster',
       action: 'RecoverableCluster',
       label: 'Recoverable Cluster',
-      category: 'Diffusers Cluster Nodes',
+      category: 'Diffusers Blocks',
       params: {
         prompt: { label: 'Prompt', type: 'string', value: 'Keep this prompt' },
       },
@@ -2915,7 +3101,7 @@ test('Cluster customization refuses a stale canvas or concurrently edited source
       module: 'modiff.hugging_face_cluster',
       action: 'StaleCluster',
       label: 'Stale Cluster',
-      category: 'Diffusers Cluster Nodes',
+      category: 'Diffusers Blocks',
       params: { prompt: { type: 'string', value: 'Before' } },
       huggingFaceClusterRole: 'root',
       huggingFaceClusterInstance: {},
@@ -3085,17 +3271,12 @@ test('all User Node save choices isolate workflow instances and cancel across a 
   assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].id, secondNode.id);
 });
 
-test('catalog projections use Cluster Node terminology and retain exact family definitions', () => {
+test('catalog projections use Block terminology and retain exact family definitions', () => {
   const parsed = libraryModule.parseHuggingFaceNodeLibrary(payload());
   const sections = libraryCatalogModule.buildHuggingFaceCatalogSections(parsed);
   assert.deepEqual(
     sections.map((section) => section.label),
-    [
-      'Diffusers Cluster Nodes',
-      'Transformers Cluster Nodes',
-      'Modular Diffusers Block Nodes',
-      'Diffusers Component Nodes',
-    ],
+    ['Diffusers Blocks', 'Transformers Blocks', 'Modular Diffusers implementation', 'Diffusers components'],
   );
   assert.deepEqual(
     sections.map((section) => section.entries.length),
@@ -3271,7 +3452,7 @@ test('reviewed Modular composition recipes preserve exact origin pins and bounde
   assert.match(recipe.operations[0].name, /_copy$/u);
 });
 
-test('Transformers Cluster Nodes insert and materialize their exact generic task graph', () => {
+test('Transformers Blocks insert and materialize their exact generic task graph', () => {
   const { body, transformerDefinition: rawDefinition, receipt } = payloadWithTransformersTextCluster();
   const parsed = libraryModule.parseHuggingFaceNodeLibrary(body);
   const definition = parsed.definitions.find((candidate) => candidate.id === rawDefinition.id);
@@ -3293,7 +3474,7 @@ test('Transformers Cluster Nodes insert and materialize their exact generic task
     admission.id,
     { device: 'cpu', quantizationMode: 'none' },
   );
-  assert.equal(root.data.category, 'Transformers Cluster Nodes');
+  assert.equal(root.data.category, 'Transformers Cluster Nodes', 'Legacy serialized category stays unchanged.');
   assert.equal(root.data.params.prompt.value, 'Explain why the sky appears blue.');
   const typedTokenCount = clusterInstanceModule.setHuggingFaceClusterParameter(
     root.data.huggingFaceClusterInstance,
@@ -4033,15 +4214,15 @@ test('Nodes panel keeps structural Clusters and Modular blocks draggable', () =>
       sections,
     }),
   );
-  assert.match(markup, />Diffusers Cluster Nodes</);
-  assert.match(markup, />Modular Diffusers Block Nodes</);
-  assert.match(markup, />Diffusers Component Nodes</);
+  assert.match(markup, />Diffusers Blocks</);
+  assert.match(markup, />Modular Diffusers implementation</);
+  assert.match(markup, />Diffusers components</);
   assert.match(markup, /data-readiness="catalog_only"/);
-  assert.match(markup, /aria-label="[^"]+Catalog only; insert Cluster Node\."/);
+  assert.match(markup, /aria-label="[^"]+Catalog only; insert Block\."/);
   assert.match(markup, /aria-label="[^"]+Composable; insert Modular Diffusers block\."/);
   assert.match(markup, /draggable="true"/);
   assert.match(markup, /Add this exact pinned Modular Diffusers definition from \d+ compatible context/);
-  assert.match(markup, /Insert the reviewed structural Cluster Node; execution remains unavailable/);
+  assert.match(markup, /Insert the reviewed structural Block; execution remains unavailable/);
   assert.match(markup, /Catalog only/);
   assert.doesNotMatch(markup, />Diffusers Pipelines</);
 

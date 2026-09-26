@@ -1,8 +1,40 @@
+import { nodeDisplayLabel, nodeSearchAliases } from '../workflow/nodePresentation';
 import { runtimeNodeIdentityV2 } from './nodeLibraryAuditV2';
 import type { NodeData } from '../stores/useNodeStore';
 import { matchesSearchKeywords } from '../utils/searchKeywords';
+import type { OperationContract } from '../workflow/operationContracts';
+import type { PipelineSupport } from '../workflow/operationCatalog';
 
 export type NodeCatalogVisibility = 'essential' | 'advanced' | 'experimental' | 'internal';
+export type NodeCatalogView = 'common' | 'advanced' | 'experimental' | 'all';
+
+/** Discovery only. Distinct schemas remain available, and no registry entry is removed. */
+export function runtimeCatalogNodes(
+  nodes: Record<string, NodeData>,
+  operations: OperationContract[],
+  support: PipelineSupport[],
+  view: NodeCatalogView,
+  selection?: { pipeline: string; task: string },
+): Record<string, NodeData> {
+  if (!selection?.pipeline || view === 'advanced' || view === 'all') return nodes;
+  const task = support
+    .find((item) => item.pipelineClass === selection.pipeline)
+    ?.tasks.find((item) => item.task === selection.task);
+  if (!task) return nodes;
+  const covered = new Set(
+    operations
+      .filter(
+        (operation) =>
+          operation.binding &&
+          operation.pipelineClass === selection.pipeline &&
+          operation.task === selection.task &&
+          task.operationIds.includes(operation.operationId) &&
+          nodes[operation.nodeKey],
+      )
+      .map((operation) => runtimeNodeIdentityV2(nodes[operation.nodeKey]!)),
+  );
+  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => !covered.has(runtimeNodeIdentityV2(node))));
+}
 
 export type NodeSurfaceCategory =
   | 'Load'
@@ -53,6 +85,43 @@ const SURFACE_CATEGORY_ORDER: NodeSurfaceCategory[] = [
 
 const MODEL_SPECIFIC_MODULES = new Set<string>();
 
+// Discovery only: these existing generic operations keep their backend schemas
+// and execution identities. Inclusion does not add model/task support.
+const GENERIC_NODE_KEYS = new Set([
+  'modules.DiffusersImage.OutpaintCanvas',
+  'modules.ModularDiffusers.ModelsLoader',
+  'modules.ModularDiffusers.AutoModelLoader',
+  'modules.ModularDiffusers.EncodePrompt',
+  'modules.ModularDiffusers.ImageEncode',
+  'modules.ModularDiffusers.ImageEmbeddings',
+  'modules.ModularDiffusers.Denoise',
+  'modules.ModularDiffusers.DecodeLatents',
+  'modules.ModularDiffusers.LatentsPreview',
+  'modules.ModularDiffusers.Lora',
+  'modules.ModularDiffusers.Controlnet',
+  'modules.ModularDiffusers.IPAdapter',
+  'modules.ModularDiffusers.Scheduler',
+  'modules.ModularDiffusers.Guider',
+  'modules.ModularDiffusers.QuantizationConfigNode',
+]);
+
+export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
+  if (entry.visibility === 'internal') return false;
+  if (entry.visibility === 'experimental') return view === 'experimental' || view === 'all';
+  return (
+    view === 'advanced' ||
+    view === 'all' ||
+    entry.visibility === 'essential' ||
+    GENERIC_NODE_KEYS.has(nodeKey(entry.node)) ||
+    entry.node.module === 'modules.Primitive' ||
+    entry.node.module === 'modules.Text' ||
+    entry.node.module === 'modules.Image' ||
+    entry.node.module === 'modules.ImageFilters' ||
+    entry.node.module === 'modules.Color' ||
+    entry.node.module.startsWith('custom.')
+  );
+}
+
 const ESSENTIAL_NODE_KEYS = new Set([
   'modules.DiffusersImage.LoadPipeline',
   'modules.DiffusersAudio.LoadPipeline',
@@ -86,35 +155,6 @@ const ESSENTIAL_NODE_KEYS = new Set([
   'modules.Text.Display',
 ]);
 
-const FACADE_LABELS: Record<string, string> = {
-  'modules.DiffusersImage.LoadPipeline': 'Load pipeline',
-  'modules.DiffusersAudio.LoadPipeline': 'Load pipeline',
-  'modules.DiffusersImage.Generate': 'Generate image',
-  'modules.DiffusersImage.UnconditionalGenerate': 'Sample image',
-  'modules.DiffusersImage.Edit': 'Edit image',
-  'modules.DiffusersImage.Inpaint': 'Inpaint',
-  'modules.DiffusersImage.ControlGenerate': 'Generate image',
-  'modules.DiffusersImage.LoadAdapter': 'Load adapter',
-  'modules.DiffusersAudio.Generate': 'Generate audio',
-  'modules.DiffusersVideo.GenerateVideoAudio': 'Generate video + audio',
-  'modules.DiffusersVideo.GenerateSequence': 'Generate video sequence',
-  'modules.DiffusersThreeD.LoadPipeline': 'Load 3D pipeline',
-  'modules.DiffusersThreeD.GenerateRenderedArtifact': 'Render 3D orbit',
-  'modules.VideoConditioning.ReferenceImages': 'Reference images',
-  'modules.Audio.Load': 'Load audio',
-  'modules.Audio.FitDuration': 'Fit audio duration',
-  'modules.Audio.Export': 'Export',
-  'modules.Image.Load': 'Load image',
-  'modules.Image.Preview': 'Preview',
-  'modules.Video.Load': 'Load video',
-  'modules.Video.Export': 'Export',
-  'modules.Video.Compose': 'Compose video',
-  'modules.Video.LyricOverlay': 'Add timed lyrics',
-  'modules.Video.ExportWithAudio': 'Export video with audio',
-  'modules.Text.Display': 'Preview text',
-  'modules.ModularDiffusers.ModelsLoader': 'Load model',
-};
-
 function nodeKey(node: NodeData) {
   return `${node.module}.${node.action}`;
 }
@@ -147,7 +187,7 @@ function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
   if (MODEL_SPECIFIC_MODULES.has(node.module)) return 'advanced';
   if (node.module === 'modules.ModularDiffusers') return 'advanced';
   if (node.module === 'modules.ModelArtifact') return 'advanced';
-  if (node.module.startsWith('custom.')) return 'advanced';
+  if (node.module.startsWith('custom.')) return 'essential';
   return 'advanced';
 }
 
@@ -158,23 +198,6 @@ function runtimeKindForNode(node: NodeData, key: string): NodeRuntimeKind {
   return 'diffusers';
 }
 
-function normalizeCatalogLabel(node: NodeData, key: string) {
-  if (FACADE_LABELS[key]) return FACADE_LABELS[key];
-  if (node.module === 'modules.HuggingFaceTransformers') return node.label || node.action;
-  const text = `${key} ${node.category} ${node.label}`.toLowerCase();
-  if (textIncludesAny(text, ['loadpipeline'])) return 'Load pipeline';
-  if (textIncludesAny(text, ['export', 'save'])) return 'Export';
-  if (textIncludesAny(text, ['preview', 'display']))
-    return textIncludesAny(text, ['text']) ? 'Preview text' : 'Preview';
-  if (textIncludesAny(text, ['inpaint', 'outpaint', 'edit'])) return 'Edit image';
-  if (textIncludesAny(text, ['generate'])) {
-    if (text.includes('audio') || /\bace(?:[-_ ]?step)?\b/u.test(text)) return 'Generate audio';
-    if (textIncludesAny(text, ['video', 'wan'])) return 'Generate video';
-    return 'Generate image';
-  }
-  return node.label || `${node.module}.${node.action}`;
-}
-
 export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCatalogEntry {
   const runtimeKind = runtimeKindForNode(node, key);
   const visibility = visibilityForNode(node, key);
@@ -182,7 +205,7 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
     runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated' || runtimeKind === 'experimental_diffusers';
   const specializedReason =
     visibility === 'experimental'
-      ? 'Experimental Diffusers node. Hidden from Essentials.'
+      ? 'Experimental Diffusers node. Enable experimental discovery to find it.'
       : MODEL_SPECIFIC_MODULES.has(node.module) || node.module === 'modules.ModularDiffusers'
         ? 'Backend strategy node. Studio routes normal workflows through profiles.'
         : undefined;
@@ -190,7 +213,8 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
   return {
     key,
     dragKey: key,
-    label: normalizeCatalogLabel(node, key),
+    label: nodeDisplayLabel(node),
+    aliases: nodeSearchAliases(node),
     description: node.description,
     surfaceCategory: categoryFromNode(node, key),
     visibility,
@@ -264,7 +288,6 @@ function nodeBrowsePath(node: NodeData, operation: NodeSurfaceCategory) {
   return [modality, role];
 }
 
-export function nodeGroupForCatalogEntry(entry: NodeCatalogEntry, _expertMode: boolean) {
-  void _expertMode;
+export function nodeGroupForCatalogEntry(entry: NodeCatalogEntry) {
   return entry.groupPath[0] ?? 'Data & Utilities';
 }
