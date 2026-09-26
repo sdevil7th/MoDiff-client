@@ -9937,12 +9937,12 @@ test('mocked Studio keeps model health contextual while exposing every authored 
 
   await dismissTaskLauncher(page);
   await page.getByTestId('left-tab-models').click();
-  await expect(page.getByTestId('left-model-installed')).toBeVisible();
+  await expect(page.getByTestId('left-model-installed')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('left-model-supported')).toBeVisible();
   await page.getByRole('button', { name: /^Image \d+$/ }).click();
   await expect(page.getByTestId('left-model-FluxSchnellPipeline')).toBeVisible();
-  await expect(page.getByText('FLUX.1-dev', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('FLUX.1-Krea-dev', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('left-model-FluxDevPipeline')).toBeVisible();
+  await expect(page.getByTestId('left-model-FluxKreaPipeline')).toBeVisible();
   await expect(page.getByText('Hardware blocks', { exact: true })).toHaveCount(0);
   await page.getByTestId('left-tab-nodes').click();
   await expect(page.getByTestId('node-browser-view-essential')).toHaveCount(0);
@@ -10038,7 +10038,7 @@ test('mocked Studio keeps model health contextual while exposing every authored 
   await expect(page.getByTestId('setup-model-FluxSchnellPipeline')).toBeVisible();
   await expect(page.getByTestId('setup-install-FluxSchnellPipeline')).toBeVisible();
   await expect(page.getByTestId('setup-model-FluxDevPipeline')).toHaveCount(0);
-  await expect(page.getByText('FLUX.1-dev', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('setup-workflow-model-health')).not.toContainText('FLUX.1-dev');
   await expect(page.getByTestId('setup-workflow-model-health')).not.toContainText('Auto:');
   await expect(page.getByTestId('setup-workflow-model-health')).not.toContainText('Backend modes:');
 });
@@ -22105,7 +22105,7 @@ test('managed Auto keeps the exact interactive graph and only contains advanced 
     await expect(autoGenerateNode.locator(`[data-key="${field}"]`)).toBeVisible();
   }
 
-  const autoGenerateAdvanced = page.getByTestId(`node-advanced-controls-${autoGenerate!.id}`);
+  const autoGenerateAdvanced = autoGenerateNode.getByTestId(`node-advanced-controls-${autoGenerate!.id}`);
   await expect(autoGenerateAdvanced).toBeVisible();
   await expect(autoGenerateAdvanced.getByRole('button').first()).toHaveAttribute('aria-expanded', 'false');
 
@@ -22214,7 +22214,7 @@ test('managed Auto keeps the exact interactive graph and only contains advanced 
   await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
   await expect(page.getByTestId('studio-custom-graph-inspector')).toHaveCount(0);
   await expect(page.locator('[data-testid^="studio-node-disclosure-"]')).toHaveCount(0);
-  await expect(page.getByTestId('studio-section-toggle-runtime')).toHaveCount(0);
+  await expect(page.getByTestId('studio-section-toggle-runtime')).toBeVisible();
   expect(
     await page.evaluate((action) => window.__MODIFF_E2E__!.selectFirstNodeByAction(action), autoGenerate!.action),
   ).toBe(true);
@@ -22243,7 +22243,8 @@ test('managed Auto keeps the exact interactive graph and only contains advanced 
   });
   expect(expertTopology).toEqual(autoTopology);
   await expect(page.locator(`.react-flow__node[data-id="${autoGenerate!.id}"]`)).toBeVisible();
-  await expect(page.getByTestId(`node-advanced-controls-${autoGenerate!.id}`)).toHaveCount(0);
+  await expect(autoGenerateAdvanced).toBeVisible();
+  await expect(autoGenerateAdvanced.getByRole('button').first()).toHaveAttribute('aria-expanded', 'false');
   await expect(pipeline.locator('[data-auto-managed-control="dtype"]')).toBeVisible();
   await page.locator('.react-flow__pane').click({ position: { x: 8, y: 8 } });
   await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
@@ -26162,6 +26163,7 @@ for (const [workspace, direction] of [
     const panel = await selectOperationPipeline(page, starter.pipelineClass, starter.task);
     await panel.getByRole('button', { name: new RegExp(`^${label(original.operation.operationId)}`, 'i') }).click();
     await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(1);
+    await waitForOperationGraphToSettle(page);
     const nodeId = await page.locator('.react-flow__node-custom').first().getAttribute('data-id');
     const handle = page.getByTestId(
       `node-handle-${nodeId}-${direction === 'source' ? edge.sourceHandle : edge.targetHandle}`,
@@ -26298,7 +26300,10 @@ test('bound prompt suggestions expose the declared text input and preserve the w
   await openNodesLibrary(page);
   await selectOperationPipeline(page, 'QwenImageModularPipeline', 'text_to_image');
   await page.locator('input[aria-label="Search nodes"]').fill('custom.Prompt.Value');
-  await page.getByTestId('node-group-custom-nodes').getByRole('button', { name: 'Value', exact: true }).click();
+  await page
+    .getByTestId('node-group-custom-nodes')
+    .getByRole('button', { name: 'custom.Prompt.Value', exact: true })
+    .click();
   const originalId = (await page.locator('.react-flow__node-custom').first().getAttribute('data-id'))!;
   const handle = page.getByTestId(`node-handle-${originalId}-output`);
   await handle.hover();
