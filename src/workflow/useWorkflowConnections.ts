@@ -1,3 +1,5 @@
+import { connectionCreatesExecutionCycle } from './connectionCycle';
+import { useUserBlockStore } from '../stores/useUserBlockStore';
 import { type Connection, type FinalConnectionState } from '@xyflow/react';
 import { useCallback, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
@@ -227,22 +229,17 @@ export function useWorkflowConnections({
       if (conn.source === conn.target) {
         return 'Cannot connect a node to itself: this would create a dependency loop.';
       }
-      const seen = new Set<string>();
-      const pending = [conn.target];
-      const edges = useFlowStore.getState().edges;
-      while (pending.length) {
-        const id = pending.pop()!;
-        if (id === conn.source) {
-          const nodes = useFlowStore.getState().nodes;
-          const label = (nodeId: string) => {
-            const node = nodes.find((node) => node.id === nodeId);
-            return node?.data.label || node?.data.action || nodeId;
+      try {
+        const graph = useFlowStore.getState();
+        if (connectionCreatesExecutionCycle(graph.nodes, graph.edges, conn, useUserBlockStore.getState().blocks)) {
+          const label = (id: string) => {
+            const node = graph.nodes.find((item) => item.id === id);
+            return node?.data.label || node?.data.action || id;
           };
-          return `Cannot connect: this would create a dependency loop. "${label(conn.source)}" already depends on "${label(conn.target)}".`;
+          return `Cannot connect: this would create a dependency loop. "${label(conn.source)}" already depends on "${label(conn.target)}" through executable nodes.`;
         }
-        if (seen.has(id)) continue;
-        seen.add(id);
-        for (const edge of edges) if (edge.source === id) pending.push(edge.target);
+      } catch (error) {
+        return error instanceof Error ? error.message : 'Cannot validate this connection.';
       }
 
       if (connectionScopeIsValid && !connectionScopeIsValid(conn)) {

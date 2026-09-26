@@ -1,3 +1,4 @@
+import { reusableBlockDefinitionFromInstanceV2 } from './blockDefinitionPersistenceV2';
 import { remapOperationAuthoring } from '../workflow/operationSharedInputs';
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
@@ -191,6 +192,21 @@ export function migrateLegacyHierarchyV2(
   const copy = JSON.parse(JSON.stringify(snapshot)) as UserBlockDefinition;
   const nested: { id: string; definition: BlockDefinitionV2 }[] = [];
   copy.nodes = (copy.nodes as CustomNodeType[]).map((node) => {
+    if (node.data.blockInstanceV2) {
+      nested.push({
+        id: node.id,
+        definition: reusableBlockDefinitionFromInstanceV2(node.data.blockInstanceV2, {
+          choice: 'new',
+          definitionId: `nested-${node.id}`,
+          displayName: node.data.label || 'Block',
+        }),
+      });
+      return {
+        ...node,
+        type: 'group',
+        data: { type: 'group', label: node.data.label, params: JSON.parse(JSON.stringify(node.data.params)) },
+      };
+    }
     if (!isLegacyUserBlock(node)) return node;
     const source = node.data.userBlockSnapshot ?? blocks.find((block) => block.id === node.data.userBlockId);
     if (!source) throw new Error(`Missing nested definition: ${node.data.label ?? node.id}`);
@@ -252,6 +268,58 @@ export function migrateLegacyHierarchyV2(
         targetNodeId: map.get(edge.targetNodeId)!,
       })),
     );
+    // Wrapper sockets are presentation aliases. Persist execution edges and
+    // outer bindings against their real leaves, including input fan-out.
+    const inputTargets = (field: string) => {
+      const port = surface.boundary.inputs.find((port) => port.portId === field);
+      if (!port) throw new Error(`Missing nested input ${id}.${field}.`);
+      return [port.binding, ...(port.mirrorBindings ?? [])];
+    };
+    const outputTarget = (field: string) => {
+      const port = surface.boundary.outputs.find((port) => port.portId === field);
+      if (!port) throw new Error(`Missing nested output ${id}.${field}.`);
+      return port.binding;
+    };
+    base.graph.edges = base.graph.edges.flatMap((edge) => {
+      const source =
+        edge.sourceNodeId === id
+          ? outputTarget(edge.sourcePortId)
+          : { nodeId: edge.sourceNodeId, fieldOrPortId: edge.sourcePortId };
+      const targets =
+        edge.targetNodeId === id
+          ? inputTargets(edge.targetPortId)
+          : [{ nodeId: edge.targetNodeId, fieldOrPortId: edge.targetPortId }];
+      return targets.map((target, index) => ({
+        ...edge,
+        edgeId: index ? `${edge.edgeId}:mirror-${index}` : edge.edgeId,
+        sourceNodeId: source.nodeId,
+        sourcePortId: source.fieldOrPortId,
+        targetNodeId: target.nodeId,
+        targetPortId: target.fieldOrPortId,
+      }));
+    });
+    base.boundary.inputs = base.boundary.inputs.map((port) => {
+      const targets = [port.binding, ...(port.mirrorBindings ?? [])].flatMap((binding) =>
+        binding.nodeId === id ? inputTargets(binding.fieldOrPortId) : [binding],
+      );
+      const updated = { ...port, binding: targets[0]! };
+      delete updated.mirrorBindings;
+      return targets.length > 1 ? { ...updated, mirrorBindings: targets.slice(1) } : updated;
+    });
+    base.boundary.outputs = base.boundary.outputs.map((port) =>
+      port.binding.nodeId === id ? { ...port, binding: outputTarget(port.binding.fieldOrPortId) } : port,
+    );
+    base.controls = base.controls.map((control) => {
+      const targets = [control.binding, ...(control.mirrorBindings ?? [])].flatMap((binding) => {
+        if (binding.nodeId !== id) return [binding];
+        const local = surface.controls.find((item) => item.controlId === binding.fieldId);
+        if (!local) throw new Error(`Missing nested control ${id}.${binding.fieldId}.`);
+        return [local.binding, ...(local.mirrorBindings ?? [])];
+      });
+      const updated = { ...control, binding: targets[0]! };
+      delete updated.mirrorBindings;
+      return targets.length > 1 ? { ...updated, mirrorBindings: targets.slice(1) } : updated;
+    });
     base.previews.push(...definition.previews.map((preview) => ({ ...preview, nodeId: map.get(preview.nodeId)! })));
   }
   // Older ordinary group membership was stored on React Flow nodes.

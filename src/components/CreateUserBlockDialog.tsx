@@ -5,6 +5,7 @@ import { ModiffButton, ModiffCheckbox, ModiffDialog, ModiffFieldShell, ModiffInp
 export type PendingBlock = {
   result: Extract<BlockSelectionResult, { ok: true }>;
   name: string;
+  error?: string;
   inputLabels: Record<string, string>;
   outputLabels: Record<string, string>;
   exposedParamIds: Set<string>;
@@ -44,6 +45,11 @@ export default function CreateUserBlockDialog({
     >
       {pendingBlock ? (
         <div className="grid gap-4">
+          {pendingBlock.error ? (
+            <p role="alert" className="text-sm text-modiff-red">
+              {pendingBlock.error}
+            </p>
+          ) : null}
           <ModiffFieldShell label="Name" required>
             <ModiffInput
               autoFocus

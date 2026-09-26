@@ -1,3 +1,4 @@
+import { hasInlineScalarControl } from './inlineScalarControl';
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
@@ -21,8 +22,17 @@ export function blockControlConnectionNotesV2(
     ? node
     : nodes.find((candidate) => candidate.id === node?.data.blockProjectionOwnerId);
   const instance = owner?.data.blockInstanceV2;
-  if (!instance || !node) return {};
   const notes: Record<string, string> = {};
+  if (!node) return notes;
+  for (const [key, param] of Object.entries(params)) {
+    if (!hasInlineScalarControl(param)) continue;
+    const wire = edges.find((edge) => edge.target === node.id && edge.targetHandle === key);
+    if (!wire) continue;
+    const source = nodes.find((item) => item.id === wire.source);
+    notes[key] =
+      `Connected from ${source?.data.label ?? wire.source}.${wire.sourceHandle ?? 'output'}. The shown value is the saved fallback. Edit the source or disconnect to edit this value.`;
+  }
+  if (!instance) return notes;
   for (const [key, param] of Object.entries(params)) {
     if (param.hidden || param.isInput || param.display === 'input' || param.display === 'output') continue;
     const binding = param.fieldOptions?.blockBindingV2;

@@ -1,3 +1,4 @@
+import { hasInlineScalarControl } from '../studio/inlineScalarControl';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { Fragment, lazy, memo, ReactNode, Suspense, useMemo } from 'react';
@@ -202,7 +203,7 @@ const NodeContent = memo(function NodeContent({
   // Workflow Auto plans resources without hiding manually authored controls.
   const autoModeActive = studioResourceMode === 'auto' && controlledStudioNode;
   const autoFormPatch = formPatchForAutoCandidate(selectedCandidate, studioForm);
-  const fields = Object.entries(params).map(([key, data]: [string, NodeParams]) => {
+  const fields = Object.entries(params).flatMap(([key, data]: [string, NodeParams]) => {
     const label = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
     const display = data.isInput ? 'input' : data.display || '';
     const dataType = (
@@ -264,7 +265,7 @@ const NodeContent = memo(function NodeContent({
       default: data.default,
       options,
       style: sanitizeModiffFieldStyle(data.style, `${nodeId}.${key}`),
-      disabled: Boolean(data.disabled || connectionNotes[key]),
+      disabled: Boolean(data.disabled || (!hasInlineScalarControl(data) && connectionNotes[key])),
       min: data.min,
       max: data.max,
       step: data.step,
@@ -281,7 +282,7 @@ const NodeContent = memo(function NodeContent({
       onSignal: data.onSignal,
     };
 
-    return {
+    const field = {
       key,
       props,
       autoManaged,
@@ -295,6 +296,29 @@ const NodeContent = memo(function NodeContent({
           ? classification.surface
           : ('main' as const),
     };
+    if (!hasInlineScalarControl(data)) return [field];
+    const inlineDisplay = data.display || '';
+    const inline = {
+      ...field,
+      key: `${key}:control`,
+      props: {
+        ...props,
+        display: inlineDisplay,
+        fieldType: getFieldType(inlineDisplay, dataType, options),
+        disabled: props.disabled || Boolean(data.isConnected || connectionNotes[key]),
+        fieldOptions: {
+          ...props.fieldOptions,
+          suppressInitialFieldAction: true,
+          ...(data.isConnected || connectionNotes[key]
+            ? {
+                connectedControlNote:
+                  connectionNotes[key] || 'Supplied by a connected input; disconnect to edit the stored value.',
+              }
+            : {}),
+        },
+      },
+    };
+    return [field, inline];
   });
   const connectors = fields.filter(({ props }) => props.fieldType === 'input' || props.fieldType === 'output');
   const controls = fields.filter(

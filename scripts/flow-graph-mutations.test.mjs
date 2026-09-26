@@ -1437,3 +1437,167 @@ test('rejected search connections restore the graph and history instead of leavi
     assert.equal(store.getState().historyTransaction, null);
   }
 });
+
+async function groupingFixture(includeEncoder = false) {
+  const { createUserBlockDraftV2, prepareUserBlockCreationV2 } = await server.ssrLoadModule(
+    '/src/studio/userBlockCreationV2.ts',
+  );
+  const encode = node('encode-leaf', {
+    models: { type: 'models', display: 'input', required: true },
+    prompt: { type: 'string', value: 'Keep this prompt' },
+    embeddings: { type: 'embeddings', display: 'output' },
+  });
+  const definition = blockSchemaModule.migrateUserBlockDefinitionV1({
+    id: 'encoder-definition',
+    name: 'Encode Inputs',
+    version: 1,
+    nodes: [encode],
+    edges: [],
+    inputs: [{ id: 'models', label: 'Models', type: 'models', nodeId: encode.id, paramKey: 'models' }],
+    outputs: [{ id: 'embeddings', label: 'Embeddings', type: 'embeddings', nodeId: encode.id, paramKey: 'embeddings' }],
+    exposedParams: [{ id: 'prompt', kind: 'graph-param', label: 'Prompt', nodeId: encode.id, paramKey: 'prompt' }],
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const encoder = blockRuntimeModule.createBlockRootNodeV2(
+    blockSchemaModule.createBlockInstanceV2(definition, {
+      instanceId: 'encoder',
+      position: { x: 300, y: 0 },
+      size: { width: 300, height: 300 },
+    }),
+  );
+  encoder.selected = includeEncoder;
+  const load = node('load', {
+    feedback: { type: 'image', display: 'input' },
+    models: { type: 'models', display: 'output' },
+    model: { type: 'model', display: 'output' },
+  });
+  const denoise = node('denoise', {
+    model: { type: 'model', display: 'input' },
+    embeddings: { type: 'embeddings', display: 'input' },
+    image: { type: 'image', display: 'output' },
+  });
+  load.selected = denoise.selected = true;
+  const preview = node('preview', { image: { type: 'image', display: 'input' } });
+  const graph = {
+    nodes: [load, encoder, denoise, preview],
+    edges: [
+      edge('models-wire', load.id, encoder.id, 'models', 'models'),
+      edge('model-wire', load.id, denoise.id, 'model', 'model'),
+      edge('embeddings-wire', encoder.id, denoise.id, 'embeddings', 'embeddings'),
+      edge('image-wire', denoise.id, preview.id, 'image', 'image'),
+    ],
+  };
+  const before = structuredClone(graph);
+  const draft = createUserBlockDraftV2(graph, []);
+  assert.equal(draft.ok, true);
+  const prepared = prepareUserBlockCreationV2(draft, { ...draft.block, name: 'Image core' });
+  assert.deepEqual(graph, before, 'creation preview must be read-only');
+  return { graph, draft, prepared };
+}
+
+for (const nested of [false, true])
+  test(`native Block creation preserves crossing wires and nested=${nested} through refresh`, async () => {
+    const { prepared } = await groupingFixture(nested);
+    const store = flowStoreModule.useFlowStore;
+    store.getState().replaceGraph(prepared.graph);
+    store.getState().updateHandleConnectionStatus();
+    store.getState().updateSignalValues(store.getState().edges);
+    const saved = JSON.parse(JSON.stringify(store.getState().toObject()));
+    store.getState().replaceGraph(saved);
+    const graph = blockRuntimeModule.expandBlockGraphV2ForExecution(store.getState().nodes, store.getState().edges);
+    assert.equal(graph.edges.length, 4, 'all original execution edges survive');
+    const encoder = graph.nodes.find((n) => n.data.action === 'encode-leaf');
+    assert.equal(encoder.data.params.prompt.value, 'Keep this prompt');
+    assert.ok(graph.edges.some((e) => e.target === encoder.id && e.targetHandle === 'models'));
+    assert.equal(prepared.definition.schemaVersion, 2);
+    if (nested) assert.ok(prepared.definition.graph.nodes.some((n) => n.containerInterface));
+  });
+
+test('cycle validation follows executable leaves across a partial Block', async () => {
+  const { prepared } = await groupingFixture(false);
+  const { connectionCreatesExecutionCycle } = await server.ssrLoadModule('/src/workflow/connectionCycle.ts');
+  const wire = prepared.graph.edges.find((e) => e.target === 'encoder');
+  assert.ok(wire);
+  const others = prepared.graph.edges.filter((e) => e.id !== wire.id);
+  assert.equal(connectionCreatesExecutionCycle(prepared.graph.nodes, others, wire), false);
+  const a = node('a', { input: { type: 'string', display: 'input' }, output: { type: 'string', display: 'output' } });
+  const b = { ...structuredClone(a), id: 'b' };
+  assert.equal(
+    connectionCreatesExecutionCycle(
+      [a, b],
+      [edge('ab', 'a', 'b', 'output', 'input')],
+      edge('ba', 'b', 'a', 'output', 'input'),
+    ),
+    true,
+  );
+});
+
+test('ordinary insertion searches free space without moving existing nodes', async () => {
+  const { collisionFreeInsertPosition } = await server.ssrLoadModule('/src/workflow/insertionPosition.ts');
+  const existing = { ...node('existing', {}), position: { x: 40, y: 60 }, width: 500, height: 600 };
+  const before = structuredClone(existing);
+  const result = collisionFreeInsertPosition({ x: 40, y: 60 }, [existing], { width: 360, height: 420 });
+  assert.ok(result.x >= 572 || result.y >= 692);
+  assert.deepEqual(existing, before);
+});
+
+test('scalar socket connection status and disconnect preserve its inline fallback and socket', () => {
+  const source = node('source', { output: { display: 'output', type: 'string' } });
+  const target = node('target', { input: { display: 'textarea', type: 'string', isInput: true, value: '' } });
+  const store = flowStoreModule.useFlowStore;
+  store.getState().replaceGraph({ nodes: [source, target], edges: [] });
+  store.getState().onConnect({ source: 'source', sourceHandle: 'output', target: 'target', targetHandle: 'input' });
+  const param = () => store.getState().nodes.find((n) => n.id === 'target').data.params.input;
+  assert.equal(param().isConnected, true);
+  assert.equal(param().value, '');
+  store.getState().onEdgesChange([{ id: store.getState().edges[0].id, type: 'remove' }]);
+  assert.equal(param().isConnected, false);
+  assert.equal(param().isInput, true);
+  assert.equal(param().value, '');
+});
+
+test('native creation retains deliberately renamed interfaces as explicit contracts', async () => {
+  const { draft } = await groupingFixture(false);
+  const { prepareUserBlockCreationV2 } = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const configured = structuredClone(draft.block);
+  configured.outputs[0].label = 'Deliberately exposed model';
+  const prepared = prepareUserBlockCreationV2(draft, configured);
+  assert.equal(prepared.definition.boundary.mode, 'explicit');
+  assert.equal(prepared.definition.boundary.outputs[0].label, 'Deliberately exposed model');
+  assert.equal(
+    prepared.graph.nodes.find((n) => n.data.blockInstanceV2 && n.id === draft.blockNode.id).data.blockInstanceV2
+      .effectiveInterface.boundary.mode,
+    'explicit',
+  );
+});
+
+test('cycle validation supports expanded internal reconnects without adding external projection edges', async () => {
+  const { prepared } = await groupingFixture(true);
+  const { connectionCreatesExecutionCycle } = await server.ssrLoadModule('/src/workflow/connectionCycle.ts');
+  const root = prepared.graph.nodes.find((n) => n.data.blockInstanceV2);
+  const expanded = blockRuntimeModule.materializeBlockProjectionV2(
+    blockRuntimeModule.createBlockRootNodeV2(
+      blockRuntimeModule.setBlockPresentationV2(root.data.blockInstanceV2, { expanded: true }),
+    ),
+  );
+  const nodes = [...prepared.graph.nodes.filter((n) => n.id !== root.id), ...expanded.nodes];
+  const edges = [...prepared.graph.edges, ...expanded.edges];
+  const wire = expanded.edges.find((e) => e.data?.blockProjectionKind === 'internal');
+  assert.ok(wire);
+  assert.equal(connectionCreatesExecutionCycle(nodes, edges, wire), false);
+  const leaf = expanded.nodes.find((n) => n.data.action === 'load');
+  const target = expanded.nodes.find((n) => n.data.action === 'denoise');
+  assert.ok(leaf && target);
+  const before = structuredClone({ nodes, edges });
+  assert.equal(
+    connectionCreatesExecutionCycle(nodes, edges, {
+      source: target.id,
+      sourceHandle: 'image',
+      target: leaf.id,
+      targetHandle: 'feedback',
+    }),
+    true,
+  );
+  assert.deepEqual({ nodes, edges }, before);
+});

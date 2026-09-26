@@ -12023,7 +12023,7 @@ test('mocked custom graph inspector summarizes multi-model comparison graphs', a
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Graph models');
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('2 model refs');
   await expect(page.getByTestId('studio-model-select')).toHaveCount(0);
-  await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Graph ready · Auto check at Run');
   await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
   await expect(page.getByTestId('studio-run')).toBeEnabled();
   await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
@@ -22301,6 +22301,25 @@ async function assertSharedBlockWorkspaceSwitch(page: Page, workspace: 'auto' | 
   await page.screenshot({ path: test.info().outputPath('shared-block-workspaces.png'), animations: 'disabled' });
 }
 
+// Legacy lifecycle coverage intentionally loads a V1 definition. Native creation
+// is covered separately and now saves the nested-capable V2 representation.
+async function installLegacySelectedBlock(page: Page, name: string) {
+  await page.evaluate(async (name) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useUserBlockStore } = await import('/src/stores/useUserBlockStore.ts');
+    const { createUserBlockFromSelection } = await import('/src/studio/userBlocks.ts');
+    const flow = useFlowStore.getState();
+    const result = createUserBlockFromSelection(flow, name, useUserBlockStore.getState().blocks);
+    if (!result.ok) throw new Error(result.reason);
+    await useUserBlockStore.getState().saveBlock(result.block);
+    flow.replaceGraph({ nodes: result.nodes, edges: result.edges });
+    useFlowStore.getState().updateHandleConnectionStatus();
+    useFlowStore.getState().updateSignalValues(result.edges);
+  }, name);
+  const arrange = page.getByRole('button', { name: 'Arrange graph', exact: true });
+  if (await arrange.isEnabled()) await arrange.click();
+}
+
 async function sharedSavedBlockLifecycle(page: Page, workspace: 'auto' | 'expert') {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
@@ -22322,13 +22341,7 @@ async function sharedSavedBlockLifecycle(page: Page, workspace: 'auto' | 'expert
   const initialNodeCount = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.selectNodesByAction(['Generate', 'Preview']))).toBe(2);
 
-  const createBlock = page.getByTestId('selection-toolbar-create-block');
-  await expect(createBlock).toBeEnabled();
-  await createBlock.click();
-  const createDialog = page.getByTestId('create-user-block-dialog');
-  await expect(createDialog).toBeVisible();
-  await createDialog.getByLabel('Name').fill('Reusable render');
-  await page.getByTestId('confirm-create-user-block').click();
+  await installLegacySelectedBlock(page, 'Reusable render');
 
   const blockNode = page.locator('.react-flow__node-block');
   await expect(blockNode).toHaveCount(1);
@@ -22585,7 +22598,7 @@ async function sharedSavedBlockLifecycle(page: Page, workspace: 'auto' | 'expert
 }
 
 for (const workspace of ['expert'] as const) {
-  test(`${workspace} Blocks save, expand in place, collapse, and survive library-definition deletion`, async ({
+  test(`${workspace} legacy Blocks save, expand in place, collapse, and survive library-definition deletion`, async ({
     page,
   }) => {
     await sharedSavedBlockLifecycle(page, workspace);
@@ -22618,10 +22631,7 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(async () => window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept'));
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.selectNodesByAction(['Generate', 'Preview']))).toBe(2);
-  await page.getByTestId('selection-toolbar-create-block').click();
-  const createDialog = page.getByTestId('create-user-block-dialog');
-  await createDialog.getByLabel('Name').fill('Editable render');
-  await page.getByTestId('confirm-create-user-block').click();
+  await installLegacySelectedBlock(page, 'Editable render');
 
   const block = page.locator('.react-flow__node-block');
   await block.getByRole('button', { name: 'Expand block' }).click();
@@ -22812,10 +22822,7 @@ async function sharedCollapsedBlockControls(page: Page, workspace: 'auto' | 'exp
   });
   expect(selectedCount).toBeGreaterThanOrEqual(5);
 
-  await page.getByTestId('selection-toolbar-create-block').click();
-  const createDialog = page.getByTestId('create-user-block-dialog');
-  await createDialog.getByLabel('Name').fill('Complete render block');
-  await page.getByTestId('confirm-create-user-block').click();
+  await installLegacySelectedBlock(page, 'Complete render block');
 
   const blockNode = page.locator('.react-flow__node-block');
   const preview = blockNode.locator('[data-testid^="node-preview-"]').first();
@@ -22897,7 +22904,7 @@ async function sharedCollapsedBlockControls(page: Page, workspace: 'auto' | 'exp
 }
 
 for (const workspace of ['expert'] as const) {
-  test(`${workspace} Collapsed many-output blocks keep preview and editable node disclosures usable`, async ({
+  test(`${workspace} legacy collapsed many-output blocks keep preview and editable node disclosures usable`, async ({
     page,
   }) => {
     await sharedCollapsedBlockControls(page, workspace);
@@ -28231,7 +28238,7 @@ test('successful node status is not presented as a warning after recovery', asyn
 });
 
 for (const workspace of ['expert'] as const) {
-  test(`${workspace} native saved ordinary Block reviews a model change and restores its legacy format with Undo`, async ({
+  test(`${workspace} native saved ordinary Block reviews a model change and restores its V2 contents with Undo`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1680, height: 1050 });
@@ -28270,9 +28277,9 @@ for (const workspace of ['expert'] as const) {
     await create.getByLabel('Name').fill('Native saved model workflow');
     await page.getByTestId('confirm-create-user-block').click();
     await expect(create).toHaveCount(0);
-    const block = (await read()).nodes.find((n) => n.data.userBlockSnapshot)!;
+    const block = (await read()).nodes.find((n) => n.data.blockInstanceV2)!;
     expect(block).toBeTruthy();
-    expect(block.data.blockInstanceV2).toBeUndefined();
+    expect(block.data.userBlockSnapshot).toBeUndefined();
     const root = page.locator(`.react-flow__node[data-id="${block.id}"]`);
     await root.getByRole('button', { name: 'Change model / task', exact: true }).click();
     await root.getByLabel('Replacement model', { exact: true }).click();
@@ -28281,7 +28288,7 @@ for (const workspace of ['expert'] as const) {
     const before = (await read()).nodes.find((n) => n.id === block.id)!;
     await root.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
     const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
-    await expect(review).toContainText('legacy workflow instance');
+    await expect(review.getByRole('heading', { name: 'Review model / task change' })).toBeVisible();
     await review.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect((await read()).nodes.find((n) => n.id === block.id)!.data).toEqual(before.data);
     await root.getByRole('button', { name: 'Choose model', exact: true }).first().click();
@@ -28302,9 +28309,9 @@ for (const workspace of ['expert'] as const) {
     await page.locator('.react-flow__pane').click({ position: { x: 80, y: 60 } });
     await page.keyboard.press('Control+z');
     await expect
-      .poll(async () => (await read()).nodes.find((n) => n.id === block.id)!.data.userBlockSnapshot)
-      .toEqual(before.data.userBlockSnapshot);
-    expect((await read()).nodes.find((n) => n.id === block.id)!.data.blockInstanceV2).toBeUndefined();
+      .poll(async () => (await read()).nodes.find((n) => n.id === block.id)!.data.blockInstanceV2)
+      .toEqual(before.data.blockInstanceV2);
+    expect((await read()).nodes.find((n) => n.id === block.id)!.data.userBlockSnapshot).toBeUndefined();
     await page.keyboard.press('Control+Shift+z');
     await expect
       .poll(async () => (await read()).nodes.find((n) => n.data.blockInstanceV2)!.data.blockInstanceV2)
@@ -28476,4 +28483,129 @@ test('Restore model defaults resets the prompt through the same undoable graph t
   await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
   await page.keyboard.press('Control+z');
   await expect(prompt).toHaveValue('An intentionally edited prompt before an explicit reset');
+});
+
+test('native Create Block preserves nested Encode Inputs, crossing wires and reload', async ({ page }) => {
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page, true);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('task-launcher').getByTestId('workflow-task-text_to_image').click();
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const before = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { expandBlockGraphV2ForExecution } = await import('/src/studio/blockRuntimeV2.ts');
+    const flow = useFlowStore.getState();
+    const nested = flow.nodes.find((n) => n.data.blockInstanceV2);
+    if (!nested) throw new Error('Task starter must include its native Encode Inputs Block');
+    const flat = expandBlockGraphV2ForExecution(flow.nodes, flow.edges);
+    await flow.onNodesChange(flow.nodes.map((node) => ({ type: 'select' as const, id: node.id, selected: true })));
+    return {
+      count: flat.nodes.filter((node) => node.data.module && node.data.action).length,
+      edges: flat.edges.length,
+    };
+  });
+  await page.getByTestId('selection-toolbar-create-block').click();
+  const dialog = page.getByTestId('create-user-block-dialog');
+  await dialog.getByLabel('Name').fill('Nested encoder workflow');
+  await page.getByTestId('confirm-create-user-block').click();
+  await expect(dialog).toHaveCount(0);
+  const read = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const { expandBlockGraphV2ForExecution } = await import('/src/studio/blockRuntimeV2.ts');
+      const flow = useFlowStore.getState();
+      const root = flow.nodes.find((node) => node.data.blockInstanceV2)!;
+      const flat = expandBlockGraphV2ForExecution(flow.nodes, flow.edges);
+      return {
+        instance: root.data.blockInstanceV2!,
+        count: flat.nodes.filter((node) => node.data.module && node.data.action).length,
+        edges: flat.edges.length,
+      };
+    });
+  const created = await read();
+  expect(created.count).toBe(before.count);
+  expect(created.edges).toBe(before.edges);
+  expect(created.instance.effectiveGraph.nodes.some((node) => node.containerInterface)).toBe(true);
+  expect(created.instance.effectiveGraph.nodes.some((node) => node.data.action === 'EncodePrompt')).toBe(true);
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Nested encoder workflow');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect.poll(read).toEqual(created);
+});
+
+test('scalar input editors preserve fallback values when a socket is connected and disconnected', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { prepareWorkflowForManualInsertion } = await import('/src/studio/manualGraphInsertion.ts');
+    prepareWorkflowForManualInsertion();
+    useFlowStore.getState().replaceGraph({
+      nodes: [
+        {
+          id: 'scalar-source',
+          type: 'custom',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'custom',
+            module: 'modules.Text',
+            action: 'Text',
+            label: 'Connected text source',
+            params: {
+              text: { type: 'string', display: 'output' },
+            },
+          },
+        },
+        {
+          id: 'scalar-editor',
+          type: 'custom',
+          position: { x: 450, y: 0 },
+          data: {
+            type: 'custom',
+            module: 'custom.Fixture',
+            action: 'Annotate',
+            label: 'Scalar input editor',
+            params: {
+              prompt: { type: 'string', display: 'textarea', label: 'Prompt', isInput: true, value: '' },
+              task: { type: 'string', label: 'Task', isInput: true, options: ['segment', 'caption'], value: 'segment' },
+              count: { type: 'int', label: 'Count', isInput: true, value: 0 },
+              enabled: { type: 'bool', label: 'Enabled', isInput: true, value: false },
+            },
+          },
+        },
+      ],
+      edges: [],
+    });
+  });
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const node = page.locator('.react-flow__node[data-id="scalar-editor"]');
+  const prompt = node.locator('[data-key="prompt"] textarea');
+  await expect(prompt).toHaveValue('');
+  await prompt.fill('Saved fallback prompt');
+  await prompt.blur();
+  await expect(node.locator('[data-key="count"] input')).toHaveValue('0');
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore
+      .getState()
+      .onConnect({ source: 'scalar-source', sourceHandle: 'text', target: 'scalar-editor', targetHandle: 'prompt' });
+  });
+  await expect(prompt).toBeDisabled();
+  await expect(prompt).toHaveValue('Saved fallback prompt');
+  await expect(node.getByText(/Connected from Connected text source.text/)).toBeVisible();
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const wire = useFlowStore.getState().edges.find((edge) => edge.target === 'scalar-editor')!;
+    useFlowStore.getState().removeEdges(wire.id);
+  });
+  await expect(prompt).toBeEnabled();
+  await expect(prompt).toHaveValue('Saved fallback prompt');
 });

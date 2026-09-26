@@ -75,6 +75,35 @@ the owning internal loader before using the existing atomic Block transaction.
 Intentional Add/Load/Reload enables validated custom code; opening a picker or
 discovering a file does not. Only load trusted Python.
 
+## Group nodes into a reusable Block
+
+Select nodes and choose **Create block**. New definitions use Block V2 and can
+contain existing Blocks such as Encode Inputs. Their nested contents, values and
+crossing connections are retained. Existing saved definitions are not rewritten.
+Creation errors appear inside the dialog. Public sockets and controls remain
+available; the dialog lets you choose controls and rename ports.
+
+Connection validation follows executable nodes inside containers. A loader and
+denoiser grouped around an external encoder can exchange values without creating
+an execution cycle. Required input checks also inspect these internal nodes; a
+missing model connection blocks Run and identifies the affected node or Block.
+
+When changing a model inside a Block, the change preview may retire untouched,
+automatically derived outputs that the new route cannot provide and nobody uses.
+Connected outputs, configured interfaces and preview bindings remain protected.
+Incompatible contracts require repair before the change can be applied.
+
+Scalar inputs declared with an editor (text, number, toggle or choices) retain
+both their editor and optional socket. A connection supplies the execution value
+and disables the literal editor; disconnecting restores the saved fallback.
+The source is shown when available. Model and media inputs retain their sockets.
+
+For a custom graph using Auto memory, **Graph ready · Auto check at Run** means
+static graph checks passed. Run checks the exact backend resource plan before
+submission. Use **Resources → Check Auto execution plan** to inspect it earlier.
+Installed model files alone do not qualify a recipe; Custom memory retains your
+chosen settings without claiming Auto qualification.
+
 ## Names, examples and library
 
 Raw loaders use distinct names: **Load Image Pipeline**, **Load Audio Pipeline**,

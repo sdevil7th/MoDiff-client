@@ -2105,3 +2105,22 @@ test('edge reconnection is durable for V2 internals and rejects cross-boundary u
   assert.deepEqual(flowStore.normalizePersistedFlowState(flowStore.useFlowStore.getState()), before);
   assert.equal(flowStore.useFlowStore.getState().historyPast.length, 5);
 });
+
+test('connectable scalar controls retain inline editors and literal false, zero and empty values', () => {
+  const node = ordinaryNode();
+  node.data.params = {
+    prompt: { type: 'string', display: 'textarea', isInput: true, value: '' },
+    steps: { type: 'int', isInput: true, value: 0 },
+    enabled: { type: 'bool', isInput: true, value: false },
+    task: { type: 'string', isInput: true, options: ['segment', 'caption'], value: 'segment' },
+    image: { type: 'image', display: 'input', isInput: true },
+    models: { type: 'models', isInput: true },
+  };
+  const before = structuredClone(node);
+  const controls = inspector.graphNodeControlParams(node);
+  assert.deepEqual(Object.keys(controls), ['prompt', 'steps', 'enabled', 'task']);
+  assert.equal(controls.steps.value, 0);
+  assert.equal(controls.enabled.value, false);
+  assert.equal(controls.prompt.value, '');
+  assert.deepEqual(node, before);
+});

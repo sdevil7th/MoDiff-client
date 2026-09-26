@@ -1,3 +1,4 @@
+import { inspectRequiredGraphInputs } from './requiredGraphInputs';
 import {
   useFlowStore,
   withoutBlockCompilationTransientsV2,
@@ -142,7 +143,9 @@ export function buildRunReadinessDecision(
           ? 'Run blocked'
           : state === 'ready_with_warnings'
             ? 'Ready with warnings'
-            : 'Ready',
+            : infoIssues.some((item) => item.code === 'workflow_auto_check_at_run')
+              ? 'Graph ready · Auto check at Run'
+              : 'Ready',
     message: primaryIssue?.message ?? (state === 'preparing' ? 'Preparing graph' : 'Ready'),
   };
 }
@@ -1043,7 +1046,7 @@ function collectGraphStructureIssues(graph = executableFlowGraph()): RunReadines
     ];
   }
 
-  return [];
+  return inspectRequiredGraphInputs(useFlowStore.getState().nodes, graph, useNodesStore.getState().nodesRegistry);
 }
 
 function collectUserBlockCompositionIssues(): RunReadinessIssue[] {
@@ -1786,6 +1789,19 @@ export function collectRunReadinessIssues(options: {
     );
   }
 
+  if (customGraphContext && studioState.form.resourceMode === 'auto') {
+    issues.push(
+      issue({
+        code: 'workflow_auto_check_at_run',
+        category: 'hardware_fit',
+        severity: 'info',
+        blocking: false,
+        message: 'Graph validation does not establish Auto resource readiness.',
+        details:
+          'Run checks the exact workflow resource plan before submitting. Open Resources → Check Auto execution plan to inspect it now. Installed files alone do not qualify a recipe.',
+      }),
+    );
+  }
   if (options.includeStudio !== false && !customGraphContext) {
     issues.push(...collectStudioIssues(studioState.form));
     const finalization = studioState.graphFinalization;
@@ -1974,6 +1990,7 @@ export function collectRunReadinessIssues(options: {
     'composite_execution_graph_invalid',
     'block_media_input_missing',
     'operation_media_input_missing',
+    'required_graph_input_missing',
     'media_file_input_missing',
   ]);
   return collected.map((item) => {

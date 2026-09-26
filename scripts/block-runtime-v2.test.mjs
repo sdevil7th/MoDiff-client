@@ -2820,3 +2820,51 @@ test('restoring an internal node clears structural customization while retaining
   assert.deepEqual(restored.definitionSnapshot, original.definitionSnapshot);
   assert.equal(restored.customization.state, original.customization.state);
 });
+
+test('missing required model inputs remain submission blockers in Custom memory as well as Auto', () => {
+  const original = studioStore.useStudioStore.getState();
+  const source = {
+    id: 'encoder',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'test',
+      action: 'EncodePrompt',
+      label: 'Encoder',
+      params: {
+        models: { type: 'models', display: 'input', required: true },
+        output: { type: 'image', display: 'output' },
+      },
+    },
+  };
+  const preview = {
+    id: 'preview',
+    type: 'custom',
+    position: { x: 400, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      params: { image: { type: 'image', display: 'input' } },
+    },
+  };
+  try {
+    flowStore.useFlowStore.setState({
+      nodes: [source, preview],
+      edges: [{ id: 'output', source: source.id, sourceHandle: 'output', target: preview.id, targetHandle: 'image' }],
+    });
+    for (const resourceMode of ['expert', 'auto']) {
+      studioStore.useStudioStore.setState({ graphBinding: null, form: { ...original.form, resourceMode } });
+      const issues = runReadiness.collectRunReadinessIssues({
+        sid: 'required-input',
+        isConnected: true,
+        includeStudio: false,
+      });
+      assert.equal(issues.find((issue) => issue.code === 'required_graph_input_missing')?.blocking, true, resourceMode);
+      assert.equal(runReadiness.buildRunReadinessDecision(issues).state, 'blocked');
+    }
+  } finally {
+    studioStore.useStudioStore.setState(original);
+  }
+});

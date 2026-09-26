@@ -59,7 +59,13 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
       state.nodes
         .map((node) => {
           const modelParams = Object.entries(node.data.params)
-            .filter(([key]) => /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key))
+            .filter(
+              ([key, param]) =>
+                param.required ||
+                param.isInput ||
+                param.display === 'input' ||
+                /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key),
+            )
             .map(([key, param]) => `${key}:${JSON.stringify(param.value ?? param.default ?? '')}`)
             .join(',');
           const instance = node.data.blockInstanceV2;

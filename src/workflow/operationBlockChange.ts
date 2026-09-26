@@ -33,12 +33,12 @@ function operationReplacementParam(
   nodeId: string,
   fieldId: string,
   valueType: string,
-  direction: 'input' | 'control',
+  direction: 'input' | 'output' | 'control',
 ) {
   const param = nodes.find((node) => node.id === nodeId)?.data.params[fieldId];
   return Boolean(
     param &&
-    param.display !== 'output' &&
+    (direction === 'output' ? param.display === 'output' : param.display !== 'output') &&
     (direction !== 'input' || !param.hidden) &&
     blockValueTypesAreCompatibleV2(valueType, param.type),
   );
@@ -49,15 +49,17 @@ function operationBindingHasOutsideWire(
   blockId: string,
   publicId: string,
   bindings: readonly { nodeId: string; fieldOrPortId?: string; fieldId?: string }[],
+  direction: 'input' | 'output' = 'input',
 ) {
   const identities = new Set(
     bindings.map(({ nodeId, fieldOrPortId, fieldId }) => `${nodeId}\u0000${fieldOrPortId ?? fieldId ?? ''}`),
   );
   return graph.edges.some((edge) => {
-    if (edge.target !== blockId) return false;
-    if (edge.targetHandle === publicId) return true;
-    const crossing = parseBlockCrossingHandleV2(edge.targetHandle);
-    return crossing?.direction === 'input' && identities.has(`${crossing.nodeId}\u0000${crossing.fieldOrPortId}`);
+    if ((direction === 'input' ? edge.target : edge.source) !== blockId) return false;
+    const handle = direction === 'input' ? edge.targetHandle : edge.sourceHandle;
+    if (handle === publicId) return true;
+    const crossing = parseBlockCrossingHandleV2(handle);
+    return crossing?.direction === direction && identities.has(`${crossing.nodeId}\u0000${crossing.fieldOrPortId}`);
   });
 }
 
@@ -104,6 +106,24 @@ function adaptDerivedOperationInterface(
     }
     return true;
   });
+  const definitionOutputs = new Map(original.definitionSnapshot.boundary.outputs.map((port) => [port.portId, port]));
+  const outputs = original.effectiveInterface.boundary.outputs.filter((port) => {
+    const { nodeId, fieldOrPortId } = port.binding;
+    const protectedPreview = original.previewStates.some(
+      ({ binding }) => binding.nodeId === nodeId && binding.outputPortId === fieldOrPortId,
+    );
+    if (
+      scope.has(nodeId) &&
+      !operationReplacementParam(planned, nodeId, fieldOrPortId, port.valueType, 'output') &&
+      deepEqual(definitionOutputs.get(port.portId), port) &&
+      !protectedPreview &&
+      !operationBindingHasOutsideWire(graph, blockId, port.portId, [port.binding], 'output')
+    ) {
+      removed.push(`output ${port.label}`);
+      return false;
+    }
+    return true;
+  });
   const controls = original.effectiveInterface.controls.filter((control) => {
     const bindings = blockContainerControlTargetsV1(control);
     const owned = bindings.filter(({ nodeId }) => scope.has(nodeId));
@@ -131,7 +151,7 @@ function adaptDerivedOperationInterface(
     instance: replaceBlockEffectiveInterfaceV2(
       original,
       {
-        boundary: { ...original.effectiveInterface.boundary, inputs },
+        boundary: { ...original.effectiveInterface.boundary, inputs, outputs },
         controls: controls.map((control, order) => ({ ...control, order })),
       },
       { preserveOmittedMirrors: false },

@@ -359,3 +359,32 @@ test('connected built-in loaders need files only when supplying declared require
     assert.equal(missing().length, 0, 'do not infer arbitrary custom execution from a file widget');
   }
 });
+
+test('required model inputs use current registry contracts inside collapsed Blocks', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  const { roots, graph, leaf, instance } = fixture('');
+  leaf.data.module = 'modules.ModularDiffusers';
+  leaf.data.action = 'EncodePrompt';
+  leaf.data.params = { models: { type: 'models', display: 'input' }, optional: { type: 'image', display: 'input' } };
+  instance.effectiveGraph.nodes = [{ nodeId: 'loadMask' }];
+  const registry = {
+    'modules.ModularDiffusers.EncodePrompt': {
+      params: { models: { type: 'models', display: 'input', required: true } },
+    },
+  };
+  const missing = inspectRequiredGraphInputs(roots, graph, registry);
+  assert.equal(missing.length, 1);
+  assert.equal(missing[0].blocking, true);
+  assert.equal(missing[0].nodeId, 'root');
+  const source = { id: 'loader', data: { params: { models: { type: 'models', display: 'output' } } } };
+  graph.nodes.push(source);
+  graph.edges.push({ id: 'wire', source: source.id, sourceHandle: 'models', target: leaf.id, targetHandle: 'models' });
+  assert.deepEqual(inspectRequiredGraphInputs(roots, graph, registry), []);
+  source.data.uiState = { disabled: true };
+  assert.equal(inspectRequiredGraphInputs(roots, graph, registry).length, 1);
+  delete source.data.uiState;
+  for (const literal of [0, false, 'provided']) {
+    leaf.data.params.models.value = literal;
+    assert.deepEqual(inspectRequiredGraphInputs(roots, { nodes: [leaf], edges: [] }, registry), []);
+  }
+});
