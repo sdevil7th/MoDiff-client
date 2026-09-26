@@ -19,6 +19,12 @@ export const AUTO_RESOURCE_LOADER_TARGETS = [
   'modules.DiffusersVideo.LoadPipeline.direct-diffusers-video',
   'modules.DiffusersVideo.LoadPipeline.direct-wan-vace',
   'modules.DiffusersThreeD.LoadPipeline.direct-diffusers-three-d',
+  'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel.direct-huggingface-speech',
+  'modules.HuggingFaceSpeech.LoadCTCSpeechRecognitionModel.direct-huggingface-speech-ctc',
+  'modules.HuggingFaceTransformers.LoadDepthEstimationModel.direct-huggingface-transformers-depth',
+  'modules.HuggingFaceTransformers.LoadTextGenerationModel.direct-huggingface-transformers-text',
+  'modules.HuggingFaceTransformers.LoadImageTextToTextModel.direct-huggingface-transformers-image-text',
+  'modules.HuggingFaceTransformers.LoadAnyToAnyModel.direct-huggingface-transformers-any-to-any',
 ] as const;
 export function autoProofIsReady(proof: { status?: string } | null | undefined) {
   return ['passed', 'declared_safe', 'live_proven'].includes(proof?.status as string);

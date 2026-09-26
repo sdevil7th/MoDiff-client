@@ -386,6 +386,60 @@ test('schema-v2 Auto planning bounds candidate identity depth, count, size, and 
   }
 });
 
+test('Auto plan batches preserve reviewed optional-runtime targets and reject mismatched loaders', async () => {
+  const targets = [
+    ['modules.DiffusersImage', 'LoadPipeline', 'direct-diffusers-image'],
+    ['modules.HuggingFaceSpeech', 'LoadSpeechRecognitionModel', 'direct-huggingface-speech'],
+    ['modules.HuggingFaceSpeech', 'LoadCTCSpeechRecognitionModel', 'direct-huggingface-speech-ctc'],
+    ['modules.HuggingFaceTransformers', 'LoadDepthEstimationModel', 'direct-huggingface-transformers-depth'],
+    ['modules.HuggingFaceTransformers', 'LoadTextGenerationModel', 'direct-huggingface-transformers-text'],
+    ['modules.HuggingFaceTransformers', 'LoadImageTextToTextModel', 'direct-huggingface-transformers-image-text'],
+    ['modules.HuggingFaceTransformers', 'LoadAnyToAnyModel', 'direct-huggingface-transformers-any-to-any'],
+  ];
+  const plans = targets.map(([loaderModule, loaderAction, executionPath], index) => ({
+    schemaVersion: 2,
+    compatibility: {
+      state: 'needs_setup',
+      severity: 'warning',
+      code: 'runtime_missing',
+      summary: 'Install required',
+      detail: 'Optional runtime requires explicit consent.',
+      source: 'backend_auto_planner',
+    },
+    selectedCandidate: null,
+    candidates: [
+      {
+        id: `candidate-${index}`,
+        executionProfileId: `profile-${index}`,
+        modelType: `Model${index}`,
+        mode: 'text_to_image',
+        loaderModule,
+        loaderAction,
+        executionPath,
+        pipelineClass: `Pipeline${index}`,
+        modelRepo: 'example/reviewed-model',
+        optionalRuntime: { profileId: 'reviewed-runtime', installed: false },
+      },
+    ],
+  }));
+  const forms = plans.map((plan) => ({ modelType: plan.candidates[0].modelType }));
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ plans });
+  };
+  assert.deepEqual(await autoResourceModule.fetchAutoResourcePlans(forms), plans);
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].endsWith('/auto_resource/plans'));
+
+  for (const loaderAction of ['LoadPipeline', 'UnreviewedLoader']) {
+    const invalid = structuredClone(plans);
+    invalid[1].candidates[0].loaderAction = loaderAction;
+    globalThis.fetch = async () => jsonResponse({ plans: invalid });
+    await assert.rejects(autoResourceModule.fetchAutoResourcePlans(forms), (error) => error.kind === 'invalid_payload');
+  }
+});
+
 test('Auto plan batches and history mutations reject invalid or failed responses', async () => {
   globalThis.fetch = async () => jsonResponse({ plans: [null] });
   await assert.rejects(
