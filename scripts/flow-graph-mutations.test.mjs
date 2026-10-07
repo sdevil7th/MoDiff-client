@@ -1565,10 +1565,18 @@ test('native creation retains deliberately renamed interfaces as explicit contra
   const prepared = prepareUserBlockCreationV2(draft, configured);
   assert.equal(prepared.definition.boundary.mode, 'explicit');
   assert.equal(prepared.definition.boundary.outputs[0].label, 'Deliberately exposed model');
+  // Legacy IDs beginning with '-' or '_' are deliberately remapped. Identify
+  // the returned root by its exact definition rather than a random draft ID.
+  const roots = prepared.graph.nodes.filter(
+    (n) =>
+      n.data.blockInstanceV2?.definitionRef.definitionId === prepared.definition.definitionId &&
+      n.data.blockInstanceV2.definitionRef.contentHash === prepared.definition.contentHash,
+  );
+  assert.equal(roots.length, 1);
+  assert.equal(roots[0].data.blockInstanceV2.effectiveInterface.boundary.mode, 'explicit');
   assert.equal(
-    prepared.graph.nodes.find((n) => n.data.blockInstanceV2 && n.id === draft.blockNode.id).data.blockInstanceV2
-      .effectiveInterface.boundary.mode,
-    'explicit',
+    roots[0].data.blockInstanceV2.effectiveInterface.boundary.outputs[0].label,
+    'Deliberately exposed model',
   );
 });
 

@@ -23,9 +23,9 @@ Good first contributions include reproducible bug fixes, accessibility improveme
 1. Fork the public repository, then clone your fork.
 2. Add the canonical repository as an `upstream` remote so you can keep the branch current.
 3. Create a short-lived branch from the latest `upstream/main`.
-4. Use the development installer for integrated work, or `npm ci` for UI-only
-   work against an already-running compatible backend, and reproduce the issue
-   before changing code.
+4. Set up the compatible backend with native uv commands and this client with
+   `npm ci`, then reproduce the issue before changing code. UI-only work can use
+   an already-running compatible backend.
 5. Make the smallest coherent change, including tests and docs.
 6. Run the required checks and review the complete diff.
 7. Rebase or merge the current `upstream/main` according to the repository's accepted workflow; resolve conflicts without discarding unrelated work.
@@ -51,15 +51,45 @@ Required client versions:
 - Node.js `24.12.0` (`.nvmrc`)
 - npm `11.6.2` (`packageManager` and `engines` in `package.json`)
 
-For setup without repository launchers, use the backend's
-[uv developer commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
-and run `npm ci`, then `npm run dev`, in this client checkout. See the
-[Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm) for the
-two-terminal flow. The same uv commands work on Linux.
+Use native uv and npm commands with the sibling backend and client checkouts.
+In the backend terminal, run:
 
-For integrated development with sibling repositories, install the reviewed
-backend profile, backend test requirements, and exact client lockfile through
-the development installer:
+```text
+uv sync --extra cpu
+uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --extra cpu python main.py
+```
+
+For NVIDIA, use `--extra cuda` in each command; for Intel, use `--extra xpu`.
+On Apple Silicon, omit the extra. Keep the same extra on sync and run. Use a
+separate checkout to try another accelerator; native sync reconciles `.venv`.
+AMD vendor-wheel environments use the backend's specialist
+[accelerator setup](https://github.com/sdevil7th/MoDiff/blob/develop/docs/accelerator-installation.md).
+
+In the client terminal, run:
+
+```text
+npm ci
+npm run dev
+```
+
+Open the URL printed by Vite and leave the backend running. Transformers and
+PEFT are installed during backend setup; normal image and LoRA workflows need
+no separate package activation. These commands work on Linux and Windows
+PowerShell. The backend's
+[developer guide](https://github.com/sdevil7th/MoDiff/blob/develop/docs/developer-setup.md)
+and the [Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm)
+cover explicit `uv pip` setup, upgrades, repair, and platform details.
+
+For UI-only work against an already-running backend, the same `npm ci` and
+`npm run dev` commands are sufficient. To use another backend port:
+
+```bash
+VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:8088 npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+The repository launchers are optional convenience tools for integrated setup
+or specialist reviewed profiles:
 
 ```powershell
 .\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto
@@ -70,14 +100,7 @@ chmod +x install-dev.sh run-dev.sh stop-dev.sh
 ./install-dev.sh --accelerator auto
 ```
 
-For UI-only work against an already-installed backend, install only the client
-dependencies exactly from the lockfile:
-
-```bash
-npm ci
-```
-
-Run the client against a compatible sibling backend:
+Start the optional integrated launcher after setup:
 
 ```powershell
 .\run-dev.ps1
@@ -86,12 +109,6 @@ Run the client against a compatible sibling backend:
 ```bash
 chmod +x run-dev.sh stop-dev.sh
 ./run-dev.sh
-```
-
-For UI-only work, run Vite against an already-running backend:
-
-```bash
-VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:8088 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 The [README](README.md) and [troubleshooting guide](docs/troubleshooting.md) cover backend paths, ports, preflight, and platform details.
@@ -129,7 +146,7 @@ Read [the architecture guide](docs/modiff-client-architecture.md) before changin
 
 The compatible backend may integrate model libraries officially maintained and published by Hugging Face. The browser does not run those libraries or a hosted inference provider. It consumes task-generic execution specifications from the backend and must not select Python classes or duplicate model-specific parameter logic. Hub hosting alone does not establish that a package or repository implementation is an official Hugging Face library.
 
-Transformers-backed execution is optional and consented. Template browsing/opening, registry discovery, and Auto planning may display a missing-runtime requirement but must not initiate installation. The user must explicitly request installation of a reviewed backend optional-runtime profile; Run remains blocked until the backend reports a compatible verified installation.
+Transformers and PEFT are required backend dependencies installed during ordinary setup. A verified base runtime must be runnable without a separate install or activation step. Template browsing, registry discovery, and Auto planning must not install packages. Additional optional runtimes still require an explicit backend installation action and verification before Run.
 
 For a large component, extract domain behavior into hooks/modules before adding another responsibility. `StudioPanel`, `Workflow`, flow mutations, websocket handling, graph export, and Studio contracts already use that pattern.
 
@@ -296,10 +313,17 @@ This runs formatting, lint, type checking, style audit, unit/contract tests, pro
 
 The Linux CI quality job checks out this client and an immutable, compatible
 `sdevil7th/MoDiff` backend revision as sibling directories. It installs the
-backend's reviewed CPU profile and test dependencies before running the same
-gate. Update the backend commit in `.github/workflows/ci.yml` when a coordinated
-contract change requires it. This setup does not download model weights or
-qualify accelerator execution; platform smoke jobs remain client-only.
+backend with `uv sync --extra cpu --locked`, installs test dependencies, and
+runs preflight and the tiny native image/LoRA smoke before the same client gate.
+This setup does not download model weights or qualify accelerator execution;
+platform smoke jobs remain client-only.
+
+For a coordinated change, commit and review the backend first, then replace the
+backend `ref` in `.github/workflows/ci.yml` with that actual compatible 40-character
+commit SHA and run the paired gates. Keep the ref immutable. The current historical
+pin predates native setup and has no `uv.lock`, so the workflow explicitly fails its
+native setup check until this release handoff is completed. Do not substitute a
+mutable branch or an invented future SHA for the paired commit.
 
 The registered Block catalog audit uses a fixed Linux runtime target and mocked
 device/package probes to reproduce the reviewed catalog on any host. Backend

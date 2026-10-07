@@ -1,6 +1,7 @@
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { connectionTypes, connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { nodeConnectorParam, nodeConnectorParams } from '../studio/nodeConnectorResolution';
+import { selectedConnectionRole } from './connectionRoleSelector';
 
 export type HandleDirection = 'source' | 'target' | null | undefined;
 
@@ -57,12 +58,17 @@ function declaredSignalCompatibilityIsSatisfied(
   signalParam: NodeParams | undefined,
   contractParam: NodeParams | undefined,
   contractNode: NodeData,
+  signalNode: NodeData,
 ) {
   const declaration = contractParam?.signalCompatibility;
   if (!declaration) return true;
   if (declaration.role) {
     const acceptedRoles = Array.isArray(declaration.role) ? declaration.role : [declaration.role];
-    if (!signalParam?.connectionRole || !acceptedRoles.includes(signalParam.connectionRole)) return false;
+    const role =
+      signalParam && 'connectionRoleSelector' in signalParam
+        ? selectedConnectionRole(signalParam.connectionRoleSelector, signalNode.params)
+        : signalParam?.connectionRole;
+    if (!role || !acceptedRoles.includes(role)) return false;
   }
   const signal = signalParam?.signal;
   if (!signal) return declaration.required !== true;
@@ -104,8 +110,8 @@ export function nodeConnectionSemanticsAreCompatible(
   if (
     !declaredSignalOptionsAreCompatible(sourceParam, targetParam) ||
     !declaredSignalOptionsAreCompatible(targetParam, sourceParam) ||
-    !declaredSignalCompatibilityIsSatisfied(sourceParam, targetParam, targetNode) ||
-    !declaredSignalCompatibilityIsSatisfied(targetParam, sourceParam, sourceNode)
+    !declaredSignalCompatibilityIsSatisfied(sourceParam, targetParam, targetNode, sourceNode) ||
+    !declaredSignalCompatibilityIsSatisfied(targetParam, sourceParam, sourceNode, targetNode)
   )
     return false;
   return true;

@@ -1568,6 +1568,31 @@ export type StudioTemplatePredictability = {
   requiredModels?: StudioModelRequirement[];
 };
 
+export type StudioTemplateExecutionSelection = {
+  schemaVersion: 1;
+  pipelineClass: string;
+  task: string;
+  executionProfileId: string;
+  /** Existing backend recipe supplies semantic field/utility bindings only. */
+  bindingSpec: { modelType: StudioModelType; mode: StudioMode };
+  implementation: 'native_stages' | 'whole_pipeline';
+  /** Explicit old whole-pipeline component policies for converted recipes. */
+  componentPolicy?: {
+    attentionBackend: 'auto' | '_native_math';
+    vaeSlicing: boolean;
+    vaeTiling: boolean;
+  };
+  guidancePolicy?: {
+    enabled: boolean;
+    useOriginalFormulation: boolean;
+    /** FLUX true CFG and transformer embedded guidance are distinct controls. */
+    distilledGuidanceScale?: number;
+  };
+  /** Original whole-pipeline default identity for a single native descriptor. */
+  loraPolicy?: { defaultAdapterName: string };
+  note?: string;
+};
+
 export type StudioTemplate = {
   id: StudioTemplateId;
   label: string;
@@ -1585,6 +1610,8 @@ export type StudioTemplate = {
   requiredBackendCapabilities?: string[];
   workflowBlocks?: StudioTemplateWorkflowBlock[];
   workflowBlockSettings?: StudioTemplateWorkflowBlockSettings;
+  /** Exact fresh-workflow choice; never applied to an existing saved graph. */
+  executionSelection?: StudioTemplateExecutionSelection;
   videoDelivery?: 'native' | 'spatial_upscale';
   /**
    * `user_supplied` marks a runnable bring-your-own-model recipe whose card

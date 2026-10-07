@@ -12,6 +12,7 @@ let server;
 let taskStoreModule;
 let userBlockStoreModule;
 let originalFetch;
+let controlModule;
 
 before(async () => {
   globalThis.window = {
@@ -27,6 +28,7 @@ before(async () => {
     appType: 'custom',
   });
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
+  controlModule = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   userBlockStoreModule = await server.ssrLoadModule('/src/stores/useUserBlockStore.ts');
   autoResourceModule = await server.ssrLoadModule('/src/studio/autoResource.ts');
@@ -34,6 +36,7 @@ before(async () => {
 });
 
 beforeEach(() => {
+  controlModule.resetSupervisorControl();
   taskStoreModule.useTaskStore.setState({
     queuedTasks: {},
     currentTask: undefined,
@@ -42,6 +45,7 @@ beforeEach(() => {
     taskCount: 0,
     queueRevision: 0,
     fetchState: { status: 'idle', error: null, requestId: null },
+    supervisorControlError: null,
   });
   flowStoreModule.useFlowStore.setState({
     nodes: [],
@@ -87,6 +91,75 @@ function userBlock(id, name = id) {
     exposedParams: [],
   };
 }
+
+test('known unsupervised worker metadata prevents background control requests', async () => {
+  controlModule.updateWorkerControl(controlModule.parseWorkerControl({ available: false, address: null }));
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    throw new Error('An absent listener must not be probed.');
+  };
+  for (let index = 0; index < 20; index += 1) await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+  assert.equal(requests, 0);
+  assert.equal(controlModule.supervisorControlCanPoll(), false);
+});
+
+test('invalid legacy control configuration has bounded diagnosable polling without an unhandled rejection', async () => {
+  const config = (await server.ssrLoadModule('/app.config.ts')).default;
+  const previous = config.supervisorAddress;
+  config.supervisorAddress = 'http://remote.example:8089';
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    throw new Error('Untrusted control destinations must not be requested.');
+  };
+  try {
+    await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+    assert.match(taskStoreModule.useTaskStore.getState().supervisorControlError, /Invalid supervisor control address/);
+    for (let index = 0; index < 20; index += 1) await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+    assert.equal(requests, 0);
+  } finally {
+    config.supervisorAddress = previous;
+  }
+});
+
+test('failed legacy control discovery backs off while retaining diagnosable failure and later recovery', async () => {
+  const originalNow = Date.now;
+  let now = 1000,
+    requests = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    requests += 1;
+    if (requests === 1) throw new TypeError('Control connection refused.');
+    return jsonResponse({ current: null, queued: {}, recent: [] });
+  };
+  try {
+    await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+    assert.match(taskStoreModule.useTaskStore.getState().supervisorControlError, /refused/);
+    for (let index = 0; index < 20; index += 1) await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+    assert.equal(requests, 1);
+    now += 5000;
+    await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+    assert.equal(requests, 2);
+    assert.equal(taskStoreModule.useTaskStore.getState().supervisorControlError, null);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test('supervisor queue reads use the verified bound port and preserve it while health is unavailable', async () => {
+  controlModule.updateWorkerControl(
+    controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:43001' }),
+  );
+  controlModule.updateWorkerControl(undefined);
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ current: null, queued: {}, recent: [] });
+  };
+  await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+  assert.deepEqual(requests, ['http://127.0.0.1:43001/queue']);
+});
 
 test('a delayed queue fetch cannot overwrite a newer websocket queue revision', async () => {
   const call = deferred();

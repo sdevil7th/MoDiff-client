@@ -206,7 +206,7 @@ export function parseTemplateGalleryManifest(value: unknown): TemplateGalleryMan
 }
 
 export type TemplateExampleUiState = {
-  status: 'reviewed' | 'exact' | 'modified' | 'blocked' | 'unverified' | 'non_exact';
+  status: 'reviewed' | 'exact' | 'historical' | 'modified' | 'blocked' | 'unverified' | 'non_exact';
   label: string;
   tone: 'success' | 'warning' | 'error' | 'neutral';
   modifiedFields: Array<keyof StudioTemplateLockedSettings>;
@@ -321,6 +321,7 @@ export function getTemplateLockHash(
       lockedSettings: getTemplateLockedSettings(template),
       modelRevision,
       mediaType: template.example?.mediaType ?? 'image',
+      ...(template.executionSelection ? { executionSelection: template.executionSelection } : {}),
       ...(workflowLock ? { workflow: workflowLock } : {}),
     }),
   )}`;
@@ -424,6 +425,17 @@ export function findManifestEntry(
   );
 }
 
+/** Approved media from the unchanged creator recipe before its execution
+ * selection changed. It is display provenance, never proof of the new graph. */
+export function findHistoricalTemplateManifestEntry(
+  template: StudioTemplate,
+  manifest: TemplateGalleryManifest | null | undefined,
+  options: { requireCardPreview?: boolean } = {},
+) {
+  if (!template.executionSelection) return undefined;
+  return findManifestEntry({ ...template, executionSelection: undefined }, manifest, options);
+}
+
 export function getTemplateExampleUiState(
   template: StudioTemplate,
   form: StudioFormState,
@@ -448,6 +460,15 @@ export function getTemplateExampleUiState(
       manifestEntry,
     };
   }
+  const historical = findHistoricalTemplateManifestEntry(template, manifest);
+  if (historical)
+    return {
+      status: 'historical',
+      label: 'Previous recipe example',
+      tone: 'neutral',
+      modifiedFields,
+      manifestEntry: historical,
+    };
 
   if (template.example?.status === 'blocked') {
     return { status: 'blocked', label: 'Blocked', tone: 'error', modifiedFields };
@@ -484,7 +505,8 @@ export function getTemplateCardMedia(
   template: StudioTemplate,
   manifest: TemplateGalleryManifest | null | undefined,
 ): TemplateCardMedia {
-  const manifestEntry = findManifestEntry(template, manifest);
+  const manifestEntry =
+    findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
   const bundledSourcePreview =
     template.outputKinds?.[0] === 'audio'
       ? template.inputBindings

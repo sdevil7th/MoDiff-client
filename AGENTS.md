@@ -15,9 +15,9 @@ These rules apply to Codex, Copilot-style agents, and any AI tool editing this r
 - Keep frontend nodes and task surfaces generic. Render the backend's declared dynamic inputs, parameters, outputs,
   readiness, and install requirements instead of selecting Python classes or maintaining model-specific parameter
   branches in the client.
-- Transformers is an optional backend runtime, not a default client/application dependency. Browsing or opening a
-  template, loading registry data, and requesting an Auto plan must never install it. Show an explicit install and
-  consent action for a reviewed optional-runtime profile, then require backend verification before enabling Run.
+- Transformers and PEFT are required backend dependencies installed during ordinary setup. Recognize a verified
+  base runtime without a separate install/activate flow. Browsing templates, discovery, and Auto planning must
+  never install packages. Additional optional runtimes still require explicit installation and verification.
 - New UI work is Tailwind/headless-first. Do not reintroduce MUI, Emotion, notistack, styled-components, CSS modules, or another UI framework.
 - Use `src/theme` for MoDiff colors, Hugging Face-inspired tokens, typography, radii, shadows, z-index values, category colors, style sanitizers, and React Flow helpers.
 - Use `src/ui` primitives before writing repeated panel, status, field, image, toast, dialog, menu, tab, or toolbar styling.

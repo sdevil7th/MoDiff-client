@@ -4,6 +4,7 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { RequestError, requestJson } from '../utils/requestJson';
 import { stableStringify } from './templateExactness';
 import type { WorkflowTab } from './types';
+import { forgetFreshWorkflowId, isFreshWorkflowId } from './workflowDocumentOrigin';
 
 function clientId() {
   const key = 'modiff-workflow-client-id';
@@ -78,6 +79,7 @@ export function isWorkflowTabClosed(id: string) {
 }
 
 export function markWorkflowTabClosed(id: string) {
+  forgetFreshWorkflowId(id);
   closedWorkflowIds.add(id);
   persistClosedWorkflowIds();
 }
@@ -89,11 +91,13 @@ export function markWorkflowTabOpen(id: string) {
 
 /** Record a server-originated document so websocket updates are not echoed back. */
 export function markBackendWorkflow(tab: WorkflowTab) {
+  forgetFreshWorkflowId(tab.id);
   backendSignatures.set(tab.id, contentSignature(tab));
   pendingSignatures.delete(tab.id);
 }
 
 export function forgetBackendWorkflow(id: string) {
+  forgetFreshWorkflowId(id);
   backendSignatures.delete(id);
   pendingSignatures.delete(id);
   closedWorkflowIds.delete(id);
@@ -126,6 +130,8 @@ export function clearDirtyMarkerForExactBackendDocument(id: string) {
 }
 
 async function putWorkflow(tab: WorkflowTab, signal?: AbortSignal) {
+  // Consume before dispatch: a lost/aborted response may still have saved remotely.
+  forgetFreshWorkflowId(tab.id);
   const payload = await requestJson(`${config.serverAddress}/workflows/${encodeURIComponent(tab.id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -142,6 +148,20 @@ async function putWorkflow(tab: WorkflowTab, signal?: AbortSignal) {
     timeoutMs: WORKFLOW_SYNC_TIMEOUT_MS,
   });
   return backendWorkflowTab(payload);
+}
+
+export async function readWorkflowForHydration(tab: WorkflowTab, signal?: AbortSignal) {
+  if (isFreshWorkflowId(tab.id)) return null;
+  try {
+    const payload = await requestJson(`${config.serverAddress}/workflows/${encodeURIComponent(tab.id)}`, {
+      signal,
+      timeoutMs: WORKFLOW_SYNC_TIMEOUT_MS,
+    });
+    return backendWorkflowTab(payload);
+  } catch (error) {
+    if (error instanceof RequestError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 /** Persist a complete backend document without implicitly opening it as a browser tab. */
@@ -272,16 +292,7 @@ export function useWorkflowBackendSync() {
         // other saved document remains available from My workflows or a run.
         for (const tab of store.workflowTabs) {
           if (isWorkflowTabClosed(tab.id)) continue;
-          let backendTab: WorkflowTab | null = null;
-          try {
-            const payload = await requestJson(`${config.serverAddress}/workflows/${encodeURIComponent(tab.id)}`, {
-              signal: controller.signal,
-              timeoutMs: WORKFLOW_SYNC_TIMEOUT_MS,
-            });
-            backendTab = backendWorkflowTab(payload);
-          } catch (error) {
-            if (!(error instanceof RequestError && error.status === 404)) throw error;
-          }
+          const backendTab = await readWorkflowForHydration(tab, controller.signal);
           if (cancelled) return;
           if (backendTab && !tab.dirty) {
             markBackendWorkflow(backendTab);

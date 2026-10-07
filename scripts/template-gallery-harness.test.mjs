@@ -459,19 +459,19 @@ test('Qwen gallery candidates use the runtime locked settings and hashes', () =>
       width: 1024,
       height: 1024,
       promptSettingsHash: 'ps_c32e6c86',
-      templateLockHash: 'tpl_6b3c93e2',
+      templateLockHash: 'tpl_76f378d2',
     },
     qwen_low_vram_product_concept: {
       width: 1024,
       height: 768,
       promptSettingsHash: 'ps_2eeea545',
-      templateLockHash: 'tpl_b90c42f9',
+      templateLockHash: 'tpl_b9f47949',
     },
     qwen_low_vram_poster_layout: {
       width: 768,
       height: 1024,
       promptSettingsHash: 'ps_124204d1',
-      templateLockHash: 'tpl_bc67f109',
+      templateLockHash: 'tpl_e5832679',
     },
   };
 

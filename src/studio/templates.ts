@@ -10,6 +10,7 @@ import type {
   StudioTemplateReadinessPolicy,
   StudioTemplateWorkflowBlockSettings,
 } from './types';
+import { IMAGE_TEMPLATE_EXECUTION_SELECTIONS } from './templateOperationSelections';
 import {
   DEFAULT_STUDIO_FORM,
   MINIMAX_MUSIC3_REVISION,
@@ -2005,24 +2006,25 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
   },
   {
     id: 'qwen_edit_strength_sweep',
-    label: 'Qwen-Image-Edit — Image Edit: Strength Comparison',
+    label: 'Qwen-Image-Edit — Image Edit: Reference Variations',
     mode: 'edit_image',
     modelType: 'QwenImageEditModularPipeline',
     category: 'edit',
-    tags: ['before/after', 'sweep', 'compare'],
+    tags: ['before/after', 'edit', 'compare'],
     difficulty: 'advanced',
     thumbnailVariant: 'contactSheet',
-    inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source image for strength sweep'] },
+    inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source image for editing'] },
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
     runtimeEstimate: `${QWEN_EDIT_RUNTIME_ESTIMATE} per candidate`,
-    description: 'Image-to-image edit starting point for strength sweeps.',
+    description:
+      'A single-image reference edit. Explore prompt and seed variations; this route does not use denoising strength.',
     presetId: 'balanced',
-    example: example(6110, `${QWEN_EDIT_RUNTIME_AFTER_INPUT} per sweep candidate`),
+    example: example(6110, `${QWEN_EDIT_RUNTIME_AFTER_INPUT} per edit`),
     predictability: {
       ...predictability(6110),
       exactnessNotes: [
         ...predictability(6110).exactnessNotes,
-        'Sweep variants are deliberately Modified because strength, seed, guidance, or steps change.',
+        'Variants are deliberately Modified when prompt, seed, guidance, or steps change.',
       ],
     },
   },
@@ -3916,6 +3918,7 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
   const normalized = withTemplateRecipeDefaults(
     {
       ...template,
+      executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id],
       inputBindings: [
         ...(template.inputBindings ?? []).filter((binding) => binding.origin !== 'template'),
         ...generatedInputBindings.filter(

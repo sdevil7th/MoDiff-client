@@ -29,6 +29,7 @@ let modelProfiles;
 let modularConditionalModule;
 let reviewedModularGraphModule;
 let routeModule;
+let nodeLibraryModule;
 let server;
 let snapshot;
 let storage;
@@ -1010,6 +1011,7 @@ before(async () => {
   modularConditionalModule = await server.ssrLoadModule('/src/studio/huggingFaceModularConditionals.ts');
   reviewedModularGraphModule = await server.ssrLoadModule('/src/studio/reviewedModularGraphV2.ts');
   routeModule = await server.ssrLoadModule('/src/studio/registeredBlockV2Routes.ts');
+  nodeLibraryModule = await server.ssrLoadModule('/src/studio/huggingFaceNodeLibrary.ts');
 });
 
 after(async () => {
@@ -1018,7 +1020,66 @@ after(async () => {
   delete globalThis.localStorage;
 });
 
+test('the real public library preserves the sealed text-Control placement and rejects unsealed or altered values', () => {
+  const parsed = nodeLibraryModule.parseHuggingFaceNodeLibrary(snapshot.library);
+  const definition = parsed.definitions.find(
+    (item) => item.id === 'diffusers.modular:QwenImageModularPipeline:controlnet_text2image',
+  );
+  const admission = definition.executionAdmissions.find((item) => item.studioMode === 'control_image');
+  assert.equal(admission.sealedBindingValues.controlnetOffloadMode, 'none');
+  assert.equal(admission.executionParameterSources.includes('controlnetOffloadMode'), false);
+  for (const value of ['model_cpu', false, null]) {
+    const invalid = structuredClone(snapshot.library);
+    invalid.definitions
+      .find((item) => item.id === definition.id)
+      .executionAdmissions.find((item) => item.id === admission.id).sealedBindingValues.controlnetOffloadMode = value;
+    assert.throws(() => nodeLibraryModule.parseHuggingFaceNodeLibrary(invalid), /node-library contract/);
+  }
+  const missing = structuredClone(snapshot.library);
+  delete missing.definitions
+    .find((item) => item.id === definition.id)
+    .executionAdmissions.find((item) => item.id === admission.id).sealedBindingValues.controlnetOffloadMode;
+  assert.throws(() => nodeLibraryModule.parseHuggingFaceNodeLibrary(missing), /node-library contract/);
+  const editable = structuredClone(snapshot.library);
+  editable.definitions
+    .find((item) => item.id === definition.id)
+    .executionAdmissions.find((item) => item.id === admission.id)
+    .executionParameterSources.push('controlnetOffloadMode');
+  assert.throws(() => nodeLibraryModule.parseHuggingFaceNodeLibrary(editable), /node-library contract/);
+});
+
+test('actual registered materialization rejects a changed sealed ControlNet offload value before node preparation', () => {
+  const definition = snapshot.library.definitions.find(
+    (item) => item.id === 'diffusers.modular:QwenImageModularPipeline:controlnet_text2image',
+  );
+  const admission = definition.executionAdmissions.find((item) => item.studioMode === 'control_image');
+  const executionSpec = snapshot.specs.find((item) => item.id === admission.studioExecutionSpec.id);
+  let instance = clusterInstance.createHuggingFaceClusterInstance(definition, 'sealed-control-placement-rejection');
+  instance = clusterInstance.setHuggingFaceClusterExecution(instance, definition, admission.id);
+  const bindingValues = clusterRuntime.huggingFaceClusterExecutionParameterValues(
+    admission,
+    modelProfiles.getFormDefaultsForRegisteredRoute(admission.studioMode, definition.pipelineClass),
+  );
+  const altered = structuredClone(admission);
+  altered.sealedBindingValues.controlnetOffloadMode = 'model_cpu';
+  assert.throws(
+    () =>
+      clusterMaterializer.materializeHuggingFaceClusterExecutionSkeleton({
+        definition,
+        instance,
+        admission: altered,
+        executionSpec,
+        nodesRegistry: snapshot.registries[executionSpec.id],
+        bindingValues,
+        expanded: false,
+      }),
+    /sealed or planner binding values/,
+  );
+});
+
 test('every explicitly routed admission is an exact backend schema-v6 compiler success with fixed runtime probes', () => {
+  const parsedLibrary = nodeLibraryModule.parseHuggingFaceNodeLibrary(snapshot.library);
+  assert.equal(parsedLibrary.definitions.length, snapshot.library.definitions.length);
   const specs = new Map(snapshot.specs.map((spec) => [spec.id, spec]));
   const eligibleAdmissions = snapshot.library.definitions.flatMap((definition) =>
     definition.executionAdmissions.filter(eligibleAdmission).map((admission) => ({ definition, admission })),
@@ -1073,6 +1134,48 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           bindingValues,
         });
         assert.equal(skeleton.bindingsComplete, true);
+        if (
+          admission.id ===
+          'diffusers.cluster-admission:QwenImageModularPipeline:controlnet_text2image:mode:control_image'
+        ) {
+          const autoBindingValues = clusterRuntime.huggingFaceClusterExecutionParameterValues(admission, {
+            ...form,
+            resourceMode: 'auto',
+            autoOffload: true,
+            offloadMode: 'model_cpu',
+            device: 'cuda:0',
+            dtype: 'bfloat16',
+          });
+          const autoMaterialized = clusterMaterializer.materializeHuggingFaceClusterExecutionSkeleton({
+            definition,
+            instance,
+            admission,
+            executionSpec,
+            nodesRegistry: snapshot.registries[executionSpec.id],
+            bindingValues: autoBindingValues,
+            expanded: false,
+          });
+          const autoSkeleton = finalizedRegisteredAuditSkeleton({
+            definition,
+            instance,
+            admission,
+            executionSpec,
+            skeleton: autoMaterialized,
+            bindingValues: autoBindingValues,
+          }).skeleton;
+          const base = autoSkeleton.nodes.find((node) => node.data.huggingFaceClusterExecutionRole === 'models');
+          const auxiliary = autoSkeleton.nodes.find(
+            (node) => node.data.huggingFaceClusterExecutionRole === 'controlnetModel',
+          );
+          assert.ok(base && auxiliary, 'the actual registered Control graph must retain both model owners');
+          assert.equal(base.data.params.auto_offload.value, true);
+          assert.equal(base.data.params.offload_mode.value, 'model_cpu');
+          assert.equal(auxiliary.data.params.auto_offload.value, false);
+          assert.equal(auxiliary.data.params.offload_mode.value, 'none');
+          for (const field of ['device', 'dtype']) {
+            assert.equal(auxiliary.data.params[field].value, base.data.params[field].value);
+          }
+        }
         const registeredRoute = routeModule.registeredBlockV2Route(definition, admission);
         const previousRoute = routeModule.REGISTERED_BLOCK_V2_ROUTES.find(
           (candidate) => candidate.definitionId === definition.id && candidate.admissionId === admission.id,
@@ -1182,6 +1285,19 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           `the exact graph leaves required runtime sockets unbound: ${unboundRequiredInputs.join(', ')}`,
         );
         assert.equal(compiled.definition.source.executionAdmissionId, admission.id);
+        if (definition.id === 'diffusers.modular:QwenImageEditModularPipeline:image_conditioned') {
+          for (const dimension of ['width', 'height']) {
+            const input = compiled.definition.boundary.inputs.find(({ portId }) => portId === `${dimension}_input`);
+            const output = compiled.definition.boundary.outputs.find(({ portId }) => portId === dimension);
+            assert.ok(input, `the authored ${dimension} has its own public input alias`);
+            assert.deepEqual(input.binding, {
+              nodeId: 'upstream:denoise.input.additional_inputs',
+              fieldOrPortId: dimension,
+            });
+            assert.ok(output, `the original source-image ${dimension} output remains public`);
+            assert.deepEqual(output.binding, { nodeId: 'loadImage', fieldOrPortId: dimension });
+          }
+        }
         if (route && process.env.MODIFF_GENERATE_ROUTE_CANDIDATES !== '1') {
           assert.equal(compiled.definition.contentHash, route.compiledDefinitionContentHash);
           assert.equal(

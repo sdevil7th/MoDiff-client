@@ -2,6 +2,7 @@ import { useSettingsStore } from './useSettingsStore';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
+import { forgetFreshWorkflowId, markFreshWorkflowId } from '../studio/workflowDocumentOrigin';
 import { applyResolvedExecutionInputs } from '../studio/resolvedExecutionInputs';
 import {
   DEFAULT_STUDIO_FORM,
@@ -2665,6 +2666,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const snapshot = currentWorkflowSnapshot(state);
         const id = nanoid();
         useFlowStore.getState().resetHistory();
+        markFreshWorkflowId(id);
         set({
           workflowTabs: [
             {
@@ -2716,6 +2718,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           snapshot: cloneJson(nextSnapshot),
         };
         applyWorkflowSnapshot(nextSnapshot, id);
+        markFreshWorkflowId(id);
         set({
           workflowTabs: [...savedTabs, tab],
           activeWorkflowTabId: id,
@@ -2777,6 +2780,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
       closeWorkflowTab: (id) => {
         const state = get();
         if (!state.workflowTabs.some((tab) => tab.id === id)) return;
+        forgetFreshWorkflowId(id);
         if (id !== state.activeWorkflowTabId) {
           // Closing a background view must not checkpoint, rehydrate, clear
           // errors, or reset the active document's pending graph work/history.
@@ -2788,6 +2792,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           const snapshot = normalizeWorkflowSnapshot(blankWorkflowSnapshot());
           const newId = nanoid();
           applyWorkflowSnapshot(snapshot, newId);
+          markFreshWorkflowId(newId);
           set({
             workflowTabs: [
               {

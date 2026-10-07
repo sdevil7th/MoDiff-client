@@ -7,7 +7,15 @@ import { fileURLToPath } from 'node:url';
 let server, contracts, inputs, outputUtils, profiles;
 before(async () => {
   globalThis.window = { location: { origin: 'http://localhost' } };
-  server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+  // These SSR imports never use HMR. Middleware mode alone still watches the
+  // repository and local Gallery assets, consuming inotify entries in parallel tests.
+  server = await createServer({
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, hmr: false, watch: null },
+    appType: 'custom',
+  });
   contracts = await server.ssrLoadModule('/src/studio/outputContracts.ts');
   inputs = await server.ssrLoadModule('/src/studio/resolvedExecutionInputs.ts');
   outputUtils = await server.ssrLoadModule('/src/studio/outputUtils.ts');
@@ -16,6 +24,16 @@ before(async () => {
 after(async () => {
   await server?.close();
   delete globalThis.window;
+});
+
+test('SSR receipt imports and explicit watch requests allocate no filesystem watchers', () => {
+  assert.equal(server.config.server.watch, null);
+  assert.deepEqual(server.watcher.getWatched(), {});
+  server.watcher.add([
+    fileURLToPath(new URL('../src/studio/resolvedExecutionInputs.ts', import.meta.url)),
+    fileURLToPath(new URL('../public/template-gallery', import.meta.url)),
+  ]);
+  assert.deepEqual(server.watcher.getWatched(), {});
 });
 
 function capturedOutput(fields, extra = {}) {
@@ -253,6 +271,37 @@ test('receipt requires exact task attempt/output identity and a summary derived 
   assert.equal(inputs.coerceResolvedExecutionInputs(badOrigin, identity), undefined);
 });
 
+test('captured native and whole-pipeline attention/VAE policies survive history and retain ambiguity', () => {
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  for (const [slicing, tiling] of [
+    ['vae_slicing', 'vae_tiling'],
+    ['enable_vae_slicing', 'enable_vae_tiling'],
+  ]) {
+    const capture = receipt();
+    Object.assign(capture.nodes[0].fields, {
+      attention_backend: { value: '_native_math', source: 'literal' },
+      [slicing]: { value: true, source: 'literal' },
+      [tiling]: { value: false, source: 'literal' },
+    });
+    Object.assign(capture.summary, { attentionBackend: '_native_math', vaeSlicing: true, vaeTiling: false });
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture);
+    const restored = contracts.coerceStudioOutput(
+      JSON.parse(JSON.stringify({ id: 'policies', url: '/image.webp', ...identity, resolvedExecutionInputs: capture })),
+    );
+    assert.deepEqual(restored.resolvedExecutionInputs, capture);
+    const unknown = structuredClone(capture);
+    unknown.nodes[0].fields.enable_vae_unknown = { value: true, source: 'literal' };
+    assert.equal(inputs.coerceResolvedExecutionInputs(unknown, identity), undefined);
+  }
+  const mixed = receipt();
+  Object.assign(mixed.nodes[0].fields, {
+    vae_slicing: { value: true, source: 'literal' },
+    enable_vae_slicing: { value: false, source: 'literal' },
+  });
+  mixed.ambiguousFields = ['vaeSlicing'];
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(mixed, identity), mixed);
+});
+
 test('every backend capture field survives client history parsing with node-scoped adapter identity', () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
   const python =
@@ -312,6 +361,57 @@ print(json.dumps(cases))
       undefined,
       'adapter fields are not global permissions',
     );
+  }
+});
+
+test('shared guidance receipts distinguish scale-one CFG formulations and stay scoped to the Guider', () => {
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  for (const enabled of [true, false]) {
+    for (const original of [true, false]) {
+      const capture = receipt();
+      capture.nodes.push({
+        nodeId: 'guide',
+        module: 'modules.ModularDiffusers',
+        action: 'Guider',
+        fields: {
+          guider: { value: 'ClassifierFreeGuidance', source: 'literal' },
+          guidance_scale: { value: 1, source: 'literal' },
+          enabled: { value: enabled, source: 'literal' },
+          use_original_formulation: { value: original, source: 'literal' },
+          guidance_rescale: { value: 0, source: 'literal' },
+          start: { value: 0, source: 'literal' },
+          stop: { value: 1, source: 'literal' },
+        },
+        omittedFields: {},
+      });
+      Object.assign(capture.summary, {
+        guidanceScale: 1,
+        guiderType: 'ClassifierFreeGuidance',
+        guidanceEnabled: enabled,
+        guidanceOriginalFormulation: original,
+        guidanceRescale: 0,
+        guidanceStart: 0,
+        guidanceStop: 1,
+      });
+      assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture);
+      const restored = contracts.coerceStudioOutput(
+        JSON.parse(
+          JSON.stringify({
+            id: 'guidance',
+            url: '/image.webp',
+            ...identity,
+            resolvedExecutionInputs: capture,
+          }),
+        ),
+      );
+      assert.deepEqual(restored.resolvedExecutionInputs, capture);
+      const wrongScope = structuredClone(capture);
+      wrongScope.nodes.at(-1).action = 'EncodePrompt';
+      assert.equal(inputs.coerceResolvedExecutionInputs(wrongScope, identity), undefined);
+      const forged = structuredClone(capture);
+      forged.summary.guidanceOriginalFormulation = !original;
+      assert.equal(inputs.coerceResolvedExecutionInputs(forged, identity), undefined);
+    }
   }
 });
 

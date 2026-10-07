@@ -6,6 +6,8 @@ This directory contains durable user, operator, and contributor documentation fo
 
 [Developer-first node authoring](developer-first-node-ux.md) covers the unified
 editor, custom imports, matching sockets and supported image/audio attachments.
+The [image template workflow guide](image-template-workflows.md) covers fresh
+template graphs, preserved settings and the distinction from historical examples.
 
 | Guide                                           | Audience            | What it covers                                                                                |
 | ----------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------- |

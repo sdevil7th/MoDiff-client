@@ -18,7 +18,7 @@ measured reuse behavior and remaining qualification work.
 
 ## Developer setup with uv and npm
 
-Install Git, [uv `0.11.26`](https://docs.astral.sh/uv/getting-started/installation/),
+Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/),
 Node.js `24.12.0`, and npm `11.6.2`. uv can provision Python 3.12.
 Use two terminals for the backend and the editable frontend.
 
@@ -29,17 +29,19 @@ then start the backend. These commands work in Linux shells and Windows PowerShe
 git clone https://github.com/sdevil7th/MoDiff.git MoDiff
 git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
-uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
-uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
-uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
-uv run --no-project --no-sync --python 3.12 -m modiff.dev run
+uv sync --extra cpu
+uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --extra cpu python main.py
 ```
 
-The CPU profile is for API/UI development. For NVIDIA inference, replace `cpu`
-with `nvidia` in both `plan` and `setup`; other accelerators are covered in the
-[full setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md). Setup preserves an existing `.venv` and
-does not download model weights. Use the guide for deliberate environment repair;
-ordinary `uv sync` is not supported.
+The CPU profile is for API/UI development. For NVIDIA inference, use `--extra cuda`
+in each command; for Intel, use `--extra xpu`. On Apple Silicon, omit the extra.
+Transformers and PEFT are installed with the base application; ordinary image and
+LoRA workflows need no optional-runtime installation or activation. Setup installs
+Python packages without downloading model weights. `uv sync` reconciles `.venv`
+with the selected profile: use a separate checkout when testing a different
+accelerator. See the [full setup guide](https://github.com/sdevil7th/MoDiff/blob/develop/docs/developer-setup.md) for specialized AMD profiles,
+explicit `uv pip` commands, repair, and upgrades.
 
 **Terminal 2 — frontend:** from the same parent directory, run:
 
@@ -138,7 +140,7 @@ Client development requires:
 Integrated development also requires:
 
 - A sibling MoDiff backend checkout, or its path passed to the launcher
-- The backend's managed Python 3.12 environment, installed through the uv commands
+- The backend's Python 3.12 environment, installed through the uv commands
   in the [quick start](#developer-setup-with-uv-and-npm) or its reviewed `install.ps1` / `install.sh` profile
 - Sufficient RAM, accelerator memory, and disk space for the model being used
 - Hugging Face authorization for gated model repositories, when applicable
@@ -261,6 +263,10 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
     package before clearing browser data.
 
 See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas, workflow tabs, Gallery behavior, setup, failure recovery, and a manual verification checklist.
+
+The [image template workflow guide](docs/image-template-workflows.md) describes
+the current developer nodes, explicit whole-pipeline exceptions, preserved
+creator settings and historical Gallery examples.
 
 ## Workspace And Memory
 

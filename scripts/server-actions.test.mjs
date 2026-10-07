@@ -10,6 +10,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let actionsModule;
 let originalFetch;
 let server;
+let controlModule;
 
 before(async () => {
   globalThis.window = {
@@ -25,11 +26,13 @@ before(async () => {
     appType: 'custom',
   });
   actionsModule = await server.ssrLoadModule('/src/utils/serverActions.ts');
+  controlModule = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
   originalFetch = globalThis.fetch;
 });
 
 beforeEach(() => {
   globalThis.fetch = originalFetch;
+  controlModule.resetSupervisorControl();
 });
 
 after(async () => {
@@ -43,6 +46,92 @@ function jsonResponse(value, status = 200) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+test('advertised unsupervised workers stop directly without probing a missing control port', async () => {
+  controlModule.updateWorkerControl(controlModule.parseWorkerControl({ available: false, address: null }));
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ error: false });
+  };
+  await actionsModule.requestExecutionStop();
+  assert.deepEqual(requests, ['http://127.0.0.1:5191/stop']);
+});
+
+test('invalid legacy control configuration still permits the ordinary worker Stop fallback', async () => {
+  const config = (await server.ssrLoadModule('/app.config.ts')).default;
+  const previous = config.supervisorAddress;
+  const requests = [];
+  config.supervisorAddress = 'http://remote.example:8089';
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ error: false });
+  };
+  try {
+    await actionsModule.requestExecutionStop();
+    assert.deepEqual(requests, ['http://127.0.0.1:5191/stop']);
+  } finally {
+    config.supervisorAddress = previous;
+  }
+});
+
+test('explicit Stop retains a verified custom control address through metadata failure and polling backoff', async () => {
+  controlModule.updateWorkerControl(
+    controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:43001' }),
+  );
+  controlModule.updateWorkerControl(undefined);
+  controlModule.supervisorControlFailed();
+  assert.equal(controlModule.supervisorControlAddress(), null);
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ error: false });
+  };
+  await actionsModule.requestExecutionStop();
+  assert.deepEqual(requests, ['http://127.0.0.1:43001/stop']);
+});
+
+test('worker control metadata rejects malformed, remote, credentialed and non-origin destinations', () => {
+  assert.equal(controlModule.parseWorkerControl(undefined), undefined);
+  for (const value of [
+    null,
+    [],
+    {},
+    { available: 'true', address: null },
+    { available: false, address: 'http://127.0.0.1:8089' },
+    { available: true, address: null },
+    { available: false, address: null, arbitrary: true },
+    ...[
+      'http://example.com:9001',
+      'http://127.0.0.2:9001',
+      'https://127.0.0.1:9001',
+      'http://user@127.0.0.1:9001',
+      'http://127.0.0.1:9001/queue',
+      'http://127.0.0.1:0',
+      'http://127.0.0.1:65536',
+      'http://127.0.0.1:9001?x=1',
+      'http://2130706433:9001',
+    ].map((address) => ({ available: true, address })),
+  ]) {
+    assert.throws(() => controlModule.parseWorkerControl(value));
+  }
+  assert.deepEqual(controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:43001/' }), {
+    available: true,
+    address: 'http://127.0.0.1:43001',
+  });
+  assert.deepEqual(controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:80' }), {
+    available: true,
+    address: 'http://127.0.0.1',
+  });
+});
+
+test('older health metadata cannot replace a newer verified supervisor destination', () => {
+  const older = controlModule.beginWorkerControlRead();
+  const newer = controlModule.beginWorkerControlRead();
+  controlModule.updateWorkerControl({ available: true, address: 'http://127.0.0.1:43001' }, newer);
+  controlModule.updateWorkerControl({ available: false, address: null }, older);
+  assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:43001');
+});
 
 test('execution stop uses the process-external supervisor before the backend worker', async () => {
   let request;

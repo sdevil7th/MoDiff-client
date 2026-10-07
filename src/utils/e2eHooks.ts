@@ -31,6 +31,7 @@ import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates
 import { getFormDefaultsForMode } from '../studio/modelProfiles';
 import type { StudioTaskTemplateSkeleton } from '../studio/taskTemplateContracts';
 import { materializeTemplateDefaultInputs } from '../studio/templateInputs';
+import { createImageTemplateOperationWorkflow } from '../studio/templateWorkflow';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { UserBlockDefinition } from '../studio/types';
 import { createUserBlockNode, normalizeUserBlockDefinition } from '../studio/userBlocks';
@@ -91,6 +92,7 @@ type ModiffE2EHooks = {
   listTemplates: (includePlanning?: boolean) => GalleryTemplateSummary[];
   listTaskTemplateSkeletons: () => StudioTaskTemplateSkeleton[];
   applyTemplate: (templateId: StudioTemplateId, formOverrides?: Partial<StudioFormState>) => Promise<void>;
+  applyLegacyTemplateForTest: (templateId: StudioTemplateId, formOverrides?: Partial<StudioFormState>) => Promise<void>;
   applyTaskTemplateSkeleton: (templateId: string, formOverrides?: Partial<StudioFormState>) => Promise<void>;
   applyControlledWorkflowBlockForTest: (
     block: ControlledWorkflowBlockForTest,
@@ -155,6 +157,7 @@ declare global {
 // Auto has finished. This is isolated to the E2E bridge; normal Studio runs keep
 // the selected template and Auto contracts unchanged.
 let pendingGalleryFormOverrides: Partial<StudioFormState> = {};
+let pendingGalleryTemplateId: StudioTemplateId | null = null;
 let managedGraphFinalizationForTest: Promise<void> | null = null;
 const GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS = 120_000;
 
@@ -211,11 +214,18 @@ async function applyTaskTemplateSkeleton(templateId: string, formOverrides: Part
   useStudioStore.getState().saveActiveWorkflowTab(true);
 }
 
-async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partial<StudioFormState> = {}) {
-  const template = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].find((item) => item.id === templateId);
-  if (!template) {
+async function applyTemplate(
+  templateId: StudioTemplateId,
+  formOverrides: Partial<StudioFormState> = {},
+  legacyForTest = false,
+) {
+  const selected = [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].find((item) => item.id === templateId);
+  if (!selected) {
     throw new Error(`Unknown Studio template: ${templateId}`);
   }
+  // Explicit fixture for saved managed-workflow regressions. Fresh authoring
+  // and Gallery harnesses always use the current selected operation recipe.
+  const template = legacyForTest ? { ...selected, executionSelection: undefined } : selected;
   await useNodesStore.getState().fetchStudioModelCapabilities();
 
   if (!useStudioStore.getState().workflowCanvasHydrated) {
@@ -230,6 +240,7 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
   const inputDefaults = await materializeTemplateDefaultInputs(template);
   useStudioStore.getState().applyTemplate(template, inputDefaults);
   pendingGalleryFormOverrides = { ...formOverrides };
+  pendingGalleryTemplateId = template.id;
   if (Object.keys(formOverrides).length > 0) {
     useStudioStore.getState().updateForm(formOverrides);
   }
@@ -242,6 +253,13 @@ async function applyTemplate(templateId: StudioTemplateId, formOverrides: Partia
   });
   try {
     const context = captureWorkflowOperationContext();
+    if (template.executionSelection && template.example?.mediaType === 'image') {
+      await createImageTemplateOperationWorkflow(template, useStudioStore.getState().form, context);
+      await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
+      await useFlowStore.getState().arrangeGraph({ history: false });
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+      return;
+    }
     // Materialize the loader graph before validating Auto's selected target.
     // The app-wide Auto sync is paused by this template transition while the
     // caller owns the initial graph and the subsequent plan commit.
@@ -355,6 +373,12 @@ function arrangeWorkflowGraphSnapshot(graph: { nodes?: CustomNodeType[]; edges?:
 }
 
 async function runActiveTemplate(): Promise<GalleryRunResult> {
+  if (
+    !useStudioStore.getState().graphBinding &&
+    pendingGalleryTemplateId &&
+    STUDIO_TEMPLATES.find((item) => item.id === pendingGalleryTemplateId)?.executionSelection
+  )
+    return runOperationTemplateGraph();
   const websocket = useWebsocketStore.getState();
   const sid = websocket.sid;
   const templateId = useStudioStore.getState().activeTemplateId;
@@ -458,6 +482,12 @@ async function runActiveTemplate(): Promise<GalleryRunResult> {
 }
 
 async function runPreparedTemplateGraph(graph: APIGraphExport): Promise<GalleryRunResult> {
+  if (
+    !useStudioStore.getState().graphBinding &&
+    pendingGalleryTemplateId &&
+    STUDIO_TEMPLATES.find((item) => item.id === pendingGalleryTemplateId)?.executionSelection
+  )
+    return runOperationTemplateGraph(graph);
   const websocket = useWebsocketStore.getState();
   const sid = websocket.sid;
   const templateId = useStudioStore.getState().activeTemplateId;
@@ -487,6 +517,33 @@ async function runPreparedTemplateGraph(graph: APIGraphExport): Promise<GalleryR
 
   return {
     templateId: templateId ?? context.templateId ?? null,
+    taskId: typeof response.task_id === 'string' ? response.task_id : null,
+    sid,
+    startedAt: context.startedAt,
+    response,
+  };
+}
+
+async function runOperationTemplateGraph(preparedGraph?: APIGraphExport): Promise<GalleryRunResult> {
+  const websocket = useWebsocketStore.getState();
+  const sid = websocket.sid;
+  if (!sid || !websocket.isConnected) throw new Error('MoDiff websocket is not connected.');
+  const validation = validateCurrentRun({
+    sid,
+    isConnected: websocket.isConnected,
+    includeStudio: false,
+    showDialog: false,
+  });
+  if (!validation.canRun) {
+    const issue = validation.blocking[0] ?? validation.issues[0];
+    throw new Error(
+      issue?.details ? `${issue.message} ${issue.details}` : (issue?.message ?? 'The template graph is not ready.'),
+    );
+  }
+  const { context, response } = await coordinateGraphRun({ sid, ...(preparedGraph ? { preparedGraph } : {}) });
+  if (!context) throw new Error('Template run context was not captured.');
+  return {
+    templateId: pendingGalleryTemplateId,
     taskId: typeof response.task_id === 'string' ? response.task_id : null,
     sid,
     startedAt: context.startedAt,
@@ -1056,6 +1113,8 @@ export function installE2EHooks() {
     listTemplates,
     listTaskTemplateSkeletons,
     applyTemplate,
+    applyLegacyTemplateForTest: (templateId: StudioTemplateId, overrides?: Partial<StudioFormState>) =>
+      applyTemplate(templateId, overrides, true),
     applyTaskTemplateSkeleton,
     applyControlledWorkflowBlockForTest,
     refreshTaskTemplateContracts: async () => {

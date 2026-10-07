@@ -41,6 +41,7 @@ import {
 import {
   TEMPLATE_GALLERY_MANIFEST_PATH,
   findManifestEntry,
+  findHistoricalTemplateManifestEntry,
   getTemplateCardMedia,
   getTemplateLockedSettings,
   parseTemplateGalleryManifest,
@@ -241,7 +242,7 @@ function categoryLabel(categoryId: TemplateBrowserCategoryId) {
 
 function templateHasPublishedMedia(template: StudioTemplate, manifest: TemplateGalleryManifest | null) {
   if (manifest) {
-    const entry = findManifestEntry(template, manifest);
+    const entry = findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
     if (!entry) return false;
     return entry.mediaType !== 'video' || Boolean(entry.cardPreviewPath && entry.cardPreviewSha256);
   }
@@ -1074,6 +1075,7 @@ function TemplateBrowserCard({
   template: StudioTemplate;
 }) {
   const { beforePath, mediaPath: cardMediaPath, thumbnailPath } = getTemplateCardMedia(template, manifest);
+  const historical = !findManifestEntry(template, manifest) && findHistoricalTemplateManifestEntry(template, manifest);
   const hasUsageRestrictions = acknowledgementRequiredForTemplate(template).length > 0;
 
   return (
@@ -1112,6 +1114,11 @@ function TemplateBrowserCard({
           thumbnailPath={thumbnailPath}
           variant={template.thumbnailVariant}
         />
+        {historical ? (
+          <span className="absolute bottom-2 left-2 rounded-modiff-compact bg-modiff-bg/85 px-2 py-1 text-xs text-modiff-text">
+            Previous recipe example
+          </span>
+        ) : null}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-end gap-2 bg-gradient-to-b from-modiff-bg/80 to-transparent p-3">
           {hasUsageRestrictions ? (
             <ModiffTooltip<HTMLSpanElement> content="Usage restrictions — review before use">
@@ -1235,7 +1242,9 @@ function TemplateRecipeDetail({
   requiresTermsReview: boolean;
   template: StudioTemplate;
 }) {
-  const detailManifestEntry = findManifestEntry(template, manifest, { requireCardPreview: false });
+  const currentEntry = findManifestEntry(template, manifest, { requireCardPreview: false });
+  const detailManifestEntry =
+    currentEntry ?? findHistoricalTemplateManifestEntry(template, manifest, { requireCardPreview: false });
   // Source inputs have their own reviewed hash and do not become invalid merely
   // because a prompt, graph, or generated-output lock changes. Keep the strict
   // exactness gate for the result, but resolve the published source separately
@@ -1276,6 +1285,12 @@ function TemplateRecipeDetail({
         thumbnailPath={thumbnailPath}
         variant={template.thumbnailVariant}
       />
+      {!currentEntry && detailManifestEntry && template.executionSelection ? (
+        <p className="mt-2 text-xs leading-5 text-modiff-subtle-text" data-testid="template-historical-example">
+          Example from the previous recipe. This template now creates editable developer workflow nodes; the new graph
+          has not been visually qualified by this image.
+        </p>
+      ) : null}
 
       <div className="mt-4 grid gap-4">
         <div>

@@ -329,8 +329,11 @@ const workflowRecords = workflowManifest.workflows.map((workflow) => {
 });
 const vite = await createServer({
   root: CLIENT_ROOT,
+  configFile: false,
+  logLevel: 'silent',
+  optimizeDeps: { entries: [], noDiscovery: true },
   appType: 'custom',
-  server: { middlewareMode: true, watch: null },
+  server: { middlewareMode: true, hmr: false, watch: null },
 });
 
 try {

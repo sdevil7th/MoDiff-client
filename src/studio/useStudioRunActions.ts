@@ -319,6 +319,25 @@ export function useStudioRunActions({
     async (templateId: string) => {
       const template = STUDIO_TEMPLATES.find((item) => item.id === templateId);
       if (!template) return;
+      if (template.executionSelection && template.example?.mediaType === 'image') {
+        const context = captureWorkflowOperationContext();
+        setIsWorking(true);
+        try {
+          const { createWorkflowFromTemplate } = await import('./templateWorkflow');
+          assertWorkflowOperationContext(context);
+          const result = await createWorkflowFromTemplate(template);
+          if (result.graphError) throw new Error(result.graphError);
+        } catch (error) {
+          if (!isWorkflowOperationCancelled(error)) {
+            const message = String(error);
+            useStudioStore.getState().setLastError(message);
+            enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
+          }
+        } finally {
+          setIsWorking(false);
+        }
+        return;
+      }
       if (useFlowStore.getState().nodes.length > 0) {
         useStudioStore.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
       }

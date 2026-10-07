@@ -26,7 +26,7 @@ function post<T>(path: string, body: Record<string, unknown>, parse: (value: unk
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-    timeoutMs: 30_000,
+    timeoutMs: path === '/runtime/optimizations/probe' ? 130_000 : 30_000,
     parse,
   });
 }
@@ -70,8 +70,6 @@ export default function RuntimeOptimizationsCard() {
   const [runtimeJob, setRuntimeJob] = useState<OptionalRuntimeJob | null>(null);
   const refreshRevision = useRef(0);
   const mutationInFlight = useRef(false);
-  const runtimePolls = useRef(0);
-  const cutoverPollRevision = useRef(0);
 
   const refresh = useCallback(async () => {
     const revision = ++refreshRevision.current;
@@ -105,50 +103,28 @@ export default function RuntimeOptimizationsCard() {
     void refresh().catch(() => undefined);
   }, [refresh]);
 
-  useEffect(
-    () => () => {
-      cutoverPollRevision.current += 1;
-    },
-    [],
-  );
-
-  const refreshOptionalRuntimeAfterCutover = useCallback(
-    async (profileId: string, specDigest: string) => {
-      const revision = ++cutoverPollRevision.current;
-      const deadline = Date.now() + 5 * 60 * 1000;
-      while (revision === cutoverPollRevision.current && Date.now() < deadline) {
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
-        if (revision !== cutoverPollRevision.current) return;
-        await fetchOptionalRuntimes();
-        const nextCatalog = useNodesStore.getState().optionalRuntimeCatalog;
-        const nextProfile = nextCatalog?.profiles.find((candidate) => candidate.id === profileId);
-        if (
-          nextCatalog?.processLoadStatus === 'active' &&
-          nextProfile?.specDigest === specDigest &&
-          nextProfile.overlayStatus === 'active'
-        ) {
-          const nodes = useNodesStore.getState();
-          await Promise.all([nodes.fetchRuntimeStatus(), nodes.fetchStudioModelCapabilities()]);
-          return;
-        }
-      }
-      if (revision === cutoverPollRevision.current) {
-        enqueueSnackbar('Runtime activation is still restarting. Refresh Setup before running this workflow.', {
-          variant: 'warning',
-        });
-      }
-    },
-    [fetchOptionalRuntimes],
-  );
+  // The backend owns setup progress, so reopening Setup or refreshing the page
+  // resumes the same operation instead of presenting Activate during cutover.
+  useEffect(() => {
+    const latest = optionalRuntimeCatalog?.latestJob;
+    if (!latest) return;
+    if (optionalRuntimeCatalog.profiles.some((profile) => profile.id === latest.profileId && profile.baseIncluded)) {
+      setRuntimeJob((current) => (current?.profileId === latest.profileId ? null : current));
+      return;
+    }
+    setRuntimeJob((current) =>
+      !current ||
+      latest.createdAt > current.createdAt ||
+      (latest.id === current.id && latest.updatedAt >= current.updatedAt)
+        ? latest
+        : current,
+    );
+  }, [optionalRuntimeCatalog]);
 
   useEffect(() => {
     if (!runtimeJob || ['cancelled', 'failed', 'ready'].includes(runtimeJob.status)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      if (++runtimePolls.current > 2400) {
-        enqueueSnackbar('Runtime setup polling stopped. Refresh status to continue.', { variant: 'warning' });
-        return;
-      }
       try {
         const next = await requestJson(
           `${config.serverAddress}/runtime/optional-runtimes/jobs/${encodeURIComponent(runtimeJob.id)}`,
@@ -156,12 +132,19 @@ export default function RuntimeOptimizationsCard() {
         );
         if (
           next.id !== runtimeJob.id ||
+          next.operation !== runtimeJob.operation ||
           next.profileId !== runtimeJob.profileId ||
           next.specDigest !== runtimeJob.specDigest
         )
           throw new Error('The optional-runtime job identity changed.');
         setRuntimeJob(next);
-        if (['cancelled', 'failed', 'ready'].includes(next.status)) void fetchOptionalRuntimes();
+        if (['cancelled', 'failed', 'ready'].includes(next.status)) {
+          await fetchOptionalRuntimes();
+          if (next.operation === 'activate' && next.status === 'ready') {
+            const nodes = useNodesStore.getState();
+            await Promise.all([nodes.fetchRuntimeStatus(), nodes.fetchStudioModelCapabilities()]);
+          }
+        }
       } catch {
         if (!controller.signal.aborted) {
           setRuntimeJob({ ...runtimeJob });
@@ -222,15 +205,15 @@ export default function RuntimeOptimizationsCard() {
       label,
       environmentId
         ? async () => {
-            const result = await post(
+            const job = await post(
               '/runtime/optional-runtimes/activate',
               { environmentId, profileId: profile.id, specDigest: profile.specDigest, consent: true },
-              parseOptionalRuntimeMutation,
+              parseOptionalRuntimeJobResponse,
             );
-            enqueueSnackbar(result.message ?? 'Activation selected.', { variant: 'success' });
-            setRuntimeJob(null);
+            if (job.operation !== 'activate' || job.profileId !== profile.id || job.specDigest !== profile.specDigest)
+              throw new Error('Runtime activation job mismatch.');
+            setRuntimeJob(job);
             await fetchOptionalRuntimes();
-            void refreshOptionalRuntimeAfterCutover(profile.id, profile.specDigest);
           }
         : async () => {
             const job = await post(
@@ -240,7 +223,6 @@ export default function RuntimeOptimizationsCard() {
             );
             if (job.profileId !== profile.id || job.specDigest !== profile.specDigest)
               throw new Error('Runtime job mismatch.');
-            runtimePolls.current = 0;
             setRuntimeJob(job);
             await fetchOptionalRuntimes();
           },
@@ -262,98 +244,113 @@ export default function RuntimeOptimizationsCard() {
   };
 
   const observedReceipts = receipts.filter((receipt) => receipt.kind === 'workload' && receipt.status === 'observed');
-  const rollbackToBase = Boolean(
-    optionalRuntimeCatalog?.activeEnvironmentId &&
-    !optionalRuntimeCatalog.previousEnvironmentId &&
-    optionalRuntimeCatalog.processLoadStatus === 'repair_required',
-  );
-  const rollbackAvailable = Boolean(optionalRuntimeCatalog?.previousEnvironmentId || rollbackToBase);
+  const resetToBase = optionalRuntimeCatalog?.processLoadStatus === 'repair_required';
+  const rollbackAvailable = Boolean(optionalRuntimeCatalog?.previousEnvironmentId || resetToBase);
+  const runtimeBusy = runtimeJob !== null && !['ready', 'failed', 'cancelled'].includes(runtimeJob.status);
 
   return (
     <section className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3">
       <div className="grid gap-1 pb-2">
         <strong>Optional runtimes</strong>
+        {optionalRuntimeRequest.status === 'success' &&
+        optionalRuntimeCatalog?.profiles.some((profile) => profile.baseIncluded) ? (
+          <p className="text-xs text-modiff-subtle-text">
+            Image generation and LoRA support are included in the base installation.
+          </p>
+        ) : null}
+        {runtimeJob ? (
+          <div
+            className="flex items-center gap-2 text-xs"
+            role="status"
+            aria-live="polite"
+            data-testid="optional-runtime-progress"
+          >
+            <span>{runtimeJob.progress.message}</span>
+            {runtimeJob.operation === 'install' && ['queued', 'running'].includes(runtimeJob.status) ? (
+              <ModiffButton size="compact" disabled={busyId !== null} onClick={cancelRuntime}>
+                Cancel
+              </ModiffButton>
+            ) : null}
+          </div>
+        ) : null}
         {optionalRuntimeRequest.error ? (
           <p className="text-xs text-modiff-warning">{optionalRuntimeRequest.error}</p>
         ) : optionalRuntimeRequest.status === 'loading' ? (
           <p className="text-xs text-modiff-subtle-text">Loading optional runtimes...</p>
         ) : optionalRuntimeRequest.status === 'success' && optionalRuntimeCatalog ? (
-          optionalRuntimeCatalog.profiles.map((profile) => {
-            const staged = stagedOptionalRuntimeEnvironment(optionalRuntimeCatalog, profile);
-            const completedEnvironment =
-              runtimeJob?.profileId === profile.id && runtimeJob.specDigest === profile.specDigest
-                ? runtimeJob.result?.environmentId
-                : undefined;
-            const canAct = profile.contractState === 'qualified' && profile.cutoverReady;
-            const environmentId = completedEnvironment ?? staged;
-            const action = environmentId
-              ? 'Activate'
-              : profile.overlayStatus === 'repair_required' || profile.overlayStatus === 'staged_unchecked'
-                ? 'Repair'
-                : 'Install';
-            const actionable =
-              canAct &&
-              (environmentId
-                ? profile.activationAvailable
-                : profile.installActionAvailable && profile.overlayStatus !== 'active');
-            return (
-              <div
-                key={profile.id}
-                className="grid gap-1 text-xs text-modiff-text"
-                data-testid={`optional-runtime-${profile.id}`}
-              >
-                <span>
-                  {profile.label} ({optionalRuntimeTarget(profile)}):{' '}
-                  {optionalRuntimeStatus(profile, optionalRuntimeCatalog.processLoadStatus)}
-                </span>
-                {runtimeJob?.profileId === profile.id ? (
-                  <div className="flex items-center gap-2" data-testid="optional-runtime-progress">
-                    <span>{runtimeJob.progress.message}</span>
-                    {['queued', 'running'].includes(runtimeJob.status) ? (
-                      <ModiffButton size="compact" disabled={busyId !== null} onClick={cancelRuntime}>
-                        Cancel
+          optionalRuntimeCatalog.profiles
+            .filter((profile) => !profile.baseIncluded)
+            .map((profile) => {
+              const staged = stagedOptionalRuntimeEnvironment(optionalRuntimeCatalog, profile);
+              const completedEnvironment =
+                runtimeJob?.operation === 'install' &&
+                runtimeJob.status === 'ready' &&
+                runtimeJob.result?.requiresActivation &&
+                runtimeJob.profileId === profile.id &&
+                runtimeJob.specDigest === profile.specDigest
+                  ? runtimeJob.result?.environmentId
+                  : undefined;
+              const canAct = profile.contractState === 'qualified' && profile.cutoverReady;
+              const environmentId = completedEnvironment ?? staged;
+              const action = environmentId
+                ? 'Activate'
+                : profile.overlayStatus === 'repair_required' || profile.overlayStatus === 'staged_unchecked'
+                  ? 'Repair'
+                  : 'Install';
+              const actionable =
+                canAct &&
+                (environmentId
+                  ? profile.activationAvailable
+                  : profile.installActionAvailable && profile.overlayStatus !== 'active');
+              return (
+                <div
+                  key={profile.id}
+                  className="grid gap-1 text-xs text-modiff-text"
+                  data-testid={`optional-runtime-${profile.id}`}
+                >
+                  <span>
+                    {profile.label} ({optionalRuntimeTarget(profile)}):{' '}
+                    {optionalRuntimeStatus(profile, optionalRuntimeCatalog.processLoadStatus)}
+                  </span>
+                  <div className="flex gap-1.5">
+                    {actionable && !runtimeBusy ? (
+                      <ModiffButton
+                        size="compact"
+                        disabled={busyId !== null || optionalRuntimeCatalog.installBusy}
+                        loading={busyId === action.toLowerCase()}
+                        onClick={() => changeRuntime(profile, environmentId)}
+                      >
+                        {action}
                       </ModiffButton>
                     ) : null}
                   </div>
-                ) : null}
-                <div className="flex gap-1.5">
-                  {actionable ? (
-                    <ModiffButton
-                      size="compact"
-                      disabled={busyId !== null || optionalRuntimeCatalog.installBusy}
-                      loading={busyId === action.toLowerCase()}
-                      onClick={() => changeRuntime(profile, environmentId)}
-                    >
-                      {action}
-                    </ModiffButton>
-                  ) : null}
                 </div>
-              </div>
-            );
-          })
+              );
+            })
         ) : (
           <p className="text-xs text-modiff-subtle-text">No optional runtimes.</p>
         )}
         {optionalRuntimeCatalog &&
         rollbackAvailable &&
-        optionalRuntimeCatalog.profiles.some(
-          (profile) => profile.activationAvailable && profile.cutoverReady && profile.contractState === 'qualified',
-        ) ? (
+        (resetToBase ||
+          optionalRuntimeCatalog.profiles.some(
+            (profile) => profile.activationAvailable && profile.cutoverReady && profile.contractState === 'qualified',
+          )) ? (
           <ModiffButton
             size="compact"
-            disabled={busyId !== null || optionalRuntimeCatalog.installBusy}
-            loading={busyId === 'rollback'}
+            disabled={busyId !== null || optionalRuntimeCatalog.installBusy || runtimeBusy}
+            loading={busyId === (resetToBase ? 'reset' : 'rollback')}
             onClick={() =>
               consent(
-                rollbackToBase ? 'Roll back optional runtime to base?' : 'Roll back optional runtime?',
-                rollbackToBase
-                  ? 'Remove the broken active optional environment and restart MoDiff with the validated base runtime. Active and queued runs must be stopped first.'
+                resetToBase ? 'Reset optional runtime to base?' : 'Roll back optional runtime?',
+                resetToBase
+                  ? 'Clear optional runtime selections and restart MoDiff with the validated base runtime. Installed optional files are kept. Active and queued runs must be stopped first.'
                   : 'Select the previous validated optional environment and restart MoDiff. Active and queued runs must be stopped first.',
-                'Rollback',
+                resetToBase ? 'Reset' : 'Rollback',
                 async () => {
                   const result = await post(
                     '/runtime/optional-runtimes/rollback',
-                    { consent: true },
+                    { consent: true, ...(resetToBase ? { targetBase: true } : {}) },
                     parseOptionalRuntimeMutation,
                   );
                   enqueueSnackbar(result.message ?? 'Optional runtime rollback selected.', { variant: 'success' });
@@ -362,7 +359,7 @@ export default function RuntimeOptimizationsCard() {
               )
             }
           >
-            {rollbackToBase ? 'Rollback to base' : 'Rollback'}
+            {resetToBase ? 'Reset to base' : 'Rollback'}
           </ModiffButton>
         ) : null}
       </div>
@@ -428,7 +425,7 @@ export default function RuntimeOptimizationsCard() {
                           })
                         }
                       >
-                        Probe
+                        {busyId === `probe:${capability.id}` ? 'Probing…' : 'Probe'}
                       </ModiffButton>
                     </>
                   ) : null}

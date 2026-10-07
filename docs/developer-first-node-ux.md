@@ -66,6 +66,9 @@ palette showed63 entries, separately from121 upstream catalog entries.
 
 New native image starters combine their input encoding stages into **Encode Inputs**.
 Related Guider and Layers stages appear as **Guidance** where they are connected.
+Fresh Qwen/Z-Image templates also present a single actual Guider as Guidance,
+shared by encoding and denoising. Z-Image Turbo keeps CFG disabled; paths without
+an upstream guider do not add one. See [image template workflows](image-template-workflows.md).
 Encode Inputs uses the ordinary node layout, scrolling controls and status-strip
 resize grip. It is not an expandable canvas Block. Backend encoding stages remain
 separate, with typed conditioning, latent and route-state outputs. Guidance uses

@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import { backendProxyLifecycle } from './scripts/backend-proxy-lifecycle';
 import {
   resolveTemplateAssetViteContract,
   serializeTemplateAssetSource,
@@ -15,6 +16,7 @@ import {
 } from './scripts/template-asset-source-contract.ts';
 
 const backendProxyTarget = process.env.VITE_BACKEND_PROXY_TARGET || 'http://127.0.0.1:8088';
+const proxyLifecycle = backendProxyLifecycle();
 const checkedInTemplateAssetSource = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'src/studio/templateAssetSource.json'), 'utf8'),
 );
@@ -215,6 +217,7 @@ const backendProxy = Object.fromEntries(
       target: backendProxyTarget,
       changeOrigin: true,
       ws: route === '/ws',
+      ...(route === '/ws' ? { configure: proxyLifecycle.configure } : {}),
     },
   ]),
 );
@@ -223,7 +226,7 @@ const baseConfig: UserConfig = {
   // Concurrent qualification frontends must not replace each other's
   // optimized dependency files and trigger navigation during a gesture.
   cacheDir: process.env.MODIFF_VITE_CACHE_DIR || 'node_modules/.vite',
-  plugins: [react(), tailwindcss(), compactProductionChunksPlugin(), shellAssetVersionPlugin()],
+  plugins: [react(), tailwindcss(), proxyLifecycle.plugin, compactProductionChunksPlugin(), shellAssetVersionPlugin()],
   server: {
     proxy: backendProxy,
     hmr: process.env.MODIFF_GALLERY_STABLE !== '1',

@@ -385,10 +385,12 @@ export function groupOperationStages(
     const members = scope.filter((node) => stageKind(node) === kind);
     if (
       kind === 'guidance' &&
-      (members.length < 2 ||
-        !graph.edges.some(
-          (edge) => members.some((node) => node.id === edge.source) && members.some((node) => node.id === edge.target),
-        ))
+      (members.length === 0 ||
+        (members.length > 1 &&
+          !graph.edges.some(
+            (edge) =>
+              members.some((node) => node.id === edge.source) && members.some((node) => node.id === edge.target),
+          )))
     )
       continue;
     if (members.length)

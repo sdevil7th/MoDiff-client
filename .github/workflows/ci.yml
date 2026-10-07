@@ -32,9 +32,17 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          ref: a0d29db8484f8f06f9d42f6782634cd66e1ac996
+          # Paired native-uv runtime and ordinary image-template contracts.
+          ref: e08f606311bbba80d796949486ed1216d41ec753
           path: MoDiff
           persist-credentials: false
+      - name: Verify the pinned backend supports native setup
+        working-directory: MoDiff
+        run: |
+          if [ ! -f uv.lock ]; then
+            echo "::error::The pinned backend predates native uv setup. Commit the paired backend changes, then update this workflow's immutable backend ref as documented in CONTRIBUTING.md."
+            exit 1
+          fi
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: MoDiff-client/.nvmrc
@@ -46,15 +54,14 @@ jobs:
         with:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-        with:
-          version: '0.11.26'
-      - name: Install the reviewed CPU backend and test dependencies
+      - name: Install the native CPU backend and test dependencies
         working-directory: MoDiff
         run: |
-          python -m modiff.install --accelerator cpu --backend-only --non-interactive --json
+          uv sync --extra cpu --locked
           uv pip install --python .venv/bin/python -r requirements/test.txt
           uv pip check --python .venv/bin/python
           .venv/bin/python -m modiff.preflight --json --fail-on-error
+          .venv/bin/python scripts/smoke_base_runtime.py
       - run: npx playwright install --with-deps chromium
       - run: npm run check
       - run: npm run check:ui

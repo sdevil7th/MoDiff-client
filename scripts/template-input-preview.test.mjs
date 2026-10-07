@@ -5,7 +5,13 @@ import { createServer } from 'vite';
 
 import { PROJECT_ROOT, readStudioTemplateIds, renderRuntimeInputTypescript } from './template-default-inputs.mjs';
 
-const server = await createServer({ server: { middlewareMode: true, watch: null }, appType: 'custom' });
+const server = await createServer({
+  configFile: false,
+  logLevel: 'silent',
+  optimizeDeps: { entries: [], noDiscovery: true },
+  server: { middlewareMode: true, hmr: false, watch: null },
+  appType: 'custom',
+});
 const { bundledTemplateInputPreviewUrl } = await server.ssrLoadModule('/src/studio/templateInputPreview.ts');
 const { resolveTemplateAssetUrl } = await server.ssrLoadModule('/src/studio/templateAssets.ts');
 const { templateDefaultInputBindings } = await server.ssrLoadModule(
@@ -18,6 +24,11 @@ test.after(async () => {
 
 const continuationAudioPath =
   '/template-gallery/runtime-inputs/assets/3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230.wav';
+
+test('static input-preview imports keep filesystem watching disabled', () => {
+  assert.equal(server.config.server.watch, null);
+  assert.deepEqual(server.watcher.getWatched(), {});
+});
 
 test('resolves an exact template input filename through the configured asset source', () => {
   assert.equal(

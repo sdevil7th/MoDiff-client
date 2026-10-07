@@ -6,11 +6,12 @@ import { test } from 'node:test';
 
 import { buildBackendInstallerPackageSet } from './backend-installer-contract.mjs';
 
-function fixture({ managed = false, requirements = 'torch==2.8.0\n' } = {}) {
+function fixture({ managed = true, requirements = 'torch==2.8.0\n' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'modiff-installer-contract-'));
   mkdirSync(join(root, 'modiff', 'compatibility'), { recursive: true });
   mkdirSync(join(root, 'requirements', 'profiles'), { recursive: true });
   writeFileSync(join(root, 'pyproject.toml'), `[project]\nname = "modiff"\n\n[tool.uv]\nmanaged = ${managed}\n`);
+  writeFileSync(join(root, 'uv.lock'), 'version = 1\nrevision = 1\n');
   writeFileSync(
     join(root, 'modiff', 'compatibility', 'accelerators.v1.json'),
     `${JSON.stringify({
@@ -33,12 +34,13 @@ function fixture({ managed = false, requirements = 'torch==2.8.0\n' } = {}) {
   return root;
 }
 
-test('package identity follows the installer-owned manifest and profile requirements without uv.lock', () => {
+test('package identity binds the native uv lock and specialized profile requirements', () => {
   const root = fixture();
   try {
     const first = buildBackendInstallerPackageSet(root);
     assert.equal(first.id, 'backend-installer-profiles');
-    assert.equal(first.uvProjectManaged, false);
+    assert.equal(first.uvProjectManaged, true);
+    assert.match(first.uvLockSha256, /^sha256:[a-f0-9]{64}$/);
     assert.equal(first.runtimeManifestRevision, 'test-runtime-contract');
     assert.match(first.runtimeManifestSha256, /^sha256:[a-f0-9]{64}$/);
     assert.match(first.runtimeProfiles.cpu.requirementsSha256, /^sha256:[a-f0-9]{64}$/);
@@ -46,21 +48,27 @@ test('package identity follows the installer-owned manifest and profile requirem
     writeFileSync(join(root, 'requirements', 'profiles', 'cpu.txt'), 'torch==2.8.1\n');
     const changed = buildBackendInstallerPackageSet(root);
     assert.notEqual(changed.runtimeProfiles.cpu.requirementsSha256, first.runtimeProfiles.cpu.requirementsSha256);
+    writeFileSync(join(root, 'uv.lock'), 'version = 1\nrevision = 2\n');
+    assert.notEqual(buildBackendInstallerPackageSet(root).uvLockSha256, first.uvLockSha256);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('package contract rejects uv project management and missing profile inputs', () => {
-  const managedRoot = fixture({ managed: true });
+test('package contract rejects unmanaged projects and missing profile or lock inputs', () => {
+  const managedRoot = fixture({ managed: false });
   const missingRoot = fixture();
+  const missingLockRoot = fixture();
   try {
-    assert.throws(() => buildBackendInstallerPackageSet(managedRoot), /managed = false/);
+    assert.throws(() => buildBackendInstallerPackageSet(managedRoot), /native uv project management/);
     rmSync(join(missingRoot, 'requirements', 'profiles', 'cpu.txt'));
     assert.throws(() => buildBackendInstallerPackageSet(missingRoot), /requirements is missing/);
+    rmSync(join(missingLockRoot, 'uv.lock'));
+    assert.throws(() => buildBackendInstallerPackageSet(missingLockRoot), /uv lock is missing/);
   } finally {
     rmSync(managedRoot, { recursive: true, force: true });
     rmSync(missingRoot, { recursive: true, force: true });
+    rmSync(missingLockRoot, { recursive: true, force: true });
   }
 });
 
@@ -115,10 +123,9 @@ test('README follows the paired install and development launcher contract', () =
     'git clone https://github.com/sdevil7th/MoDiff.git MoDiff',
     'git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
     'cd MoDiff',
-    'uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json',
-    'uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive',
-    'uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error',
-    'uv run --no-project --no-sync --python 3.12 -m modiff.dev run',
+    'uv sync --extra cpu',
+    'uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error',
+    'uv run --extra cpu python main.py',
     'cd MoDiff-client',
     'npm ci',
     'npm run dev',
