@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired native-uv runtime and ordinary image-template contracts.
-          ref: e08f606311bbba80d796949486ed1216d41ec753
+          ref: 36d36d9e594ce0212abfb3d825ef72044b401215
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
