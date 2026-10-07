@@ -56,6 +56,305 @@ const registry = {
   },
 };
 
+test('optional stage groups retain executable leaves, previews and exact mask geometry', async () => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'text_to_image');
+  const graph = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  const decoder = graph.nodes.find((n) => n.data.action === 'DecodeLatents');
+  const image = decoder.data.operationAuthoring.operation.ports.find(
+    (p) => p.direction === 'output' && p.types.includes('image'),
+  );
+  graph.nodes.push({
+    id: 'preview',
+    type: 'custom',
+    position: { x: 1600, y: 0 },
+    data: {
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview Image',
+      params: {
+        image: { type: ['image', 'latent'], display: 'input' },
+        preview: { type: 'url', display: 'ui_image', dataSource: 'output' },
+        output: { type: 'image', display: 'output' },
+        export: { type: 'str', display: 'text', value: '0' },
+      },
+    },
+  });
+  graph.edges.push({
+    id: 'preview-edge',
+    source: decoder.id,
+    sourceHandle: image.name,
+    target: 'preview',
+    targetHandle: 'image',
+  });
+  assert.deepEqual(visual.availableOperationStageGroups(graph, owner.id), ['output']);
+  const before = visual.unpackVisualOperationGroups(graph).graph;
+  const grouped = visual.groupOperationStages(graph, owner.id, ['output']);
+  const output = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'output');
+  assert.equal(output.data.label, 'Image Output');
+  assert.equal(output.data.blockInstanceV2.effectiveGraph.nodes.length, 2);
+  assert.deepEqual(output.data.blockInstanceV2.definitionSnapshot.previews, [
+    { nodeId: 'stage-preview', outputPortId: 'preview', mediaType: 'image', primary: true },
+  ]);
+  assert.equal(runtime.blockViewModelV2(output.data.blockInstanceV2).previewViews.length, 1);
+  const selected = runtime.expandBlockGraphV2ForExecution(grouped.nodes, grouped.edges, output.id);
+  assert.ok(
+    ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents', 'Preview'].every((action) =>
+      selected.nodes.some((node) => node.data.action === action),
+    ),
+    'selected Image Output keeps the original upstream dependency closure',
+  );
+  for (const original of graph.nodes.filter((node) => visual.visualOperationGroup(node)))
+    assert.equal(
+      grouped.nodes.find((node) => node.id === original.id),
+      original,
+      'other stage wrappers retain exact state',
+    );
+  const separated = visual.unpackVisualOperationGroups(grouped).graph;
+  const signature = (g) => ({
+    nodes: g.nodes
+      .map((n) => [
+        n.data.module,
+        n.data.action,
+        Object.fromEntries(Object.entries(n.data.params).map(([key, p]) => [key, p.value ?? p.default])),
+      ])
+      .sort(),
+    edges: g.edges
+      .map((e) => [
+        g.nodes.find((n) => n.id === e.source).data.action,
+        e.sourceHandle,
+        g.nodes.find((n) => n.id === e.target).data.action,
+        e.targetHandle,
+      ])
+      .sort(),
+  });
+  assert.deepEqual(signature(separated), signature(before));
+  assert.deepEqual(visual.availableOperationStageGroups(grouped, owner.id), []);
+  const completed = runtime.setBlockPreviewStateV2(
+    output.data.blockInstanceV2,
+    { nodeId: 'stage-preview', outputPortId: 'preview' },
+    {
+      mediaReference: '/file/output.png',
+      taskId: 'preview-task',
+      status: 'complete',
+    },
+  );
+  const withPreview = {
+    ...grouped,
+    nodes: grouped.nodes.map((node) => (node.id === output.id ? runtime.createBlockRootNodeV2(completed) : node)),
+  };
+  const projected = visual.unpackVisualOperationGroups(withPreview);
+  assert.equal(
+    projected.graph.nodes.find((node) => node.data.action === 'Preview').data.params.preview.value,
+    '/file/output.png',
+  );
+  const restored = visual.restoreVisualOperationGroups(projected.graph, projected);
+  assert.deepEqual(
+    restored.nodes.find((node) => node.id === output.id).data.blockInstanceV2.previewStates,
+    completed.previewStates,
+  );
+  const maskStarter = starters.find((s) => s.pipelineClass === 'FluxFillPipeline' && s.task === 'outpaint');
+  assert.ok(maskStarter, 'use the backend declared whole-pipeline masked task');
+  const maskGraph = authoring.createOperationStarter(maskStarter, { x: 0, y: 0 });
+  const maskOwner = maskGraph.nodes.find((n) => n.data.operationAuthoring.operation.decomposition === 'loader');
+  const consumer = maskGraph.nodes.find((n) =>
+    n.data.operationAuthoring.operation.ports.some((p) => p.name === 'mask_image' && p.direction === 'input'),
+  );
+  maskGraph.nodes.push(
+    {
+      id: 'source',
+      type: 'custom',
+      position: { x: -800, y: 0 },
+      data: {
+        module: 'modules.Image',
+        action: 'Load',
+        label: 'Load Image',
+        params: {
+          file: { type: 'str', display: 'filebrowser', label: false, value: '/source.png' },
+          image: { type: 'image', display: 'output' },
+        },
+      },
+    },
+    {
+      id: 'canvas',
+      type: 'custom',
+      position: { x: -400, y: 0 },
+      data: {
+        module: 'modules.DiffusersImage',
+        action: 'OutpaintCanvas',
+        label: 'Outpaint Canvas',
+        params: {
+          image: { type: 'image', display: 'input' },
+          width: { label: 'Canvas width', type: 'int', value: 1344 },
+          height: { label: 'Canvas height', type: 'int', value: 768 },
+          feather: { label: 'Mask feather', type: 'float', value: 8 },
+          canvas: { type: 'image', display: 'output' },
+          mask_image: { type: 'image', display: 'output' },
+          width_out: { type: 'int', display: 'output' },
+          height_out: { type: 'int', display: 'output' },
+        },
+      },
+    },
+  );
+  for (const [source, sourceHandle, target, targetHandle] of [
+    ['source', 'image', 'canvas', 'image'],
+    ['canvas', 'canvas', consumer.id, 'image'],
+    ['canvas', 'mask_image', consumer.id, 'mask_image'],
+    ['canvas', 'width_out', consumer.id, 'width'],
+    ['canvas', 'height_out', consumer.id, 'height'],
+  ])
+    maskGraph.edges.push({ id: `${source}-${sourceHandle}`, source, sourceHandle, target, targetHandle });
+  const mask = visual.groupOperationStages(maskGraph, maskOwner.id, ['mask']);
+  const maskRoot = mask.nodes.find((n) => visual.visualOperationGroup(n) === 'mask');
+  assert.equal(maskRoot.data.label, 'Prepare Mask');
+  assert.equal(
+    maskRoot.data.blockInstanceV2.effectiveInterface.controls.find((control) => control.binding.fieldId === 'file')
+      .label,
+    'file',
+    'the real Image.Load hidden field label receives a valid interface name',
+  );
+  assert.deepEqual(
+    maskRoot.data.blockInstanceV2.effectiveInterface.controls
+      .filter((control) => ['width', 'height', 'feather'].includes(control.binding.fieldId))
+      .map((control) => [control.binding.fieldId, control.label, control.defaultValue]),
+    [
+      ['width', 'Canvas width', 1344],
+      ['height', 'Canvas height', 768],
+      ['feather', 'Mask feather', 8],
+    ],
+    'registered utilities infer scalar editors from their types without a display declaration',
+  );
+  assert.deepEqual(signature(visual.unpackVisualOperationGroups(mask).graph), signature(maskGraph));
+  const wrong = structuredClone(maskGraph);
+  wrong.edges = wrong.edges.filter((e) => e.sourceHandle !== 'mask_image');
+  assert.deepEqual(visual.availableOperationStageGroups(wrong, maskOwner.id), []);
+});
+
+test('Model Setup retains loader ownership, ordered descriptors, task adaptation and independent reuse', async () => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  const persistence = await server.ssrLoadModule('/src/studio/blockDefinitionPersistenceV2.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'text_to_image');
+  const graph = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  for (const id of ['lora-a', 'lora-b'])
+    graph.nodes.push({
+      id,
+      type: 'custom',
+      position: { x: -800, y: 0 },
+      data: {
+        module: 'modules.ModularDiffusers',
+        action: 'Lora',
+        label: id,
+        params: {
+          model: { type: 'string', display: 'modelselect', value: { source: 'hub', value: id } },
+          scale: { type: 'float', display: 'slider', value: id === 'lora-a' ? 0 : 0.4 },
+          previous_loras: { type: 'custom_lora', display: 'input' },
+          lora: { type: 'custom_lora', display: 'output' },
+        },
+      },
+    });
+  graph.edges.push(
+    { id: 'ordered', source: 'lora-a', sourceHandle: 'lora', target: 'lora-b', targetHandle: 'previous_loras' },
+    { id: 'descriptors', source: 'lora-b', sourceHandle: 'lora', target: owner.id, targetHandle: 'lora_list' },
+  );
+  const grouped = visual.groupOperationStages(graph, owner.id, ['setup']);
+  const setup = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'setup');
+  assert.equal(setup.data.label, 'Model Setup');
+  assert.equal(setup.data.blockInstanceV2.effectiveGraph.nodes.length, 3);
+  assert.equal(setup.data.blockInstanceV2.effectiveGraph.edges.length, 2);
+  const semanticOwner = setup.data.blockInstanceV2.effectiveGraph.nodes.find(
+    (n) => n.data.action === 'ModelsLoader',
+  ).nodeId;
+  const ownerId = visual.visualOperationOwnerId(grouped, semanticOwner, setup.id);
+  assert.equal(ownerId, `${setup.id}/${semanticOwner}`);
+  const sealed = runtime.replaceBlockEffectiveInterfaceV2(setup.data.blockInstanceV2, {
+    boundary: setup.data.blockInstanceV2.effectiveInterface.boundary,
+    controls: setup.data.blockInstanceV2.effectiveInterface.controls.map((control) =>
+      control.binding.nodeId === semanticOwner && control.binding.fieldId === 'repo_id'
+        ? { ...control, sealed: true }
+        : control,
+    ),
+  });
+  const protectedGraph = {
+    ...grouped,
+    nodes: grouped.nodes.map((node) => (node.id === setup.id ? runtime.createBlockRootNodeV2(sealed) : node)),
+  };
+  const replacement = structuredClone(starter);
+  replacement.nodes.find((node) => node.operation.decomposition === 'loader').node.params.repo_id.value =
+    'example/different-model';
+  const protectedBefore = structuredClone(protectedGraph);
+  assert.throws(
+    () => authoring.planOperationChange(protectedGraph, ownerId, replacement, { replaceModel: true }),
+    /sealed/,
+  );
+  assert.deepEqual(protectedGraph, protectedBefore);
+  const target = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'image_to_image');
+  const plan = authoring.planOperationChange(grouped, ownerId, target);
+  const flat = visual.unpackVisualOperationGroups(plan.graph).graph;
+  assert.ok(
+    flat.nodes.find((n) => n.data.action === 'ModelsLoader').data.operationAuthoring.operation.task ===
+      'image_to_image',
+  );
+  assert.ok(
+    flat.nodes.some((n) => n.data.operationAuthoring?.operation.nodeType === 'vae_encoder'),
+    'the complete connected branch adapts outside Model Setup',
+  );
+  assert.equal(flat.nodes.filter((n) => n.data.action === 'Lora').length, 2);
+  assert.deepEqual(
+    plan.graph.nodes.find((n) => n.id === setup.id).data.blockInstanceV2.definitionSnapshot,
+    setup.data.blockInstanceV2.definitionSnapshot,
+  );
+  const control = setup.data.blockInstanceV2.effectiveInterface.controls.find(
+    (c) => c.binding.nodeId === 'stage-lora-a' && c.binding.fieldId === 'scale',
+  );
+  assert.equal(schema.blockInstanceValueV2(setup.data.blockInstanceV2, control.controlId), 0);
+  const changed = runtime.setBlockInstanceValueV2(setup.data.blockInstanceV2, control.controlId, 0.7);
+  const definition = persistence.reusableBlockDefinitionFromInstanceV2(changed, {
+    choice: 'new',
+    definitionId: 'my-setup',
+    displayName: 'My model setup',
+  });
+  const instances = ['first', 'second'].map((instanceId) =>
+    schema.createBlockInstanceV2(definition, {
+      instanceId,
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 540 },
+    }),
+  );
+  assert.equal(schema.blockInstanceValueV2(instances[0], control.controlId), 0.7);
+  const edited = runtime.setBlockInstanceValueV2(instances[0], control.controlId, 0);
+  assert.equal(schema.blockInstanceValueV2(edited, control.controlId), 0);
+  assert.equal(schema.blockInstanceValueV2(instances[1], control.controlId), 0.7);
+  const shared = structuredClone(graph);
+  const other = { ...structuredClone(owner), id: 'other-model' };
+  shared.nodes.push(other);
+  shared.edges.push({
+    id: 'shared-descriptors',
+    source: 'lora-b',
+    sourceHandle: 'lora',
+    target: other.id,
+    targetHandle: 'lora_list',
+  });
+  assert.ok(
+    !visual.availableOperationStageGroups(shared, owner.id).includes('setup'),
+    'a modifier shared with another loader is not claimed exclusively',
+  );
+  shared.edges = shared.edges.filter((edge) => edge.id !== 'shared-descriptors');
+  shared.nodes.push({ ...structuredClone(shared.nodes.find((node) => node.id === 'lora-a')), id: 'lora-c' });
+  shared.edges.push(
+    { id: 'shared-chain', source: 'lora-a', sourceHandle: 'lora', target: 'lora-c', targetHandle: 'previous_loras' },
+    { id: 'other-chain-owner', source: 'lora-c', sourceHandle: 'lora', target: other.id, targetHandle: 'lora_list' },
+  );
+  assert.ok(
+    !visual.availableOperationStageGroups(shared, owner.id).includes('setup'),
+    'indirectly shared descriptor chains also retain separate ownership',
+  );
+});
+
 test('removed dynamic Guidance controls stay hidden without resetting execution values', async () => {
   const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');

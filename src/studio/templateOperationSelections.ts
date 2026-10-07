@@ -118,6 +118,31 @@ function pipeline(
   };
 }
 
+/** Exact masked-template selection shared by fresh creation and parity tooling.
+ * Generic developer starters keep their upstream native defaults. */
+export function qwenInpaintNativeCandidateSelection(id: StudioTemplateId): StudioTemplateExecutionSelection {
+  if (
+    ![
+      'qwen_inpaint_object_replace',
+      'qwen_inpaint_mask_draft',
+      'qwen_outpaint_aspect_template',
+      'qwen_outpaint_draft',
+    ].includes(id)
+  )
+    throw new Error('This template has no reviewed Qwen native inpaint candidate.');
+  return {
+    ...native(
+      'QwenImageEditModularPipeline',
+      'qwen-edit:modular',
+      'QwenImageEditModularPipeline',
+      'modular_inpainting',
+      'inpaint',
+    ),
+    componentPolicy: { attentionBackend: 'auto', vaeSlicing: true, vaeTiling: true },
+    note: 'Native masked stages preserve the reviewed whole-template preprocessing and composite through an owned compatibility adapter.',
+  };
+}
+
 /** Curated fresh recipes, not global model defaults or execution authority. */
 export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateId, StudioTemplateExecutionSelection>> =
   {
@@ -246,24 +271,13 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
       ),
     ),
     ...recipes(
-      ['qwen_inpaint_object_replace', 'qwen_inpaint_mask_draft'],
-      pipeline(
-        'QwenImageEditInpaintPipeline',
-        'qwen-edit:direct-inpaint',
-        'QwenImageEditModularPipeline',
-        'inpaint',
-        'Retains the reviewed standard masked-edit semantics; native mask/generator parity has not been established.',
-      ),
-    ),
-    ...recipes(
-      ['qwen_outpaint_aspect_template', 'qwen_outpaint_draft'],
-      pipeline(
-        'QwenImageEditInpaintPipeline',
-        'qwen-edit:direct-inpaint',
-        'QwenImageEditModularPipeline',
-        'outpaint',
-        'Retains the reviewed canvas preparation and standard masked-edit semantics; native parity has not been established.',
-      ),
+      [
+        'qwen_inpaint_object_replace',
+        'qwen_inpaint_mask_draft',
+        'qwen_outpaint_aspect_template',
+        'qwen_outpaint_draft',
+      ],
+      qwenInpaintNativeCandidateSelection('qwen_inpaint_object_replace'),
     ),
     ...recipes(
       ['flux_fill_inpaint'],

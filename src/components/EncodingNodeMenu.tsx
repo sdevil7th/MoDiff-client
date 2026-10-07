@@ -13,9 +13,13 @@ import {
 } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { commitOperationGraph, operationGraphSignature } from '../workflow/operationGraphTransaction';
-import { unpackVisualOperationGroups } from '../workflow/visualOperationGroups';
+import {
+  unpackVisualOperationGroups,
+  visualOperationGroup,
+  VISUAL_STAGE_LABELS,
+  VISUAL_STAGE_NAMES,
+} from '../workflow/visualOperationGroupProjection';
 import NodeInspectionDetails from './NodeInspectionDetails';
-import { isFocusedGuidance } from '../workflow/encodingNodePresentation';
 
 export default function EncodingNodeMenu({
   node,
@@ -29,9 +33,20 @@ export default function EncodingNodeMenu({
   canSave: boolean;
 }) {
   const [docsOpen, setDocsOpen] = useState(false);
-  const guidance = isFocusedGuidance(node.data.blockInstanceV2);
-  const label = guidance ? 'Guidance' : 'Encode Inputs';
-  const separateLabel = `Separate ${guidance ? 'guidance' : 'encoding'} stages`;
+  const kind = visualOperationGroup(node)!;
+  const label = VISUAL_STAGE_LABELS[kind];
+  const separateLabel = `Separate ${VISUAL_STAGE_NAMES[kind]} stages`;
+  const description = {
+    guidance:
+      'Guidance combines the related Guider and Layers configuration. Schedulers and adapters remain separate nodes.',
+    inputs:
+      'Text and image stages both run when present. Collapsing a section only hides its fields. Load media separately and connect its output to the relevant input.',
+    setup:
+      'Model Setup contains this loader and its connected configuration or adapter nodes. Model and task changes review the complete connected workflow. Grouping does not load or cache models.',
+    mask: 'Prepare Mask contains the existing image source and Outpaint Canvas utility. Canvas geometry, mask feathering and the white-generate mask keep their original bindings. It does not add preprocessing to other masked tasks.',
+    output:
+      'Image Output runs the existing decoder and Preview Image nodes. Its image display uses the normal backend preview state; all declared output sockets remain available.',
+  }[kind];
   function separate() {
     try {
       const graph = useFlowStore.getState().toObject();
@@ -65,11 +80,7 @@ export default function EncodingNodeMenu({
       {docsOpen ? (
         <ModiffDialog open title={`${label} documentation`} onClose={() => setDocsOpen(false)}>
           <div className="grid gap-4">
-            <p>
-              {guidance
-                ? 'Guidance combines the related Guider and Layers configuration. Schedulers and adapters remain separate nodes.'
-                : 'Text and image stages both run when present. Collapsing a section only hides its fields. Load media separately and connect its output to the relevant input.'}
-            </p>
+            <p>{description}</p>
             {blockOperationGraphV2(node.data.blockInstanceV2!).nodes.map((stage) => (
               <section key={stage.id}>
                 <h3 className="mb-2 font-semibold">{stage.data.label}</h3>

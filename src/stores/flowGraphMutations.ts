@@ -10,6 +10,7 @@ import {
   setBlockPresentationV2,
 } from '../studio/blockRuntimeV2';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { useNodesStore } from './useNodeStore';
@@ -45,6 +46,7 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
     const definition = registry[`${node.data.module}.${node.data.action}`];
     const liveParams = definition?.params;
     const storedParams = node.data.params;
+    const operation = operationAuthoring(node)?.operation;
     const params = Object.fromEntries(
       Object.entries(storedParams).map(([fieldKey, storedParam]) => {
         const liveParam = liveParams?.[fieldKey];
@@ -68,6 +70,16 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
     );
     for (const [fieldKey, liveParam] of Object.entries(liveParams ?? {})) {
       if (hasOwn(storedParams, fieldKey)) continue;
+      // The generic registry contains sockets for other pipeline/task modes.
+      // An authored operation's selected contract owns its missing inputs;
+      // UI fields and hidden scalar defaults still hydrate normally.
+      if (
+        operation &&
+        liveParam.hidden &&
+        liveParam.display === 'input' &&
+        !operation.ports.some((port) => port.direction === 'input' && port.name === fieldKey)
+      )
+        continue;
       if (liveParam.display?.startsWith('ui_') || liveParam.hidden) params[fieldKey] = { ...liveParam };
     }
     return { ...node, data: { ...node.data, params } };

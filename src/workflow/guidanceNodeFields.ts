@@ -7,7 +7,7 @@ import { captureWorkflowOperationContext } from '../stores/useStudioStore';
 import { blockOperationGraphV2, blockControlParamsV2 } from '../studio/blockRuntimeV2';
 import type { BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isFocusedGuidance } from './encodingNodePresentation';
-import { unpackVisualOperationGroups, restoreVisualOperationGroups } from './visualOperationGroups';
+import { unpackVisualOperationGroups } from './visualOperationGroupProjection';
 import { operationGraphSignature, commitOperationGraph } from './operationGraphTransaction';
 import { requestJson } from '../utils/requestJson';
 import config from '../../app.config';
@@ -147,6 +147,7 @@ export async function updateGuidanceField(rootId: string, logicalId: string, val
       pending.delete(id);
     }
   }
+  const { restoreVisualOperationGroups } = await import('./visualOperationGroups');
   const restored = restoreVisualOperationGroups(next, unpacked);
   commitOperationGraph(restored, context, signature, 'Edit Guidance');
 }

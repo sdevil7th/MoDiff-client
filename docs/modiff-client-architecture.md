@@ -213,6 +213,47 @@ still owns values, interfaces and execution. Inspection is read-only; Separate
 stages is an explicit undoable structural edit. The interface inspector includes
 visible optional encoding sockets and labels their deferred stage preparation.
 
+Optional image Model Setup, Prepare Mask and Image Output use that same ordinary
+node shell and `BlockInstanceV2` contract. `visualOperationGroups` selects only
+existing eligible leaves: a loader with connected built-in descriptor/configuration
+utilities, an exact Load Image/Outpaint Canvas pair feeding both image and mask
+to the same masked consumer, or a declared image decoder plus its direct previews.
+Single loaders/whole-pipeline previews and unrelated/shared modifiers are not
+wrapped. Explicit stage actions leave other instances untouched and commit one
+history transaction; opening documents and current template defaults do not
+opt into these additional groups. Output preview bindings use the existing V2
+preview inventory and backend output-slot authority. Model Setup's projected
+loader resolves back to its unpacked runtime owner for the complete ordinary
+workflow planner, rather than adapting only the wrapper's implementation. Values,
+configured interfaces, immutable reusable snapshots and explicit save/separate
+behavior keep their existing authority.
+Optional groups retain ordinary type-inferred scalar editors even when registry
+fields omit `display`. An empty or suppressed field label uses its field name
+in the explicit interface; the original leaf field and value remain unchanged.
+`visualOperationGroupProjection` contains the ordinary renderer/store's
+read-only projection and shared-value planning. Structural grouping stays in
+the deferred `visualOperationGroups` planner; Guidance's asynchronous schema
+edit loads regrouping only when requested. Public graph helper exports and
+the same graph transaction remain unchanged.
+
+`operationComponentBundle` adds explicit **Use component bundle** / **Expose
+components** actions through those same workflow stage controls. It consumes
+parsed `semantics.suppliedBy` declarations and exact scoped component members;
+it does not dispatch on model names. The first backend declaration is native
+Qwen text to image. Existing loader-to-stage component fanout is replaced only
+where the aggregate provides those exact inputs, preserving loader and stage
+IDs, creative controls, the separate Guider, and unrelated branches. Independent
+suppliers, modifier paths, literal overrides and alternate aggregate sources
+leave the entire consumer's raw path unchanged because static type compatibility
+cannot prove the backend's sealed component identity. Breakout restores raw
+connections without replacing explicit inputs. Required-input/fix projection uses
+`componentBundleInputs`; backend object/role/owner/generation checks remain the
+execution authority. Each action commits the existing full-graph transaction,
+including visual-stage unwrapping/restoration and Undo. This prototype reduces
+Qwen T2I's four loader component edges to three, and leaves template defaults and
+previous documents unchanged. No alternate executor or hidden implementation
+collapse is introduced.
+
 Guidance interface edits record explicitly removed field bindings in optional
 `presentation.removedControlBindings` on the instance. The bounded, unique
 `{nodeId, fieldId}` list is visibility metadata, not an execution toggle. Removing
@@ -273,9 +314,10 @@ then stays mounted so focus changes do not discard open dialog state.
 
 Running from a V2 Block root or internal Block selects all enabled terminal
 branches in that semantic scope and their contained upstream dependencies.
-Outside suppliers are removed before validation and lowering, including public-input
-suppliers; stored internal fallbacks remain available. Whole-workflow execution keeps
-the crossing wires. Missing
+Wired outside suppliers and their upstream owners remain in the dependency closure
+before validation and lowering, including public-input suppliers. Disconnected
+unrelated owners remain outside selected execution. Stored internal fallbacks
+remain available. Missing
 previews never mean "run the whole workflow". Disabled descendants are excluded;
 an entirely disabled/non-executable selection produces an actionable error.
 The representative node used for run metadata still prefers a terminal media

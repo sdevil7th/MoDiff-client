@@ -8,7 +8,7 @@ import { operationAuthoring } from '../workflow/operationAuthoring';
 import { workflowChoices } from '../workflow/workflowChoices';
 import { ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import OperationGraphControls from './OperationGraphControls';
-import { visualOperationGroup } from '../workflow/visualOperationGroups';
+import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 const VisualStageControls = lazy(() => import('./VisualStageControls'));
 const OperationModelPicker = lazy(() => import('./OperationModelPicker'));
 

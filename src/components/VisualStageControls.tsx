@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Ellipsis } from 'lucide-react';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { captureWorkflowOperationContext, useStudioStore } from '../stores/useStudioStore';
@@ -16,16 +17,40 @@ import {
   unpackVisualOperationGroups,
   visualOperationGroup,
   type VisualOperationGroup,
+  availableOperationStageGroups,
+  visualOperationOwnerId,
 } from '../workflow/visualOperationGroups';
 import MediaAttachmentControls from './MediaAttachmentControls';
 import { useNodesStore } from '../stores/useNodeStore';
+import {
+  availableOperationComponentBundleActions,
+  setOperationComponentBundle,
+  type OperationComponentBundleAction,
+} from '../workflow/operationComponentBundle';
 import { executableMediaOperations, mediaAttachmentChoices } from '../workflow/mediaAttachment';
 
 /** Workflow-local presentation actions; saving a reusable definition is separate. */
 export default function VisualStageControls({ node }: { node: CustomNodeType }) {
   const [error, setError] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
-  const kind = visualOperationGroup(node);
+  const graph = useFlowStore(useShallow((state) => ({ nodes: state.nodes, edges: state.edges })));
+  const root = node.data.blockProjectionOwnerId && graph.nodes.find((n) => n.id === node.data.blockProjectionOwnerId);
+  const kind = visualOperationGroup(root || node);
+  const ownerId = visualOperationOwnerId(
+    graph,
+    node.data.blockProjectionNodeId ?? node.id,
+    node.data.blockProjectionOwnerId,
+  );
+  let available: VisualOperationGroup[] = [];
+  let bundleActions: OperationComponentBundleAction[] = [];
+  try {
+    if (!node.data.blockProjectionOwnerId || (root && visualOperationGroup(root))) {
+      available = availableOperationStageGroups(graph, ownerId);
+      bundleActions = availableOperationComponentBundleActions(graph, ownerId);
+    }
+  } catch {
+    // Ambiguous/shared ownership retains the existing planner restrictions.
+  }
   const operations = useNodesStore((state) => state.operationContracts);
   const support = useNodesStore((state) => state.pipelineSupport);
   const canAttach =
@@ -39,8 +64,8 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
       const graph = useFlowStore.getState().toObject();
       const context = captureWorkflowOperationContext();
       const next = group
-        ? groupOperationStages(graph, node.id, [group])
-        : unpackVisualOperationGroups(graph, new Set([node.id])).graph;
+        ? groupOperationStages(graph, ownerId, [group])
+        : unpackVisualOperationGroups(graph, new Set([root ? root.id : node.id])).graph;
       if (next === graph && !kind)
         throw new Error('No eligible ungrouped stages on this model branch. Existing groups are unchanged.');
       commitOperationGraph(
@@ -55,6 +80,23 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
       setError(failure instanceof Error ? failure.message : 'Could not group these stages.');
     }
   }
+  function applyBundle(action: OperationComponentBundleAction) {
+    try {
+      const graph = useFlowStore.getState().toObject();
+      const context = captureWorkflowOperationContext();
+      const next = setOperationComponentBundle(graph, ownerId, action);
+      commitOperationGraph(
+        next,
+        context,
+        operationGraphSignature(graph),
+        action === 'bundle' ? 'Use component bundle' : 'Expose components',
+      );
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not change these component connections.');
+    }
+  }
   return (
     <div className="nodrag nowheel grid gap-2 py-2">
       <ModiffMenuRoot>
@@ -64,23 +106,30 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
           </ModiffIconButton>
         </ModiffMenuTrigger>
         <ModiffMenuSurface layer="graph">
-          {kind ? (
-            <ModiffMenuAction onClick={() => apply()}>Ungroup stages</ModiffMenuAction>
-          ) : (
-            <>
-              {!node.data.blockProjectionOwnerId ? (
-                <>
-                  <ModiffMenuAction onClick={() => apply('inputs')}>Group input encoders</ModiffMenuAction>
-                  <ModiffMenuAction onClick={() => apply('guidance')}>Group guidance</ModiffMenuAction>
-                </>
-              ) : null}
-              {canAttach ? (
-                <ModiffMenuAction onClick={() => requestAnimationFrame(() => setAttachOpen(true))}>
-                  Add image / audio input…
-                </ModiffMenuAction>
-              ) : null}
-            </>
-          )}
+          {available.map((group) => (
+            <ModiffMenuAction key={group} onClick={() => apply(group)}>
+              {
+                {
+                  inputs: 'Group input encoders',
+                  guidance: 'Group guidance',
+                  setup: 'Group model setup',
+                  mask: 'Group mask preparation',
+                  output: 'Group image output',
+                }[group]
+              }
+            </ModiffMenuAction>
+          ))}
+          {bundleActions.map((action) => (
+            <ModiffMenuAction key={action} onClick={() => applyBundle(action)}>
+              {action === 'bundle' ? 'Use component bundle' : 'Expose components'}
+            </ModiffMenuAction>
+          ))}
+          {kind ? <ModiffMenuAction onClick={() => apply()}>Ungroup stages</ModiffMenuAction> : null}
+          {canAttach ? (
+            <ModiffMenuAction onClick={() => requestAnimationFrame(() => setAttachOpen(true))}>
+              Add image / audio input…
+            </ModiffMenuAction>
+          ) : null}
         </ModiffMenuSurface>
       </ModiffMenuRoot>
       {attachOpen ? (

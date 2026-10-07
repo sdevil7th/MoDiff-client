@@ -75,7 +75,8 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                 rows.append({"id": item["id"], "starter": starter, "spec": spec,
                              "capability": STUDIO_MODEL_CAPABILITIES[binding["modelType"]]})
             for key in ("modules.ModularDiffusers.Lora", "modules.DiffusersImage.LoadAdapter",
-                        "modules.Spandrel.Upscaler", "modules.Image.Preview"):
+                        "modules.Spandrel.Upscaler", "modules.Image.Preview",
+                        "modules.DiffusersImage.OutpaintCanvas"):
                 describe(key)
     json.dump({"recipes": rows, "registry": registry, "capabilities": public_capabilities,
                "publicPayload": public_payload}, sys.stdout)

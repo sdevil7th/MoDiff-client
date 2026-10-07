@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { after, before, beforeEach, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1608,4 +1609,60 @@ test('cycle validation supports expanded internal reconnects without adding exte
     true,
   );
   assert.deepEqual({ nodes, edges }, before);
+});
+
+test('operation hydration restores only declared missing hidden input sockets while preserving widgets and live actions', async () => {
+  const fixture = JSON.parse(
+    await readFile(new URL('../tests/fixtures/qwen-component-bundle-contract.v1.json', import.meta.url), 'utf8'),
+  );
+  const { parseOperationContracts } = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const operation = parseOperationContracts(fixture.contracts, 3).find(
+    (item) => item.nodeKey === 'modules.ModularDiffusers.DecodeLatents',
+  );
+  const stored = node('decode', {
+    latents: { type: 'latents', display: 'input', required: true, onSignal: 'untrusted_saved_action' },
+  });
+  Object.assign(stored.data, {
+    module: 'modules.ModularDiffusers',
+    action: 'DecodeLatents',
+    operationAuthoring: { schemaVersion: 1, operation, defaults: {}, retained: [] },
+  });
+  const live = {
+    latents: { type: 'latents', display: 'input', hidden: true, onSignal: 'current_live_action' },
+    pipeline_components: { type: 'diffusers_modular_pipeline_components', display: 'input', hidden: true },
+    foreign_components: { type: 'diffusers_modular_pipeline_components', display: 'input', hidden: true },
+    hidden_width: { type: 'int', display: 'number', hidden: true, default: 64 },
+    hidden_mode: { type: 'string', display: 'select', hidden: true, default: 'native' },
+    hidden_default: { type: 'float', hidden: true, default: 0.75 },
+    preview: { display: 'ui_image', type: 'image', dataSource: 'file' },
+  };
+  nodeStoreModule.useNodesStore.setState({
+    nodesRegistry: { [operation.nodeKey]: { ...stored.data, params: live } },
+  });
+  const before = structuredClone(stored);
+  flowStoreModule.useFlowStore.getState().replaceGraph({ nodes: [stored], edges: [] });
+  const params = flowStoreModule.useFlowStore.getState().nodes[0].data.params;
+  assert.equal(params.foreign_components, undefined, 'an absent socket from another route must stay absent');
+  for (const field of ['pipeline_components', 'hidden_width', 'hidden_mode', 'hidden_default', 'preview']) {
+    const hydrated = { ...params[field] };
+    delete hydrated.isConnected;
+    assert.deepEqual(hydrated, live[field], field);
+  }
+  assert.equal(params.latents.required, true);
+  assert.equal(params.latents.onSignal, 'current_live_action');
+  assert.deepEqual(stored, before, 'hydration must not mutate the saved document');
+});
+
+test('missing hidden socket hydration preserves legacy behavior without a parsed operation hint', () => {
+  const missing = { type: 'components', display: 'input', hidden: true };
+  const definition = node('legacy', { missing });
+  nodeStoreModule.useNodesStore.setState({ nodesRegistry: { 'modules.Test.legacy': definition.data } });
+  for (const hint of [undefined, { schemaVersion: 1, operation: { ports: [] }, defaults: {}, retained: [] }]) {
+    const stored = node('legacy', {}, { ...(hint ? { operationAuthoring: hint } : {}) });
+    flowStoreModule.useFlowStore.getState().replaceGraph({ nodes: [stored], edges: [] });
+    assert.deepEqual(flowStoreModule.useFlowStore.getState().nodes[0].data.params.missing, {
+      ...missing,
+      isConnected: false,
+    });
+  }
 });

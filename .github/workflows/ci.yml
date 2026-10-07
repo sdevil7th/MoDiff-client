@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Paired native-uv runtime and ordinary image-template contracts.
-          ref: 36d36d9e594ce0212abfb3d825ef72044b401215
+          # Paired guidance, component-bundle and native masked-template contracts.
+          ref: 123ede05172fe6049922af014e0bfb5b1dff7aa1
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

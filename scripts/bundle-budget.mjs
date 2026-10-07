@@ -217,7 +217,13 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // stay in lazy template authoring. Measured aggregate is 258637 bytes (+345;
 // 329 bytes in that helper). Allow 384 bytes above the former 258304-byte cap;
 // startup, the 64 KiB per-chunk ceiling and loading boundaries stay unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384;
+// Reviewed guidance transfer, component-bundle authoring, optional stage
+// controls and native masked recipes measure 267262 deferred bytes. Read-only
+// visual projection keeps structural grouping out of startup. Exact archived
+// runtime restoration and the native recipe checks add 1316 bytes to the last
+// reviewed build. Bound these features and relocation at 8.5 KiB above the
+// former aggregate cap; startup and both per-chunk caps stay fixed.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

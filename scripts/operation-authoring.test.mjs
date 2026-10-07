@@ -2216,6 +2216,683 @@ test('a whole-pipeline round trip restores custom text to the dedicated prompt s
   assert.equal(returned.graph.nodes.find((node) => node.id === wire.target).data.params.prompt.isInput, false);
 });
 
+function declaredGuidance(pipeline = 'FuturePipeline', options = {}) {
+  const item = starter(pipeline);
+  const node = item.nodes[1];
+  const controls = {
+    guider: { type: 'string', display: 'select', value: 'ClassifierFreeGuidance' },
+    enabled: { type: 'boolean', display: 'switch', value: true },
+    use_original_formulation: { type: 'boolean', display: 'switch', value: false },
+    guidance_scale: { type: 'float', display: 'number', value: 3.5 },
+  };
+  Object.assign(node.node.params, controls);
+  const control = {
+    technique: 'classifier_free',
+    parameter: 'scale',
+    compatibilityScope: 'diffusers.classifier_free.v1',
+    scaleMeaning: 'cfg_prediction_mix',
+    enabled: 'boolean_field',
+    enabledField: 'enabled',
+    formulation: 'boolean_field',
+    formulationField: 'use_original_formulation',
+    selectorField: 'guider',
+    selectorValue: 'ClassifierFreeGuidance',
+    negativeConditioning: 'pipeline_scoped_when_enabled',
+    negativeConditioningScope: pipeline,
+    ...options,
+  };
+  for (const [name, field] of Object.entries(controls)) {
+    node.operation.ports.push({
+      name,
+      semanticName: name,
+      direction: 'input',
+      roles: ['value'],
+      types: [field.type],
+      required: false,
+      hidden: false,
+      semantics: {
+        kind: 'value',
+        scope: null,
+        state: null,
+        owner: 'none',
+        members: [],
+        ...(name === 'guidance_scale' ? { control } : {}),
+      },
+    });
+  }
+  return item;
+}
+
+test('an unchanged route attachment retains authored hidden runtime values while a new task adopts its defaults', () => {
+  const recipe = starter();
+  recipe.nodes[0].node.params.repo_id = {
+    type: 'model',
+    display: 'modelselect',
+    value: { source: 'hub', value: 'org/model' },
+  };
+  for (const stage of recipe.nodes) {
+    stage.node.params.runtime_variant = {
+      type: 'string',
+      display: 'select',
+      hidden: true,
+      options: ['native', 'compatible'],
+      value: 'native',
+    };
+    stage.operation.ports.push({
+      name: 'runtime_variant',
+      semanticName: 'runtime_variant',
+      direction: 'input',
+      roles: ['value'],
+      types: ['string'],
+      required: false,
+      hidden: true,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [] },
+    });
+  }
+  const graph = authoring.createOperationStarter(recipe, { x: 0, y: 0 });
+  graph.nodes.forEach((node) => {
+    node.data.params.runtime_variant.value = 'compatible';
+  });
+  const preserved = authoring.planOperationChange(graph, graph.nodes[0].id, recipe, { preserveValues: true });
+  assert.ok(preserved.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'compatible'));
+  const nextTask = structuredClone(recipe);
+  nextTask.task = 'image_to_image';
+  nextTask.workflowId = 'image_to_image';
+  for (const stage of nextTask.nodes) {
+    stage.operation.task = nextTask.task;
+    stage.operation.workflowId = nextTask.workflowId;
+  }
+  const changed = authoring.planOperationChange(graph, graph.nodes[0].id, nextTask, { preserveValues: true });
+  assert.ok(changed.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'native'));
+  const nextModel = structuredClone(recipe);
+  nextModel.nodes[0].node.params.repo_id.value = { source: 'hub', value: 'org/other-model' };
+  const replaced = authoring.planOperationChange(graph, graph.nodes[0].id, nextModel, {
+    preserveValues: true,
+    replaceModel: true,
+  });
+  assert.ok(replaced.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'native'));
+  const rebound = structuredClone(recipe);
+  for (const stage of rebound.nodes) {
+    stage.operation.binding = { ...stage.operation.binding, values: { runtime_variant: 'native' } };
+  }
+  const bound = authoring.planOperationChange(graph, graph.nodes[0].id, rebound, { preserveValues: true });
+  assert.ok(bound.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'native'));
+  const reset = authoring.planOperationChange(graph, graph.nodes[0].id, recipe, {
+    preserveValues: true,
+    restoreDefaults: true,
+  });
+  assert.ok(reset.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'native'));
+  for (const [sourceSelector, targetSelector, expected] of [
+    [{ source: 'local', value: '/models/model' }, { source: 'local', value: '/models/model' }, 'compatible'],
+    ['org/model', 'org/model', 'compatible'],
+    [{ source: 'hub', value: 'org/model' }, { source: 'local', value: 'org/model' }, 'native'],
+    [{ source: 'unknown', value: 'org/model' }, { source: 'unknown', value: 'org/model' }, 'native'],
+    [{ source: 'hub', value: '   ' }, { source: 'hub', value: '   ' }, 'native'],
+    [{ source: 'hub', value: ['org/model'] }, { source: 'hub', value: ['org/model'] }, 'native'],
+    [
+      { source: 'hub', value: 'org/model', sha256: 'old' },
+      { source: 'hub', value: 'org/model', sha256: 'new' },
+      'native',
+    ],
+  ]) {
+    const source = structuredClone(graph);
+    source.nodes[0].data.params.repo_id.value = sourceSelector;
+    const target = structuredClone(recipe);
+    target.nodes[0].node.params.repo_id.value = targetSelector;
+    const result = authoring.planOperationChange(source, source.nodes[0].id, target, { preserveValues: true });
+    assert.ok(
+      result.graph.nodes.every((node) => node.data.params.runtime_variant.value === expected),
+      `Exact durable owner identity: ${JSON.stringify([sourceSelector, targetSelector])}`,
+    );
+  }
+});
+
+function archivedHiddenRuntimeFixture() {
+  const recipe = starter();
+  recipe.nodes[0].node.params.repo_id = {
+    type: 'model',
+    display: 'modelselect',
+    value: { source: 'hub', value: 'org/model' },
+  };
+  for (const stage of recipe.nodes) {
+    stage.node.params.runtime_variant = {
+      type: 'string',
+      display: 'select',
+      hidden: true,
+      options: ['native', 'compatible'],
+      value: 'native',
+    };
+    stage.operation.ports.push({
+      name: 'runtime_variant',
+      semanticName: 'runtime_variant',
+      direction: 'input',
+      roles: ['value'],
+      types: ['string'],
+      required: false,
+      hidden: true,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [] },
+    });
+  }
+  const graph = authoring.createOperationStarter(recipe, { x: 0, y: 0 });
+  graph.nodes.forEach((node) => {
+    node.data.params.runtime_variant.value = 'compatible';
+  });
+  const next = structuredClone(recipe);
+  next.task = next.workflowId = 'image_to_image';
+  for (const stage of next.nodes) stage.operation.task = stage.operation.workflowId = next.task;
+  const away = authoring.planOperationChange(graph, graph.nodes[0].id, next).graph;
+  const owner = away.nodes.find((node) => node.data.action === 'Load');
+  return { recipe, away, owner, archive: owner.data.operationAuthoring.inactiveDrafts[0] };
+}
+
+test('exact archived route return restores its authored hidden runtime literals together', () => {
+  const { recipe, away, owner } = archivedHiddenRuntimeFixture();
+  const before = structuredClone(away);
+  const returned = authoring.planOperationChange(away, owner.id, recipe);
+  assert.ok(returned.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'compatible'));
+  assert.ok(returned.review.preserved.some((message) => /runtime settings.*inactive draft/i.test(message)));
+  assert.deepEqual(away, before, 'return preview must not alter the archive or current workflow');
+  const reset = authoring.planOperationChange(away, owner.id, recipe, { restoreDefaults: true });
+  assert.ok(reset.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'native'));
+});
+
+test('bound hidden identity selectors stay under fresh binding authority during runtime draft recovery', () => {
+  const { recipe, away, owner, archive } = archivedHiddenRuntimeFixture();
+  for (const [index, stage] of recipe.nodes.entries()) {
+    stage.node.params.bound_identity = { type: 'string', hidden: true, value: 'exact' };
+    stage.operation.binding.values.bound_identity = 'exact';
+    stage.operation.ports.push({
+      name: 'bound_identity',
+      semanticName: 'bound_identity',
+      direction: 'input',
+      roles: ['value'],
+      types: ['string'],
+      required: false,
+      hidden: true,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [] },
+    });
+    archive.nodes[index].data.operationAuthoring.operation = structuredClone(stage.operation);
+    archive.nodes[index].data.params.bound_identity = { ...stage.node.params.bound_identity, value: 'stale' };
+    archive.nodes[index].data.operationAuthoring.authored = ['runtime_variant', 'bound_identity'];
+  }
+  const returned = authoring.planOperationChange(away, owner.id, recipe);
+  assert.ok(returned.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'compatible'));
+  assert.ok(returned.graph.nodes.every((node) => node.data.params.bound_identity.value === 'exact'));
+});
+
+test('regrouping unchanged stages and returning to their snapshot derives the actual customization state', async () => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const ordinary = graph();
+  const grouped = visual.groupVisualStages(ordinary, [ordinary.nodes[1].id], 'inputs');
+  const initial = structuredClone(grouped);
+  const root = grouped.nodes.find((node) => node.data.blockInstanceV2);
+  const same = visual.groupVisualStages(ordinary, [ordinary.nodes[1].id], 'inputs', root);
+  const sameInstance = same.nodes.find((node) => node.id === root.id).data.blockInstanceV2;
+  assert.equal(sameInstance.customization.state, 'unchanged');
+  assert.deepEqual(sameInstance.definitionSnapshot, root.data.blockInstanceV2.definitionSnapshot);
+  assert.deepEqual(sameInstance.effectiveGraph, root.data.blockInstanceV2.effectiveGraph);
+
+  const promptControl = root.data.blockInstanceV2.effectiveInterface.controls.find(
+    (control) => control.binding.fieldId === 'prompt',
+  );
+  const parameterEdit = structuredClone(grouped);
+  const parameterRoot = parameterEdit.nodes.find((node) => node.id === root.id);
+  parameterRoot.data.blockInstanceV2 = runtime.setBlockInstanceValueV2(
+    parameterRoot.data.blockInstanceV2,
+    promptControl.controlId,
+    'Public override',
+  );
+  assert.equal(parameterRoot.data.blockInstanceV2.customization.state, 'parameters_changed');
+  const parameterUnpacked = visual.unpackVisualOperationGroups(parameterEdit);
+  const parameterRegrouped = visual.restoreVisualOperationGroups(parameterUnpacked.graph, parameterUnpacked);
+  assert.equal(
+    visual.unpackVisualOperationGroups(parameterRegrouped).graph.nodes.find((node) => node.data.action === 'Denoise')
+      .data.params.prompt.value,
+    'Public override',
+    'regrouping materializes and keeps the public parameter override',
+  );
+  assert.equal(
+    parameterRegrouped.nodes.find((node) => node.id === root.id).data.blockInstanceV2.customization.state,
+    'structure_changed',
+    'materialized parameter overrides differ from the immutable base graph',
+  );
+
+  const changed = structuredClone(ordinary);
+  changed.nodes.find((node) => node.data.action === 'Denoise').data.params.prompt.value = 'Changed prompt';
+  const edited = visual.groupVisualStages(changed, [ordinary.nodes[1].id], 'inputs', root);
+  assert.equal(
+    edited.nodes.find((node) => node.id === root.id).data.blockInstanceV2.customization.state,
+    'structure_changed',
+  );
+  const restored = visual.groupVisualStages(
+    ordinary,
+    [ordinary.nodes[1].id],
+    'inputs',
+    edited.nodes.find((node) => node.id === root.id),
+  );
+  const restoredInstance = restored.nodes.find((node) => node.id === root.id).data.blockInstanceV2;
+  assert.equal(restoredInstance.customization.state, 'unchanged');
+  assert.deepEqual(restoredInstance.definitionSnapshot, root.data.blockInstanceV2.definitionSnapshot);
+  assert.deepEqual(restoredInstance.effectiveGraph, root.data.blockInstanceV2.effectiveGraph);
+  assert.deepEqual(grouped, initial, 'regrouping never mutates the reusable snapshot or original instance');
+});
+
+for (const [name, change] of [
+  [
+    'another archived owner',
+    ({ archive }) => {
+      archive.nodes[0].data.params.repo_id.value = { source: 'hub', value: 'org/other' };
+    },
+  ],
+  [
+    'another archived revision',
+    ({ archive }) => {
+      archive.nodes[0].data.params.revision = { type: 'string', value: 'other' };
+    },
+  ],
+  [
+    'another archived task',
+    ({ archive }) => {
+      archive.nodes[0].data.operationAuthoring.operation.task = 'outpaint';
+    },
+  ],
+  [
+    'changed archived binding',
+    ({ archive }) => {
+      archive.nodes[1].data.operationAuthoring.operation.binding.values.other = 'bound';
+    },
+  ],
+  [
+    'changed archived value port',
+    ({ archive }) => {
+      archive.nodes[1].data.operationAuthoring.operation.ports.find((p) => p.name === 'runtime_variant').semanticName =
+        'another_runtime';
+    },
+  ],
+  [
+    'changed destination visibility',
+    ({ recipe }) => {
+      recipe.nodes[1].node.params.runtime_variant.hidden = false;
+    },
+  ],
+  [
+    'changed destination type',
+    ({ recipe }) => {
+      recipe.nodes[1].node.params.runtime_variant.type = 'int';
+    },
+  ],
+  [
+    'rejected destination value',
+    ({ recipe }) => {
+      recipe.nodes[1].node.params.runtime_variant.options = ['native'];
+    },
+  ],
+  [
+    'archived runtime wire',
+    ({ archive }) => {
+      archive.edges.push({
+        id: 'runtime-wire',
+        source: 'external',
+        sourceHandle: 'value',
+        target: archive.nodes[1].id,
+        targetHandle: 'runtime_variant',
+      });
+    },
+  ],
+  [
+    'archived connected marker',
+    ({ archive }) => {
+      archive.nodes[1].data.params.runtime_variant.isConnected = true;
+    },
+  ],
+  [
+    'fresh runtime wire',
+    ({ recipe }) => {
+      recipe.edges.push({
+        source: 'diffusion.load_models',
+        sourceHandle: 'models',
+        target: 'diffusion.denoise',
+        targetHandle: 'runtime_variant',
+      });
+    },
+  ],
+  [
+    'removed destination runtime port',
+    ({ recipe }) => {
+      recipe.nodes[1].operation.ports = recipe.nodes[1].operation.ports.filter((p) => p.name !== 'runtime_variant');
+    },
+  ],
+  [
+    'fresh connected marker',
+    ({ recipe }) => {
+      recipe.nodes[1].node.params.runtime_variant.isConnected = true;
+    },
+  ],
+  [
+    'new bound runtime selector',
+    ({ recipe }) => {
+      recipe.nodes[1].operation.binding.values.runtime_variant = 'native';
+    },
+  ],
+])
+  test(`archived hidden runtime restoration is atomic and reviewed with ${name}`, () => {
+    const value = archivedHiddenRuntimeFixture();
+    change(value);
+    const before = structuredClone(value.away);
+    const result = authoring.planOperationChange(value.away, value.owner.id, value.recipe);
+    assert.ok(result.graph.nodes.every((node) => node.data.params.runtime_variant.value === 'native'));
+    assert.equal(result.review.required, true);
+    assert.ok(result.review.attention.some((message) => /runtime settings.*archived.*defaults/i.test(message)));
+    assert.deepEqual(value.away, before, 'failed restoration keeps the original archive intact');
+  });
+
+test('explicitly compatible CFG settings transfer across families without moving conditioning ownership', () => {
+  const source = authoring.createOperationStarter(declaredGuidance(), { x: 0, y: 0 });
+  source.nodes[1].data.params.guidance_scale.value = 7;
+  const before = structuredClone(source);
+  const changed = authoring.planOperationChange(source, source.nodes[0].id, declaredGuidance('OtherPipeline'));
+  const stage = changed.graph.nodes.find((node) => node.data.action === 'Denoise');
+  assert.equal(stage.data.params.guidance_scale.value, 7);
+  assert.equal(stage.data.operationAuthoring.retained.length, 0);
+  assert.equal(
+    stage.data.operationAuthoring.operation.ports.find((p) => p.name === 'guidance_scale').semantics.control
+      .negativeConditioningScope,
+    'OtherPipeline',
+  );
+  assert.deepEqual(source, before, 'Preview does not mutate the original workflow.');
+});
+
+test('reviewed control aliases transfer by declared meaning rather than field labels', () => {
+  const source = authoring.createOperationStarter(declaredGuidance(), { x: 0, y: 0 });
+  source.nodes[1].data.params.guidance_scale.value = 7;
+  const target = declaredGuidance('OtherPipeline');
+  const node = target.nodes[1];
+  node.node.params.true_cfg_scale = node.node.params.guidance_scale;
+  delete node.node.params.guidance_scale;
+  const port = node.operation.ports.find((p) => p.name === 'guidance_scale');
+  port.name = 'true_cfg_scale';
+  port.semanticName = 'true_cfg_scale';
+  const changed = authoring.planOperationChange(source, source.nodes[0].id, target);
+  const stage = changed.graph.nodes.find((node) => node.data.action === 'Denoise');
+  assert.equal(stage.data.params.true_cfg_scale.value, 7);
+  assert.equal(stage.data.operationAuthoring.retained.length, 0);
+});
+
+test('unchanged model attachment preserves unresolved distilled values and wires without authorizing model transfer', () => {
+  const recipe = declaredGuidance();
+  recipe.nodes[0].node.params.repo_id = {
+    type: 'model',
+    display: 'modelselect',
+    value: { source: 'hub', value: 'org/model' },
+  };
+  recipe.nodes[1].operation.ports.find((p) => p.name === 'guidance_scale').semantics.control.enabled = 'model_config';
+  recipe.nodes[1].operation.ports.find((p) => p.name === 'guidance_scale').semantics.control.enabledField = null;
+  const source = authoring.createOperationStarter(recipe, { x: 0, y: 0 });
+  source.nodes[1].data.params.guidance_scale.value = 7;
+  source.nodes[1].data.params.guidance_scale.isInput = true;
+  const input = {
+    id: 'external-guidance',
+    type: 'custom',
+    position: { x: -400, y: 0 },
+    data: {
+      module: 'modules.Test',
+      action: 'Scalar',
+      label: 'Guidance value',
+      params: { value: { type: 'float', display: 'output' } },
+    },
+  };
+  source.nodes.push(input);
+  source.edges.push({
+    id: 'external-guidance-wire',
+    source: input.id,
+    sourceHandle: 'value',
+    target: source.nodes[1].id,
+    targetHandle: 'guidance_scale',
+  });
+  const preserved = authoring.planOperationChange(source, source.nodes[0].id, recipe, { preserveValues: true });
+  assert.equal(preserved.graph.nodes.find((n) => n.data.action === 'Denoise').data.params.guidance_scale.value, 7);
+  assert.ok(preserved.graph.edges.some((e) => e.id === 'external-guidance-wire'));
+  const reset = authoring.planOperationChange(source, source.nodes[0].id, recipe, { restoreDefaults: true });
+  assert.ok(
+    reset.graph.edges.some((e) => e.id === 'external-guidance-wire'),
+    "Resetting unconnected creative defaults preserves the unchanged model's connected distilled control.",
+  );
+  const different = structuredClone(recipe);
+  different.nodes[0].node.params.repo_id.value = { source: 'hub', value: 'org/other-model' };
+  const changed = authoring.planOperationChange(source, source.nodes[0].id, different, { replaceModel: true });
+  assert.equal(changed.graph.nodes.find((n) => n.data.action === 'Denoise').data.params.guidance_scale.value, 3.5);
+  assert.ok(!changed.graph.edges.some((e) => e.id === 'external-guidance-wire'));
+});
+
+test('empty negative text is a supplied condition, while wired or absent conditioning remains unresolved', () => {
+  const direct = (negative) => {
+    const value = declaredGuidance('OtherPipeline', {
+      negativePromptField: 'negative_prompt',
+      negativePromptPolicy: 'empty_string_is_condition',
+    });
+    value.nodes[1].node.params.negative_prompt = { type: 'string', display: 'text', value: negative };
+    value.nodes[1].operation.ports.push({
+      name: 'negative_prompt',
+      semanticName: 'negative_prompt',
+      direction: 'input',
+      roles: ['value'],
+      types: ['string'],
+      required: false,
+      hidden: false,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [] },
+    });
+    return value;
+  };
+  const source = authoring.createOperationStarter(declaredGuidance(), { x: 0, y: 0 });
+  source.nodes[1].data.params.guidance_scale.value = 7;
+  const supplied = authoring.planOperationChange(source, source.nodes[0].id, direct(''));
+  assert.equal(supplied.graph.nodes.find((n) => n.data.action === 'Denoise').data.params.guidance_scale.value, 7);
+  const absent = authoring.planOperationChange(source, source.nodes[0].id, direct(undefined));
+  assert.equal(absent.graph.nodes.find((n) => n.data.action === 'Denoise').data.params.guidance_scale.value, 3.5);
+});
+
+test('a direct-pipeline scale must preserve the effective CFG switch after transfer', () => {
+  const source = authoring.createOperationStarter(declaredGuidance(), { x: 0, y: 0 });
+  source.nodes[1].data.params.guidance_scale.value = 0;
+  const target = declaredGuidance('OtherPipeline', { enabled: 'scale_gt_one', enabledField: 'guidance_scale' });
+  const changed = authoring.planOperationChange(source, source.nodes[0].id, target);
+  const stage = changed.graph.nodes.find((node) => node.data.action === 'Denoise');
+  assert.equal(stage.data.params.guidance_scale.value, 3.5);
+  assert.ok(
+    stage.data.operationAuthoring.retained.some((entry) => entry.field === 'guidance_scale' && entry.value === 0),
+  );
+  assert.equal(changed.review.required, true);
+});
+
+test('wired guidance policy is unresolved even if the inline fallback looks compatible', () => {
+  const source = authoring.createOperationStarter(declaredGuidance(), { x: 0, y: 0 });
+  source.nodes[1].data.params.guidance_scale.value = 7;
+  source.nodes.push({
+    id: 'policy',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      module: 'custom.Policy',
+      action: 'Value',
+      params: { value: { display: 'output', type: 'boolean' } },
+    },
+  });
+  source.nodes[1].data.params.enabled.isInput = true;
+  source.edges.push({
+    id: 'enabled-wire',
+    source: 'policy',
+    sourceHandle: 'value',
+    target: source.nodes[1].id,
+    targetHandle: 'enabled',
+  });
+  const changed = authoring.planOperationChange(source, source.nodes[0].id, declaredGuidance('OtherPipeline'));
+  const stage = changed.graph.nodes.find((node) => node.data.action === 'Denoise');
+  assert.equal(stage.data.params.guidance_scale.value, 3.5);
+  assert.ok(
+    stage.data.operationAuthoring.retained.some((entry) => entry.field === 'guidance_scale' && entry.value === 7),
+  );
+  assert.equal(changed.review.required, true);
+});
+
+test('external CFG scale wiring is preserved only for an explicitly compatible target policy', () => {
+  const source = authoring.createOperationStarter(declaredGuidance(), { x: 0, y: 0 });
+  source.nodes[1].data.params.guidance_scale.value = 7;
+  source.nodes.push({
+    id: 'scale',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      module: 'custom.Scale',
+      action: 'Value',
+      params: { value: { display: 'output', type: 'float' } },
+    },
+  });
+  source.nodes[1].data.params.guidance_scale.isInput = true;
+  source.edges.push({
+    id: 'scale-wire',
+    source: 'scale',
+    sourceHandle: 'value',
+    target: source.nodes[1].id,
+    targetHandle: 'guidance_scale',
+  });
+  const compatible = authoring.planOperationChange(source, source.nodes[0].id, declaredGuidance('OtherPipeline'));
+  assert.ok(compatible.graph.edges.some((edge) => edge.id === 'scale-wire'));
+  const target = declaredGuidance('OtherPipeline');
+  target.nodes[1].node.params.use_original_formulation.value = true;
+  const incompatible = authoring.planOperationChange(source, source.nodes[0].id, target);
+  assert.ok(!incompatible.graph.edges.some((edge) => edge.id === 'scale-wire'));
+  assert.ok(incompatible.graph.nodes.some((node) => node.id === 'scale'));
+  assert.equal(incompatible.review.required, true);
+  assert.ok(incompatible.review.attention.some((message) => /disconnect/i.test(message)));
+  const threshold = authoring.planOperationChange(
+    source,
+    source.nodes[0].id,
+    declaredGuidance('OtherPipeline', { enabled: 'scale_gt_one', enabledField: 'guidance_scale' }),
+  );
+  assert.ok(!threshold.graph.edges.some((edge) => edge.id === 'scale-wire'));
+  assert.ok(threshold.graph.nodes.some((node) => node.id === 'scale'));
+  assert.equal(threshold.review.required, true);
+  assert.ok(threshold.review.attention.some((message) => /disconnect/i.test(message)));
+});
+
+test('actual CFG contracts never use a wired scale fallback to prove the destination activation policy', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const fixture = JSON.parse(
+    await readFile(new URL('../tests/fixtures/guidance-control-contract.v1.json', import.meta.url)),
+  );
+  const { compatibleOperationControlTransfer } = await server.ssrLoadModule(
+    '/src/workflow/operationControlTransfer.ts',
+  );
+  const contract = (pipeline, nodeKey) => {
+    const operation = fixture.contracts.find((item) => item.pipelineClass === pipeline && item.nodeKey === nodeKey);
+    assert.ok(operation);
+    return operation;
+  };
+  const node = (operation, values) => ({
+    id: operation.pipelineClass,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      module: operation.nodeKey.slice(0, operation.nodeKey.lastIndexOf('.')),
+      action: operation.nodeKey.split('.').at(-1),
+      params: Object.fromEntries(Object.entries(values).map(([field, value]) => [field, { value }])),
+    },
+  });
+  const sourceContract = contract('StableDiffusionXLModularPipeline', 'modules.ModularDiffusers.Guider');
+  const targetContract = contract('FluxPipeline', 'modules.DiffusersImage.Generate');
+  const nativeContract = contract('FluxModularPipeline', 'modules.ModularDiffusers.Guider');
+  const control = (operation) => operation.ports.find((port) => port.name === 'guidance_scale').semantics.control;
+  const source = node(sourceContract, {
+    guider: 'ClassifierFreeGuidance',
+    enabled: true,
+    use_original_formulation: false,
+    guidance_scale: 7,
+  });
+  const target = node(targetContract, { guidance_scale: 7, negative_prompt: '' });
+  const native = node(nativeContract, {
+    guider: 'ClassifierFreeGuidance',
+    enabled: true,
+    use_original_formulation: false,
+    guidance_scale: 7,
+  });
+  const compatible = (destination, destinationContract, connected = new Set()) =>
+    compatibleOperationControlTransfer(
+      source,
+      'guidance_scale',
+      control(sourceContract),
+      destination,
+      'guidance_scale',
+      control(destinationContract),
+      connected,
+      new Set(),
+    );
+  assert.equal(compatible(target, targetContract), true, 'the known literal retains enabled CFG');
+  assert.equal(
+    compatible(target, targetContract, new Set(['guidance_scale'])),
+    false,
+    'a wire can supply zero regardless of its fallback',
+  );
+  assert.equal(
+    compatible(native, nativeContract, new Set(['guidance_scale'])),
+    true,
+    'native boolean activation does not depend on the unknown scale',
+  );
+  source.data.params.guidance_scale.isConnected = true;
+  assert.equal(compatible(target, targetContract), false, 'the connected field marker must also stay opaque');
+  assert.equal(compatible(native, nativeContract), true);
+});
+
+for (const [name, change] of [
+  [
+    'different formulation',
+    (item) => {
+      item.nodes[1].node.params.use_original_formulation.value = true;
+    },
+  ],
+  [
+    'disabled guidance',
+    (item) => {
+      item.nodes[1].node.params.enabled.value = false;
+    },
+  ],
+  [
+    'another guider technique',
+    (item) => {
+      item.nodes[1].node.params.guider.value = 'OtherGuidance';
+    },
+  ],
+  [
+    'unknown component enablement',
+    (item) => {
+      const control = item.nodes[1].operation.ports.find((p) => p.name === 'guidance_scale').semantics.control;
+      control.enabled = 'model_config';
+      control.enabledField = null;
+    },
+  ],
+  [
+    'unrelated compatibility scope',
+    (item) => {
+      item.nodes[1].operation.ports.find((p) => p.name === 'guidance_scale').semantics.control.compatibilityScope =
+        'reviewed.unrelated.v1';
+    },
+  ],
+]) {
+  test(`guidance transfer retains the edited value for review with ${name}`, () => {
+    const source = authoring.createOperationStarter(declaredGuidance(), { x: 0, y: 0 });
+    source.nodes[1].data.params.guidance_scale.value = 7;
+    const target = declaredGuidance('OtherPipeline');
+    change(target);
+    const changed = authoring.planOperationChange(source, source.nodes[0].id, target);
+    const stage = changed.graph.nodes.find((node) => node.data.action === 'Denoise');
+    assert.equal(stage.data.params.guidance_scale.value, 3.5);
+    assert.ok(
+      stage.data.operationAuthoring.retained.some((entry) => entry.field === 'guidance_scale' && entry.value === 7),
+    );
+    assert.equal(changed.review.required, true);
+  });
+}
+
 test('matching guidance labels do not establish cross-family guidance semantics', () => {
   const source = starter();
   const target = starter('DistilledPipeline');

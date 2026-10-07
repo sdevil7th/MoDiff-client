@@ -17,7 +17,7 @@ let server,
   nodeStore,
   studioStore,
   lifecycle;
-let publicOperations, starterRequests;
+let publicOperations, starterRequests, qwenInpaintCandidate, qwenInpaintCandidateFixture;
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -40,6 +40,7 @@ before(async () => {
   ({ STUDIO_TEMPLATES: templates } = await server.ssrLoadModule('/src/studio/templates.ts'));
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
   builder = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
+  qwenInpaintCandidate = await server.ssrLoadModule('/src/studio/qwenInpaintNativeCandidate.ts');
   groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   values = await server.ssrLoadModule('/src/studio/executionSpecValues.ts');
   ({ DEFAULT_STUDIO_FORM: defaults } = await server.ssrLoadModule('/src/studio/modelProfiles.ts'));
@@ -70,8 +71,210 @@ before(async () => {
       },
     ),
   );
+  const { qwenInpaintNativeCandidateSelection } = await server.ssrLoadModule(
+    '/src/studio/templateOperationSelections.ts',
+  );
+  qwenInpaintCandidateFixture = JSON.parse(
+    execFileSync(
+      process.platform === 'win32' ? python : path.join(backend, 'scripts/with-runtime-env.sh'),
+      process.platform === 'win32' ? [script] : [python, script],
+      {
+        cwd: backend,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        input: JSON.stringify(
+          [
+            'qwen_inpaint_object_replace',
+            'qwen_inpaint_mask_draft',
+            'qwen_outpaint_aspect_template',
+            'qwen_outpaint_draft',
+          ].map((id) => ({ id, selection: qwenInpaintNativeCandidateSelection(id) })),
+        ),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    ),
+  );
 });
 after(async () => server?.close());
+
+test('four fresh Qwen masked templates preserve creator settings and use actual native stages', async (t) => {
+  const operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const payload = qwenInpaintCandidateFixture.publicPayload;
+  const contracts = operations.parseOperationContracts(
+    payload.operationContracts,
+    payload.operationContractSchemaVersion,
+  );
+  for (const row of qwenInpaintCandidateFixture.recipes)
+    await t.test(row.id, () => {
+      const template = templates.find((item) => item.id === row.id);
+      const before = structuredClone(template);
+      const form = selectedForm(template);
+      const starter = starterRequests.parseOperationStarter(
+        row.starter,
+        row.starter.pipelineClass,
+        row.starter.task,
+        contracts,
+      );
+      for (const action of ['ModelsLoader', 'ImageEncode']) {
+        const field = starter.nodes.find((item) => item.node.action === action).node.params.inpaint_compatibility;
+        assert.equal(field.value ?? field.default, 'native', 'generic starter retains its native policy');
+      }
+      const graph = builder.createTemplateOperationGraph(
+        template,
+        form,
+        starter,
+        { ...fixture.registry, ...qwenInpaintCandidateFixture.registry },
+        row.spec,
+        row.capability,
+      );
+      assert.deepEqual(template, before);
+      assert.equal(
+        template.executionSelection.implementation,
+        'native_stages',
+        'fresh templates select the reviewed native masked recipe',
+      );
+      const flat = groups.unpackVisualOperationGroups(graph).graph;
+      const api = flowStore
+        .getState()
+        .exportGraph('qwen-native-candidate', undefined, { sourceGraph: graph, randomizeSeeds: false });
+      const nodes = Object.values(api.nodes);
+      for (const action of ['ModelsLoader', 'EncodePrompt', 'ImageEncode', 'Denoise', 'DecodeLatents', 'Guider'])
+        assert.equal(
+          nodes.filter((node) => node.module === 'modules.ModularDiffusers' && node.action === action).length,
+          1,
+          action,
+        );
+      assert.equal(
+        nodes.some((node) => ['LoadPipeline', 'Inpaint', 'DiffusersExecutionRecipe'].includes(node.action)),
+        false,
+      );
+      const encode = nodes.find((node) => node.action === 'ImageEncode');
+      const denoise = nodes.find((node) => node.action === 'Denoise');
+      const prompt = nodes.find((node) => node.action === 'EncodePrompt');
+      const loader = nodes.find((node) => node.action === 'ModelsLoader');
+      assert.equal(loader.params.inpaint_compatibility.value, 'whole_v1');
+      assert.equal(encode.params.inpaint_compatibility.value, 'whole_v1');
+      assert.equal(denoise.params.width.value, form.width);
+      assert.equal(denoise.params.height.value, form.height);
+      assert.equal(denoise.params.num_inference_steps.value, form.steps);
+      assert.equal(denoise.params.strength.value, form.strength);
+      assert.equal(prompt.params.prompt.value, form.prompt);
+      assert.equal(prompt.params.negative_prompt.value, form.negativePrompt);
+      assert.ok(nodes.filter((node) => node.params.seed).every((node) => node.params.seed.value === form.seed));
+      assert.equal(new Set(flat.edges.map((edge) => `${edge.target}:${edge.targetHandle}`)).size, flat.edges.length);
+      const canvas = nodes.find((node) => node.action === 'OutpaintCanvas');
+      if (row.id.startsWith('qwen_outpaint_')) {
+        assert.ok(canvas);
+        assert.equal(denoise.params.width.value, canvas.params.width.value);
+        assert.equal(denoise.params.height.value, canvas.params.height.value);
+        assert.deepEqual(
+          [denoise.params.width.value, denoise.params.height.value],
+          [1344, 768],
+          'the original rectangular canvas and denoising noise use the same geometry',
+        );
+        for (const [field, formField] of Object.entries({
+          width: 'width',
+          height: 'height',
+          left: 'outpaintLeft',
+          right: 'outpaintRight',
+          top: 'outpaintTop',
+          bottom: 'outpaintBottom',
+          overlap: 'outpaintOverlap',
+          feather: 'outpaintFeather',
+          fill_color: 'outpaintFillColor',
+        }))
+          assert.deepEqual(canvas.params[field].value, form[formField]);
+        for (const [node, field, output] of [
+          [encode, 'image', 'canvas'],
+          [encode, 'mask_image', 'mask_image'],
+          [prompt, 'image', 'canvas'],
+        ]) {
+          assert.equal(api.nodes[node.params[field].sourceId], canvas);
+          assert.equal(node.params[field].sourceKey, output);
+        }
+      } else assert.equal(canvas, undefined);
+    });
+});
+
+test('private Qwen candidate inherits authored crop padding and honors explicit overrides including null', async () => {
+  const row = qwenInpaintCandidateFixture.recipes.find((item) => item.id === 'qwen_inpaint_object_replace');
+  const operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const payload = qwenInpaintCandidateFixture.publicPayload;
+  const contracts = operations.parseOperationContracts(
+    payload.operationContracts,
+    payload.operationContractSchemaVersion,
+  );
+  const starter = starterRequests.parseOperationStarter(
+    row.starter,
+    row.starter.pipelineClass,
+    row.starter.task,
+    contracts,
+  );
+  const template = templates.find((item) => item.id === row.id);
+  const form = { ...selectedForm(template), paddingMaskCrop: 96 };
+  for (const [options, expected] of [
+    [{}, 96],
+    [{ paddingMaskCrop: 24 }, 24],
+    [{ paddingMaskCrop: null }, null],
+  ]) {
+    const graph = groups.unpackVisualOperationGroups(
+      qwenInpaintCandidate.createQwenInpaintNativeCandidateGraph(
+        template,
+        form,
+        starter,
+        { ...fixture.registry, ...qwenInpaintCandidateFixture.registry },
+        row.spec,
+        row.capability,
+        options,
+      ),
+    ).graph;
+    const encode = graph.nodes.find((node) => node.data.action === 'ImageEncode');
+    assert.equal(encode.data.params.padding_mask_crop.value, expected);
+    const api = flowStore
+      .getState()
+      .exportGraph('qwen-native-crop', undefined, { sourceGraph: graph, randomizeSeeds: false });
+    const packetEncode = Object.values(api.nodes).find((node) => node.action === 'ImageEncode');
+    assert.equal(packetEncode.params.padding_mask_crop.value ?? null, expected);
+  }
+});
+
+test('fresh Qwen masked compatibility rejects missing or different reviewed workflow identities', () => {
+  const row = qwenInpaintCandidateFixture.recipes.find((item) => item.id === 'qwen_inpaint_object_replace');
+  const template = templates.find((item) => item.id === row.id);
+  for (const workflowId of [null, 'image_conditioned']) {
+    const starter = structuredClone(row.starter);
+    starter.workflowId = workflowId;
+    const before = structuredClone(starter);
+    assert.throws(
+      () =>
+        builder.createTemplateOperationGraph(
+          template,
+          selectedForm(template),
+          starter,
+          fixture.registry,
+          row.spec,
+          row.capability,
+        ),
+      /requires the reviewed image_conditioned_inpainting workflow/,
+    );
+    assert.deepEqual(starter, before);
+  }
+  const starter = structuredClone(row.starter);
+  const owner = starter.nodes.find((item) => item.operation.nodeType === 'loader');
+  owner.operation.binding.values.workflow_id = 'image_conditioned';
+  assert.throws(
+    () =>
+      builder.createTemplateOperationGraph(
+        template,
+        selectedForm(template),
+        starter,
+        fixture.registry,
+        row.spec,
+        row.capability,
+      ),
+    /requires the reviewed image_conditioned_inpainting workflow/,
+  );
+});
 
 test('the real public capability and every selected starter response pass production wire parsers', async () => {
   const nodes = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
@@ -510,7 +713,7 @@ test('all54 image recipes construct and export the exact backend developer stage
     fixture.recipes.filter(
       (row) => templates.find((item) => item.id === row.id).executionSelection.implementation === 'native_stages',
     ).length,
-    44,
+    48,
   );
   for (const row of fixture.recipes)
     await t.test(row.id, () => {
@@ -559,6 +762,10 @@ test('all54 image recipes construct and export the exact backend developer stage
       });
       const claimed = new Set();
       for (const [role, key] of row.spec.roles) {
+        if (role === 'loadMask' && ['qwen_outpaint_aspect_template', 'qwen_outpaint_draft'].includes(template.id)) {
+          assert.ok(flat.nodes.some((node) => node.data.action === 'OutpaintCanvas'));
+          continue;
+        }
         const node = flat.nodes.find(
           (item) => `${item.data.module}.${item.data.action}` === key && !claimed.has(item.id),
         );
@@ -1310,5 +1517,269 @@ test('ordinary Auto ControlNet creation keeps the auxiliary component resident w
         nodeStore.setState(previous[1]);
         studioStore.useStudioStore.setState(previous[2]);
       }
+    });
+});
+
+test('actual Qwen Edit and T2I contracts retain exact API inputs through ordinary creation and workflow import', async (t) => {
+  const operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  publicOperations ??= operations.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  const nodeModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const packageModule = await server.ssrLoadModule('/src/studio/workflowPackage.ts');
+  const canonical = (api) => {
+    const names = new Map(Object.entries(api.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
+    assert.equal(new Set(names.values()).size, names.size, 'this fixture needs unique executable node roles');
+    return Object.fromEntries(
+      Object.entries(api.nodes).map(([id, node]) => [
+        names.get(id),
+        {
+          ...node,
+          params: Object.fromEntries(
+            Object.entries(node.params).map(([field, param]) => [
+              field,
+              { ...param, ...(param.sourceId ? { sourceId: names.get(param.sourceId) } : {}) },
+            ]),
+          ),
+        },
+      ]),
+    );
+  };
+  for (const templateId of ['qwen_character_angles', 'qwen_text_rendering'])
+    await t.test(templateId, async () => {
+      const previous = [flowStore.getState(), nodeStore.getState(), studioStore.useStudioStore.getState()];
+      const originalFetch = globalThis.fetch;
+      try {
+        const { row, template, studio } = prepareLifecycleFixture(templateId);
+        nodeStore.setState({ nodesRegistry: nodeModule.parseNodesResponse({ nodes: fixture.registry }).nodes });
+        const form = structuredClone(studio.getState().form);
+        const expectedGraph = builder.createTemplateOperationGraph(
+          template,
+          form,
+          row.starter,
+          fixture.registry,
+          row.spec,
+          row.capability,
+        );
+        const expected = flowStore
+          .getState()
+          .exportGraph('qwen-hydration', undefined, { sourceGraph: expectedGraph, randomizeSeeds: false });
+        globalThis.fetch = async () => Response.json(row.starter);
+        await lifecycle.createImageTemplateOperationWorkflow(
+          template,
+          form,
+          studioStore.captureWorkflowOperationContext(),
+        );
+        const created = flowStore.getState().exportGraph('qwen-hydration', undefined, { randomizeSeeds: false });
+        assert.deepEqual(canonical(created), canonical(expected), 'hydration retains the exact selected starter API');
+        const flat = groups.unpackVisualOperationGroups(flowStore.getState().toObject()).graph;
+        for (const node of flat.nodes) {
+          if (node.data.module !== 'modules.ModularDiffusers') continue;
+          const operation = operations.parseOperationContracts([node.data.operationAuthoring?.operation], 3)[0];
+          assert.equal(
+            Object.hasOwn(node.data.params, 'pipeline_components'),
+            operation.ports.some((port) => port.name === 'pipeline_components'),
+            `${node.data.action}: bundle socket applicability follows this route's actual contract`,
+          );
+        }
+        const graph = flowStore.getState().toObject();
+        const parsed = packageModule.parseWorkflowPackage({
+          metadata: { studio: form },
+          graph,
+          restore: { formSnapshot: form, graphSnapshot: graph, graphBindingSnapshot: null },
+        });
+        assert.ok(parsed);
+        studio.getState().createWorkflowTab('Imported exact Qwen recipe', parsed.snapshot, 'import', 'private');
+        assert.deepEqual(
+          flowStore.getState().exportGraph('qwen-hydration', undefined, { randomizeSeeds: false }),
+          created,
+          'normal workflow import preserves every API setting, component and media source',
+        );
+        if (templateId === 'qwen_text_rendering') {
+          const bundle = await server.ssrLoadModule('/src/workflow/operationComponentBundle.ts');
+          const owner = flat.nodes.find((node) => node.data.action === 'ModelsLoader');
+          const bundled = bundle.setOperationComponentBundle(graph, owner.id, 'bundle');
+          const expectedBundle = flowStore
+            .getState()
+            .exportGraph('qwen-hydration', undefined, { sourceGraph: bundled, randomizeSeeds: false });
+          flowStore.getState().replaceGraph(bundled);
+          assert.deepEqual(
+            flowStore.getState().exportGraph('qwen-hydration', undefined, { randomizeSeeds: false }),
+            expectedBundle,
+            'declared bundle inputs and every supplier remain intact during graph replacement',
+          );
+          const bundledGraph = flowStore.getState().toObject();
+          const parsedBundle = packageModule.parseWorkflowPackage({
+            metadata: { studio: form },
+            graph: bundledGraph,
+            restore: { formSnapshot: form, graphSnapshot: bundledGraph, graphBindingSnapshot: null },
+          });
+          assert.ok(parsedBundle);
+          studio
+            .getState()
+            .createWorkflowTab('Imported bundled Qwen recipe', parsedBundle.snapshot, 'import', 'private');
+          assert.deepEqual(
+            flowStore.getState().exportGraph('qwen-hydration', undefined, { randomizeSeeds: false }),
+            expectedBundle,
+            'normal import retains all declared aggregate connections',
+          );
+        }
+      } finally {
+        globalThis.fetch = originalFetch;
+        flowStore.setState(previous[0]);
+        nodeStore.setState(previous[1]);
+        studioStore.useStudioStore.setState(previous[2]);
+      }
+    });
+});
+
+test('all four actual Qwen native inpaint candidates preserve their full API packets through normal import', async (t) => {
+  const operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const payload = qwenInpaintCandidateFixture.publicPayload;
+  const contracts = operations.parseOperationContracts(
+    payload.operationContracts,
+    payload.operationContractSchemaVersion,
+  );
+  const nodeModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const packageModule = await server.ssrLoadModule('/src/studio/workflowPackage.ts');
+  for (const row of qwenInpaintCandidateFixture.recipes)
+    await t.test(row.id, () => {
+      const previous = [flowStore.getState(), nodeStore.getState(), studioStore.useStudioStore.getState()];
+      try {
+        const template = templates.find((item) => item.id === row.id);
+        const form = selectedForm(template);
+        const registry = { ...fixture.registry, ...qwenInpaintCandidateFixture.registry };
+        const starter = starterRequests.parseOperationStarter(
+          row.starter,
+          row.starter.pipelineClass,
+          row.starter.task,
+          contracts,
+        );
+        const candidate = qwenInpaintCandidate.createQwenInpaintNativeCandidateGraph(
+          template,
+          form,
+          starter,
+          registry,
+          row.spec,
+          row.capability,
+        );
+        const expected = flowStore
+          .getState()
+          .exportGraph('qwen-native-import', undefined, { sourceGraph: candidate, randomizeSeeds: false });
+        nodeStore.setState({ nodesRegistry: nodeModule.parseNodesResponse({ nodes: registry }).nodes });
+        flowStore.getState().replaceGraph(candidate);
+        assert.deepEqual(
+          flowStore.getState().exportGraph('qwen-native-import', undefined, { randomizeSeeds: false }),
+          expected,
+          'initial replacement retains the complete actual native API packet',
+        );
+        const graph = flowStore.getState().toObject();
+        const parsed = packageModule.parseWorkflowPackage({
+          metadata: { studio: form },
+          graph,
+          restore: { formSnapshot: form, graphSnapshot: graph, graphBindingSnapshot: null },
+        });
+        assert.ok(parsed);
+        studioStore.useStudioStore
+          .getState()
+          .createWorkflowTab('Imported Qwen native candidate', parsed.snapshot, 'import', 'private');
+        assert.deepEqual(
+          flowStore.getState().exportGraph('qwen-native-import', undefined, { randomizeSeeds: false }),
+          expected,
+          'normal import retains whole_v1 owner/encoder settings, every media source and exact geometry',
+        );
+      } finally {
+        flowStore.setState(previous[0]);
+        nodeStore.setState(previous[1]);
+        studioStore.useStudioStore.setState(previous[2]);
+      }
+    });
+});
+
+test('all four actual Qwen native recipes recover their coherent runtime settings after switching tasks and returning', async (t) => {
+  const operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const authoring = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
+  const contracts = operations.parseOperationContracts(
+    qwenInpaintCandidateFixture.publicPayload.operationContracts,
+    qwenInpaintCandidateFixture.publicPayload.operationContractSchemaVersion,
+  );
+  const awayRow = fixture.recipes.find((item) => item.id === 'qwen_character_angles');
+  const awayContracts = operations.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  const awayStarter = starterRequests.parseOperationStarter(
+    awayRow.starter,
+    awayRow.starter.pipelineClass,
+    awayRow.starter.task,
+    awayContracts,
+  );
+  for (const row of qwenInpaintCandidateFixture.recipes)
+    await t.test(row.id, () => {
+      const template = templates.find((item) => item.id === row.id);
+      const starter = starterRequests.parseOperationStarter(
+        row.starter,
+        row.starter.pipelineClass,
+        row.starter.task,
+        contracts,
+      );
+      const candidate = qwenInpaintCandidate.createQwenInpaintNativeCandidateGraph(
+        template,
+        { ...selectedForm(template), device: 'cpu:0', autoOffload: false, offloadMode: 'none' },
+        starter,
+        { ...fixture.registry, ...qwenInpaintCandidateFixture.registry },
+        row.spec,
+        row.capability,
+      );
+      const source = structuredClone(candidate);
+      const originalApi = flowStore
+        .getState()
+        .exportGraph('qwen-task-return', undefined, { sourceGraph: candidate, randomizeSeeds: false });
+      const owner = groups
+        .unpackVisualOperationGroups(candidate)
+        .graph.nodes.find((node) => operations.operationOwnsModel(node.data.operationAuthoring?.operation));
+      const away = authoring.planOperationChange(candidate, owner.id, awayStarter).graph;
+      const archived = structuredClone(away);
+      const awayOwner = groups
+        .unpackVisualOperationGroups(away)
+        .graph.nodes.find((node) => operations.operationOwnsModel(node.data.operationAuthoring?.operation));
+      const returned = authoring.planOperationChange(away, awayOwner.id, starter);
+      const flat = groups.unpackVisualOperationGroups(returned.graph).graph;
+      for (const action of ['ModelsLoader', 'ImageEncode'])
+        assert.equal(
+          flat.nodes.find((node) => node.data.action === action).data.params.inpaint_compatibility.value,
+          'whole_v1',
+          `${action}: exact task return restores the authored compatibility setting as one coherent set`,
+        );
+      assert.ok(returned.review.preserved.some((message) => /runtime settings.*inactive draft/i.test(message)));
+      assert.deepEqual(candidate, source, 'the original recipe remains immutable');
+      assert.deepEqual(away, archived, 'the inactive draft remains immutable');
+      const returnedApi = flowStore
+        .getState()
+        .exportGraph('qwen-task-return', undefined, { sourceGraph: returned.graph, randomizeSeeds: false });
+      assert.deepEqual(returnedApi, originalApi, 'the exact task return retains the full valid CPU-host API packet');
+      const previous = flowStore.getState();
+      try {
+        flowStore.getState().replaceGraph(returned.graph);
+        assert.deepEqual(
+          flowStore.getState().exportGraph('qwen-task-return', undefined, { randomizeSeeds: false }),
+          returnedApi,
+          'normal graph replacement and export retain the recovered runtime settings',
+        );
+      } finally {
+        flowStore.setState(previous);
+      }
+      const reset = groups.unpackVisualOperationGroups(
+        authoring.planOperationChange(away, awayOwner.id, starter, { restoreDefaults: true }).graph,
+      ).graph;
+      for (const action of ['ModelsLoader', 'ImageEncode'])
+        assert.equal(
+          authoring.operationFieldValue(
+            reset.nodes.find((node) => node.data.action === action).data.params.inpaint_compatibility,
+          ),
+          'native',
+          `${action}: explicit defaults reset retains the selected starter's runtime setting`,
+        );
     });
 });

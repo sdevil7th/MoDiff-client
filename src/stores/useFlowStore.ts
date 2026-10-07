@@ -1,5 +1,5 @@
 import { remapOperationAuthoring, sharedOperationInput } from '../workflow/operationSharedInputs';
-import { planVisualSharedInput } from '../workflow/visualOperationGroups';
+import { planVisualSharedInput } from '../workflow/visualOperationGroupProjection';
 import { isFocusedStageNode, isFocusedGuidance } from '../workflow/encodingNodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 

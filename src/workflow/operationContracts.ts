@@ -1,3 +1,21 @@
+/** Reviewed value-transfer meaning; neither tensor compatibility nor execution permission. */
+export type OperationControl = {
+  technique: 'classifier_free' | 'embedded_distilled';
+  parameter: 'scale' | 'rescale' | 'enabled' | 'formulation' | 'start' | 'stop' | 'technique';
+  compatibilityScope: string;
+  scaleMeaning: 'cfg_prediction_mix' | 'distilled_model_embedding';
+  enabled: 'boolean_field' | 'scale_gt_one' | 'always' | 'model_config';
+  enabledField: string | null;
+  formulation: 'boolean_field' | 'original' | 'diffusers' | 'embedded';
+  formulationField: string | null;
+  selectorField: string | null;
+  selectorValue: string | boolean | null;
+  negativeConditioning: 'pipeline_scoped_when_enabled' | 'none';
+  negativeConditioningScope: string | null;
+  negativePromptField?: string;
+  negativePromptPolicy?: 'empty_string_is_condition';
+};
+
 /** Backend declarations, not execution permission or a graph recipe. */
 export type OperationSemantics = {
   kind: 'value' | 'media' | 'component' | 'conditioning' | 'latents' | 'state' | 'pipeline' | 'opaque';
@@ -5,6 +23,8 @@ export type OperationSemantics = {
   state: string | null;
   owner: 'same_loader' | 'none';
   members: { name: string; type: string }[];
+  control?: OperationControl;
+  suppliedBy?: { input: string; members: string[] };
 };
 export type OperationPort = {
   name: string;
@@ -126,7 +146,19 @@ export function boundedText(value: unknown, limit = 2048): string {
 }
 
 function parseSemantics(value: unknown, pipeline: string, workflowId: string | null): OperationSemantics {
-  const item = record(value, ['kind', 'scope', 'state', 'owner', 'members']);
+  const hasControl =
+    typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, 'control');
+  const hasSupplier =
+    typeof value === 'object' && value !== null && Object.prototype.hasOwnProperty.call(value, 'suppliedBy');
+  const item = record(value, [
+    'kind',
+    'scope',
+    'state',
+    'owner',
+    'members',
+    ...(hasControl ? ['control'] : []),
+    ...(hasSupplier ? ['suppliedBy'] : []),
+  ]);
   if (
     !['value', 'media', 'component', 'conditioning', 'latents', 'state', 'pipeline', 'opaque'].includes(
       String(item.kind),
@@ -145,12 +177,98 @@ function parseSemantics(value: unknown, pipeline: string, workflowId: string | n
     return { name: identifier(member.name), type: boundedText(member.type, 1024) };
   });
   if (new Set(members.map((m) => m.name)).size !== members.length) invalid();
+  if (hasControl && item.kind !== 'value') invalid();
+  let suppliedBy: OperationSemantics['suppliedBy'];
+  if (hasSupplier) {
+    if (item.kind !== 'component') invalid();
+    const supplier = record(item.suppliedBy, ['input', 'members']);
+    if (!Array.isArray(supplier.members) || !supplier.members.length || supplier.members.length > 16) invalid();
+    const names = supplier.members.map(identifier);
+    if (new Set(names).size !== names.length) invalid();
+    suppliedBy = { input: identifier(supplier.input), members: names };
+  }
   return {
     kind: item.kind as OperationSemantics['kind'],
     scope: item.scope as string | null,
     state: item.state === null ? null : identifier(item.state),
     owner: item.owner as OperationSemantics['owner'],
     members,
+    ...(hasControl ? { control: parseControl(item.control, pipeline) } : {}),
+    ...(suppliedBy ? { suppliedBy } : {}),
+  };
+}
+
+function parseControl(value: unknown, pipeline: string): OperationControl {
+  const hasNegativePrompt =
+    typeof value === 'object' &&
+    value !== null &&
+    (Object.prototype.hasOwnProperty.call(value, 'negativePromptField') ||
+      Object.prototype.hasOwnProperty.call(value, 'negativePromptPolicy'));
+  const item = record(value, [
+    'technique',
+    'parameter',
+    'compatibilityScope',
+    'scaleMeaning',
+    'enabled',
+    'enabledField',
+    'formulation',
+    'formulationField',
+    'selectorField',
+    'selectorValue',
+    'negativeConditioning',
+    'negativeConditioningScope',
+    ...(hasNegativePrompt ? ['negativePromptField', 'negativePromptPolicy'] : []),
+  ]);
+  if (
+    !['classifier_free', 'embedded_distilled'].includes(String(item.technique)) ||
+    !['scale', 'rescale', 'enabled', 'formulation', 'start', 'stop', 'technique'].includes(String(item.parameter)) ||
+    !['boolean_field', 'scale_gt_one', 'always', 'model_config'].includes(String(item.enabled)) ||
+    !['boolean_field', 'original', 'diffusers', 'embedded'].includes(String(item.formulation)) ||
+    !['pipeline_scoped_when_enabled', 'none'].includes(String(item.negativeConditioning))
+  )
+    invalid();
+  const cfg = item.technique === 'classifier_free';
+  const negativePromptField = hasNegativePrompt ? identifier(item.negativePromptField) : undefined;
+  if (hasNegativePrompt && (!cfg || item.negativePromptPolicy !== 'empty_string_is_condition')) invalid();
+  const compatibilityScope = boundedText(item.compatibilityScope, 128);
+  compatibilityScope.split('.').forEach(identifier);
+  const enabledField = item.enabledField === null ? null : identifier(item.enabledField);
+  const formulationField = item.formulationField === null ? null : identifier(item.formulationField);
+  const selectorField = item.selectorField === null ? null : identifier(item.selectorField);
+  const selectorValue =
+    item.selectorValue === null || typeof item.selectorValue === 'boolean'
+      ? item.selectorValue
+      : identifier(item.selectorValue);
+  if (
+    ['boolean_field', 'scale_gt_one'].includes(String(item.enabled)) !== (enabledField !== null) ||
+    (item.formulation === 'boolean_field') !== (formulationField !== null) ||
+    (selectorField === null) !== (selectorValue === null) ||
+    (typeof selectorValue === 'string' && selectorValue !== 'ClassifierFreeGuidance')
+  )
+    invalid();
+  if (
+    item.scaleMeaning !== (cfg ? 'cfg_prediction_mix' : 'distilled_model_embedding') ||
+    item.negativeConditioning !== (cfg ? 'pipeline_scoped_when_enabled' : 'none') ||
+    item.negativeConditioningScope !== (cfg ? pipeline : null) ||
+    (cfg
+      ? item.formulation === 'embedded'
+      : item.formulation !== 'embedded' || (selectorField !== null && typeof selectorValue !== 'boolean'))
+  )
+    invalid();
+  return {
+    technique: item.technique as OperationControl['technique'],
+    parameter: item.parameter as OperationControl['parameter'],
+    compatibilityScope,
+    scaleMeaning: item.scaleMeaning as OperationControl['scaleMeaning'],
+    enabled: item.enabled as OperationControl['enabled'],
+    enabledField,
+    formulation: item.formulation as OperationControl['formulation'],
+    formulationField,
+    selectorField,
+    selectorValue,
+    negativeConditioning: item.negativeConditioning as OperationControl['negativeConditioning'],
+    negativeConditioningScope: item.negativeConditioningScope as string | null,
+    ...(hasNegativePrompt ? { negativePromptField, negativePromptPolicy: 'empty_string_is_condition' as const } : {}),
   };
 }
 
@@ -221,6 +339,41 @@ export function parseOperationContracts(value: unknown, schemaVersion: unknown):
       parsePort(port, v2, wholePipeline, v3, binding?.pipelineClass ?? pipelineClass, workflowId),
     );
     if (new Set(ports.map((port) => `${port.direction}:${port.name}`)).size !== ports.length) invalid();
+    for (const port of ports) {
+      const supplier = port.semantics?.suppliedBy;
+      if (supplier) {
+        const input = ports.find((p) => p.name === supplier.input && p.direction === 'input');
+        if (
+          port.direction !== 'input' ||
+          !port.roles.includes('component') ||
+          supplier.input === port.name ||
+          !input ||
+          !input.roles.includes('component') ||
+          input.types.length !== 1 ||
+          input.types[0] !== 'diffusers_modular_pipeline_components' ||
+          input.semantics?.kind !== 'component' ||
+          input.semantics.scope !== port.semantics!.scope ||
+          supplier.members.length !== port.semantics!.members.length ||
+          !supplier.members.every((name) => {
+            const required = port.semantics!.members.find((m) => m.name === name);
+            return required && input.semantics!.members.some((m) => m.name === name && m.type === required.type);
+          })
+        )
+          invalid();
+      }
+      const control = port.semantics?.control;
+      if (!control) continue;
+      for (const [name, types] of [
+        [control.selectorField, typeof control.selectorValue === 'boolean' ? ['bool', 'boolean'] : ['string', 'text']],
+        [control.enabledField, control.enabled === 'boolean_field' ? ['bool', 'boolean'] : ['float', 'int', 'number']],
+        [control.formulationField, ['bool', 'boolean']],
+        [control.negativePromptField ?? null, ['string', 'text']],
+      ] as const) {
+        if (name === null) continue;
+        const referenced = ports.find((p) => p.name === name && p.direction === 'input');
+        if (!referenced || !referenced.types.every((type) => (types as readonly string[]).includes(type))) invalid();
+      }
+    }
     return {
       pipelineClass,
       task,

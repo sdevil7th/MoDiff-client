@@ -49,6 +49,25 @@ export function createTemplateOperationGraph(
   const owners = graph.nodes.filter((node) => operationOwnsModel(operationAuthoring(node)?.operation));
   if (owners.length !== 1) throw new Error('The template needs exactly one declared model owner.');
   const owner = owners[0]!;
+  const qwenMaskedCompatibility =
+    [
+      'qwen_inpaint_object_replace',
+      'qwen_inpaint_mask_draft',
+      'qwen_outpaint_aspect_template',
+      'qwen_outpaint_draft',
+    ].includes(template.id) &&
+    selection.implementation === 'native_stages' &&
+    selection.pipelineClass === 'QwenImageEditModularPipeline' &&
+    selection.executionProfileId === 'qwen-edit:modular' &&
+    selection.task === 'inpaint' &&
+    selection.bindingSpec.modelType === 'QwenImageEditModularPipeline' &&
+    selection.bindingSpec.mode === 'modular_inpainting';
+  if (
+    qwenMaskedCompatibility &&
+    (starter.workflowId !== 'image_conditioned_inpainting' ||
+      operationAuthoring(owner)?.operation.binding?.values.workflow_id !== 'image_conditioned_inpainting')
+  )
+    throw new Error('The Qwen masked template requires the reviewed image_conditioned_inpainting workflow.');
   const adapterName = selection.loraPolicy?.defaultAdapterName;
   const lora = template.workflowBlockSettings?.lora;
   if (
@@ -257,6 +276,67 @@ export function createTemplateOperationGraph(
       );
       connect(upscaler, ['images', 'output', 'image'], upscalePreview, ['image']);
     } else throw new Error(`The image template does not declare support for ${block}.`);
+  }
+  // Only these fresh, reviewed recipes select the backend's owned compatibility
+  // adapter. Generic starters and existing saved graphs retain their own values.
+  if (qwenMaskedCompatibility) {
+    const padding = (form as StudioFormState & { paddingMaskCrop?: number | null }).paddingMaskCrop ?? null;
+    if (padding !== null && (!Number.isSafeInteger(padding) || padding < 0 || padding > 8192))
+      throw new Error('The Qwen crop padding must be a bounded nonnegative integer or null.');
+    const exact = (action: string) => {
+      const nodes = graph.nodes.filter(
+        (node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === action,
+      );
+      if (nodes.length !== 1) throw new Error(`The Qwen masked template requires exactly one ${action} stage.`);
+      return nodes[0]!;
+    };
+    const encode = exact('ImageEncode');
+    const prompt = exact('EncodePrompt');
+    set(owner, ['inpaint_compatibility'], 'whole_v1');
+    set(encode, ['inpaint_compatibility'], 'whole_v1');
+    set(encode, ['padding_mask_crop'], padding);
+    set(exact('Denoise'), ['width'], form.width);
+    set(exact('Denoise'), ['height'], form.height);
+    if (template.id === 'qwen_outpaint_aspect_template' || template.id === 'qwen_outpaint_draft') {
+      const canvas = createNodeFromRegistry('modules.DiffusersImage.OutpaintCanvas', registry, { x: -560, y: 440 });
+      if (!canvas) throw new Error('The public OutpaintCanvas operation is missing.');
+      for (const [field, value] of Object.entries({
+        width: form.width,
+        height: form.height,
+        left: form.outpaintLeft,
+        right: form.outpaintRight,
+        top: form.outpaintTop,
+        bottom: form.outpaintBottom,
+        overlap: form.outpaintOverlap,
+        feather: form.outpaintFeather,
+        fill_color: form.outpaintFillColor,
+      }))
+        set(canvas, [field], value);
+      const imageEdge = graph.edges.find((edge) => edge.target === encode.id && edge.targetHandle === 'image');
+      const maskEdge = graph.edges.find((edge) => edge.target === encode.id && edge.targetHandle === 'mask_image');
+      const promptEdge = graph.edges.find((edge) => edge.target === prompt.id && edge.targetHandle === 'image');
+      if (
+        !imageEdge ||
+        !maskEdge ||
+        !promptEdge ||
+        promptEdge.source !== imageEdge.source ||
+        promptEdge.sourceHandle !== imageEdge.sourceHandle
+      )
+        throw new Error('The Qwen outpaint template has ambiguous source media.');
+      const source = graph.nodes.find((node) => node.id === imageEdge.source)!;
+      const maskLoader = graph.nodes.find((node) => node.id === maskEdge.source);
+      if (!maskLoader || maskLoader.data.module !== 'modules.Image' || maskLoader.data.action !== 'Load')
+        throw new Error('The Qwen outpaint template has no standalone mask role to replace.');
+      graph.edges = graph.edges.filter((edge) => ![imageEdge, maskEdge, promptEdge].includes(edge));
+      if (graph.edges.some((edge) => edge.source === maskLoader.id || edge.target === maskLoader.id))
+        throw new Error('The Qwen outpaint mask role has another consumer.');
+      graph.nodes = graph.nodes.filter((node) => node.id !== maskLoader.id);
+      graph.nodes.push(canvas);
+      connect(source, [imageEdge.sourceHandle!], canvas, ['image']);
+      connect(canvas, ['canvas'], encode, ['image']);
+      connect(canvas, ['mask_image'], encode, ['mask_image']);
+      connect(canvas, ['canvas'], prompt, ['image']);
+    }
   }
   return groupNewOperationGraph(graph);
 }

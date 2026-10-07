@@ -29362,3 +29362,450 @@ test('startup metadata wait preserves supervised active-run restoration at the a
   expect(addresses.length).toBeGreaterThan(0);
   expect(addresses.every((url) => url === 'http://127.0.0.1:65532/queue')).toBe(true);
 });
+
+async function openOptionalStageTemplate(page: Page, templateId: string, search: string, reviewTerms = true) {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const browser = page.getByTestId('template-browser-dialog');
+  await browser.getByTestId('template-browser-category-all').click();
+  await browser.getByTestId('template-browser-search').fill(search);
+  await browser.getByTestId(`template-browser-use-${templateId}`).click();
+  await browser.getByTestId(`template-browser-create-${templateId}`).click();
+  if (reviewTerms) {
+    const terms = page.getByRole('dialog', { name: 'Review model terms', exact: true });
+    const agreement = terms.getByRole('button', { name: 'I have reviewed and agree — Create graph', exact: true });
+    await expect(agreement).toBeVisible();
+    await agreement.click();
+  }
+  await expect(browser).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.canvasTransition)).toBeNull();
+  await assertUnifiedWorkspace(page, 'expert');
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+}
+
+async function optionalStageApi(page: Page) {
+  return page.evaluate(() => {
+    const hooks = window.__MODIFF_E2E__!;
+    hooks.setWebsocketConnection({ sid: 'optional-stage-contract', isConnected: true });
+    const api = hooks.exportAuthorizedApiGraph();
+    const identities = new Map(Object.entries(api.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
+    // These single-branch fixtures have one instance per implementation key.
+    // Compare consumed parameters and source/port bindings across explicit
+    // grouping, whose normal V2 lowering owns new runtime node IDs.
+    if (new Set(identities.values()).size !== identities.size)
+      throw new Error('Ambiguous optional-stage fixture identity');
+    return Object.fromEntries(
+      Object.entries(api.nodes).map(([id, node]) => [
+        identities.get(id),
+        {
+          ...node,
+          params: Object.fromEntries(
+            Object.entries(node.params).map(([field, value]) => [
+              field,
+              { ...value, ...(value.sourceId ? { sourceId: identities.get(value.sourceId) } : {}) },
+            ]),
+          ),
+        },
+      ]),
+    );
+  });
+}
+
+test('optional Model Setup and Image Output preserve native stages, task review, separate, Undo and reusable save', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'flux_lora_ghibli_story', 'ghibli');
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const before = await optionalStageApi(page);
+  const owner = (await graph()).nodes.find((node) => node.data.action === 'ModelsLoader')!;
+  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  await loader.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Node inspector', exact: true })
+    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .click();
+  await page.getByRole('menuitem', { name: 'Group image output', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const output = (await graph()).nodes.find((node) => node.data.label === 'Image Output')!;
+  const outputNode = page.getByTestId(`output-node-${output.id}`);
+  await expect(outputNode).toBeVisible();
+  await expect(outputNode.getByTestId(`stage-preview-${output.id}`)).toBeVisible();
+  expect(output.data.blockInstanceV2!.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
+    'DecodeLatents',
+    'Preview',
+  ]);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await loader.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Node inspector', exact: true })
+    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .click();
+  await page.getByRole('menuitem', { name: 'Group model setup', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const setup = (await graph()).nodes.find((node) => node.data.label === 'Model Setup')!;
+  const setupNode = page.getByTestId(`setup-node-${setup.id}`);
+  await expect(setupNode).toBeVisible();
+  expect(setup.data.blockInstanceV2!.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
+    'Lora',
+    'ModelsLoader',
+  ]);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await expect(setupNode.getByRole('button', { name: 'Expand block', exact: true })).toHaveCount(0);
+  await setupNode.getByRole('button', { name: 'Model Setup options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Inspect implementation', exact: true }).click();
+  const implementation = page.getByRole('dialog', { name: 'Model Setup implementation', exact: true });
+  await expect(implementation.getByRole('heading', { name: 'Load Models', exact: true })).toBeVisible();
+  await implementation.getByRole('button', { name: 'Close', exact: true }).click();
+  const starters = await operationStarterFixtures();
+  await page.route('**/operations/starter', (route) => {
+    const request = route.request().postDataJSON();
+    const starter = starters.find((item) => item.pipelineClass === request.pipelineClass && item.task === request.task);
+    return route.fulfill({ status: starter ? 200 : 400, json: starter ?? { error: 'Unknown fixture task' } });
+  });
+  await setupNode.getByRole('button', { name: 'Change model / task', exact: true }).click();
+  await setupNode.getByLabel('Replacement task', { exact: true }).click();
+  await page.getByRole('option', { name: 'image to image', exact: true }).click();
+  await setupNode.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+  await expect(review.getByRole('heading', { name: 'Review model / task change', exact: true })).toBeVisible();
+  await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await optionalStageApi(page)).toEqual(before);
+  await setupNode.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await graph()).nodes
+          .find((node) => node.id === setup.id)!
+          .data.blockInstanceV2!.effectiveGraph.nodes.find((node) => node.data.action === 'ModelsLoader')!.data
+          .operationAuthoring!.operation.task,
+    )
+    .toBe('image_to_image');
+  expect(
+    (await graph()).nodes
+      .find((node) => node.data.label === 'Encode Inputs')!
+      .data.blockInstanceV2!.effectiveGraph.nodes.some(
+        (node) => node.data.operationAuthoring?.operation.nodeType === 'vae_encoder',
+      ),
+  ).toBe(true);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => optionalStageApi(page)).toEqual(before);
+  await setupNode.getByRole('button', { name: 'Model Setup options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Separate model setup stages', exact: true }).click();
+  await expect(setupNode).toHaveCount(0);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(setupNode).toBeVisible();
+  await outputNode.getByRole('button', { name: 'Image Output options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Save as reusable node…', exact: true }).click();
+  const save = page.getByTestId(`save-user-block-choices-${output.id}`);
+  await save.getByLabel('Node name').fill('My decoded image output');
+  await save.getByRole('button', { name: 'Save as new node', exact: true }).click();
+  await expect(save).toHaveCount(0);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`setup-node-${setup.id}`)).toBeVisible();
+  await expect(page.getByTestId(`output-node-${output.id}`)).toBeVisible();
+  expect(await optionalStageApi(page)).toEqual(before);
+});
+
+test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and geometry across edit, separate and reload', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'flux_fill_outpaint', 'fill outpaint');
+  // Setup an existing, task-correct ordinary outpaint composition. The current
+  // Gallery starter intentionally has separate image/mask loaders; this case
+  // verifies grouping/edit/history for a graph already using the registered
+  // canvas utility, not a claim that Gallery creates mask preprocessing.
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    const { createNodeFromRegistry } = await import('/src/workflow/nodeFactory.ts');
+    const { prepareWorkflowForManualInsertion } = await import('/src/studio/manualGraphInsertion.ts');
+    const graph = useFlowStore.getState().toObject();
+    const consumer = graph.nodes.find(
+      (node) =>
+        node.data.operationAuthoring?.operation.task === 'outpaint' &&
+        node.data.params.image &&
+        node.data.params.mask_image,
+    )!;
+    if (!consumer)
+      throw new Error(
+        `Missing declared masked consumer: ${JSON.stringify(graph.nodes.map((node) => ({ module: node.data.module, action: node.data.action, task: node.data.operationAuthoring?.operation.task, fields: Object.keys(node.data.params) })))}`,
+      );
+    const image = graph.edges.find((edge) => edge.target === consumer.id && edge.targetHandle === 'image')!;
+    const mask = graph.edges.find((edge) => edge.target === consumer.id && edge.targetHandle === 'mask_image')!;
+    const canvas = createNodeFromRegistry(
+      'modules.DiffusersImage.OutpaintCanvas',
+      useNodesStore.getState().nodesRegistry,
+      { x: -300, y: 400 },
+    );
+    if (!canvas || !image || !mask) throw new Error('Missing exact registered outpaint fixture');
+    for (const [field, value] of Object.entries({
+      width: 1536,
+      height: 1024,
+      left: 128,
+      right: 128,
+      top: 0,
+      bottom: 0,
+      overlap: 24,
+      feather: 8,
+    }))
+      canvas.data.params[field].value = value;
+    consumer.data.params.width.isInput = true;
+    consumer.data.params.height.isInput = true;
+    const edges = graph.edges.filter((edge) => edge.id !== image.id && edge.id !== mask.id);
+    if (edges.some((edge) => edge.source === mask.source || edge.target === mask.source))
+      throw new Error('Mask fixture has another consumer');
+    edges.push({
+      id: 'mask-source-canvas',
+      source: image.source,
+      sourceHandle: image.sourceHandle,
+      target: canvas.id,
+      targetHandle: 'image',
+    });
+    for (const [output, input] of [
+      ['canvas', 'image'],
+      ['mask_image', 'mask_image'],
+      ['width_out', 'width'],
+      ['height_out', 'height'],
+    ])
+      edges.push({
+        id: `mask-canvas-${input}`,
+        source: canvas.id,
+        sourceHandle: output,
+        target: consumer.id,
+        targetHandle: input,
+      });
+    prepareWorkflowForManualInsertion();
+    useFlowStore
+      .getState()
+      .replaceGraph({ nodes: [...graph.nodes.filter((node) => node.id !== mask.source), canvas], edges });
+  });
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const before = await optionalStageApi(page);
+  const owner = (await graph()).nodes.find((node) => node.data.action === 'LoadPipeline')!;
+  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  await loader.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Node inspector', exact: true })
+    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .click();
+  await expect(page.getByRole('menuitem', { name: 'Group image output', exact: true })).toHaveCount(0);
+  await page.getByRole('menuitem', { name: 'Group mask preparation', exact: true }).click();
+  await expect
+    .poll(async () => {
+      if ((await graph()).nodes.some((node) => node.data.label === 'Prepare Mask')) return 'grouped';
+      return (
+        (
+          await page.getByRole('dialog', { name: 'Node inspector', exact: true }).getByRole('alert').allTextContents()
+        ).join('; ') || 'waiting'
+      );
+    })
+    .toBe('grouped');
+  await page.keyboard.press('Escape');
+  const prepared = (await graph()).nodes.find((node) => node.data.label === 'Prepare Mask')!;
+  const node = page.getByTestId(`mask-node-${prepared.id}`);
+  await expect(node).toBeVisible();
+  expect(prepared.data.blockInstanceV2!.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
+    'Load',
+    'OutpaintCanvas',
+  ]);
+  expect(await optionalStageApi(page)).toEqual(before);
+  const consumer = (await graph()).nodes.find(
+    (node) =>
+      node.data.operationAuthoring?.operation.task === 'outpaint' &&
+      node.data.params.image &&
+      node.data.params.mask_image,
+  )!;
+  const consumerKey = `${consumer.data.module}.${consumer.data.action}`;
+  const feather = node.getByLabel(/^Mask feather$/i);
+  await feather.fill('0');
+  await feather.press('Enter');
+  await expect(feather).toHaveValue('0');
+  const edited = await optionalStageApi(page);
+  expect(edited['modules.DiffusersImage.OutpaintCanvas'].params.feather.value).toBe('0');
+  expect(edited[consumerKey].params.mask_image.sourceKey).toBe('mask_image');
+  expect(edited[consumerKey].params.width.sourceKey).toBe('width_out');
+  expect(edited[consumerKey].params.height.sourceKey).toBe('height_out');
+  await node.getByRole('button', { name: 'Prepare Mask options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Separate mask preparation stages', exact: true }).click();
+  await expect(node).toHaveCount(0);
+  expect(await optionalStageApi(page)).toEqual(edited);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(node).toBeVisible();
+  await expect(feather).toHaveValue('0');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(node).toBeVisible();
+  await expect(feather).toHaveValue('0');
+  expect(await optionalStageApi(page)).toEqual(edited);
+});
+
+test('optional declared component bundle preserves Qwen stages, controls, breakout, Undo and reload', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'qwen', false);
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const original = await graph();
+  const before = await optionalStageApi(page);
+  const owner = original.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  const menu = async () => {
+    await loader.locator('header').first().click();
+    await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Node inspector', exact: true })
+      .getByRole('button', { name: 'Workflow stage actions', exact: true })
+      .click();
+  };
+  await menu();
+  await page.getByRole('menuitem', { name: 'Use component bundle', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const bundled = await graph();
+  expect(bundled.nodes.map((node) => node.id).sort()).toEqual(original.nodes.map((node) => node.id).sort());
+  expect(bundled.edges.length).toBe(original.edges.length - 1);
+  const api = await optionalStageApi(page);
+  for (const key of [
+    'modules.ModularDiffusers.EncodePrompt',
+    'modules.ModularDiffusers.Denoise',
+    'modules.ModularDiffusers.DecodeLatents',
+  ]) {
+    expect(api[key].params.pipeline_components.sourceId).toBe('modules.ModularDiffusers.ModelsLoader');
+    expect(api[key].params.pipeline_components.sourceKey).toBe('pipeline_components');
+  }
+  expect(api['modules.ModularDiffusers.EncodePrompt'].params.prompt).toEqual(
+    before['modules.ModularDiffusers.EncodePrompt'].params.prompt,
+  );
+  expect(api['modules.ModularDiffusers.Guider']).toEqual(before['modules.ModularDiffusers.Guider']);
+  expect(api['modules.ModularDiffusers.Denoise'].params.seed).toEqual(
+    before['modules.ModularDiffusers.Denoise'].params.seed,
+  );
+  await menu();
+  await page.getByRole('menuitem', { name: 'Expose components', exact: true }).click();
+  await page.keyboard.press('Escape');
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => optionalStageApi(page)).toEqual(api);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await expect.poll(() => optionalStageApi(page)).toEqual(api);
+  await menu();
+  await expect(page.getByRole('menuitem', { name: 'Expose components', exact: true })).toBeVisible();
+});
+
+for (const templateId of [
+  'qwen_inpaint_object_replace',
+  'qwen_inpaint_mask_draft',
+  'qwen_outpaint_aspect_template',
+  'qwen_outpaint_draft',
+] as const)
+  test(`Qwen Gallery ${templateId} preserves its selected stages and exact inputs through export, normal import and refresh`, async ({
+    page,
+  }) => {
+    await openOptionalStageTemplate(page, templateId, 'qwen', false);
+    const api = () =>
+      page.evaluate(async () => {
+        const sid = 'qwen-gallery-hydration';
+        window.__MODIFF_E2E__!.setWebsocketConnection({ sid, isConnected: true });
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return useFlowStore.getState().exportGraph(sid, undefined, { randomizeSeeds: false });
+      });
+    const before = await api();
+    const selection = IMAGE_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;
+    const executable = Object.values(before.nodes);
+    const form = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form);
+    if (selection.implementation === 'native_stages') {
+      for (const action of ['ModelsLoader', 'EncodePrompt', 'ImageEncode', 'Denoise', 'DecodeLatents', 'Guider'])
+        expect(
+          executable.filter((node) => node.module === 'modules.ModularDiffusers' && node.action === action),
+        ).toHaveLength(1);
+      expect(executable.some((node) => ['LoadPipeline', 'Inpaint'].includes(node.action))).toBe(false);
+      const owner = executable.find((node) => node.action === 'ModelsLoader')!;
+      const encode = executable.find((node) => node.action === 'ImageEncode')!;
+      const prompt = executable.find((node) => node.action === 'EncodePrompt')!;
+      const denoise = executable.find((node) => node.action === 'Denoise')!;
+      expect(owner.params.inpaint_compatibility.value).toBe('whole_v1');
+      expect(encode.params.inpaint_compatibility.value).toBe('whole_v1');
+      expect([denoise.params.width.value, denoise.params.height.value]).toEqual([form.width, form.height]);
+      expect(denoise.params.num_inference_steps.value).toBe(form.steps);
+      expect(denoise.params.strength.value).toBe(form.strength);
+      expect(prompt.params.prompt.value).toBe(form.prompt);
+      expect(prompt.params.negative_prompt.value).toBe(form.negativePrompt);
+      if (templateId.startsWith('qwen_outpaint_')) {
+        const canvasId = Object.keys(before.nodes).find((id) => before.nodes[id].action === 'OutpaintCanvas')!;
+        const canvas = before.nodes[canvasId];
+        expect(canvas).toBeTruthy();
+        expect([canvas.params.width.value, canvas.params.height.value]).toEqual([form.width, form.height]);
+        expect(encode.params.image).toMatchObject({ sourceId: canvasId, sourceKey: 'canvas' });
+        expect(encode.params.mask_image).toMatchObject({ sourceId: canvasId, sourceKey: 'mask_image' });
+        expect(prompt.params.image).toMatchObject({ sourceId: canvasId, sourceKey: 'canvas' });
+      }
+    } else {
+      expect(selection.implementation).toBe('whole_pipeline');
+      expect(executable.some((node) => node.action === 'LoadPipeline')).toBe(true);
+    }
+    const foreignSockets = await page.evaluate(async () => {
+      const [{ useFlowStore }, runtime, { operationAuthoring }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+        import('/src/workflow/operationAuthoringHint.ts'),
+      ]);
+      const graph = useFlowStore.getState().toObject();
+      return runtime
+        .expandBlockGraphV2ForExecution(graph.nodes, graph.edges)
+        .nodes.filter((node) => {
+          const operation = operationAuthoring(node)?.operation;
+          return (
+            operation &&
+            Object.hasOwn(node.data.params, 'pipeline_components') &&
+            !operation.ports.some((port) => port.name === 'pipeline_components')
+          );
+        })
+        .map((node) => `${node.data.module}.${node.data.action}`);
+    });
+    expect(foreignSockets).toEqual([]);
+    await page.getByTestId('topbar-export').click();
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByTestId('topbar-export-workflow-package').click();
+    const download = await downloadPromise;
+    const downloadedPath = await download.path();
+    expect(downloadedPath).toBeTruthy();
+    const packageBytes = await fs.readFile(downloadedPath!);
+    const workflowPackage = JSON.parse(packageBytes.toString('utf8')) as { apiGraph: ApiGraphExport };
+    expect(workflowPackage.apiGraph.nodes).toEqual(before.nodes);
+    await page.getByTestId('left-tab-assets').click();
+    await page.getByTestId('left-open-gallery-library').click();
+    await expect(page.getByRole('heading', { name: 'Output Gallery', exact: true })).toBeVisible();
+    await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+      name: `${templateId}.json`,
+      mimeType: 'application/json',
+      buffer: packageBytes,
+    });
+    await page.waitForFunction(() => {
+      const state = window.__MODIFF_E2E__!.getState().studio;
+      return (
+        state.canvasTransition === null &&
+        state.workflowTabs.find((tab: { id: string }) => tab.id === state.activeWorkflowTabId)?.source === 'import'
+      );
+    });
+    await expect.poll(api).toEqual(before);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await expect.poll(api).toEqual(before);
+  });

@@ -267,6 +267,10 @@ See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas
 The [image template workflow guide](docs/image-template-workflows.md) describes
 the current developer nodes, explicit whole-pipeline exceptions, preserved
 creator settings and historical Gallery examples.
+The [developer authoring guide](docs/developer-first-node-ux.md) covers optional
+Model Setup, Prepare Mask and Image Output groups, reversible component bundle
+wiring, and the existing inspection/reuse controls. These explicit actions keep
+saved graphs and template defaults intact.
 
 ## Workspace And Memory
 

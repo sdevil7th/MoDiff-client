@@ -16,23 +16,31 @@ use explicit execution-profile selections rather than a family-wide default.
 | -------------------------- | --------: | ------------------------------------------- |
 | Z-Image Turbo              |         7 | Text to image and styles using LoRAs        |
 | Qwen Image                 |        10 | Text to image and ControlNet image layout   |
-| Qwen Image Edit            |         3 | Image editing                               |
+| Qwen Image Edit            |         7 | Image editing, inpainting and outpainting   |
 | Qwen Image Edit Plus       |         7 | Single-image and multiple-reference editing |
 | Qwen Image Layered         |         1 | Layer decomposition                         |
 | FLUX Schnell, Dev and Krea |        11 | Text to image and styles using LoRAs        |
 | FLUX Kontext               |         2 | Single-image and multiple-reference editing |
 | FLUX.2 Klein               |         3 | Text to image and image/reference editing   |
 
-These 44 recipes contain real model loading, input encoding, denoising and latent
+These 48 recipes contain real model loading, input encoding, denoising and latent
 decoding stages. **Encode Inputs** presents the relevant encoding stages together;
 the exported graph retains their distinct backend calls and typed connections.
 Image, mask, control and reference inputs remain separate when their roles differ.
 
-The other ten recipes retain explicit whole-pipeline operations:
+The four Qwen masked-edit/outpaint templates use real native stages with a
+backend-owned compatibility path for their original image preparation and final
+mask composite. Their dimensions, strength, crop padding and outpaint canvas
+settings stay explicit. Ordinary developer starters keep their native defaults;
+saved workflows retain their own route and values. Matched original outputs and
+Auto/repeat checks on local ROCm remain separate from Windows or cloud hardware
+qualification. Changing a fresh template's execution selection invalidates its
+current exact-template evidence while retaining the historical example.
+
+The other six recipes retain explicit whole-pipeline operations:
 
 | Whole-pipeline path      | Templates | Preserved boundary                                    |
 | ------------------------ | --------: | ----------------------------------------------------- |
-| Qwen Image Edit Inpaint  |         4 | Image/mask preparation and inpaint/outpaint recipe    |
 | FLUX Fill                |         2 | Fill model, image and mask recipe                     |
 | FLUX Canny/Depth control |         2 | Selected control artifact and conditioning contract   |
 | FLUX Redux               |         2 | Selected base/prior models and reference conditioning |
@@ -76,7 +84,7 @@ to `2.5`. Schnell keeps CFG disabled. Ordinary developer Flux starters keep thei
 at scale `1`; creating a converted template explicitly applies that template's
 preserved settings.
 
-The 31 recipes converted from whole-pipeline loading bind their original
+The 35 recipes converted from whole-pipeline loading bind their original
 attention backend and enabled VAE slicing/tiling explicitly. The original 13
 native recipes retain inherited attention and unset VAE policies. Schnell's
 template preserves its authored 512-token prompt limit; the ordinary developer
