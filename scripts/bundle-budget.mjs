@@ -223,7 +223,11 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // runtime restoration and the native recipe checks add 1316 bytes to the last
 // reviewed build. Bound these features and relocation at 8.5 KiB above the
 // former aggregate cap; startup and both per-chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704;
+// Preserving one declared media source across new required inputs adds 746
+// deferred gzip bytes (267236 -> 267982 measured). Its role, source, literal
+// and cycle guards stay in the existing lazy authoring chunk and reuse nanoid.
+// Allow 768 bytes; startup, dependencies and both per-chunk caps stay fixed.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

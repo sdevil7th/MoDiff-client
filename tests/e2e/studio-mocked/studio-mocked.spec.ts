@@ -9301,6 +9301,137 @@ test('the unified editor inspect a node with the library closed, preserving grap
     .toBe(before.nodes.find((node) => node.id === nodeId)!.params.prompt.value);
 });
 
+test('mounted run readiness follows an optional loader file used by a required operation input', async ({ page }) => {
+  await ensureFrontend();
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
+  const selectionArgs = [script, '--selection', 'QwenImageModularPipeline', 'image_to_image'];
+  const { stdout } = await promisify(execFile)(
+    process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh'),
+    process.platform === 'win32' ? selectionArgs : [python, ...selectionArgs],
+    {
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      timeout: 90_000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  const [starter] = JSON.parse(stdout) as (OperationStarter & {
+    testMediaLoaderRegistry: Record<string, NodeData>;
+  })[];
+  expect(starter?.pipelineClass).toBe('QwenImageModularPipeline');
+  expect(starter?.task).toBe('image_to_image');
+  const imageEncoder = starter!.nodes.find(
+    (item) =>
+      item.operation.nodeKey === 'modules.ModularDiffusers.ImageEncode' &&
+      item.operation.ports.some((port) => port.name === 'image' && port.direction === 'input' && port.required),
+  )!;
+  expect(imageEncoder).toBeDefined();
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(
+    async ({ encoder, registry }) => {
+      const [{ useFlowStore }, { useStudioStore }, { useNodesStore }, { mountRunReadinessProbe }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/stores/useStudioStore.ts'),
+        import('/src/stores/useNodeStore.ts'),
+        import('/tests/e2e/studio-mocked/runReadinessFixture.tsx'),
+      ]);
+      const loader = structuredClone(registry['modules.Image.Load']!);
+      loader.label = 'Load Image';
+      loader.params.file = {
+        ...loader.params.file,
+        label: 'Source image',
+        display: 'filebrowser',
+        value: [],
+        fieldOptions: { fileTypes: ['image'], multiple: true },
+      };
+      // The real loader picker is optional in the registry. Its typed connection
+      // to this actual backend operation makes the file necessary for this run.
+      if (loader.params.file.required || loader.params.file.isInput)
+        throw new Error('Expected optional picker metadata');
+      useNodesStore.setState({ nodesRegistry: { ...registry, [encoder.operation.nodeKey]: encoder.node } });
+      useStudioStore.getState().clearGraphBinding();
+      useFlowStore.setState({
+        nodes: [
+          {
+            id: 'readiness-upload-source',
+            type: 'custom',
+            position: { x: 80, y: 100 },
+            data: loader,
+          },
+          {
+            id: 'readiness-required-image',
+            type: 'custom',
+            position: { x: 600, y: 100 },
+            data: {
+              ...encoder.node,
+              operationAuthoring: {
+                schemaVersion: 1,
+                operation: encoder.operation,
+                defaults: {},
+                retained: [],
+              },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: 'readiness-required-image-wire',
+            source: 'readiness-upload-source',
+            sourceHandle: 'image',
+            target: 'readiness-required-image',
+            targetHandle: 'image',
+          },
+        ],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      });
+      useFlowStore.getState().resetHistory();
+      mountRunReadinessProbe();
+    },
+    { encoder: imageEncoder, registry: starter!.testMediaLoaderRegistry },
+  );
+  const readiness = page.getByTestId('mounted-media-readiness');
+  await expect(readiness).toContainText('Load Image needs a file before running.');
+  const source = page.getByTestId('readiness-upload-picker');
+  await page.route('**/file', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({ json: { path: ['@data/images/readiness-source.png'] } });
+  });
+  const before = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    return useFlowStore.getState().toObject();
+  });
+  await source.locator('input[type="file"]').setInputFiles({
+    name: 'readiness-source.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
+  const fileValue = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().nodes.find((node) => node.id === 'readiness-upload-source')!.data.params.file
+        .value;
+    });
+  await expect.poll(fileValue).toEqual(['@data/images/readiness-source.png']);
+  // Keep the hook mounted: no refresh, graph replacement, registry publication,
+  // queue event or Studio edit may be needed to clear a successful upload.
+  await expect(readiness).toHaveText('[]');
+  expect(
+    await page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().edges;
+    }),
+  ).toEqual(before.edges);
+  await source.getByRole('button', { name: 'Remove media', exact: true }).click();
+  await expect.poll(fileValue).toEqual(['']);
+  await expect(readiness).toContainText('Load Image needs a file before running.');
+});
+
 test('Fix opens a required Block input without changing Creator workspace or memory policy', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);

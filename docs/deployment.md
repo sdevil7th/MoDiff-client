@@ -137,13 +137,15 @@ That gate also checks emitted module identity: static imports, dynamic imports
 per module. Duplicate URLs create independent workflow stores and can break
 portable export. Shared Lucide dependencies initialize in `graph-vendor` so
 lazy panels cannot capture undefined icons through an entry-chunk cycle. The
-startup graph ceiling is 613 KiB gzip, with a 439 KiB largest startup chunk.
-Explicit default-equal edit provenance and validation of bounded inactive
-model drafts bring measured startup to about 612.1 KiB. Their synchronous
-validation stays with the editor; model-change planning and right-panel forms
-remain lazy. No dependency was added. Deferred code is separately bounded by
-the budget script. Test cold panel startup,
-native portable import/Save/export, and browser resource URLs on the built app.
+startup graph ceiling is 642304 gzip bytes, with a 464000-byte largest startup
+chunk. The reviewed media-migration build measures 642098 startup bytes and
+463792 bytes for its largest startup chunk. Model-change planning and
+right-panel forms remain lazy. Preserving one declared media source across
+new required inputs adds 746 deferred gzip bytes, from 267236 to 267982;
+the reviewed deferred aggregate ceiling is 268160 bytes. The existing
+65536-byte deferred-chunk ceiling and dependencies stay fixed. Test cold
+panel startup, native portable import/Save/export, and browser resource URLs
+on the built app.
 
 When updating selected loader field metadata, regenerate the paired
 `BlockDefinitionV2` catalog and frontend identity pins together. This metadata

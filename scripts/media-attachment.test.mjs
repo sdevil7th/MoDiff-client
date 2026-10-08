@@ -642,6 +642,244 @@ test('fresh sources keep masks distinct and share the same declared image across
   );
 });
 
+function qwenImageMigrationSource() {
+  const source = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'image_to_image');
+  const target = starters.find(
+    (s) => s.pipelineClass === 'QwenImageEditPlusModularPipeline' && s.task === 'edit_image',
+  );
+  assert.ok(source && target, 'both actual backend routes are published');
+  const graph = authoring.createOperationStarter(source, { x: 0, y: 0 });
+  const owner = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+  owner.data.params.auto_offload.value = false;
+  owner.data.params.offload_mode.value = 'none';
+  const choice = attachment
+    .mediaAttachmentChoices(
+      source.nodes.map((node) => node.operation),
+      source.pipelineClass,
+    )
+    .find((item) => item.role === 'image');
+  const attached = attachment.planMediaAttachment(graph, owner.id, source, choice, registry);
+  const image = attached.nodes.find((node) => node.data.module === 'modules.Image' && node.data.action === 'Load');
+  image.data.params.file = { type: 'str', display: 'filebrowser', value: ['inputs/source-product.png'] };
+  return { source, target, graph: attached, ownerId: owner.id, imageId: image.id };
+}
+
+test('actual image-to-image model migration preserves one image source across all new declared consumers', async (t) => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  for (const grouped of [false, true])
+    await t.test(grouped ? 'visible encoding group' : 'ordinary leaves', () => {
+      const fixture = qwenImageMigrationSource();
+      const graph = grouped ? visual.groupNewOperationGraph(fixture.graph) : fixture.graph;
+      const original = structuredClone(graph);
+      const plan = authoring.planOperationChange(graph, fixture.ownerId, fixture.target);
+      const flat = visual.unpackVisualOperationGroups(plan.graph).graph;
+      const consumers = flat.nodes.filter((node) => ['ImageEncode', 'EncodePrompt'].includes(node.data.action));
+      assert.equal(consumers.length, 2);
+      for (const consumer of consumers) {
+        const port = consumer.data.operationAuthoring.operation.ports.find((item) => item.name === 'image');
+        assert.equal(port.semanticName, 'image');
+        assert.equal(port.semantics.kind, 'media');
+        assert.equal(port.required, true);
+        assert.deepEqual(
+          flat.edges
+            .filter((edge) => edge.target === consumer.id && edge.targetHandle === port.name)
+            .map((edge) => [edge.source, edge.sourceHandle]),
+          [[fixture.imageId, 'image']],
+          'the original image output, not a new source or mask, supplies both declared roles',
+        );
+      }
+      assert.deepEqual(
+        flat.nodes.find((node) => node.id === fixture.imageId),
+        fixture.graph.nodes.find((node) => node.id === fixture.imageId),
+      );
+      assert.deepEqual(graph, original, 'planning leaves the source graph and its immutable group snapshots unchanged');
+      assert.ok(
+        !inspectRequiredGraphInputs(plan.graph.nodes, flat, {}).some((issue) =>
+          /needs image before running/u.test(issue.message),
+        ),
+      );
+      const api = useFlowStore
+        .getState()
+        .exportGraph('media-migration', undefined, { sourceGraph: plan.graph, randomizeSeeds: false });
+      for (const consumer of consumers) {
+        const submitted = Object.values(api.nodes).find((node) => node.action === consumer.data.action);
+        assert.equal(submitted.params.image.sourceId, fixture.imageId);
+        assert.equal(submitted.params.image.sourceKey, 'image');
+        assert.equal(submitted.params.image.display, 'input');
+      }
+    });
+});
+
+test('media migration keeps distinct roles, existing values, disabled sources and absent declarations unresolved', async (t) => {
+  const { preservedMediaFanout } = await server.ssrLoadModule('/src/workflow/operationMediaMigration.ts');
+  const operationNodes = (graph) => graph.nodes.filter((node) => node.data.operationAuthoring);
+  for (const [name, change] of [
+    [
+      'reference role',
+      ({ port }) => {
+        port.semanticName = 'reference_image';
+      },
+    ],
+    [
+      'mask role',
+      ({ port }) => {
+        port.semanticName = 'mask_image';
+      },
+    ],
+    [
+      'control role',
+      ({ port }) => {
+        port.semanticName = 'control_image';
+      },
+    ],
+    [
+      'component role',
+      ({ port }) => {
+        port.roles = ['component'];
+      },
+    ],
+    [
+      'state scope',
+      ({ port }) => {
+        port.semantics.scope = 'OtherOwner';
+      },
+    ],
+    [
+      'missing semantics',
+      ({ port }) => {
+        delete port.semantics;
+      },
+    ],
+    [
+      'hidden port',
+      ({ port }) => {
+        port.hidden = true;
+      },
+    ],
+    [
+      'optional port',
+      ({ port }) => {
+        port.required = false;
+      },
+    ],
+    [
+      'hidden field',
+      ({ field }) => {
+        field.hidden = true;
+      },
+    ],
+    [
+      'disabled field',
+      ({ field }) => {
+        field.disabled = true;
+      },
+    ],
+    [
+      'existing value',
+      ({ field }) => {
+        field.value = ['inputs/another-product.png'];
+      },
+    ],
+    [
+      'disabled source',
+      ({ image }) => {
+        image.data.uiState = { disabled: true };
+      },
+    ],
+    [
+      'incompatible source',
+      ({ image }) => {
+        image.data.params.image.type = 'audio';
+      },
+    ],
+    [
+      'no preserved driver',
+      ({ after, image }) => {
+        after.edges = after.edges.filter((edge) => edge.source !== image.id);
+      },
+    ],
+    [
+      'previously required but disconnected',
+      ({ previousPrompt, port, field }) => {
+        previousPrompt.data.operationAuthoring.operation.ports.push(structuredClone(port));
+        previousPrompt.data.params.image = structuredClone(field);
+      },
+    ],
+  ])
+    await t.test(name, () => {
+      const fixture = qwenImageMigrationSource();
+      const before = structuredClone(fixture.graph);
+      const after = authoring.planOperationChange(fixture.graph, fixture.ownerId, fixture.target).graph;
+      const prompt = after.nodes.find((node) => node.data.action === 'EncodePrompt');
+      after.edges = after.edges.filter((edge) => !(edge.target === prompt.id && edge.targetHandle === 'image'));
+      const port = prompt.data.operationAuthoring.operation.ports.find((item) => item.name === 'image');
+      const previousPrompt = before.nodes.find((node) => node.data.action === 'EncodePrompt');
+      change({
+        before,
+        after,
+        prompt,
+        port,
+        field: prompt.data.params.image,
+        previousPrompt,
+        image: after.nodes.find((node) => node.id === fixture.imageId),
+      });
+      const snapshot = structuredClone({ before, after });
+      assert.deepEqual(preservedMediaFanout(before, after, operationNodes(before), operationNodes(after)).edges, []);
+      assert.deepEqual({ before, after }, snapshot, 'rejected fanout is read-only');
+    });
+});
+
+test('media migration preserves occupied sockets and rejects competing drivers and cycles', async (t) => {
+  const { preservedMediaFanout } = await server.ssrLoadModule('/src/workflow/operationMediaMigration.ts');
+  const operationNodes = (graph) => graph.nodes.filter((node) => node.data.operationAuthoring);
+  for (const mode of ['occupied', 'two sources', 'two handles', 'cycle'])
+    await t.test(mode, () => {
+      const fixture = qwenImageMigrationSource();
+      const before = structuredClone(fixture.graph);
+      const after = authoring.planOperationChange(fixture.graph, fixture.ownerId, fixture.target).graph;
+      const prompt = after.nodes.find((node) => node.data.action === 'EncodePrompt');
+      const current = after.edges.find((edge) => edge.target === prompt.id && edge.targetHandle === 'image');
+      if (mode !== 'occupied') after.edges = after.edges.filter((edge) => edge !== current);
+      if (mode === 'two sources' || mode === 'two handles') {
+        const alternative = structuredClone(before.nodes.find((node) => node.id === fixture.imageId));
+        if (mode === 'two sources') {
+          alternative.id = 'another-image';
+          before.nodes.push(structuredClone(alternative));
+          after.nodes.push(alternative);
+        } else {
+          for (const graph of [before, after])
+            graph.nodes.find((node) => node.id === alternative.id).data.params.alternate = {
+              type: 'image',
+              display: 'output',
+            };
+        }
+        const sourceHandle = mode === 'two sources' ? 'image' : 'alternate';
+        for (const graph of [before, after]) {
+          const encoder = graph.nodes.find((node) => node.data.action === 'ImageEncode');
+          graph.edges.push({
+            id: `competing-${graph === before ? 'before' : 'after'}`,
+            source: alternative.id,
+            sourceHandle,
+            target: encoder.id,
+            targetHandle: 'image',
+          });
+        }
+      }
+      if (mode === 'cycle') after.edges.push({ id: 'downstream-source', source: prompt.id, target: fixture.imageId });
+      const snapshot = structuredClone({ before, after });
+      const result = preservedMediaFanout(before, after, operationNodes(before), operationNodes(after));
+      assert.deepEqual(result.edges, []);
+      assert.equal(result.attention.length, mode === 'occupied' ? 0 : 1);
+      assert.deepEqual(
+        { before, after },
+        snapshot,
+        'existing wires, conflicting sources and cycles are preserved for review',
+      );
+    });
+});
+
 test('custom mirrored interfaces reject adaptation without mutating their source or values', async () => {
   const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   const baseline = starters.find(
