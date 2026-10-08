@@ -45,6 +45,229 @@ before(async () => {
 });
 after(async () => server?.close());
 
+test('media source labels distinguish same-pipeline repositories and same-repository branches without changing ports', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image');
+  const branches = ['Qwen/first', 'Qwen/second', 'Qwen/first'].map((repo) => {
+    const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+    graph.nodes.find((n) => n.data.action === 'ModelsLoader').data.params.repo_id.value = {
+      source: 'hub',
+      value: repo,
+    };
+    return graph;
+  });
+  const graph = { nodes: branches.flatMap((g) => g.nodes), edges: branches.flatMap((g) => g.edges) };
+  const decoders = graph.nodes.filter((n) => n.data.action === 'DecodeLatents');
+  const before = structuredClone(graph);
+  const options = mediaAttachmentSources(graph.nodes, graph.edges, 'image');
+  const images = options.filter((o) => decoders.some((n) => JSON.parse(o.value)[0] === n.id));
+  assert.deepEqual(
+    images.map((o) => o.value),
+    decoders.map((n) => JSON.stringify([n.id, 'images'])),
+  );
+  assert.deepEqual(
+    images.map((o) => o.label),
+    [
+      'Decode Latents · Images · Qwen/first · Branch 1',
+      'Decode Latents · Images · Qwen/second',
+      'Decode Latents · Images · Qwen/first · Branch 2',
+    ],
+  );
+  assert.deepEqual(graph, before, 'display context never changes model identity, settings or graph');
+});
+
+test('media labels follow current wires and model edits while retaining shared and cyclic sources', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image');
+  const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  const decoder = graph.nodes.find((n) => n.data.action === 'DecodeLatents');
+  owner.data.params.repo_id.value = { source: 'local', value: '/models/shared' };
+  const selected = JSON.stringify([decoder.id, 'images']);
+  const read = () => mediaAttachmentSources(graph.nodes, graph.edges, 'image');
+  assert.equal(read().find((o) => o.value === selected).label, 'Decode Latents · Images · Local: /models/shared');
+  owner.data.params.repo_id.value = 'org/updated';
+  assert.equal(read().find((o) => o.value === selected).label, 'Decode Latents · Images · org/updated');
+  graph.edges.push({ id: 'cycle-for-review', source: decoder.id, target: owner.id });
+  assert.ok(
+    read().some((o) => o.value === selected),
+    'cycle checks remain the actual attachment planner responsibility',
+  );
+  graph.edges = graph.edges.filter((e) => e.source !== owner.id);
+  assert.equal(read().find((o) => o.value === selected).label, 'Decode Latents · Images');
+  graph.nodes = graph.nodes.filter((n) => n.id !== decoder.id);
+  assert.ok(!read().some((o) => o.value === selected), 'removed ports cannot remain selectable');
+});
+
+test('Block output labels resolve effective model controls and exact declared and crossing ports', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const crossing = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image');
+  const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  owner.data.params.repo_id.value = { source: 'hub', value: 'org/original' };
+  const decoder = graph.nodes.find((n) => n.data.action === 'DecodeLatents');
+  const inner = {
+    nodes: graph.nodes.map((n) => ({ nodeId: n.id, nodeType: n.type, data: n.data })),
+    edges: graph.edges.map((e) => ({
+      edgeId: e.id,
+      sourceNodeId: e.source,
+      sourcePortId: e.sourceHandle,
+      targetNodeId: e.target,
+      targetPortId: e.targetHandle,
+    })),
+  };
+  const definition = {
+    schemaVersion: 2,
+    definitionId: 'user:source-label',
+    displayName: 'My image branch',
+    source: { kind: 'user' },
+    graph: { ...inner, graphHash: schema.blockGraphHashV2(inner) },
+    boundary: {
+      mode: 'explicit',
+      inputs: [],
+      outputs: [
+        {
+          portId: 'rendered',
+          label: 'Result',
+          valueType: 'image',
+          required: false,
+          binding: { nodeId: decoder.id, fieldOrPortId: 'images' },
+        },
+      ],
+    },
+    controls: [
+      {
+        controlId: 'source-model',
+        label: 'Model',
+        binding: { nodeId: owner.id, fieldId: 'repo_id' },
+        valueType: 'string',
+        order: 0,
+      },
+    ],
+    suggestedInputs: [],
+    previews: [],
+    ownership: { kind: 'user', definitionMutable: true },
+  };
+  definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+  const instance = schema.createBlockInstanceV2(definition, {
+    instanceId: 'source-label-block',
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 500 },
+  });
+  const block = runtime.createBlockRootNodeV2(instance);
+  const before = structuredClone(block);
+  const handle = crossing.blockCrossingHandleV2({ direction: 'output', nodeId: decoder.id, fieldOrPortId: 'images' });
+  const options = mediaAttachmentSources([block], [], 'image', { nodeId: block.id, handleId: handle });
+  assert.deepEqual(
+    options.map((o) => o.value),
+    [JSON.stringify([block.id, 'rendered']), JSON.stringify([block.id, handle])],
+  );
+  assert.ok(options.every((o) => o.label.startsWith('My image branch · ') && o.label.endsWith(' · org/original')));
+  assert.deepEqual(block, before, 'Block definition, interface and values remain immutable');
+  const changed = runtime.createBlockRootNodeV2(
+    runtime.setBlockInstanceValueV2(instance, 'source-model', { source: 'hub', value: 'org/edited' }),
+  );
+  assert.ok(mediaAttachmentSources([changed], [], 'image').every((o) => o.label.endsWith(' · org/edited')));
+  assert.ok(
+    mediaAttachmentSources([block], [], 'image').every((o) => o.label.endsWith(' · org/original')),
+    'immutable-instance cache never retains another instance edit',
+  );
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const originalState = useFlowStore.getState();
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    throw new Error('No network in imported-edge regression');
+  };
+  try {
+    const target = {
+      id: 'retained-input-target',
+      type: 'custom',
+      position: { x: 800, y: 0 },
+      data: {
+        module: 'custom.Values',
+        action: 'Input',
+        label: 'Input',
+        params: { input: { type: 'str', display: 'input' } },
+      },
+    };
+    const edge = {
+      id: 'retained-input-as-output',
+      source: block.id,
+      sourceHandle: crossing.blockCrossingHandleV2({ direction: 'input', nodeId: owner.id, fieldOrPortId: 'repo_id' }),
+      target: target.id,
+      targetHandle: 'input',
+    };
+    useFlowStore.getState().replaceGraph({ nodes: [block, target], edges: [edge] }, { clearRemovedCache: false });
+    const imported = useFlowStore.getState();
+    assert.equal(imported.edges[0].id, edge.id, 'ordinary import retains the broken wire for explicit repair');
+    let sources;
+    assert.doesNotThrow(() => {
+      sources = mediaAttachmentSources(imported.nodes, imported.edges, 'image');
+    }, 'unresolved display context must not hide valid source choices');
+    assert.deepEqual(
+      sources.map((o) => o.value),
+      [JSON.stringify([block.id, 'rendered'])],
+    );
+    assert.throws(
+      () => crossing.blockConnectionTargetsV2(imported.nodes[0], edge.sourceHandle, 'output'),
+      /wrong direction/,
+      'the original endpoint authority still rejects a wrong-direction wire',
+    );
+    assert.throws(
+      () =>
+        mediaAttachmentSources(imported.nodes, imported.edges, 'image', {
+          nodeId: block.id,
+          handleId: crossing.blockCrossingHandleV2({
+            direction: 'output',
+            nodeId: owner.id,
+            fieldOrPortId: 'repo_id',
+          }),
+        }),
+      /missing or has changed direction/,
+      'source enumeration must not swallow an invalid selected socket',
+    );
+    assert.equal(requests, 0);
+  } finally {
+    useFlowStore.setState(originalState);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('audio and custom source titles retain order, types, visibility and opaque selector safety', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const data = (id, label, params) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { module: 'custom.Media', action: 'Source', label, params },
+  });
+  const nodes = [
+    data('a', 'My recording', {
+      clip: { type: ['audio', 'image'], display: 'output', label: 'Clip' },
+      secret: { type: 'audio', display: 'output', hidden: true },
+      stopped: { type: 'audio', display: 'output', disabled: true },
+    }),
+    data('b', 'My recording', { clip: { type: 'audio', display: 'output', label: 'Clip' } }),
+    data('metadata', 'Metadata', {
+      repo_id: { display: 'modelselect', value: { source: 'hub', value: { token: 'never-stringify' } } },
+    }),
+  ];
+  const edges = [{ id: 'metadata', source: 'metadata', target: 'a' }];
+  assert.deepEqual(mediaAttachmentSources(nodes, edges, 'audio'), [
+    { value: JSON.stringify(['a', 'clip']), label: 'My recording · Clip · Branch 1' },
+    { value: JSON.stringify(['b', 'clip']), label: 'My recording · Clip · Branch 2' },
+  ]);
+  assert.deepEqual(
+    mediaAttachmentSources(nodes, edges, 'image').map((o) => o.value),
+    [JSON.stringify(['a', 'clip'])],
+  );
+});
+
 const registry = {
   'modules.Image.Load': {
     type: 'custom',

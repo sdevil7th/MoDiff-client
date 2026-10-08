@@ -29968,3 +29968,215 @@ for (const templateId of [
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
     await expect.poll(api).toEqual(before);
   });
+
+test('mounted media source picker distinguishes model branches and follows edits, removal and Undo', async ({
+  page,
+}) => {
+  page.setDefaultTimeout(15_000);
+  await ensureFrontend();
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
+  const args = [script, '--selection', 'QwenImageModularPipeline', 'image_to_image'];
+  const { stdout } = await promisify(execFile)(
+    process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh'),
+    process.platform === 'win32' ? args : [python, ...args],
+    {
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      timeout: 90_000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  const [starter] = JSON.parse(stdout) as OperationStarter[];
+  expect(starter!.task).toBe('image_to_image');
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  const ids = await page.evaluate(async (starter) => {
+    const [
+      { useFlowStore },
+      { useNodesStore },
+      { createOperationStarter },
+      { mountMediaAttachmentProbe },
+      schema,
+      runtime,
+      crossing,
+    ] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useNodeStore.ts'),
+      import('/src/workflow/operationAuthoring.ts'),
+      import('/tests/e2e/studio-mocked/mediaAttachmentFixture.tsx'),
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+      import('/src/studio/blockCrossingConnectionsV2.ts'),
+    ]);
+    const branches = ['Qwen/Qwen-Image', 'Qwen/Qwen-Image-2512', 'Qwen/Qwen-Image'].map((repo) => {
+      const graph = createOperationStarter(starter, { x: 0, y: 0 });
+      graph.nodes.find((node) => node.data.action === 'ModelsLoader')!.data.params.repo_id!.value = {
+        source: 'hub',
+        value: repo,
+      };
+      return graph;
+    });
+    const owners = branches.map((graph) => graph.nodes.find((node) => node.data.action === 'ModelsLoader')!.id);
+    const decoders = branches.map((graph) => graph.nodes.find((node) => node.data.action === 'DecodeLatents')!.id);
+    useNodesStore.setState({
+      operationContracts: starter.nodes.map((node) => node.operation),
+      pipelineSupport: [
+        {
+          pipelineClass: starter.pipelineClass,
+          coverage: 'declared',
+          reason: 'Actual backend starter contracts for this isolated picker regression.',
+          equivalentTo: [],
+          upstreamTasks: [],
+          tasks: [
+            {
+              task: starter.task,
+              execution: 'adapter',
+              decomposition: 'stages',
+              operationIds: starter.nodes.map((node) => node.operation.operationId),
+              executionProfileIds: [],
+              dependencies: 'ready',
+              runtimeRequirements: [],
+            },
+          ],
+        },
+      ],
+    });
+    const saved = createOperationStarter(starter, { x: 0, y: 0 });
+    const savedOwner = saved.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+    savedOwner.data.params.repo_id!.value = { source: 'hub', value: 'Qwen/Qwen-Image-2512' };
+    const savedDecoder = saved.nodes.find((node) => node.data.action === 'DecodeLatents')!;
+    const inner = {
+      nodes: saved.nodes.map((node) => ({ nodeId: node.id, nodeType: node.type!, data: node.data })),
+      edges: saved.edges.map((edge) => ({
+        edgeId: edge.id,
+        sourceNodeId: edge.source,
+        sourcePortId: edge.sourceHandle!,
+        targetNodeId: edge.target,
+        targetPortId: edge.targetHandle!,
+      })),
+    };
+    const definition = {
+      schemaVersion: 2 as const,
+      definitionId: 'user:media-label-import',
+      displayName: 'Saved image branch',
+      source: { kind: 'user' as const },
+      graph: { ...inner, graphHash: schema.blockGraphHashV2(inner) },
+      boundary: {
+        mode: 'explicit' as const,
+        inputs: [],
+        outputs: [
+          {
+            portId: 'rendered',
+            label: 'Result',
+            valueType: 'image',
+            required: false,
+            binding: { nodeId: savedDecoder.id, fieldOrPortId: 'images' },
+          },
+        ],
+      },
+      controls: [],
+      suggestedInputs: [],
+      previews: [],
+      ownership: { kind: 'user' as const, definitionMutable: true },
+    };
+    const block = runtime.createBlockRootNodeV2(
+      schema.createBlockInstanceV2(
+        { ...definition, contentHash: schema.blockDefinitionContentHashV2(definition) },
+        { instanceId: 'media-label-import-block', position: { x: 0, y: 800 }, size: { width: 400, height: 500 } },
+      ),
+    );
+    const broken = {
+      id: 'retained-input-as-output',
+      source: block.id,
+      sourceHandle: crossing.blockCrossingHandleV2({
+        direction: 'input',
+        nodeId: savedOwner.id,
+        fieldOrPortId: 'repo_id',
+      }),
+      target: 'retained-input-target',
+      targetHandle: 'input',
+    };
+    useFlowStore.getState().replaceGraph(
+      {
+        nodes: [
+          ...branches.flatMap((graph) => graph.nodes),
+          block,
+          {
+            id: broken.target,
+            type: 'custom',
+            position: { x: 900, y: 800 },
+            data: {
+              module: 'custom.Values',
+              action: 'Input',
+              type: 'custom',
+              category: 'test',
+              label: 'Input',
+              params: { input: { type: 'str', display: 'input' } },
+            },
+          },
+        ],
+        edges: [...branches.flatMap((graph) => graph.edges), broken],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+      { clearRemovedCache: false },
+    );
+    useFlowStore.getState().resetHistory();
+    mountMediaAttachmentProbe(owners[0]!, owners[1]!, decoders[1]!);
+    return { owners, decoders, brokenEdgeId: broken.id };
+  }, starter!);
+  const probe = page.getByTestId('mounted-media-attachment');
+  const picker = probe.getByRole('button', { name: 'Media input source', exact: true });
+  await picker.click();
+  const first = 'Decode Latents · Images · Qwen/Qwen-Image · Branch 1';
+  const second = 'Decode Latents · Images · Qwen/Qwen-Image-2512';
+  const third = 'Decode Latents · Images · Qwen/Qwen-Image · Branch 2';
+  await expect(page.getByRole('option', { name: first, exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: third, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('option', { name: 'Saved image branch · Result · Qwen/Qwen-Image-2512', exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().edges.some((edge) => edge.id === id),
+      ids.brokenEdgeId,
+    ),
+  ).toBe(true);
+  await page.getByRole('option', { name: second, exact: true }).click();
+  await expect(picker).toHaveText(second);
+  await probe.getByRole('button', { name: 'Use the same source model', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  await picker.click();
+  await expect(
+    page.getByRole('option', { name: 'Decode Latents · Images · Qwen/Qwen-Image · Branch 3', exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await probe.getByRole('button', { name: 'Remove selected source', exact: true }).click();
+  await expect(picker).toHaveText('Add Load Image');
+  let starterRequests = 0;
+  await page.route('**/operations/starter*', (route) => {
+    starterRequests += 1;
+    return route.abort();
+  });
+  await probe.getByRole('button', { name: 'Attach input', exact: true }).click();
+  await expect(probe).toContainText(
+    'The selected source is no longer compatible. Choose a source for this input role.',
+  );
+  expect(starterRequests).toBe(0);
+  await probe.getByRole('button', { name: 'Undo source edit', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  await probe.getByRole('button', { name: 'Undo source edit', exact: true }).click();
+  await expect(picker).toHaveText(second);
+  await probe.getByRole('button', { name: 'Redo source edit', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().nodes.some((node) => node.id === id),
+      ids.decoders[1]!,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('media-source-model-branches.png'), animations: 'disabled' });
+});

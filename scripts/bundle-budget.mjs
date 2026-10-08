@@ -227,7 +227,12 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // deferred gzip bytes (267236 -> 267982 measured). Its role, source, literal
 // and cycle guards stay in the existing lazy authoring chunk and reuse nanoid.
 // Allow 768 bytes; startup, dependencies and both per-chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768;
+// Ordinary media-source labels add upstream repository/local context and
+// visible branch ordinals without changing ports or attachment authority.
+// Measured deferred aggregate is 268690 bytes (+588 from 268102); reuse the
+// existing Block projection and cache immutable instances. Allow 640 bytes;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

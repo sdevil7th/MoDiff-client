@@ -271,6 +271,15 @@ for equal media roles, keeps masks separate from alpha-mask outputs, and reports
 missing/incompatible loader definitions. It does not touch existing documents,
 invent media for text-only routes, or infer a tensor from a path-only field.
 
+The media attachment source picker retains the exact node/port values and graph
+ordering. Friendly node/field labels add the nearest upstream declared model
+repository or local-source context; remaining identical labels use visible branch
+ordinals. Read-only Block projections resolve effective controls and exact output
+bindings, with immutable instances cached. Unresolved retained crossings add no
+display context and remain available for ordinary repair. This context is
+presentation only: all existing source choices, stale-selection checks, task
+planning, ownership and cycle validation remain unchanged.
+
 Readiness also checks required file pickers in the selected executable closure.
 A connected loader output does not satisfy an empty required source file. Current
 registry declarations cover historical loader snapshots without modifying their
