@@ -1300,7 +1300,7 @@ function payloadWithTransformersTextCluster() {
     components: [
       {
         name: 'model_runtime',
-        type: 'modiff.base-model-runtime@sha256:cc281f8fbae5093d68b4dd963a8f80e32b1589991c8cda97a3ec0f26c9e700db',
+        type: 'modiff.base-model-runtime@sha256:98449d8d9faca739ce5914f6c5ce25cf75b3fabde10c90a1c2818574f362adeb',
         creationMethod: 'base_installation',
         reuseKey: ['model_runtime'],
       },
@@ -1334,7 +1334,7 @@ function payloadWithTransformersTextCluster() {
         url: '',
       },
     },
-    contentHash: 'sha256:ec00d85eae98ff645e1ead4726c55904a9360513b5e21bdc2473fa1a2720a310',
+    contentHash: 'sha256:af0665a30de76d2a10de99d3fc64ede348efcde4620eb7972e6696673722ed33',
   };
   body.providers = ['diffusers', 'transformers'];
   body.definitions.push(transformerDefinition);
@@ -3467,10 +3467,22 @@ test('Transformers Blocks insert and materialize their exact generic task graph'
   assert.equal(transformersSection.entries[0].insertable, true);
   assert.deepEqual(definition.components[0], {
     name: 'model_runtime',
-    type: 'modiff.base-model-runtime@sha256:cc281f8fbae5093d68b4dd963a8f80e32b1589991c8cda97a3ec0f26c9e700db',
+    type: 'modiff.base-model-runtime@sha256:98449d8d9faca739ce5914f6c5ce25cf75b3fabde10c90a1c2818574f362adeb',
     creationMethod: 'base_installation',
     reuseKey: ['model_runtime'],
   });
+  const historicalBaseBody = structuredClone(body);
+  const historicalBaseDefinition = historicalBaseBody.definitions.find(
+    (candidate) => candidate.id === rawDefinition.id,
+  );
+  historicalBaseDefinition.components[0].type =
+    'modiff.base-model-runtime@sha256:cc281f8fbae5093d68b4dd963a8f80e32b1589991c8cda97a3ec0f26c9e700db';
+  historicalBaseDefinition.contentHash = 'sha256:ec00d85eae98ff645e1ead4726c55904a9360513b5e21bdc2473fa1a2720a310';
+  const historicalBaseEntry = libraryCatalogModule
+    .buildHuggingFaceCatalogSections(libraryModule.parseHuggingFaceNodeLibrary(historicalBaseBody))
+    .find((section) => section.id === 'transformers_cluster_nodes').entries[0];
+  assert.equal(historicalBaseEntry.readiness, 'catalog_only');
+  assert.equal(historicalBaseEntry.insertable, false);
   const staleBody = structuredClone(body);
   const staleDefinition = staleBody.definitions.find((candidate) => candidate.id === rawDefinition.id);
   staleDefinition.components[0] = {
