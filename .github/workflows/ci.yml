@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired guidance, component-bundle and native masked-template contracts.
-          ref: 27698452a21ecd19fa4446413886f6bccb6f7446
+          ref: ff93a8a831827c7eb627f0b0a6c8c7cae59c7347
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
