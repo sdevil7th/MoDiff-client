@@ -16,6 +16,8 @@ let sockets;
 let probes;
 let timers;
 let nextTimer;
+let control;
+let config;
 
 class FakeSocket {
   static CONNECTING = 0;
@@ -78,10 +80,14 @@ before(async () => {
     appType: 'custom',
   });
   store = (await server.ssrLoadModule('/src/stores/useWebsocketStore.ts')).useWebsocketStore;
+  control = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
+  config = (await server.ssrLoadModule('/app.config.ts')).default;
 });
 
 beforeEach(() => {
   store.getState().disconnect();
+  store.setState({ address: null });
+  control.resetSupervisorControl();
   sockets = [];
   probes = [];
   timers = new Map();
@@ -183,6 +189,38 @@ test('stale recovery callbacks cannot replace a newer manually connected socket'
   assert.equal(sockets.length, 2);
   assert.equal(store.getState().ws, current);
   assert.equal(store.getState().isConnected, true);
+});
+
+test('health discovery binds a custom websocket tunnel to its own supervisor and ignores stale metadata', async () => {
+  const previous = { ...config };
+  Object.assign(config, {
+    backendAddress: 'http://127.0.0.1:8088',
+    supervisorAddress: 'http://127.0.0.1:8089',
+    supervisorAddressExplicit: false,
+  });
+  try {
+    const metadata = {
+      error: false,
+      ready: true,
+      server: { host: '127.0.0.1', port: 8088, scheme: 'http' },
+      workerControl: { available: true, address: 'http://127.0.0.1:8089' },
+    };
+    store.setState({ address: 'ws://127.0.0.1:18088' });
+    const older = enterHealthRecovery();
+    assert.equal(older.url, 'http://127.0.0.1:18088/health');
+    store.getState().disconnect();
+    store.setState({ address: 'ws://127.0.0.1:28088' });
+    const newer = enterHealthRecovery();
+    newer.respond(200, metadata);
+    await settle();
+    assert.equal(control.supervisorControlAddress(), 'http://127.0.0.1:28089');
+    older.respond(200, metadata);
+    await settle();
+    assert.equal(control.supervisorControlAddress(), 'http://127.0.0.1:28089');
+    assert.equal(older.signal.aborted, true);
+  } finally {
+    Object.assign(config, previous);
+  }
 });
 
 test('disconnect cancels a retry timer even when its callback was already queued', () => {

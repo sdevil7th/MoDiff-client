@@ -674,7 +674,7 @@ function parseRuntimeStatus(value: unknown) {
   return {
     ...payload,
     runtimeEnvironment: parseRuntimeEnvironment(payload),
-    workerControl: parseWorkerControl(payload.workerControl),
+    workerControl: parseWorkerControl(payload.workerControl, payload.server),
   } as RuntimeStatus;
 }
 

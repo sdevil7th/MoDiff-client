@@ -129,6 +129,18 @@ available while the supervised model worker restarts. Temporary health failure
 retains the last verified supervisor address; genuine connection failures remain
 visible and retries use bounded backoff. Explicit Stop remains immediate.
 
+When using an SSH tunnel, forward both the backend and supervisor ports. For
+example, if backend `8088` and supervisor `8089` are forwarded to local `18088`
+and `18089`, open `http://127.0.0.1:18088`. The client resolves that verified
+adjacent pair through the local tunnel instead of contacting local `8089`.
+Development uses the actual backend proxy target, or an explicit
+`VITE_SERVER_ADDRESS`, rather than the frontend port. A custom nonadjacent
+supervisor mapping requires an explicit loopback
+`VITE_SUPERVISOR_CONTROL_ADDRESS` when building or serving the client. An
+unresolved mapping makes no supervisor request; Stop can still use the ordinary
+backend endpoint. Direct backends retain their advertised custom supervisor
+port, and remote or malformed supervisor destinations remain rejected.
+
 ## Registry Or Studio Nodes Are Missing
 
 Studio builds from the live `/nodes` registry. A client profile does not create backend support by itself.

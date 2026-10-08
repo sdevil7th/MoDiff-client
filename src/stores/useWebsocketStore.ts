@@ -43,7 +43,9 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
     const controlRead = beginWorkerControlRead();
     healthProbe = controller;
     try {
-      const address = (get().address || config.serverAddress).replace(/^ws/, 'http');
+      const customAddress = get().address;
+      const address = (customAddress || config.serverAddress).replace(/^ws/, 'http');
+      const backendAddress = customAddress ? address : config.backendAddress;
       const status = await requestJson(`${address}/health`, {
         signal: controller.signal,
         timeoutMs: 5000,
@@ -56,7 +58,11 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
           }
           return {
             ready: value.ready,
-            workerControl: parseWorkerControl('workerControl' in value ? value.workerControl : undefined),
+            workerControl: parseWorkerControl(
+              'workerControl' in value ? value.workerControl : undefined,
+              'server' in value ? value.server : undefined,
+              backendAddress,
+            ),
           };
         },
       });

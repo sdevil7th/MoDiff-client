@@ -2046,6 +2046,37 @@ test('runtime discovery publishes supervisor capability and retains it across te
   assert.equal(controlModule.supervisorControlAddress(), null);
 });
 
+test('runtime discovery resolves a published adjacent supervisor through the configured production tunnel', async () => {
+  const config = (await server.ssrLoadModule('/app.config.ts')).default;
+  const previous = { ...config };
+  Object.assign(config, {
+    backendAddress: 'http://127.0.0.1:18088',
+    supervisorAddress: 'http://127.0.0.1:18089',
+    supervisorAddressExplicit: false,
+  });
+  try {
+    globalThis.fetch = async () =>
+      jsonResponse({
+        ready: true,
+        server: { host: '127.0.0.1', port: 8088, scheme: 'http' },
+        workerControl: { available: true, address: 'http://127.0.0.1:8089' },
+      });
+    await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+    assert.equal(
+      nodesStoreModule.useNodesStore.getState().runtimeStatus.workerControl.address,
+      'http://127.0.0.1:18089',
+    );
+    assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:18089');
+    globalThis.fetch = async () => {
+      throw new TypeError('Owned tunneled worker restarting.');
+    };
+    await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+    assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:18089');
+  } finally {
+    Object.assign(config, previous);
+  }
+});
+
 test('malformed runtime control metadata rejects discovery without replacing the last verified destination', async () => {
   globalThis.fetch = async () =>
     jsonResponse({ ready: true, workerControl: { available: true, address: 'http://127.0.0.1:43001' } });

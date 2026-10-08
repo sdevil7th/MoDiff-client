@@ -20,7 +20,59 @@ function loopbackControlAddress(value: unknown): string {
   return url.origin;
 }
 
-export function parseWorkerControl(value: unknown): WorkerControl | undefined {
+function loopbackEndpoint(value: unknown): { host: string; port: number; origin: string } | null {
+  const match =
+    typeof value === 'string' && value.length <= 128
+      ? /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::([0-9]+))?\/?$/.exec(value)
+      : null;
+  if (!match) return null;
+  const port = Number(match[2] ?? ((value as string).startsWith('https:') ? 443 : 80));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const url = new URL(value as string);
+  return { host: url.hostname.replace(/^\[|\]$/g, ''), port, origin: url.origin };
+}
+
+function advertisedBackendEndpoint(value: unknown): { host: string; port: number } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const server = value as Record<string, unknown>;
+  if (
+    !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(server.host as string) ||
+    typeof server.port !== 'number' ||
+    !Number.isInteger(server.port) ||
+    server.port < 1 ||
+    server.port > 65535 ||
+    !['http', 'https'].includes(server.scheme as string)
+  )
+    return null;
+  return { host: (server.host as string).replace(/^\[|\]$/g, ''), port: server.port };
+}
+
+function resolvedControlAddress(address: string, server: unknown, backendAddress: string): string | null {
+  // A trusted explicit override is the only authority for a custom tunnel
+  // mapping. Neither advertised hosts nor arbitrary port deltas can supply it.
+  if (config.supervisorAddressExplicit) return loopbackControlAddress(config.supervisorAddress);
+  const backend = loopbackEndpoint(backendAddress);
+  const advertised = advertisedBackendEndpoint(server);
+  const control = loopbackEndpoint(address);
+  if (!backend || !advertised || !control) return null;
+  // All accepted hosts refer to this machine. A matching backend port keeps
+  // its actual custom/ephemeral control listener rather than assuming +1.
+  if (backend.port === advertised.port) return address;
+  if (control.host !== advertised.host || control.port !== advertised.port + 1 || backend.port === 65535) return null;
+  if (backendAddress === config.backendAddress) return loopbackControlAddress(config.supervisorAddress);
+  // A custom websocket endpoint is operator configuration too. Bind health
+  // metadata to that endpoint, never the unrelated default backend origin.
+  const target = new URL(backend.origin);
+  target.protocol = 'http:';
+  target.port = String(backend.port + 1);
+  return loopbackControlAddress(target.origin);
+}
+
+export function parseWorkerControl(
+  value: unknown,
+  server?: unknown,
+  backendAddress = config.backendAddress,
+): WorkerControl | undefined {
   // Missing metadata belongs to older backends. It is not evidence that a
   // previously advertised supervisor disappeared during worker replacement.
   if (value === undefined) return undefined;
@@ -35,7 +87,13 @@ export function parseWorkerControl(value: unknown): WorkerControl | undefined {
     if (record.address !== null) throw new Error('Unavailable worker control must have no address.');
     return { available: false, address: null };
   }
-  return { available: true, address: loopbackControlAddress(record.address) };
+  const address = loopbackControlAddress(record.address);
+  // Older backends omit server metadata. Preserve their existing advertised
+  // address behavior while new metadata can identify tunneled transports.
+  return {
+    available: true,
+    address: server === undefined ? address : resolvedControlAddress(address, server, backendAddress),
+  };
 }
 
 export function beginWorkerControlRead() {
@@ -102,7 +160,15 @@ export async function waitForSupervisorMetadata(store: ControlDiscoveryStore, si
 
 export function supervisorControlAddress(explicitAction = false): string | null {
   if (!supervisorControlCanPoll() || (!explicitAction && Date.now() < retryAt)) return null;
-  return knownControl?.address ?? loopbackControlAddress(config.supervisorAddress);
+  if (knownControl) {
+    if (!knownControl.address) {
+      throw new Error(
+        'The supervisor cannot be resolved through the configured backend. Set a trusted loopback VITE_SUPERVISOR_CONTROL_ADDRESS.',
+      );
+    }
+    return knownControl.address;
+  }
+  return loopbackControlAddress(config.supervisorAddress);
 }
 
 export function supervisorControlFailed() {
