@@ -29,7 +29,7 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import { STUDIO_MODE_LABELS } from '../studio/modelProfiles';
+import { outputTaskDisplay } from '../studio/outputTaskDisplay';
 import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
@@ -77,7 +77,7 @@ function outputSubtitle(output: StudioOutput) {
     : isVideoOutput(output)
       ? ` | ${videoOutputSummary(output)}`
       : ` | ${size || 'image'}`;
-  return `${output.modelLabel}${template} | ${STUDIO_MODE_LABELS[output.mode]}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
+  return `${output.modelLabel}${template} | ${outputTaskDisplay(output)}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
 }
 
 function isAudioOutput(output: StudioOutput) {

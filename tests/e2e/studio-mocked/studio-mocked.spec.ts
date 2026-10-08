@@ -28330,7 +28330,9 @@ for (const workspace of ['expert'] as const) {
 }
 
 for (const workspace of ['expert'] as const) {
-  test(`${workspace} Gallery keeps recognized graph task after history reload`, async ({ page }) => {
+  test(`${workspace} Gallery keeps recognized and ambiguous graph task labels after history reload`, async ({
+    page,
+  }) => {
     await ensureFrontend();
     await installMockRoutes(page);
     const output = {
@@ -28377,7 +28379,13 @@ for (const workspace of ['expert'] as const) {
         unavailableFields: [],
         uncapturedNodeIds: [],
         truncated: false,
-        graphTasks: [{ loaderId: 'loader', pipelineClass: 'StableDiffusionXLModularPipeline', task: 'image_to_image' }],
+        graphTasks: [
+          {
+            loaderId: 'loader',
+            pipelineClass: 'StableDiffusionXLModularPipeline',
+            task: 'image_to_image' as string | null,
+          },
+        ],
       },
     };
     const custom = structuredClone(output);
@@ -28385,11 +28393,20 @@ for (const workspace of ['expert'] as const) {
     custom.resolvedExecutionInputs.nodes[0]!.fields.model_type!.value = 'CustomModularPipeline';
     custom.resolvedExecutionInputs.summary.modelType = 'CustomModularPipeline';
     custom.resolvedExecutionInputs.graphTasks[0]!.pipelineClass = 'CustomModularPipeline';
+    const edit = structuredClone(output);
+    edit.id = 'ambiguous-edit-history';
+    edit.resolvedExecutionInputs.nodes[0]!.fields.model_type!.value = 'QwenImageEditPlusModularPipeline';
+    edit.resolvedExecutionInputs.summary.modelType = 'QwenImageEditPlusModularPipeline';
+    edit.resolvedExecutionInputs.nodes[1]!.fields.num_inference_steps!.value = '40';
+    edit.resolvedExecutionInputs.summary.steps = '40';
+    edit.resolvedExecutionInputs.graphTasks = [
+      { loaderId: 'loader', pipelineClass: 'QwenImageEditPlusModularPipeline', task: null },
+    ];
     await page.route('**/studio_outputs**', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ error: false, outputs: [output, custom], revision: 1 }),
+        body: JSON.stringify({ error: false, outputs: [output, custom, edit], revision: 1 }),
       }),
     );
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
@@ -28420,6 +28437,17 @@ for (const workspace of ['expert'] as const) {
       expect(stored.formSnapshot.mode).toBe('text_to_image');
       expect(stored.formSnapshot.modelType).toBe('ZImageModularPipeline');
       expect(stored.formSnapshot.steps).toBe(9);
+      await page.getByTestId('gallery-filter-QwenImageEditPlusModularPipeline').click();
+      await expect(inspector.locator('h2')).toContainText('Task not uniquely captured');
+      await expect(inspector.locator('h2')).not.toContainText('Text to image');
+      const ambiguousMetadata = JSON.parse((await inspector.locator('pre').textContent())!);
+      expect(ambiguousMetadata.steps).toBe(40);
+      expect(ambiguousMetadata.resolvedExecutionInputs.graphTasks[0].task).toBeNull();
+      const ambiguousStored = await page.evaluate(() =>
+        window.__MODIFF_E2E__!.getState().studio.outputs.find((item) => item.id === 'ambiguous-edit-history'),
+      );
+      expect(ambiguousStored!.mode).toBe('text_to_image');
+      expect(ambiguousStored!.formSnapshot.mode).toBe('text_to_image');
       if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
     }
     await page.getByTestId('gallery-inspect-view').locator('h2').scrollIntoViewIfNeeded();

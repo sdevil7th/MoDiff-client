@@ -1457,8 +1457,10 @@ without changing graph values or execution ownership.
 `resolvedExecutionInputs` can carry backend `graphTasks` alongside captured call
 arguments. The client validates each owner against the receipt's captured Modular
 loader and model identity. A unique supported task updates the output label while
-leaving its saved form untouched. Legacy receipts remain readable; incomplete or
-ambiguous graph recognition does not invent a task. This metadata grants no
+leaving its saved form untouched. Gallery labels a receipt with absent, null or
+conflicting task recognition as **Task not uniquely captured**, rather than using
+the saved form's task. Only outputs without a consumed-input receipt retain their
+historical task label. This metadata grants no
 execution or resource authority and adds no frontend model-family dispatch.
 
 History model labels and Gallery filters also use the validated captured model
