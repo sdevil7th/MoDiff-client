@@ -43,7 +43,7 @@ import {
 } from '../studio/workflowPackage';
 import { ImageFrame, ModiffBadge, ModiffButton, ModiffChip, ModiffFileInput, ModiffIconButton } from '../ui';
 import { cx } from '../utils/classNames';
-import { imageUrlLightboxOpener } from '../utils/mediaViewer';
+import { imageUrlLightboxOpener, outputImageLightboxOpener } from '../utils/mediaViewer';
 
 type GalleryView = 'grid' | 'inspect' | 'compare' | 'lineage';
 type GalleryAssetKind = 'generated' | 'imported';
@@ -510,7 +510,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                           setSelectedOutputIds([output.id]);
                           setView('inspect');
                         } else {
-                          setLightboxOpener(imageUrlLightboxOpener([output.url]));
+                          setLightboxOpener(outputImageLightboxOpener(output));
                         }
                       }}
                     >
@@ -655,7 +655,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                     setSelectedOutputIds([output.id]);
                     setView('inspect');
                   } else {
-                    setLightboxOpener(imageUrlLightboxOpener([output.url]));
+                    setLightboxOpener(outputImageLightboxOpener(output));
                   }
                 }}
               />

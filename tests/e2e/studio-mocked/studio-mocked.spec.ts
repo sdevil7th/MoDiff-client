@@ -30180,3 +30180,93 @@ test('mounted media source picker distinguishes model branches and follows edits
   ).toBe(true);
   await page.screenshot({ path: test.info().outputPath('media-source-model-branches.png'), animations: 'disabled' });
 });
+
+test('mocked Gallery opens every ordered collection image before and after history reload', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const mediaPaths = [0, 1, 2].map((index) => `@data/studio/outputs/ordered-layer-${index}.webp`);
+  const mediaItems = mediaPaths.map((backendPath, index) => ({
+    index,
+    url: `/file?file=${encodeURIComponent(backendPath)}`,
+    backendPath,
+    displayType: 'image',
+    label: `Layer ${index + 1}`,
+    taskId: 'ordered-layers-task',
+    clientRunId: 'ordered-layers-client',
+    runInputHash: 'ordered-layers-input',
+    attemptIndex: 0,
+    width: 2,
+    height: 2,
+  }));
+  const output = {
+    id: 'ordered-layers-output',
+    url: mediaItems[0]!.url,
+    displayType: 'image_collection',
+    modelType: 'QwenImageLayeredModularPipeline',
+    modelLabel: 'Ordered collection',
+    mode: 'layer_decomposition',
+    prompt: 'Keep all three recorded layers.',
+    taskId: 'ordered-layers-task',
+    clientRunId: 'ordered-layers-client',
+    runInputHash: 'ordered-layers-input',
+    nodeId: 'preview',
+    attemptIndex: 0,
+    createdAt: 1,
+    mediaItems,
+  };
+  let graphPosts = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/graph' && request.method() === 'POST') graphPosts += 1;
+  });
+  await page.route('**/studio_outputs**', (route) => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({
+      json: { error: false, outputs: [output], revision: 1 },
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  for (let reload = 0; reload < 2; reload += 1) {
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await page.getByTestId('topbar-gallery').click();
+    const gallery = page.getByTestId('gallery-panel');
+    await expect(gallery.getByTestId('gallery-output-0').getByRole('img')).toHaveCount(3);
+    // Both existing full-size entry points must preserve the collection.
+    if (reload === 0) await gallery.getByTestId('gallery-open-0').click();
+    else await gallery.getByRole('button', { name: /^Root \| Ordered collection \|/ }).click();
+    for (let index = 0; index < 3; index += 1) {
+      const dialog = page.getByRole('dialog', {
+        name: `Image ${index + 1} of 3`,
+        exact: true,
+      });
+      await expect(dialog).toHaveCount(1);
+      await expect(dialog.getByRole('heading', { name: `Image ${index + 1} of 3`, exact: true })).toBeVisible();
+      const image = dialog.locator('img.max-h-full.max-w-full');
+      await expect(image).toHaveCount(1);
+      await expect(image).toBeVisible();
+      await expect
+        .poll(() =>
+          image.evaluate((element: HTMLImageElement) => ({
+            file: new URL(element.currentSrc).searchParams.get('file'),
+            width: element.naturalWidth,
+            height: element.naturalHeight,
+          })),
+        )
+        .toEqual({ file: mediaPaths[index], width: 2, height: 2 });
+      await expect(dialog.getByRole('button', { name: /^Show image [123]$/ })).toHaveCount(3);
+      if (index < 2) await dialog.getByRole('button', { name: 'Next image', exact: true }).click();
+    }
+    await page.getByRole('button', { name: 'Previous image', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Image 2 of 3', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Image 2 of 3', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Show image 1', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Image 1 of 3', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Image 1 of 3', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+    expect((await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0]))!.mediaItems).toMatchObject(
+      mediaItems,
+    );
+    if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
+  }
+  expect(graphPosts).toBe(0);
+});

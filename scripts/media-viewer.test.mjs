@@ -413,3 +413,63 @@ test('runtime optimization contracts fail closed and documentation URLs allow on
     /^https:/,
   );
 });
+
+test('Gallery collection full-size previews retain recorded URL order and selected item identity', () => {
+  const urls = [
+    '/file?file=%40data%2Fstudio%2Foutputs%2Flayer0.webp',
+    '/file?file=%40data%2Fstudio%2Foutputs%2Flayer1.webp',
+    '/file?file=%40data%2Fstudio%2Foutputs%2Flayer2.webp',
+  ];
+  const opener = mediaViewer.outputImageLightboxOpener({
+    url: urls[2],
+    displayType: 'image_collection',
+    mediaItems: urls.map((url, index) => ({ url, index: 2 - index })),
+  });
+  assert.deepEqual(
+    opener.images,
+    urls.map((url) => 'http://127.0.0.1:5191' + url),
+  );
+  assert.equal(opener.currentIndex, 2);
+  assert.equal(opener.dataType, 'url');
+  assert.equal(opener.mimeType, null);
+});
+
+test('Gallery collection selection follows canonical URL filtering without admitting unsafe schemes', () => {
+  const urls = [
+    'javascript:alert(1)',
+    '/file?file=first.webp',
+    'data:image/svg+xml,<svg onload="alert(1)"/>',
+    ' /file?file=selected.webp ',
+    'file:///tmp/untrusted.png',
+    'blob:http://127.0.0.1:5191/untrusted',
+    'data:text/html,<script>1</script>',
+    'data:image/png;base64,AAAA',
+  ];
+  const opener = mediaViewer.outputImageLightboxOpener({
+    url: ' /file?file=selected.webp ',
+    displayType: 'image_collection',
+    mediaItems: urls.map((url, index) => ({ url, index })),
+  });
+  assert.deepEqual(opener.images, [
+    'http://127.0.0.1:5191/file?file=first.webp',
+    'http://127.0.0.1:5191/file?file=selected.webp',
+    'data:image/png;base64,AAAA',
+  ]);
+  assert.equal(opener.currentIndex, 1);
+});
+
+test('Gallery single images and empty collections retain the ordinary one-image fallback', () => {
+  const url = '/file?file=single.webp';
+  for (const output of [
+    { url, displayType: 'image', mediaItems: [{ url: '/file?file=other.webp', index: 0 }] },
+    { url, displayType: 'image_collection', mediaItems: [] },
+    { url, displayType: 'image_collection' },
+  ]) {
+    assert.deepEqual(mediaViewer.outputImageLightboxOpener(output), {
+      images: ['http://127.0.0.1:5191/file?file=single.webp'],
+      currentIndex: 0,
+      dataType: 'url',
+      mimeType: null,
+    });
+  }
+});
