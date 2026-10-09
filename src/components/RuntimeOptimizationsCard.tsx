@@ -10,6 +10,7 @@ import {
   type OptionalRuntimeJob,
   type OptionalRuntimeProfileStatus,
 } from '../studio/optionalRuntimes';
+import { optionalRuntimePollingFailure, type OptionalRuntimePollingFailure } from '../studio/optionalRuntimePolling';
 import { formatRequestError, requestJson } from '../utils/requestJson';
 import { enqueueSnackbar, ModiffButton, ModiffDisclosure } from '../ui';
 import {
@@ -68,6 +69,9 @@ export default function RuntimeOptimizationsCard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runtimeJob, setRuntimeJob] = useState<OptionalRuntimeJob | null>(null);
+  const [runtimePollingFailure, setRuntimePollingFailure] = useState<
+    (OptionalRuntimePollingFailure & { jobId: string }) | null
+  >(null);
   const refreshRevision = useRef(0);
   const mutationInFlight = useRef(false);
 
@@ -122,7 +126,18 @@ export default function RuntimeOptimizationsCard() {
   }, [optionalRuntimeCatalog]);
 
   useEffect(() => {
+    setRuntimePollingFailure((current) =>
+      current &&
+      (!runtimeJob || current.jobId !== runtimeJob.id || ['cancelled', 'failed', 'ready'].includes(runtimeJob.status))
+        ? null
+        : current,
+    );
+  }, [runtimeJob]);
+
+  useEffect(() => {
     if (!runtimeJob || ['cancelled', 'failed', 'ready'].includes(runtimeJob.status)) return;
+    const failure = runtimePollingFailure?.jobId === runtimeJob.id ? runtimePollingFailure : null;
+    if (failure?.retryDelayMs === null) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
@@ -137,7 +152,19 @@ export default function RuntimeOptimizationsCard() {
           next.specDigest !== runtimeJob.specDigest
         )
           throw new Error('The optional-runtime job identity changed.');
-        setRuntimeJob(next);
+        if (next.updatedAt < runtimeJob.updatedAt)
+          throw new Error('The optional-runtime job status is older than the last known progress.');
+        if (controller.signal.aborted) return;
+        setRuntimePollingFailure(null);
+        setRuntimeJob((current) =>
+          current?.id === runtimeJob.id &&
+          current.operation === runtimeJob.operation &&
+          current.profileId === runtimeJob.profileId &&
+          current.specDigest === runtimeJob.specDigest &&
+          next.updatedAt >= current.updatedAt
+            ? next
+            : current,
+        );
         if (['cancelled', 'failed', 'ready'].includes(next.status)) {
           await fetchOptionalRuntimes();
           if (next.operation === 'activate' && next.status === 'ready') {
@@ -145,17 +172,20 @@ export default function RuntimeOptimizationsCard() {
             await Promise.all([nodes.fetchRuntimeStatus(), nodes.fetchStudioModelCapabilities()]);
           }
         }
-      } catch {
+      } catch (error) {
         if (!controller.signal.aborted) {
-          setRuntimeJob({ ...runtimeJob });
+          setRuntimePollingFailure({
+            jobId: runtimeJob.id,
+            ...optionalRuntimePollingFailure(error, (failure?.failures ?? 0) + 1),
+          });
         }
       }
-    }, 750);
+    }, failure?.retryDelayMs ?? 750);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [fetchOptionalRuntimes, runtimeJob]);
+  }, [fetchOptionalRuntimes, runtimeJob, runtimePollingFailure]);
 
   const runAction = async (busyKey: string, action: () => Promise<void>) => {
     if (mutationInFlight.current) return;
@@ -271,6 +301,21 @@ export default function RuntimeOptimizationsCard() {
                 Cancel
               </ModiffButton>
             ) : null}
+          </div>
+        ) : null}
+        {runtimePollingFailure && runtimePollingFailure.jobId === runtimeJob?.id ? (
+          <div
+            className="grid gap-1 text-xs text-modiff-warning"
+            role="alert"
+            data-testid="optional-runtime-status-error"
+          >
+            <span>
+              {runtimePollingFailure.message} Last known progress is shown.{' '}
+              {runtimePollingFailure.retryDelayMs === null ? 'Status checks paused.' : 'Retrying automatically.'}
+            </span>
+            <ModiffButton size="compact" onClick={() => setRuntimePollingFailure(null)}>
+              Retry status
+            </ModiffButton>
           </div>
         ) : null}
         {optionalRuntimeRequest.error ? (

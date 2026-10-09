@@ -232,7 +232,11 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Measured deferred aggregate is 268690 bytes (+588 from 268102); reuse the
 // existing Block projection and cache immutable instances. Allow 640 bytes;
 // startup, dependencies and both per-chunk ceilings remain unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640;
+// Bounded optional-runtime status retries, visible stale-progress errors and
+// status-only recovery measure 269147 deferred gzip bytes (+457 from 268690).
+// Allow 512 bytes for this correctness fix in the existing lazy workspace;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 512;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;
