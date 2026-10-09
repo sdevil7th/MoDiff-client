@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired stable runtime, workflow bindings and registered Block contracts.
-          ref: 5f38a40af6d9f3befbd4c744a4700ab9865e323d
+          ref: ad79f3a8067febb338980e2838cec1bc7086b199
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
