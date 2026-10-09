@@ -7598,7 +7598,7 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
       reads += 1;
       if (!unavailable) return route.fallback();
       const job = {
-        id: failure === 'identity' ? 'optjob-Different1234' : 'optjob-AbCdEf123456',
+        id: failure === 'identity' ? 'optjob-GhIjKl654321' : 'optjob-AbCdEf123456',
         operation: 'install',
         profileId: 'huggingface-transformers-peft-5.14.1-0.20.0',
         specDigest: 'sha256:8e1b0b6b2baa891d4551caa3cde4d59708eced0fd74c1333b68a1aab7ff924b5',
@@ -7624,6 +7624,7 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
     const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
     const error = disclosure.getByTestId('optional-runtime-status-error');
     await expect(error).toContainText('Last known progress', { timeout: 3_000 });
+    if (failure === 'identity') await expect(error).toContainText('job identity changed');
     await expect(error).toContainText('paused');
     await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('Installing reviewed artifacts');
     await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
@@ -7640,35 +7641,40 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
   });
 }
 
-test('optional runtime polling reports a transient disconnect and resumes without a duplicate mutation', async ({
-  page,
-}) => {
-  mockOptionalRuntimeActions = true;
-  mockOptionalRuntimeJobState = 'running';
-  await ensureFrontend();
-  await installMockRoutes(page);
-  let unavailable = true;
-  let reads = 0;
-  await page.route('**/runtime/optional-runtimes/jobs/*', (route) => {
-    reads += 1;
-    return unavailable ? route.abort('connectionrefused') : route.fallback();
+for (const failure of ['disconnect', 'non-JSON503'] as const) {
+  test(`optional runtime polling reports a transient ${failure} and resumes without a duplicate mutation`, async ({
+    page,
+  }) => {
+    mockOptionalRuntimeActions = true;
+    mockOptionalRuntimeJobState = 'running';
+    await ensureFrontend();
+    await installMockRoutes(page);
+    let unavailable = true;
+    let reads = 0;
+    await page.route('**/runtime/optional-runtimes/jobs/*', (route) => {
+      reads += 1;
+      if (!unavailable) return route.fallback();
+      return failure === 'disconnect'
+        ? route.abort('connectionrefused')
+        : route.fulfill({ status: 503, contentType: 'text/html', body: '<html>Service Unavailable</html>' });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+    await dismissTaskLauncher(page);
+    await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+    const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+    const error = disclosure.getByTestId('optional-runtime-status-error');
+    await expect(error).toContainText('Retrying', { timeout: 3_000 });
+    await expect(error).toContainText('Last known progress');
+    await expect.poll(() => reads).toBeGreaterThan(1);
+    await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
+    unavailable = false;
+    mockOptionalRuntimeJobState = 'ready';
+    await expect(error).toHaveCount(0);
+    await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    expect(mockOptionalRuntimeMutationCalls).toBe(0);
   });
-  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await dismissTaskLauncher(page);
-  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
-  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
-  const error = disclosure.getByTestId('optional-runtime-status-error');
-  await expect(error).toContainText('Retrying', { timeout: 3_000 });
-  await expect(error).toContainText('Last known progress');
-  await expect.poll(() => reads).toBeGreaterThan(1);
-  await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
-  unavailable = false;
-  mockOptionalRuntimeJobState = 'ready';
-  await expect(error).toHaveCount(0);
-  await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
-  expect(mockOptionalRuntimeMutationCalls).toBe(0);
-});
+}
 
 test('a broken optional runtime can explicitly reset to base when legacy activation controls are unavailable', async ({
   page,
@@ -29637,6 +29643,55 @@ async function openOptionalStageTemplate(page: Page, templateId: string, search:
   await assertUnifiedWorkspace(page, 'expert');
   await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
 }
+
+test('full image template cards, details, artifact search and Model Manager focus show the selected variant', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  mockInstalledRepos.clear();
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/runtime/status**', (route) =>
+    route.fulfill({
+      json: {
+        ready: true,
+        runtime_profile: { requested: 'cpu', installed: 'cpu', status: 'ready', execution_ready: true },
+        missing_required_packages: [],
+        packages: Object.fromEntries(
+          ['torch', 'diffusers', 'transformers', 'peft'].map((name) => [name, { available: true }]),
+        ),
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const browser = page.getByTestId('template-browser-dialog');
+  await browser.getByTestId('template-browser-category-all').click();
+  for (const [id, repo, label] of [
+    ['cosmos3_super_text_to_image', 'nvidia/Cosmos3-Super-Text2Image', 'Cosmos 3 Super'],
+    ['flux2_dev_text_to_image', 'black-forest-labs/FLUX.2-dev', 'FLUX.2-dev'],
+  ]) {
+    await browser.getByTestId('template-browser-search').fill(repo);
+    const card = browser.getByTestId(`template-browser-card-${id}`);
+    await expect(card.getByText(`${label} · Text to image`, { exact: true })).toBeVisible();
+    const poster = `/assets/${id === 'flux2_dev_text_to_image' ? 'flux2-dev' : 'cosmos3-super'}.card-poster.png`;
+    const artwork = card.getByRole('img', { name: 'Template preview', exact: true });
+    await expect(artwork).toHaveAttribute('src', poster);
+    await expect.poll(() => artwork.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
+    await card.getByTestId(`template-browser-use-${id}`).click();
+    await expect(browser.getByText(`${label} · Text to image`, { exact: true })).toHaveCount(2);
+  }
+  await page.getByTestId('template-card-readiness-flux2_dev_text_to_image').click();
+  const manager = page.getByTestId('model-manager-dialog');
+  await expect(manager).toBeVisible();
+  await expect(manager.getByTestId('model-manager-focus')).toContainText('FLUX.2-dev');
+  await expect(manager.getByTestId('model-manager-focus')).not.toContainText('Modular Diffusers');
+});
 
 async function optionalStageApi(page: Page) {
   return page.evaluate(() => {

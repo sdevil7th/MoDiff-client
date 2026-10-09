@@ -7,6 +7,10 @@ import {
   ANIMATELCM_MOTION_REVISION,
   COSMOS3_GUARDRAIL_REPO,
   COSMOS3_GUARDRAIL_REVISION,
+  COSMOS3_SUPER_T2I_REPO,
+  COSMOS3_SUPER_T2I_REVISION,
+  FLUX2_DEV_REPO,
+  FLUX2_DEV_REVISION,
   FLUX_DEV_FP8_REPO,
   FLUX_DEV_REPO,
   FLUX_DEV_REVISION,
@@ -126,6 +130,33 @@ function hunyuanVideo15Policy(repository: string, reviewedRevision: string): Mod
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
+  [FLUX2_DEV_REPO]: {
+    id: 'flux-non-commercial-license-v2.1:flux2-dev',
+    repository: FLUX2_DEV_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'FLUX Non-Commercial License v2.1 limits model use to non-commercial, non-production purposes. Output use follows separate restrictions. Content filtering or manual review, applicable AI-disclosure duties, and other terms apply; commercial model use requires separate authorization.',
+    termsUrl: `https://huggingface.co/${FLUX2_DEV_REPO}/blob/${FLUX2_DEV_REVISION}/LICENSE.md`,
+    modelCardUrl: `https://huggingface.co/${FLUX2_DEV_REPO}/tree/${FLUX2_DEV_REVISION}`,
+    access: 'huggingface_gated',
+    reviewedRevision: FLUX2_DEV_REVISION,
+    policyVersion: '2026-10-09',
+    reviewedAt: '2026-10-09',
+  },
+  [COSMOS3_SUPER_T2I_REPO]: {
+    id: 'openmdw-1.1:cosmos3-super-text2image',
+    repository: COSMOS3_SUPER_T2I_REPO,
+    useScope: 'commercial_allowed',
+    acknowledgementRequired: true,
+    shortSummary:
+      'OpenMDW-1.1 permits commercial and non-commercial use. Distribution must retain the license and applicable origin notices; independent rights clearance and other terms apply. The license imposes no output-use restrictions. Mandatory safety dependencies have separate terms.',
+    termsUrl: 'https://openmdw.ai/license/1-1/',
+    access: 'public',
+    reviewedRevision: COSMOS3_SUPER_T2I_REVISION,
+    policyVersion: '2026-10-09',
+    reviewedAt: '2026-10-09',
+  },
   [ANIMA_REPO]: {
     id: 'circlestone-labs-non-commercial-license-v1:anima-base-v1',
     repository: ANIMA_REPO,
@@ -338,7 +369,7 @@ function workflowArtifacts(template: StudioTemplate) {
 export function templateUsagePolicies(template: StudioTemplate): ResolvedModelUsagePolicy[] {
   const profile = getProfileForArtifactMode(STUDIO_MODEL_PROFILES[template.modelType], template.mode);
   const dependencies: Array<{ repository: string; revision?: string }> = [
-    { repository: profile.defaultRepo },
+    { repository: template.modelArtifact?.value ?? profile.defaultRepo, revision: template.modelArtifact?.revision },
     ...getModelRequirementsForMode(profile, template.mode).map((requirement) => ({
       repository: requirement.repo,
       revision: requirement.revision,

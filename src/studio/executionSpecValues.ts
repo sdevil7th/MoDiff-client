@@ -97,6 +97,8 @@ export function resolveStudioExecutionSpecValues(
     workflowImageEncoderBlock: 'vae_encoder',
     workflowDenoiseBlock: 'denoise',
     workflowDecodeBlock: 'decode',
+    workflowAfterDecodeBlock: 'after_decode',
+    oneFrame: 1,
     kind: auxiliaryRequirement?.kind,
     repo: auxiliaryRequirement ? { source: 'hub', value: auxiliaryRequirement.repo } : undefined,
     revision: auxiliaryRequirement?.revision,

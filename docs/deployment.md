@@ -176,6 +176,19 @@ Startup measures 642694 bytes and the largest startup chunk 464387 bytes; their
 ceilings remain 642816 and 464512, and the deferred chunk ceiling remains 65536.
 No dependency or loading-boundary change is included in this allowance.
 
+The subsequent Linux update adds exact experimental full-image recipe metadata
+and reviewed terms, backend-bound Custom prerequisites, and non-JSON transient
+HTTP status recovery. Preserve its bounded allowances alongside the Windows
+fixes: startup 642816 + 1536 = 644352 bytes; largest startup chunk
+464512 + 1536 = 466048 bytes; deferred aggregate
+268800 + 512 + 256 + 1024 + 128 + 2048 = 272768 bytes. The shared 512-byte
+optional-runtime polling allowance is counted once. The combined build measures
+644101 startup bytes, a 465794-byte largest startup chunk, and 272590 deferred
+bytes. The largest deferred chunk is 36508 bytes against the unchanged 65536-byte
+ceiling. Dependencies and loading boundaries remain unchanged; the new recipe
+cards are editorial illustrations with unverified examples, not generated-output,
+Auto, hardware-fit or Gallery qualification.
+
 When updating selected loader field metadata, regenerate the paired
 `BlockDefinitionV2` catalog and frontend identity pins together. This metadata
 must not rewrite saved instance values, prompts, wiring, or layout. Deploy only

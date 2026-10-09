@@ -12,7 +12,9 @@ export function optionalRuntimePollingFailure(error: unknown, failures: number):
     error instanceof RequestError &&
     (error.kind === 'network' ||
       error.kind === 'timeout' ||
-      (error.kind === 'http' &&
+      // Proxies can return an HTML error while a worker is restarting.
+      // The transport retains its HTTP status even when JSON parsing fails.
+      ((error.kind === 'http' || error.kind === 'invalid_json') &&
         error.status !== undefined &&
         ([408, 425, 429].includes(error.status) || error.status >= 500)));
   return {

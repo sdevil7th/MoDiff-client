@@ -80,7 +80,7 @@
     "test:graph-export": "node --test scripts/flow-graph-export.test.mjs",
     "test:hugging-face-cluster-drag": "node --test scripts/hugging-face-cluster-drag.test.mjs",
     "test:hugging-face-node-library": "node --test scripts/hugging-face-node-library.test.mjs",
-    "test:templates": "node --test scripts/modiff-template.test.mjs scripts/template-operation-workflows.test.mjs",
+    "test:templates": "node --test scripts/modiff-template.test.mjs scripts/template-operation-workflows.test.mjs scripts/image-full-native-template-candidates.test.mjs scripts/image-model-usage-policies.test.mjs scripts/workflow-library-dependency-contracts.test.mjs",
     "test:task-templates": "node --test scripts/task-template-contracts.test.mjs",
     "test:template-assets:local": "node --test scripts/template-default-inputs.test.mjs",
     "test:template-quality": "node --test scripts/template-quality.test.mjs",

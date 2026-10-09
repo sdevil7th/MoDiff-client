@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired AMD/Linux and preserved Windows runtime, workflow and Block contracts.
-          ref: 846aedbaad9f6d932cdfed7d40a34b07399f00a6
+          ref: 7544bc6299eecbb606d46815b7d7c7c960c93ac2
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

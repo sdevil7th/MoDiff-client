@@ -478,6 +478,140 @@ test('review ignores derived operation availability but protects values, wires, 
   }
 });
 
+test('a reviewed model change survives delayed empty uiState enrichment without losing Undo or sibling metadata', async () => {
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { captureWorkflowOperationContext } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const { commitOperationGraph, operationGraphSignature } = await server.ssrLoadModule(
+    '/src/workflow/operationGraphTransaction.ts',
+  );
+  const flow = useFlowStore.getState();
+  flow.replaceGraph(graph());
+  flow.resetHistory();
+  let before = flow.toObject();
+  delete before.nodes[0].data.uiState;
+  delete before.nodes[1].data.uiState;
+  const sibling = structuredClone(before.nodes[1]);
+  sibling.id = 'independent-reviewed-stage';
+  delete sibling.data.operationAuthoring;
+  before.nodes.push(sibling);
+  flow.replaceGraph(before);
+  before = flow.toObject();
+  const context = captureWorkflowOperationContext();
+  const signature = operationGraphSignature(before);
+  const plan = authoring.planOperationChange(before, before.nodes[0].id, starter('OtherPipeline'));
+  const enriched = structuredClone(before);
+  enriched.nodes[0].data.uiState = {};
+  enriched.nodes[1].data.uiState = {};
+  enriched.nodes[2].data.uiState = {};
+  flow.replaceGraph(enriched);
+  assert.notEqual(
+    JSON.stringify(flow.toObject()),
+    JSON.stringify(before),
+    'Exercise the actual delayed metadata difference.',
+  );
+  assert.equal(operationGraphSignature(flow.toObject()), signature);
+  commitOperationGraph(plan.graph, context, signature, 'Change model after presentation refresh');
+  assert.equal(flow.toObject().nodes[0].data.params.pipeline_class.value, 'OtherPipeline');
+  assert.deepEqual(flow.toObject().nodes.find((node) => node.id === sibling.id).data.uiState, {});
+  assert.deepEqual(
+    flow.toObject().nodes.find((node) => node.id === sibling.id).data.params,
+    enriched.nodes[2].data.params,
+  );
+  assert.equal(useFlowStore.getState().historyPast.length, 1);
+  flow.undo();
+  assert.equal(flow.toObject().nodes[0].data.params.pipeline_class.value, 'FuturePipeline');
+  flow.redo();
+  assert.equal(flow.toObject().nodes[0].data.params.pipeline_class.value, 'OtherPipeline');
+});
+
+test('preview normalization preserves every nonempty UI setting and authored graph mutation', async () => {
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { captureWorkflowOperationContext } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const { commitOperationGraph, operationGraphSignature, operationGraphPreviewSignature } = await server.ssrLoadModule(
+    '/src/workflow/operationGraphTransaction.ts',
+  );
+  const flow = useFlowStore.getState();
+  flow.replaceGraph(graph());
+  const original = flow.toObject();
+  delete original.nodes[0].data.uiState;
+  original.nodes[1].data.params.seed = { type: 'int', value: { value: 4109, isRandom: false } };
+  const previewSignature = operationGraphPreviewSignature(original);
+  const signature = operationGraphSignature(original);
+  const empty = structuredClone(original);
+  empty.nodes[0].data.uiState = {};
+  assert.equal(operationGraphPreviewSignature(empty), previewSignature);
+  assert.equal(operationGraphSignature(empty), signature);
+  for (const mutate of [
+    (value) => {
+      value.nodes[0].data.uiState = { collapsed: false };
+    },
+    (value) => {
+      value.nodes[0].data.uiState = { collapsed: true };
+    },
+    (value) => {
+      value.nodes[0].data.uiState = { disabled: false };
+    },
+    (value) => {
+      value.nodes[0].data.uiState = { disabled: true };
+    },
+    (value) => {
+      value.nodes[0].data.uiState = { blockExpanded: false };
+    },
+    (value) => {
+      value.nodes[0].data.params.pipeline_class.value = 'AnotherModel';
+    },
+    (value) => {
+      value.nodes[1].data.params.seed.value.value = 4110;
+    },
+    (value) => {
+      value.nodes[1].data.params.seed.value.isRandom = true;
+    },
+    (value) => {
+      value.nodes[1].data.operationAuthoring.authored = ['prompt'];
+    },
+    (value) => {
+      value.nodes[1].data.operationAuthoring.operation.binding.values = { task: 'image_to_image' };
+    },
+    (value) => {
+      value.nodes[1].data.params.prompt.value = 'Edited prompt';
+    },
+    (value) => {
+      value.nodes[0].position.x += 1;
+    },
+    (value) => {
+      value.edges[0].targetHandle = 'different-port';
+    },
+    (value) => {
+      value.nodes[0].data.label = 'Edited label';
+    },
+  ]) {
+    const changed = structuredClone(original);
+    mutate(changed);
+    assert.notEqual(operationGraphPreviewSignature(changed), previewSignature);
+    assert.notEqual(operationGraphSignature(changed), signature);
+    flow.replaceGraph(changed);
+    assert.throws(
+      () => commitOperationGraph(original, captureWorkflowOperationContext(), signature, 'Stale'),
+      /changed/,
+    );
+  }
+  for (const uiState of [null, [], { arbitrary: {} }]) {
+    const changed = structuredClone(original);
+    changed.nodes[0].data.uiState = uiState;
+    assert.notEqual(operationGraphPreviewSignature(changed), previewSignature);
+    assert.notEqual(operationGraphSignature(changed), signature);
+  }
+  for (const field of ['hidden', 'disabled']) {
+    const changed = structuredClone(original);
+    changed.nodes[1].data.params.prompt[field] = true;
+    assert.notEqual(
+      operationGraphPreviewSignature(changed),
+      previewSignature,
+      'The UI preview check gains no broader availability waiver.',
+    );
+  }
+});
+
 test('an application failure rolls the whole graph back and does not create a history entry', async () => {
   const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   const { captureWorkflowOperationContext } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');

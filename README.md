@@ -480,13 +480,16 @@ in [Template Gallery asset storage](docs/template-gallery-assets.md).
 Run the same complete static/unit/build gate used by CI:
 
 ```bash
+npx playwright install chromium
 npm run check
 ```
+
+The request/proxy regression tests in this gate also use Chromium. On a fresh
+Linux host, install its system dependencies with `npx playwright install-deps chromium`.
 
 Run the mocked Studio browser suite:
 
 ```bash
-npx playwright install chromium
 npm run check:ui
 ```
 
