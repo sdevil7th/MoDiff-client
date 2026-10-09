@@ -9,6 +9,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let mediaViewer;
 let outputUtils;
+let outputText;
+let outputContracts;
+let previewHistory;
 let templateAssets;
 let previewFrame;
 let audioField;
@@ -37,6 +40,9 @@ before(async () => {
   });
   mediaViewer = await server.ssrLoadModule('/src/utils/mediaViewer.ts');
   outputUtils = await server.ssrLoadModule('/src/studio/outputUtils.ts');
+  outputText = await server.ssrLoadModule('/src/studio/outputText.ts');
+  outputContracts = await server.ssrLoadModule('/src/studio/outputContracts.ts');
+  previewHistory = await server.ssrLoadModule('/src/fields/PreviewHistoryStripContent.tsx');
   templateAssets = await server.ssrLoadModule('/src/studio/templateAssets.ts');
   previewFrame = await server.ssrLoadModule('/src/ui/PreviewFrame.tsx');
   audioField = await server.ssrLoadModule('/src/fields/UIAudioField.tsx');
@@ -51,6 +57,112 @@ before(async () => {
 
 after(async () => {
   await server?.close();
+});
+
+test('text and JSON output presentation preserves missing, primitive, structured and literal markup values', () => {
+  for (const [value, expected] of [
+    [undefined, ''],
+    ['', ''],
+    [0, '0'],
+    [false, 'false'],
+    [null, 'null'],
+    ['हैलो <img src=x onerror="alert(1)">', 'हैलो <img src=x onerror="alert(1)">'],
+    [['native text'], '[\n  "native text"\n]'],
+    [{ message: 'text', values: [0, false] }, '{\n  "message": "text",\n  "values": [\n    0,\n    false\n  ]\n}'],
+  ]) {
+    const output = { id: 'text-output', displayType: 'text', value };
+    assert.equal(outputText.outputText(output), expected);
+    const opener = outputText.textOutputViewerOpener(output, 'Recorded text', 'recorded.txt');
+    assert.deepEqual(opener.items, [
+      { id: 'text-output', kind: 'text', label: 'Text', text: expected, downloadName: 'recorded.txt' },
+    ]);
+    assert.equal(mediaViewer.sanitizeMediaViewerItems(opener.items)[0].text, expected);
+  }
+  assert.equal(
+    outputText.outputTextType({ displayType: 'text', url: '/recorded.mp4', mediaItems: [{ displayType: 'image' }] }),
+    'text',
+  );
+  assert.equal(outputText.outputTextType({ displayType: 'json', mediaItems: [{ displayType: 'text' }] }), 'json');
+  assert.equal(outputText.outputTextType({ displayType: 'unknown', mediaItems: [{ displayType: 'json' }] }), 'json');
+  for (const displayType of ['image', 'image_collection', 'audio', 'video']) {
+    assert.equal(outputText.outputTextType({ displayType, mediaItems: [{ displayType: 'text' }] }), undefined);
+  }
+});
+
+test('Previous strip renders declared text and JSON as escaped content rather than media', () => {
+  for (const displayType of ['text', 'json']) {
+    const value = '<img src=x onerror="window.__previewXss=true">';
+    const markup = renderToStaticMarkup(
+      createElement(previewHistory.default, {
+        history: [
+          {
+            id: `history-${displayType}`,
+            displayType,
+            value,
+            url: '/recorded.mp4',
+            nodeId: 'preview',
+            fieldKey: 'preview',
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+    assert.match(markup, /&lt;img src=x onerror=&quot;window\.__previewXss=true&quot;&gt;/);
+    assert.doesNotMatch(markup, /<(img|video|audio)\b/);
+    assert.match(markup, new RegExp(`${displayType === 'json' ? 'JSON' : 'Text'} from`));
+  }
+});
+
+test('history parsing preserves explicit text and JSON null values before presentation', () => {
+  for (const displayType of ['text', 'json']) {
+    for (const value of [null, 0, false, '', { message: 'हैलो' }]) {
+      const record = outputContracts.coerceStudioOutput({
+        id: 'parsed-output',
+        url: '/file?file=recorded.json',
+        displayType,
+        value,
+      });
+      assert.deepEqual(record.value, value);
+      assert.equal(outputText.outputText(record), typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+    }
+  }
+  for (const displayType of ['image', 'image_collection', 'audio', 'video']) {
+    const record = outputContracts.coerceStudioOutput({
+      id: 'declared-media',
+      url: '/recorded-media',
+      displayType,
+      value: null,
+    });
+    assert.equal(record.value, null);
+    assert.equal(record.url, '/recorded-media');
+  }
+  assert.equal(outputContracts.coerceStudioOutput({ id: 'legacy-image', url: '/recorded.png' }).value, '/recorded.png');
+});
+
+test('Previous preserves explicit media families and ordered image collection thumbnails', () => {
+  for (const displayType of ['image', 'video', 'audio', 'image_collection']) {
+    const markup = renderToStaticMarkup(
+      createElement(previewHistory.default, {
+        history: [
+          outputContracts.coerceStudioOutput({
+            id: 'declared-media',
+            displayType,
+            url: '/file?file=recorded-media',
+            value: 'Wrong item text',
+            createdAt: 1,
+            mediaItems: [{ index: 0, displayType: 'text', url: '/file?file=wrong-text.txt' }],
+          }),
+        ],
+      }),
+    );
+    assert.doesNotMatch(markup, /Wrong item text/);
+    if (displayType === 'audio') assert.match(markup, /Audio from/);
+    else {
+      assert.match(markup, displayType === 'video' ? /<video\b/ : /<img\b/);
+      assert.match(markup, /src="\/file\?file=recorded-media"/);
+      assert.doesNotMatch(markup, /wrong-text\.txt/);
+    }
+  }
 });
 
 test('media viewer URL sanitizer accepts media URLs and rejects executable or mismatched data URLs', () => {

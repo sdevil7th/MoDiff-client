@@ -956,6 +956,13 @@ account action and install recovery uses the backend's structured error code.
 
 ## Websocket And Task State
 
+Node execution `memoryUsage` records carry finite byte measurements or `null`
+when a measurement is unavailable (including CPU-only runs). The parser accepts
+those null values without dropping the execution event; the cache store preserves
+them and the node memory footer/popover displays a dash, not an invented zero.
+Measured zero remains `0 B`. Execution timing and phase timing records still
+require finite numbers, and numeric strings or malformed memory records are rejected.
+
 Every welcome refreshes authoritative runtime readiness, including after worker
 replacement or package repair. The existing discovery request gate discards older
 responses so they cannot restore stale Setup errors after the replacement is ready.
@@ -1325,6 +1332,16 @@ An output can carry:
 Encoded video measurements are retained per media item as `mediaMetadata` with `source: "encoded-file"`. The output boundary accepts only positive finite measurements (integer dimensions and frame counts). Gallery labels use the primary video item's measured dimensions, frame count and frame rate. Without encoded measurements, use captured execution inputs labelled Resolved; only receipts without an execution-input capture fall back to values labelled Requested. Missing captured fields are not filled from form defaults. Inspect keeps requested settings, captured execution inputs and encoded measurements separate. Neither display path rewrites the form or workflow reused for generation.
 
 Gallery restore creates a workflow tab from the snapshot. Rerun recomputes current readiness and Auto state before submitting; persisted output metadata is not blindly trusted as current runtime proof.
+
+Gallery and Previous previews preserve declared text and JSON output types. Strings
+display literally; other captured values use formatted JSON, including `0`, `false`
+and `null`. React text rendering keeps markup inert in cards and the shared text
+viewer. History parsing preserves explicit captured null; only absent values keep
+the legacy URL fallback. Gallery's text/JSON download fetches the original backend file without
+reserializing it; Previous and viewer downloads export the displayed text. PNG
+packages, image overlays and Send to edit are unavailable for text/JSON outputs.
+Metadata packages, favorites, history identity, workflow restore and rerun retain
+their existing contracts.
 
 For images, Gallery uses decoded media dimensions for the output-size label and
 reports captured input dimensions separately. Reference-driven edit geometry may

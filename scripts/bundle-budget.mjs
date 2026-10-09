@@ -247,7 +247,13 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Preserve both reviewed allowances: 268800 + 256 + 512 = 269568 bytes.
 // The combined build measures 269414 deferred bytes, 642643 startup bytes and
 // a 464336-byte largest startup chunk; retain the existing startup ceilings.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 256 + 512;
+// Declared text/JSON Gallery previews and raw-original downloads share the
+// Previous text formatter/viewer and existing export path. Together with the
+// Session JSON kind/null and Previous declared-family corrections, the measured
+// build is 270329 deferred bytes (+915 from 269414). Allow only 1024 additional
+// aggregate bytes; startup,
+// dependencies and both per-chunk ceilings remain unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 256 + 512 + 1024;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

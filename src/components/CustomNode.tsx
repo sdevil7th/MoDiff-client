@@ -491,14 +491,14 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
                 title="Peak node memory usage"
                 onClick={(event) => setMemoryAnchor(anchorBelow(event.currentTarget))}
               >
-                {node.data.memoryUsage?.last ? formatMemory(node.data.memoryUsage.last) : '-'}
+                {formatMemory(node.data.memoryUsage?.last)}
               </FooterMetricButton>
               {memoryAnchor && (
                 <NodePopover anchor={memoryAnchor} onClose={() => setMemoryAnchor(null)} className="p-3">
                   <div className="mb-1 text-sm font-bold text-modiff-text">Peak node VRAM usage</div>
-                  <MetricRow label="Last:">{formatMemory(node.data.memoryUsage?.last ?? 0)}</MetricRow>
-                  <MetricRow label="Min:">{formatMemory(node.data.memoryUsage?.min ?? 0)}</MetricRow>
-                  <MetricRow label="Max:">{formatMemory(node.data.memoryUsage?.max ?? 0)}</MetricRow>
+                  <MetricRow label="Last:">{formatMemory(node.data.memoryUsage?.last)}</MetricRow>
+                  <MetricRow label="Min:">{formatMemory(node.data.memoryUsage?.min)}</MetricRow>
+                  <MetricRow label="Max:">{formatMemory(node.data.memoryUsage?.max)}</MetricRow>
                 </NodePopover>
               )}
               <FooterMetricButton

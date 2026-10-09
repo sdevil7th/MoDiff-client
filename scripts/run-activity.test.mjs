@@ -7,6 +7,7 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let activityModule;
+let outputContracts;
 let flowStoreModule;
 let issueStoreModule;
 let settingsStoreModule;
@@ -61,6 +62,7 @@ before(async () => {
     appType: 'custom',
   });
   activityModule = await server.ssrLoadModule('/src/studio/runActivity.ts');
+  outputContracts = await server.ssrLoadModule('/src/studio/outputContracts.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   issueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');
   settingsStoreModule = await server.ssrLoadModule('/src/stores/useSettingsStore.ts');
@@ -139,6 +141,39 @@ function output(overrides = {}) {
     ...overrides,
   };
 }
+
+test('run outputs preserve declared JSON with backend file URLs and structured, null and zero values', () => {
+  for (const value of [{ message: '<img src=x onerror="alert(1)">', values: [false, 'हैलो'] }, null, 0]) {
+    for (const withMediaItem of [false, true]) {
+      const url = '/file?file=%40data%2Fstudio%2Foutputs%2Frecorded.json';
+      const record = output({
+        displayType: 'json',
+        url,
+        value,
+        mediaItems: withMediaItem ? [{ index: 0, displayType: 'json', url, value }] : undefined,
+      });
+      const items = activityModule.mediaViewerItemsForRun([record]);
+      assert.equal(items.length, 1);
+      assert.equal(items[0].kind, 'text');
+      assert.equal(items[0].text, JSON.stringify(value, null, 2));
+      assert.equal(items[0].url, undefined);
+    }
+  }
+});
+
+test('run outputs retain explicit null from parsed JSON history and per-item captures', () => {
+  const url = '/file?file=recorded.json';
+  for (const withMediaItem of [false, true]) {
+    const record = outputContracts.coerceStudioOutput({
+      id: 'parsed-json',
+      displayType: 'json',
+      url,
+      value: withMediaItem ? { legacy: 'fallback' } : null,
+      mediaItems: withMediaItem ? [{ index: 0, displayType: 'json', url, value: null }] : undefined,
+    });
+    assert.equal(activityModule.mediaViewerItemsForRun([record])[0].text, 'null');
+  }
+});
 
 function deferredResponse() {
   let resolve;

@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 
 import type { NodeData, NodeParams } from './useNodeStore';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
+import type { NodeMemoryUsage } from '../types/api';
 import { deepEqual } from '../utils/deepEqual';
 import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
@@ -635,7 +636,7 @@ export function setFlowViewport(viewport: Viewport, set: FlowStoreSet) {
 export function setFlowNodeCached(
   id: string,
   isCached: boolean,
-  memoryUsage: Record<string, number> | undefined,
+  memoryUsage: NodeMemoryUsage | undefined,
   executionTime: Record<string, number> | undefined,
   set: FlowStoreSet,
 ) {

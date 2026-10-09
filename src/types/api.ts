@@ -6,6 +6,7 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 export type NodeParamValue = JsonValue | File | Blob | undefined;
+export type NodeMemoryUsage = Record<string, number | null>;
 
 export type ApiGraphParamExport = {
   sourceId?: string;
@@ -187,7 +188,7 @@ export type NodeWebsocketMessage = BaseWebsocketMessage<
   label?: string;
   style?: { headerColor?: string };
   hasChanged?: boolean;
-  memoryUsage?: Record<string, number>;
+  memoryUsage?: NodeMemoryUsage;
   executionTime?: Record<string, number>;
   message?: string;
   error?: string;
@@ -488,6 +489,12 @@ function isNumericRecord(value: unknown) {
   return isRecord(value) && Object.values(value).every(isFiniteNumber);
 }
 
+function isMemoryUsageRecord(value: unknown) {
+  return (
+    isRecord(value) && Object.values(value).every((measurement) => measurement === null || isFiniteNumber(measurement))
+  );
+}
+
 function isNotificationAction(value: unknown) {
   if (!isRecord(value)) return false;
   return (
@@ -584,7 +591,7 @@ function hasValidCommonWebsocketFields(value: Record<string, unknown>) {
       'style',
       (field) => isRecord(field) && optionalField(field, 'headerColor', (color) => typeof color === 'string'),
     ) &&
-    optionalField(value, 'memoryUsage', isNumericRecord) &&
+    optionalField(value, 'memoryUsage', isMemoryUsageRecord) &&
     optionalField(value, 'resource_snapshot', isRecord, true) &&
     optionalField(value, 'phase_timings', isNumericRecord) &&
     optionalField(

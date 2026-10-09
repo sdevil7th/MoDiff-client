@@ -30485,3 +30485,142 @@ test('mocked Gallery opens every ordered collection image before and after histo
   }
   expect(graphPosts).toBe(0);
 });
+
+for (const displayType of ['text', 'json'] as const) {
+  test(`mocked Gallery preserves ${displayType} preview, original download and non-image actions`, async ({ page }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined });
+    });
+    const value =
+      displayType === 'text'
+        ? ['Native CPU memory telemetry acceptance']
+        : { message: '<img src=x onerror="window.__galleryXss=true">', values: [0, false, 'हैलो'], empty: '' };
+    const content = JSON.stringify(value, null, 2);
+    const rawContent = displayType === 'json' ? content + '\n' : content;
+    const extension = displayType === 'json' ? 'json' : 'txt';
+    const label = displayType === 'json' ? 'JSON' : 'Text';
+    const mediaPath = `@data/studio/outputs/gallery-${displayType}.${extension}`;
+    const url = `/file?file=${encodeURIComponent(mediaPath)}`;
+    const output = {
+      id: `gallery-${displayType}-output`,
+      url,
+      displayType,
+      value,
+      modelLabel: `Recorded ${label}`,
+      nodeId: 'preview',
+      fieldKey: 'preview',
+      taskId: `gallery-${displayType}-task`,
+      clientRunId: `gallery-${displayType}-client`,
+      runInputHash: `gallery-${displayType}-inputs`,
+      attemptIndex: 0,
+      createdAt: 1,
+      favorite: false,
+      mediaItems: [
+        {
+          index: 0,
+          url,
+          backendPath: mediaPath,
+          displayType,
+          contentType: displayType === 'json' ? 'application/json' : 'text/plain',
+        },
+      ],
+    };
+    let historyReads = 0;
+    let favoritePatches = 0;
+    await page.route('**/studio_outputs**', (route) => {
+      if (route.request().method() === 'PATCH') {
+        expect(route.request().postDataJSON()).toEqual({ favorite: true });
+        expect(decodeURIComponent(new URL(route.request().url()).pathname)).toContain(output.id);
+        output.favorite = true;
+        favoritePatches += 1;
+      } else {
+        expect(route.request().method()).toBe('GET');
+        historyReads += 1;
+      }
+      return route.fulfill({ json: { error: false, outputs: [output], revision: 1 } });
+    });
+    await page.route('**/file*', (route) => {
+      const requestUrl = new URL(route.request().url());
+      return requestUrl.searchParams.get('file') === mediaPath
+        ? route.fulfill({ contentType: displayType === 'json' ? 'application/json' : 'text/plain', body: rawContent })
+        : route.fallback();
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await page.getByTestId('topbar-gallery').click();
+    const gallery = page.getByTestId('gallery-panel');
+    const card = gallery.getByTestId('gallery-output-0');
+    const closeTextPreview = async () => {
+      await page.getByRole('button', { name: 'Close media viewer', exact: true }).click();
+      await expect(page.getByTestId('media-viewer-dialog')).toHaveCount(0);
+      // Cold shared dialogs dismiss Gallery while loading; warm dialogs retain it.
+      if (!(await gallery.isVisible())) await page.getByTestId('topbar-gallery').click();
+      await expect(card).toBeVisible();
+    };
+    await expect(card.getByTestId('gallery-output-text')).toHaveText(content);
+    await expect(card).toContainText(`| ${label} |`);
+    await expect(card.locator('img')).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Download PNG package', exact: true })).toHaveCount(0);
+    await expect(card.getByTestId('gallery-compare-0')).toHaveCount(0);
+    await expect(card.getByTestId('gallery-send-edit-0')).toHaveCount(0);
+    await card.getByTestId('gallery-open-0').click();
+    await expect(page.getByTestId('media-viewer-text')).toHaveText(content);
+    await expect(page.getByTestId('media-viewer-dialog').locator('img')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as Window & { __galleryXss?: boolean }).__galleryXss)).toBeUndefined();
+    await closeTextPreview();
+    await expect(card.getByTestId('gallery-restore-0')).toBeVisible();
+    await expect(card.getByTestId('gallery-rerun-0')).toBeVisible();
+    const packageDownloadPromise = page.waitForEvent('download');
+    await card.getByTestId('gallery-download-package-0').click();
+    const packageDownload = await packageDownloadPromise;
+    const metadataPackage = JSON.parse(await fs.readFile((await packageDownload.path())!, 'utf8'));
+    expect(metadataPackage.latestOutput).toMatchObject({
+      id: output.id,
+      taskId: output.taskId,
+      clientRunId: output.clientRunId,
+      runInputHash: output.runInputHash,
+      displayType,
+      value,
+    });
+    await card.getByTestId('gallery-favorite-0').click();
+    await expect.poll(() => favoritePatches).toBe(1);
+    const downloadPromise = page.waitForEvent('download');
+    await card.getByRole('button', { name: `Download ${displayType}`, exact: true }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`));
+    expect(await fs.readFile((await download.path())!, 'utf8')).toBe(rawContent);
+    if (displayType === 'text') {
+      const bytes = await fs.readFile((await download.path())!);
+      expect(bytes.length).toBe(46);
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+        '87b7128d0401ebcb7de32877ff7378a51b1f9067ac47392af6469f15cb488862',
+      );
+    }
+    await gallery.getByTestId('gallery-view-inspect').click();
+    await expect(gallery.getByTestId('gallery-inspect-view').getByTestId('gallery-output-text')).toHaveText(content);
+    await gallery.getByTestId('gallery-view-compare').click();
+    await expect(gallery.getByTestId('gallery-compare-view').getByTestId('gallery-output-text')).toHaveText(content);
+    await gallery.getByTestId('gallery-view-grid').click();
+    await gallery.getByRole('button', { name: new RegExp(`^Root \\| Recorded ${label} \\|`) }).click();
+    await expect(page.getByTestId('media-viewer-text')).toHaveText(content);
+    await closeTextPreview();
+    await gallery.getByTestId('gallery-refresh-history').click();
+    await expect.poll(() => historyReads).toBeGreaterThan(1);
+    await expect(card.getByTestId('gallery-output-text')).toHaveText(content);
+    const restoredOutput = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0]);
+    expect(restoredOutput).toMatchObject({
+      id: output.id,
+      taskId: output.taskId,
+      clientRunId: output.clientRunId,
+      runInputHash: output.runInputHash,
+      nodeId: 'preview',
+      fieldKey: 'preview',
+      displayType,
+      value,
+      favorite: true,
+    });
+  });
+}

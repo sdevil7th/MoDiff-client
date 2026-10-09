@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { buildBackendInstallerPackageSet } from './backend-installer-contract.mjs';
+import './development-installer-launchers.test.mjs';
 
 function fixture({ managed = true, requirements = 'torch==2.8.0\n' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'modiff-installer-contract-'));

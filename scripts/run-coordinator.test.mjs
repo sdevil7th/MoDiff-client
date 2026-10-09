@@ -22,6 +22,7 @@ let studioStoreModule;
 let taskStoreModule;
 let websocketModule;
 let websocketStoreModule;
+let memoryFormattingModule;
 let server;
 let originalFetch;
 
@@ -68,6 +69,7 @@ before(async () => {
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
   websocketModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   websocketStoreModule = await server.ssrLoadModule('/src/stores/useWebsocketStore.ts');
+  memoryFormattingModule = await server.ssrLoadModule('/src/utils/formatMemory.ts');
   originalFetch = globalThis.fetch;
 });
 
@@ -2731,6 +2733,126 @@ test('websocket parsing accepts handled Auto events and rejects malformed typed 
     progress: -1,
   };
   assert.deepEqual(websocketModule.parseWebsocketMessage(JSON.stringify(exactBackendHeartbeat)), exactBackendHeartbeat);
+});
+
+test('native CPU executed frames retain unavailable memory measurements and node completion', () => {
+  // Exact execution messages captured from a native CPU service run on 2026-10-09.
+  // Prompt at 12:00:54.728Z; preview at 12:00:54.759Z. No model download was involved.
+  const frames = [
+    {
+      type: 'executed',
+      node: 'prompt',
+      name: 'modules.Primitive.TextValue',
+      task_id: 'native-cpu-memory-task',
+      attempt_index: 0,
+      status: 'succeeded',
+      phase: 'unknown',
+      progress: 100,
+      current_node: 'prompt',
+      hasChanged: true,
+      message: 'Recomputed: node inputs changed.',
+      executionTime: { last: 0, min: 0, max: 0.0009989738464355469 },
+      memoryUsage: { last: null, min: null, max: null },
+    },
+    {
+      type: 'executed',
+      node: 'preview',
+      name: 'modules.Primitive.DataViewer',
+      task_id: 'native-cpu-memory-task',
+      attempt_index: 0,
+      status: 'succeeded',
+      phase: 'unknown',
+      progress: 100,
+      current_node: 'preview',
+      hasChanged: true,
+      message: 'Recomputed: output was invalidated by an upstream change or recompute request.',
+      executionTime: { last: 0, min: 0, max: 0 },
+      memoryUsage: { last: null, min: null, max: null },
+    },
+  ];
+  const flow = flowStoreModule.useFlowStore;
+  const preview = flow.getState().nodes[0];
+  flow.setState({ nodes: [{ ...preview, id: 'prompt' }, preview] });
+  studioStoreModule.useStudioStore
+    .getState()
+    .captureRunContext(graph(), undefined, { clientRunId: 'native-memory-run' });
+  studioStoreModule.useStudioStore
+    .getState()
+    .attachRunResponse({ task_id: 'native-cpu-memory-task', sid: 'session-1' }, 'native-memory-run');
+  for (const frame of frames) {
+    const parsed = websocketModule.parseWebsocketMessage(JSON.stringify(frame));
+    assert.deepEqual(parsed, frame);
+    websocketModule.handleWebsocketMessage(parsed, {
+      sid: 'session-1',
+      ws: {},
+      getSid: () => 'session-1',
+      setSid: () => undefined,
+      setLoopTimer: () => undefined,
+    });
+    const node = flow.getState().nodes.find((item) => item.id === frame.node);
+    assert.equal(node.data.isCached, true);
+    assert.equal(node.data.progress, 100);
+    assert.equal(node.data.executionStatus, 'succeeded');
+    assert.deepEqual(node.data.memoryUsage, { last: null, min: null, max: null });
+    assert.deepEqual(node.data.executionTime, frame.executionTime);
+  }
+});
+
+test('memory measurements permit mixed finite values and null without weakening other telemetry', () => {
+  const message = {
+    type: 'executed',
+    node: 'preview',
+    hasChanged: true,
+    memoryUsage: { last: 0, min: null, max: 1024 },
+    executionTime: { last: 0, min: 0, max: 1 },
+  };
+  const parsed = websocketModule.parseWebsocketMessage(JSON.stringify(message));
+  assert.deepEqual(parsed, message);
+  websocketModule.handleWebsocketMessage(parsed, {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  });
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().nodes[0].data.memoryUsage, message.memoryUsage);
+  for (const memoryUsage of [
+    null,
+    [],
+    'unknown',
+    { last: '0' },
+    { last: false },
+    { last: {} },
+    { last: [] },
+    { last: undefined },
+    { last: Number.NaN },
+    { last: Number.POSITIVE_INFINITY },
+    { last: Number.NEGATIVE_INFINITY },
+  ]) {
+    assert.equal(websocketModule.parseWebsocketMessage({ ...message, memoryUsage }), null);
+  }
+  for (const executionTime of [
+    { last: null },
+    { last: '0' },
+    { last: Number.NaN },
+    { last: Number.POSITIVE_INFINITY },
+  ]) {
+    assert.equal(websocketModule.parseWebsocketMessage({ ...message, executionTime }), null);
+  }
+  assert.equal(websocketModule.parseWebsocketMessage({ ...message, phase_timings: { loading: null } }), null);
+  assert.equal(
+    websocketModule.parseWebsocketMessage({ ...message, phase_timings: { loading: Number.POSITIVE_INFINITY } }),
+    null,
+  );
+});
+
+test('memory formatting distinguishes unavailable readings from measured zero', () => {
+  assert.equal(memoryFormattingModule.formatMemory(null), '-');
+  assert.equal(memoryFormattingModule.formatMemory(undefined), '-');
+  assert.equal(memoryFormattingModule.formatMemory(0), '0 B');
+  assert.equal(memoryFormattingModule.formatMemory(1024), '1.0 KB');
+  assert.equal(memoryFormattingModule.formatMemory(Number.NaN), '-');
+  assert.equal(memoryFormattingModule.formatMemory(Number.POSITIVE_INFINITY), '-');
 });
 
 test('exact backend heartbeats with null telemetry still update the task and node stores', () => {

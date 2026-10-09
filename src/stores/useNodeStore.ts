@@ -9,6 +9,7 @@ import {
 
 import { create } from 'zustand';
 import type { RuntimeResourceSnapshot } from '../studio/runtimeResources';
+import type { NodeMemoryUsage } from '../types/api';
 import config from '../../app.config';
 import {
   classifyHfDownloadFailure,
@@ -79,7 +80,7 @@ export type NodeData = {
   resizable?: boolean;
   skipParamsCheck?: boolean;
   executionTime?: Record<string, number>;
-  memoryUsage?: Record<string, number>;
+  memoryUsage?: NodeMemoryUsage;
   isCached?: boolean;
   progress?: number;
   activeTaskId?: string | null;

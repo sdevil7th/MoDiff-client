@@ -423,7 +423,7 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
       attemptIndex: optionalNumber(value.attemptIndex),
       nodeId: stringValue(value.nodeId, 'studio-output'),
       fieldKey: stringValue(value.fieldKey, 'output'),
-      value: safeCloneJson(value.value ?? url),
+      value: safeCloneJson(value.value === undefined ? url : value.value),
       url,
       mode,
       modelType,

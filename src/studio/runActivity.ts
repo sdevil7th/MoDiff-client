@@ -127,6 +127,7 @@ function inferredMediaKind(
   displayType: StudioOutput['displayType'] | NonNullable<StudioOutput['mediaItems']>[number]['displayType'],
   url: string,
 ): MediaViewerItem['kind'] {
+  if (displayType === 'json') return 'text';
   if (displayType === 'video' || displayType === 'audio' || displayType === 'text') return displayType;
   if (displayType === 'image' || displayType === 'image_collection') return 'image';
   const path = url.split(/[?#]/, 1)[0]?.toLowerCase() ?? '';
@@ -162,7 +163,7 @@ export function mediaViewerItemsForRun(outputs: StudioOutput[]): MediaViewerItem
     sourceItems.forEach((item, itemIndex) => {
       const url = typeof item.url === 'string' ? item.url : '';
       const kind = inferredMediaKind(item.displayType, url);
-      const text = kind === 'text' ? textValue(item.value ?? output.value) : undefined;
+      const text = kind === 'text' ? textValue(item.value === undefined ? output.value : item.value) : undefined;
       if (kind !== 'text' && !url) return;
       const dedupeKey = `${kind}:${kind === 'text' ? text : url}`;
       if (seen.has(dedupeKey)) return;

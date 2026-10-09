@@ -64,7 +64,7 @@ For NVIDIA, use `--extra cuda` in each command; for Intel, use `--extra xpu`.
 On Apple Silicon, omit the extra. Keep the same extra on sync and run. Use a
 separate checkout to try another accelerator; native sync reconciles `.venv`.
 AMD vendor-wheel environments use the backend's specialist
-[accelerator setup](https://github.com/sdevil7th/MoDiff/blob/develop/docs/accelerator-installation.md).
+[accelerator setup](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/accelerator-installation.md).
 
 In the client terminal, run:
 
@@ -77,7 +77,7 @@ Open the URL printed by Vite and leave the backend running. Transformers and
 PEFT are installed during backend setup; normal image and LoRA workflows need
 no separate package activation. These commands work on Linux and Windows
 PowerShell. The backend's
-[developer guide](https://github.com/sdevil7th/MoDiff/blob/develop/docs/developer-setup.md)
+[developer guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md)
 and the [Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm)
 cover explicit `uv pip` setup, upgrades, repair, and platform details.
 

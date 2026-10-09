@@ -167,6 +167,15 @@ startup bytes, a 464336-byte largest startup chunk and 269414 deferred bytes.
 The startup ceilings remain 642816 and 464512 bytes, and the individual deferred
 chunk ceiling remains 65536 bytes. Dependencies and loading boundaries stay fixed.
 
+Declared text/JSON Gallery previews, original-file downloads and Session JSON
+classification reuse the existing text viewer, Previous formatter and export path.
+Together with captured-null and declared-family preservation, their measured build
+adds 915 deferred gzip bytes, from 269414 to 270329. A bounded
+1024-byte aggregate allowance makes the ceiling 269568 + 1024 = 270592 bytes.
+Startup measures 642694 bytes and the largest startup chunk 464387 bytes; their
+ceilings remain 642816 and 464512, and the deferred chunk ceiling remains 65536.
+No dependency or loading-boundary change is included in this allowance.
+
 When updating selected loader field metadata, regenerate the paired
 `BlockDefinitionV2` catalog and frontend identity pins together. This metadata
 must not rewrite saved instance values, prompts, wiring, or layout. Deploy only

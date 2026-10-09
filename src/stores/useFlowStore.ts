@@ -10,7 +10,7 @@ import { NodeData, NodeParams, type NodeParamSignal } from './useNodeStore';
 import { Node, Edge, OnNodesChange, OnEdgesChange, NodeChange, EdgeChange, Connection, Viewport } from '@xyflow/react';
 import { nanoid } from 'nanoid';
 
-import type { ApiGraphExport } from '../types/api';
+import type { ApiGraphExport, NodeMemoryUsage } from '../types/api';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
 import { createResilientCheckpointStorage } from '../utils/checkpointStorage';
 import { arrangeGraphNodes } from '../workflow/graphLayout';
@@ -276,7 +276,7 @@ export type FlowStore = {
   setNodeCached: (
     id: string,
     cached: boolean,
-    memoryUsage?: Record<string, number>,
+    memoryUsage?: NodeMemoryUsage,
     executionTime?: Record<string, number>,
   ) => void;
   updateCacheStatus: (ids: string | string[]) => void;
@@ -2480,7 +2480,7 @@ export const useFlowStore = create<FlowStore>()(
       setNodeCached: (
         id: string,
         isCached: boolean,
-        memoryUsage?: Record<string, number>,
+        memoryUsage?: NodeMemoryUsage,
         executionTime?: Record<string, number>,
       ) => {
         setFlowNodeCached(id, isCached, memoryUsage, executionTime, set);
