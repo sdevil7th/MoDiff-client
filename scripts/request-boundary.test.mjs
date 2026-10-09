@@ -80,6 +80,27 @@ test('optional setup status retries transient failures with bounded delay and pr
   }
 });
 
+test('optional setup status uses transient HTTP status when the real transport receives non-JSON errors', async () => {
+  for (const [status, retryDelayMs] of [
+    [503, 1500],
+    [200, null],
+    [404, null],
+  ]) {
+    globalThis.fetch = async () =>
+      new Response('<html>Service Unavailable</html>', {
+        status,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    await assert.rejects(requestModule.requestJson('/runtime/optional-runtimes/jobs/optjob-AbCdEf123456'), (error) => {
+      assert.equal(error.kind, 'invalid_json');
+      assert.equal(error.status, status);
+      assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 1).retryDelayMs, retryDelayMs);
+      assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 8).retryDelayMs, null);
+      return true;
+    });
+  }
+});
+
 test('missing, invalid and identity-mismatched setup status pause without fabricating a job outcome', () => {
   for (const error of [
     new requestModule.RequestError('Job not found.', { kind: 'http', status: 404, url: '/job' }),

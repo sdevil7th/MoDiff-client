@@ -236,7 +236,10 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // status-only recovery measure 269147 deferred gzip bytes (+457 from 268690).
 // Allow 512 bytes for this correctness fix in the existing lazy workspace;
 // startup, dependencies and both per-chunk ceilings remain unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 512;
+// Retrying non-JSON transient HTTP errors adds 14 bytes to the workspace chunk.
+// The versioned aggregate measures 269341 bytes; allow 128 additional bytes
+// for this correction, keeping startup, per-chunk and loading limits unchanged.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 512 + 128;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -7598,7 +7598,7 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
       reads += 1;
       if (!unavailable) return route.fallback();
       const job = {
-        id: failure === 'identity' ? 'optjob-Different1234' : 'optjob-AbCdEf123456',
+        id: failure === 'identity' ? 'optjob-GhIjKl654321' : 'optjob-AbCdEf123456',
         operation: 'install',
         profileId: 'huggingface-transformers-peft-5.14.1-0.20.0',
         specDigest: 'sha256:8e1b0b6b2baa891d4551caa3cde4d59708eced0fd74c1333b68a1aab7ff924b5',
@@ -7624,6 +7624,7 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
     const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
     const error = disclosure.getByTestId('optional-runtime-status-error');
     await expect(error).toContainText('Last known progress', { timeout: 3_000 });
+    if (failure === 'identity') await expect(error).toContainText('job identity changed');
     await expect(error).toContainText('paused');
     await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('Installing reviewed artifacts');
     await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
@@ -7640,35 +7641,40 @@ for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const
   });
 }
 
-test('optional runtime polling reports a transient disconnect and resumes without a duplicate mutation', async ({
-  page,
-}) => {
-  mockOptionalRuntimeActions = true;
-  mockOptionalRuntimeJobState = 'running';
-  await ensureFrontend();
-  await installMockRoutes(page);
-  let unavailable = true;
-  let reads = 0;
-  await page.route('**/runtime/optional-runtimes/jobs/*', (route) => {
-    reads += 1;
-    return unavailable ? route.abort('connectionrefused') : route.fallback();
+for (const failure of ['disconnect', 'non-JSON503'] as const) {
+  test(`optional runtime polling reports a transient ${failure} and resumes without a duplicate mutation`, async ({
+    page,
+  }) => {
+    mockOptionalRuntimeActions = true;
+    mockOptionalRuntimeJobState = 'running';
+    await ensureFrontend();
+    await installMockRoutes(page);
+    let unavailable = true;
+    let reads = 0;
+    await page.route('**/runtime/optional-runtimes/jobs/*', (route) => {
+      reads += 1;
+      if (!unavailable) return route.fallback();
+      return failure === 'disconnect'
+        ? route.abort('connectionrefused')
+        : route.fulfill({ status: 503, contentType: 'text/html', body: '<html>Service Unavailable</html>' });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+    await dismissTaskLauncher(page);
+    await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+    const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+    const error = disclosure.getByTestId('optional-runtime-status-error');
+    await expect(error).toContainText('Retrying', { timeout: 3_000 });
+    await expect(error).toContainText('Last known progress');
+    await expect.poll(() => reads).toBeGreaterThan(1);
+    await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
+    unavailable = false;
+    mockOptionalRuntimeJobState = 'ready';
+    await expect(error).toHaveCount(0);
+    await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    expect(mockOptionalRuntimeMutationCalls).toBe(0);
   });
-  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await dismissTaskLauncher(page);
-  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
-  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
-  const error = disclosure.getByTestId('optional-runtime-status-error');
-  await expect(error).toContainText('Retrying', { timeout: 3_000 });
-  await expect(error).toContainText('Last known progress');
-  await expect.poll(() => reads).toBeGreaterThan(1);
-  await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
-  unavailable = false;
-  mockOptionalRuntimeJobState = 'ready';
-  await expect(error).toHaveCount(0);
-  await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
-  expect(mockOptionalRuntimeMutationCalls).toBe(0);
-});
+}
 
 test('a broken optional runtime can explicitly reset to base when legacy activation controls are unavailable', async ({
   page,
