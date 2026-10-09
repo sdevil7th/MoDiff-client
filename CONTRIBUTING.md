@@ -64,7 +64,7 @@ For NVIDIA, use `--extra cuda` in each command; for Intel, use `--extra xpu`.
 On Apple Silicon, omit the extra. Keep the same extra on sync and run. Use a
 separate checkout to try another accelerator; native sync reconciles `.venv`.
 AMD vendor-wheel environments use the backend's specialist
-[accelerator setup](https://github.com/sdevil7th/MoDiff/blob/develop/docs/accelerator-installation.md).
+[accelerator setup](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/accelerator-installation.md).
 
 In the client terminal, run:
 
@@ -77,7 +77,7 @@ Open the URL printed by Vite and leave the backend running. Transformers and
 PEFT are installed during backend setup; normal image and LoRA workflows need
 no separate package activation. These commands work on Linux and Windows
 PowerShell. The backend's
-[developer guide](https://github.com/sdevil7th/MoDiff/blob/develop/docs/developer-setup.md)
+[developer guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md)
 and the [Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm)
 cover explicit `uv pip` setup, upgrades, repair, and platform details.
 
@@ -315,17 +315,20 @@ The request/proxy regression tests also launch Chromium. On a fresh Linux host,
 install its system dependencies with `npx playwright install-deps chromium`
 using an account with administrator access before running the gate.
 
-The Linux CI quality job checks out this client and an immutable, compatible
-`sdevil7th/MoDiff` backend revision as sibling directories. It installs the
-backend with `uv sync --extra cpu --locked`, installs test dependencies, and
-runs preflight and the tiny native image/LoRA smoke before the same client gate.
+The Linux CI quality and browser jobs check out this client and an immutable,
+compatible `sdevil7th/MoDiff` backend revision as sibling directories. Both install
+the backend with `uv sync --extra cpu --locked`, install test dependencies, and
+run preflight and the tiny native image/LoRA smoke. The quality job runs the
+client gate; the browser job builds the production client and runs the complete
+browser gate within its own job budget.
 This setup does not download model weights or qualify accelerator execution;
 platform smoke jobs remain client-only.
 
 For a coordinated change, commit and review the backend first, then replace the
-backend `ref` in `.github/workflows/ci.yml` with that actual compatible 40-character
-commit SHA and run the paired gates. Keep the ref immutable. The selected backend
-must contain its reviewed native setup contract and `uv.lock`; the workflow
+backend `ref` in both jobs in `.github/workflows/ci.yml` with that actual compatible
+40-character commit SHA and run the paired gates. Keep both refs immutable and
+equal. The selected backend must contain its reviewed native setup contract and
+`uv.lock`; the workflow
 checks these before setup. Do not substitute a mutable branch or an invented
 future SHA for the paired commit.
 

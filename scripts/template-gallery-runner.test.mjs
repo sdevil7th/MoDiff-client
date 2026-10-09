@@ -50,11 +50,224 @@ import {
   parseCampaignArgs,
   qualityBlockedWorkflowsFromResearch,
 } from './review-generation-campaign.mjs';
+import {
+  assertRetainedExecutionIdentity,
+  retainedGalleryMediaFiles,
+  retainedTemplateBinding,
+} from './template-gallery-repair-contract.mjs';
+import { canonicalGraphIdentity, stableStringify } from './live-proof-provenance.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const portablePath = (value) => value.split(sep).join('/');
 // Unit tests check fixture selection without requiring local review media.
 const availableFixtureOverrides = (workflowId, media) => fixtureOverrides(workflowId, media, () => true);
+
+function retainedRepairFixture() {
+  const settings = { mode: 'text_to_image', modelType: 'ExamplePipeline', prompt: 'original brief', seed: 73 };
+  const template = { id: 'original_template' };
+  const revision = 'original-model-revision';
+  const runtime = {
+    lockedSettingsForTemplate: () => ({ ...settings }),
+    promptSettingsHash: () => `prompt:${stableStringify(settings)}`,
+    templateLockHash: (_template, modelRevision = 'catalog') =>
+      `template:${modelRevision}:${stableStringify(settings)}`,
+  };
+  const apiGraphSnapshot = {
+    nodes: { denoise: { module: 'modules.Diffusers', action: 'Denoise', params: { seed: { value: 73 } } } },
+    paths: [['denoise']],
+  };
+  const graph = canonicalGraphIdentity(apiGraphSnapshot);
+  const original = {
+    taskId: 'original-task',
+    capturedAt: '2026-10-06T12:00:00.000Z',
+    template: {
+      id: template.id,
+      lockedSettings: { ...settings },
+      promptSettingsHash: runtime.promptSettingsHash(template),
+      catalogTemplateLockHash: runtime.templateLockHash(template),
+      resolvedTemplateLockHash: runtime.templateLockHash(template, revision),
+    },
+    models: { revisionLock: revision },
+    graphHash: graph.hash,
+    graph,
+    inputs: { items: [] },
+  };
+  const output = { taskId: original.taskId, templateId: template.id, formSnapshot: { ...settings }, apiGraphSnapshot };
+  const events = [
+    { type: 'executed', task_id: original.taskId, node: 'denoise', status: 'succeeded', hasChanged: true },
+    { type: 'graph_completed', task_id: original.taskId },
+    { type: 'task_completed', task_id: original.taskId },
+  ];
+  return {
+    runtime,
+    template,
+    original,
+    output,
+    run: { taskId: original.taskId },
+    events,
+    inputArtifacts: [],
+    settings,
+  };
+}
+
+test('retained proof repair preserves original template and capture identities after exact recipe corroboration', () => {
+  const fixture = retainedRepairFixture();
+  assert.deepEqual(retainedTemplateBinding(fixture), {
+    ...fixture.original.template,
+    capturedAt: fixture.original.capturedAt,
+  });
+});
+
+test('retained proof repair rejects changed creator defaults before relabelling a historical graph', () => {
+  const fixture = retainedRepairFixture();
+  fixture.settings.prompt = 'a different creative brief';
+  assert.throws(() => retainedTemplateBinding(fixture), /creator setting prompt changed/);
+});
+
+test('equal retained settings cannot establish parity for a changed workflow admission', () => {
+  const fixture = retainedRepairFixture();
+  fixture.original.template.catalogTemplateLockHash = 'legacy-template-admission';
+  assert.throws(() => retainedTemplateBinding(fixture), /catalogTemplateLockHash differs/);
+});
+
+test('retained hashes alone cannot hide different submitted graph contents or consumed values', () => {
+  const graphFixture = retainedRepairFixture();
+  graphFixture.output.apiGraphSnapshot.nodes.denoise.params.seed.value = 999;
+  assert.throws(() => retainedTemplateBinding(graphFixture), /executed graph does not match/);
+  const formFixture = retainedRepairFixture();
+  formFixture.output.formSnapshot.seed = 999;
+  assert.throws(() => retainedTemplateBinding(formFixture), /consumed form setting seed differs/);
+});
+
+test('retained proof repair rejects mismatched tasks and missing executed-node receipts', () => {
+  const taskFixture = retainedRepairFixture();
+  taskFixture.run.taskId = 'another-task';
+  assert.throws(() => retainedTemplateBinding(taskFixture), /do not identify the retained task/);
+  const eventFixture = retainedRepairFixture();
+  eventFixture.events = eventFixture.events.filter((event) => event.type !== 'executed');
+  assert.throws(() => retainedTemplateBinding(eventFixture), /execution receipt is missing for graph node/);
+});
+
+test('retained proof repair correlates original pinned media, allowing only proven source bindings', () => {
+  const fixture = retainedRepairFixture();
+  fixture.settings.sourceVideo = '';
+  fixture.original.template = {
+    ...fixture.original.template,
+    lockedSettings: { ...fixture.settings },
+    promptSettingsHash: fixture.runtime.promptSettingsHash(fixture.template),
+    catalogTemplateLockHash: fixture.runtime.templateLockHash(fixture.template),
+    resolvedTemplateLockHash: fixture.runtime.templateLockHash(fixture.template, fixture.original.models.revisionLock),
+  };
+  fixture.output.formSnapshot.sourceVideo = 'retained-video';
+  fixture.inputArtifacts = [
+    { role: 'source_video', path: 'retained-video', contentHash: 'sha256:original', byteSize: 5 },
+  ];
+  fixture.original.inputs.items = [{ ...fixture.inputArtifacts[0] }];
+  assert.equal(retainedTemplateBinding(fixture).capturedAt, fixture.original.capturedAt);
+  fixture.inputArtifacts[0].contentHash = 'sha256:replacement';
+  assert.throws(() => retainedTemplateBinding(fixture), /input media does not match/);
+});
+
+test('retained proof repair requires the original authority instead of recovering it from current hashes', () => {
+  const fixture = retainedRepairFixture();
+  fixture.original = null;
+  assert.throws(() => retainedTemplateBinding(fixture), /original template locked settings are missing/);
+});
+
+test('repeat retained-media discovery excludes repair backups, sidecars and directories and preserves item order', () => {
+  const mediaDir = mkdtempSync(resolve(tmpdir(), 'modiff-repair-media-discovery-'));
+  const base = 'high_quality.run1';
+  try {
+    const images = [`${base}.item10.png`, `${base}.item2.png`, `${base}.item1.webp`];
+    for (const name of images) writeFileSync(resolve(mediaDir, name), 'retained-media');
+    const expected = [`${base}.item1.webp`, `${base}.item2.png`, `${base}.item10.png`];
+    assert.deepEqual(retainedGalleryMediaFiles(mediaDir, base), expected);
+    const evidenceDir = resolve(mediaDir, 'evidence');
+    mkdirSync(evidenceDir);
+    mkdirSync(resolve(mediaDir, `${base}.directory.png`));
+    for (const directory of [mediaDir, evidenceDir]) {
+      for (const name of [
+        `${base}.provenance.json`,
+        `${base}.websocket-events.json.before-repair-original`,
+        `${base}.before-repair-original.png`,
+        `${base}.before.png`,
+        `${base}.recomposed.png`,
+        `${base}.debug.log`,
+      ])
+        writeFileSync(resolve(directory, name), 'metadata');
+    }
+    assert.deepEqual(retainedGalleryMediaFiles(mediaDir, base), expected);
+    assert.deepEqual(retainedGalleryMediaFiles(mediaDir, base), expected);
+  } finally {
+    rmSync(mediaDir, { recursive: true, force: true });
+  }
+});
+
+test('retained proof repair preserves reference order through indexed input roles', () => {
+  const fixture = retainedRepairFixture();
+  fixture.inputArtifacts = [
+    { role: 'reference_image_1', contentHash: 'sha256:first', byteSize: 5 },
+    { role: 'reference_image_2', contentHash: 'sha256:second', byteSize: 6 },
+  ];
+  fixture.original.inputs.items = structuredClone(fixture.inputArtifacts);
+  assert.equal(retainedTemplateBinding(fixture).id, fixture.template.id);
+  fixture.inputArtifacts = [
+    { ...fixture.inputArtifacts[1], role: 'reference_image_1' },
+    { ...fixture.inputArtifacts[0], role: 'reference_image_2' },
+  ];
+  assert.throws(() => retainedTemplateBinding(fixture), /input media does not match/);
+});
+
+test('retained proof repair forbids runtime or source substitution while permitting metadata reconstruction', () => {
+  const original = {
+    taskId: 'original-task',
+    capturedAt: '2026-10-06T12:00:00.000Z',
+    backendSourceFingerprint: 'original-source',
+    backendContractFingerprint: 'original-contract',
+    runtimeFingerprint: 'original-runtime',
+    graphHash: 'original-graph',
+    modelRevision: 'original-model',
+    modelCommit: 'original-commit',
+    inputArtifactsHash: 'original-inputs',
+    runtime: { backendSource: { fingerprint: 'original-source', gitCommit: 'original-commit', files: ['original'] } },
+    model: { repoId: 'original-model', fingerprint: 'original-artifacts' },
+    models: { items: [{ repoId: 'original-model', fingerprint: 'original-artifacts' }] },
+    output: {
+      count: 2,
+      collectionHash: 'original-output-collection',
+      backendCollectionHash: 'original-backend-collection',
+      items: [
+        { index: 0, mediaType: 'image', encodedSha256: 'first-bytes', decodedSha256: 'first-pixels' },
+        { index: 1, mediaType: 'image', encodedSha256: 'second-bytes', decodedSha256: 'second-pixels' },
+      ],
+    },
+  };
+  assert.doesNotThrow(() => assertRetainedExecutionIdentity(original, structuredClone(original)));
+  assert.throws(
+    () => assertRetainedExecutionIdentity(original, { ...original, runtimeFingerprint: 'current-runtime' }),
+    /execution identity runtimeFingerprint/,
+  );
+  const replacement = structuredClone(original);
+  replacement.runtime.backendSource.files = ['replacement'];
+  assert.throws(() => assertRetainedExecutionIdentity(original, replacement), /original backend source inventory/);
+  const wrongWeights = structuredClone(original);
+  wrongWeights.model.fingerprint = 'different-artifacts';
+  assert.throws(() => assertRetainedExecutionIdentity(original, wrongWeights), /original model artifact identity/);
+  const differentImage = structuredClone(original);
+  differentImage.output.items[0].encodedSha256 = 'unrelated-image-bytes';
+  differentImage.output.items[0].decodedSha256 = 'unrelated-image-pixels';
+  assert.throws(() => assertRetainedExecutionIdentity(original, differentImage), /original ordered output identities/);
+  const reversedOutput = structuredClone(original);
+  reversedOutput.output.items.reverse();
+  reversedOutput.output.items = reversedOutput.output.items.map((item, index) => ({ ...item, index }));
+  assert.throws(() => assertRetainedExecutionIdentity(original, reversedOutput), /original ordered output identities/);
+  const missingOriginalBytes = structuredClone(original);
+  delete missingOriginalBytes.output.items[0].encodedSha256;
+  assert.throws(
+    () => assertRetainedExecutionIdentity(missingOriginalBytes, structuredClone(missingOriginalBytes)),
+    /requires the original ordered output identities/,
+  );
+});
 
 test('gallery capture and resume paths have no unresolved variables', () => {
   const messages = new Linter().verify(readFileSync(resolve(ROOT, 'scripts/template-gallery-runner.mjs'), 'utf8'), {
@@ -599,6 +812,41 @@ test('offline evidence repair refuses to substitute current state for a missing 
 
     assert.notEqual(repaired.status, 0);
     assert.match(repaired.stderr, /backend-source-before\.json/u);
+    assert.equal(existsSync(resolve(evidenceDir, 'high_quality.run1.provenance.json')), false);
+  } finally {
+    rmSync(artifactDir, { recursive: true, force: true });
+  }
+});
+
+test('offline evidence repair leaves every sidecar untouched when original template authority is missing', () => {
+  const artifactDir = mkdtempSync(resolve(tmpdir(), 'modiff-retained-template-proof-'));
+  try {
+    const mediaDir = resolve(artifactDir, 'media');
+    const evidenceDir = resolve(mediaDir, 'evidence');
+    mkdirSync(evidenceDir, { recursive: true });
+    const evidencePaths = ['backend-source-before.json'].map((name) => resolve(artifactDir, name));
+    for (const suffix of ['output', 'websocket-events', 'nodes', 'model-fingerprint', 'backend-source-after']) {
+      evidencePaths.push(resolve(evidenceDir, `high_quality.run1.${suffix}.json`));
+    }
+    for (const path of evidencePaths) writeFileSync(path, '{}\n');
+    const before = evidencePaths.map((path) => readFileSync(path));
+    const repaired = spawnSync(
+      process.execPath,
+      [
+        resolve(ROOT, 'scripts/template-gallery-repair-evidence.mjs'),
+        '--media-dir',
+        mediaDir,
+        '--template',
+        'high_quality',
+      ],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+    assert.notEqual(repaired.status, 0);
+    assert.match(repaired.stderr, /requires original run provenance/);
+    assert.deepEqual(
+      evidencePaths.map((path) => readFileSync(path)),
+      before,
+    );
     assert.equal(existsSync(resolve(evidenceDir, 'high_quality.run1.provenance.json')), false);
   } finally {
     rmSync(artifactDir, { recursive: true, force: true });

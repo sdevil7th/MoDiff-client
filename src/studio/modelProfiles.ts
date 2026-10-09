@@ -4334,7 +4334,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceTextGenerationModel',
     supportedModes: TRANSFORMERS_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed SmolLM2 135M Instruct float32 profile with bounded token controls.',
     qualityDefaults: 'Deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLLM2_135M_INSTRUCT_REPO],
@@ -4345,7 +4346,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceImageTextToTextModel',
     supportedModes: TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed SmolVLM 256M Instruct float32 profile with one bounded local image.',
     qualityDefaults: 'One image, deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLVLM_256M_INSTRUCT_REPO],
@@ -4356,7 +4358,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceAnyToAnyModel',
     supportedModes: TRANSFORMERS_ANY_TO_ANY_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'Expert-only execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum: 'Expert-only execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed Janus Pro 1B bfloat16 profile after acknowledging the pinned model terms.',
     qualityDefaults: 'Bounded text generation or native 384x384 image generation.',
     artifacts: [JANUS_PRO_1B_REPO],
@@ -4367,7 +4369,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceSpeechRecognitionModel',
     supportedModes: SPEECH_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed Whisper Tiny float32 profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, segment timestamps.',
     artifacts: [WHISPER_TINY_REPO],
@@ -4378,7 +4381,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceCTCSpeechRecognitionModel',
     supportedModes: ['speech_to_text'],
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed Wav2Vec2 Base 960h float32 CTC profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, word timestamps.',
     artifacts: [WAV2VEC2_BASE_960H_REPO],

@@ -68,7 +68,7 @@ and PEFT are installed with the backend, with no separate activation for normal
 image and LoRA workflows. Setup downloads packages, not inference weights.
 `uv sync` reconciles the selected environment; use another checkout to test a
 different accelerator. The backend's
-[developer setup guide](https://github.com/sdevil7th/MoDiff/blob/develop/docs/developer-setup.md)
+[developer setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md)
 also documents explicit `uv pip` commands, repair, and uv upgrades.
 
 Windows uses PyTorch's default allocator. MoDiff does not set
