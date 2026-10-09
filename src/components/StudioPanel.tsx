@@ -56,6 +56,7 @@ import {
 import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
+import { studioSupportsStrength } from '../studio/effectiveControls';
 import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies';
 import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import type { StudioAspectRatio, StudioFormState, StudioMode, StudioModelType } from '../studio/types';
@@ -344,6 +345,7 @@ export default function StudioPanel() {
     backendCapabilitiesAuthoritative: studioModelCapabilitiesAuthoritative,
   });
   const requiredVideos = capability.modeRequirements?.[form.mode]?.requiredVideos ?? [];
+  const supportsStrength = studioSupportsStrength(form, studioModelCapabilities, activeTemplate);
   const requiresSourceVideo = requiredVideos.includes('sourceVideo');
   const requiresReferenceVideos = requiredVideos.includes('referenceVideos');
   const requiresControlVideo = requiredVideos.includes('controlVideo');
@@ -417,12 +419,12 @@ export default function StudioPanel() {
   ]);
 
   useEffect(() => {
-    if (!runtimeStatus) return;
+    if (!runtimeStatus || templateGraphPreparing) return;
     const preferredDevice = getPreferredRuntimeDevice(runtimeStatus);
     if (preferredDevice === form.device || runtimeDeviceIsAvailable(runtimeStatus, form.device)) return;
     if (form.device !== DEFAULT_STUDIO_FORM.device && !form.device.toLowerCase().startsWith('cuda')) return;
     updateAndSync({ device: preferredDevice });
-  }, [form.device, runtimeStatus, updateAndSync]);
+  }, [form.device, runtimeStatus, templateGraphPreparing, updateAndSync]);
 
   const handleAspectChange = (aspectRatio: StudioAspectRatio) => {
     const aspect = ASPECT_OPTIONS.find((item) => item.label === aspectRatio);
@@ -1331,7 +1333,7 @@ export default function StudioPanel() {
                       }
                     </>
                   )}
-                  {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
+                  {supportsStrength && !isVideoMode && !isPerceptionMode && (
                     <>
                       <ModiffFieldShell label={`Strength: ${form.strength}`}>
                         <StudioSlider
@@ -1387,10 +1389,11 @@ export default function StudioPanel() {
                 </div>
               </section>
             )}
-            {usesPrompt && <StudioParameterExplainers form={form} />}
+            {usesPrompt && <StudioParameterExplainers form={form} supportsStrength={supportsStrength} />}
             {usesPrompt && (
               <StudioVariationPlanner
                 form={form}
+                supportsStrength={supportsStrength}
                 template={activeTemplate}
                 onChange={updateAndSync}
                 onRunSweep={(variations) => {

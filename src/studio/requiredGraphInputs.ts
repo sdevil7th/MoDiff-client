@@ -5,6 +5,7 @@ import type { NodeData } from '../stores/useNodeStore';
 import type { RunReadinessIssue } from './types';
 import { runtimeProgressTarget } from './userBlocks';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
+import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
 
 /** Inspect current declarations on the same lowered graph used by Run. */
 export function inspectRequiredGraphInputs(
@@ -42,6 +43,7 @@ export function inspectRequiredGraphInputs(
         return source?.display === 'output' && connectionTypesAreCompatible(source.type, saved.type);
       });
       if (supplied) continue;
+      if (operationInputIsSuppliedByBundle(node, field, graph)) continue;
       const target = visible.some((item) => item.id === node.id && !item.hidden)
         ? node.id
         : (owners.get(node.id) ?? runtimeProgressTarget(visible, node.id) ?? node.id);

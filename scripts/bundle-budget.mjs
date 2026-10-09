@@ -30,7 +30,23 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Required-input preflight, leaf-graph cycle checks and connectable scalar editors
 // add shared correctness logic: measured largest startup chunk 450.1 KiB.
 // Keep native creation deferred and bound the chunk at 450.25 KiB.
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 256;
+// Abortable backend probes, durable runtime status parsing, and regenerated
+// route pins measure 461311 bytes here. Allow a bounded 512-byte increase;
+// deferred chunk ceilings and the complete startup budget remain independent.
+// Exact image-template execution selections add bounded shared recipe metadata.
+// Native graph creation stays lazy: measured largest startup chunk is 462529
+// bytes. Allow 1280 bytes for the metadata, without new dependencies.
+// Conditional component connector roles and exact dual-Guidance recipe metadata
+// measure 463021 bytes. Allow 256 more bytes; native creation remains deferred.
+// Verified supervisor origins, ordered health discovery and bounded legacy
+// recovery share one control helper. Together with exact consumed-control
+// visibility, the measured chunk is 463619 bytes (+567 from 463052). Allow
+// 576 bytes; retain lazy authoring and the independent deferred-chunk ceiling.
+// Owned metadata waiting and fresh-document hydration add 280 bytes to this
+// shared startup chunk (463950 measured). Bound the necessary fix by 320 bytes.
+// Two full-image recipe declarations and their reviewed terms add 1374 gzip
+// bytes to the same startup chunk (465247 measured). Authoring stays deferred.
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 768 + 1280 + 256 + 576 + 320 + 1536;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -87,7 +103,20 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 256;
 // bounded 128 bytes above the previous ceiling, not an unbounded budget reset.
 // The same authoring fixes measure 624.2 KiB startup with no new dependencies.
 // Allow 624.5 KiB; individual deferred-chunk ceilings stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 512;
+// The same changes measure 639616 startup bytes, 128 above the former bound.
+// Allow 256 additional bytes without increasing deferred or total ceilings.
+// The same image-template metadata measures 640835 startup bytes. Native graph
+// authoring and controlled-workflow helpers load only when creation is requested.
+// The validated connector and Guidance fixes measure 641325 startup bytes.
+// Allow 384 additional bytes without new dependencies or eager authoring imports.
+// The same supervisor/consumed-control fix measures 641927 startup bytes
+// (+567 from 641360). Bound this shared correctness logic with 576 bytes;
+// no new dependencies or eager template-creation imports.
+// The same startup fix adds 277 bytes (642255 measured); deferred code falls
+// by 115 bytes. Add 320 here without changing lazy boundaries or chunk limits.
+// The same recipe metadata measures 643554 total startup bytes (+1378).
+// Allocate 1536 bytes for this feature, preserving the existing four assets.
+const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 768 + 1280 + 384 + 576 + 320 + 1536;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -177,7 +206,46 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 247.4 KiB measured; retain the independent 64 KiB per-chunk limit.
 // Deferred native Block creation and explicit-interface preservation measure
 // 248.1 KiB combined. Allow 512 bytes beyond the previous deferred ceiling.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512;
+// Backend-defined image-template creation, exact parameter bindings and guarded
+// atomic insertion measure 257611 deferred bytes. Bound this added feature at
+// 3328 bytes above the previous aggregate; the 64 KiB chunk ceiling stays fixed.
+// The exact recipe fixes measure 257819 aggregate bytes. Allow another 128 bytes
+// while retaining the independent 64 KiB limit for every deferred chunk.
+// Validated preservation of the two Z-Image default adapter names adds 263
+// compressed bytes (258082 total). Bound it with 256 additional bytes above
+// the prior ceiling; startup, dependencies and individual chunk limits stay fixed.
+// Exact consumed-control visibility measures 258292 aggregate bytes (+137
+// from 258155). Allow 128 additional bytes above the previous ceiling;
+// retain the independent 64 KiB limit and all lazy authoring boundaries.
+// Bounded runtime-discovery waiting, cancellation and owned device normalization
+// stay in lazy template authoring. Measured aggregate is 258637 bytes (+345;
+// 329 bytes in that helper). Allow 384 bytes above the former 258304-byte cap;
+// startup, the 64 KiB per-chunk ceiling and loading boundaries stay unchanged.
+// Reviewed guidance transfer, component-bundle authoring, optional stage
+// controls and native masked recipes measure 267262 deferred bytes. Read-only
+// visual projection keeps structural grouping out of startup. Exact archived
+// runtime restoration and the native recipe checks add 1316 bytes to the last
+// reviewed build. Bound these features and relocation at 8.5 KiB above the
+// former aggregate cap; startup and both per-chunk caps stay fixed.
+// Preserving one declared media source across new required inputs adds 746
+// deferred gzip bytes (267236 -> 267982 measured). Its role, source, literal
+// and cycle guards stay in the existing lazy authoring chunk and reuse nanoid.
+// Allow 768 bytes; startup, dependencies and both per-chunk caps stay fixed.
+// Ordinary media-source labels add upstream repository/local context and
+// visible branch ordinals without changing ports or attachment authority.
+// Measured deferred aggregate is 268690 bytes (+588 from 268102); reuse the
+// existing Block projection and cache immutable instances. Allow 640 bytes;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+// Bounded optional-runtime status retries, visible stale-progress errors and
+// status-only recovery measure 269147 deferred gzip bytes (+457 from 268690).
+// Allow 512 bytes for this correctness fix in the existing lazy workspace;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+// Retrying non-JSON transient HTTP errors adds 14 bytes to the workspace chunk.
+// The versioned aggregate measures 269341 bytes; allow 128 additional bytes
+// for this correction, keeping startup, per-chunk and loading limits unchanged.
+// Exact Custom recipe readiness and selection measure 271404 deferred bytes.
+// Allocate 2048 bytes above the prior cap; the 64 KiB per-chunk limit stays fixed.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 512 + 128 + 2048;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -25,6 +25,7 @@ import { operationOwnsModel } from '../workflow/operationContracts';
 import { rememberTaskModel } from '../workflow/taskModelPreferences';
 import { ModiffButton, ModiffDialog, ModiffDisclosure, ModiffSearchInput } from '../ui';
 import { formatRequestError } from '../utils/requestJson';
+import { visualOperationOwnerId } from '../workflow/visualOperationGroups';
 
 type Review = {
   plan: OperationChangePlan;
@@ -125,29 +126,40 @@ export default function OperationModelPicker({
       );
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      const baseline = node.data.blockProjectionOwnerId
-        ? null
-        : await requestOperationStarter(
-            hint.operation.pipelineClass,
-            hint.operation.task!,
-            operations,
-            controller.signal,
-          );
+      const ownerId = visualOperationOwnerId(
+        snapshot,
+        node.data.blockProjectionNodeId ?? node.id,
+        node.data.blockProjectionOwnerId,
+      );
+      const visualOwner = ownerId !== (node.data.blockProjectionNodeId ?? node.id);
+      const baseline =
+        node.data.blockProjectionOwnerId && !visualOwner
+          ? null
+          : await requestOperationStarter(
+              hint.operation.pipelineClass,
+              hint.operation.task!,
+              operations,
+              controller.signal,
+            );
       if (controller.signal.aborted) return;
-      const plan = node.data.blockProjectionOwnerId
-        ? (await import('../workflow/operationLegacyBlockChange')).planOwnerBlockOperationChange(
-            snapshot,
-            node.data.blockProjectionOwnerId,
-            node.data.blockProjectionNodeId ?? node.id,
-            starter,
-            { replaceModel: !restoreDefaults, restoreDefaults },
-          )
-        : (!restoreDefaults && baseline && planPristineOperationChange(snapshot, node.id, baseline, starter)) ||
-          planOperationChange(snapshot, node.id, starter, {
-            replaceModel: !restoreDefaults,
-            restoreDefaults,
-            baseline,
-          });
+      const plan =
+        node.data.blockProjectionOwnerId && !visualOwner
+          ? (await import('../workflow/operationLegacyBlockChange')).planOwnerBlockOperationChange(
+              snapshot,
+              node.data.blockProjectionOwnerId,
+              node.data.blockProjectionNodeId ?? node.id,
+              starter,
+              { replaceModel: !restoreDefaults, restoreDefaults },
+            )
+          : (!visualOwner &&
+              !restoreDefaults &&
+              baseline &&
+              planPristineOperationChange(snapshot, ownerId, baseline, starter)) ||
+            planOperationChange(snapshot, ownerId, starter, {
+              replaceModel: !restoreDefaults,
+              restoreDefaults,
+              baseline,
+            });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
       if (operationGraphSignature(useFlowStore.getState().toObject()) !== signature)

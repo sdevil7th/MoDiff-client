@@ -16,7 +16,7 @@ Install the common Homebrew packages:
 
 ```bash
 xcode-select --install
-brew install node@24 ffmpeg
+brew install uv node@24 ffmpeg
 ```
 
 If Homebrew does not put Node 24 first on your `PATH`, use your normal shell
@@ -27,15 +27,17 @@ profile to add it before running the development installer.
 From the backend checkout:
 
 ```bash
-./install.sh --accelerator mps
-./.venv/bin/python -m modiff.preflight --json --check-port 8088 --fail-on-error
-./run.sh
+uv sync
+uv run python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run python main.py
 ```
 
 The Apple Silicon profile keeps the core backend install on normal PyPI wheels so PyTorch can use CPU/MPS support. CUDA-only packages such as `bitsandbytes`, `dfloat11[cuda12]`, Nunchaku, `xformers`, FlashAttention, and SageAttention are not part of the default macOS path.
 
-The installer owns this environment and validates the MPS profile before
-promotion. Do not layer a separate pip-managed Torch stack into `.venv`.
+Transformers and PEFT are required base packages. Native `uv sync` uses the
+committed lock; no optional activation is needed for normal image or LoRA
+workflows. Keep operator pip changes in a separately managed environment, or
+declare them in the project before using `uv run` auto-sync.
 
 Put large model caches on a writable disk with enough space by setting `HF_HOME`, `HF_HUB_CACHE`, or `[huggingface] cache_dir` in `config.ini`. If you change `config.ini`, keep local development on:
 

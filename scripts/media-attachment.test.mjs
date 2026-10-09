@@ -45,6 +45,229 @@ before(async () => {
 });
 after(async () => server?.close());
 
+test('media source labels distinguish same-pipeline repositories and same-repository branches without changing ports', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image');
+  const branches = ['Qwen/first', 'Qwen/second', 'Qwen/first'].map((repo) => {
+    const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+    graph.nodes.find((n) => n.data.action === 'ModelsLoader').data.params.repo_id.value = {
+      source: 'hub',
+      value: repo,
+    };
+    return graph;
+  });
+  const graph = { nodes: branches.flatMap((g) => g.nodes), edges: branches.flatMap((g) => g.edges) };
+  const decoders = graph.nodes.filter((n) => n.data.action === 'DecodeLatents');
+  const before = structuredClone(graph);
+  const options = mediaAttachmentSources(graph.nodes, graph.edges, 'image');
+  const images = options.filter((o) => decoders.some((n) => JSON.parse(o.value)[0] === n.id));
+  assert.deepEqual(
+    images.map((o) => o.value),
+    decoders.map((n) => JSON.stringify([n.id, 'images'])),
+  );
+  assert.deepEqual(
+    images.map((o) => o.label),
+    [
+      'Decode Latents · Images · Qwen/first · Branch 1',
+      'Decode Latents · Images · Qwen/second',
+      'Decode Latents · Images · Qwen/first · Branch 2',
+    ],
+  );
+  assert.deepEqual(graph, before, 'display context never changes model identity, settings or graph');
+});
+
+test('media labels follow current wires and model edits while retaining shared and cyclic sources', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image');
+  const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  const decoder = graph.nodes.find((n) => n.data.action === 'DecodeLatents');
+  owner.data.params.repo_id.value = { source: 'local', value: '/models/shared' };
+  const selected = JSON.stringify([decoder.id, 'images']);
+  const read = () => mediaAttachmentSources(graph.nodes, graph.edges, 'image');
+  assert.equal(read().find((o) => o.value === selected).label, 'Decode Latents · Images · Local: /models/shared');
+  owner.data.params.repo_id.value = 'org/updated';
+  assert.equal(read().find((o) => o.value === selected).label, 'Decode Latents · Images · org/updated');
+  graph.edges.push({ id: 'cycle-for-review', source: decoder.id, target: owner.id });
+  assert.ok(
+    read().some((o) => o.value === selected),
+    'cycle checks remain the actual attachment planner responsibility',
+  );
+  graph.edges = graph.edges.filter((e) => e.source !== owner.id);
+  assert.equal(read().find((o) => o.value === selected).label, 'Decode Latents · Images');
+  graph.nodes = graph.nodes.filter((n) => n.id !== decoder.id);
+  assert.ok(!read().some((o) => o.value === selected), 'removed ports cannot remain selectable');
+});
+
+test('Block output labels resolve effective model controls and exact declared and crossing ports', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const crossing = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'text_to_image');
+  const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  owner.data.params.repo_id.value = { source: 'hub', value: 'org/original' };
+  const decoder = graph.nodes.find((n) => n.data.action === 'DecodeLatents');
+  const inner = {
+    nodes: graph.nodes.map((n) => ({ nodeId: n.id, nodeType: n.type, data: n.data })),
+    edges: graph.edges.map((e) => ({
+      edgeId: e.id,
+      sourceNodeId: e.source,
+      sourcePortId: e.sourceHandle,
+      targetNodeId: e.target,
+      targetPortId: e.targetHandle,
+    })),
+  };
+  const definition = {
+    schemaVersion: 2,
+    definitionId: 'user:source-label',
+    displayName: 'My image branch',
+    source: { kind: 'user' },
+    graph: { ...inner, graphHash: schema.blockGraphHashV2(inner) },
+    boundary: {
+      mode: 'explicit',
+      inputs: [],
+      outputs: [
+        {
+          portId: 'rendered',
+          label: 'Result',
+          valueType: 'image',
+          required: false,
+          binding: { nodeId: decoder.id, fieldOrPortId: 'images' },
+        },
+      ],
+    },
+    controls: [
+      {
+        controlId: 'source-model',
+        label: 'Model',
+        binding: { nodeId: owner.id, fieldId: 'repo_id' },
+        valueType: 'string',
+        order: 0,
+      },
+    ],
+    suggestedInputs: [],
+    previews: [],
+    ownership: { kind: 'user', definitionMutable: true },
+  };
+  definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+  const instance = schema.createBlockInstanceV2(definition, {
+    instanceId: 'source-label-block',
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 500 },
+  });
+  const block = runtime.createBlockRootNodeV2(instance);
+  const before = structuredClone(block);
+  const handle = crossing.blockCrossingHandleV2({ direction: 'output', nodeId: decoder.id, fieldOrPortId: 'images' });
+  const options = mediaAttachmentSources([block], [], 'image', { nodeId: block.id, handleId: handle });
+  assert.deepEqual(
+    options.map((o) => o.value),
+    [JSON.stringify([block.id, 'rendered']), JSON.stringify([block.id, handle])],
+  );
+  assert.ok(options.every((o) => o.label.startsWith('My image branch · ') && o.label.endsWith(' · org/original')));
+  assert.deepEqual(block, before, 'Block definition, interface and values remain immutable');
+  const changed = runtime.createBlockRootNodeV2(
+    runtime.setBlockInstanceValueV2(instance, 'source-model', { source: 'hub', value: 'org/edited' }),
+  );
+  assert.ok(mediaAttachmentSources([changed], [], 'image').every((o) => o.label.endsWith(' · org/edited')));
+  assert.ok(
+    mediaAttachmentSources([block], [], 'image').every((o) => o.label.endsWith(' · org/original')),
+    'immutable-instance cache never retains another instance edit',
+  );
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const originalState = useFlowStore.getState();
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    throw new Error('No network in imported-edge regression');
+  };
+  try {
+    const target = {
+      id: 'retained-input-target',
+      type: 'custom',
+      position: { x: 800, y: 0 },
+      data: {
+        module: 'custom.Values',
+        action: 'Input',
+        label: 'Input',
+        params: { input: { type: 'str', display: 'input' } },
+      },
+    };
+    const edge = {
+      id: 'retained-input-as-output',
+      source: block.id,
+      sourceHandle: crossing.blockCrossingHandleV2({ direction: 'input', nodeId: owner.id, fieldOrPortId: 'repo_id' }),
+      target: target.id,
+      targetHandle: 'input',
+    };
+    useFlowStore.getState().replaceGraph({ nodes: [block, target], edges: [edge] }, { clearRemovedCache: false });
+    const imported = useFlowStore.getState();
+    assert.equal(imported.edges[0].id, edge.id, 'ordinary import retains the broken wire for explicit repair');
+    let sources;
+    assert.doesNotThrow(() => {
+      sources = mediaAttachmentSources(imported.nodes, imported.edges, 'image');
+    }, 'unresolved display context must not hide valid source choices');
+    assert.deepEqual(
+      sources.map((o) => o.value),
+      [JSON.stringify([block.id, 'rendered'])],
+    );
+    assert.throws(
+      () => crossing.blockConnectionTargetsV2(imported.nodes[0], edge.sourceHandle, 'output'),
+      /wrong direction/,
+      'the original endpoint authority still rejects a wrong-direction wire',
+    );
+    assert.throws(
+      () =>
+        mediaAttachmentSources(imported.nodes, imported.edges, 'image', {
+          nodeId: block.id,
+          handleId: crossing.blockCrossingHandleV2({
+            direction: 'output',
+            nodeId: owner.id,
+            fieldOrPortId: 'repo_id',
+          }),
+        }),
+      /missing or has changed direction/,
+      'source enumeration must not swallow an invalid selected socket',
+    );
+    assert.equal(requests, 0);
+  } finally {
+    useFlowStore.setState(originalState);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('audio and custom source titles retain order, types, visibility and opaque selector safety', async () => {
+  const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const data = (id, label, params) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { module: 'custom.Media', action: 'Source', label, params },
+  });
+  const nodes = [
+    data('a', 'My recording', {
+      clip: { type: ['audio', 'image'], display: 'output', label: 'Clip' },
+      secret: { type: 'audio', display: 'output', hidden: true },
+      stopped: { type: 'audio', display: 'output', disabled: true },
+    }),
+    data('b', 'My recording', { clip: { type: 'audio', display: 'output', label: 'Clip' } }),
+    data('metadata', 'Metadata', {
+      repo_id: { display: 'modelselect', value: { source: 'hub', value: { token: 'never-stringify' } } },
+    }),
+  ];
+  const edges = [{ id: 'metadata', source: 'metadata', target: 'a' }];
+  assert.deepEqual(mediaAttachmentSources(nodes, edges, 'audio'), [
+    { value: JSON.stringify(['a', 'clip']), label: 'My recording · Clip · Branch 1' },
+    { value: JSON.stringify(['b', 'clip']), label: 'My recording · Clip · Branch 2' },
+  ]);
+  assert.deepEqual(
+    mediaAttachmentSources(nodes, edges, 'image').map((o) => o.value),
+    [JSON.stringify(['a', 'clip'])],
+  );
+});
+
 const registry = {
   'modules.Image.Load': {
     type: 'custom',
@@ -55,6 +278,305 @@ const registry = {
     params: { image: { type: 'image', display: 'output' }, mask: { type: 'image', display: 'output' } },
   },
 };
+
+test('optional stage groups retain executable leaves, previews and exact mask geometry', async () => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'text_to_image');
+  const graph = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  const decoder = graph.nodes.find((n) => n.data.action === 'DecodeLatents');
+  const image = decoder.data.operationAuthoring.operation.ports.find(
+    (p) => p.direction === 'output' && p.types.includes('image'),
+  );
+  graph.nodes.push({
+    id: 'preview',
+    type: 'custom',
+    position: { x: 1600, y: 0 },
+    data: {
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview Image',
+      params: {
+        image: { type: ['image', 'latent'], display: 'input' },
+        preview: { type: 'url', display: 'ui_image', dataSource: 'output' },
+        output: { type: 'image', display: 'output' },
+        export: { type: 'str', display: 'text', value: '0' },
+      },
+    },
+  });
+  graph.edges.push({
+    id: 'preview-edge',
+    source: decoder.id,
+    sourceHandle: image.name,
+    target: 'preview',
+    targetHandle: 'image',
+  });
+  assert.deepEqual(visual.availableOperationStageGroups(graph, owner.id), ['output']);
+  const before = visual.unpackVisualOperationGroups(graph).graph;
+  const grouped = visual.groupOperationStages(graph, owner.id, ['output']);
+  const output = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'output');
+  assert.equal(output.data.label, 'Image Output');
+  assert.equal(output.data.blockInstanceV2.effectiveGraph.nodes.length, 2);
+  assert.deepEqual(output.data.blockInstanceV2.definitionSnapshot.previews, [
+    { nodeId: 'stage-preview', outputPortId: 'preview', mediaType: 'image', primary: true },
+  ]);
+  assert.equal(runtime.blockViewModelV2(output.data.blockInstanceV2).previewViews.length, 1);
+  const selected = runtime.expandBlockGraphV2ForExecution(grouped.nodes, grouped.edges, output.id);
+  assert.ok(
+    ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents', 'Preview'].every((action) =>
+      selected.nodes.some((node) => node.data.action === action),
+    ),
+    'selected Image Output keeps the original upstream dependency closure',
+  );
+  for (const original of graph.nodes.filter((node) => visual.visualOperationGroup(node)))
+    assert.equal(
+      grouped.nodes.find((node) => node.id === original.id),
+      original,
+      'other stage wrappers retain exact state',
+    );
+  const separated = visual.unpackVisualOperationGroups(grouped).graph;
+  const signature = (g) => ({
+    nodes: g.nodes
+      .map((n) => [
+        n.data.module,
+        n.data.action,
+        Object.fromEntries(Object.entries(n.data.params).map(([key, p]) => [key, p.value ?? p.default])),
+      ])
+      .sort(),
+    edges: g.edges
+      .map((e) => [
+        g.nodes.find((n) => n.id === e.source).data.action,
+        e.sourceHandle,
+        g.nodes.find((n) => n.id === e.target).data.action,
+        e.targetHandle,
+      ])
+      .sort(),
+  });
+  assert.deepEqual(signature(separated), signature(before));
+  assert.deepEqual(visual.availableOperationStageGroups(grouped, owner.id), []);
+  const completed = runtime.setBlockPreviewStateV2(
+    output.data.blockInstanceV2,
+    { nodeId: 'stage-preview', outputPortId: 'preview' },
+    {
+      mediaReference: '/file/output.png',
+      taskId: 'preview-task',
+      status: 'complete',
+    },
+  );
+  const withPreview = {
+    ...grouped,
+    nodes: grouped.nodes.map((node) => (node.id === output.id ? runtime.createBlockRootNodeV2(completed) : node)),
+  };
+  const projected = visual.unpackVisualOperationGroups(withPreview);
+  assert.equal(
+    projected.graph.nodes.find((node) => node.data.action === 'Preview').data.params.preview.value,
+    '/file/output.png',
+  );
+  const restored = visual.restoreVisualOperationGroups(projected.graph, projected);
+  assert.deepEqual(
+    restored.nodes.find((node) => node.id === output.id).data.blockInstanceV2.previewStates,
+    completed.previewStates,
+  );
+  const maskStarter = starters.find((s) => s.pipelineClass === 'FluxFillPipeline' && s.task === 'outpaint');
+  assert.ok(maskStarter, 'use the backend declared whole-pipeline masked task');
+  const maskGraph = authoring.createOperationStarter(maskStarter, { x: 0, y: 0 });
+  const maskOwner = maskGraph.nodes.find((n) => n.data.operationAuthoring.operation.decomposition === 'loader');
+  const consumer = maskGraph.nodes.find((n) =>
+    n.data.operationAuthoring.operation.ports.some((p) => p.name === 'mask_image' && p.direction === 'input'),
+  );
+  maskGraph.nodes.push(
+    {
+      id: 'source',
+      type: 'custom',
+      position: { x: -800, y: 0 },
+      data: {
+        module: 'modules.Image',
+        action: 'Load',
+        label: 'Load Image',
+        params: {
+          file: { type: 'str', display: 'filebrowser', label: false, value: '/source.png' },
+          image: { type: 'image', display: 'output' },
+        },
+      },
+    },
+    {
+      id: 'canvas',
+      type: 'custom',
+      position: { x: -400, y: 0 },
+      data: {
+        module: 'modules.DiffusersImage',
+        action: 'OutpaintCanvas',
+        label: 'Outpaint Canvas',
+        params: {
+          image: { type: 'image', display: 'input' },
+          width: { label: 'Canvas width', type: 'int', value: 1344 },
+          height: { label: 'Canvas height', type: 'int', value: 768 },
+          feather: { label: 'Mask feather', type: 'float', value: 8 },
+          canvas: { type: 'image', display: 'output' },
+          mask_image: { type: 'image', display: 'output' },
+          width_out: { type: 'int', display: 'output' },
+          height_out: { type: 'int', display: 'output' },
+        },
+      },
+    },
+  );
+  for (const [source, sourceHandle, target, targetHandle] of [
+    ['source', 'image', 'canvas', 'image'],
+    ['canvas', 'canvas', consumer.id, 'image'],
+    ['canvas', 'mask_image', consumer.id, 'mask_image'],
+    ['canvas', 'width_out', consumer.id, 'width'],
+    ['canvas', 'height_out', consumer.id, 'height'],
+  ])
+    maskGraph.edges.push({ id: `${source}-${sourceHandle}`, source, sourceHandle, target, targetHandle });
+  const mask = visual.groupOperationStages(maskGraph, maskOwner.id, ['mask']);
+  const maskRoot = mask.nodes.find((n) => visual.visualOperationGroup(n) === 'mask');
+  assert.equal(maskRoot.data.label, 'Prepare Mask');
+  assert.equal(
+    maskRoot.data.blockInstanceV2.effectiveInterface.controls.find((control) => control.binding.fieldId === 'file')
+      .label,
+    'file',
+    'the real Image.Load hidden field label receives a valid interface name',
+  );
+  assert.deepEqual(
+    maskRoot.data.blockInstanceV2.effectiveInterface.controls
+      .filter((control) => ['width', 'height', 'feather'].includes(control.binding.fieldId))
+      .map((control) => [control.binding.fieldId, control.label, control.defaultValue]),
+    [
+      ['width', 'Canvas width', 1344],
+      ['height', 'Canvas height', 768],
+      ['feather', 'Mask feather', 8],
+    ],
+    'registered utilities infer scalar editors from their types without a display declaration',
+  );
+  assert.deepEqual(signature(visual.unpackVisualOperationGroups(mask).graph), signature(maskGraph));
+  const wrong = structuredClone(maskGraph);
+  wrong.edges = wrong.edges.filter((e) => e.sourceHandle !== 'mask_image');
+  assert.deepEqual(visual.availableOperationStageGroups(wrong, maskOwner.id), []);
+});
+
+test('Model Setup retains loader ownership, ordered descriptors, task adaptation and independent reuse', async () => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  const persistence = await server.ssrLoadModule('/src/studio/blockDefinitionPersistenceV2.ts');
+  const starter = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'text_to_image');
+  const graph = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
+  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  for (const id of ['lora-a', 'lora-b'])
+    graph.nodes.push({
+      id,
+      type: 'custom',
+      position: { x: -800, y: 0 },
+      data: {
+        module: 'modules.ModularDiffusers',
+        action: 'Lora',
+        label: id,
+        params: {
+          model: { type: 'string', display: 'modelselect', value: { source: 'hub', value: id } },
+          scale: { type: 'float', display: 'slider', value: id === 'lora-a' ? 0 : 0.4 },
+          previous_loras: { type: 'custom_lora', display: 'input' },
+          lora: { type: 'custom_lora', display: 'output' },
+        },
+      },
+    });
+  graph.edges.push(
+    { id: 'ordered', source: 'lora-a', sourceHandle: 'lora', target: 'lora-b', targetHandle: 'previous_loras' },
+    { id: 'descriptors', source: 'lora-b', sourceHandle: 'lora', target: owner.id, targetHandle: 'lora_list' },
+  );
+  const grouped = visual.groupOperationStages(graph, owner.id, ['setup']);
+  const setup = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'setup');
+  assert.equal(setup.data.label, 'Model Setup');
+  assert.equal(setup.data.blockInstanceV2.effectiveGraph.nodes.length, 3);
+  assert.equal(setup.data.blockInstanceV2.effectiveGraph.edges.length, 2);
+  const semanticOwner = setup.data.blockInstanceV2.effectiveGraph.nodes.find(
+    (n) => n.data.action === 'ModelsLoader',
+  ).nodeId;
+  const ownerId = visual.visualOperationOwnerId(grouped, semanticOwner, setup.id);
+  assert.equal(ownerId, `${setup.id}/${semanticOwner}`);
+  const sealed = runtime.replaceBlockEffectiveInterfaceV2(setup.data.blockInstanceV2, {
+    boundary: setup.data.blockInstanceV2.effectiveInterface.boundary,
+    controls: setup.data.blockInstanceV2.effectiveInterface.controls.map((control) =>
+      control.binding.nodeId === semanticOwner && control.binding.fieldId === 'repo_id'
+        ? { ...control, sealed: true }
+        : control,
+    ),
+  });
+  const protectedGraph = {
+    ...grouped,
+    nodes: grouped.nodes.map((node) => (node.id === setup.id ? runtime.createBlockRootNodeV2(sealed) : node)),
+  };
+  const replacement = structuredClone(starter);
+  replacement.nodes.find((node) => node.operation.decomposition === 'loader').node.params.repo_id.value =
+    'example/different-model';
+  const protectedBefore = structuredClone(protectedGraph);
+  assert.throws(
+    () => authoring.planOperationChange(protectedGraph, ownerId, replacement, { replaceModel: true }),
+    /sealed/,
+  );
+  assert.deepEqual(protectedGraph, protectedBefore);
+  const target = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'image_to_image');
+  const plan = authoring.planOperationChange(grouped, ownerId, target);
+  const flat = visual.unpackVisualOperationGroups(plan.graph).graph;
+  assert.ok(
+    flat.nodes.find((n) => n.data.action === 'ModelsLoader').data.operationAuthoring.operation.task ===
+      'image_to_image',
+  );
+  assert.ok(
+    flat.nodes.some((n) => n.data.operationAuthoring?.operation.nodeType === 'vae_encoder'),
+    'the complete connected branch adapts outside Model Setup',
+  );
+  assert.equal(flat.nodes.filter((n) => n.data.action === 'Lora').length, 2);
+  assert.deepEqual(
+    plan.graph.nodes.find((n) => n.id === setup.id).data.blockInstanceV2.definitionSnapshot,
+    setup.data.blockInstanceV2.definitionSnapshot,
+  );
+  const control = setup.data.blockInstanceV2.effectiveInterface.controls.find(
+    (c) => c.binding.nodeId === 'stage-lora-a' && c.binding.fieldId === 'scale',
+  );
+  assert.equal(schema.blockInstanceValueV2(setup.data.blockInstanceV2, control.controlId), 0);
+  const changed = runtime.setBlockInstanceValueV2(setup.data.blockInstanceV2, control.controlId, 0.7);
+  const definition = persistence.reusableBlockDefinitionFromInstanceV2(changed, {
+    choice: 'new',
+    definitionId: 'my-setup',
+    displayName: 'My model setup',
+  });
+  const instances = ['first', 'second'].map((instanceId) =>
+    schema.createBlockInstanceV2(definition, {
+      instanceId,
+      position: { x: 0, y: 0 },
+      size: { width: 400, height: 540 },
+    }),
+  );
+  assert.equal(schema.blockInstanceValueV2(instances[0], control.controlId), 0.7);
+  const edited = runtime.setBlockInstanceValueV2(instances[0], control.controlId, 0);
+  assert.equal(schema.blockInstanceValueV2(edited, control.controlId), 0);
+  assert.equal(schema.blockInstanceValueV2(instances[1], control.controlId), 0.7);
+  const shared = structuredClone(graph);
+  const other = { ...structuredClone(owner), id: 'other-model' };
+  shared.nodes.push(other);
+  shared.edges.push({
+    id: 'shared-descriptors',
+    source: 'lora-b',
+    sourceHandle: 'lora',
+    target: other.id,
+    targetHandle: 'lora_list',
+  });
+  assert.ok(
+    !visual.availableOperationStageGroups(shared, owner.id).includes('setup'),
+    'a modifier shared with another loader is not claimed exclusively',
+  );
+  shared.edges = shared.edges.filter((edge) => edge.id !== 'shared-descriptors');
+  shared.nodes.push({ ...structuredClone(shared.nodes.find((node) => node.id === 'lora-a')), id: 'lora-c' });
+  shared.edges.push(
+    { id: 'shared-chain', source: 'lora-a', sourceHandle: 'lora', target: 'lora-c', targetHandle: 'previous_loras' },
+    { id: 'other-chain-owner', source: 'lora-c', sourceHandle: 'lora', target: other.id, targetHandle: 'lora_list' },
+  );
+  assert.ok(
+    !visual.availableOperationStageGroups(shared, owner.id).includes('setup'),
+    'indirectly shared descriptor chains also retain separate ownership',
+  );
+});
 
 test('removed dynamic Guidance controls stay hidden without resetting execution values', async () => {
   const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
@@ -341,6 +863,244 @@ test('fresh sources keep masks distinct and share the same declared image across
     unpackVisualOperationGroups(without.graph).graph.nodes.filter((n) => n.data.action === 'Load').length,
     0,
   );
+});
+
+function qwenImageMigrationSource() {
+  const source = starters.find((s) => s.pipelineClass === 'QwenImageModularPipeline' && s.task === 'image_to_image');
+  const target = starters.find(
+    (s) => s.pipelineClass === 'QwenImageEditPlusModularPipeline' && s.task === 'edit_image',
+  );
+  assert.ok(source && target, 'both actual backend routes are published');
+  const graph = authoring.createOperationStarter(source, { x: 0, y: 0 });
+  const owner = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+  owner.data.params.auto_offload.value = false;
+  owner.data.params.offload_mode.value = 'none';
+  const choice = attachment
+    .mediaAttachmentChoices(
+      source.nodes.map((node) => node.operation),
+      source.pipelineClass,
+    )
+    .find((item) => item.role === 'image');
+  const attached = attachment.planMediaAttachment(graph, owner.id, source, choice, registry);
+  const image = attached.nodes.find((node) => node.data.module === 'modules.Image' && node.data.action === 'Load');
+  image.data.params.file = { type: 'str', display: 'filebrowser', value: ['inputs/source-product.png'] };
+  return { source, target, graph: attached, ownerId: owner.id, imageId: image.id };
+}
+
+test('actual image-to-image model migration preserves one image source across all new declared consumers', async (t) => {
+  const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  for (const grouped of [false, true])
+    await t.test(grouped ? 'visible encoding group' : 'ordinary leaves', () => {
+      const fixture = qwenImageMigrationSource();
+      const graph = grouped ? visual.groupNewOperationGraph(fixture.graph) : fixture.graph;
+      const original = structuredClone(graph);
+      const plan = authoring.planOperationChange(graph, fixture.ownerId, fixture.target);
+      const flat = visual.unpackVisualOperationGroups(plan.graph).graph;
+      const consumers = flat.nodes.filter((node) => ['ImageEncode', 'EncodePrompt'].includes(node.data.action));
+      assert.equal(consumers.length, 2);
+      for (const consumer of consumers) {
+        const port = consumer.data.operationAuthoring.operation.ports.find((item) => item.name === 'image');
+        assert.equal(port.semanticName, 'image');
+        assert.equal(port.semantics.kind, 'media');
+        assert.equal(port.required, true);
+        assert.deepEqual(
+          flat.edges
+            .filter((edge) => edge.target === consumer.id && edge.targetHandle === port.name)
+            .map((edge) => [edge.source, edge.sourceHandle]),
+          [[fixture.imageId, 'image']],
+          'the original image output, not a new source or mask, supplies both declared roles',
+        );
+      }
+      assert.deepEqual(
+        flat.nodes.find((node) => node.id === fixture.imageId),
+        fixture.graph.nodes.find((node) => node.id === fixture.imageId),
+      );
+      assert.deepEqual(graph, original, 'planning leaves the source graph and its immutable group snapshots unchanged');
+      assert.ok(
+        !inspectRequiredGraphInputs(plan.graph.nodes, flat, {}).some((issue) =>
+          /needs image before running/u.test(issue.message),
+        ),
+      );
+      const api = useFlowStore
+        .getState()
+        .exportGraph('media-migration', undefined, { sourceGraph: plan.graph, randomizeSeeds: false });
+      for (const consumer of consumers) {
+        const submitted = Object.values(api.nodes).find((node) => node.action === consumer.data.action);
+        assert.equal(submitted.params.image.sourceId, fixture.imageId);
+        assert.equal(submitted.params.image.sourceKey, 'image');
+        assert.equal(submitted.params.image.display, 'input');
+      }
+    });
+});
+
+test('media migration keeps distinct roles, existing values, disabled sources and absent declarations unresolved', async (t) => {
+  const { preservedMediaFanout } = await server.ssrLoadModule('/src/workflow/operationMediaMigration.ts');
+  const operationNodes = (graph) => graph.nodes.filter((node) => node.data.operationAuthoring);
+  for (const [name, change] of [
+    [
+      'reference role',
+      ({ port }) => {
+        port.semanticName = 'reference_image';
+      },
+    ],
+    [
+      'mask role',
+      ({ port }) => {
+        port.semanticName = 'mask_image';
+      },
+    ],
+    [
+      'control role',
+      ({ port }) => {
+        port.semanticName = 'control_image';
+      },
+    ],
+    [
+      'component role',
+      ({ port }) => {
+        port.roles = ['component'];
+      },
+    ],
+    [
+      'state scope',
+      ({ port }) => {
+        port.semantics.scope = 'OtherOwner';
+      },
+    ],
+    [
+      'missing semantics',
+      ({ port }) => {
+        delete port.semantics;
+      },
+    ],
+    [
+      'hidden port',
+      ({ port }) => {
+        port.hidden = true;
+      },
+    ],
+    [
+      'optional port',
+      ({ port }) => {
+        port.required = false;
+      },
+    ],
+    [
+      'hidden field',
+      ({ field }) => {
+        field.hidden = true;
+      },
+    ],
+    [
+      'disabled field',
+      ({ field }) => {
+        field.disabled = true;
+      },
+    ],
+    [
+      'existing value',
+      ({ field }) => {
+        field.value = ['inputs/another-product.png'];
+      },
+    ],
+    [
+      'disabled source',
+      ({ image }) => {
+        image.data.uiState = { disabled: true };
+      },
+    ],
+    [
+      'incompatible source',
+      ({ image }) => {
+        image.data.params.image.type = 'audio';
+      },
+    ],
+    [
+      'no preserved driver',
+      ({ after, image }) => {
+        after.edges = after.edges.filter((edge) => edge.source !== image.id);
+      },
+    ],
+    [
+      'previously required but disconnected',
+      ({ previousPrompt, port, field }) => {
+        previousPrompt.data.operationAuthoring.operation.ports.push(structuredClone(port));
+        previousPrompt.data.params.image = structuredClone(field);
+      },
+    ],
+  ])
+    await t.test(name, () => {
+      const fixture = qwenImageMigrationSource();
+      const before = structuredClone(fixture.graph);
+      const after = authoring.planOperationChange(fixture.graph, fixture.ownerId, fixture.target).graph;
+      const prompt = after.nodes.find((node) => node.data.action === 'EncodePrompt');
+      after.edges = after.edges.filter((edge) => !(edge.target === prompt.id && edge.targetHandle === 'image'));
+      const port = prompt.data.operationAuthoring.operation.ports.find((item) => item.name === 'image');
+      const previousPrompt = before.nodes.find((node) => node.data.action === 'EncodePrompt');
+      change({
+        before,
+        after,
+        prompt,
+        port,
+        field: prompt.data.params.image,
+        previousPrompt,
+        image: after.nodes.find((node) => node.id === fixture.imageId),
+      });
+      const snapshot = structuredClone({ before, after });
+      assert.deepEqual(preservedMediaFanout(before, after, operationNodes(before), operationNodes(after)).edges, []);
+      assert.deepEqual({ before, after }, snapshot, 'rejected fanout is read-only');
+    });
+});
+
+test('media migration preserves occupied sockets and rejects competing drivers and cycles', async (t) => {
+  const { preservedMediaFanout } = await server.ssrLoadModule('/src/workflow/operationMediaMigration.ts');
+  const operationNodes = (graph) => graph.nodes.filter((node) => node.data.operationAuthoring);
+  for (const mode of ['occupied', 'two sources', 'two handles', 'cycle'])
+    await t.test(mode, () => {
+      const fixture = qwenImageMigrationSource();
+      const before = structuredClone(fixture.graph);
+      const after = authoring.planOperationChange(fixture.graph, fixture.ownerId, fixture.target).graph;
+      const prompt = after.nodes.find((node) => node.data.action === 'EncodePrompt');
+      const current = after.edges.find((edge) => edge.target === prompt.id && edge.targetHandle === 'image');
+      if (mode !== 'occupied') after.edges = after.edges.filter((edge) => edge !== current);
+      if (mode === 'two sources' || mode === 'two handles') {
+        const alternative = structuredClone(before.nodes.find((node) => node.id === fixture.imageId));
+        if (mode === 'two sources') {
+          alternative.id = 'another-image';
+          before.nodes.push(structuredClone(alternative));
+          after.nodes.push(alternative);
+        } else {
+          for (const graph of [before, after])
+            graph.nodes.find((node) => node.id === alternative.id).data.params.alternate = {
+              type: 'image',
+              display: 'output',
+            };
+        }
+        const sourceHandle = mode === 'two sources' ? 'image' : 'alternate';
+        for (const graph of [before, after]) {
+          const encoder = graph.nodes.find((node) => node.data.action === 'ImageEncode');
+          graph.edges.push({
+            id: `competing-${graph === before ? 'before' : 'after'}`,
+            source: alternative.id,
+            sourceHandle,
+            target: encoder.id,
+            targetHandle: 'image',
+          });
+        }
+      }
+      if (mode === 'cycle') after.edges.push({ id: 'downstream-source', source: prompt.id, target: fixture.imageId });
+      const snapshot = structuredClone({ before, after });
+      const result = preservedMediaFanout(before, after, operationNodes(before), operationNodes(after));
+      assert.deepEqual(result.edges, []);
+      assert.equal(result.attention.length, mode === 'occupied' ? 0 : 1);
+      assert.deepEqual(
+        { before, after },
+        snapshot,
+        'existing wires, conflicting sources and cycles are preserved for review',
+      );
+    });
 });
 
 test('custom mirrored interfaces reject adaptation without mutating their source or values', async () => {

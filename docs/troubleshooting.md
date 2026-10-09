@@ -37,10 +37,10 @@ The launcher also saves its latest report at `artifacts/dev-server-current/backe
 The supported client toolchain is defined in `.nvmrc`, `package.json`, and `package-lock.json`.
 
 1. Confirm Node `24.12.x` and npm `11.6.x`.
-2. For paired development, rerun `./install-dev.sh --accelerator auto` or
-   `.\install-dev.ps1 -BackendPath ..\MoDiff -Accelerator auto`. Use `npm ci`
-   directly only for client-only work against an already-installed backend.
-   Do not regenerate the lockfile just to work around an install failure.
+2. For paired development, run `uv sync` with your accelerator extra in the
+   backend, then `npm ci` here. The combined development installers remain
+   available for specialized profiles. Do not regenerate the npm lockfile just
+   to work around an install failure.
 3. If the lockfile and manifest intentionally changed together, run `npm install` once as part of that dependency change, review the diff, and return to `npm ci` for validation.
 4. If native browser installation fails, retry `npx playwright install chromium` and follow Playwright's platform dependency message.
 
@@ -110,12 +110,36 @@ If direct requests work but proxied requests do not:
 
 If using direct server mode, `VITE_SERVER_ADDRESS` must include the protocol and must point to the backend, not the Vite port.
 
-The production bundle derives its supervisor address from the backend address,
-using the adjacent port (for example, backend `8096`, supervisor `8097`). Vite's
-development proxy settings do not select the production recovery endpoint.
-Set `VITE_SUPERVISOR_CONTROL_ADDRESS` explicitly at build time only when the
-supervisor uses a different address. This endpoint must stay available while
-the model worker is restarting so Stop and queue recovery can work.
+Browser refresh closes the previous WebSocket and requests. MoDiff cancels the
+old health probe and ignores callbacks from that connection; reconnect requires
+a successful backend `/health` response. Vite filters only teardown errors tied
+to the closed browser socket. Connection refusal, backend resets while the
+browser is still connected, and other errors remain visible. If errors repeat,
+record the terminal and stack excerpt and check `/health` directly and through
+the proxy; a locally served favicon does not prove the backend is ready.
+
+MoDiff uses the backend's verified `workerControl` metadata for the supervisor
+address. A standalone worker advertises no supervisor, so background queue reads
+are skipped. Startup waits up to one second for node/runtime discovery already
+in progress, then retains the existing five-second queue restoration bound.
+A busy worker or older backend without metadata keeps the trusted loopback
+fallback: the adjacent backend port (for example, `8096` → `8097`), or the
+explicit build-time `VITE_SUPERVISOR_CONTROL_ADDRESS`. That endpoint must stay
+available while the supervised model worker restarts. Temporary health failure
+retains the last verified supervisor address; genuine connection failures remain
+visible and retries use bounded backoff. Explicit Stop remains immediate.
+
+When using an SSH tunnel, forward both the backend and supervisor ports. For
+example, if backend `8088` and supervisor `8089` are forwarded to local `18088`
+and `18089`, open `http://127.0.0.1:18088`. The client resolves that verified
+adjacent pair through the local tunnel instead of contacting local `8089`.
+Development uses the actual backend proxy target, or an explicit
+`VITE_SERVER_ADDRESS`, rather than the frontend port. A custom nonadjacent
+supervisor mapping requires an explicit loopback
+`VITE_SUPERVISOR_CONTROL_ADDRESS` when building or serving the client. An
+unresolved mapping makes no supervisor request; Stop can still use the ordinary
+backend endpoint. Direct backends retain their advertised custom supervisor
+port, and remote or malformed supervisor destinations remain rejected.
 
 ## Registry Or Studio Nodes Are Missing
 

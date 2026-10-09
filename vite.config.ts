@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import { backendProxyLifecycle } from './scripts/backend-proxy-lifecycle';
 import {
   resolveTemplateAssetViteContract,
   serializeTemplateAssetSource,
@@ -15,6 +16,7 @@ import {
 } from './scripts/template-asset-source-contract.ts';
 
 const backendProxyTarget = process.env.VITE_BACKEND_PROXY_TARGET || 'http://127.0.0.1:8088';
+const proxyLifecycle = backendProxyLifecycle();
 const checkedInTemplateAssetSource = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'src/studio/templateAssetSource.json'), 'utf8'),
 );
@@ -44,6 +46,8 @@ function shellPublicAssetsPlugin(): Plugin {
     ['assets/modiff-icon-256.png', 'image/png'],
     // Locally authored editorial card, not a Gallery generation/publication.
     ['assets/minimax-chamber-pop.card-poster.png', 'image/png'],
+    ['assets/flux2-dev.card-poster.png', 'image/png'],
+    ['assets/cosmos3-super.card-poster.png', 'image/png'],
   ]);
   return {
     name: 'modiff-shell-public-assets',
@@ -215,6 +219,7 @@ const backendProxy = Object.fromEntries(
       target: backendProxyTarget,
       changeOrigin: true,
       ws: route === '/ws',
+      ...(route === '/ws' ? { configure: proxyLifecycle.configure } : {}),
     },
   ]),
 );
@@ -223,7 +228,7 @@ const baseConfig: UserConfig = {
   // Concurrent qualification frontends must not replace each other's
   // optimized dependency files and trigger navigation during a gesture.
   cacheDir: process.env.MODIFF_VITE_CACHE_DIR || 'node_modules/.vite',
-  plugins: [react(), tailwindcss(), compactProductionChunksPlugin(), shellAssetVersionPlugin()],
+  plugins: [react(), tailwindcss(), proxyLifecycle.plugin, compactProductionChunksPlugin(), shellAssetVersionPlugin()],
   server: {
     proxy: backendProxy,
     hmr: process.env.MODIFF_GALLERY_STABLE !== '1',
@@ -365,6 +370,9 @@ export default defineConfig(({ mode, command }) => {
         ? {
             'import.meta.env.VITE_BACKEND_PROXY_TARGET': JSON.stringify(backendProxyTarget),
             'import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS': JSON.stringify(supervisorControlTarget),
+            'import.meta.env.MODIFF_SUPERVISOR_CONTROL_EXPLICIT': JSON.stringify(
+              Boolean(process.env.VITE_SUPERVISOR_CONTROL_ADDRESS),
+            ),
           }
         : {}),
     },

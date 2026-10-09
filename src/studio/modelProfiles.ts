@@ -559,6 +559,8 @@ export const HUNYUAN_VIDEO_15_LICENSE_REPO = 'tencent/HunyuanVideo-1.5';
 export const HUNYUAN_VIDEO_15_LICENSE_REVISION = '9b49404b3f5df2a8f0b31df27a0c7ab872e7b038';
 export const COSMOS3_DISTILLED_T2I_REPO = 'nvidia/Cosmos3-Super-Text2Image-4Step';
 export const COSMOS3_DISTILLED_T2I_REVISION = 'aa0d5a57b7b045d68daa60fbacd84ec723c7cb7b';
+export const COSMOS3_SUPER_T2I_REPO = 'nvidia/Cosmos3-Super-Text2Image';
+export const COSMOS3_SUPER_T2I_REVISION = 'daf3d374804be4c512c2135568a7cb95d4341d79';
 export const COSMOS3_DISTILLED_I2V_REPO = 'nvidia/Cosmos3-Super-Image2Video-4Step';
 export const COSMOS3_DISTILLED_I2V_REVISION = 'cd55ce81bc5cea51a09c37cd7652144e7278f049';
 export const COSMOS3_NANO_REPO = 'nvidia/Cosmos3-Nano';
@@ -4332,7 +4334,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceTextGenerationModel',
     supportedModes: TRANSFORMERS_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed SmolLM2 135M Instruct float32 profile with bounded token controls.',
     qualityDefaults: 'Deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLLM2_135M_INSTRUCT_REPO],
@@ -4343,7 +4346,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceImageTextToTextModel',
     supportedModes: TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed SmolVLM 256M Instruct float32 profile with one bounded local image.',
     qualityDefaults: 'One image, deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLVLM_256M_INSTRUCT_REPO],
@@ -4354,7 +4358,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceAnyToAnyModel',
     supportedModes: TRANSFORMERS_ANY_TO_ANY_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'Expert-only execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum: 'Expert-only execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed Janus Pro 1B bfloat16 profile after acknowledging the pinned model terms.',
     qualityDefaults: 'Bounded text generation or native 384x384 image generation.',
     artifacts: [JANUS_PRO_1B_REPO],
@@ -4365,7 +4369,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceSpeechRecognitionModel',
     supportedModes: SPEECH_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed Whisper Tiny float32 profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, segment timestamps.',
     artifacts: [WHISPER_TINY_REPO],
@@ -4376,7 +4381,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceCTCSpeechRecognitionModel',
     supportedModes: ['speech_to_text'],
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and standard Transformers installation.',
     recommended: 'Use the reviewed Wav2Vec2 Base 960h float32 CTC profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, word timestamps.',
     artifacts: [WAV2VEC2_BASE_960H_REPO],

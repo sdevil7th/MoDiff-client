@@ -19,9 +19,13 @@ import {
   type OperationStarter,
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
-import { commitOperationGraph } from '../workflow/operationGraphTransaction';
+import { commitOperationGraph, operationGraphPreviewSignature } from '../workflow/operationGraphTransaction';
 import NodeInspectorDialog from './NodeInspectorDialog';
-import { groupNewOperationGraph } from '../workflow/visualOperationGroups';
+import {
+  groupNewOperationGraph,
+  visualOperationOwnerId,
+  visualOperationGroup,
+} from '../workflow/visualOperationGroups';
 
 type Preview = {
   starter: OperationStarter;
@@ -60,6 +64,7 @@ export default function OperationGraphControls({
   );
   const selected = nodes.find((n) => n.selected && n.data.operationAuthoring);
   const selectedHint = selected ? operationAuthoring(selected) : null;
+  const visualBlock = blockId && nodes.find((node) => node.id === blockId && visualOperationGroup(node));
 
   useEffect(() => {
     pending.current?.abort();
@@ -79,18 +84,20 @@ export default function OperationGraphControls({
     pending.current = controller;
     const context = captureWorkflowOperationContext();
     const snapshot = useFlowStore.getState().toObject();
-    const signature = JSON.stringify(snapshot);
+    const signature = operationGraphPreviewSignature(snapshot);
     setBusy(true);
     setError(null);
     try {
       const starter = await requestOperationStarter(pipeline, task, operations, controller.signal, executionProfileId);
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
+      if (operationGraphPreviewSignature(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The graph changed. Request a fresh preview.');
+      const effectiveOwnerId = visualOperationOwnerId(snapshot, loader, blockId);
+      const visualOwner = effectiveOwnerId !== loader;
       const plan = !change
         ? null
-        : blockId
+        : blockId && !visualOwner
           ? (await import('../workflow/operationLegacyBlockChange')).planOwnerBlockOperationChange(
               snapshot,
               blockId,
@@ -98,10 +105,10 @@ export default function OperationGraphControls({
               starter,
               { replaceModel: Boolean(executionProfileId) },
             )
-          : planOperationChange(snapshot, loader, starter, { replaceModel: Boolean(executionProfileId) });
+          : planOperationChange(snapshot, effectiveOwnerId, starter, { replaceModel: Boolean(executionProfileId) });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
+      if (operationGraphPreviewSignature(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The graph changed. Request a fresh preview.');
       setPreview({ starter, plan, context, signature });
     } catch (e) {
@@ -119,7 +126,7 @@ export default function OperationGraphControls({
     try {
       assertWorkflowOperationContext(preview.context, { includeForm: false });
       const flow = useFlowStore.getState();
-      if (JSON.stringify(flow.toObject()) !== preview.signature)
+      if (operationGraphPreviewSignature(flow.toObject()) !== preview.signature)
         throw new Error('The graph changed after this preview. Close it and request a fresh preview.');
       if (preview.plan)
         commitOperationGraph(preview.plan.graph, preview.context, preview.signature, 'Change operation model or task');
@@ -203,7 +210,7 @@ export default function OperationGraphControls({
             </p>
             <p>{preview.starter.nodes.map((n) => n.node.label).join(' → ')}</p>
             <p>
-              {blockId
+              {blockId && !visualBlock
                 ? 'The result updates the editable graph inside this Block.'
                 : 'The result is an editable canvas graph.'}{' '}
               Run checks model files, runtime support, required inputs and resources.

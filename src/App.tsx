@@ -24,6 +24,7 @@ import { ModiffIconButton } from './ui';
 import { openRunActivity } from './studio/runActivity.ts';
 import { useAutoResourcePlanSync } from './studio/useAutoResourcePlanSync.ts';
 import { useWorkflowBackendSync } from './studio/useWorkflowBackendSync.ts';
+import { supervisorControlCanPoll, waitForSupervisorMetadata } from './utils/supervisorControl';
 
 const DeveloperWorkflowLauncher = lazy(() => import('./components/DeveloperWorkflowLauncher'));
 const GraphFixDialog = lazy(() => import('./components/GraphFixDialog.tsx'));
@@ -56,6 +57,7 @@ const WORKSPACE_MIN_WIDTH = modiffLayout.workspaceMinWidth;
 const SUPERVISOR_STARTUP_TIMEOUT_MS = 5_000;
 
 async function boundedSupervisorStartup(fetchSupervisorTasks: () => Promise<void>) {
+  await waitForSupervisorMetadata(useNodesStore);
   let timeoutId: number | undefined;
   try {
     await Promise.race([
@@ -128,6 +130,7 @@ export default function App() {
   const fetchSupervisorTasks = useTaskStore((state) => state.fetchSupervisorTasks);
   const currentTask = useTaskStore((state) => state.currentTask);
   const taskCount = useTaskStore((state) => state.taskCount);
+  const workerControl = useNodesStore((state) => state.runtimeStatus?.workerControl);
   const graphFixDialogOpen = useGraphFixStore((state) => state.dialogOpen);
   const runIssuesDialogOpen = useRunIssueStore((state) => state.issueDialogOpen || state.failureDialogOpen);
   const nodeCount = useFlowStore((state) => state.nodes.length);
@@ -330,12 +333,14 @@ export default function App() {
     // remains connected. Reconcile active runs through the process-external
     // supervisor until the queue is empty; this keeps the visible task state
     // truthful without navigating away from the user's current workflow.
-    if (websocketConnected && taskCount === 0) return;
+    if (!supervisorControlCanPoll() || (websocketConnected && taskCount === 0)) return;
     let disposed = false;
+    const abort = new AbortController();
     let timer: number | undefined;
     const pollSupervisor = async () => {
+      if (!(await waitForSupervisorMetadata(useNodesStore, abort.signal))) return;
       await fetchSupervisorTasks();
-      if (!disposed) {
+      if (!disposed && supervisorControlCanPoll()) {
         timer = window.setTimeout(
           () => {
             void pollSupervisor();
@@ -347,9 +352,10 @@ export default function App() {
     void pollSupervisor();
     return () => {
       disposed = true;
+      abort.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [fetchSupervisorTasks, taskCount, websocketConnected]);
+  }, [fetchSupervisorTasks, taskCount, websocketConnected, workerControl]);
 
   const criticalDiscoveryKeys = useMemo(
     () => ['nodes', 'runtime', 'hfCache', 'localModels', 'modelCache', 'capabilities'] as const,

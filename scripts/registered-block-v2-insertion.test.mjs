@@ -477,6 +477,14 @@ function fluxFixture() {
     repo: 'black-forest-labs/FLUX.1-dev',
     revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
   };
+  // This synthetic interaction fixture follows the published identity. Its
+  // synthetic compiled bytes are checked separately by pinFixtureRoute;
+  // these lifecycle tests do not qualify the real backend graph.
+  const route = routeModule.REGISTERED_BLOCK_V2_ROUTES.find(
+    (candidate) => candidate.definitionId === definitionId && candidate.admissionId === admissionId,
+  );
+  assert.ok(route);
+  assert.deepEqual(route.artifact, artifact);
   Object.assign(definition, {
     id: definitionId,
     pipelineClass: 'FluxModularPipeline',
@@ -498,7 +506,7 @@ function fluxFixture() {
         url: 'https://huggingface.co/black-forest-labs/FLUX.1-dev',
       },
     },
-    contentHash: 'sha256:cfec41815a507f63620e7b80cb6a18700485ac2520a7472826b1389418bbd7ed',
+    contentHash: route.definitionContentHash,
   });
   Object.assign(admission, {
     id: admissionId,
@@ -507,11 +515,7 @@ function fluxFixture() {
     sealedBindingValues: { artifact: artifact.repo, pipelineClass: 'FluxModularPipeline' },
     modelDependencies: [{ id: 'model', kind: 'model', repo: artifact.repo, revision: artifact.revision }],
     adapterContractId: adapterId,
-    studioExecutionSpec: {
-      id: 'flux-dev:modular-text-to-image:v1',
-      contentHash: 'studio-spec-v1-9dd14796',
-      executionProfileId: 'flux-dev:modular',
-    },
+    studioExecutionSpec: structuredClone(route.studioExecutionSpec),
     artifact,
   });
   definition.graphAdapterContracts[0] = { ...definition.graphAdapterContracts[0], id: adapterId };
@@ -2506,7 +2510,7 @@ test('workflow replacement during a deferred field action aborts and cleans the 
 });
 
 for (const change of ['workflow', 'edit', 'cancel', 'gesture', 'none']) {
-  test(`a delayed registered Block switch preserves its owner after ${change}`, async () => {
+  test(`a delayed registered Block switch preserves its owner after ${change}`, { timeout: 10000 }, async () => {
     const switching = await server.ssrLoadModule('/src/studio/registeredBlockRouteSwitchV1.ts');
     const configured = fixture();
     const root = await insertion.createHuggingFaceClusterForGraph(configured.definition, { x: 80, y: 90 }, form());
@@ -2543,7 +2547,13 @@ for (const change of ['workflow', 'edit', 'cancel', 'gesture', 'none']) {
       (value) => ({ value }),
       (error) => ({ error }),
     );
-    await entered.promise;
+    await Promise.race([
+      entered.promise,
+      settled.then((result) => {
+        if (result.error) throw result.error;
+        assert.fail('The switch completed before reaching the deliberately delayed request.');
+      }),
+    ]);
     if (change === 'workflow') {
       studioStore.useStudioStore.setState({ activeWorkflowTabId: 'different-workflow', workflowCanvasEpoch: 2 });
     } else if (change === 'edit') {

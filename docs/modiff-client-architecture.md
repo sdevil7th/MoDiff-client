@@ -213,6 +213,47 @@ still owns values, interfaces and execution. Inspection is read-only; Separate
 stages is an explicit undoable structural edit. The interface inspector includes
 visible optional encoding sockets and labels their deferred stage preparation.
 
+Optional image Model Setup, Prepare Mask and Image Output use that same ordinary
+node shell and `BlockInstanceV2` contract. `visualOperationGroups` selects only
+existing eligible leaves: a loader with connected built-in descriptor/configuration
+utilities, an exact Load Image/Outpaint Canvas pair feeding both image and mask
+to the same masked consumer, or a declared image decoder plus its direct previews.
+Single loaders/whole-pipeline previews and unrelated/shared modifiers are not
+wrapped. Explicit stage actions leave other instances untouched and commit one
+history transaction; opening documents and current template defaults do not
+opt into these additional groups. Output preview bindings use the existing V2
+preview inventory and backend output-slot authority. Model Setup's projected
+loader resolves back to its unpacked runtime owner for the complete ordinary
+workflow planner, rather than adapting only the wrapper's implementation. Values,
+configured interfaces, immutable reusable snapshots and explicit save/separate
+behavior keep their existing authority.
+Optional groups retain ordinary type-inferred scalar editors even when registry
+fields omit `display`. An empty or suppressed field label uses its field name
+in the explicit interface; the original leaf field and value remain unchanged.
+`visualOperationGroupProjection` contains the ordinary renderer/store's
+read-only projection and shared-value planning. Structural grouping stays in
+the deferred `visualOperationGroups` planner; Guidance's asynchronous schema
+edit loads regrouping only when requested. Public graph helper exports and
+the same graph transaction remain unchanged.
+
+`operationComponentBundle` adds explicit **Use component bundle** / **Expose
+components** actions through those same workflow stage controls. It consumes
+parsed `semantics.suppliedBy` declarations and exact scoped component members;
+it does not dispatch on model names. The first backend declaration is native
+Qwen text to image. Existing loader-to-stage component fanout is replaced only
+where the aggregate provides those exact inputs, preserving loader and stage
+IDs, creative controls, the separate Guider, and unrelated branches. Independent
+suppliers, modifier paths, literal overrides and alternate aggregate sources
+leave the entire consumer's raw path unchanged because static type compatibility
+cannot prove the backend's sealed component identity. Breakout restores raw
+connections without replacing explicit inputs. Required-input/fix projection uses
+`componentBundleInputs`; backend object/role/owner/generation checks remain the
+execution authority. Each action commits the existing full-graph transaction,
+including visual-stage unwrapping/restoration and Undo. This prototype reduces
+Qwen T2I's four loader component edges to three, and leaves template defaults and
+previous documents unchanged. No alternate executor or hidden implementation
+collapse is introduced.
+
 Guidance interface edits record explicitly removed field bindings in optional
 `presentation.removedControlBindings` on the instance. The bounded, unique
 `{nodeId, fieldId}` list is visibility metadata, not an execution toggle. Removing
@@ -229,6 +270,15 @@ loaders for typed required media inputs before grouping. It reuses sources only
 for equal media roles, keeps masks separate from alpha-mask outputs, and reports
 missing/incompatible loader definitions. It does not touch existing documents,
 invent media for text-only routes, or infer a tensor from a path-only field.
+
+The media attachment source picker retains the exact node/port values and graph
+ordering. Friendly node/field labels add the nearest upstream declared model
+repository or local-source context; remaining identical labels use visible branch
+ordinals. Read-only Block projections resolve effective controls and exact output
+bindings, with immutable instances cached. Unresolved retained crossings add no
+display context and remain available for ordinary repair. This context is
+presentation only: all existing source choices, stale-selection checks, task
+planning, ownership and cycle validation remain unchanged.
 
 Readiness also checks required file pickers in the selected executable closure.
 A connected loader output does not satisfy an empty required source file. Current
@@ -273,9 +323,10 @@ then stays mounted so focus changes do not discard open dialog state.
 
 Running from a V2 Block root or internal Block selects all enabled terminal
 branches in that semantic scope and their contained upstream dependencies.
-Outside suppliers are removed before validation and lowering, including public-input
-suppliers; stored internal fallbacks remain available. Whole-workflow execution keeps
-the crossing wires. Missing
+Wired outside suppliers and their upstream owners remain in the dependency closure
+before validation and lowering, including public-input suppliers. Disconnected
+unrelated owners remain outside selected execution. Stored internal fallbacks
+remain available. Missing
 previews never mean "run the whole workflow". Disabled descendants are excluded;
 an entirely disabled/non-executable selection produces an actionable error.
 The representative node used for run metadata still prefers a terminal media
@@ -1415,8 +1466,10 @@ without changing graph values or execution ownership.
 `resolvedExecutionInputs` can carry backend `graphTasks` alongside captured call
 arguments. The client validates each owner against the receipt's captured Modular
 loader and model identity. A unique supported task updates the output label while
-leaving its saved form untouched. Legacy receipts remain readable; incomplete or
-ambiguous graph recognition does not invent a task. This metadata grants no
+leaving its saved form untouched. Gallery labels a receipt with absent, null or
+conflicting task recognition as **Task not uniquely captured**, rather than using
+the saved form's task. Only outputs without a consumed-input receipt retain their
+historical task label. This metadata grants no
 execution or resource authority and adds no frontend model-family dispatch.
 
 History model labels and Gallery filters also use the validated captured model

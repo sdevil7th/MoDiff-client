@@ -68,6 +68,10 @@ const TEMPLATE_DISPLAY_NAME_OVERRIDES: Partial<Record<StudioTemplate['id'], stri
   low_vram: 'Quick Preview',
 };
 
+export function templateModelDisplayName(template: Pick<StudioTemplate, 'modelType' | 'modelDisplayName'>) {
+  return template.modelDisplayName?.trim() || STUDIO_MODEL_LABELS[template.modelType];
+}
+
 /**
  * The model and operation already have dedicated card metadata. Keep the
  * primary card title focused on the creative result so it remains readable at
@@ -158,7 +162,8 @@ export function templateSearchText(template: StudioTemplate) {
     template.difficulty,
     template.vramEstimate,
     STUDIO_MODE_LABELS[template.mode],
-    STUDIO_MODEL_LABELS[template.modelType],
+    templateModelDisplayName(template),
+    template.modelArtifact?.value,
     ...(template.tags ?? []),
     ...(template.inputRequirements?.sampleAssets ?? []),
     ...(template.requiredBackendCapabilities ?? []),
@@ -217,8 +222,7 @@ export function filterStudioTemplates(
         (localRuntimeSeconds?.(right) ?? Number.POSITIVE_INFINITY)
       );
     }
-    if (filter.sort === 'model')
-      return STUDIO_MODEL_LABELS[left.modelType].localeCompare(STUDIO_MODEL_LABELS[right.modelType]);
+    if (filter.sort === 'model') return templateModelDisplayName(left).localeCompare(templateModelDisplayName(right));
     if (filter.sort === 'task') return STUDIO_MODE_LABELS[left.mode].localeCompare(STUDIO_MODE_LABELS[right.mode]);
     return recommendedRank(left, form) - recommendedRank(right, form) || left.label.localeCompare(right.label);
   });

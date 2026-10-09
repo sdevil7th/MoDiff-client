@@ -7,10 +7,10 @@ MoDiff Client is the graph-first web interface for the MoDiff generative-media b
 The client is built with React 19, TypeScript, Vite, Tailwind CSS, Headless UI, Zustand, Lucide React, and [`@xyflow/react`](https://reactflow.dev/).
 
 For Qwen-Image 2.1, use the generic image nodes in Workflows. The backend's
-[integration guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/qwen-image-21.md)
+[integration guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/qwen-image-21.md)
 explains attention-context reuse, runtime requirements and current qualification limits.
 
-The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/image-demo.md) lists the tested workflows, settings,
+The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/image-demo.md) lists the tested workflows, settings,
 measured reuse behavior and remaining qualification work.
 
 > [!IMPORTANT]
@@ -18,28 +18,33 @@ measured reuse behavior and remaining qualification work.
 
 ## Developer setup with uv and npm
 
-Install Git, [uv `0.11.26`](https://docs.astral.sh/uv/getting-started/installation/),
+Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/),
 Node.js `24.12.0`, and npm `11.6.2`. uv can provision Python 3.12.
 Use two terminals for the backend and the editable frontend.
+
+The setup and workflow updates described here are on `fix-ui-ux-issues` in both
+repositories. Select that branch until these changes are released on `main`.
 
 **Terminal 1 — backend:** clone both repositories into the same parent directory,
 then start the backend. These commands work in Linux shells and Windows PowerShell.
 
 ```text
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
-uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
-uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
-uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
-uv run --no-project --no-sync --python 3.12 -m modiff.dev run
+uv sync --extra cpu
+uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --extra cpu python main.py
 ```
 
-The CPU profile is for API/UI development. For NVIDIA inference, replace `cpu`
-with `nvidia` in both `plan` and `setup`; other accelerators are covered in the
-[full setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md). Setup preserves an existing `.venv` and
-does not download model weights. Use the guide for deliberate environment repair;
-ordinary `uv sync` is not supported.
+The CPU profile is for API/UI development. For NVIDIA inference, use `--extra cuda`
+in each command; for Intel, use `--extra xpu`. On Apple Silicon, omit the extra.
+Transformers and PEFT are installed with the base application; ordinary image and
+LoRA workflows need no optional-runtime installation or activation. Setup installs
+Python packages without downloading model weights. `uv sync` reconciles `.venv`
+with the selected profile: use a separate checkout when testing a different
+accelerator. See the [full setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for specialized AMD profiles,
+explicit `uv pip` commands, repair, and upgrades.
 
 **Terminal 2 — frontend:** from the same parent directory, run:
 
@@ -51,7 +56,7 @@ npm run dev
 
 Keep the backend running at <http://127.0.0.1:8088> and open the URL printed by
 Vite for the editable frontend. Press `Ctrl+C` in each terminal to stop it.
-See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md) for accelerator prerequisites,
+See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for accelerator prerequisites,
 optional runtimes, repair, and bundled-app setup.
 
 ## Install and run MoDiff
@@ -59,15 +64,15 @@ optional runtimes, repair, and bundled-app setup.
 Clone both repositories into the same parent directory. The backend installer
 automatically finds this sibling client, installs its locked Node.js toolchain
 and packages, downloads the verified Gallery assets, and bundles the frontend.
-The backend [installation guide](https://github.com/sdevil7th/MoDiff#install-and-run)
+The backend [installation guide](https://github.com/sdevil7th/MoDiff/tree/fix-ui-ux-issues#install-and-run)
 is the canonical source for installer profiles, prerequisites, repair, and
 platform support.
 
 Linux or macOS:
 
 ```bash
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
 ./install.sh --accelerator auto
 ./run.sh
@@ -76,8 +81,8 @@ cd MoDiff
 Windows PowerShell:
 
 ```powershell
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
 .\install.ps1 -Accelerator auto
 .\run.ps1
@@ -111,7 +116,7 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 
 In the editor, **Export → Service package** exposes named scalar inputs and
 persisted preview outputs for the same lowered API graph. See the backend's
-[service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
+[service guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/service-prototyping.md)
 for the CLI, environment manifest and model-free example.
 
 ## Repository Pairing
@@ -138,7 +143,7 @@ Client development requires:
 Integrated development also requires:
 
 - A sibling MoDiff backend checkout, or its path passed to the launcher
-- The backend's managed Python 3.12 environment, installed through the uv commands
+- The backend's Python 3.12 environment, installed through the uv commands
   in the [quick start](#developer-setup-with-uv-and-npm) or its reviewed `install.ps1` / `install.sh` profile
 - Sufficient RAM, accelerator memory, and disk space for the model being used
 - Hugging Face authorization for gated model repositories, when applicable
@@ -262,6 +267,14 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
 
 See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas, workflow tabs, Gallery behavior, setup, failure recovery, and a manual verification checklist.
 
+The [image template workflow guide](docs/image-template-workflows.md) describes
+the current developer nodes, explicit whole-pipeline exceptions, preserved
+creator settings and historical Gallery examples.
+The [developer authoring guide](docs/developer-first-node-ux.md) covers optional
+Model Setup, Prepare Mask and Image Output groups, reversible component bundle
+wiring, and the existing inspection/reuse controls. These explicit actions keep
+saved graphs and template defaults intact.
+
 ## Workspace And Memory
 
 **Memory → Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
@@ -377,7 +390,7 @@ require Custom memory. See the backend custom-node guide for contracts and examp
 Approved Modular blocks that omit model ports receive a **Models** input when
 their Python contract requires components. Connect **Load Models → Pipeline
 Components** to reuse compatible loaded weights. This does not download missing
-block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/custom-nodes.md)
+block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/custom-nodes.md)
 for the VAE reconstruction example and component requirements.
 Blocks with official component types also expose **Load Models — [block name]**
 after approval. Select pinned, downloaded sources for its components, use **Custom**
@@ -467,13 +480,16 @@ in [Template Gallery asset storage](docs/template-gallery-assets.md).
 Run the same complete static/unit/build gate used by CI:
 
 ```bash
+npx playwright install chromium
 npm run check
 ```
+
+The request/proxy regression tests in this gate also use Chromium. On a fresh
+Linux host, install its system dependencies with `npx playwright install-deps chromium`.
 
 Run the mocked Studio browser suite:
 
 ```bash
-npx playwright install chromium
 npm run check:ui
 ```
 

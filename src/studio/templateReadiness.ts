@@ -22,6 +22,9 @@ import type {
   StudioTemplateModelArtifact,
 } from './types';
 import { backendNodeKeysForCapability } from './templateBackendCapabilities';
+import { resolveTemplateModelSelection } from './templateModelSelection';
+import { optionalRuntimeBlockState, type OptionalRuntimeCatalog } from './optionalRuntimes';
+import type { StudioModelProfile } from './types';
 export { isTemplateBackendCapabilityRecognized, templateBackendNodeKeys } from './templateBackendCapabilities';
 
 export type TemplateReadinessStatus =
@@ -52,6 +55,8 @@ export type TemplateReadinessContext = {
   nodesRegistry: Record<string, NodeData>;
   autoResourcePlan?: StudioAutoResourcePlan | null;
   modelIndexesRefreshing?: boolean;
+  studioModelCapabilities?: StudioModelProfile[];
+  optionalRuntimeCatalog?: OptionalRuntimeCatalog | null;
 };
 
 export type TemplateReadinessResult = {
@@ -59,10 +64,18 @@ export type TemplateReadinessResult = {
   label: string;
   tone: TemplateReadinessTone;
   summary: string;
-  compatibility: StudioCompatibilityAssessment;
+  compatibility:
+    | StudioCompatibilityAssessment
+    | (Omit<StudioCompatibilityAssessment, 'source'> & { source: 'backend_execution_profile' });
   issues: TemplateReadinessIssue[];
   missingModelRepos: string[];
-  modelInstallTargets: Array<{ repoId: string; repair?: boolean; actionLabel?: string }>;
+  modelInstallTargets: Array<{
+    repoId: string;
+    repair?: boolean;
+    actionLabel?: string;
+    revision?: string;
+    files?: string[];
+  }>;
   missingInputs: string[];
   missingBackendCapabilities: string[];
   decision: RunReadinessDecision;
@@ -143,6 +156,7 @@ function workflowModelRequirements(template: StudioTemplate): StudioModelRequire
       id,
       label,
       repo: artifactRepoId(artifact),
+      revision: artifact.revision,
       kind: 'adapter',
       requiredForModes: [template.mode],
       description: `${label} pinned by ${template.label}.`,
@@ -194,10 +208,217 @@ function needsLocalCompatibilityProof(template: StudioTemplate) {
   return false;
 }
 
+/** Custom recipe admission checks prerequisites, never an Auto fit or media proof. */
+function customRecipeReadiness(template: StudioTemplate, context: TemplateReadinessContext): TemplateReadinessResult {
+  const selected = resolveTemplateModelSelection(template, context.studioModelCapabilities ?? []);
+  const issues: TemplateReadinessIssue[] = [];
+  const modelInstallTargets: TemplateReadinessResult['modelInstallTargets'] = [];
+  const missingRepos: string[] = [];
+  const backendIssues = missingBackendCapabilities(template, context.nodesRegistry);
+  const inputIssues = missingInputLabels(template, template.inputRequirements);
+  const planningOnly =
+    template.readinessPolicy === 'planning' ||
+    template.difficulty === 'blocked' ||
+    template.example?.status === 'blocked';
+  const checkingModels = context.modelIndexesRefreshing === true;
+  const addSetup = (id: string, title: string, detail: string, category: RunReadinessIssueCategory = 'package') =>
+    issues.push({ id, category, blocking: true, tone: 'error', title, detail, action: 'open_setup' });
+
+  if (planningOnly)
+    issues.push({
+      id: 'planning',
+      category: 'graph',
+      blocking: true,
+      tone: 'info',
+      title: 'Planning template',
+      detail: template.example?.blockReason ?? 'This experimental recipe has not been admitted for normal use.',
+      action: 'open_planning',
+    });
+  if (context.form?.resourceMode !== 'expert')
+    addSetup(
+      'custom:memory',
+      'Custom memory required',
+      'This experimental recipe declares Custom settings; no Auto fit is qualified.',
+      'environment',
+    );
+  if (!selected)
+    addSetup(
+      'custom:contract',
+      'Exact backend recipe needed',
+      'The declared profile, model artifact and immutable revision must match the backend contract.',
+      'backend',
+    );
+  if (!hasRegistry(context.nodesRegistry))
+    addSetup(
+      'backend:registry',
+      'Backend contract needed',
+      'Connect to the backend and refresh its node registry.',
+      'backend',
+    );
+  backendIssues.forEach((capability) => addSetup(`backend:${capability}`, 'Backend contract needed', capability));
+  const runtime = context.runtimeStatus;
+  if (
+    runtime?.ready !== true ||
+    runtime.runtimeEnvironment?.profileVerified !== true ||
+    runtime.runtimeEnvironment?.executionReady !== true ||
+    (runtime.missing_required_packages?.length ?? 0) > 0 ||
+    ['torch', 'diffusers', 'transformers', 'peft'].some((name) => runtime.packages?.[name]?.available !== true)
+  )
+    addSetup(
+      'custom:base-runtime',
+      'Standard runtime needs repair',
+      'Verify the installed accelerator runtime and required Torch, Diffusers, Transformers and PEFT packages.',
+    );
+  if (selected) {
+    const requirement = selected.profile.optionalRuntimeRequirement;
+    const declaredOptional = selected.profile.optional_runtime_profiles ?? [];
+    const invalidRequirement =
+      declaredOptional.length > 0 &&
+      (!requirement ||
+        !requirement.executionProfileIds.includes(selected.profile.id) ||
+        (requirement.requiredNow && !requirement.profileIds.some((id) => declaredOptional.includes(id))));
+    const runtimeBlock = optionalRuntimeBlockState(requirement, context.optionalRuntimeCatalog ?? null);
+    if (invalidRequirement || runtimeBlock)
+      addSetup(
+        'custom:optional-runtime',
+        'Recipe runtime needed',
+        invalidRequirement
+          ? 'Refresh the exact backend runtime requirement for this recipe.'
+          : `${requirement?.reason ?? 'Required recipe runtime is not active.'} (${runtimeBlock})`,
+      );
+
+    const artifactSelection = selected.capability.artifactSelections?.find(
+      (item) =>
+        item.repo === selected.repository && item.revision === selected.revision && item.modes.includes(template.mode),
+    );
+    const requirements: StudioModelRequirement[] = [
+      {
+        id: `${template.id}-base`,
+        label: selected.profile.id,
+        repo: selected.repository,
+        revision: selected.revision,
+        kind: 'base',
+        downloadFiles:
+          artifactSelection?.downloadFiles ??
+          (selected.capability.defaultRepo === selected.repository ? selected.capability.downloadFiles : undefined),
+      },
+      ...getModelRequirementsForMode(selected.capability, template.mode),
+      ...workflowModelRequirements(template),
+    ];
+    if (!checkingModels)
+      for (const requirement of requirements) {
+        // Exact recipe checks must not accept a different repository with a matching substring.
+        const exactCache = context.hfCache.filter((entry) =>
+          typeof entry === 'string'
+            ? entry === requirement.repo
+            : entry && typeof entry === 'object' && (entry as { id?: unknown }).id === requirement.repo,
+        );
+        const cache = getRepoCacheStatus(
+          requirement.repo,
+          exactCache,
+          context.localModels,
+          context.modelCacheDiagnostics,
+          { revision: requirement.revision, files: requirement.downloadFiles },
+        );
+        if (cache.runnable) continue;
+        const repair =
+          cache.repairRequired ||
+          exactCache.some((entry) => {
+            if (!entry || typeof entry !== 'object') return false;
+            const status = entry as { complete?: unknown; installed?: unknown; repair_required?: unknown };
+            return status.complete === false || status.installed === false || status.repair_required === true;
+          });
+        missingRepos.push(requirement.repo);
+        const actionLabel = repair ? 'Repair' : 'Install';
+        modelInstallTargets.push({
+          repoId: requirement.repo,
+          revision: requirement.revision,
+          files: requirement.downloadFiles,
+          repair,
+          actionLabel,
+        });
+        issues.push({
+          id: `model:${requirement.repo}`,
+          category: repair ? 'model_integrity' : 'model',
+          blocking: true,
+          tone: repair ? 'error' : 'warning',
+          title: repair ? 'Exact model package repair required' : 'Model package missing',
+          detail: `${requirement.repo}${requirement.revision ? ` @ ${requirement.revision}` : ''}: ${cache.reason}`,
+          action: 'install_model',
+          repoId: requirement.repo,
+          repair,
+          actionLabel,
+        });
+      }
+  }
+  if (checkingModels)
+    issues.push({
+      id: 'model-index-refresh',
+      category: 'model',
+      blocking: true,
+      tone: 'info',
+      title: 'Checking installed models',
+      detail: 'Refreshing the local model index before reporting recipe prerequisites.',
+    });
+  inputIssues.forEach((input) =>
+    issues.push({
+      id: `input:${input}`,
+      category: 'asset',
+      blocking: true,
+      tone: 'warning',
+      title: `${input} required`,
+      detail: 'Add the declared required input before running this workflow.',
+      action: 'open_assets',
+    }),
+  );
+  const decision = buildRunReadinessDecision(issues.map(runIssueForTemplateIssue), { preparing: checkingModels });
+  const category = decision.primaryIssue?.category;
+  const status: TemplateReadinessStatus = planningOnly
+    ? 'planning'
+    : decision.state === 'preparing'
+      ? 'preparing'
+      : decision.state !== 'blocked'
+        ? 'ready'
+        : category === 'backend' || category === 'package'
+          ? 'needs_backend'
+          : category === 'model' || category === 'model_integrity'
+            ? 'needs_model'
+            : category === 'asset' || category === 'user_input'
+              ? 'needs_input'
+              : 'needs_setup';
+  const copy = statusCopy(status);
+  const summary =
+    status === 'ready'
+      ? 'Required packages, exact model artifacts and inputs are available. This uses Custom memory; hardware fit and output quality remain experimental.'
+      : (issues[0]?.detail ?? 'Review the declared recipe prerequisites.');
+  return {
+    status,
+    label: status === 'ready' ? 'Custom · experimental' : copy.label,
+    tone: status === 'ready' ? 'warning' : copy.tone,
+    summary,
+    compatibility: {
+      state: status === 'ready' ? 'ready' : status === 'needs_model' ? 'needs_model' : 'needs_setup',
+      severity: 'warning',
+      code: 'custom_recipe_experimental',
+      summary: 'Custom memory · experimental',
+      detail: 'Checks recipe prerequisites without claiming Auto hardware fit or validated output quality.',
+      source: 'backend_execution_profile',
+    },
+    issues,
+    missingModelRepos: Array.from(new Set(missingRepos)),
+    modelInstallTargets: Array.from(new Map(modelInstallTargets.map((target) => [target.repoId, target])).values()),
+    missingInputs: inputIssues,
+    missingBackendCapabilities: backendIssues,
+    decision,
+  };
+}
+
 export function getTemplateReadiness(
   template: StudioTemplate,
   context: TemplateReadinessContext,
 ): TemplateReadinessResult {
+  if (template.executionSelection?.memoryPolicy === 'custom_experimental')
+    return customRecipeReadiness(template, context);
   const profile = STUDIO_MODEL_PROFILES[template.modelType];
   const autoReady = autoPlanIsReady(context.autoResourcePlan, context.form);
   const autoInstallTarget = autoResourceInstallTarget(context.autoResourcePlan, context.form);

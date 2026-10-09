@@ -599,6 +599,29 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
     case 'auto_resource_cleanup':
     case 'runtime_resource_cleanup': {
       console.info('Runtime resource cleanup', message);
+      if (message.performed === false && message.message && message.task_id) {
+        const tasks = useTaskStore.getState();
+        const current = tasks.currentTask;
+        if (
+          current?.task_id === message.task_id &&
+          !terminalNodeProgressTaskIds.has(message.task_id) &&
+          !['completed', 'failed', 'cancelled'].includes(current.status ?? '')
+        ) {
+          tasks.updateProgress(message.task_id, current.progress ?? 0, message.message);
+          if (
+            shouldApplyWorkflowCanvasMutation(
+              {
+                ...message,
+                client_run_id: message.client_run_id ?? current.client_run_id,
+                workflow_tab_id: message.workflow_tab_id ?? current.workflow_tab_id,
+              },
+              context,
+            )
+          ) {
+            enqueueSnackbar(message.message, { variant: 'info', autoHideDuration: 4500 });
+          }
+        }
+      }
       if (message.performed) {
         const reason = message.reasons?.filter(Boolean).join('; ');
         enqueueSnackbar(reason ? `Released stale runtime resources: ${reason}` : 'Released stale runtime resources.', {

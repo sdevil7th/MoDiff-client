@@ -31,6 +31,73 @@ const definition = (params, action = 'Process') => ({
   params,
 });
 
+test('backend-declared component role selectors accept only an exact unconnected literal selection', async () => {
+  const storage = new Map();
+  globalThis.localStorage ??= {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key),
+  };
+  globalThis.window ??= {
+    location: { origin: 'http://127.0.0.1:5191' },
+    localStorage: globalThis.localStorage,
+    dispatchEvent: () => true,
+  };
+  const matching = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  const { parseNodesResponse } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const selector = { field: 'model_type', values: { controlnet: 'controlnet_component' } };
+  const loader = definition(
+    {
+      model_type: { type: 'string', value: 'controlnet' },
+      model: { display: 'output', type: 'diffusers_auto_model', connectionRoleSelector: selector },
+    },
+    'AutoModelLoader',
+  );
+  const control = definition(
+    {
+      controlnet: {
+        display: 'input',
+        type: 'diffusers_auto_model',
+        signalCompatibility: { role: 'controlnet_component' },
+      },
+    },
+    'Controlnet',
+  );
+  const parsed = parseNodesResponse({
+    instance: 'component-contract',
+    nodes: { 'custom.Workbench.AutoModelLoader': loader },
+  });
+  assert.deepEqual(parsed.nodes['custom.Workbench.AutoModelLoader'].params.model.connectionRoleSelector, selector);
+  const compatible = (source) => matching.nodeConnectionSemanticsAreCompatible(source, 'model', control, 'controlnet');
+  assert.equal(compatible(loader), true);
+  for (const value of ['', 'vae', 'unet', 'transformer', 'unknown', undefined, 1, { value: 'controlnet' }]) {
+    const source = structuredClone(loader);
+    source.params.model_type.value = value;
+    assert.equal(compatible(source), false, `unsupported selector ${JSON.stringify(value)}`);
+  }
+  const connected = structuredClone(loader);
+  connected.params.model_type.isConnected = true;
+  assert.equal(compatible(connected), false, 'a connected selector cannot borrow the stale local literal');
+  const missing = structuredClone(loader);
+  delete missing.params.model_type;
+  assert.equal(compatible(missing), false);
+  for (const malformed of [
+    null,
+    [],
+    {},
+    { field: 'model_type', values: {} },
+    { field: 'model_type', values: { controlnet: 1 } },
+    { field: 'model_type', values: { controlnet: 'controlnet_component' }, extra: true },
+    { field: '__proto__', values: { controlnet: 'controlnet_component' } },
+  ]) {
+    const source = structuredClone(loader);
+    source.params.model.connectionRoleSelector = malformed;
+    source.params.model.connectionRole = 'controlnet_component';
+    assert.throws(() => parseNodesResponse({ nodes: { source } }), /invalid connection role selector/);
+    assert.equal(compatible(source), false, 'malformed saved declarations fail closed');
+  }
+});
+
 test('insertion preserves the discovery policy and rejects stale endpoints without choosing another socket', async () => {
   const { matchingNodeHandleForInsertion } = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
   const node = definition({ metadata: { type: 'any', display: 'input' }, image: { type: 'image', display: 'input' } });

@@ -10,6 +10,7 @@ import type {
   StudioTemplateReadinessPolicy,
   StudioTemplateWorkflowBlockSettings,
 } from './types';
+import { IMAGE_TEMPLATE_EXECUTION_SELECTIONS } from './templateOperationSelections';
 import {
   DEFAULT_STUDIO_FORM,
   MINIMAX_MUSIC3_REVISION,
@@ -2005,24 +2006,25 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
   },
   {
     id: 'qwen_edit_strength_sweep',
-    label: 'Qwen-Image-Edit — Image Edit: Strength Comparison',
+    label: 'Qwen-Image-Edit — Image Edit: Reference Variations',
     mode: 'edit_image',
     modelType: 'QwenImageEditModularPipeline',
     category: 'edit',
-    tags: ['before/after', 'sweep', 'compare'],
+    tags: ['before/after', 'edit', 'compare'],
     difficulty: 'advanced',
     thumbnailVariant: 'contactSheet',
-    inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source image for strength sweep'] },
+    inputRequirements: { sourceImage: true, referenceImages: 1, sampleAssets: ['source image for editing'] },
     vramEstimate: QWEN_NATIVE_MEMORY_ESTIMATE,
     runtimeEstimate: `${QWEN_EDIT_RUNTIME_ESTIMATE} per candidate`,
-    description: 'Image-to-image edit starting point for strength sweeps.',
+    description:
+      'A single-image reference edit. Explore prompt and seed variations; this route does not use denoising strength.',
     presetId: 'balanced',
-    example: example(6110, `${QWEN_EDIT_RUNTIME_AFTER_INPUT} per sweep candidate`),
+    example: example(6110, `${QWEN_EDIT_RUNTIME_AFTER_INPUT} per edit`),
     predictability: {
       ...predictability(6110),
       exactnessNotes: [
         ...predictability(6110).exactnessNotes,
-        'Sweep variants are deliberately Modified because strength, seed, guidance, or steps change.',
+        'Variants are deliberately Modified when prompt, seed, guidance, or steps change.',
       ],
     },
   },
@@ -3916,6 +3918,7 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
   const normalized = withTemplateRecipeDefaults(
     {
       ...template,
+      executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id],
       inputBindings: [
         ...(template.inputBindings ?? []).filter((binding) => binding.origin !== 'template'),
         ...generatedInputBindings.filter(
@@ -3961,6 +3964,125 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
 
 const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   ...BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow),
+  // Experimental Custom recipes use explicit full-model contracts; their
+  // availability does not publish output, Auto, Gallery or runtime proof.
+  withTemplateRecipeDefaults(
+    {
+      id: 'flux2_dev_text_to_image',
+      label: 'FLUX.2-dev — Text to Image: Morning Light Teapot',
+      modelDisplayName: 'FLUX.2-dev',
+      mode: 'text_to_image',
+      modelType: 'Flux2ModularPipeline',
+      category: 'flux',
+      tags: ['flux2', 'photography', 'product', 'full-model'],
+      difficulty: 'advanced',
+      executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux2_dev_text_to_image,
+      modelArtifact: {
+        source: 'hub',
+        value: 'black-forest-labs/FLUX.2-dev',
+        revision: '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c',
+      },
+      requiredBackendCapabilities: [
+        'modules.ModularDiffusers.ModelsLoader',
+        'modules.ModularDiffusers.EncodePrompt',
+        'modules.ModularDiffusers.Denoise',
+        'modules.ModularDiffusers.DecodeLatents',
+        'modules.Image.Preview',
+      ],
+      vramEstimate: '113 GB full BF16 weights plus execution memory; no offload qualification claimed',
+      runtimeEstimate: 'Full-model image timing remains pending',
+      description:
+        'Generate a detailed studio product photograph with the full FLUX.2-dev model and visible native stages.',
+      presetId: 'flux_fast',
+      example: {
+        mediaType: 'image',
+        status: 'unverified',
+        lockedSeed: 20260905,
+        thumbnailPath: '/assets/flux2-dev.card-poster.png',
+        modelRevision: '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c',
+        lockedSettings: {
+          width: 1024,
+          height: 1024,
+          randomSeed: false,
+          steps: 50,
+          guidanceScale: 4,
+          maxSequenceLength: 512,
+          dtype: 'bfloat16',
+          quantizationMode: 'none',
+          resourceMode: 'expert',
+          autoOffload: false,
+          offloadMode: 'none',
+        },
+        expectedOutput: { width: 1024, height: 1024 },
+        runtimeEstimate: 'Pending measured full native workflow execution',
+        notes: 'The card is an original editorial workflow illustration; a generated image example remains pending.',
+      },
+    },
+    [
+      'A photorealistic close-up of a handmade blue ceramic teapot on a wooden workbench in a sunlit pottery studio. A single small green plant sits to its left. Warm sunlight enters through a window on the right, casting soft shadows across the table. Fine glaze texture and subtle fingerprints are visible on the teapot. On the front of the teapot, the painted words "MORNING LIGHT" are crisp and readable. Natural colors, calm composition, shallow depth of field, 35 mm photography.',
+      '',
+    ],
+    -1,
+  ),
+  withTemplateRecipeDefaults(
+    {
+      id: 'cosmos3_super_text_to_image',
+      label: 'Cosmos 3 Super — Text to Image: Publisher Caption',
+      modelDisplayName: 'Cosmos 3 Super',
+      mode: 'text_to_image',
+      modelType: 'Cosmos3OmniModularPipeline',
+      category: 'concept',
+      tags: ['cosmos3', 'publisher-recipe', 'full-model', 'safety-checked'],
+      difficulty: 'advanced',
+      executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.cosmos3_super_text_to_image,
+      modelArtifact: {
+        source: 'hub',
+        value: 'nvidia/Cosmos3-Super-Text2Image',
+        revision: 'daf3d374804be4c512c2135568a7cb95d4341d79',
+      },
+      requiredBackendCapabilities: [
+        'modules.ModularDiffusers.ModelsLoader',
+        'modules.ModularDiffusers.WorkflowCosmos3OmniTextEncode',
+        'modules.ModularDiffusers.WorkflowCosmos3OmniDenoise',
+        'modules.ModularDiffusers.WorkflowCosmos3OmniDecode',
+        'modules.ModularDiffusers.WorkflowCosmos3OmniAfterDecode',
+        'modules.Image.Preview',
+      ],
+      vramEstimate: '132 GB full BF16 weights plus execution and mandatory safety memory',
+      runtimeEstimate: 'Full-model image timing remains pending',
+      description:
+        'Run the original 50-step Cosmos 3 Super image recipe with the backend-owned publisher caption and mandatory safety checks.',
+      userGoal:
+        'Inspect and edit the publisher caption, denoising and safety-checked decoding stages in one ordinary graph.',
+      presetId: 'flux_fast',
+      example: {
+        mediaType: 'image',
+        status: 'unverified',
+        lockedSeed: 1143,
+        thumbnailPath: '/assets/cosmos3-super.card-poster.png',
+        modelRevision: 'daf3d374804be4c512c2135568a7cb95d4341d79',
+        lockedSettings: {
+          width: 1024,
+          height: 1024,
+          randomSeed: false,
+          steps: 50,
+          guidanceScale: 4,
+          numFrames: 1,
+          dtype: 'bfloat16',
+          quantizationMode: 'none',
+          resourceMode: 'expert',
+          autoOffload: false,
+          offloadMode: 'none',
+        },
+        expectedOutput: { width: 1024, height: 1024, frames: 1 },
+        runtimeEstimate: 'Pending measured full native workflow execution',
+        notes:
+          'The fresh graph inherits the exact resolved backend publisher caption; it remains editable. This is the original full model, not its separately published four-step variant. The card is an original editorial workflow illustration; a generated image example remains pending.',
+      },
+    },
+    ['', ''],
+    -1,
+  ),
   // Keep new authored recipes independent of the legacy positional input/poster
   // indexes. This recipe has no source media and no published example yet.
   withTemplateRecipeDefaults(
@@ -4019,9 +4141,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   ),
 ];
 
-// Failed qualification contracts stay available to planning/reporting code, but
-// never appear as runnable browser templates. A template returns to the browser
-// only after its app-managed proof and modality review remove the blocked state.
+// Blocked contracts remain available to planning/reporting. Experimental Custom
+// recipes may be available with explicit prerequisites and unverified examples;
+// this source admission does not grant Auto, Gallery or runtime qualification.
 export const PLANNING_STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEMPLATES.filter(
   (template) => template.example?.status === 'blocked',
 );

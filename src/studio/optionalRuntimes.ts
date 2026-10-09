@@ -38,6 +38,7 @@ export type OptionalRuntimeProfileStatus = {
   status: 'missing' | 'present_unqualified' | 'wrong_version';
   overlayStatus: 'active' | 'missing' | 'repair_required' | 'staged' | 'staged_unchecked';
   satisfiesProfiles: Array<{ profileId: string; specDigest: string }>;
+  baseIncluded: boolean;
 };
 
 export type OptionalRuntimeCatalog = {
@@ -48,13 +49,17 @@ export type OptionalRuntimeCatalog = {
   activeEnvironmentId: string | null;
   previousEnvironmentId: string | null;
   installBusy: boolean;
+  latestJob: OptionalRuntimeJob | null;
 };
 
 export type OptionalRuntimeJob = {
   id: string;
   profileId: string;
   specDigest: string;
-  status: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready';
+  operation: 'install' | 'activate';
+  createdAt: number;
+  updatedAt: number;
+  status: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready' | 'restarting' | 'verifying';
   progress: {
     phase:
       | 'queued'
@@ -62,6 +67,10 @@ export type OptionalRuntimeJob = {
       | 'downloading'
       | 'installing'
       | 'validating'
+      | 'activating'
+      | 'restarting'
+      | 'restart_required'
+      | 'verifying'
       | 'promoting'
       | 'ready'
       | 'cancelling'
@@ -72,6 +81,7 @@ export type OptionalRuntimeJob = {
   result?: {
     environmentId: string;
     requiresActivation: boolean;
+    restartRequired?: boolean;
   };
 };
 
@@ -341,6 +351,7 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
   string(item.contractState);
   string(item.status, /^(?:missing|present_unqualified|wrong_version)$/);
   string(item.overlayStatus, /^(?:active|missing|repair_required|staged|staged_unchecked)$/);
+  if (item.baseIncluded !== undefined && typeof item.baseIncluded !== 'boolean') invalid();
   const rawSatisfiedProfiles = item.satisfiesProfiles ?? [];
   if (!Array.isArray(rawSatisfiedProfiles) || rawSatisfiedProfiles.length > 32) invalid();
   const satisfiesProfiles = rawSatisfiedProfiles.map((rawProfile) => {
@@ -355,7 +366,11 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
     satisfiesProfiles.length
   )
     invalid();
-  return { ...(item as unknown as OptionalRuntimeProfileStatus), satisfiesProfiles };
+  return {
+    ...(item as unknown as OptionalRuntimeProfileStatus),
+    satisfiesProfiles,
+    baseIncluded: item.baseIncluded === true,
+  };
 }
 
 function nullableId(value: unknown, pattern: RegExp) {
@@ -448,24 +463,36 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
     activeEnvironmentId,
     previousEnvironmentId,
     installBusy: payload.activeInstallJob !== null,
+    latestJob: payload.latestJob === undefined || payload.latestJob === null ? null : parseJob(payload.latestJob),
   };
 }
 
 function parseJob(value: unknown): OptionalRuntimeJob {
   const item = record(value);
   const progress = record(item.progress);
+  const timestamp = (value: unknown) => {
+    if (value === undefined || value === null) return 0;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) invalid();
+    return value as number;
+  };
   const parsed: OptionalRuntimeJob = {
     id: string(item.id, jobId)!,
     profileId: string(item.profileId, runtimeId)!,
     specDigest: string(item.specDigest, specDigest)!,
+    operation:
+      item.operation === undefined
+        ? 'install'
+        : (string(item.operation, /^(?:install|activate)$/) as OptionalRuntimeJob['operation']),
+    createdAt: timestamp(item.createdAt),
+    updatedAt: timestamp(item.updatedAt),
     status: string(
       item.status,
-      /^(?:queued|running|cancelling|cancelled|failed|ready)$/,
+      /^(?:queued|running|cancelling|cancelled|failed|ready|restarting|verifying)$/,
     ) as OptionalRuntimeJob['status'],
     progress: {
       phase: string(
         progress.phase,
-        /^(?:queued|copying|downloading|installing|validating|promoting|ready|cancelling|cancelled|failed)$/,
+        /^(?:queued|copying|downloading|installing|validating|activating|restarting|restart_required|verifying|promoting|ready|cancelling|cancelled|failed)$/,
       ) as OptionalRuntimeJob['progress']['phase'],
       message: string(progress.message)!,
     },
@@ -473,9 +500,11 @@ function parseJob(value: unknown): OptionalRuntimeJob {
   if (item.result !== undefined) {
     const result = record(item.result);
     if (typeof result.requiresActivation !== 'boolean') invalid();
+    if (result.restartRequired !== undefined && typeof result.restartRequired !== 'boolean') invalid();
     parsed.result = {
       environmentId: string(result.environmentId, environmentId)!,
       requiresActivation: result.requiresActivation,
+      ...(result.restartRequired === undefined ? {} : { restartRequired: result.restartRequired }),
     };
   }
   return parsed;

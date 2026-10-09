@@ -23,6 +23,7 @@ import {
   type ControlledNodeRole,
 } from './controlledWorkflowContracts';
 import { resolveStudioResourceForm } from './resourcePlanner';
+import { loraWorkflowFieldValues, upscaleWorkflowFieldValues } from './controlledWorkflowValues';
 import type {
   StudioAudioFitSettings,
   StudioFormState,
@@ -323,22 +324,7 @@ export async function addLoraWorkflowBlock(
         x: basePosition.x + index * 310,
         y: basePosition.y,
       });
-      setParamIfPresent(nodeId, ['scale'], adapter?.scale ?? 1);
-      setParamIfPresent(nodeId, ['replace_existing'], index === 0);
-      if (adapter?.model) {
-        setParamIfPresent(nodeId, ['model', 'adapter_path'], {
-          source: adapter.model.source,
-          value: adapter.model.value,
-        });
-        setParamIfPresent(nodeId, ['revision'], adapter.model.revision ?? '');
-        setParamIfPresent(nodeId, ['expected_sha256'], adapter.model.sha256 ?? '');
-      }
-      if (adapter?.weightName) {
-        setParamIfPresent(nodeId, ['weight_name'], adapter.weightName);
-      }
-      if (adapter?.adapterName) {
-        setParamIfPresent(nodeId, ['adapter_name'], adapter.adapterName);
-      }
+      for (const { fields, value } of loraWorkflowFieldValues(adapter, index)) setParamIfPresent(nodeId, fields, value);
       return nodeId;
     });
     const primaryLoraNode = loraNodes[0];
@@ -348,12 +334,6 @@ export async function addLoraWorkflowBlock(
         value: settings.baseModel.value,
       });
       setParamIfPresent(audioPipelineNode, ['revision'], settings.baseModel.revision ?? '');
-    }
-    if (settings?.schedulerClass) {
-      setParamIfPresent(primaryLoraNode, ['scheduler_class'], settings.schedulerClass);
-    }
-    if (settings?.schedulerConfig) {
-      setParamIfPresent(primaryLoraNode, ['scheduler_config'], JSON.stringify(settings.schedulerConfig));
     }
     let connected = false;
     if (usesDirectDiffusersImage || usesDirectDiffusersAudio) {
@@ -453,13 +433,8 @@ export async function addUpscaleWorkflowBlock(
       'upscaler',
       positionNear(decodeNode ?? directImageNode ?? videoDeliverySource, { x: 930, y: 170 }, { x: 330, y: 250 }),
     );
-    setParamIfPresent(upscalerNode, ['device'], form.device);
-    if (settings?.model) {
-      setParamIfPresent(upscalerNode, ['model_id'], settings.model);
-    }
-    if (settings?.downscale !== undefined) {
-      setParamIfPresent(upscalerNode, ['downscale'], settings.downscale);
-    }
+    for (const { fields, value } of upscaleWorkflowFieldValues(settings, form.device))
+      setParamIfPresent(upscalerNode, fields, value);
     if (qualityVideoGenerateNode && qualityVideoRetainNode) {
       removeEdgesBetween(qualityVideoGenerateNode.id, qualityVideoRetainNode.id, ['video_out'], ['video']);
       const generateConnected = ensureConnection(qualityVideoGenerateNode.id, ['video_out'], upscalerNode, ['image']);

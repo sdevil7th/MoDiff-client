@@ -29,7 +29,7 @@ import {
   useStudioStore,
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import { STUDIO_MODE_LABELS } from '../studio/modelProfiles';
+import { outputTaskDisplay } from '../studio/outputTaskDisplay';
 import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { coordinateGraphRun } from '../studio/runCoordinator';
@@ -43,7 +43,7 @@ import {
 } from '../studio/workflowPackage';
 import { ImageFrame, ModiffBadge, ModiffButton, ModiffChip, ModiffFileInput, ModiffIconButton } from '../ui';
 import { cx } from '../utils/classNames';
-import { imageUrlLightboxOpener } from '../utils/mediaViewer';
+import { imageUrlLightboxOpener, outputImageLightboxOpener } from '../utils/mediaViewer';
 
 type GalleryView = 'grid' | 'inspect' | 'compare' | 'lineage';
 type GalleryAssetKind = 'generated' | 'imported';
@@ -77,7 +77,7 @@ function outputSubtitle(output: StudioOutput) {
     : isVideoOutput(output)
       ? ` | ${videoOutputSummary(output)}`
       : ` | ${size || 'image'}`;
-  return `${output.modelLabel}${template} | ${STUDIO_MODE_LABELS[output.mode]}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
+  return `${output.modelLabel}${template} | ${outputTaskDisplay(output)}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
 }
 
 function isAudioOutput(output: StudioOutput) {
@@ -510,7 +510,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                           setSelectedOutputIds([output.id]);
                           setView('inspect');
                         } else {
-                          setLightboxOpener(imageUrlLightboxOpener([output.url]));
+                          setLightboxOpener(outputImageLightboxOpener(output));
                         }
                       }}
                     >
@@ -655,7 +655,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                     setSelectedOutputIds([output.id]);
                     setView('inspect');
                   } else {
-                    setLightboxOpener(imageUrlLightboxOpener([output.url]));
+                    setLightboxOpener(outputImageLightboxOpener(output));
                   }
                 }}
               />

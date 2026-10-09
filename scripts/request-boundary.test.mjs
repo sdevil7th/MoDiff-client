@@ -11,6 +11,7 @@ const SRC = path.join(ROOT, 'src');
 let fileApiModule;
 let originalFetch;
 let requestModule;
+let optionalRuntimePolling;
 let templateGalleryInstall;
 let server;
 
@@ -40,6 +41,7 @@ before(async () => {
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
+  optionalRuntimePolling = await server.ssrLoadModule('/src/studio/optionalRuntimePolling.ts');
   templateGalleryInstall = await server.ssrLoadModule('/src/studio/templateGalleryInstall.ts');
   fileApiModule = await server.ssrLoadModule('/src/utils/backendUpload.ts');
   originalFetch = globalThis.fetch;
@@ -60,6 +62,59 @@ function jsonResponse(value, status = 200) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+test('optional setup status retries transient failures with bounded delay and preserves the error', () => {
+  for (const options of [
+    { kind: 'network' },
+    { kind: 'timeout' },
+    { kind: 'http', status: 408 },
+    { kind: 'http', status: 429 },
+    { kind: 'http', status: 503 },
+  ]) {
+    const error = new requestModule.RequestError('Status temporarily unavailable.', { url: '/job', ...options });
+    const first = optionalRuntimePolling.optionalRuntimePollingFailure(error, 1);
+    assert.equal(first.message, error.message);
+    assert.equal(first.retryDelayMs, 1500);
+    assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 7).retryDelayMs, 5000);
+    assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 8).retryDelayMs, null);
+  }
+});
+
+test('optional setup status uses transient HTTP status when the real transport receives non-JSON errors', async () => {
+  for (const [status, retryDelayMs] of [
+    [503, 1500],
+    [200, null],
+    [404, null],
+  ]) {
+    globalThis.fetch = async () =>
+      new Response('<html>Service Unavailable</html>', {
+        status,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    await assert.rejects(requestModule.requestJson('/runtime/optional-runtimes/jobs/optjob-AbCdEf123456'), (error) => {
+      assert.equal(error.kind, 'invalid_json');
+      assert.equal(error.status, status);
+      assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 1).retryDelayMs, retryDelayMs);
+      assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 8).retryDelayMs, null);
+      return true;
+    });
+  }
+});
+
+test('missing, invalid and identity-mismatched setup status pause without fabricating a job outcome', () => {
+  for (const error of [
+    new requestModule.RequestError('Job not found.', { kind: 'http', status: 404, url: '/job' }),
+    new requestModule.RequestError('Invalid JSON.', { kind: 'invalid_json', status: 200, url: '/job' }),
+    new requestModule.RequestError('Invalid payload.', { kind: 'invalid_payload', status: 200, url: '/job' }),
+    new Error('The optional-runtime job identity changed.'),
+  ]) {
+    const failure = optionalRuntimePolling.optionalRuntimePollingFailure(error, 1);
+    assert.equal(failure.retryDelayMs, null);
+    assert.equal(failure.message, error.message);
+    assert.equal('status' in failure, false);
+    assert.equal('job' in failure, false);
+  }
+});
 
 test('production source keeps raw fetch calls inside the request transport boundary', async () => {
   const violations = [];

@@ -8,6 +8,13 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { attachResizeObserverDiagnostics, installResizeObserverDiagnostics } from '../resize-observer-diagnostics';
+import { IMAGE_TEMPLATE_EXECUTION_SELECTIONS } from '../../../src/studio/templateOperationSelections';
+import type { NodeData } from '../../../src/stores/useNodeStore';
+import type { StudioExecutionSpec, StudioModelProfile } from '../../../src/studio/types';
+import type { OperationStarter } from '../../../src/workflow/operationAuthoring';
+import type { OperationContract } from '../../../src/workflow/operationContracts';
+import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
+import type { ApiGraphExport } from '../../../src/types/api';
 
 test('Advanced numeric values and step buttons fit a narrow scrolling node', async ({ page }) => {
   page.setDefaultTimeout(15_000);
@@ -66,6 +73,23 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async ({ page }, testInfo) => {
   if (process.env.MODIFF_TRACE_RESIZE === '1') await attachResizeObserverDiagnostics(page, testInfo);
+  if (process.env.MODIFF_TRACE_STARTUP === '1' && testInfo.status !== testInfo.expectedStatus) {
+    const diagnostic = await page
+      .evaluate(() => {
+        const state = window.__MODIFF_E2E__?.getState();
+        return (
+          state && {
+            lastError: state.studio.lastError,
+            canvasTransition: state.studio.canvasTransition,
+            graphFinalization: state.studio.graphFinalization,
+            nodeCount: state.flow.nodes.length,
+            discovery: state.nodes.discoveryRequests,
+          }
+        );
+      })
+      .catch(() => undefined);
+    console.error('[startup final state]', JSON.stringify(diagnostic));
+  }
 });
 
 async function verifyCompactDialog(page: Page, dialog: Locator, label: string) {
@@ -518,6 +542,7 @@ declare global {
         edges: Array<{ id: string; source: string; target: string }>;
         viewport: { x: number; y: number; zoom: number };
       };
+      exportAuthorizedApiGraph: () => ApiGraphExport;
       setGraphScenarioForTest: (
         scenario:
           | 'empty'
@@ -634,6 +659,9 @@ let mockOptionalRuntimeDelayMs = 0;
 let mockOptionalRuntimeActions = false;
 let mockOptionalRuntimeRollbackToBase = false;
 let mockOptionalRuntimeJobState: 'idle' | 'running' | 'ready' | 'cancelled' = 'idle';
+let mockOptionalRuntimeActivationState: 'idle' | 'validating' | 'restarting' | 'verifying' | 'failed' = 'idle';
+let mockOptionalRuntimeJobUnavailable = false;
+let mockOptionalRuntimeBaseIncluded = false;
 let mockAdvertiseStudioExecutionSpecs = false;
 let mockReadyProofStatus: 'declared_safe' | 'live_proven' = 'declared_safe';
 
@@ -4282,6 +4310,117 @@ function mockGraphQualifiedQwenNodeDefinitionParams(action: 'EncodePrompt' | 'De
   return params;
 }
 
+type ImageTemplateSchemaFixture = {
+  recipes: { id: string; starter: OperationStarter; spec: StudioExecutionSpec; capability: StudioModelProfile }[];
+  registry: Record<string, NodeData>;
+  capabilities: StudioModelProfile[];
+  publicPayload: { operationContracts: OperationContract[]; pipelineSupport: PipelineSupport[] };
+};
+let imageTemplateSchemaPromise: Promise<ImageTemplateSchemaFixture>;
+
+async function imageTemplateSchemas() {
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'template-operation-fixtures.py');
+  const command = process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
+  const args = process.platform === 'win32' ? [script] : [python, script];
+  // These are the real, source-derived authoring contracts, with no model
+  // construction or generation. Each scenario receives an isolated copy.
+  imageTemplateSchemaPromise ??= new Promise((resolve, reject) => {
+    const child = execFile(
+      command,
+      args,
+      {
+        cwd: BACKEND_ROOT,
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+        timeout: 90_000,
+        maxBuffer: 64 * 1024 * 1024,
+      },
+      (error, stdout) => {
+        if (error) return reject(error);
+        try {
+          resolve(JSON.parse(stdout));
+        } catch (parseError) {
+          reject(parseError);
+        }
+      },
+    );
+    child.stdin!.end(
+      JSON.stringify(Object.entries(IMAGE_TEMPLATE_EXECUTION_SELECTIONS).map(([id, selection]) => ({ id, selection }))),
+    );
+  });
+  return structuredClone(await imageTemplateSchemaPromise);
+}
+
+function includeImageTemplateBindings(capabilities: StudioModelProfile[], fixture: ImageTemplateSchemaFixture) {
+  // Legacy form fixtures did not need labels while their operation support
+  // list was empty. The unified workflow browser now consumes these choices.
+  for (const capability of capabilities)
+    capability.label ??=
+      fixture.capabilities.find((source) => source.modelType === capability.modelType)?.label ?? capability.modelType;
+  const selected = new Map(fixture.recipes.map((row) => [`${row.spec.modelType}:${row.spec.mode}`, row.spec]));
+  for (const source of fixture.capabilities) {
+    const specs = source.studioExecutionSpecs?.filter((spec) => selected.has(`${spec.modelType}:${spec.mode}`)) ?? [];
+    if (!specs.length) continue;
+    const existing = capabilities.find((capability) => capability.modelType === source.modelType);
+    if (!existing) {
+      capabilities.push(source);
+      continue;
+    }
+    existing.modes = [...new Set([...existing.modes, ...specs.map((spec) => spec.mode)])];
+    existing.runnableModes = [...new Set([...(existing.runnableModes ?? []), ...specs.map((spec) => spec.mode)])];
+    // Keep an explicitly authored legacy fixture for the same backend task.
+    // Fresh native tasks still receive their current source-derived bindings.
+    const replacements = specs.filter(
+      (candidate) =>
+        !existing.studioExecutionSpecs?.some(
+          (spec) =>
+            spec.modelType === candidate.modelType &&
+            spec.mode === candidate.mode &&
+            spec.pipelineClass === candidate.pipelineClass,
+        ),
+    );
+    existing.studioExecutionSpecs = [
+      ...(existing.studioExecutionSpecs ?? []).filter(
+        (spec) => !replacements.some((candidate) => candidate.mode === spec.mode),
+      ),
+      ...replacements,
+    ];
+    existing.studioExecutionSpecModes = existing.studioExecutionSpecs.map((spec) => spec.mode);
+    const selectedProfiles = new Set(specs.map((spec) => spec.executionProfileId));
+    existing.executionProfiles = [
+      ...(existing.executionProfiles ?? []).filter((profile) => !selectedProfiles.has(profile.id)),
+      ...(source.executionProfiles ?? [])
+        .filter((profile) => selectedProfiles.has(profile.id))
+        .map((profile) => ({
+          ...profile,
+          modes: profile.modes.filter((mode) => existing.runnableModes!.includes(mode)),
+        })),
+    ];
+    // Legacy authoring mocks predate base-runtime requirements. A capability
+    // must publish one coherent requirement across all of its profiles.
+    const baseRequirement = {
+      schemaVersion: 1 as const,
+      delivery: 'base' as const,
+      requiredNow: false,
+      profileIds: [],
+      state: 'base_satisfied' as const,
+      reason: 'base_runtime',
+    };
+    existing.executionProfiles = existing.executionProfiles.map((profile) => ({
+      ...profile,
+      optional_runtime_delivery: 'base',
+      optionalRuntimeRequirement: { ...baseRequirement, executionProfileIds: [profile.id] },
+    }));
+    existing.optionalRuntimeRequirement = {
+      ...baseRequirement,
+      executionProfileIds: existing.executionProfiles.map((profile) => profile.id),
+    };
+  }
+  return capabilities;
+}
+
 async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluster?: boolean } = {}) {
   mockAdvertiseStudioExecutionSpecs = true;
   mockFileUploadCalls = 0;
@@ -4309,6 +4448,7 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
     });
   }
   const reviewedArtifactSelections = await mockReviewedArtifactSelections();
+  const imageSchemas = await imageTemplateSchemas();
   const workflows = new Map<string, Record<string, unknown>>();
   const userBlocks = new Map<string, Record<string, unknown>>();
   let workflowRevision = 0;
@@ -4730,9 +4870,14 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
     );
   });
   await page.route('**/nodes**', async (route) => {
+    const templateRegistry = {
+      ...imageSchemas.registry,
+      ...mockRegistry,
+      'modules.ModularDiffusers.Lora': imageSchemas.registry['modules.ModularDiffusers.Lora'],
+    };
     const routedRegistry = options.graphQualifiedQwenCluster
-      ? { ...mockRegistry, ...mockGraphQualifiedQwenRegistry }
-      : mockRegistry;
+      ? { ...templateRegistry, ...mockGraphQualifiedQwenRegistry }
+      : templateRegistry;
     const nodes = Object.fromEntries(
       Object.entries(routedRegistry)
         .filter(([key]) => {
@@ -4812,10 +4957,14 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
     });
   });
   await page.route('**/model_capabilities**', async (route) => {
-    const capabilities = mockStudioExecutionCapabilities();
+    const capabilities = includeImageTemplateBindings(mockStudioExecutionCapabilities(), imageSchemas);
     if (options.graphQualifiedQwenCluster) {
       const index = capabilities.findIndex((capability) => capability.modelType === 'QwenImageModularPipeline');
-      if (index >= 0) capabilities[index] = mockGraphQualifiedQwenExecutionCapability();
+      if (index >= 0)
+        capabilities[index] = {
+          ...mockGraphQualifiedQwenExecutionCapability(),
+          label: capabilities[index]!.label,
+        };
     }
     await route.fulfill({
       status: 200,
@@ -4823,10 +4972,48 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
       body: JSON.stringify({
         schemaVersion: 2,
         capabilities,
-        studioExecutionSpecs: capabilities.flatMap((capability) => capability.studioExecutionSpecs),
+        studioExecutionSpecs: capabilities.flatMap((capability) => capability.studioExecutionSpecs ?? []),
+        operationContractSchemaVersion: 3,
+        operationContracts: imageSchemas.publicPayload.operationContracts,
+        pipelineSupportSchemaVersion: 1,
+        pipelineSupport: imageSchemas.publicPayload.pipelineSupport,
       }),
     });
   });
+  await page.route('**/operations/starter', (route) => {
+    const selection = route.request().postDataJSON();
+    const recipe = imageSchemas.recipes.find(
+      (row) =>
+        row.starter.pipelineClass === selection.pipelineClass &&
+        row.starter.task === selection.task &&
+        (!selection.executionProfileId ||
+          IMAGE_TEMPLATE_EXECUTION_SELECTIONS[row.id as keyof typeof IMAGE_TEMPLATE_EXECUTION_SELECTIONS]
+            ?.executionProfileId === selection.executionProfileId),
+    );
+    return route.fulfill({
+      status: recipe ? 200 : 400,
+      json: recipe?.starter ?? { error: 'Unknown template execution selection' },
+    });
+  });
+  // This response exercises the ordinary graph submission UI only. It is a
+  // transport fixture and never evidence of hardware or model qualification.
+  await page.route('**/auto_resource/workflow', (route) =>
+    route.fulfill({
+      json: {
+        schemaVersion: 1,
+        graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+        plannedGraphHash: `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+        canAutoRun: true,
+        issues: [],
+        message: 'Mock workflow planning',
+        patches: [],
+        loaders: [],
+        requirements: {},
+        available: {},
+        sharedMemory: false,
+      },
+    }),
+  );
   await page.route('**/custom_modules', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ modules: [] }) });
   });
@@ -4881,8 +5068,15 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
     const method = route.request().method();
     const profileId = 'huggingface-transformers-peft-5.14.1-0.20.0';
     const digest = 'sha256:8e1b0b6b2baa891d4551caa3cde4d59708eced0fd74c1333b68a1aab7ff924b5';
+    if (mockOptionalRuntimeJobUnavailable && method === 'GET') {
+      await route.abort('connectionrefused');
+      return;
+    }
     const job = () => ({
       id: 'optjob-AbCdEf123456',
+      operation: 'install',
+      createdAt: 1,
+      updatedAt: mockOptionalRuntimeJobState === 'ready' ? 3 : 2,
       profileId,
       specDigest: digest,
       status: mockOptionalRuntimeJobState === 'idle' ? 'queued' : mockOptionalRuntimeJobState,
@@ -4904,6 +5098,32 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
         ? { result: { environmentId: 'runtime-2-12345678', requiresActivation: true } }
         : {}),
     });
+    const activationJob = () => {
+      const ready = mockOptionalRuntimeQualified && mockOptionalRuntimeProcessStatus === 'active';
+      const phase = ready ? 'ready' : mockOptionalRuntimeActivationState;
+      return {
+        id: 'optjob-Activate1234',
+        operation: 'activate',
+        createdAt: 4,
+        updatedAt: ready ? 6 : 5,
+        profileId,
+        specDigest: digest,
+        status: ready ? 'ready' : phase === 'validating' ? 'running' : phase,
+        progress: {
+          phase,
+          message: ready
+            ? 'The runtime is loaded and MoDiff is ready.'
+            : phase === 'validating'
+              ? 'Validating the runtime before activation.'
+              : phase === 'restarting'
+                ? 'MoDiff is restarting. Waiting for the replacement worker.'
+                : phase === 'failed'
+                  ? 'Runtime activation could not be verified. Refresh Setup and inspect runtime status.'
+                  : 'Verifying the loaded runtime and backend readiness.',
+        },
+        result: { environmentId: 'runtime-2-12345678', requiresActivation: false, restartRequired: true },
+      };
+    };
     if (mockOptionalRuntimeActions && method === 'POST' && url.pathname.endsWith('/install')) {
       mockOptionalRuntimeMutationCalls += 1;
       expect(route.request().postDataJSON()).toEqual({ profileId, specDigest: digest, consent: true });
@@ -4919,7 +5139,7 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ error: false, job: job() }),
+        body: JSON.stringify({ error: false, job: url.pathname.includes('Activate1234') ? activationJob() : job() }),
       });
       return;
     }
@@ -4942,21 +5162,19 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
         consent: true,
       });
       mockOptionalRuntimeProcessStatus = 'restart_required';
+      mockOptionalRuntimeActivationState = 'restarting';
       await route.fulfill({
-        status: 200,
+        status: 202,
         contentType: 'application/json',
-        body: JSON.stringify({
-          error: false,
-          restartRequired: true,
-          restarting: true,
-          message: 'MoDiff is restarting.',
-        }),
+        body: JSON.stringify({ error: false, job: activationJob() }),
       });
       return;
     }
     if (mockOptionalRuntimeActions && method === 'POST' && url.pathname.endsWith('/rollback')) {
       mockOptionalRuntimeMutationCalls += 1;
-      expect(route.request().postDataJSON()).toEqual({ consent: true });
+      expect(route.request().postDataJSON()).toEqual(
+        mockOptionalRuntimeRollbackToBase ? { consent: true, targetBase: true } : { consent: true },
+      );
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -4987,9 +5205,10 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
             contractState:
               mockOptionalRuntimeQualified || mockOptionalRuntimeActions ? 'qualified' : 'candidate_unqualified',
             cutoverReady: mockOptionalRuntimeQualified || mockOptionalRuntimeActions,
-            installActionAvailable: mockOptionalRuntimeActions,
-            activationAvailable: mockOptionalRuntimeActions,
-            status: 'missing',
+            installActionAvailable: mockOptionalRuntimeActions && !mockOptionalRuntimeBaseIncluded,
+            activationAvailable: mockOptionalRuntimeActions && !mockOptionalRuntimeBaseIncluded,
+            baseIncluded: mockOptionalRuntimeBaseIncluded,
+            status: mockOptionalRuntimeBaseIncluded ? 'wrong_version' : 'missing',
             overlayStatus: mockOptionalRuntimeRollbackToBase
               ? 'repair_required'
               : mockOptionalRuntimeQualified
@@ -5033,6 +5252,12 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
         },
         activeInstallJob:
           mockOptionalRuntimeJobState === 'running' ? { ownerKind: 'optional_runtime', ownerId: profileId } : null,
+        latestJob:
+          mockOptionalRuntimeActivationState !== 'idle'
+            ? activationJob()
+            : mockOptionalRuntimeJobState !== 'idle'
+              ? job()
+              : null,
       }),
     });
   });
@@ -5967,6 +6192,9 @@ test.beforeEach(() => {
   mockOptionalRuntimeActions = false;
   mockOptionalRuntimeRollbackToBase = false;
   mockOptionalRuntimeJobState = 'idle';
+  mockOptionalRuntimeActivationState = 'idle';
+  mockOptionalRuntimeJobUnavailable = false;
+  mockOptionalRuntimeBaseIncluded = false;
   mockTemplateGalleryInstallCalls = 0;
   mockTemplateGalleryInstalled = false;
   mockReadyProofStatus = 'declared_safe';
@@ -7165,7 +7393,9 @@ test('optional runtime setup is GET-only and keeps a pending target non-actionab
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept', { resourceMode: 'auto' });
+    // Keep this historical pending-target fixture independent of fresh native
+    // template creation; ordinary image creation is covered separately.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept', { resourceMode: 'auto' });
     window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
   });
 
@@ -7223,8 +7453,8 @@ test('optional runtime setup is GET-only and keeps a pending target non-actionab
   mockOptionalRuntimeDelayMs = 500;
   await page.getByTestId('setup-refresh').click();
   await expect(disclosure).toContainText('Loading optional runtimes');
-  await expect(profile).toHaveCount(0);
   mockOptionalRuntimeDelayMs = 0;
+  await expect(disclosure).not.toContainText('Loading optional runtimes');
   await expect(profile).toContainText('active');
   expect(mockOptionalRuntimeMutationCalls).toBe(0);
 });
@@ -7268,10 +7498,14 @@ test('qualified optional runtime setup requires consent and supports progress, c
   const activateDialog = page.getByRole('dialog');
   await expect(activateDialog).toContainText('restart MoDiff');
   await activateDialog.getByRole('button', { name: 'Activate', exact: true }).click();
-  await expect(disclosure.getByText(/restart required/)).toBeVisible();
+  await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('Waiting for the replacement worker');
+  await expect(activate).toHaveCount(0);
   expect(mockOptionalRuntimeMutationCalls).toBe(4);
   mockOptionalRuntimeQualified = true;
   mockOptionalRuntimeProcessStatus = 'active';
+  await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('MoDiff is ready', {
+    timeout: 5_000,
+  });
   await expect(disclosure.getByText(/active\./)).toBeVisible({ timeout: 5_000 });
   // Runtime activation rehydrates the workspace. On an empty graph its task
   // launcher can reopen, so dismiss it before interacting with Setup again.
@@ -7284,9 +7518,170 @@ test('qualified optional runtime setup requires consent and supports progress, c
   await expect.poll(() => mockOptionalRuntimeMutationCalls).toBe(5);
 });
 
-test('a broken active optional runtime can be rolled back to the base runtime', async ({ page }) => {
+test('base image generation and LoRA dependencies do not expose legacy optional install or activation controls', async ({
+  page,
+}) => {
+  mockOptionalRuntimeActions = true;
+  mockOptionalRuntimeBaseIncluded = true;
+  mockOptionalRuntimeJobState = 'ready';
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  await expect(disclosure).toContainText('Image generation and LoRA support are included in the base installation.');
+  await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
+  await expect(disclosure.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0')).toHaveCount(0);
+  await expect(disclosure.getByTestId('optional-runtime-progress')).toHaveCount(0);
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
+});
+
+test('optional runtime activation survives refresh and worker disconnection without premature readiness', async ({
+  page,
+}) => {
+  mockOptionalRuntimeActions = true;
+  mockOptionalRuntimeJobState = 'ready';
+  mockOptionalRuntimeActivationState = 'validating';
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const openSetup = async () => {
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+    await dismissTaskLauncher(page);
+    await page.evaluate(() => {
+      window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+      window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
+    });
+  };
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openSetup();
+  const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+  const progress = disclosure.getByTestId('optional-runtime-progress');
+  await expect(progress).toContainText('Validating the runtime');
+  await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await openSetup();
+  await expect(progress).toContainText('Validating the runtime');
+  mockOptionalRuntimeActivationState = 'restarting';
+  mockOptionalRuntimeProcessStatus = 'restart_required';
+  await expect(progress).toContainText('Waiting for the replacement worker');
+  mockOptionalRuntimeJobUnavailable = true;
+  await page.waitForTimeout(1600);
+  await expect(progress).toContainText('Waiting for the replacement worker');
+  await expect(progress).not.toContainText('MoDiff is ready');
+  mockOptionalRuntimeJobUnavailable = false;
+  mockOptionalRuntimeActivationState = 'verifying';
+  await expect(progress).toContainText('Verifying the loaded runtime');
+  await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toHaveCount(0);
+  mockOptionalRuntimeQualified = true;
+  mockOptionalRuntimeProcessStatus = 'active';
+  await expect(progress).toContainText('MoDiff is ready');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await openSetup();
+  await expect(progress).toContainText('MoDiff is ready');
+  await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toHaveCount(0);
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
+});
+
+for (const failure of ['missing', 'malformed', 'identity', 'regressed'] as const) {
+  test(`optional runtime polling exposes ${failure} status and retries only the same job on request`, async ({
+    page,
+  }) => {
+    mockOptionalRuntimeActions = true;
+    mockOptionalRuntimeJobState = 'running';
+    await ensureFrontend();
+    await installMockRoutes(page);
+    let unavailable = true;
+    let reads = 0;
+    await page.route('**/runtime/optional-runtimes/jobs/*', async (route) => {
+      reads += 1;
+      if (!unavailable) return route.fallback();
+      const job = {
+        id: failure === 'identity' ? 'optjob-GhIjKl654321' : 'optjob-AbCdEf123456',
+        operation: 'install',
+        profileId: 'huggingface-transformers-peft-5.14.1-0.20.0',
+        specDigest: 'sha256:8e1b0b6b2baa891d4551caa3cde4d59708eced0fd74c1333b68a1aab7ff924b5',
+        createdAt: 1,
+        updatedAt: failure === 'regressed' ? 1 : 2,
+        status: 'running',
+        progress: { phase: 'installing', message: 'Installing reviewed artifacts into the isolated stage.' },
+      };
+      await route.fulfill({
+        status: failure === 'missing' ? 404 : 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          failure === 'missing'
+            ? { error: true, message: 'The setup job could not be found.' }
+            : { error: false, job: failure === 'malformed' ? {} : job },
+        ),
+      });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+    await dismissTaskLauncher(page);
+    await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+    const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+    const error = disclosure.getByTestId('optional-runtime-status-error');
+    await expect(error).toContainText('Last known progress', { timeout: 3_000 });
+    if (failure === 'identity') await expect(error).toContainText('job identity changed');
+    await expect(error).toContainText('paused');
+    await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('Installing reviewed artifacts');
+    await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
+    const pausedReads = reads;
+    await page.waitForTimeout(1_600);
+    expect(reads).toBe(pausedReads);
+    unavailable = false;
+    mockOptionalRuntimeJobState = 'ready';
+    await error.getByRole('button', { name: 'Retry status', exact: true }).click();
+    await expect(error).toHaveCount(0);
+    await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    expect(reads).toBeGreaterThan(pausedReads);
+    expect(mockOptionalRuntimeMutationCalls).toBe(0);
+  });
+}
+
+for (const failure of ['disconnect', 'non-JSON503'] as const) {
+  test(`optional runtime polling reports a transient ${failure} and resumes without a duplicate mutation`, async ({
+    page,
+  }) => {
+    mockOptionalRuntimeActions = true;
+    mockOptionalRuntimeJobState = 'running';
+    await ensureFrontend();
+    await installMockRoutes(page);
+    let unavailable = true;
+    let reads = 0;
+    await page.route('**/runtime/optional-runtimes/jobs/*', (route) => {
+      reads += 1;
+      if (!unavailable) return route.fallback();
+      return failure === 'disconnect'
+        ? route.abort('connectionrefused')
+        : route.fulfill({ status: 503, contentType: 'text/html', body: '<html>Service Unavailable</html>' });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+    await dismissTaskLauncher(page);
+    await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
+    const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
+    const error = disclosure.getByTestId('optional-runtime-status-error');
+    await expect(error).toContainText('Retrying', { timeout: 3_000 });
+    await expect(error).toContainText('Last known progress');
+    await expect.poll(() => reads).toBeGreaterThan(1);
+    await expect(disclosure.getByRole('button', { name: /^(Install|Activate|Repair)$/ })).toHaveCount(0);
+    unavailable = false;
+    mockOptionalRuntimeJobState = 'ready';
+    await expect(error).toHaveCount(0);
+    await expect(disclosure.getByRole('button', { name: 'Activate', exact: true })).toBeVisible();
+    expect(mockOptionalRuntimeMutationCalls).toBe(0);
+  });
+}
+
+test('a broken optional runtime can explicitly reset to base when legacy activation controls are unavailable', async ({
+  page,
+}) => {
   mockOptionalRuntimeActions = true;
   mockOptionalRuntimeRollbackToBase = true;
+  mockOptionalRuntimeBaseIncluded = true;
   mockOptionalRuntimeProcessStatus = 'repair_required';
   await ensureFrontend();
   await installMockRoutes(page);
@@ -7296,14 +7691,15 @@ test('a broken active optional runtime can be rolled back to the base runtime', 
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup'));
 
   const disclosure = page.getByText('Optional runtimes', { exact: true }).locator('..');
-  const rollback = disclosure.getByRole('button', { name: 'Rollback to base', exact: true });
+  const rollback = disclosure.getByRole('button', { name: 'Reset to base', exact: true });
   await expect(rollback).toBeVisible();
   await rollback.click();
 
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('validated base runtime');
+  await expect(dialog).toContainText('Installed optional files are kept');
   expect(mockOptionalRuntimeMutationCalls).toBe(0);
-  await dialog.getByRole('button', { name: 'Rollback', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect.poll(() => mockOptionalRuntimeMutationCalls).toBe(1);
 });
 
@@ -7460,6 +7856,9 @@ test('Developer defers template indexes until first open and never refreshes the
   ) as Record<StartupIndexRequestName, number>;
   expect(requestCounts).toEqual(onceWhenNeeded);
 
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-templates').click();
+  await expect(page.getByTestId('left-open-template-browser')).toBeVisible();
   await openTemplateBrowser(page);
   await expect.poll(() => requestCounts.autoPlans).toBe(1);
   await expect.poll(() => requestCounts.manifest).toBe(1);
@@ -8194,7 +8593,8 @@ test('schema-v2 capabilities hide and block an exact model task pair the backend
     // generation graph, so retain and observe the published state without
     // waiting for that unrelated finalization timeout.
     void window
-      .__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+      // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+      .__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_control_image_layout', {
         resourceMode: 'expert',
         controlImage: 'mock-control.png',
         referenceImages: ['mock-control.png'],
@@ -8272,7 +8672,8 @@ test('mocked Studio restores legacy template tabs as managed without moving thei
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept'));
+  // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept'));
 
   const legacyReloaded = page.waitForEvent('load');
   await page.evaluate(() => {
@@ -8983,11 +9384,144 @@ test('the unified editor inspect a node with the library closed, preserving grap
     .poll(async () => (await read()).nodes.find((node) => node.id === nodeId)?.params.prompt.value)
     .toBe('Inspector edit on the original graph');
   await page.keyboard.press('Escape');
-  await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
+  // Invoke the graph shortcut after the dialog restores its non-editable trigger.
+  await expect(editable).toHaveCount(0);
+  await expect(trigger).toBeFocused();
   await page.keyboard.press('Control+z');
   await expect
     .poll(async () => (await read()).nodes.find((node) => node.id === nodeId)?.params.prompt.value)
     .toBe(before.nodes.find((node) => node.id === nodeId)!.params.prompt.value);
+});
+
+test('mounted run readiness follows an optional loader file used by a required operation input', async ({ page }) => {
+  await ensureFrontend();
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
+  const selectionArgs = [script, '--selection', 'QwenImageModularPipeline', 'image_to_image'];
+  const { stdout } = await promisify(execFile)(
+    process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh'),
+    process.platform === 'win32' ? selectionArgs : [python, ...selectionArgs],
+    {
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      timeout: 90_000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  const [starter] = JSON.parse(stdout) as (OperationStarter & {
+    testMediaLoaderRegistry: Record<string, NodeData>;
+  })[];
+  expect(starter?.pipelineClass).toBe('QwenImageModularPipeline');
+  expect(starter?.task).toBe('image_to_image');
+  const imageEncoder = starter!.nodes.find(
+    (item) =>
+      item.operation.nodeKey === 'modules.ModularDiffusers.ImageEncode' &&
+      item.operation.ports.some((port) => port.name === 'image' && port.direction === 'input' && port.required),
+  )!;
+  expect(imageEncoder).toBeDefined();
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(
+    async ({ encoder, registry }) => {
+      const [{ useFlowStore }, { useStudioStore }, { useNodesStore }, { mountRunReadinessProbe }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/stores/useStudioStore.ts'),
+        import('/src/stores/useNodeStore.ts'),
+        import('/tests/e2e/studio-mocked/runReadinessFixture.tsx'),
+      ]);
+      const loader = structuredClone(registry['modules.Image.Load']!);
+      loader.label = 'Load Image';
+      loader.params.file = {
+        ...loader.params.file,
+        label: 'Source image',
+        display: 'filebrowser',
+        value: [],
+        fieldOptions: { fileTypes: ['image'], multiple: true },
+      };
+      // The real loader picker is optional in the registry. Its typed connection
+      // to this actual backend operation makes the file necessary for this run.
+      if (loader.params.file.required || loader.params.file.isInput)
+        throw new Error('Expected optional picker metadata');
+      useNodesStore.setState({ nodesRegistry: { ...registry, [encoder.operation.nodeKey]: encoder.node } });
+      useStudioStore.getState().clearGraphBinding();
+      useFlowStore.setState({
+        nodes: [
+          {
+            id: 'readiness-upload-source',
+            type: 'custom',
+            position: { x: 80, y: 100 },
+            data: loader,
+          },
+          {
+            id: 'readiness-required-image',
+            type: 'custom',
+            position: { x: 600, y: 100 },
+            data: {
+              ...encoder.node,
+              operationAuthoring: {
+                schemaVersion: 1,
+                operation: encoder.operation,
+                defaults: {},
+                retained: [],
+              },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: 'readiness-required-image-wire',
+            source: 'readiness-upload-source',
+            sourceHandle: 'image',
+            target: 'readiness-required-image',
+            targetHandle: 'image',
+          },
+        ],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      });
+      useFlowStore.getState().resetHistory();
+      mountRunReadinessProbe();
+    },
+    { encoder: imageEncoder, registry: starter!.testMediaLoaderRegistry },
+  );
+  const readiness = page.getByTestId('mounted-media-readiness');
+  await expect(readiness).toContainText('Load Image needs a file before running.');
+  const source = page.getByTestId('readiness-upload-picker');
+  await page.route('**/file', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({ json: { path: ['@data/images/readiness-source.png'] } });
+  });
+  const before = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    return useFlowStore.getState().toObject();
+  });
+  await source.locator('input[type="file"]').setInputFiles({
+    name: 'readiness-source.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
+  const fileValue = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().nodes.find((node) => node.id === 'readiness-upload-source')!.data.params.file
+        .value;
+    });
+  await expect.poll(fileValue).toEqual(['@data/images/readiness-source.png']);
+  // Keep the hook mounted: no refresh, graph replacement, registry publication,
+  // queue event or Studio edit may be needed to clear a successful upload.
+  await expect(readiness).toHaveText('[]');
+  expect(
+    await page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().edges;
+    }),
+  ).toEqual(before.edges);
+  await source.getByRole('button', { name: 'Remove media', exact: true }).click();
+  await expect.poll(fileValue).toEqual(['']);
+  await expect(readiness).toContainText('Load Image needs a file before running.');
 });
 
 test('Fix opens a required Block input without changing Creator workspace or memory policy', async ({ page }) => {
@@ -9193,7 +9727,8 @@ test('ordinary operation graphs preserve native edits through model/task preview
   await dialog.getByRole('button', { name: 'Add starter to canvas', exact: true }).click();
   await useOrdinaryStageFixture(page);
   await expect(dialog).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(4);
+  // Qwen's prompt encoder and denoiser share the actual Guidance node.
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(5);
   await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
   const promptId = await page.evaluate(
     () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')!.id,
@@ -9225,8 +9760,16 @@ test('ordinary operation graphs preserve native edits through model/task preview
   await panel.getByRole('button', { name: 'Inspect selected node', exact: true }).click();
   const stageInspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
   await stageInspector.getByRole('tab', { name: 'Implementation', exact: true }).click();
-  await expect(stageInspector).toContainText('Retained settings');
+  // FLUX now consumes this negative prompt through its real CFG encoder.
+  await expect(stageInspector).toContainText('negative_prompt — User override');
   await expect(stageInspector).toContainText('watermark');
+  expect(
+    await page.evaluate(
+      () =>
+        window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')?.params.negative_prompt
+          .value,
+    ),
+  ).toBe('watermark');
   await stageInspector.getByRole('button', { name: 'Close', exact: true }).click();
   const inspect = () =>
     page.evaluate(() => {
@@ -9239,12 +9782,12 @@ test('ordinary operation graphs preserve native edits through model/task preview
     });
   await expect
     .poll(inspect)
-    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 4 });
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 5 });
   await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
   await page.keyboard.press('Control+z');
   await expect
     .poll(inspect)
-    .toEqual({ pipeline: 'QwenImageModularPipeline', prompt: 'Copper observatory at sunrise', count: 4 });
+    .toEqual({ pipeline: 'QwenImageModularPipeline', prompt: 'Copper observatory at sunrise', count: 5 });
   expect(
     await page.evaluate(
       () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')?.id,
@@ -9253,7 +9796,7 @@ test('ordinary operation graphs preserve native edits through model/task preview
   await page.keyboard.press('Control+Shift+z');
   await expect
     .poll(inspect)
-    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 4 });
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 5 });
   expect(
     await page.evaluate(
       () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'EncodePrompt')?.id,
@@ -9273,7 +9816,7 @@ test('ordinary operation graphs preserve native edits through model/task preview
   await expect(dialog).toHaveCount(0);
   await expect
     .poll(inspect)
-    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 5 });
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 6 });
   await page.keyboard.press('Control+Shift+s');
   await expect(page.getByTestId('save-workflow-dialog')).toBeVisible();
   await page.getByTestId('save-workflow-name').fill('Operation authoring');
@@ -9283,7 +9826,20 @@ test('ordinary operation graphs preserve native edits through model/task preview
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
   await expect
     .poll(inspect)
-    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 5 });
+    .toEqual({ pipeline: 'FluxModularPipeline', prompt: 'Copper observatory at sunrise', count: 6 });
+  expect(
+    await page.evaluate(() => {
+      const { nodes, edges } = window.__MODIFF_E2E__!.getState().flow;
+      const guider = nodes.find((node) => node.action === 'Guider');
+      return {
+        negativePrompt: nodes.find((node) => node.action === 'EncodePrompt')?.params.negative_prompt.value,
+        guidanceTargets: edges
+          .filter((edge) => edge.source === guider?.id && edge.targetHandle === 'guider')
+          .map((edge) => nodes.find((node) => node.id === edge.target)?.action)
+          .sort(),
+      };
+    }),
+  ).toEqual({ negativePrompt: 'watermark', guidanceTargets: ['Denoise', 'EncodePrompt'] });
   await page.screenshot({ path: test.info().outputPath('operation-authoring.png'), animations: 'disabled' });
   expect(errors).toEqual([]);
 });
@@ -9352,12 +9908,12 @@ for (const workspace of ['expert'] as const) {
     await expect(review).toHaveCount(0);
     // Applying a graph replacement clears selection and closes the contextual inspector.
     await expect(inspector).toHaveCount(0);
-    await expect.poll(inspect).toEqual({ ...before, pipeline: 'FluxModularPipeline' });
+    await expect.poll(inspect).toEqual({ ...before, pipeline: 'FluxModularPipeline', count: 5 });
     await page.locator('.react-flow__pane').click({ position: { x: 100, y: 80 } });
     await page.keyboard.press('Control+z');
     await expect.poll(inspect).toEqual(before);
     await page.keyboard.press('Control+Shift+z');
-    await expect.poll(inspect).toEqual({ ...before, pipeline: 'FluxModularPipeline' });
+    await expect.poll(inspect).toEqual({ ...before, pipeline: 'FluxModularPipeline', count: 5 });
     inspector = await openOwner();
     await inspector.getByLabel('Replacement task', { exact: true }).click();
     await page.getByRole('option', { name: 'image to image', exact: true }).click();
@@ -9369,7 +9925,7 @@ for (const workspace of ['expert'] as const) {
     await expect(review).toHaveCount(0);
     // Applying a graph replacement clears selection and closes the contextual inspector.
     await expect(inspector).toHaveCount(0);
-    const expected = { ...before, pipeline: 'FluxModularPipeline', count: 5 };
+    const expected = { ...before, pipeline: 'FluxModularPipeline', count: 6 };
     await expect.poll(inspect).toEqual(expected);
     await page.keyboard.press('Control+Shift+s');
     await expect(page.getByTestId('save-workflow-dialog')).toBeVisible();
@@ -10274,7 +10830,14 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
       return current.flow.visibleNodeCount;
     })
     .toBeGreaterThan(0);
-  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Z-Image Turbo');
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
+  expect(
+    await page.evaluate(
+      () =>
+        window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'ModelsLoader')?.params.repo_id
+          .value,
+    ),
+  ).toEqual({ source: 'hub', value: 'Tongyi-MAI/Z-Image-Turbo' });
 
   await page.getByTestId('topbar-new-workflow').click();
   await expect(page.getByTestId('task-launcher')).toBeVisible();
@@ -10525,7 +11088,8 @@ test('mocked imported assets fill active Studio input slots', async ({ page }) =
   await dismissTaskLauncher(page);
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+      // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_control_image_layout', {
         controlImage: '',
         referenceImages: [],
       });
@@ -10553,7 +11117,7 @@ test('mocked imported assets fill active Studio input slots', async ({ page }) =
 
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_inpaint_object_replace', {
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_inpaint_object_replace', {
         referenceImages: [],
         maskImage: '',
       });
@@ -10592,7 +11156,7 @@ test('mocked imported assets fill active Studio input slots', async ({ page }) =
 
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('ace_step_audio_continuation', {
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('ace_step_audio_continuation', {
         sourceAudio: '',
       });
     } catch {
@@ -11534,7 +12098,8 @@ test('mocked workflow artifact requirements are contextual and role grouped', as
 
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+      // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_control_image_layout', {
         controlImage: 'mock-control.png',
         referenceImages: ['mock-control.png'],
         resourceMode: 'expert',
@@ -12217,7 +12782,8 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
     await page.evaluate(
       async ({ id, overrides }) => {
         try {
-          await window.__MODIFF_E2E__!.applyTemplate(id, overrides);
+          // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+          await window.__MODIFF_E2E__!.applyLegacyTemplateForTest(id, overrides);
         } catch (error) {
           throw new Error(`${id}: ${String(error)}`);
         }
@@ -12359,7 +12925,8 @@ test('controlled LoRA labels base-only Auto history until its exact artifacts ar
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('flux_lora_cinematic_octane_3d'));
+  // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('flux_lora_cinematic_octane_3d'));
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
 
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Base recipe ran here');
@@ -12428,7 +12995,8 @@ test('Studio sticky prompt seals the measured header gap while the right panel s
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
-  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept'));
+  // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept'));
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
 
   const promptToolsToggle = page.getByTestId('studio-section-toggle-prompt-tools');
@@ -12871,7 +13439,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
   await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
 });
 
-test('2x Product Upscale waits for discovery and builds its pinned finishing block', async ({ page }) => {
+test('legacy 2x Product Upscale restores its pinned finishing block and comparison', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
@@ -12885,10 +13453,9 @@ test('2x Product Upscale waits for discovery and builds its pinned finishing blo
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await openTemplateBrowser(page);
-  await page.getByTestId('template-browser-search').fill('Product Upscale');
-  await page.getByTestId('template-browser-create-card-qwen_upscale_finish').click();
-  await expect(page.getByTestId('template-browser-dialog')).toBeHidden();
+  // Saved managed workflows retain their finishing-stage comparison controls.
+  // Fresh Gallery graphs are ordinary operation graphs, covered independently.
+  await page.evaluate(async () => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_upscale_finish'));
 
   await expect
     .poll(async () => {
@@ -13207,6 +13774,16 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
     'true',
   );
   await focusedModelDialog.getByTestId('model-manager-close').click();
+  // The remaining assertions exercise persisted managed graph controls and
+  // exact old cache ownership. Fresh Gallery creation above stays native.
+  await page.evaluate(async () => {
+    try {
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'No compatible local artifact was found for Auto.')
+        throw error;
+    }
+  });
   await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
   await expect(page.getByTestId('studio-pinned-graph-inputs')).toBeVisible();
 
@@ -13328,7 +13905,8 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
 
   await assertUnifiedWorkspace(page, 'expert');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept', { resourceMode: 'expert' });
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept', { resourceMode: 'expert' });
   });
   const graphAfterSecondUpdate = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
   const expertStudioRoles = graphAfterSecondUpdate.flow.nodes
@@ -13344,8 +13922,8 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   expect(graphAfterSecondUpdate.flow.edges.length).toBeGreaterThanOrEqual(graphAfterRunBlock.flow.edges.length);
 
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept', { resourceMode: 'expert' });
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept', { resourceMode: 'expert' });
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept', { resourceMode: 'expert' });
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept', { resourceMode: 'expert' });
   });
   await expect
     .poll(async () => {
@@ -13413,7 +13991,7 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
       };
     })
     .toEqual({
-      nodeCount: 5,
+      nodeCount: 6,
       transition: null,
     });
 
@@ -13475,7 +14053,7 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
     .toEqual({
       activeTemplateId: 'z_image_quick_concept',
       transition: null,
-      visibleNodeCount: 5,
+      visibleNodeCount: 6,
     });
   const transitionSamples = await page.evaluate(() => {
     type TemplateGraphSample = {
@@ -13504,9 +14082,10 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
     expect(sample.runDisabled).toBe(true);
     expect(sample.runTitle).toBe('Preparing graph');
   });
-  await expect(page.getByTestId('studio-task-model-summary')).not.toContainText('Custom graph');
-  await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
-  await expect(page.getByTestId('studio-prompt-input')).toBeVisible();
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('Graph ready · Auto check at Run');
+  await expect(page.getByTestId('studio-prompt-input')).toHaveCount(0);
+  await expect(page.locator('.react-flow__node').getByRole('textbox', { name: 'Prompt *', exact: true })).toBeVisible();
 });
 
 test('low-VRAM Auto template remains finalized across repeated Run planning', async ({ page }) => {
@@ -13539,7 +14118,8 @@ test('low-VRAM Auto template remains finalized across repeated Run planning', as
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('low_vram');
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('low_vram');
   });
 
   await expect
@@ -13621,7 +14201,8 @@ test('busy one-shot action becomes Queue and submits once without stopping activ
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('low_vram');
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('low_vram');
   });
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
 
@@ -13782,7 +14363,8 @@ test('restored finalized exact workflow queues without replaying field actions o
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('low_vram', { resourceMode: 'expert' });
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('low_vram', { resourceMode: 'expert' });
   });
 
   await expect
@@ -13862,7 +14444,8 @@ test('transient Auto planner failure does not report an installed Z-Image model 
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
   });
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Ready');
 
@@ -13901,7 +14484,8 @@ test('backend declarative bindings synchronize both generic Layered actions afte
 
   await page.evaluate(() => {
     void window
-      .__MODIFF_E2E__!.applyTemplate('qwen_layered_portrait', {
+      // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+      .__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_layered_portrait', {
         referenceImages: ['mock-layer-source.webp'],
         resourceMode: 'expert',
         width: 1000,
@@ -14001,14 +14585,16 @@ test('backend declarative bindings synchronize both generic Layered actions afte
     .toEqual([1024, 1024]);
 });
 
-test('mocked Studio renders generic Qwen template skeleton without waiting on Modular fields', async ({ page }) => {
+test('fresh Qwen template uses ordinary native stages without legacy field refresh', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   mockInstalledRepos.add('unsloth/Qwen-Image-2512-unsloth-bnb-4bit');
   mockDownloadCalls = 0;
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
-  mockDynamicModularFields = true;
+  // Native starters consume their declared stage schema. The historical
+  // empty-stage fixture is reserved for whole-pipeline independence.
+  mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
@@ -14040,8 +14626,8 @@ test('mocked Studio renders generic Qwen template skeleton without waiting on Mo
     .toEqual({
       activeTemplateId: 'qwen_low_vram_product_concept',
       transition: null,
-      visibleNodeCount: 5,
-      finalization: 'complete',
+      visibleNodeCount: 6,
+      finalization: undefined,
     });
 
   await expect
@@ -14049,33 +14635,33 @@ test('mocked Studio renders generic Qwen template skeleton without waiting on Mo
       async () => {
         const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
         const pipelineNode = current.flow.nodes.find(
-          (node) => node.action === 'LoadPipeline' && node.module === 'modules.DiffusersImage',
+          (node) => node.action === 'ModelsLoader' && node.module === 'modules.ModularDiffusers',
         );
         const generateNode = current.flow.nodes.find(
-          (node) => node.action === 'Generate' && node.module === 'modules.DiffusersImage',
+          (node) => node.action === 'Denoise' && node.module === 'modules.ModularDiffusers',
+        );
+        const encoding = current.flow.nodes.find((node) => node.label === 'Encode Inputs');
+        const promptNode = encoding?.blockInstanceV2?.effectiveGraph.nodes.find(
+          (node) => node.data.action === 'EncodePrompt',
         );
         const pipelineEdge = current.flow.edges.find(
-          (edge) =>
-            edge.source === pipelineNode?.id &&
-            edge.target === generateNode?.id &&
-            edge.sourceHandle === 'pipeline' &&
-            edge.targetHandle === 'pipeline',
+          (edge) => edge.source === pipelineNode?.id && edge.target === generateNode?.id,
         );
         return {
           finalization: current.studio.graphFinalization?.status,
-          promptValue: generateNode?.params?.prompt?.value,
+          promptValue: promptNode?.data.params?.prompt?.value,
           offloadMode: pipelineNode?.params?.offload_mode?.value,
-          quantizedComponents: pipelineNode?.params?.quantized_components?.value,
+          pipelineClass: pipelineNode?.params?.model_type?.value,
           pipelineEdge: Boolean(pipelineEdge),
         };
       },
       { timeout: 10_000 },
     )
     .toEqual({
-      finalization: 'complete',
+      finalization: undefined,
       promptValue: await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.prompt),
       offloadMode: 'model_cpu',
-      quantizedComponents: [],
+      pipelineClass: 'QwenImageModularPipeline',
       pipelineEdge: true,
     });
 });
@@ -14182,7 +14768,8 @@ test('mocked Studio keeps exact direct Qwen Expert graphs independent of unused 
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await assertUnifiedWorkspace(page, 'expert');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'bnb_4bit',
       dtype: 'bfloat16',
@@ -14225,7 +14812,8 @@ test('mocked Studio consumes the exact execution-profile Expert CUDA policy', as
 
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'bnb_4bit',
       dtype: 'float16',
@@ -14262,7 +14850,8 @@ test('mocked Studio derives Expert quantization choices from the exact execution
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.getByTestId('launcher-mode-advanced_workflow').click();
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'none',
     });
@@ -14287,7 +14876,8 @@ test('mocked Studio preserves Expert quantization only when the target execution
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'bnb_4bit',
     });
@@ -14322,7 +14912,8 @@ test('mocked Studio exposes and binds generic PAG controls for the exact PAG pro
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'none',
     });
@@ -14599,7 +15190,8 @@ test('mocked Studio consumes the exact execution-profile Expert MPS policy', asy
 
   await page.getByTestId('launcher-mode-advanced_workflow').click();
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'expert',
       quantizationMode: 'bnb_4bit',
       dtype: 'bfloat16',
@@ -14712,7 +15304,8 @@ test('the unified editor preserves the exact Qwen graph and automatic resources'
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'auto',
       device: 'cuda:0',
     });
@@ -14973,7 +15566,8 @@ test('mocked Auto Run atomically submits the selected resident Qwen recipe and r
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Existing managed document fixture; fresh image templates use ordinary operation graphs.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'auto',
       device: 'cuda:0',
       steps: 7,
@@ -16729,7 +17323,8 @@ test('mocked Studio blocks a schema-v2 Auto plan that targets a different manage
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+      // Legacy fixture setup preserves the managed loader binding under test.
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
         resourceMode: 'auto',
         device: 'cuda:0',
       });
@@ -16764,7 +17359,8 @@ test('mocked Studio binds schema-v2 Auto to the exact managed loader repository'
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Legacy fixture setup preserves the managed loader repository binding.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'auto',
       device: 'cuda:0',
     });
@@ -16805,7 +17401,8 @@ test('mocked Studio image preview actions and progress ignore stale websocket me
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Legacy fixture setup preserves managed Generate receipts and preview roles.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'auto',
       device: 'cuda:0',
     });
@@ -17305,7 +17902,8 @@ test('startup run recovery preserves the selected saved workflow until explicit 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
   const identity = await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    // Legacy fixture setup preserves the saved managed workflow snapshot.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
     const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
     useStudioStore.getState().saveActiveWorkflowTab(false);
     const state = useStudioStore.getState();
@@ -17411,7 +18009,8 @@ test('active node execution follows its exact workflow across tabs, notification
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    // Legacy fixture setup preserves the managed Generate task origin.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
   });
 
   const identity = await page.evaluate(() => {
@@ -17708,7 +18307,8 @@ test('previous video and audio renders open in-app without replacing the current
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
   const videoState = await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video');
+    // Legacy fixture setup preserves managed media output receipts.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('wan_vace_cinematic_text_to_video');
     const current = window.__MODIFF_E2E__!.getState();
     const exporter = current.flow.nodes.find((node) => node.module === 'modules.Video' && node.action === 'Export');
     if (!exporter) throw new Error('Video export node is missing.');
@@ -17800,7 +18400,8 @@ test('previous video and audio renders open in-app without replacing the current
   await expect(mediaExport).toHaveCount(0);
 
   const audioState = await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('ace_step_text_to_audio');
+    // Legacy fixture setup preserves managed audio output receipts.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('ace_step_text_to_audio');
     const current = window.__MODIFF_E2E__!.getState();
     const exporter = current.flow.nodes.find((node) => node.module === 'modules.Audio' && node.action === 'Export');
     if (!exporter) throw new Error('Audio export node is missing.');
@@ -17933,7 +18534,8 @@ test('session activity and generation notifications open the originating workflo
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    // Legacy fixture setup preserves managed task and preview attribution.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
   });
 
   const workflowId = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
@@ -18321,6 +18923,7 @@ test('a recovered native worker crash opens an explicit failure with a lower-mem
 });
 
 test('mocked Studio leaves newly-created Expert Qwen quantization node expanded', async ({ page }) => {
+  // Legacy fixture setup preserves the Expert quantization utility node contract.
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Qwen/Qwen-Image-2512');
   mockInstalledRepos.add('InstantX/Qwen-Image-ControlNet-Union');
@@ -18351,7 +18954,7 @@ test('mocked Studio leaves newly-created Expert Qwen quantization node expanded'
   await assertUnifiedWorkspace(page, 'expert');
   await page.evaluate(() => {
     void window
-      .__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+      .__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_control_image_layout', {
         resourceMode: 'expert',
         quantizationMode: 'bnb_4bit',
         dtype: 'bfloat16',
@@ -18493,7 +19096,8 @@ test('mocked Studio builds registered Diffusers edit, inpaint, and control facad
   for (const item of cases) {
     await page.evaluate(
       async ({ templateId, overrides }) => {
-        await window.__MODIFF_E2E__!.applyTemplate(templateId, overrides);
+        // Legacy fixture setup preserves registered facades and managed edges.
+        await window.__MODIFF_E2E__!.applyLegacyTemplateForTest(templateId, overrides);
       },
       { templateId: item.templateId, overrides: item.overrides },
     );
@@ -18562,7 +19166,8 @@ test('mocked Studio wires Qwen inpaint through generic Diffusers image nodes', a
   await page.getByTestId('launcher-mode-advanced_workflow').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_inpaint_mask_draft', {
+    // Legacy fixture setup preserves the saved generic inpaint topology.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_inpaint_mask_draft', {
       referenceImages: ['mock-source.png'],
       maskImage: 'mock-mask.png',
       quantizationMode: 'bnb_4bit',
@@ -18652,7 +19257,8 @@ test('mocked Studio wires generic Qwen outpaint graph with generated canvas and 
   await seedLegacyManagedWorkflow(page, 'outpaint');
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_outpaint_draft', {
+    // Legacy fixture setup preserves the saved outpaint canvas and mask topology.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_outpaint_draft', {
       referenceImages: ['mock-source.png'],
       quantizationMode: 'bnb_4bit',
       dtype: 'bfloat16',
@@ -18773,7 +19379,8 @@ test('mocked Studio blocks Qwen outpaint when backend canvas node is missing', a
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_outpaint_draft', {
+      // Legacy fixture setup preserves the legacy canvas capability guard.
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_outpaint_draft', {
         referenceImages: ['mock-source.png'],
         quantizationMode: 'bnb_4bit',
         dtype: 'bfloat16',
@@ -18827,7 +19434,8 @@ test('mocked Studio blocks Expert Modular Qwen 4-bit mode when backend quantizat
   await assertUnifiedWorkspace(page, 'expert');
   await page.evaluate(async () => {
     try {
-      await window.__MODIFF_E2E__!.applyTemplate('qwen_control_image_layout', {
+      // Legacy fixture setup preserves the Expert auxiliary quantization guard.
+      await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_control_image_layout', {
         resourceMode: 'expert',
         quantizationMode: 'bnb_4bit',
         dtype: 'bfloat16',
@@ -19037,7 +19645,8 @@ test('mocked dynamic node definitions update node and field metadata without val
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await seedLegacyManagedWorkflow(page, 'text_to_image');
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('qwen_low_vram_product_concept', {
+    // Legacy fixture setup preserves the managed Generate metadata contract.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('qwen_low_vram_product_concept', {
       resourceMode: 'auto',
       device: 'cuda:0',
     });
@@ -20106,12 +20715,13 @@ test('generic text and model-source actions debounce queries and send the latest
     )
     .toBe(true);
 
-  const initialRepositoryRequestCount = requests.filter((request) => request.fieldKey === 'repository').length;
   // Test debounce time, not host scheduling latency under a concurrent GPU
-  // workload. A nominal 150ms wall-clock wait may resume after the debounce.
+  // workload. Install before the pause target so host delay cannot make it past;
+  // take the baseline after initial timers have settled during that setup jump.
   const frozenTime = new Date();
-  await page.clock.install({ time: frozenTime });
+  await page.clock.install({ time: new Date(frozenTime.getTime() - 60_000) });
   await page.clock.pauseAt(frozenTime);
+  const initialRepositoryRequestCount = requests.filter((request) => request.fieldKey === 'repository').length;
   await repositoryInput.fill(selectedRepository);
   await page.clock.runFor(150);
   expect(requests.filter((request) => request.fieldKey === 'repository')).toHaveLength(initialRepositoryRequestCount);
@@ -22090,7 +22700,8 @@ test('managed Auto keeps the exact interactive graph and only contains advanced 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    // Legacy fixture setup preserves managed Auto controls and graph roles.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
     window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio');
   });
 
@@ -22335,7 +22946,8 @@ async function sharedSavedBlockLifecycle(page: Page, workspace: 'auto' | 'expert
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    // Legacy fixture setup exercises saved V1 Generate/Preview block lifecycle.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
   });
   await assertUnifiedWorkspace(page, workspace);
   const initialNodeCount = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length);
@@ -22629,7 +23241,8 @@ test('existing canvas nodes drag into User Nodes and the three persistence choic
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
-  await page.evaluate(async () => window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept'));
+  // Legacy fixture setup exercises adoption of saved V1 Generate/Preview nodes.
+  await page.evaluate(async () => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept'));
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.selectNodesByAction(['Generate', 'Preview']))).toBe(2);
   await installLegacySelectedBlock(page, 'Editable render');
 
@@ -22813,7 +23426,8 @@ async function sharedCollapsedBlockControls(page: Page, workspace: 'auto' | 'exp
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
+    // Legacy fixture setup preserves collapsed V1 outputs and editable disclosures.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept');
   });
   await assertUnifiedWorkspace(page, workspace);
   const selectedCount = await page.evaluate(() => {
@@ -25780,9 +26394,9 @@ async function openDeveloperWorkflows(page: Page) {
 }
 
 for (const [task, , count, output] of [
-  ['text_to_image', 'QwenImageModularPipeline', 5, 'modules.Image'],
-  ['image_to_image', 'FluxModularPipeline', 6, 'modules.Image'],
-  ['edit_image', 'FluxKontextModularPipeline', 6, 'modules.Image'],
+  ['text_to_image', 'QwenImageModularPipeline', 6, 'modules.Image'],
+  ['image_to_image', 'FluxModularPipeline', 7, 'modules.Image'],
+  ['edit_image', 'FluxKontextModularPipeline', 7, 'modules.Image'],
   ['text_to_audio', 'StableAudioPipeline', 3, 'modules.Audio'],
   ['image_upscale', 'SpandrelImageUpscaleV1', 3, 'modules.Image'],
 ] as const) {
@@ -25887,6 +26501,125 @@ test('one editor starts in Workflows and offers Templates explicitly', async ({ 
   await expect(page.getByTestId('template-browser-create-card-z_image_quick_concept')).toBeVisible();
 });
 
+test('Gallery creation survives CPU runtime discovery while capabilities are pending', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  let releaseCapabilities!: () => void;
+  let releaseRuntime!: () => void;
+  const capabilitiesPending = new Promise<void>((resolve) => {
+    releaseCapabilities = resolve;
+  });
+  const runtimePending = new Promise<void>((resolve) => {
+    releaseRuntime = resolve;
+  });
+  const starterRequests: unknown[] = [];
+  const forbiddenMutations: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/operations/starter') starterRequests.push(request.postDataJSON());
+    if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      forbiddenMutations.push(request.url());
+  });
+  await page.route('**/model_capabilities**', async (route) => {
+    await capabilitiesPending;
+    await route.fulfill({ status: 200, json: fixture.publicPayload });
+  });
+  await page.route('**/runtime/status**', async (route) => {
+    await runtimePending;
+    await route.fulfill({
+      status: 200,
+      json: {
+        ready: true,
+        packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+      },
+    });
+  });
+  try {
+    // Refresh the actual discovery requests as network-fixture setup only.
+    // Creation itself uses the visible Gallery action, never a graph builder.
+    await page.evaluate(async () => {
+      const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+      void useNodesStore.getState().fetchStudioModelCapabilities();
+      void useNodesStore.getState().fetchRuntimeStatus();
+    });
+    const modal = page.getByTestId('template-browser-dialog');
+    await modal.getByTestId('template-browser-create-card-z_image_quick_concept').click();
+    await page.waitForFunction(
+      () => window.__MODIFF_E2E__?.getState().studio.canvasTransition?.type === 'template_graph_building',
+    );
+    const beforeRuntime = await page.evaluate(async () => {
+      const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+      const state = useStudioStore.getState();
+      return { device: state.form.device, offloadMode: state.form.offloadMode, formEpoch: state.workflowFormEpoch };
+    });
+    releaseRuntime();
+    await page.waitForFunction(async () => {
+      const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+      return useNodesStore.getState().runtimeStatus?.packages?.torch?.cuda_available === false;
+    });
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    );
+    await test.info().attach('cpu-runtime-mid-template-transaction', {
+      body: JSON.stringify(
+        {
+          beforeRuntime,
+          afterRuntime: await page.evaluate(async () => {
+            const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+            const state = useStudioStore.getState();
+            return {
+              device: state.form.device,
+              offloadMode: state.form.offloadMode,
+              formEpoch: state.workflowFormEpoch,
+              transition: state.canvasTransition,
+            };
+          }),
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    });
+    releaseCapabilities();
+    await expect(modal).toHaveCount(0);
+    await expect.poll(() => starterRequests.length).toBe(1);
+    await expect(
+      page.locator('.react-flow__node').filter({ has: page.getByText('Encode Inputs', { exact: true }) }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator('.react-flow__node').filter({ has: page.getByText('Guidance', { exact: true }) }),
+    ).toHaveCount(1);
+    const result = await page.evaluate(() => {
+      const hooks = window.__MODIFF_E2E__!;
+      hooks.setWebsocketConnection({ sid: 'cpu-template-creation', isConnected: true });
+      const graph = hooks.exportAuthorizedApiGraph();
+      return {
+        studio: hooks.getState().studio,
+        owner: Object.values(graph.nodes).find((node) => node.action === 'ModelsLoader'),
+      };
+    });
+    expect(result.studio.activeTemplateId).toBe('z_image_quick_concept');
+    expect(result.studio.form.seed).toBe(4201);
+    expect(result.studio.form.prompt.trim().length).toBeGreaterThan(0);
+    expect(result.studio.form.device).toBe('cpu:0');
+    expect(result.studio.form.offloadMode).toBe('none');
+    expect(result.owner?.params.device.value).toBe(result.studio.form.device);
+    expect(result.owner?.params.offload_mode.value).toBe('none');
+    expect(result.studio.canvasTransition).toBeNull();
+    expect(forbiddenMutations).toEqual([]);
+  } finally {
+    releaseCapabilities();
+    releaseRuntime();
+  }
+});
+
 test('Templates opens an editable workflow in the unified editor', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
@@ -25903,12 +26636,153 @@ test('Templates opens an editable workflow in the unified editor', async ({ page
   const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.canvasTransition)).toBeNull();
   const graph = await read();
+  const apiGraph = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'template-guidance-test', isConnected: true });
+    return window.__MODIFF_E2E__!.exportAuthorizedApiGraph();
+  });
+  const guiders = Object.entries(apiGraph.nodes).filter(([, node]) => node.action === 'Guider');
+  expect(guiders).toHaveLength(1);
+  const [guiderId, guider] = guiders[0];
+  expect(guider.params.guider.value).toBe('ClassifierFreeGuidance');
+  expect(guider.params.guidance_scale.value).toBe(1);
+  expect(guider.params.enabled.value).toBe(true);
+  expect(guider.params.use_original_formulation.value).toBe(true);
+  expect(
+    Object.values(apiGraph.nodes)
+      .filter((node) => node.params.guider?.sourceId === guiderId && node.params.guider.sourceKey === 'guider_out')
+      .map((node) => node.action)
+      .sort(),
+  ).toEqual(['Denoise', 'EncodePrompt']);
   await assertUnifiedWorkspace(page, 'expert');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await read()).toEqual(graph);
   await assertUnifiedWorkspace(page, 'auto');
   expect(await read()).toEqual(graph);
 });
+
+test('Schnell template keeps its full creator token limit through ordinary authoring and reload', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const modal = page.getByTestId('template-browser-dialog');
+  await modal.getByTestId('template-browser-category-all').click();
+  await modal.getByTestId('template-browser-use-flux_schnell_text_to_image').click();
+  await modal.getByTestId('template-browser-create-flux_schnell_text_to_image').click();
+  await expect(modal).toHaveCount(0);
+  const read = () =>
+    page.evaluate(() => {
+      const hooks = window.__MODIFF_E2E__!;
+      hooks.setWebsocketConnection({ sid: 'schnell-token-recipe', isConnected: true });
+      const graph = hooks.exportAuthorizedApiGraph();
+      const prompt = Object.values(graph.nodes).find((node) => node.action === 'EncodePrompt');
+      const denoise = Object.values(graph.nodes).find((node) => node.action === 'Denoise');
+      const owner = Object.values(graph.nodes).find((node) => node.action === 'ModelsLoader');
+      return {
+        template: hooks.getState().studio.activeTemplateId,
+        transition: hooks.getState().studio.canvasTransition,
+        model: owner?.params.repo_id.value,
+        tokens: prompt?.params.max_sequence_length.value,
+        steps: denoise?.params.num_inference_steps.value,
+        scale: denoise?.params.guidance_scale.value,
+        seed: denoise?.params.seed.value,
+      };
+    });
+  const expected = {
+    template: 'flux_schnell_text_to_image',
+    transition: null,
+    model: { source: 'hub', value: 'black-forest-labs/FLUX.1-schnell' },
+    tokens: 512,
+    steps: 4,
+    scale: 0,
+    seed: 8427,
+  };
+  await expect.poll(read, { timeout: 30_000 }).toEqual(expected);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect.poll(read).toEqual(expected);
+});
+
+for (const [templateId, search, scale, negativePrompt] of [
+  ['z_image_lora_style', 'Coastal Rescue Documentary', 0.8, ''],
+  [
+    'fast_lora',
+    'Product Hero',
+    0.65,
+    'contact sheet, multiple helmets, duplicate product, cropped helmet, changing shell proportions, extra visor, extra vents, invented controls, text, logo, label, overprocessed texture, clutter, low detail, broken visor, floating product, noisy adapter artifacts',
+  ],
+] as const)
+  test(`${templateId} Gallery creation and reload preserve the original default LoRA identity`, async ({ page }) => {
+    mockInstalledRepos.clear();
+    mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+    mockInstalledRepos.add('youknownothing/v1-realism-v1-adapter-ZIT-lora');
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const fixture = await imageTemplateSchemas();
+    await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+    await page.route('**/nodes**', (route) =>
+      route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+    );
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await openTemplateBrowser(page);
+    const modal = page.getByTestId('template-browser-dialog');
+    await modal.getByTestId('template-browser-category-all').click();
+    await modal.getByTestId('template-browser-search').fill(search);
+    await modal.getByTestId(`template-browser-use-${templateId}`).click();
+    await modal.getByTestId(`template-browser-create-${templateId}`).click();
+    await expect(modal).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.canvasTransition)).toBeNull();
+    const read = () =>
+      page.evaluate(() => {
+        const hooks = window.__MODIFF_E2E__!;
+        hooks.setWebsocketConnection({ sid: 'z-default-adapter-browser-proof', isConnected: true });
+        return hooks.exportAuthorizedApiGraph() as ApiGraphExport;
+      });
+    const graph = await read();
+    const nodes = Object.entries(graph.nodes);
+    const one = (action: string) => {
+      const matches = nodes.filter(([, node]) => node.module === 'modules.ModularDiffusers' && node.action === action);
+      expect(matches).toHaveLength(1);
+      return matches[0];
+    };
+    const [adapterId, adapter] = one('Lora');
+    const [ownerId, owner] = one('ModelsLoader');
+    const [guideId, guide] = one('Guider');
+    const [encoderId, encoder] = one('EncodePrompt');
+    const [, denoise] = one('Denoise');
+    expect(adapter.params.adapter_name.value).toBe('default');
+    expect(adapter.params.scale.value).toBe(scale);
+    expect(adapter.params.model.value).toEqual({
+      source: 'hub',
+      value: 'youknownothing/v1-realism-v1-adapter-ZIT-lora',
+    });
+    expect(adapter.params.revision.value).toBe('fd6d52d1199ad47f73c18db58339ad01ef766fa7');
+    expect(adapter.params.expected_sha256.value).toBe(
+      '1fe0487cfe69b31f6d93ec1a1a6e49f75e9ff77adc8d845380ba7352a3931190',
+    );
+    expect(adapter.params.weight_name.value).toBe('v1-realism.safetensors');
+    expect(owner.params.lora_list).toMatchObject({ sourceId: adapterId, sourceKey: 'lora' });
+    expect(guide.params.guider.value).toBe('ClassifierFreeGuidance');
+    expect(guide.params.enabled.value).toBe(true);
+    expect(guide.params.use_original_formulation.value).toBe(true);
+    expect(guide.params.guidance_scale.value).toBe(1);
+    for (const node of [encoder, denoise])
+      expect(node.params.guider).toMatchObject({ sourceId: guideId, sourceKey: 'guider_out' });
+    expect(encoder.params.text_encoders).toMatchObject({ sourceId: ownerId, sourceKey: 'text_encoders' });
+    expect(encoder.params.negative_prompt.value).toBe(negativePrompt);
+    expect(denoise.params.unet).toMatchObject({ sourceId: ownerId, sourceKey: 'unet_out' });
+    expect(denoise.params.embeddings).toMatchObject({ sourceId: encoderId, sourceKey: 'embeddings' });
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect.poll(async () => (await read()).nodes).toEqual(graph.nodes);
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
+  });
 
 test('Developer Workflows abandons pending creation when switching documents', async ({ page }) => {
   await openDeveloperWorkflows(page);
@@ -25934,7 +26808,7 @@ test('Developer Workflows abandons pending creation when switching documents', a
   await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
   await modal.getByTestId('workflow-task-edit_image').click();
   await expect(modal).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(6);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(7);
   const readGraph = () =>
     page.evaluate(() => {
       const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
@@ -25958,15 +26832,17 @@ test('Developer Workflows abandons pending creation when switching documents', a
   await expect(page.getByLabel('Search workflows')).toBeVisible();
 });
 
-test('Template reload retries automatic planning when late hydration changes document ownership', async ({ page }) => {
+test('legacy template reload retries automatic planning when late hydration changes document ownership', async ({
+  page,
+}) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   mockIncludeQuantizationNode = true;
   await ensureFrontend();
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await openTemplateBrowser(page);
-  await page.getByTestId('template-browser-create-card-z_image_quick_concept').click();
+  await dismissTaskLauncher(page);
+  await page.evaluate(async () => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept'));
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.canvasTransition)).toBeNull();
   await page.getByTestId('topbar-save-workflow').click();
   let release!: () => void;
@@ -27546,7 +28422,9 @@ for (const workspace of ['expert'] as const) {
 }
 
 for (const workspace of ['expert'] as const) {
-  test(`${workspace} Gallery keeps recognized graph task after history reload`, async ({ page }) => {
+  test(`${workspace} Gallery keeps recognized and ambiguous graph task labels after history reload`, async ({
+    page,
+  }) => {
     await ensureFrontend();
     await installMockRoutes(page);
     const output = {
@@ -27593,7 +28471,13 @@ for (const workspace of ['expert'] as const) {
         unavailableFields: [],
         uncapturedNodeIds: [],
         truncated: false,
-        graphTasks: [{ loaderId: 'loader', pipelineClass: 'StableDiffusionXLModularPipeline', task: 'image_to_image' }],
+        graphTasks: [
+          {
+            loaderId: 'loader',
+            pipelineClass: 'StableDiffusionXLModularPipeline',
+            task: 'image_to_image' as string | null,
+          },
+        ],
       },
     };
     const custom = structuredClone(output);
@@ -27601,11 +28485,20 @@ for (const workspace of ['expert'] as const) {
     custom.resolvedExecutionInputs.nodes[0]!.fields.model_type!.value = 'CustomModularPipeline';
     custom.resolvedExecutionInputs.summary.modelType = 'CustomModularPipeline';
     custom.resolvedExecutionInputs.graphTasks[0]!.pipelineClass = 'CustomModularPipeline';
+    const edit = structuredClone(output);
+    edit.id = 'ambiguous-edit-history';
+    edit.resolvedExecutionInputs.nodes[0]!.fields.model_type!.value = 'QwenImageEditPlusModularPipeline';
+    edit.resolvedExecutionInputs.summary.modelType = 'QwenImageEditPlusModularPipeline';
+    edit.resolvedExecutionInputs.nodes[1]!.fields.num_inference_steps!.value = '40';
+    edit.resolvedExecutionInputs.summary.steps = '40';
+    edit.resolvedExecutionInputs.graphTasks = [
+      { loaderId: 'loader', pipelineClass: 'QwenImageEditPlusModularPipeline', task: null },
+    ];
     await page.route('**/studio_outputs**', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ error: false, outputs: [output, custom], revision: 1 }),
+        body: JSON.stringify({ error: false, outputs: [output, custom, edit], revision: 1 }),
       }),
     );
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
@@ -27636,6 +28529,17 @@ for (const workspace of ['expert'] as const) {
       expect(stored.formSnapshot.mode).toBe('text_to_image');
       expect(stored.formSnapshot.modelType).toBe('ZImageModularPipeline');
       expect(stored.formSnapshot.steps).toBe(9);
+      await page.getByTestId('gallery-filter-QwenImageEditPlusModularPipeline').click();
+      await expect(inspector.locator('h2')).toContainText('Task not uniquely captured');
+      await expect(inspector.locator('h2')).not.toContainText('Text to image');
+      const ambiguousMetadata = JSON.parse((await inspector.locator('pre').textContent())!);
+      expect(ambiguousMetadata.steps).toBe(40);
+      expect(ambiguousMetadata.resolvedExecutionInputs.graphTasks[0].task).toBeNull();
+      const ambiguousStored = await page.evaluate(() =>
+        window.__MODIFF_E2E__!.getState().studio.outputs.find((item) => item.id === 'ambiguous-edit-history'),
+      );
+      expect(ambiguousStored!.mode).toBe('text_to_image');
+      expect(ambiguousStored!.formSnapshot.mode).toBe('text_to_image');
       if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
     }
     await page.getByTestId('gallery-inspect-view').locator('h2').scrollIntoViewIfNeeded();
@@ -28169,6 +29073,13 @@ test('saved workflow browsing bounds mounted rows and searches the full library'
 test('successful node status is not presented as a warning after recovery', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
+  // A dead mock websocket retries with a new sid and correctly revalidates the
+  // graph, clearing synthetic statuses. Keep this presentation fixture connected.
+  await page.routeWebSocket('**/ws**', (socket) => {
+    socket.send(
+      JSON.stringify({ type: 'welcome', sid: new URL(socket.url()).searchParams.get('sid'), instance: 'mock' }),
+    );
+  });
   await page.route('**/nodes**', (route) =>
     route.fulfill({
       json: {
@@ -28213,6 +29124,19 @@ test('successful node status is not presented as a warning after recovery', asyn
   const node = page.locator('.react-flow__node[data-id="recovered-node"]');
   await expect(node).toBeVisible();
   await waitForOperationGraphToSettle(page);
+  await page.waitForFunction(async () => {
+    const [{ useWebsocketStore }, { useNodesStore }, { useStudioStore }] = await Promise.all([
+      import('/src/stores/useWebsocketStore.ts'),
+      import('/src/stores/useNodeStore.ts'),
+      import('/src/stores/useStudioStore.ts'),
+    ]);
+    return (
+      useWebsocketStore.getState().isConnected &&
+      Boolean(useWebsocketStore.getState().sid) &&
+      useStudioStore.getState().workflowCanvasHydrated &&
+      Object.values(useNodesStore.getState().discoveryRequests).every((request) => request.status === 'success')
+    );
+  });
   // Publish the simulated runtime result after initial graph validation, just
   // as a real completion arrives after the node has mounted.
   await page.evaluate(async () => {
@@ -28443,7 +29367,7 @@ test('task sidebar preserves the current document and explicit Save promotes its
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
     .not.toBe(first);
-  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(6);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(7);
   await page.getByTestId(`workflow-tab-${first}`).click();
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((n) => n.id))).toEqual(original);
   await page.screenshot({ path: test.info().outputPath('shared-task-sidebar.png'), animations: 'disabled' });
@@ -28608,4 +29532,882 @@ test('scalar input editors preserve fallback values when a socket is connected a
   });
   await expect(prompt).toBeEnabled();
   await expect(prompt).toHaveValue('Saved fallback prompt');
+});
+
+test('standalone startup awaits owned metadata and fresh workflow reload retains remote hydration', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let queueRequests = 0;
+  const documents: Array<{ id: string; method: string }> = [];
+  const missingDocuments: string[] = [];
+  page.on('request', (request) => {
+    const match = /\/workflows\/([^/?]+)$/.exec(new URL(request.url()).pathname);
+    if (match) documents.push({ id: decodeURIComponent(match[1]!), method: request.method() });
+  });
+  page.on('response', (response) => {
+    if (/\/workflows\/[^/?]+$/.test(new URL(response.url()).pathname) && response.status() === 404)
+      missingDocuments.push(response.url());
+  });
+  await page.route('**/queue', (route) => {
+    queueRequests++;
+    return route.fulfill({ json: { current: null, queued: {}, recent: [] } });
+  });
+  await page.route('**/nodes', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    await route.fallback();
+  });
+  await page.route('**/runtime/status**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    await route.fulfill({
+      json: {
+        ready: true,
+        workerControl: { available: false, address: null },
+        packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+      },
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  const id = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId!);
+  await expect.poll(() => documents.filter((x) => x.id === id).length).toBeGreaterThan(0);
+  expect(documents.filter((x) => x.id === id)[0]!.method).toBe('PUT');
+  expect(missingDocuments).toEqual([]);
+  expect(queueRequests).toBe(0);
+  const before = documents.length;
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await expect.poll(() => documents.slice(before).filter((x) => x.id === id).length).toBeGreaterThan(0);
+  expect(documents.slice(before).find((x) => x.id === id)!.method).toBe('GET');
+  expect(missingDocuments).toEqual([]);
+  expect(queueRequests).toBe(0);
+});
+
+test('startup metadata wait preserves supervised active-run restoration at the advertised control address', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const addresses: string[] = [];
+  await page.route('**/queue', (route) => {
+    addresses.push(route.request().url());
+    return route.fulfill({
+      json: {
+        current: { task_id: 'metadata-startup-run', status: 'running', name: 'Native worker is busy' },
+        queued: {},
+        recent: [],
+      },
+    });
+  });
+  await page.route('**/runtime/status**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    await route.fulfill({
+      json: { ready: true, workerControl: { available: true, address: 'http://127.0.0.1:65532' } },
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(
+    () => window.__MODIFF_E2E__?.getState().tasks.currentTask?.task_id === 'metadata-startup-run',
+  );
+  expect(addresses.length).toBeGreaterThan(0);
+  expect(addresses.every((url) => url === 'http://127.0.0.1:65532/queue')).toBe(true);
+});
+
+async function openOptionalStageTemplate(page: Page, templateId: string, search: string, reviewTerms = true) {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const browser = page.getByTestId('template-browser-dialog');
+  await browser.getByTestId('template-browser-category-all').click();
+  await browser.getByTestId('template-browser-search').fill(search);
+  await browser.getByTestId(`template-browser-use-${templateId}`).click();
+  await browser.getByTestId(`template-browser-create-${templateId}`).click();
+  if (reviewTerms) {
+    const terms = page.getByRole('dialog', { name: 'Review model terms', exact: true });
+    const agreement = terms.getByRole('button', { name: 'I have reviewed and agree — Create graph', exact: true });
+    await expect(agreement).toBeVisible();
+    await agreement.click();
+  }
+  await expect(browser).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.canvasTransition)).toBeNull();
+  await assertUnifiedWorkspace(page, 'expert');
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+}
+
+test('full image template cards, details, artifact search and Model Manager focus show the selected variant', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  mockInstalledRepos.clear();
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/runtime/status**', (route) =>
+    route.fulfill({
+      json: {
+        ready: true,
+        runtime_profile: { requested: 'cpu', installed: 'cpu', status: 'ready', execution_ready: true },
+        missing_required_packages: [],
+        packages: Object.fromEntries(
+          ['torch', 'diffusers', 'transformers', 'peft'].map((name) => [name, { available: true }]),
+        ),
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const browser = page.getByTestId('template-browser-dialog');
+  await browser.getByTestId('template-browser-category-all').click();
+  for (const [id, repo, label] of [
+    ['cosmos3_super_text_to_image', 'nvidia/Cosmos3-Super-Text2Image', 'Cosmos 3 Super'],
+    ['flux2_dev_text_to_image', 'black-forest-labs/FLUX.2-dev', 'FLUX.2-dev'],
+  ]) {
+    await browser.getByTestId('template-browser-search').fill(repo);
+    const card = browser.getByTestId(`template-browser-card-${id}`);
+    await expect(card.getByText(`${label} · Text to image`, { exact: true })).toBeVisible();
+    const poster = `/assets/${id === 'flux2_dev_text_to_image' ? 'flux2-dev' : 'cosmos3-super'}.card-poster.png`;
+    const artwork = card.getByRole('img', { name: 'Template preview', exact: true });
+    await expect(artwork).toHaveAttribute('src', poster);
+    await expect.poll(() => artwork.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
+    await card.getByTestId(`template-browser-use-${id}`).click();
+    await expect(browser.getByText(`${label} · Text to image`, { exact: true })).toHaveCount(2);
+  }
+  await page.getByTestId('template-card-readiness-flux2_dev_text_to_image').click();
+  const manager = page.getByTestId('model-manager-dialog');
+  await expect(manager).toBeVisible();
+  await expect(manager.getByTestId('model-manager-focus')).toContainText('FLUX.2-dev');
+  await expect(manager.getByTestId('model-manager-focus')).not.toContainText('Modular Diffusers');
+});
+
+async function optionalStageApi(page: Page) {
+  return page.evaluate(() => {
+    const hooks = window.__MODIFF_E2E__!;
+    hooks.setWebsocketConnection({ sid: 'optional-stage-contract', isConnected: true });
+    const api = hooks.exportAuthorizedApiGraph();
+    const identities = new Map(Object.entries(api.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
+    // These single-branch fixtures have one instance per implementation key.
+    // Compare consumed parameters and source/port bindings across explicit
+    // grouping, whose normal V2 lowering owns new runtime node IDs.
+    if (new Set(identities.values()).size !== identities.size)
+      throw new Error('Ambiguous optional-stage fixture identity');
+    return Object.fromEntries(
+      Object.entries(api.nodes).map(([id, node]) => [
+        identities.get(id),
+        {
+          ...node,
+          params: Object.fromEntries(
+            Object.entries(node.params).map(([field, value]) => [
+              field,
+              { ...value, ...(value.sourceId ? { sourceId: identities.get(value.sourceId) } : {}) },
+            ]),
+          ),
+        },
+      ]),
+    );
+  });
+}
+
+test('optional Model Setup and Image Output preserve native stages, task review, separate, Undo and reusable save', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'flux_lora_ghibli_story', 'ghibli');
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const before = await optionalStageApi(page);
+  const owner = (await graph()).nodes.find((node) => node.data.action === 'ModelsLoader')!;
+  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  await loader.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Node inspector', exact: true })
+    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .click();
+  await page.getByRole('menuitem', { name: 'Group image output', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const output = (await graph()).nodes.find((node) => node.data.label === 'Image Output')!;
+  const outputNode = page.getByTestId(`output-node-${output.id}`);
+  await expect(outputNode).toBeVisible();
+  await expect(outputNode.getByTestId(`stage-preview-${output.id}`)).toBeVisible();
+  expect(output.data.blockInstanceV2!.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
+    'DecodeLatents',
+    'Preview',
+  ]);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await loader.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Node inspector', exact: true })
+    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .click();
+  await page.getByRole('menuitem', { name: 'Group model setup', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const setup = (await graph()).nodes.find((node) => node.data.label === 'Model Setup')!;
+  const setupNode = page.getByTestId(`setup-node-${setup.id}`);
+  await expect(setupNode).toBeVisible();
+  expect(setup.data.blockInstanceV2!.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
+    'Lora',
+    'ModelsLoader',
+  ]);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await expect(setupNode.getByRole('button', { name: 'Expand block', exact: true })).toHaveCount(0);
+  await setupNode.getByRole('button', { name: 'Model Setup options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Inspect implementation', exact: true }).click();
+  const implementation = page.getByRole('dialog', { name: 'Model Setup implementation', exact: true });
+  await expect(implementation.getByRole('heading', { name: 'Load Models', exact: true })).toBeVisible();
+  await implementation.getByRole('button', { name: 'Close', exact: true }).click();
+  const starters = await operationStarterFixtures();
+  await page.route('**/operations/starter', (route) => {
+    const request = route.request().postDataJSON();
+    const starter = starters.find((item) => item.pipelineClass === request.pipelineClass && item.task === request.task);
+    return route.fulfill({ status: starter ? 200 : 400, json: starter ?? { error: 'Unknown fixture task' } });
+  });
+  await setupNode.getByRole('button', { name: 'Change model / task', exact: true }).click();
+  await setupNode.getByLabel('Replacement task', { exact: true }).click();
+  await page.getByRole('option', { name: 'image to image', exact: true }).click();
+  await setupNode.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+  await expect(review.getByRole('heading', { name: 'Review model / task change', exact: true })).toBeVisible();
+  await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(await optionalStageApi(page)).toEqual(before);
+  await setupNode.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+  await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await graph()).nodes
+          .find((node) => node.id === setup.id)!
+          .data.blockInstanceV2!.effectiveGraph.nodes.find((node) => node.data.action === 'ModelsLoader')!.data
+          .operationAuthoring!.operation.task,
+    )
+    .toBe('image_to_image');
+  expect(
+    (await graph()).nodes
+      .find((node) => node.data.label === 'Encode Inputs')!
+      .data.blockInstanceV2!.effectiveGraph.nodes.some(
+        (node) => node.data.operationAuthoring?.operation.nodeType === 'vae_encoder',
+      ),
+  ).toBe(true);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => optionalStageApi(page)).toEqual(before);
+  await setupNode.getByRole('button', { name: 'Model Setup options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Separate model setup stages', exact: true }).click();
+  await expect(setupNode).toHaveCount(0);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(setupNode).toBeVisible();
+  await outputNode.getByRole('button', { name: 'Image Output options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Save as reusable node…', exact: true }).click();
+  const save = page.getByTestId(`save-user-block-choices-${output.id}`);
+  await save.getByLabel('Node name').fill('My decoded image output');
+  await save.getByRole('button', { name: 'Save as new node', exact: true }).click();
+  await expect(save).toHaveCount(0);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`setup-node-${setup.id}`)).toBeVisible();
+  await expect(page.getByTestId(`output-node-${output.id}`)).toBeVisible();
+  expect(await optionalStageApi(page)).toEqual(before);
+});
+
+test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and geometry across edit, separate and reload', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'flux_fill_outpaint', 'fill outpaint');
+  // Setup an existing, task-correct ordinary outpaint composition. The current
+  // Gallery starter intentionally has separate image/mask loaders; this case
+  // verifies grouping/edit/history for a graph already using the registered
+  // canvas utility, not a claim that Gallery creates mask preprocessing.
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    const { createNodeFromRegistry } = await import('/src/workflow/nodeFactory.ts');
+    const { prepareWorkflowForManualInsertion } = await import('/src/studio/manualGraphInsertion.ts');
+    const graph = useFlowStore.getState().toObject();
+    const consumer = graph.nodes.find(
+      (node) =>
+        node.data.operationAuthoring?.operation.task === 'outpaint' &&
+        node.data.params.image &&
+        node.data.params.mask_image,
+    )!;
+    if (!consumer)
+      throw new Error(
+        `Missing declared masked consumer: ${JSON.stringify(graph.nodes.map((node) => ({ module: node.data.module, action: node.data.action, task: node.data.operationAuthoring?.operation.task, fields: Object.keys(node.data.params) })))}`,
+      );
+    const image = graph.edges.find((edge) => edge.target === consumer.id && edge.targetHandle === 'image')!;
+    const mask = graph.edges.find((edge) => edge.target === consumer.id && edge.targetHandle === 'mask_image')!;
+    const canvas = createNodeFromRegistry(
+      'modules.DiffusersImage.OutpaintCanvas',
+      useNodesStore.getState().nodesRegistry,
+      { x: -300, y: 400 },
+    );
+    if (!canvas || !image || !mask) throw new Error('Missing exact registered outpaint fixture');
+    for (const [field, value] of Object.entries({
+      width: 1536,
+      height: 1024,
+      left: 128,
+      right: 128,
+      top: 0,
+      bottom: 0,
+      overlap: 24,
+      feather: 8,
+    }))
+      canvas.data.params[field].value = value;
+    consumer.data.params.width.isInput = true;
+    consumer.data.params.height.isInput = true;
+    const edges = graph.edges.filter((edge) => edge.id !== image.id && edge.id !== mask.id);
+    if (edges.some((edge) => edge.source === mask.source || edge.target === mask.source))
+      throw new Error('Mask fixture has another consumer');
+    edges.push({
+      id: 'mask-source-canvas',
+      source: image.source,
+      sourceHandle: image.sourceHandle,
+      target: canvas.id,
+      targetHandle: 'image',
+    });
+    for (const [output, input] of [
+      ['canvas', 'image'],
+      ['mask_image', 'mask_image'],
+      ['width_out', 'width'],
+      ['height_out', 'height'],
+    ])
+      edges.push({
+        id: `mask-canvas-${input}`,
+        source: canvas.id,
+        sourceHandle: output,
+        target: consumer.id,
+        targetHandle: input,
+      });
+    prepareWorkflowForManualInsertion();
+    useFlowStore
+      .getState()
+      .replaceGraph({ nodes: [...graph.nodes.filter((node) => node.id !== mask.source), canvas], edges });
+  });
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const before = await optionalStageApi(page);
+  const owner = (await graph()).nodes.find((node) => node.data.action === 'LoadPipeline')!;
+  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  await loader.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Node inspector', exact: true })
+    .getByRole('button', { name: 'Workflow stage actions', exact: true })
+    .click();
+  await expect(page.getByRole('menuitem', { name: 'Group image output', exact: true })).toHaveCount(0);
+  await page.getByRole('menuitem', { name: 'Group mask preparation', exact: true }).click();
+  await expect
+    .poll(async () => {
+      if ((await graph()).nodes.some((node) => node.data.label === 'Prepare Mask')) return 'grouped';
+      return (
+        (
+          await page.getByRole('dialog', { name: 'Node inspector', exact: true }).getByRole('alert').allTextContents()
+        ).join('; ') || 'waiting'
+      );
+    })
+    .toBe('grouped');
+  await page.keyboard.press('Escape');
+  const prepared = (await graph()).nodes.find((node) => node.data.label === 'Prepare Mask')!;
+  const node = page.getByTestId(`mask-node-${prepared.id}`);
+  await expect(node).toBeVisible();
+  expect(prepared.data.blockInstanceV2!.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
+    'Load',
+    'OutpaintCanvas',
+  ]);
+  expect(await optionalStageApi(page)).toEqual(before);
+  const consumer = (await graph()).nodes.find(
+    (node) =>
+      node.data.operationAuthoring?.operation.task === 'outpaint' &&
+      node.data.params.image &&
+      node.data.params.mask_image,
+  )!;
+  const consumerKey = `${consumer.data.module}.${consumer.data.action}`;
+  const feather = node.getByLabel(/^Mask feather$/i);
+  await feather.fill('0');
+  await feather.press('Enter');
+  await expect(feather).toHaveValue('0');
+  const edited = await optionalStageApi(page);
+  expect(edited['modules.DiffusersImage.OutpaintCanvas'].params.feather.value).toBe('0');
+  expect(edited[consumerKey].params.mask_image.sourceKey).toBe('mask_image');
+  expect(edited[consumerKey].params.width.sourceKey).toBe('width_out');
+  expect(edited[consumerKey].params.height.sourceKey).toBe('height_out');
+  await node.getByRole('button', { name: 'Prepare Mask options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Separate mask preparation stages', exact: true }).click();
+  await expect(node).toHaveCount(0);
+  expect(await optionalStageApi(page)).toEqual(edited);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(node).toBeVisible();
+  await expect(feather).toHaveValue('0');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(node).toBeVisible();
+  await expect(feather).toHaveValue('0');
+  expect(await optionalStageApi(page)).toEqual(edited);
+});
+
+test('optional declared component bundle preserves Qwen stages, controls, breakout, Undo and reload', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'qwen', false);
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const original = await graph();
+  const before = await optionalStageApi(page);
+  const owner = original.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  const menu = async () => {
+    await loader.locator('header').first().click();
+    await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Node inspector', exact: true })
+      .getByRole('button', { name: 'Workflow stage actions', exact: true })
+      .click();
+  };
+  await menu();
+  await page.getByRole('menuitem', { name: 'Use component bundle', exact: true }).click();
+  await page.keyboard.press('Escape');
+  const bundled = await graph();
+  expect(bundled.nodes.map((node) => node.id).sort()).toEqual(original.nodes.map((node) => node.id).sort());
+  expect(bundled.edges.length).toBe(original.edges.length - 1);
+  const api = await optionalStageApi(page);
+  for (const key of [
+    'modules.ModularDiffusers.EncodePrompt',
+    'modules.ModularDiffusers.Denoise',
+    'modules.ModularDiffusers.DecodeLatents',
+  ]) {
+    expect(api[key].params.pipeline_components.sourceId).toBe('modules.ModularDiffusers.ModelsLoader');
+    expect(api[key].params.pipeline_components.sourceKey).toBe('pipeline_components');
+  }
+  expect(api['modules.ModularDiffusers.EncodePrompt'].params.prompt).toEqual(
+    before['modules.ModularDiffusers.EncodePrompt'].params.prompt,
+  );
+  expect(api['modules.ModularDiffusers.Guider']).toEqual(before['modules.ModularDiffusers.Guider']);
+  expect(api['modules.ModularDiffusers.Denoise'].params.seed).toEqual(
+    before['modules.ModularDiffusers.Denoise'].params.seed,
+  );
+  await menu();
+  await page.getByRole('menuitem', { name: 'Expose components', exact: true }).click();
+  await page.keyboard.press('Escape');
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => optionalStageApi(page)).toEqual(api);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await expect.poll(() => optionalStageApi(page)).toEqual(api);
+  await menu();
+  await expect(page.getByRole('menuitem', { name: 'Expose components', exact: true })).toBeVisible();
+});
+
+for (const templateId of [
+  'qwen_inpaint_object_replace',
+  'qwen_inpaint_mask_draft',
+  'qwen_outpaint_aspect_template',
+  'qwen_outpaint_draft',
+] as const)
+  test(`Qwen Gallery ${templateId} preserves its selected stages and exact inputs through export, normal import and refresh`, async ({
+    page,
+  }) => {
+    await openOptionalStageTemplate(page, templateId, 'qwen', false);
+    const api = () =>
+      page.evaluate(async () => {
+        const sid = 'qwen-gallery-hydration';
+        window.__MODIFF_E2E__!.setWebsocketConnection({ sid, isConnected: true });
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return useFlowStore.getState().exportGraph(sid, undefined, { randomizeSeeds: false });
+      });
+    const before = await api();
+    const selection = IMAGE_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;
+    const executable = Object.values(before.nodes);
+    const form = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form);
+    if (selection.implementation === 'native_stages') {
+      for (const action of ['ModelsLoader', 'EncodePrompt', 'ImageEncode', 'Denoise', 'DecodeLatents', 'Guider'])
+        expect(
+          executable.filter((node) => node.module === 'modules.ModularDiffusers' && node.action === action),
+        ).toHaveLength(1);
+      expect(executable.some((node) => ['LoadPipeline', 'Inpaint'].includes(node.action))).toBe(false);
+      const owner = executable.find((node) => node.action === 'ModelsLoader')!;
+      const encode = executable.find((node) => node.action === 'ImageEncode')!;
+      const prompt = executable.find((node) => node.action === 'EncodePrompt')!;
+      const denoise = executable.find((node) => node.action === 'Denoise')!;
+      expect(owner.params.inpaint_compatibility.value).toBe('whole_v1');
+      expect(encode.params.inpaint_compatibility.value).toBe('whole_v1');
+      expect([denoise.params.width.value, denoise.params.height.value]).toEqual([form.width, form.height]);
+      expect(denoise.params.num_inference_steps.value).toBe(form.steps);
+      expect(denoise.params.strength.value).toBe(form.strength);
+      expect(prompt.params.prompt.value).toBe(form.prompt);
+      expect(prompt.params.negative_prompt.value).toBe(form.negativePrompt);
+      if (templateId.startsWith('qwen_outpaint_')) {
+        const canvasId = Object.keys(before.nodes).find((id) => before.nodes[id].action === 'OutpaintCanvas')!;
+        const canvas = before.nodes[canvasId];
+        expect(canvas).toBeTruthy();
+        expect([canvas.params.width.value, canvas.params.height.value]).toEqual([form.width, form.height]);
+        expect(encode.params.image).toMatchObject({ sourceId: canvasId, sourceKey: 'canvas' });
+        expect(encode.params.mask_image).toMatchObject({ sourceId: canvasId, sourceKey: 'mask_image' });
+        expect(prompt.params.image).toMatchObject({ sourceId: canvasId, sourceKey: 'canvas' });
+      }
+    } else {
+      expect(selection.implementation).toBe('whole_pipeline');
+      expect(executable.some((node) => node.action === 'LoadPipeline')).toBe(true);
+    }
+    const foreignSockets = await page.evaluate(async () => {
+      const [{ useFlowStore }, runtime, { operationAuthoring }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+        import('/src/workflow/operationAuthoringHint.ts'),
+      ]);
+      const graph = useFlowStore.getState().toObject();
+      return runtime
+        .expandBlockGraphV2ForExecution(graph.nodes, graph.edges)
+        .nodes.filter((node) => {
+          const operation = operationAuthoring(node)?.operation;
+          return (
+            operation &&
+            Object.hasOwn(node.data.params, 'pipeline_components') &&
+            !operation.ports.some((port) => port.name === 'pipeline_components')
+          );
+        })
+        .map((node) => `${node.data.module}.${node.data.action}`);
+    });
+    expect(foreignSockets).toEqual([]);
+    await page.getByTestId('topbar-export').click();
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByTestId('topbar-export-workflow-package').click();
+    const download = await downloadPromise;
+    const downloadedPath = await download.path();
+    expect(downloadedPath).toBeTruthy();
+    const packageBytes = await fs.readFile(downloadedPath!);
+    const workflowPackage = JSON.parse(packageBytes.toString('utf8')) as { apiGraph: ApiGraphExport };
+    expect(workflowPackage.apiGraph.nodes).toEqual(before.nodes);
+    await page.getByTestId('left-tab-assets').click();
+    await page.getByTestId('left-open-gallery-library').click();
+    await expect(page.getByRole('heading', { name: 'Output Gallery', exact: true })).toBeVisible();
+    await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+      name: `${templateId}.json`,
+      mimeType: 'application/json',
+      buffer: packageBytes,
+    });
+    await page.waitForFunction(() => {
+      const state = window.__MODIFF_E2E__!.getState().studio;
+      return (
+        state.canvasTransition === null &&
+        state.workflowTabs.find((tab: { id: string }) => tab.id === state.activeWorkflowTabId)?.source === 'import'
+      );
+    });
+    await expect.poll(api).toEqual(before);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await expect.poll(api).toEqual(before);
+  });
+
+test('mounted media source picker distinguishes model branches and follows edits, removal and Undo', async ({
+  page,
+}) => {
+  page.setDefaultTimeout(15_000);
+  await ensureFrontend();
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
+  const args = [script, '--selection', 'QwenImageModularPipeline', 'image_to_image'];
+  const { stdout } = await promisify(execFile)(
+    process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh'),
+    process.platform === 'win32' ? args : [python, ...args],
+    {
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      timeout: 90_000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  const [starter] = JSON.parse(stdout) as OperationStarter[];
+  expect(starter!.task).toBe('image_to_image');
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  const ids = await page.evaluate(async (starter) => {
+    const [
+      { useFlowStore },
+      { useNodesStore },
+      { createOperationStarter },
+      { mountMediaAttachmentProbe },
+      schema,
+      runtime,
+      crossing,
+    ] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useNodeStore.ts'),
+      import('/src/workflow/operationAuthoring.ts'),
+      import('/tests/e2e/studio-mocked/mediaAttachmentFixture.tsx'),
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+      import('/src/studio/blockCrossingConnectionsV2.ts'),
+    ]);
+    const branches = ['Qwen/Qwen-Image', 'Qwen/Qwen-Image-2512', 'Qwen/Qwen-Image'].map((repo) => {
+      const graph = createOperationStarter(starter, { x: 0, y: 0 });
+      graph.nodes.find((node) => node.data.action === 'ModelsLoader')!.data.params.repo_id!.value = {
+        source: 'hub',
+        value: repo,
+      };
+      return graph;
+    });
+    const owners = branches.map((graph) => graph.nodes.find((node) => node.data.action === 'ModelsLoader')!.id);
+    const decoders = branches.map((graph) => graph.nodes.find((node) => node.data.action === 'DecodeLatents')!.id);
+    useNodesStore.setState({
+      operationContracts: starter.nodes.map((node) => node.operation),
+      pipelineSupport: [
+        {
+          pipelineClass: starter.pipelineClass,
+          coverage: 'declared',
+          reason: 'Actual backend starter contracts for this isolated picker regression.',
+          equivalentTo: [],
+          upstreamTasks: [],
+          tasks: [
+            {
+              task: starter.task,
+              execution: 'adapter',
+              decomposition: 'stages',
+              operationIds: starter.nodes.map((node) => node.operation.operationId),
+              executionProfileIds: [],
+              dependencies: 'ready',
+              runtimeRequirements: [],
+            },
+          ],
+        },
+      ],
+    });
+    const saved = createOperationStarter(starter, { x: 0, y: 0 });
+    const savedOwner = saved.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+    savedOwner.data.params.repo_id!.value = { source: 'hub', value: 'Qwen/Qwen-Image-2512' };
+    const savedDecoder = saved.nodes.find((node) => node.data.action === 'DecodeLatents')!;
+    const inner = {
+      nodes: saved.nodes.map((node) => ({ nodeId: node.id, nodeType: node.type!, data: node.data })),
+      edges: saved.edges.map((edge) => ({
+        edgeId: edge.id,
+        sourceNodeId: edge.source,
+        sourcePortId: edge.sourceHandle!,
+        targetNodeId: edge.target,
+        targetPortId: edge.targetHandle!,
+      })),
+    };
+    const definition = {
+      schemaVersion: 2 as const,
+      definitionId: 'user:media-label-import',
+      displayName: 'Saved image branch',
+      source: { kind: 'user' as const },
+      graph: { ...inner, graphHash: schema.blockGraphHashV2(inner) },
+      boundary: {
+        mode: 'explicit' as const,
+        inputs: [],
+        outputs: [
+          {
+            portId: 'rendered',
+            label: 'Result',
+            valueType: 'image',
+            required: false,
+            binding: { nodeId: savedDecoder.id, fieldOrPortId: 'images' },
+          },
+        ],
+      },
+      controls: [],
+      suggestedInputs: [],
+      previews: [],
+      ownership: { kind: 'user' as const, definitionMutable: true },
+    };
+    const block = runtime.createBlockRootNodeV2(
+      schema.createBlockInstanceV2(
+        { ...definition, contentHash: schema.blockDefinitionContentHashV2(definition) },
+        { instanceId: 'media-label-import-block', position: { x: 0, y: 800 }, size: { width: 400, height: 500 } },
+      ),
+    );
+    const broken = {
+      id: 'retained-input-as-output',
+      source: block.id,
+      sourceHandle: crossing.blockCrossingHandleV2({
+        direction: 'input',
+        nodeId: savedOwner.id,
+        fieldOrPortId: 'repo_id',
+      }),
+      target: 'retained-input-target',
+      targetHandle: 'input',
+    };
+    useFlowStore.getState().replaceGraph(
+      {
+        nodes: [
+          ...branches.flatMap((graph) => graph.nodes),
+          block,
+          {
+            id: broken.target,
+            type: 'custom',
+            position: { x: 900, y: 800 },
+            data: {
+              module: 'custom.Values',
+              action: 'Input',
+              type: 'custom',
+              category: 'test',
+              label: 'Input',
+              params: { input: { type: 'str', display: 'input' } },
+            },
+          },
+        ],
+        edges: [...branches.flatMap((graph) => graph.edges), broken],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+      { clearRemovedCache: false },
+    );
+    useFlowStore.getState().resetHistory();
+    mountMediaAttachmentProbe(owners[0]!, owners[1]!, decoders[1]!);
+    return { owners, decoders, brokenEdgeId: broken.id };
+  }, starter!);
+  const probe = page.getByTestId('mounted-media-attachment');
+  const picker = probe.getByRole('button', { name: 'Media input source', exact: true });
+  await picker.click();
+  const first = 'Decode Latents · Images · Qwen/Qwen-Image · Branch 1';
+  const second = 'Decode Latents · Images · Qwen/Qwen-Image-2512';
+  const third = 'Decode Latents · Images · Qwen/Qwen-Image · Branch 2';
+  await expect(page.getByRole('option', { name: first, exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: third, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('option', { name: 'Saved image branch · Result · Qwen/Qwen-Image-2512', exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().edges.some((edge) => edge.id === id),
+      ids.brokenEdgeId,
+    ),
+  ).toBe(true);
+  await page.getByRole('option', { name: second, exact: true }).click();
+  await expect(picker).toHaveText(second);
+  await probe.getByRole('button', { name: 'Use the same source model', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  await picker.click();
+  await expect(
+    page.getByRole('option', { name: 'Decode Latents · Images · Qwen/Qwen-Image · Branch 3', exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await probe.getByRole('button', { name: 'Remove selected source', exact: true }).click();
+  await expect(picker).toHaveText('Add Load Image');
+  let starterRequests = 0;
+  await page.route('**/operations/starter*', (route) => {
+    starterRequests += 1;
+    return route.abort();
+  });
+  await probe.getByRole('button', { name: 'Attach input', exact: true }).click();
+  await expect(probe).toContainText(
+    'The selected source is no longer compatible. Choose a source for this input role.',
+  );
+  expect(starterRequests).toBe(0);
+  await probe.getByRole('button', { name: 'Undo source edit', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  await probe.getByRole('button', { name: 'Undo source edit', exact: true }).click();
+  await expect(picker).toHaveText(second);
+  await probe.getByRole('button', { name: 'Redo source edit', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().nodes.some((node) => node.id === id),
+      ids.decoders[1]!,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('media-source-model-branches.png'), animations: 'disabled' });
+});
+
+test('mocked Gallery opens every ordered collection image before and after history reload', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const mediaPaths = [0, 1, 2].map((index) => `@data/studio/outputs/ordered-layer-${index}.webp`);
+  const mediaItems = mediaPaths.map((backendPath, index) => ({
+    index,
+    url: `/file?file=${encodeURIComponent(backendPath)}`,
+    backendPath,
+    displayType: 'image',
+    label: `Layer ${index + 1}`,
+    taskId: 'ordered-layers-task',
+    clientRunId: 'ordered-layers-client',
+    runInputHash: 'ordered-layers-input',
+    attemptIndex: 0,
+    width: 2,
+    height: 2,
+  }));
+  const output = {
+    id: 'ordered-layers-output',
+    url: mediaItems[0]!.url,
+    displayType: 'image_collection',
+    modelType: 'QwenImageLayeredModularPipeline',
+    modelLabel: 'Ordered collection',
+    mode: 'layer_decomposition',
+    prompt: 'Keep all three recorded layers.',
+    taskId: 'ordered-layers-task',
+    clientRunId: 'ordered-layers-client',
+    runInputHash: 'ordered-layers-input',
+    nodeId: 'preview',
+    attemptIndex: 0,
+    createdAt: 1,
+    mediaItems,
+  };
+  let graphPosts = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/graph' && request.method() === 'POST') graphPosts += 1;
+  });
+  await page.route('**/studio_outputs**', (route) => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({
+      json: { error: false, outputs: [output], revision: 1 },
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  for (let reload = 0; reload < 2; reload += 1) {
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await page.getByTestId('topbar-gallery').click();
+    const gallery = page.getByTestId('gallery-panel');
+    await expect(gallery.getByTestId('gallery-output-0').getByRole('img')).toHaveCount(3);
+    // Both existing full-size entry points must preserve the collection.
+    if (reload === 0) await gallery.getByTestId('gallery-open-0').click();
+    else await gallery.getByRole('button', { name: /^Root \| Ordered collection \|/ }).click();
+    for (let index = 0; index < 3; index += 1) {
+      const dialog = page.getByRole('dialog', {
+        name: `Image ${index + 1} of 3`,
+        exact: true,
+      });
+      await expect(dialog).toHaveCount(1);
+      await expect(dialog.getByRole('heading', { name: `Image ${index + 1} of 3`, exact: true })).toBeVisible();
+      const image = dialog.locator('img.max-h-full.max-w-full');
+      await expect(image).toHaveCount(1);
+      await expect(image).toBeVisible();
+      await expect
+        .poll(() =>
+          image.evaluate((element: HTMLImageElement) => ({
+            file: new URL(element.currentSrc).searchParams.get('file'),
+            width: element.naturalWidth,
+            height: element.naturalHeight,
+          })),
+        )
+        .toEqual({ file: mediaPaths[index], width: 2, height: 2 });
+      await expect(dialog.getByRole('button', { name: /^Show image [123]$/ })).toHaveCount(3);
+      if (index < 2) await dialog.getByRole('button', { name: 'Next image', exact: true }).click();
+    }
+    await page.getByRole('button', { name: 'Previous image', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Image 2 of 3', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Image 2 of 3', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Show image 1', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Image 1 of 3', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Image 1 of 3', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+    expect((await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0]))!.mediaItems).toMatchObject(
+      mediaItems,
+    );
+    if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
+  }
+  expect(graphPosts).toBe(0);
 });

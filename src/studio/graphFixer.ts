@@ -14,6 +14,7 @@ import { reviewedLoopRepairEdgeV2 } from './reviewedLoopRepairV2';
 import type { HuggingFaceNodeLibraryBlockDefinition } from './huggingFaceNodeLibrary';
 import { isBlockRootV2Node, nodeConnectorParam, nodeConnectorParams } from './nodeConnectorResolution';
 import type { RunReadinessIssue } from './types';
+import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
 
 export type GraphFixConfidence = 'safe' | 'choice';
 export type GraphFixExternalAction = 'open_model_manager' | 'open_assets' | 'open_setup' | 'inspect_node';
@@ -900,6 +901,7 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
       if (blockInputHasFieldControl(target, targetHandle)) return;
       if (!inputIsRequired(targetHandle, targetParam, Boolean(target.data.skipParamsCheck))) return;
       if (validIncoming.has(`${target.id}:${targetHandle}`)) return;
+      if (operationInputIsSuppliedByBundle(target, targetHandle, context)) return;
       if (missingOutputTargetIds.has(target.id) && connectedOutputs.length === 0) return;
       const issueId = candidateId('missing-input', target.id, targetHandle);
       const candidates = missingInputCandidates(issueId, context, target, targetHandle, targetParam);

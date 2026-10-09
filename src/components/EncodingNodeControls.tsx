@@ -6,7 +6,7 @@ import { blockOperationGraphV2, blockViewModelV2 } from '../studio/blockRuntimeV
 import { ModiffDisclosure } from '../ui';
 import { encodingControlParam } from '../workflow/encodingNodePresentation';
 import { sharedOperationInput } from '../workflow/operationSharedInputs';
-import { unpackVisualOperationGroups } from '../workflow/visualOperationGroups';
+import { unpackVisualOperationGroups } from '../workflow/visualOperationGroupProjection';
 import { EncodeImageSummary } from './EncodeImageSummary';
 import { useNodesStore } from '../stores/useNodeStore';
 import { optionalEncodingImageInput } from '../workflow/encodingOptionalInput';

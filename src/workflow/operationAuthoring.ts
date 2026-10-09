@@ -9,6 +9,8 @@ import type { OperationContract } from './operationContracts';
 import { operationAuthoring } from './operationAuthoringHint';
 export { operationAuthoring } from './operationAuthoringHint';
 import { operationPortCompatibility } from './operationCatalog';
+import { compatibleOperationControlTransfer } from './operationControlTransfer';
+import { preservedMediaFanout } from './operationMediaMigration';
 import { createNodeFromRegistry } from './nodeFactory';
 import { acceptsOperationValue as acceptsValue } from './operationFieldValue';
 import { operationScope } from './operationScope';
@@ -71,7 +73,12 @@ function endpointLabel(node: CustomNodeType | undefined, field: string | null | 
 }
 
 function semanticName(node: CustomNodeType, field: string, direction: 'input' | 'output') {
-  const declared = port(node, field, direction)?.semanticName;
+  const contract = port(node, field, direction);
+  if (contract?.semantics?.control) {
+    const control = contract.semantics.control;
+    return `${control.technique} ${control.parameter}`;
+  }
+  const declared = contract?.semanticName;
   const value = declared || '';
   return value
     .toLowerCase()
@@ -103,20 +110,60 @@ function isAuthored(node: CustomNodeType, name: string, field: NodeParams) {
   );
 }
 
-function transferableSetting(source: CustomNodeType, sourceName: string, target: CustomNodeType, targetName: string) {
+function transferableSetting(
+  source: CustomNodeType,
+  sourceName: string,
+  target: CustomNodeType,
+  targetName: string,
+  sourceConnected: ReadonlySet<string>,
+  targetConnected: ReadonlySet<string>,
+) {
   const a = port(source, sourceName, 'input');
   const b = port(target, targetName, 'input');
-  if (!a || !b || a.semanticName !== b.semanticName) return false;
-  // Backend v3 contracts do not yet distinguish distilled, true CFG and CFG
-  // guidance semantically. Do not invent that equivalence from their labels.
+  if (!a || !b) return false;
+  const left = a.semantics?.control,
+    right = b.semantics?.control;
   if (
-    /guidance|cfg/i.test(a.semanticName) &&
+    a.semanticName !== b.semanticName &&
+    !(left && right && left.technique === right.technique && left.parameter === right.parameter)
+  )
+    return false;
+  if (left || right) {
+    if (
+      !left ||
+      !right ||
+      !compatibleOperationControlTransfer(
+        source,
+        sourceName,
+        left,
+        target,
+        targetName,
+        right,
+        sourceConnected,
+        targetConnected,
+      )
+    )
+      return false;
+  } else if (
+    (/guidance|cfg|guider/i.test(a.semanticName) ||
+      operationAuthoring(source)!.operation.operationId === 'diffusion.guidance' ||
+      operationAuthoring(target)!.operation.operationId === 'diffusion.guidance') &&
     operationAuthoring(source)!.operation.pipelineClass !== operationAuthoring(target)!.operation.pipelineClass
   )
     return false;
   // This is a value migration between two input declarations, not a wire
   // joining two input sockets. Assess the source as a supplied output value.
   return operationPortCompatibility({ ...a, direction: 'output' }, b) !== 'incompatible';
+}
+
+function isGuidanceSetting(node: CustomNodeType, name: string) {
+  const declared = port(node, name, 'input');
+  return Boolean(
+    declared &&
+    (declared.semantics?.control ||
+      /guidance|cfg|guider/i.test(declared.semanticName) ||
+      operationAuthoring(node)?.operation.operationId === 'diffusion.guidance'),
+  );
 }
 
 function reviewValue(value: unknown) {
@@ -396,12 +443,173 @@ export function planOperationChange(
     throw new Error('Preserving all current values is only supported within the same pipeline.');
   const before = new Map(scope.map((n) => [operationAuthoring(n)!.operation.operationId, n]));
   const draft = createOperationStarter(starter, root.position);
+  const connected = new Map<string, Set<string>>();
+  for (const edge of [...graph.edges, ...draft.edges]) {
+    if (!edge.targetHandle) continue;
+    if (!connected.has(edge.target)) connected.set(edge.target, new Set());
+    connected.get(edge.target)!.add(edge.targetHandle);
+  }
+  const canTransfer = (source: CustomNodeType, sourceName: string, target: CustomNodeType, targetName: string) =>
+    unchangedControl(source, sourceName, target, targetName) ||
+    transferableSetting(
+      source,
+      sourceName,
+      target,
+      targetName,
+      connected.get(source.id) ?? new Set(),
+      connected.get(target.id) ?? new Set(),
+    );
   const nextOwner = draft.nodes.find((node) => operationOwnsModel(operationAuthoring(node)?.operation))!;
+  const ownerFields = [
+    'repo_id',
+    'model_id',
+    'repo_source',
+    'revision',
+    'execution_profile_id',
+    'reviewed_variant',
+    'trust_remote_code',
+    'conditioning_model_id',
+    'conditioning_revision',
+    'conditioning_kind',
+    'execution_recipe',
+  ];
+  const sameOwner = (left: CustomNodeType, right: CustomNodeType) =>
+    operationAuthoring(left)!.operation.binding?.pipelineClass ===
+      operationAuthoring(right)!.operation.binding?.pipelineClass &&
+    ['repo_id', 'model_id'].some((name) => {
+      const value = operationFieldValue(left.data.params[name]);
+      if (typeof value === 'string') return Boolean(value.trim());
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+      const selector = value as Record<string, unknown>;
+      return (
+        (selector.source === 'hub' || selector.source === 'local') &&
+        typeof selector.value === 'string' &&
+        Boolean(selector.value.trim())
+      );
+    }) &&
+    ownerFields.every((name) =>
+      deepEqual(operationFieldValue(left.data.params[name]), operationFieldValue(right.data.params[name])),
+    );
+  const sameModel = sameOwner(root, nextOwner);
+  // Keeping an unchanged executor and model preserves its unresolved runtime
+  // policy. It does not infer a distilled scale's meaning for a different model.
+  function unchangedControl(source: CustomNodeType, sourceName: string, target: CustomNodeType, targetName: string) {
+    const previousOwner = returning?.nodes.find((node) => operationOwnsModel(operationAuthoring(node)?.operation));
+    const exactReturn =
+      previousOwner && sameOwner(previousOwner, nextOwner) && returning?.nodes.some((node) => node.id === source.id);
+    if (
+      (!sameModel && !exactReturn) ||
+      sourceName !== targetName ||
+      (options.restoreDefaults && !connected.get(source.id)?.has(sourceName))
+    )
+      return false;
+    const a = operationAuthoring(source)?.operation,
+      b = operationAuthoring(target)?.operation;
+    const left = port(source, sourceName, 'input'),
+      right = port(target, targetName, 'input');
+    return Boolean(
+      left?.semantics?.control &&
+      right?.semantics?.control &&
+      a &&
+      b &&
+      a.nodeKey === b.nodeKey &&
+      a.operationId === b.operationId &&
+      deepEqual(a.binding, b.binding) &&
+      deepEqual(left, right),
+    );
+  }
   const archived = operationAuthoring(root)!.inactiveDrafts ?? [];
   const returning = archived.find((item) => item.routeKey === routeKey(nextOwner));
   const inactiveByOperation = new Map(
     (returning?.nodes ?? []).map((node) => [operationAuthoring(node)!.operation.operationId, node]),
   );
+  function hiddenRuntimeValue(
+    source: CustomNodeType,
+    target: CustomNodeType,
+    name: string,
+    wired: ReadonlySet<string>,
+  ) {
+    const a = operationAuthoring(source)!,
+      b = operationAuthoring(target)!;
+    const field = source.data.params[name],
+      destination = target.data.params[name];
+    const input = port(source, name, 'input');
+    return Boolean(
+      a.operation.nodeKey === b.operation.nodeKey &&
+      a.operation.operationId === b.operation.operationId &&
+      a.operation.task === b.operation.task &&
+      a.operation.workflowId === b.operation.workflowId &&
+      deepEqual(a.operation.binding, b.operation.binding) &&
+      field?.hidden === true &&
+      destination?.hidden === true &&
+      input?.semantics?.kind === 'value' &&
+      deepEqual(input, port(target, name, 'input')) &&
+      !wired.has(name) &&
+      !connected.get(target.id)?.has(name) &&
+      !field.isConnected &&
+      !destination.isConnected &&
+      isAuthored(source, name, field) &&
+      !Object.prototype.hasOwnProperty.call(a.operation.binding?.values ?? {}, name) &&
+      !Object.prototype.hasOwnProperty.call(b.operation.binding?.values ?? {}, name) &&
+      connectionTypesAreCompatible(field.type, destination.type) &&
+      acceptsValue(destination, operationFieldValue(field)),
+    );
+  }
+  const runtimeSettings = (returning?.nodes ?? []).flatMap((node) =>
+    Object.entries(node.data.params).flatMap(([name, field]) => {
+      const hint = operationAuthoring(node)!;
+      const input = port(node, name, 'input');
+      return (field.hidden === true || input?.hidden) &&
+        input?.semantics?.kind === 'value' &&
+        isAuthored(node, name, field) &&
+        !Object.prototype.hasOwnProperty.call(hint.operation.binding?.values ?? {}, name)
+        ? [{ node, name }]
+        : [];
+    }),
+  );
+  const returningOwners = (returning?.nodes ?? []).filter((node) =>
+    operationOwnsModel(operationAuthoring(node)?.operation),
+  );
+  const restoreRuntime =
+    !options.restoreDefaults &&
+    runtimeSettings.length > 0 &&
+    returningOwners.length === 1 &&
+    sameOwner(returningOwners[0]!, nextOwner) &&
+    routeKey(returningOwners[0]!) === returning!.routeKey &&
+    inactiveByOperation.size === returning!.nodes.length &&
+    returning!.nodes.every((node) => {
+      const operation = operationAuthoring(node)!.operation;
+      const matches = draft.nodes.filter(
+        (target) => operationAuthoring(target)!.operation.operationId === operation.operationId,
+      );
+      const target = matches[0] && operationAuthoring(matches[0])!.operation;
+      return (
+        matches.length === 1 &&
+        target &&
+        operation.nodeKey === target.nodeKey &&
+        operation.task === target.task &&
+        operation.workflowId === target.workflowId &&
+        deepEqual(operation.binding, target.binding) &&
+        operation.ports.length === target.ports.length &&
+        operation.ports.every((input) =>
+          deepEqual(
+            input,
+            target.ports.find((p) => p.name === input.name && p.direction === input.direction),
+          ),
+        )
+      );
+    }) &&
+    runtimeSettings.every(({ node, name }) => {
+      const target = draft.nodes.find(
+        (item) => operationAuthoring(item)!.operation.operationId === operationAuthoring(node)!.operation.operationId,
+      );
+      const wired = new Set(
+        returning!.edges
+          .filter((edge) => edge.target === node.id && edge.targetHandle)
+          .map((edge) => edge.targetHandle!),
+      );
+      return target && hiddenRuntimeValue(node, target, name, wired);
+    });
   const changes: string[] = [];
   const diagnostics: string[] = [];
   const reviewChanges: string[] = [];
@@ -409,6 +617,11 @@ export function planOperationChange(
   const addPreserved = (message: string) => {
     if (!preserved.includes(message)) preserved.push(message);
   };
+  if (restoreRuntime) addPreserved('Restore runtime settings from this exact model’s inactive draft.');
+  else if (runtimeSettings.length && !options.restoreDefaults)
+    diagnostics.push(
+      'Runtime settings remain archived because they cannot be safely restored; the selected route’s defaults apply.',
+    );
   const idMap = new Map<string, string>();
   const replacements = new Map<string, CustomNodeType>();
   const changedIds = new Map<string, string>();
@@ -447,12 +660,16 @@ export function planOperationChange(
     const params = structuredClone(fresh.data.params);
     if (restored && !options.restoreDefaults) {
       for (const [name, field] of Object.entries(restored.data.params)) {
+        if (restoreRuntime && runtimeSettings.some((item) => item.node === restored && item.name === name)) {
+          params[name] = { ...params[name], value: structuredClone(operationFieldValue(field)) };
+          continue;
+        }
         if (
           publicSetting(field) &&
           params[name] &&
           publicSetting(params[name]) &&
           isAuthored(restored, name, field) &&
-          transferableSetting(restored, name, fresh, name) &&
+          canTransfer(restored, name, fresh, name) &&
           acceptsValue(params[name], operationFieldValue(field)) &&
           !Object.prototype.hasOwnProperty.call(next.operation.binding?.values ?? {}, name) &&
           !operationOwnsModel(next.operation)
@@ -473,6 +690,21 @@ export function planOperationChange(
     const retained = [...previous.retained];
     const modelChanged = previous.operation.binding?.pipelineClass !== next.operation.binding?.pipelineClass;
     for (const [name, originalField] of Object.entries(old.data.params)) {
+      // Reattaching a socket to this exact route must keep its authored runtime
+      // mode. Hidden execution settings never migrate to another task, model,
+      // implementation or schema, and never override a bound selector.
+      const targetField = params[name];
+      if (
+        options.preserveValues &&
+        !options.restoreDefaults &&
+        sameModel &&
+        routeKey(root) === routeKey(nextOwner) &&
+        hiddenRuntimeValue(old, fresh, name, connected.get(old.id) ?? new Set())
+      ) {
+        params[name] = { ...targetField, value: structuredClone(operationFieldValue(originalField)) };
+        addPreserved(`Keep runtime settings for unchanged ${old.data.label}.`);
+        continue;
+      }
       // Preserve compatible creative defaults, not task-bound selectors or
       // controls absent from the destination. Authored overrides still go
       // through the normal review path below.
@@ -482,7 +714,7 @@ export function planOperationChange(
         publicSetting(params[name]) &&
         !Object.prototype.hasOwnProperty.call(next.operation.binding?.values ?? {}, name) &&
         acceptsValue(params[name], operationFieldValue(originalField)) &&
-        (operationOwnsModel(previous.operation) || transferableSetting(old, name, fresh, name));
+        (operationOwnsModel(previous.operation) || canTransfer(old, name, fresh, name));
       // A direct socket connection is not a request for a new creative example.
       // Retain default-backed visible values too, through the same schema and
       // semantic checks used for explicit overrides. Model-change behavior is
@@ -529,7 +761,7 @@ export function planOperationChange(
         ) &&
         target &&
         publicSetting(target) &&
-        (operationOwnsModel(previous.operation) || transferableSetting(old, name, fresh, name)) &&
+        (operationOwnsModel(previous.operation) || canTransfer(old, name, fresh, name)) &&
         connectionTypesAreCompatible(field.type, target.type) &&
         acceptsValue(target, field.value);
       if (allowed) {
@@ -588,7 +820,7 @@ export function planOperationChange(
           targetField.display === 'output' ||
           !connectionTypesAreCompatible(entry.field.type, targetField.type) ||
           !acceptsValue(targetField, entry.field.value) ||
-          !transferableSetting(entry.old, entry.name, targetNode, targetName)
+          !canTransfer(entry.old, entry.name, targetNode, targetName)
         )
           return [];
         const targetKey = semanticName(targetNode, targetName, 'input');
@@ -658,7 +890,7 @@ export function planOperationChange(
               targetField.display === 'output' ||
               !connectionTypesAreCompatible(field.type, targetField.type) ||
               !acceptsValue(targetField, field.value) ||
-              !transferableSetting(old, name, targetNode, targetName)
+              !canTransfer(old, name, targetNode, targetName)
             )
               return [];
             const targetKey = semanticName(targetNode, targetName, 'input');
@@ -727,7 +959,8 @@ export function planOperationChange(
           field.hidden ||
           field.display === 'output' ||
           targetTaken.has(`${candidate.id}:${name}`) ||
-          !connectionTypesAreCompatible(oldNode.data.params[oldField]?.type, field.type)
+          !connectionTypesAreCompatible(oldNode.data.params[oldField]?.type, field.type) ||
+          (isGuidanceSetting(oldNode, oldField) && !canTransfer(oldNode, oldField, candidate, name))
         )
           return [];
         const match = oldField === name ? 3 : key && key === semanticName(candidate, name, 'input') ? 2 : 0;
@@ -822,7 +1055,15 @@ export function planOperationChange(
       source: changedIds.get(edge.source) ?? edge.source,
       target: changedIds.get(edge.target) ?? edge.target,
     };
-    if (!obsolete.has(edge.source) && !obsolete.has(edge.target) && compatibleEdge(adapted, nodes)) edges.push(adapted);
+    const previousTarget = graph.nodes.find((node) => node.id === edge.target);
+    const nextTarget = nodes.find((node) => node.id === adapted.target);
+    const controlCompatible =
+      !previousTarget ||
+      !nextTarget ||
+      !isGuidanceSetting(previousTarget, edge.targetHandle ?? '') ||
+      canTransfer(previousTarget, edge.targetHandle ?? '', nextTarget, adapted.targetHandle ?? '');
+    if (!obsolete.has(edge.source) && !obsolete.has(edge.target) && controlCompatible && compatibleEdge(adapted, nodes))
+      edges.push(adapted);
     else if (
       proposedDraftEdges.some(
         (candidate) =>
@@ -871,6 +1112,20 @@ export function planOperationChange(
     )
       edges.push(structuredClone(edge));
   }
+  const media = preservedMediaFanout(graph, { nodes, edges }, scope, migrated);
+  for (const edge of media.edges) {
+    edges.push(edge);
+    addPreserved(
+      `${endpointLabel(
+        nodes.find((node) => node.id === edge.source),
+        edge.sourceHandle,
+      )} → ${endpointLabel(
+        nodes.find((node) => node.id === edge.target),
+        edge.targetHandle,
+      )} connection for the same declared media role`,
+    );
+  }
+  diagnostics.push(...media.attention);
   if (rebuiltManagedConnections)
     reviewChanges.push(
       `Rebuild ${rebuiltManagedConnections} model-owned connection${rebuiltManagedConnections === 1 ? '' : 's'} for the selected model; no user-created nodes are removed.`,

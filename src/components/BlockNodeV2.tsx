@@ -31,7 +31,7 @@ import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
-import { visualOperationGroup } from '../workflow/visualOperationGroups';
+import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 
 const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
 const BlockDetailDialogV2 = lazy(() => import('./BlockDetailDialogV2'));

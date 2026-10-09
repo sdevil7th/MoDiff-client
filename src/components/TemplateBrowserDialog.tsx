@@ -25,12 +25,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { isWorkflowOperationCancelled, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import {
-  STUDIO_MODEL_LABELS,
-  STUDIO_MODE_LABELS,
-  getCatalogModelProfiles,
-  getFormDefaultsForMode,
-} from '../studio/modelProfiles';
+import { STUDIO_MODE_LABELS, getCatalogModelProfiles, getFormDefaultsForMode } from '../studio/modelProfiles';
 import {
   autoPlanKeyForForm,
   fetchAutoResourcePlans,
@@ -41,6 +36,7 @@ import {
 import {
   TEMPLATE_GALLERY_MANIFEST_PATH,
   findManifestEntry,
+  findHistoricalTemplateManifestEntry,
   getTemplateCardMedia,
   getTemplateLockedSettings,
   parseTemplateGalleryManifest,
@@ -51,6 +47,7 @@ import {
   TEMPLATE_BROWSER_CATEGORIES,
   filterStudioTemplates,
   templateDisplayName,
+  templateModelDisplayName,
   templateMediaSlots,
   type TemplateBrowserCategoryId,
   type TemplateBrowserFilter,
@@ -123,7 +120,9 @@ function templateAutoForm(template: StudioTemplate) {
   });
 }
 
-const templateAutoPlanEntries = STUDIO_TEMPLATES.map((template) => {
+const templateAutoPlanEntries = STUDIO_TEMPLATES.filter(
+  (template) => template.executionSelection?.memoryPolicy !== 'custom_experimental',
+).map((template) => {
   const form = templateAutoForm(template);
   return { form, planKey: autoPlanKeyForForm(form), templateId: template.id };
 });
@@ -241,7 +240,7 @@ function categoryLabel(categoryId: TemplateBrowserCategoryId) {
 
 function templateHasPublishedMedia(template: StudioTemplate, manifest: TemplateGalleryManifest | null) {
   if (manifest) {
-    const entry = findManifestEntry(template, manifest);
+    const entry = findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
     if (!entry) return false;
     return entry.mediaType !== 'video' || Boolean(entry.cardPreviewPath && entry.cardPreviewSha256);
   }
@@ -332,6 +331,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   const localModels = useNodesStore((state) => state.localModels);
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
+  const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const installHfModel = useNodesStore((state) => state.installHfModel);
   const modelIndexesRefreshing = useNodesStore((state) =>
@@ -509,10 +510,21 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       localModels,
       modelCacheDiagnostics,
       runtimeStatus,
+      studioModelCapabilities,
+      optionalRuntimeCatalog,
       nodesRegistry,
       modelIndexesRefreshing,
     }),
-    [hfCache, localModels, modelCacheDiagnostics, modelIndexesRefreshing, nodesRegistry, runtimeStatus],
+    [
+      hfCache,
+      localModels,
+      modelCacheDiagnostics,
+      modelIndexesRefreshing,
+      nodesRegistry,
+      runtimeStatus,
+      studioModelCapabilities,
+      optionalRuntimeCatalog,
+    ],
   );
 
   const effectiveFilter = useMemo(
@@ -528,7 +540,10 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     [autoResourcePlans],
   );
   const runtimeEstimateForTemplate = useCallback(
-    (template: StudioTemplate) => localRuntimeEstimate(autoPlanForTemplate(template)),
+    (template: StudioTemplate) =>
+      template.executionSelection?.memoryPolicy === 'custom_experimental'
+        ? null
+        : localRuntimeEstimate(autoPlanForTemplate(template)),
     [autoPlanForTemplate],
   );
   const isExperimentalTemplate = useCallback(
@@ -723,10 +738,10 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
 
   const pendingTermsPolicies = modelUsageTerms.pending?.policies ?? [];
 
-  const installRepo = async (repoId: string, repair = false) => {
+  const installRepo = async (repoId: string, repair = false, selection?: { revision?: string; files?: string[] }) => {
     setInstallingRepo(repoId);
     try {
-      await installHfModel(repoId, sid, { repair });
+      await installHfModel(repoId, sid, { repair, ...selection });
       setAutoResourcePlans(await loadTemplateAutoPlans(true));
     } catch (error) {
       console.error(error);
@@ -735,8 +750,15 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     }
   };
 
-  const requestInstallRepo = (template: StudioTemplate, repoId: string, repair = false) => {
-    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () => installRepo(repoId, repair));
+  const requestInstallRepo = (
+    template: StudioTemplate,
+    repoId: string,
+    repair = false,
+    selection?: { revision?: string; files?: string[] },
+  ) => {
+    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () =>
+      installRepo(repoId, repair, selection),
+    );
   };
 
   const openSetup = () => {
@@ -757,7 +779,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       focus: {
         modelType: template.modelType,
         repo,
-        label: STUDIO_MODEL_LABELS[template.modelType],
+        label: templateModelDisplayName(template),
         source: 'template',
       },
     });
@@ -995,8 +1017,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                   onCreate={() => {
                     requestCreateFromTemplate(selectedTemplate);
                   }}
-                  onInstallRepo={(repoId, repair) => {
-                    requestInstallRepo(selectedTemplate, repoId, repair);
+                  onInstallRepo={(repoId, repair, selection) => {
+                    requestInstallRepo(selectedTemplate, repoId, repair, selection);
                   }}
                   onOpenAssets={openAssets}
                   onOpenModels={openModels}
@@ -1074,6 +1096,7 @@ function TemplateBrowserCard({
   template: StudioTemplate;
 }) {
   const { beforePath, mediaPath: cardMediaPath, thumbnailPath } = getTemplateCardMedia(template, manifest);
+  const historical = !findManifestEntry(template, manifest) && findHistoricalTemplateManifestEntry(template, manifest);
   const hasUsageRestrictions = acknowledgementRequiredForTemplate(template).length > 0;
 
   return (
@@ -1112,6 +1135,11 @@ function TemplateBrowserCard({
           thumbnailPath={thumbnailPath}
           variant={template.thumbnailVariant}
         />
+        {historical ? (
+          <span className="absolute bottom-2 left-2 rounded-modiff-compact bg-modiff-bg/85 px-2 py-1 text-xs text-modiff-text">
+            Previous recipe example
+          </span>
+        ) : null}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-end gap-2 bg-gradient-to-b from-modiff-bg/80 to-transparent p-3">
           {hasUsageRestrictions ? (
             <ModiffTooltip<HTMLSpanElement> content="Usage restrictions — review before use">
@@ -1166,7 +1194,7 @@ function TemplateBrowserCard({
             />
           </div>
           <p className="truncate text-sm font-semibold text-modiff-subtle-text">
-            {STUDIO_MODEL_LABELS[template.modelType]} · {STUDIO_MODE_LABELS[template.mode]}
+            {templateModelDisplayName(template)} · {STUDIO_MODE_LABELS[template.mode]}
           </p>
         </div>
 
@@ -1225,7 +1253,7 @@ function TemplateRecipeDetail({
   manifest: TemplateGalleryManifest | null;
   onBack: () => void;
   onCreate: () => void;
-  onInstallRepo: (repoId: string, repair?: boolean) => void;
+  onInstallRepo: (repoId: string, repair?: boolean, selection?: { revision?: string; files?: string[] }) => void;
   onOpenAssets: () => void;
   onOpenModels: () => void;
   onOpenSetup: () => void;
@@ -1235,7 +1263,9 @@ function TemplateRecipeDetail({
   requiresTermsReview: boolean;
   template: StudioTemplate;
 }) {
-  const detailManifestEntry = findManifestEntry(template, manifest, { requireCardPreview: false });
+  const currentEntry = findManifestEntry(template, manifest, { requireCardPreview: false });
+  const detailManifestEntry =
+    currentEntry ?? findHistoricalTemplateManifestEntry(template, manifest, { requireCardPreview: false });
   // Source inputs have their own reviewed hash and do not become invalid merely
   // because a prompt, graph, or generated-output lock changes. Keep the strict
   // exactness gate for the result, but resolve the published source separately
@@ -1276,6 +1306,12 @@ function TemplateRecipeDetail({
         thumbnailPath={thumbnailPath}
         variant={template.thumbnailVariant}
       />
+      {!currentEntry && detailManifestEntry && template.executionSelection ? (
+        <p className="mt-2 text-xs leading-5 text-modiff-subtle-text" data-testid="template-historical-example">
+          Example from the previous recipe. This template now creates editable developer workflow nodes; the new graph
+          has not been visually qualified by this image.
+        </p>
+      ) : null}
 
       <div className="mt-4 grid gap-4">
         <div>
@@ -1289,7 +1325,7 @@ function TemplateRecipeDetail({
                 {templateDisplayName(template)}
               </h2>
               <p className="mt-1 text-sm font-semibold text-modiff-subtle-text">
-                {STUDIO_MODEL_LABELS[template.modelType]} · {STUDIO_MODE_LABELS[template.mode]}
+                {templateModelDisplayName(template)} · {STUDIO_MODE_LABELS[template.mode]}
               </p>
             </div>
             <TemplateReadinessBadge readiness={readiness} />
@@ -1345,7 +1381,7 @@ function TemplateRecipeDetail({
             <TemplateReadinessBadge readiness={readiness} />
           </div>
           {readiness.issues.length === 0 ? (
-            <IssueCard tone="success" title="Ready now" meta={readiness.summary}>
+            <IssueCard tone={readiness.tone} title={readiness.label} meta={readiness.summary}>
               Create a graph tab, build the graph, and then run when you are ready.
             </IssueCard>
           ) : (
@@ -1362,7 +1398,9 @@ function TemplateRecipeDetail({
               icon={<Boxes size={15} />}
               disabled={installingRepo === target.repoId}
               aria-label={`Install ${target.repoId}`}
-              onClick={() => onInstallRepo(target.repoId, target.repair)}
+              onClick={() =>
+                onInstallRepo(target.repoId, target.repair, { revision: target.revision, files: target.files })
+              }
             >
               {installingRepo === target.repoId ? 'Installing...' : (target.actionLabel ?? 'Install')}
             </ModiffButton>

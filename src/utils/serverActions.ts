@@ -1,5 +1,6 @@
 import config from '../../app.config';
 import { requestJson, RequestError, type RequestOptions } from './requestJson';
+import { supervisorControlAddress } from './supervisorControl';
 
 export type ServerActionResult = Record<string, unknown> & {
   error?: boolean | string;
@@ -119,13 +120,17 @@ function serverAction<T extends ServerActionResult>(
 }
 
 export function requestExecutionStop() {
-  return serverAction(
-    '/stop',
-    'Could not stop the current execution.',
-    { method: 'POST' },
-    undefined,
-    config.supervisorAddress,
-  ).catch(() => serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' }));
+  let address: string | null = null;
+  try {
+    address = supervisorControlAddress(true);
+  } catch {
+    // A rejected legacy control configuration must still permit the worker's
+    // ordinary Stop endpoint. Never request the untrusted control origin.
+  }
+  if (!address) return serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' });
+  return serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' }, undefined, address).catch(
+    () => serverAction('/stop', 'Could not stop the current execution.', { method: 'POST' }),
+  );
 }
 
 export function cancelQueuedTask(taskId: string) {

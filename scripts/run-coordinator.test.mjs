@@ -17,6 +17,7 @@ let flowStoreModule;
 let nodesStoreModule;
 let runIssueStoreModule;
 let runPreparationModule;
+let snackbarModule;
 let studioStoreModule;
 let taskStoreModule;
 let websocketModule;
@@ -62,6 +63,7 @@ before(async () => {
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   runIssueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');
   runPreparationModule = await server.ssrLoadModule('/src/studio/runPreparation.ts');
+  snackbarModule = await server.ssrLoadModule('/src/ui/snackbar.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
   websocketModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
@@ -70,6 +72,7 @@ before(async () => {
 });
 
 beforeEach(() => {
+  snackbarModule.closeSnackbar();
   flowStoreModule.useFlowStore.setState({
     nodes: [
       {
@@ -2510,6 +2513,120 @@ test('a terminal event cannot borrow identity from a different current task', ()
   assert.equal(completed?.status, 'completed');
   assert.equal(completed?.workflow_tab_id, undefined);
   assert.equal(completed?.client_run_id, undefined);
+});
+
+test('Auto cache preparation updates its running task message without changing progress or errors', () => {
+  const tasks = taskStoreModule.useTaskStore;
+  tasks.setState({
+    currentTask: {
+      task_id: 'cache-preparation-task',
+      name: 'Graph execution',
+      status: 'running',
+      workflow_tab_id: 'workflow-origin',
+      client_run_id: 'cache-preparation-run',
+      progress: 37,
+      node_progress: 12,
+      current_node: 'preview',
+      error: 'Existing diagnostic',
+      message: 'Preparing the workflow',
+    },
+    taskCount: 1,
+  });
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'auto_resource_cleanup',
+      sid: 'session-1',
+      task_id: 'cache-preparation-task',
+      performed: false,
+      message: 'Releasing previous model cache, then checking actual available memory.',
+    },
+    context,
+  );
+  const current = tasks.getState().currentTask;
+  assert.equal(current.message, 'Releasing previous model cache, then checking actual available memory.');
+  assert.equal(current.progress, 37);
+  assert.equal(current.node_progress, 12);
+  assert.equal(current.current_node, 'preview');
+  assert.equal(current.error, 'Existing diagnostic');
+  assert.equal(current.status, 'running');
+  assert.equal(current.client_run_id, 'cache-preparation-run');
+  assert.equal(current.workflow_tab_id, 'workflow-origin');
+  assert.equal(tasks.getState().sessionRuns[0].message, current.message);
+  assert.deepEqual(
+    snackbarModule.getToastItems().map((toast) => toast.message),
+    [current.message],
+  );
+  assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.progress, undefined);
+});
+
+test('Auto preparation cannot change another task or revive a terminal task', () => {
+  const tasks = taskStoreModule.useTaskStore;
+  const current = {
+    task_id: 'different-task',
+    name: 'Graph execution',
+    status: 'running',
+    progress: 42,
+    message: 'Denoising',
+  };
+  tasks.setState({ currentTask: current, taskCount: 1 });
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  const event = {
+    type: 'auto_resource_cleanup',
+    task_id: 'previous-task',
+    performed: false,
+    message: 'Checking memory',
+  };
+  websocketModule.handleWebsocketMessage(event, context);
+  assert.deepEqual(tasks.getState().currentTask, current);
+  assert.deepEqual(snackbarModule.getToastItems(), []);
+  for (const status of ['completed', 'failed', 'cancelled']) {
+    tasks.setState({ currentTask: { ...current, task_id: 'previous-task', status } });
+    websocketModule.handleWebsocketMessage(event, context);
+    assert.equal(tasks.getState().currentTask.message, 'Denoising');
+    assert.equal(tasks.getState().currentTask.status, status);
+  }
+  assert.deepEqual(tasks.getState().sessionRuns, []);
+});
+
+test('background cache preparation belongs to its task without notifying the active canvas', () => {
+  const tasks = taskStoreModule.useTaskStore;
+  tasks.setState({
+    currentTask: {
+      task_id: 'background-task',
+      name: 'Background graph',
+      status: 'running',
+      workflow_tab_id: 'background-workflow',
+      progress: 20,
+      message: 'Preparing',
+    },
+  });
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'auto_resource_cleanup',
+      task_id: 'background-task',
+      performed: false,
+      message: 'Checking actual available memory',
+    },
+    context,
+  );
+  assert.equal(tasks.getState().currentTask.message, 'Checking actual available memory');
+  assert.deepEqual(snackbarModule.getToastItems(), []);
+  assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.progress, undefined);
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'auto_resource_cleanup',
+      task_id: 'background-task',
+      performed: true,
+      reasons: ['previous model cache released'],
+    },
+    context,
+  );
+  assert.deepEqual(
+    snackbarModule.getToastItems().map((toast) => toast.message),
+    ['Released stale runtime resources: previous model cache released'],
+  );
 });
 
 test('websocket parsing accepts handled Auto events and rejects malformed typed payloads', () => {

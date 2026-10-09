@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
 import { workflowNodeAttentionBackendError, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
 import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
+import { parseCanonicalAuxiliarySources } from './workflow-library-auxiliary-sources.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -33,6 +35,8 @@ if (!Array.isArray(manifest.workflows) || manifest.workflows.length !== expected
 }
 
 const pairs = new Set();
+let authoritativeAuxiliarySources = new Map();
+let unpackCanonicalGraph;
 
 function graphLayoutSignature(graph) {
   return stable(
@@ -133,7 +137,12 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
   const raw = readFileSync(graphPath, 'utf8');
   const graph = JSON.parse(raw);
   verifyCanonicalLayout(workflow, graph, graphLayout);
-  verifyNoDeadWorkflowNodes(workflow, graph);
+  const dependencyGraph = workflow.auxiliaryTerminalBinding ? unpackCanonicalGraph(graph) : graph;
+  verifyNoDeadWorkflowNodes(
+    workflow,
+    dependencyGraph,
+    authoritativeAuxiliarySources.get(`${workflow.modelType}|${workflow.mode}`),
+  );
   const nodeIds = new Set((graph.nodes ?? []).map((node) => node.id));
   for (const node of graph.nodes ?? []) {
     if (node.parentId && !nodeIds.has(node.parentId)) {
@@ -726,6 +735,34 @@ const layoutModuleServer = await createServer({
 });
 try {
   const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
+  const sourceBoundWorkflows = [...manifest.workflows, ...(manifest.experimentalWorkflows ?? [])].filter((workflow) =>
+    Object.prototype.hasOwnProperty.call(workflow, 'auxiliaryTerminalBinding'),
+  );
+  if (sourceBoundWorkflows.length > 0) {
+    const python = process.env.MODIFF_BACKEND_PYTHON;
+    if (!python)
+      throw new Error(
+        'Auxiliary-terminal verification requires the declared native MODIFF_BACKEND_PYTHON schema environment.',
+      );
+    const fixture = JSON.parse(
+      execFileSync(python, [join(ROOT, 'scripts', 'template-operation-fixtures.py')], {
+        // The fixture imports the paired first-party source. The manifest's
+        // graph root may be a separate review tree and is not source authority.
+        cwd: resolve(ROOT, '..', 'MoDiff'),
+        input: '[]',
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      }),
+    );
+    const parsed = await parseCanonicalAuxiliarySources(
+      fixture.publicPayload,
+      sourceBoundWorkflows,
+      layoutModuleServer,
+    );
+    authoritativeAuxiliarySources = parsed.sources;
+    unpackCanonicalGraph = parsed.unpackGraph;
+  }
   const selectedSupported = requestedPair
     ? manifest.workflows.filter((workflow) => `${workflow.modelType}|${workflow.mode}` === requestedPair)
     : manifest.workflows;

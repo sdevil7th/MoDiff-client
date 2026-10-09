@@ -20,9 +20,16 @@ import {
   isHfDownloadComplete,
 } from '../studio/modelInstall';
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
+import {
+  beginWorkerControlRead,
+  parseWorkerControl,
+  updateWorkerControl,
+  type WorkerControl,
+} from '../utils/supervisorControl';
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
 import type { OperationAuthoring } from '../workflow/operationAuthoring';
+import { isConnectionRoleSelector, type ConnectionRoleSelector } from '../workflow/connectionRoleSelector';
 import type { OperationContract } from '../workflow/operationContracts';
 import type { PipelineSupport } from '../workflow/operationCatalog';
 import type { WorkflowModelDescriptor } from '../workflow/workflowChoices';
@@ -202,6 +209,7 @@ export type NodeParams = {
   onChange?: unknown;
   onSignal?: unknown;
   connectionRole?: string;
+  connectionRoleSelector?: ConnectionRoleSelector;
   signalCompatibility?: {
     required?: boolean;
     values?: Record<string, unknown>;
@@ -392,6 +400,7 @@ export type RuntimePackageStatus = {
 
 export type RuntimeStatus = {
   ready?: boolean;
+  workerControl?: WorkerControl;
   runtime_fingerprint?: string;
   runtimeEnvironment: RuntimeEnvironment;
   server?: {
@@ -640,6 +649,14 @@ export function parseNodesResponse(value: unknown) {
     ) {
       throw new Error(`Node definition ${key} is invalid.`);
     }
+    for (const [field, param] of Object.entries(definition.params)) {
+      if (
+        isRecord(param) &&
+        'connectionRoleSelector' in param &&
+        !isConnectionRoleSelector(param.connectionRoleSelector)
+      )
+        throw new Error(`Node definition ${key} has an invalid connection role selector for ${field}.`);
+    }
   });
   return {
     nodes: payload.nodes as unknown as Record<string, NodeData>,
@@ -657,6 +674,7 @@ function parseRuntimeStatus(value: unknown) {
   return {
     ...payload,
     runtimeEnvironment: parseRuntimeEnvironment(payload),
+    workerControl: parseWorkerControl(payload.workerControl, payload.server),
   } as RuntimeStatus;
 }
 
@@ -1345,6 +1363,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
     );
   },
   fetchRuntimeStatus: async () => {
+    const controlRead = beginWorkerControlRead();
     const previousFingerprint = get().runtimeStatus?.runtime_fingerprint;
     await runDiscoveryRequest(
       'runtime',
@@ -1356,6 +1375,7 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           parse: parseRuntimeStatus,
         }),
       (runtimeStatus) => {
+        updateWorkerControl(runtimeStatus.workerControl, controlRead);
         const nextFingerprint = runtimeStatus.runtime_fingerprint;
         if (
           previousFingerprint !== undefined &&

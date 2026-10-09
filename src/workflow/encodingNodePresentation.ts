@@ -35,7 +35,14 @@ export function isFocusedGuidance(instance: BlockInstanceV2 | undefined) {
 }
 
 export function isFocusedStageNode(instance: BlockInstanceV2 | undefined) {
-  return isFocusedImageEncoding(instance) || isFocusedGuidance(instance);
+  return (
+    isFocusedImageEncoding(instance) ||
+    isFocusedGuidance(instance) ||
+    (['setup', 'mask', 'output'].some(
+      (kind) => instance?.definitionSnapshot.source.provider === `modiff.visual-stages.v1/${kind}`,
+    ) &&
+      Boolean(instance?.effectiveGraph.nodes.length))
+  );
 }
 
 /** Rendering only: never remove a declared boundary or an existing connection. */
