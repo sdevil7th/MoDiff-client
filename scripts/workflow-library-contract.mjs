@@ -2,6 +2,31 @@ function paramValue(node, key) {
   return node?.data?.params?.[key]?.value;
 }
 
+/** A canonical graph records both visible artifacts and backend-declared
+ * dependencies for its exact task. This is metadata, not installation or proof. */
+export function canonicalWorkflowRequiredArtifacts(graph, capability, mode) {
+  const artifacts = new Set();
+  for (const node of graph?.nodes ?? []) {
+    for (const field of Object.values(node?.data?.params ?? {})) {
+      const value = field?.value;
+      if (value?.source === 'hub' && typeof value.value === 'string' && value.value.length > 0)
+        artifacts.add(value.value);
+    }
+  }
+  if (artifacts.size === 0 && capability.defaultRepo) artifacts.add(capability.defaultRepo);
+  for (const requirement of [
+    ...(capability.inputContracts?.[mode]?.modelRequirements ?? []),
+    ...(capability.modeRequirements?.[mode]?.modelRequirements ?? []),
+    ...(capability.additionalRequirements ?? []),
+  ]) {
+    if (Array.isArray(requirement.requiredForModes) && !requirement.requiredForModes.includes(mode)) continue;
+    if (typeof requirement.repo !== 'string' || !requirement.repo.trim())
+      throw new Error('A required canonical workflow dependency has no repository.');
+    artifacts.add(requirement.repo);
+  }
+  return [...artifacts];
+}
+
 const FORBIDDEN_ATTENTION_BACKENDS = new Set(['aiter', 'aiter_fa2_hub']);
 const APP_DATA_COLLISION_REFERENCE = /^(@data\/(?:audio|images|videos)\/[^/]+?)_[A-Za-z0-9_-]{6}(\.[A-Za-z0-9]+)$/;
 

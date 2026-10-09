@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { chromium } from 'playwright';
+import { createServer } from 'vite';
 import { canonicalJsonHash as hash, stableJsonValue as stable } from './canonical-json.mjs';
 import {
   closeWorkflowBrowser,
@@ -13,11 +14,16 @@ import {
 } from './workflow-library-browser-session.mjs';
 import { installEphemeralWorkflowStorage } from './workflow-library-ephemeral-storage.mjs';
 import {
+  canonicalWorkflowRequiredArtifacts,
   normalizePortableWorkflowDataReference,
   normalizePortableWorkflowFieldState,
   normalizePortableWorkflowNodeOffload,
 } from './workflow-library-contract.mjs';
 import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
+import {
+  attachCanonicalAuxiliaryBinding,
+  parseCanonicalAuxiliarySources,
+} from './workflow-library-auxiliary-sources.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -274,15 +280,6 @@ function applyCatalogArtifactPins(graph, artifactPins) {
   return graph;
 }
 
-function requiredArtifactsForGraph(graph, defaultRepo) {
-  const artifacts = new Set();
-  for (const node of graph?.nodes ?? []) {
-    for (const repository of hubRepositoriesForNode(node)) artifacts.add(repository);
-  }
-  if (artifacts.size === 0 && defaultRepo) artifacts.add(defaultRepo);
-  return [...artifacts];
-}
-
 async function main() {
   const capabilities = await loadCapabilities();
   const artifactPins = await loadArtifactPins();
@@ -293,6 +290,20 @@ async function main() {
     : capabilities.capabilities;
   if (requestedPair && selectedCapabilities.length !== 1) {
     throw new Error(`The requested workflow pair is not uniquely runnable: ${requestedPair}.`);
+  }
+  const parserServer = await createServer({
+    root: ROOT,
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+    appType: 'custom',
+  });
+  let auxiliarySources;
+  try {
+    auxiliarySources = await parseCanonicalAuxiliarySources(capabilities, selectedCapabilities, parserServer);
+  } finally {
+    await parserServer.close();
   }
   const installedChrome = join(
     process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), '.cache', 'ms-playwright'),
@@ -578,7 +589,7 @@ async function main() {
           supportTier: capability.supportTier,
           qualificationStatus,
           ...qualificationDimensions(qualificationStatus),
-          requiredArtifacts: requiredArtifactsForGraph(graph, capability.defaultRepo),
+          requiredArtifacts: canonicalWorkflowRequiredArtifacts(graph, capability, mode),
           requiredInputs: capability.inputContracts?.[mode] ?? [],
           pipelineClasses: capability.pipelineClasses ?? [],
           sourceTemplateId: template.id,
@@ -587,6 +598,7 @@ async function main() {
           graphPath: relativePath,
           graphHash,
         };
+        attachCanonicalAuxiliaryBinding(record, graph, auxiliarySources);
         (isSupported ? records : experimentalRecords).push(record);
       }
     }
@@ -642,7 +654,11 @@ async function main() {
         qualificationStatus,
         ...qualificationDimensions(qualificationStatus),
         variant: 'lora-theme',
-        requiredArtifacts: requiredArtifactsForGraph(graph, capability.defaultRepo || adapterRepo),
+        requiredArtifacts: canonicalWorkflowRequiredArtifacts(
+          graph,
+          { ...capability, defaultRepo: capability.defaultRepo || adapterRepo },
+          template.mode,
+        ),
         requiredInputs: capability.inputContracts?.[template.mode] ?? [],
         pipelineClasses: capability.pipelineClasses ?? [],
         sourceTemplateId: template.id,
@@ -651,6 +667,7 @@ async function main() {
         graphPath: relativePath,
         graphHash,
       };
+      attachCanonicalAuxiliaryBinding(record, graph, auxiliarySources);
       (isSupported ? records : experimentalRecords).push(record);
     }
 

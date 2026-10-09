@@ -14,6 +14,7 @@ import { groupNewOperationGraph } from '../workflow/visualOperationGroups';
 import { CONTROLLED_WORKFLOW_NODE_KEYS } from './controlledWorkflowContracts';
 import { loraWorkflowFieldValues, upscaleWorkflowFieldValues } from './controlledWorkflowValues';
 import { resolveStudioExecutionSpecValues } from './executionSpecValues';
+import { resolveTemplateModelSelection } from './templateModelSelection';
 import type {
   StudioExecutionSpec,
   StudioFormState,
@@ -87,6 +88,24 @@ export function createTemplateOperationGraph(
   const ownerProfile = owner.data.params.execution_profile_id;
   if (ownerProfile && (ownerProfile.value ?? ownerProfile.default) !== selection.executionProfileId)
     throw new Error('The backend resolved a different template execution profile.');
+  const lockedRevision = template.modelArtifact?.revision ?? template.example?.modelRevision;
+  if (template.modelArtifact || (lockedRevision && /^[a-f0-9]{40}$/u.test(lockedRevision))) {
+    const selected = resolveTemplateModelSelection(template, [capability]);
+    const repositoryField = owner.data.params.repo_id ?? owner.data.params.model_id;
+    const repository = repositoryField?.value ?? repositoryField?.default;
+    const revision = owner.data.params.revision;
+    if (
+      !selected ||
+      !repository ||
+      typeof repository !== 'object' ||
+      !('source' in repository) ||
+      repository.source !== 'hub' ||
+      !('value' in repository) ||
+      repository.value !== selected.repository ||
+      (revision?.value ?? revision?.default) !== selected.revision
+    )
+      throw new Error('The backend resolved a different immutable template model artifact.');
+  }
   const roles = new Map<StudioGraphRole, CustomNodeType>();
   const claimed = new Set<string>();
   for (const [role, key, x, y] of spec.roles) {
@@ -126,6 +145,14 @@ export function createTemplateOperationGraph(
     set(owner, ['vae_slicing'], policy.vaeSlicing);
     set(owner, ['vae_tiling'], policy.vaeTiling);
   }
+  const backendDefaultInputs = new Set(selection.backendDefaultInputs ?? []);
+  for (const source of backendDefaultInputs) {
+    if (
+      !['prompt', 'negativePrompt'].includes(source) ||
+      spec.bindings.filter(([, , name]) => name === source).length !== 1
+    )
+      throw new Error(`The template backend default ${source} needs one declared text binding.`);
+  }
   for (const [role, field, source] of spec.bindings) {
     const node = roles.get(role)!;
     // The selected backend profile owns its exact repository, revision and
@@ -134,6 +161,20 @@ export function createTemplateOperationGraph(
     if (node.id === owner.id && OWNER_IDENTITY.has(source)) continue;
     const value = values[source];
     if (value === undefined) throw new Error(`The template setting ${source} has no declared value.`);
+    if (backendDefaultInputs.has(source as 'prompt' | 'negativePrompt') && value === '') {
+      const hint = operationAuthoring(node);
+      const declared = node.data.params[field];
+      const backendDefault = hint?.defaults[field];
+      if (
+        !declared ||
+        typeof backendDefault !== 'string' ||
+        !backendDefault.trim() ||
+        hint?.authored?.includes(field) ||
+        (declared.value ?? declared.default) !== backendDefault
+      )
+        throw new Error(`The template backend default ${source} is missing or already authored.`);
+      continue;
+    }
     set(node, [field], value);
   }
   // A real starter Guider owns the scale shared by encoding and denoising.

@@ -315,6 +315,8 @@ export type StudioTemplateId =
   | 'flux_redux_edit'
   | 'flux_redux_multi_reference'
   | 'flux2_klein_text_to_image'
+  | 'flux2_dev_text_to_image'
+  | 'cosmos3_super_text_to_image'
   | 'flux2_klein_edit'
   | 'flux2_klein_multi_reference'
   | 'wan_vace_video_to_video'
@@ -1576,6 +1578,11 @@ export type StudioTemplateExecutionSelection = {
   /** Existing backend recipe supplies semantic field/utility bindings only. */
   bindingSpec: { modelType: StudioModelType; mode: StudioMode };
   implementation: 'native_stages' | 'whole_pipeline';
+  /** Fresh authoring only: an empty initial text input retains its resolved
+   * backend default. Authored text and subsequent edits always take priority. */
+  backendDefaultInputs?: Array<'prompt' | 'negativePrompt'>;
+  /** Explicit initial recipe policy; Auto and Gallery qualification stay separate. */
+  memoryPolicy?: 'custom_experimental';
   /** Explicit old whole-pipeline component policies for converted recipes. */
   componentPolicy?: {
     attentionBackend: 'auto' | '_native_math';
@@ -1612,6 +1619,8 @@ export type StudioTemplate = {
   workflowBlockSettings?: StudioTemplateWorkflowBlockSettings;
   /** Exact fresh-workflow choice; never applied to an existing saved graph. */
   executionSelection?: StudioTemplateExecutionSelection;
+  /** Declared immutable artifact for this fresh recipe's backend model owner. */
+  modelArtifact?: StudioTemplateModelArtifact;
   videoDelivery?: 'native' | 'spatial_upscale';
   /**
    * `user_supplied` marks a runnable bring-your-own-model recipe whose card

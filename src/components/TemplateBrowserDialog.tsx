@@ -124,7 +124,9 @@ function templateAutoForm(template: StudioTemplate) {
   });
 }
 
-const templateAutoPlanEntries = STUDIO_TEMPLATES.map((template) => {
+const templateAutoPlanEntries = STUDIO_TEMPLATES.filter(
+  (template) => template.executionSelection?.memoryPolicy !== 'custom_experimental',
+).map((template) => {
   const form = templateAutoForm(template);
   return { form, planKey: autoPlanKeyForForm(form), templateId: template.id };
 });
@@ -333,6 +335,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   const localModels = useNodesStore((state) => state.localModels);
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
+  const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const installHfModel = useNodesStore((state) => state.installHfModel);
   const modelIndexesRefreshing = useNodesStore((state) =>
@@ -510,10 +514,21 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       localModels,
       modelCacheDiagnostics,
       runtimeStatus,
+      studioModelCapabilities,
+      optionalRuntimeCatalog,
       nodesRegistry,
       modelIndexesRefreshing,
     }),
-    [hfCache, localModels, modelCacheDiagnostics, modelIndexesRefreshing, nodesRegistry, runtimeStatus],
+    [
+      hfCache,
+      localModels,
+      modelCacheDiagnostics,
+      modelIndexesRefreshing,
+      nodesRegistry,
+      runtimeStatus,
+      studioModelCapabilities,
+      optionalRuntimeCatalog,
+    ],
   );
 
   const effectiveFilter = useMemo(
@@ -529,7 +544,10 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     [autoResourcePlans],
   );
   const runtimeEstimateForTemplate = useCallback(
-    (template: StudioTemplate) => localRuntimeEstimate(autoPlanForTemplate(template)),
+    (template: StudioTemplate) =>
+      template.executionSelection?.memoryPolicy === 'custom_experimental'
+        ? null
+        : localRuntimeEstimate(autoPlanForTemplate(template)),
     [autoPlanForTemplate],
   );
   const isExperimentalTemplate = useCallback(
@@ -724,10 +742,10 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
 
   const pendingTermsPolicies = modelUsageTerms.pending?.policies ?? [];
 
-  const installRepo = async (repoId: string, repair = false) => {
+  const installRepo = async (repoId: string, repair = false, selection?: { revision?: string; files?: string[] }) => {
     setInstallingRepo(repoId);
     try {
-      await installHfModel(repoId, sid, { repair });
+      await installHfModel(repoId, sid, { repair, ...selection });
       setAutoResourcePlans(await loadTemplateAutoPlans(true));
     } catch (error) {
       console.error(error);
@@ -736,8 +754,15 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     }
   };
 
-  const requestInstallRepo = (template: StudioTemplate, repoId: string, repair = false) => {
-    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () => installRepo(repoId, repair));
+  const requestInstallRepo = (
+    template: StudioTemplate,
+    repoId: string,
+    repair = false,
+    selection?: { revision?: string; files?: string[] },
+  ) => {
+    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () =>
+      installRepo(repoId, repair, selection),
+    );
   };
 
   const openSetup = () => {
@@ -996,8 +1021,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                   onCreate={() => {
                     requestCreateFromTemplate(selectedTemplate);
                   }}
-                  onInstallRepo={(repoId, repair) => {
-                    requestInstallRepo(selectedTemplate, repoId, repair);
+                  onInstallRepo={(repoId, repair, selection) => {
+                    requestInstallRepo(selectedTemplate, repoId, repair, selection);
                   }}
                   onOpenAssets={openAssets}
                   onOpenModels={openModels}
@@ -1232,7 +1257,7 @@ function TemplateRecipeDetail({
   manifest: TemplateGalleryManifest | null;
   onBack: () => void;
   onCreate: () => void;
-  onInstallRepo: (repoId: string, repair?: boolean) => void;
+  onInstallRepo: (repoId: string, repair?: boolean, selection?: { revision?: string; files?: string[] }) => void;
   onOpenAssets: () => void;
   onOpenModels: () => void;
   onOpenSetup: () => void;
@@ -1360,7 +1385,7 @@ function TemplateRecipeDetail({
             <TemplateReadinessBadge readiness={readiness} />
           </div>
           {readiness.issues.length === 0 ? (
-            <IssueCard tone="success" title="Ready now" meta={readiness.summary}>
+            <IssueCard tone={readiness.tone} title={readiness.label} meta={readiness.summary}>
               Create a graph tab, build the graph, and then run when you are ready.
             </IssueCard>
           ) : (
@@ -1377,7 +1402,9 @@ function TemplateRecipeDetail({
               icon={<Boxes size={15} />}
               disabled={installingRepo === target.repoId}
               aria-label={`Install ${target.repoId}`}
-              onClick={() => onInstallRepo(target.repoId, target.repair)}
+              onClick={() =>
+                onInstallRepo(target.repoId, target.repair, { revision: target.revision, files: target.files })
+              }
             >
               {installingRepo === target.repoId ? 'Installing...' : (target.actionLabel ?? 'Install')}
             </ModiffButton>

@@ -256,6 +256,20 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
       ['flux2_klein_text_to_image'],
       native('Flux2KleinModularPipeline', 'flux2-klein:modular', 'Flux2KleinModularPipeline', 'text_to_image'),
     ),
+    ...recipes(['flux2_dev_text_to_image'], {
+      ...native('Flux2ModularPipeline', 'flux2:modular', 'Flux2ModularPipeline', 'text_to_image'),
+      memoryPolicy: 'custom_experimental',
+    }),
+    ...recipes(['cosmos3_super_text_to_image'], {
+      ...native(
+        'Cosmos3OmniModularPipeline',
+        'cosmos3-super-text-to-image:official-modular-workflow',
+        'Cosmos3OmniModularPipeline',
+        'text_to_image',
+      ),
+      backendDefaultInputs: ['prompt'],
+      memoryPolicy: 'custom_experimental',
+    }),
     ...recipes(
       ['flux2_klein_edit'],
       native('Flux2KleinModularPipeline', 'flux2-klein:modular', 'Flux2KleinModularPipeline', 'edit_image'),

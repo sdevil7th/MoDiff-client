@@ -44,7 +44,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 576 bytes; retain lazy authoring and the independent deferred-chunk ceiling.
 // Owned metadata waiting and fresh-document hydration add 280 bytes to this
 // shared startup chunk (463950 measured). Bound the necessary fix by 320 bytes.
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 768 + 1280 + 256 + 576 + 320;
+// Two full-image recipe declarations and their reviewed terms add 1374 gzip
+// bytes to the same startup chunk (465247 measured). Authoring stays deferred.
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 768 + 1280 + 256 + 576 + 320 + 1536;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -112,7 +114,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 768 + 1280 + 256 + 576 + 320;
 // no new dependencies or eager template-creation imports.
 // The same startup fix adds 277 bytes (642255 measured); deferred code falls
 // by 115 bytes. Add 320 here without changing lazy boundaries or chunk limits.
-const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 768 + 1280 + 384 + 576 + 320;
+// The same recipe metadata measures 643554 total startup bytes (+1378).
+// Allocate 1536 bytes for this feature, preserving the existing four assets.
+const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 768 + 1280 + 384 + 576 + 320 + 1536;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -239,7 +243,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Retrying non-JSON transient HTTP errors adds 14 bytes to the workspace chunk.
 // The versioned aggregate measures 269341 bytes; allow 128 additional bytes
 // for this correction, keeping startup, per-chunk and loading limits unchanged.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 512 + 128;
+// Exact Custom recipe readiness and selection measure 271404 deferred bytes.
+// Allocate 2048 bytes above the prior cap; the 64 KiB per-chunk limit stays fixed.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 512 + 128 + 2048;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

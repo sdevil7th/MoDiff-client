@@ -217,8 +217,8 @@ requires a target that actually publishes qualified actions.
 Client gates:
 
 ```powershell
-npm run check
 npx playwright install chromium
+npm run check
 npm run check:ui
 ```
 
