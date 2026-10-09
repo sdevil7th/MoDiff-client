@@ -10,6 +10,7 @@ import { operationAuthoring } from './operationAuthoringHint';
 export { operationAuthoring } from './operationAuthoringHint';
 import { operationPortCompatibility } from './operationCatalog';
 import { compatibleOperationControlTransfer } from './operationControlTransfer';
+import { preservedMediaFanout } from './operationMediaMigration';
 import { createNodeFromRegistry } from './nodeFactory';
 import { acceptsOperationValue as acceptsValue } from './operationFieldValue';
 import { operationScope } from './operationScope';
@@ -1111,6 +1112,20 @@ export function planOperationChange(
     )
       edges.push(structuredClone(edge));
   }
+  const media = preservedMediaFanout(graph, { nodes, edges }, scope, migrated);
+  for (const edge of media.edges) {
+    edges.push(edge);
+    addPreserved(
+      `${endpointLabel(
+        nodes.find((node) => node.id === edge.source),
+        edge.sourceHandle,
+      )} → ${endpointLabel(
+        nodes.find((node) => node.id === edge.target),
+        edge.targetHandle,
+      )} connection for the same declared media role`,
+    );
+  }
+  diagnostics.push(...media.attention);
   if (rebuiltManagedConnections)
     reviewChanges.push(
       `Rebuild ${rebuiltManagedConnections} model-owned connection${rebuiltManagedConnections === 1 ? '' : 's'} for the selected model; no user-created nodes are removed.`,

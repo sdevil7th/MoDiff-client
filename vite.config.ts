@@ -368,6 +368,9 @@ export default defineConfig(({ mode, command }) => {
         ? {
             'import.meta.env.VITE_BACKEND_PROXY_TARGET': JSON.stringify(backendProxyTarget),
             'import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS': JSON.stringify(supervisorControlTarget),
+            'import.meta.env.MODIFF_SUPERVISOR_CONTROL_EXPLICIT': JSON.stringify(
+              Boolean(process.env.VITE_SUPERVISOR_CONTROL_ADDRESS),
+            ),
           }
         : {}),
     },

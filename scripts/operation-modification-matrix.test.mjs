@@ -284,3 +284,100 @@ test('modular image graph to GLM keeps authored controls, custom prompt wiring a
     await server.close();
   }
 });
+
+test('ordinary same-pipeline profile and task Apply retains exact workflow bindings through visual groups', async () => {
+  const selections = [
+    ['nano-image', 'text_to_image', 'cosmos3-nano:official-modular-workflow'],
+    ['super-image', 'text_to_image', 'cosmos3-super-text-to-image:official-modular-workflow'],
+    ['nano-video', 'text_to_video', 'cosmos3-nano:official-modular-workflow'],
+  ].map(([id, task, executionProfileId]) => ({
+    id,
+    selection: {
+      pipelineClass: 'Cosmos3OmniModularPipeline',
+      task,
+      executionProfileId,
+      bindingSpec: { modelType: 'Cosmos3OmniModularPipeline', mode: task },
+    },
+  }));
+  const profiles = JSON.parse(
+    execFileSync(
+      process.platform === 'win32' ? python : path.join(backend, 'scripts/with-runtime-env.sh'),
+      process.platform === 'win32'
+        ? [path.join(root, 'scripts/template-operation-fixtures.py')]
+        : [python, path.join(root, 'scripts/template-operation-fixtures.py')],
+      { cwd: backend, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, input: JSON.stringify(selections) },
+    ),
+  );
+  const server = await createServer({
+    root,
+    configFile: false,
+    logLevel: 'silent',
+    define: { 'import.meta.env.VITE_SERVER_ADDRESS': JSON.stringify('http://127.0.0.1:5191') },
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+    appType: 'custom',
+  });
+  try {
+    const a = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
+    const contracts = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+    const request = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+    const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+    const operations = contracts.parseOperationContracts(
+      profiles.publicPayload.operationContracts,
+      profiles.publicPayload.operationContractSchemaVersion,
+    );
+    const recipes = profiles.recipes.map((row) =>
+      request.parseOperationStarter(row.starter, row.starter.pipelineClass, row.starter.task, operations),
+    );
+    const owner = (graph) =>
+      graph.nodes.find((node) => contracts.operationOwnsModel(a.operationAuthoring(node)?.operation));
+    function checkBindings(graph, recipe) {
+      const flat = groups.unpackVisualOperationGroups(graph).graph;
+      for (const { operation } of recipe.nodes) {
+        const node = flat.nodes.find((n) => a.operationAuthoring(n)?.operation.operationId === operation.operationId);
+        assert.ok(node, operation.operationId);
+        assert.deepEqual(a.operationAuthoring(node).operation.binding, operation.binding);
+        for (const [name, value] of Object.entries(operation.binding.values))
+          assert.equal(a.operationFieldValue(node.data.params[name]), value, `${operation.operationId}.${name}`);
+      }
+      const loader = owner(flat);
+      assert.equal(loader.data.params.workflow_id.value, recipe.workflowId);
+      assert.equal(a.operationAuthoring(loader).operation.binding.values.workflow_id, recipe.workflowId);
+      return flat;
+    }
+    for (const grouped of [false, true]) {
+      let graph = a.createOperationStarter(recipes[0], { x: 80, y: 100 });
+      const loader = owner(graph);
+      // The actual failed production starter had an empty hidden loader field.
+      // A fresh reviewed Apply must replace that stored value with its binding.
+      loader.data.params.workflow_id.value = '';
+      loader.data.operationAuthoring.authored = ['workflow_id'];
+      const prompt = graph.nodes.find((node) => node.data.params.prompt);
+      prompt.data.params.prompt.value = 'Keep my authored caption through model and task changes.';
+      prompt.data.operationAuthoring.authored = ['prompt'];
+      if (grouped) graph = groups.groupNewOperationGraph(graph);
+      const before = structuredClone(graph);
+      const ownerId = loader.id;
+      for (const preserveValues of [false, true]) {
+        const plan = a.planOperationChange(graph, ownerId, recipes[1], { replaceModel: true, preserveValues });
+        const next = checkBindings(plan.graph, recipes[1]);
+        assert.equal(owner(next).data.params.repo_id.value.value, 'nvidia/Cosmos3-Super-Text2Image');
+        assert.equal(owner(next).data.params.reviewed_variant.value, 'nvidia/Cosmos3-Super-Text2Image');
+        assert.equal(
+          next.nodes.find((node) => node.data.params.prompt).data.params.prompt.value,
+          'Keep my authored caption through model and task changes.',
+        );
+        assert.equal(owner(next).data.params.revision.value, 'daf3d374804be4c512c2135568a7cb95d4341d79');
+        assert.deepEqual(graph, before, 'Previewing a change must not mutate the source graph.');
+        const video = a.planOperationChange(plan.graph, ownerId, recipes[2], { replaceModel: true });
+        checkBindings(video.graph, recipes[2]);
+        const returned = a.planOperationChange(video.graph, ownerId, recipes[0], { replaceModel: true });
+        checkBindings(returned.graph, recipes[0]);
+        const reset = a.planOperationChange(returned.graph, ownerId, recipes[0], { restoreDefaults: true });
+        checkBindings(reset.graph, recipes[0]);
+      }
+    }
+  } finally {
+    await server.close();
+  }
+});

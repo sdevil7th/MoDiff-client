@@ -35,7 +35,7 @@
         "creationMethod": "base_installation",
         "name": "model_runtime",
         "reuseKey": ["model_runtime"],
-        "type": "modiff.base-model-runtime@sha256:cc281f8fbae5093d68b4dd963a8f80e32b1589991c8cda97a3ec0f26c9e700db"
+        "type": "modiff.base-model-runtime@sha256:cc7a00bd6942e5d4e95f6cc8a80efab42b1e26c9c4df9862568cd7b6af15f32c"
       },
       {
         "creationMethod": "from_pretrained",
@@ -44,7 +44,7 @@
         "type": "AutoModelForCTC"
       }
     ],
-    "contentHash": "sha256:0c03dcd8f16cf19c33a827aa802f22294eb20d9dceee73bfacd73b6f1a9ef67d",
+    "contentHash": "sha256:d57f7ecdb741ec9d41a4d6bbd0c9769c99cd69495770616f0fd2e91d60aa6bfe",
     "definitionKind": "studio_execution_composite",
     "description": "Cluster Node containing an exact reviewed ASR loader, local audio input, bounded transcription action, and preview.",
     "executionAdmissions": [
@@ -253,9 +253,9 @@
   },
   "compiledEntry": {
     "catalogDefinitionId": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
-    "catalogDefinitionContentHash": "sha256:0c03dcd8f16cf19c33a827aa802f22294eb20d9dceee73bfacd73b6f1a9ef67d",
+    "catalogDefinitionContentHash": "sha256:d57f7ecdb741ec9d41a4d6bbd0c9769c99cd69495770616f0fd2e91d60aa6bfe",
     "admissionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
-    "compiledDefinitionCanonicalSha256": "sha256:4b8f73034ef9305d920807d13e61b0adee8d150cc66b9bea486f9636e7275342",
+    "compiledDefinitionCanonicalSha256": "sha256:dcc4b55efd51fba2716eb39a1cedfdf5eb8d2be3a35a197c30c2cf903bdfe16f",
     "definition": {
       "schemaVersion": 2,
       "definitionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
@@ -271,7 +271,7 @@
         "blocksClass": "AutoModelForCTC",
         "workflow": "speech_to_text",
         "manifestDefinitionId": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
-        "manifestContentHash": "sha256:0c03dcd8f16cf19c33a827aa802f22294eb20d9dceee73bfacd73b6f1a9ef67d",
+        "manifestContentHash": "sha256:d57f7ecdb741ec9d41a4d6bbd0c9769c99cd69495770616f0fd2e91d60aa6bfe",
         "executionAdmissionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
         "repository": "facebook/wav2vec2-base-960h",
         "repositoryRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
@@ -777,7 +777,7 @@
         "kind": "registered",
         "definitionMutable": false
       },
-      "contentHash": "block-definition-v2-e6518c32"
+      "contentHash": "block-definition-v2-5a91bee4"
     },
     "values": {
       "dtype": "float32",

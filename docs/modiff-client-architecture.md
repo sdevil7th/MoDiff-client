@@ -276,6 +276,15 @@ for equal media roles, keeps masks separate from alpha-mask outputs, and reports
 missing/incompatible loader definitions. It does not touch existing documents,
 invent media for text-only routes, or infer a tensor from a path-only field.
 
+The media attachment source picker retains the exact node/port values and graph
+ordering. Friendly node/field labels add the nearest upstream declared model
+repository or local-source context; remaining identical labels use visible branch
+ordinals. Read-only Block projections resolve effective controls and exact output
+bindings, with immutable instances cached. Unresolved retained crossings add no
+display context and remain available for ordinary repair. This context is
+presentation only: all existing source choices, stale-selection checks, task
+planning, ownership and cycle validation remain unchanged.
+
 Readiness also checks required file pickers in the selected executable closure.
 A connected loader output does not satisfy an empty required source file. Current
 registry declarations cover historical loader snapshots without modifying their
@@ -1486,8 +1495,10 @@ without changing graph values or execution ownership.
 `resolvedExecutionInputs` can carry backend `graphTasks` alongside captured call
 arguments. The client validates each owner against the receipt's captured Modular
 loader and model identity. A unique supported task updates the output label while
-leaving its saved form untouched. Legacy receipts remain readable; incomplete or
-ambiguous graph recognition does not invent a task. This metadata grants no
+leaving its saved form untouched. Gallery labels a receipt with absent, null or
+conflicting task recognition as **Task not uniquely captured**, rather than using
+the saved form's task. Only outputs without a consumed-input receipt retain their
+historical task label. This metadata grants no
 execution or resource authority and adds no frontend model-family dispatch.
 
 History model labels and Gallery filters also use the validated captured model

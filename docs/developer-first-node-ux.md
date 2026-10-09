@@ -108,8 +108,14 @@ are not silently repaired or structurally rewritten when opened.
    the canvas, with one Undo to restore the combined node. Inspection never turns
    the node into an enclosing Block.
 5. Change model/task through Load Models. Compatible values and external branches
-   are retained; incompatible changes still require the normal review. Save and
-   refresh retain the presentation and values.
+   are retained; incompatible changes still require the normal review. An existing
+   image/audio source also supplies newly required inputs with the same declared
+   media role and compatible type when the preserved source is unambiguous.
+   Different roles and already authored inputs remain separate. Save and refresh
+   retain the presentation and values.
+
+Uploading or removing a source file updates Run readiness immediately, including
+optional loader pickers connected to required workflow inputs.
 
 Existing workflows are not regrouped on open. Their loader inspector's
 **Workflow stage actions** menu offers **Group input encoders**, **Group guidance**

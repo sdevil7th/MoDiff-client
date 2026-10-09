@@ -42,7 +42,12 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
             ("StableDiffusionXLModularPipeline", "inpaint"),
             ("QwenImageEditPlusModularPipeline", "multi_image_reference_edit"),
         )
-        if "--image-audio" in sys.argv:
+        if "--selection" in sys.argv:
+            index = sys.argv.index("--selection")
+            if len(sys.argv[index + 1:]) != 2:
+                raise ValueError("--selection requires a pipeline class and task")
+            selections = (tuple(sys.argv[index + 1:]),)
+        elif "--image-audio" in sys.argv:
             selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
                                  and operation_owns_model(c)
                                  and not ("video" in c["task"] or c["task"] == "flf2v"
@@ -64,5 +69,10 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
                 }
                 for node in result["nodes"]
             ]
+            if "--selection" in sys.argv:
+                result["testMediaLoaderRegistry"] = {
+                    f"{module}.Load": describer._describe_registered_node(module, "Load", MODULE_MAP[module]["Load"])
+                    for module in ("modules.Image", "modules.Audio")
+                }
             results.append(result)
 json.dump(results, sys.stdout)

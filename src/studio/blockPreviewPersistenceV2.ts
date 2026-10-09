@@ -14,14 +14,16 @@ export function withDurableBlockPreviewsV2(
     if (!instance) return node;
     let previewChanged = false;
     const previewStates = instance.previewStates.map((preview) => {
+      const nodeId = blockProjectionNodeIdV2(node.id, preview.binding.nodeId);
+      const fieldKey = preview.binding.outputPortId;
       // A reopened browser may have missed completion over websocket. Only an
       // explicit backend current-output slot for this document can advance it.
       const slot = current?.workflowTabId
         ? Object.values(current.previewSlots).find(
             (candidate) =>
               candidate.workflowTabId === current.workflowTabId &&
-              candidate.nodeId === blockProjectionNodeIdV2(node.id, preview.binding.nodeId) &&
-              candidate.fieldKey === preview.binding.outputPortId,
+              candidate.nodeId === nodeId &&
+              candidate.fieldKey === fieldKey,
           )
         : undefined;
       const currentOutput =
@@ -68,12 +70,7 @@ export function withDurableBlockPreviewsV2(
         if (isText) {
           // A retained .txt URL is an export asset, never the displayed text.
           // Repair older saved previews only using this task's exact field.
-          if (
-            output.displayType !== 'text' ||
-            output.nodeId !== blockProjectionNodeIdV2(node.id, preview.binding.nodeId) ||
-            output.fieldKey !== preview.binding.outputPortId
-          )
-            continue;
+          if (output.displayType !== 'text' || output.nodeId !== nodeId || output.fieldKey !== fieldKey) continue;
           const reference = textReference(output);
           if (!reference || reference === preview.mediaReference) return preview;
           previewChanged = true;
@@ -86,9 +83,7 @@ export function withDurableBlockPreviewsV2(
             item.backendPath &&
             (!item.taskId || item.taskId === preview.taskId),
         );
-        const sameSlot =
-          output.nodeId === blockProjectionNodeIdV2(node.id, preview.binding.nodeId) &&
-          output.fieldKey === preview.binding.outputPortId;
+        const sameSlot = output.nodeId === nodeId && output.fieldKey === fieldKey;
         const sameReference: boolean =
           output.value === preview.mediaReference ||
           (Array.isArray(output.value) && output.value.includes(preview.mediaReference));

@@ -64,6 +64,8 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
                 param.required ||
                 param.isInput ||
                 param.display === 'input' ||
+                // Optional loader pickers can supply a required downstream media input.
+                param.display === 'filebrowser' ||
                 /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key),
             )
             .map(([key, param]) => `${key}:${JSON.stringify(param.value ?? param.default ?? '')}`)

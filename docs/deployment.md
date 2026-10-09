@@ -43,10 +43,12 @@ disk reads rather than Hub requests. See
 
 Release qualification fingerprints the backend's actual installer inputs:
 `pyproject.toml`, `modiff/compatibility/accelerators.v1.json`, and every profile
-requirements file named by that manifest. The backend intentionally declares
-`[tool.uv] managed = false`; its accelerator-aware installer owns the executable
-environment, so there is no repository `uv.lock` and the client release contract
-must not require or synthesize one.
+requirements file named by that manifest. Native CPU, CUDA and XPU setup uses
+the committed `uv.lock` with the selected accelerator extra; Apple Silicon uses
+the native default. Specialized AMD setup retains its reviewed direct-wheel
+profile. The release fingerprint currently covers the declared installer inputs;
+record the selected lock resolution and installed versions with live evidence
+rather than treating an installer fingerprint as proof of a runtime installation.
 
 Before starting the long-running template qualification campaign on a clean
 host, refresh its plan and verify every selected template's exact immutable
@@ -137,13 +139,24 @@ That gate also checks emitted module identity: static imports, dynamic imports
 per module. Duplicate URLs create independent workflow stores and can break
 portable export. Shared Lucide dependencies initialize in `graph-vendor` so
 lazy panels cannot capture undefined icons through an entry-chunk cycle. The
-startup graph ceiling is 613 KiB gzip, with a 439 KiB largest startup chunk.
-Explicit default-equal edit provenance and validation of bounded inactive
-model drafts bring measured startup to about 612.1 KiB. Their synchronous
-validation stays with the editor; model-change planning and right-panel forms
-remain lazy. No dependency was added. Deferred code is separately bounded by
-the budget script. Test cold panel startup,
-native portable import/Save/export, and browser resource URLs on the built app.
+startup graph ceiling is 642816 gzip bytes, with a 464512-byte largest startup
+chunk. The reviewed media-migration build measures 642098 startup bytes and
+463792 bytes for its largest startup chunk. Model-change planning and
+right-panel forms remain lazy. Preserving one declared media source across
+new required inputs adds 746 deferred gzip bytes, from 267236 to 267982;
+the source-label follow-up adds another 588 bytes and the reviewed deferred
+aggregate ceiling at that stage was 268800 bytes. The existing
+65536-byte deferred-chunk ceiling and dependencies stay fixed. Test cold
+panel startup, native portable import/Save/export, and browser resource URLs
+on the built app.
+
+The combined Windows and Linux recovery, checkpoint, preview and complete-scope
+Auto fixes measure 642639 startup bytes, a 464333-byte largest startup chunk and
+268989 deferred bytes after sharing normalized attention/progress, preview
+identities and unique media drivers. These reviewed changes add bounded ceilings
+of 512 startup bytes and 256 deferred bytes, making the current deferred ceiling
+269056 bytes. Earlier failed measurements remain failures for their original
+source and limits. No dependencies, lazy boundaries or deferred-chunk limit change.
 
 When updating selected loader field metadata, regenerate the paired
 `BlockDefinitionV2` catalog and frontend identity pins together. This metadata

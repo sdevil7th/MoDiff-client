@@ -1,8 +1,21 @@
 import type { LightboxOpener, MediaViewerItem } from '../stores/useSettingsStore';
+import type { StudioOutput } from '../studio/types';
+import { sanitizeImageArtifactUrl } from './imageArtifacts';
 
 /** Resolved output URLs must not use the raw-base64 node image representation. */
 export function imageUrlLightboxOpener(images: string[], currentIndex = 0): NonNullable<LightboxOpener> {
   return { images, currentIndex, dataType: 'url', mimeType: null };
+}
+
+/** Open a recorded image collection in its existing order after canonical URL filtering. */
+export function outputImageLightboxOpener(output: Pick<StudioOutput, 'url' | 'displayType' | 'mediaItems'>) {
+  const candidates =
+    output.displayType === 'image_collection' && output.mediaItems?.length
+      ? output.mediaItems.map((item) => item.url)
+      : [output.url];
+  const images = candidates.map(sanitizeImageArtifactUrl).filter((image): image is string => image !== null);
+  const selected = sanitizeImageArtifactUrl(output.url);
+  return imageUrlLightboxOpener(images, Math.max(0, images.indexOf(selected ?? '')));
 }
 
 export const MEDIA_PLACEHOLDER_DATA_URL =

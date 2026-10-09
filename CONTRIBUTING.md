@@ -306,10 +306,14 @@ Keep Add custom node, the strict response parser and backend hash-bound imports 
 Run the complete local CI-equivalent gate before requesting review:
 
 ```bash
+npx playwright install chromium
 npm run check
 ```
 
 This runs formatting, lint, type checking, style audit, unit/contract tests, production build, and bundle budget.
+The request/proxy regression tests also launch Chromium. On a fresh Linux host,
+install its system dependencies with `npx playwright install-deps chromium`
+using an account with administrator access before running the gate.
 
 The Linux CI quality job checks out this client and an immutable, compatible
 `sdevil7th/MoDiff` backend revision as sibling directories. It installs the
@@ -320,10 +324,10 @@ platform smoke jobs remain client-only.
 
 For a coordinated change, commit and review the backend first, then replace the
 backend `ref` in `.github/workflows/ci.yml` with that actual compatible 40-character
-commit SHA and run the paired gates. Keep the ref immutable. The current historical
-pin predates native setup and has no `uv.lock`, so the workflow explicitly fails its
-native setup check until this release handoff is completed. Do not substitute a
-mutable branch or an invented future SHA for the paired commit.
+commit SHA and run the paired gates. Keep the ref immutable. The selected backend
+must contain its reviewed native setup contract and `uv.lock`; the workflow
+checks these before setup. Do not substitute a mutable branch or an invented
+future SHA for the paired commit.
 
 The registered Block catalog audit uses a fixed Linux runtime target and mocked
 device/package probes to reproduce the reviewed catalog on any host. Backend

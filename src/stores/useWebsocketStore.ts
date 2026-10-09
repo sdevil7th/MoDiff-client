@@ -46,6 +46,9 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
     healthProbe = controller;
     try {
       const address = (get().address || config.serverAddress).replace(/^ws/, 'http');
+      // connect() also retains the default socket URL; its same-origin Vite
+      // transport still represents the configured backend behind the proxy.
+      const backendAddress = address === config.serverAddress ? config.backendAddress : address;
       const status = await requestJson(`${address}/health`, {
         signal: controller.signal,
         timeoutMs: 5000,
@@ -62,7 +65,11 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
               'instance' in value && typeof value.instance === 'string' && value.instance.trim()
                 ? value.instance
                 : undefined,
-            workerControl: parseWorkerControl('workerControl' in value ? value.workerControl : undefined),
+            workerControl: parseWorkerControl(
+              'workerControl' in value ? value.workerControl : undefined,
+              'server' in value ? value.server : undefined,
+              backendAddress,
+            ),
           };
         },
       });
@@ -70,7 +77,7 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
       updateWorkerControl(status.workerControl, controlRead);
       if (status.instance && status.instance !== probedRuntimeInstance) {
         probedRuntimeInstance = status.instance;
-        void useNodesStore.getState().fetchRuntimeStatus();
+        void useNodesStore.getState().fetchRuntimeStatus(address);
       }
       if (!status.ready) throw new Error('The backend is still starting.');
       // Only a successful websocket handshake resets its retry budget.

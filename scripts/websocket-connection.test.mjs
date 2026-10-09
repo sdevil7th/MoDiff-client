@@ -17,6 +17,8 @@ let probes;
 let timers;
 let nextTimer;
 let nodeStore, originalRuntimeRead, runtimeReads;
+let control;
+let config;
 
 class FakeSocket {
   static CONNECTING = 0;
@@ -81,10 +83,14 @@ before(async () => {
   store = (await server.ssrLoadModule('/src/stores/useWebsocketStore.ts')).useWebsocketStore;
   nodeStore = (await server.ssrLoadModule('/src/stores/useNodeStore.ts')).useNodesStore;
   originalRuntimeRead = nodeStore.getState().fetchRuntimeStatus;
+  control = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
+  config = (await server.ssrLoadModule('/app.config.ts')).default;
 });
 
 beforeEach(() => {
   store.getState().disconnect();
+  store.setState({ address: null });
+  control.resetSupervisorControl();
   sockets = [];
   probes = [];
   timers = new Map();
@@ -219,6 +225,146 @@ test('stale recovery callbacks cannot replace a newer manually connected socket'
   assert.equal(sockets.length, 2);
   assert.equal(store.getState().ws, current);
   assert.equal(store.getState().isConnected, true);
+});
+
+test('health discovery binds a custom websocket tunnel to its own supervisor and ignores stale metadata', async () => {
+  const previous = { ...config };
+  Object.assign(config, {
+    backendAddress: 'http://127.0.0.1:8088',
+    supervisorAddress: 'http://127.0.0.1:8089',
+    supervisorAddressExplicit: false,
+  });
+  try {
+    const metadata = {
+      error: false,
+      ready: true,
+      server: { host: '127.0.0.1', port: 8088, scheme: 'http' },
+      workerControl: { available: true, address: 'http://127.0.0.1:8089' },
+    };
+    store.setState({ address: 'ws://127.0.0.1:18088' });
+    const older = enterHealthRecovery();
+    assert.equal(older.url, 'http://127.0.0.1:18088/health');
+    store.getState().disconnect();
+    store.setState({ address: 'ws://127.0.0.1:28088' });
+    const newer = enterHealthRecovery();
+    newer.respond(200, metadata);
+    await settle();
+    assert.equal(control.supervisorControlAddress(), 'http://127.0.0.1:28089');
+    older.respond(200, metadata);
+    await settle();
+    assert.equal(control.supervisorControlAddress(), 'http://127.0.0.1:28089');
+    assert.equal(older.signal.aborted, true);
+  } finally {
+    Object.assign(config, previous);
+  }
+});
+
+test('default Vite websocket recovery retains the configured backend transport and its custom supervisor', async () => {
+  const previous = { ...config };
+  const previousNodes = nodeStore.getState();
+  Object.assign(config, {
+    serverAddress: 'http://127.0.0.1:5191',
+    backendAddress: 'http://127.0.0.1:8088',
+    supervisorAddress: 'http://127.0.0.1:8089',
+    supervisorAddressExplicit: false,
+  });
+  nodeStore.setState({ fetchRuntimeStatus: originalRuntimeRead });
+  try {
+    for (const port of [8089, 43001]) {
+      store.getState().disconnect();
+      store.setState({ address: null });
+      control.resetSupervisorControl();
+      const previousSockets = sockets.length;
+      const probe = enterHealthRecovery();
+      assert.equal(store.getState().address, 'ws://127.0.0.1:5191');
+      assert.equal(probe.url, 'http://127.0.0.1:5191/health');
+      const metadata = {
+        error: false,
+        ready: true,
+        instance: 'proxy-worker',
+        server: { host: '127.0.0.1', port: 8088, scheme: 'http' },
+        workerControl: { available: true, address: `http://127.0.0.1:${port}` },
+      };
+      probe.respond(200, metadata);
+      await settle();
+      const runtime = probes.at(-1);
+      assert.equal(runtime.url, 'http://127.0.0.1:5191/runtime/status');
+      runtime.respond(200, metadata);
+      await settle();
+      assert.equal(control.supervisorControlAddress(), `http://127.0.0.1:${port}`);
+      assert.equal(nodeStore.getState().runtimeStatus.ready, true);
+      assert.equal(sockets.length, previousSockets + 2);
+    }
+  } finally {
+    Object.assign(config, previous);
+    nodeStore.setState(previousNodes);
+  }
+});
+
+test('custom websocket recovery and welcome refresh the same runtime transport and fence the older status', async () => {
+  const previous = { ...config };
+  const previousNodes = nodeStore.getState();
+  Object.assign(config, {
+    serverAddress: 'http://127.0.0.1:5191',
+    backendAddress: 'http://127.0.0.1:8088',
+    supervisorAddress: 'http://127.0.0.1:8089',
+    supervisorAddressExplicit: false,
+  });
+  nodeStore.setState({ fetchRuntimeStatus: originalRuntimeRead, instance: 'custom-worker' });
+  try {
+    store.setState({ address: 'ws://127.0.0.1:18088' });
+    const health = enterHealthRecovery();
+    const metadata = {
+      error: false,
+      ready: true,
+      instance: 'custom-worker',
+      server: { host: '127.0.0.1', port: 8088, scheme: 'http' },
+      workerControl: { available: true, address: 'http://127.0.0.1:8089' },
+    };
+    health.respond(200, metadata);
+    await settle();
+    const older = probes.find((probe) => probe.url.endsWith('/runtime/status'));
+    assert.equal(older?.url, 'http://127.0.0.1:18088/runtime/status');
+    assert.equal(control.supervisorControlAddress(), 'http://127.0.0.1:18089');
+
+    const replacement = sockets.at(-1);
+    replacement.open();
+    replacement.onmessage({
+      data: JSON.stringify({
+        type: 'welcome',
+        sid: store.getState().sid,
+        instance: 'custom-worker',
+        current: null,
+        queued: {},
+        recent: [],
+      }),
+    });
+    await settle();
+    const runtimeProbes = probes.filter((probe) => probe.url.endsWith('/runtime/status'));
+    assert.deepEqual(
+      runtimeProbes.map((probe) => probe.url),
+      ['http://127.0.0.1:18088/runtime/status', 'http://127.0.0.1:18088/runtime/status'],
+    );
+    assert.equal(older.signal.aborted, true);
+    runtimeProbes[1].respond(200, { ...metadata, packages: { transformers: { available: true } } });
+    await settle();
+    older.respond(200, {
+      ...metadata,
+      ready: false,
+      packages: { transformers: { available: false } },
+      workerControl: { available: true, address: 'http://127.0.0.1:43001' },
+    });
+    await settle();
+    assert.equal(nodeStore.getState().runtimeStatus.ready, true);
+    assert.equal(nodeStore.getState().runtimeStatus.packages.transformers.available, true);
+    assert.equal(control.supervisorControlAddress(), 'http://127.0.0.1:18089');
+    for (const probe of probes.filter((probe) => probe.url.includes('/studio_outputs')))
+      probe.respond(200, { error: false, outputs: [] });
+    await settle();
+  } finally {
+    Object.assign(config, previous);
+    nodeStore.setState(previousNodes);
+  }
 });
 
 test('disconnect cancels a retry timer even when its callback was already queued', () => {

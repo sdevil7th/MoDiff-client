@@ -4,7 +4,7 @@ import { createServer } from 'vite';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-let server, contracts, inputs, outputUtils, profiles;
+let server, contracts, inputs, outputUtils, profiles, tasks;
 before(async () => {
   globalThis.window = { location: { origin: 'http://localhost' } };
   // These SSR imports never use HMR. Middleware mode alone still watches the
@@ -20,6 +20,7 @@ before(async () => {
   inputs = await server.ssrLoadModule('/src/studio/resolvedExecutionInputs.ts');
   outputUtils = await server.ssrLoadModule('/src/studio/outputUtils.ts');
   profiles = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
+  tasks = await server.ssrLoadModule('/src/studio/outputTaskDisplay.ts');
 });
 after(async () => {
   await server?.close();
@@ -552,6 +553,76 @@ test('graph task evidence replaces stale history labels while preserving the sav
     Object.assign(malformed.graphTasks[0], patch);
     assert.equal(inputs.coerceResolvedExecutionInputs(malformed, output), undefined);
   }
+});
+
+function taskHistoryOutput(graphTasks) {
+  const evidence = receipt();
+  evidence.nodes.push({
+    nodeId: 'loader',
+    module: 'modules.ModularDiffusers',
+    action: 'ModelsLoader',
+    fields: { model_type: { value: 'QwenImageEditPlusModularPipeline', source: 'literal' } },
+    omittedFields: {},
+  });
+  evidence.summary.modelType = 'QwenImageEditPlusModularPipeline';
+  if (graphTasks !== undefined) evidence.graphTasks = graphTasks;
+  return contracts.coerceStudioOutput({
+    id: 'task-alias',
+    url: '/image.webp',
+    taskId: 'actual-task',
+    attemptIndex: 2,
+    nodeId: 'preview',
+    mode: 'text_to_image',
+    formSnapshot: { mode: 'text_to_image', steps: 50 },
+    resolvedExecutionInputs: evidence,
+  });
+}
+
+const taskOwner = { loaderId: 'loader', pipelineClass: 'QwenImageEditPlusModularPipeline' };
+
+test('ambiguous consumed task stays explicitly uncaptured across history reload without borrowing the form', () => {
+  let output = taskHistoryOutput([{ ...taskOwner, task: null }]);
+  for (let reload = 0; reload < 2; reload++) {
+    assert.equal(tasks.outputTaskDisplay(output), 'Task not uniquely captured');
+    assert.equal(output.mode, 'text_to_image');
+    assert.equal(output.formSnapshot.mode, 'text_to_image');
+    assert.equal(output.formSnapshot.steps, 50);
+    assert.equal(inputs.outputModelKey(output), 'QwenImageEditPlusModularPipeline');
+    output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+  }
+});
+
+test('missing and mixed consumed task evidence never uses the historical global task', () => {
+  const output = taskHistoryOutput();
+  assert.equal(tasks.outputTaskDisplay(output), 'Task not uniquely captured');
+  for (const graphTasks of [
+    [],
+    [{ ...taskOwner, task: null }],
+    [
+      { ...taskOwner, task: 'edit_image' },
+      { ...taskOwner, loaderId: 'other', task: 'text_to_image' },
+    ],
+    [
+      { ...taskOwner, task: 'edit_image' },
+      { ...taskOwner, loaderId: 'other', task: null },
+    ],
+    [{ ...taskOwner, task: 'unrecognized_task' }],
+    [{ ...taskOwner, task: 'constructor' }],
+  ]) {
+    output.resolvedExecutionInputs.graphTasks = graphTasks;
+    assert.equal(tasks.outputTaskDisplay(output), 'Task not uniquely captured');
+  }
+});
+
+test('unique consumed task labels override stale history, and only receipt-free records retain legacy labels', () => {
+  for (const task of ['edit_image', 'multi_image_reference_edit']) {
+    const output = taskHistoryOutput([{ ...taskOwner, task }]);
+    assert.equal(tasks.outputTaskDisplay(output), profiles.STUDIO_MODE_LABELS[task]);
+    assert.equal(output.formSnapshot.mode, 'text_to_image');
+  }
+  const legacy = taskHistoryOutput();
+  delete legacy.resolvedExecutionInputs;
+  assert.equal(tasks.outputTaskDisplay(legacy), 'Text to image');
 });
 
 test('depth receipt preserves model-default resolution and false input matching through history parsing', () => {

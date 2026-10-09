@@ -9301,6 +9301,137 @@ test('the unified editor inspect a node with the library closed, preserving grap
     .toBe(before.nodes.find((node) => node.id === nodeId)!.params.prompt.value);
 });
 
+test('mounted run readiness follows an optional loader file used by a required operation input', async ({ page }) => {
+  await ensureFrontend();
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
+  const selectionArgs = [script, '--selection', 'QwenImageModularPipeline', 'image_to_image'];
+  const { stdout } = await promisify(execFile)(
+    process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh'),
+    process.platform === 'win32' ? selectionArgs : [python, ...selectionArgs],
+    {
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      timeout: 90_000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  const [starter] = JSON.parse(stdout) as (OperationStarter & {
+    testMediaLoaderRegistry: Record<string, NodeData>;
+  })[];
+  expect(starter?.pipelineClass).toBe('QwenImageModularPipeline');
+  expect(starter?.task).toBe('image_to_image');
+  const imageEncoder = starter!.nodes.find(
+    (item) =>
+      item.operation.nodeKey === 'modules.ModularDiffusers.ImageEncode' &&
+      item.operation.ports.some((port) => port.name === 'image' && port.direction === 'input' && port.required),
+  )!;
+  expect(imageEncoder).toBeDefined();
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(
+    async ({ encoder, registry }) => {
+      const [{ useFlowStore }, { useStudioStore }, { useNodesStore }, { mountRunReadinessProbe }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/stores/useStudioStore.ts'),
+        import('/src/stores/useNodeStore.ts'),
+        import('/tests/e2e/studio-mocked/runReadinessFixture.tsx'),
+      ]);
+      const loader = structuredClone(registry['modules.Image.Load']!);
+      loader.label = 'Load Image';
+      loader.params.file = {
+        ...loader.params.file,
+        label: 'Source image',
+        display: 'filebrowser',
+        value: [],
+        fieldOptions: { fileTypes: ['image'], multiple: true },
+      };
+      // The real loader picker is optional in the registry. Its typed connection
+      // to this actual backend operation makes the file necessary for this run.
+      if (loader.params.file.required || loader.params.file.isInput)
+        throw new Error('Expected optional picker metadata');
+      useNodesStore.setState({ nodesRegistry: { ...registry, [encoder.operation.nodeKey]: encoder.node } });
+      useStudioStore.getState().clearGraphBinding();
+      useFlowStore.setState({
+        nodes: [
+          {
+            id: 'readiness-upload-source',
+            type: 'custom',
+            position: { x: 80, y: 100 },
+            data: loader,
+          },
+          {
+            id: 'readiness-required-image',
+            type: 'custom',
+            position: { x: 600, y: 100 },
+            data: {
+              ...encoder.node,
+              operationAuthoring: {
+                schemaVersion: 1,
+                operation: encoder.operation,
+                defaults: {},
+                retained: [],
+              },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: 'readiness-required-image-wire',
+            source: 'readiness-upload-source',
+            sourceHandle: 'image',
+            target: 'readiness-required-image',
+            targetHandle: 'image',
+          },
+        ],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      });
+      useFlowStore.getState().resetHistory();
+      mountRunReadinessProbe();
+    },
+    { encoder: imageEncoder, registry: starter!.testMediaLoaderRegistry },
+  );
+  const readiness = page.getByTestId('mounted-media-readiness');
+  await expect(readiness).toContainText('Load Image needs a file before running.');
+  const source = page.getByTestId('readiness-upload-picker');
+  await page.route('**/file', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({ json: { path: ['@data/images/readiness-source.png'] } });
+  });
+  const before = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    return useFlowStore.getState().toObject();
+  });
+  await source.locator('input[type="file"]').setInputFiles({
+    name: 'readiness-source.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
+  const fileValue = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().nodes.find((node) => node.id === 'readiness-upload-source')!.data.params.file
+        .value;
+    });
+  await expect.poll(fileValue).toEqual(['@data/images/readiness-source.png']);
+  // Keep the hook mounted: no refresh, graph replacement, registry publication,
+  // queue event or Studio edit may be needed to clear a successful upload.
+  await expect(readiness).toHaveText('[]');
+  expect(
+    await page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().edges;
+    }),
+  ).toEqual(before.edges);
+  await source.getByRole('button', { name: 'Remove media', exact: true }).click();
+  await expect.poll(fileValue).toEqual(['']);
+  await expect(readiness).toContainText('Load Image needs a file before running.');
+});
+
 test('Fix opens a required Block input without changing Creator workspace or memory policy', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
@@ -28199,7 +28330,9 @@ for (const workspace of ['expert'] as const) {
 }
 
 for (const workspace of ['expert'] as const) {
-  test(`${workspace} Gallery keeps recognized graph task after history reload`, async ({ page }) => {
+  test(`${workspace} Gallery keeps recognized and ambiguous graph task labels after history reload`, async ({
+    page,
+  }) => {
     await ensureFrontend();
     await installMockRoutes(page);
     const output = {
@@ -28246,7 +28379,13 @@ for (const workspace of ['expert'] as const) {
         unavailableFields: [],
         uncapturedNodeIds: [],
         truncated: false,
-        graphTasks: [{ loaderId: 'loader', pipelineClass: 'StableDiffusionXLModularPipeline', task: 'image_to_image' }],
+        graphTasks: [
+          {
+            loaderId: 'loader',
+            pipelineClass: 'StableDiffusionXLModularPipeline',
+            task: 'image_to_image' as string | null,
+          },
+        ],
       },
     };
     const custom = structuredClone(output);
@@ -28254,11 +28393,20 @@ for (const workspace of ['expert'] as const) {
     custom.resolvedExecutionInputs.nodes[0]!.fields.model_type!.value = 'CustomModularPipeline';
     custom.resolvedExecutionInputs.summary.modelType = 'CustomModularPipeline';
     custom.resolvedExecutionInputs.graphTasks[0]!.pipelineClass = 'CustomModularPipeline';
+    const edit = structuredClone(output);
+    edit.id = 'ambiguous-edit-history';
+    edit.resolvedExecutionInputs.nodes[0]!.fields.model_type!.value = 'QwenImageEditPlusModularPipeline';
+    edit.resolvedExecutionInputs.summary.modelType = 'QwenImageEditPlusModularPipeline';
+    edit.resolvedExecutionInputs.nodes[1]!.fields.num_inference_steps!.value = '40';
+    edit.resolvedExecutionInputs.summary.steps = '40';
+    edit.resolvedExecutionInputs.graphTasks = [
+      { loaderId: 'loader', pipelineClass: 'QwenImageEditPlusModularPipeline', task: null },
+    ];
     await page.route('**/studio_outputs**', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ error: false, outputs: [output, custom], revision: 1 }),
+        body: JSON.stringify({ error: false, outputs: [output, custom, edit], revision: 1 }),
       }),
     );
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
@@ -28289,6 +28437,17 @@ for (const workspace of ['expert'] as const) {
       expect(stored.formSnapshot.mode).toBe('text_to_image');
       expect(stored.formSnapshot.modelType).toBe('ZImageModularPipeline');
       expect(stored.formSnapshot.steps).toBe(9);
+      await page.getByTestId('gallery-filter-QwenImageEditPlusModularPipeline').click();
+      await expect(inspector.locator('h2')).toContainText('Task not uniquely captured');
+      await expect(inspector.locator('h2')).not.toContainText('Text to image');
+      const ambiguousMetadata = JSON.parse((await inspector.locator('pre').textContent())!);
+      expect(ambiguousMetadata.steps).toBe(40);
+      expect(ambiguousMetadata.resolvedExecutionInputs.graphTasks[0].task).toBeNull();
+      const ambiguousStored = await page.evaluate(() =>
+        window.__MODIFF_E2E__!.getState().studio.outputs.find((item) => item.id === 'ambiguous-edit-history'),
+      );
+      expect(ambiguousStored!.mode).toBe('text_to_image');
+      expect(ambiguousStored!.formSnapshot.mode).toBe('text_to_image');
       if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
     }
     await page.getByTestId('gallery-inspect-view').locator('h2').scrollIntoViewIfNeeded();
@@ -29935,4 +30094,306 @@ test('managed Studio resources and Auto Run check the whole graph before submitt
   await expect(page.getByText(/Auto cannot run this workflow: The complete workflow needs/u).first()).toBeVisible();
   expect(submitted).toBe(0);
   expect(await readExecution()).toEqual(before);
+});
+
+test('mounted media source picker distinguishes model branches and follows edits, removal and Undo', async ({
+  page,
+}) => {
+  page.setDefaultTimeout(15_000);
+  await ensureFrontend();
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'operation-starter-fixtures.py');
+  const args = [script, '--selection', 'QwenImageModularPipeline', 'image_to_image'];
+  const { stdout } = await promisify(execFile)(
+    process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh'),
+    process.platform === 'win32' ? args : [python, ...args],
+    {
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      timeout: 90_000,
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  const [starter] = JSON.parse(stdout) as OperationStarter[];
+  expect(starter!.task).toBe('image_to_image');
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  const ids = await page.evaluate(async (starter) => {
+    const [
+      { useFlowStore },
+      { useNodesStore },
+      { createOperationStarter },
+      { mountMediaAttachmentProbe },
+      schema,
+      runtime,
+      crossing,
+    ] = await Promise.all([
+      import('/src/stores/useFlowStore.ts'),
+      import('/src/stores/useNodeStore.ts'),
+      import('/src/workflow/operationAuthoring.ts'),
+      import('/tests/e2e/studio-mocked/mediaAttachmentFixture.tsx'),
+      import('/src/studio/blockSchemaV2.ts'),
+      import('/src/studio/blockRuntimeV2.ts'),
+      import('/src/studio/blockCrossingConnectionsV2.ts'),
+    ]);
+    const branches = ['Qwen/Qwen-Image', 'Qwen/Qwen-Image-2512', 'Qwen/Qwen-Image'].map((repo) => {
+      const graph = createOperationStarter(starter, { x: 0, y: 0 });
+      graph.nodes.find((node) => node.data.action === 'ModelsLoader')!.data.params.repo_id!.value = {
+        source: 'hub',
+        value: repo,
+      };
+      return graph;
+    });
+    const owners = branches.map((graph) => graph.nodes.find((node) => node.data.action === 'ModelsLoader')!.id);
+    const decoders = branches.map((graph) => graph.nodes.find((node) => node.data.action === 'DecodeLatents')!.id);
+    useNodesStore.setState({
+      operationContracts: starter.nodes.map((node) => node.operation),
+      pipelineSupport: [
+        {
+          pipelineClass: starter.pipelineClass,
+          coverage: 'declared',
+          reason: 'Actual backend starter contracts for this isolated picker regression.',
+          equivalentTo: [],
+          upstreamTasks: [],
+          tasks: [
+            {
+              task: starter.task,
+              execution: 'adapter',
+              decomposition: 'stages',
+              operationIds: starter.nodes.map((node) => node.operation.operationId),
+              executionProfileIds: [],
+              dependencies: 'ready',
+              runtimeRequirements: [],
+            },
+          ],
+        },
+      ],
+    });
+    const saved = createOperationStarter(starter, { x: 0, y: 0 });
+    const savedOwner = saved.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+    savedOwner.data.params.repo_id!.value = { source: 'hub', value: 'Qwen/Qwen-Image-2512' };
+    const savedDecoder = saved.nodes.find((node) => node.data.action === 'DecodeLatents')!;
+    const inner = {
+      nodes: saved.nodes.map((node) => ({ nodeId: node.id, nodeType: node.type!, data: node.data })),
+      edges: saved.edges.map((edge) => ({
+        edgeId: edge.id,
+        sourceNodeId: edge.source,
+        sourcePortId: edge.sourceHandle!,
+        targetNodeId: edge.target,
+        targetPortId: edge.targetHandle!,
+      })),
+    };
+    const definition = {
+      schemaVersion: 2 as const,
+      definitionId: 'user:media-label-import',
+      displayName: 'Saved image branch',
+      source: { kind: 'user' as const },
+      graph: { ...inner, graphHash: schema.blockGraphHashV2(inner) },
+      boundary: {
+        mode: 'explicit' as const,
+        inputs: [],
+        outputs: [
+          {
+            portId: 'rendered',
+            label: 'Result',
+            valueType: 'image',
+            required: false,
+            binding: { nodeId: savedDecoder.id, fieldOrPortId: 'images' },
+          },
+        ],
+      },
+      controls: [],
+      suggestedInputs: [],
+      previews: [],
+      ownership: { kind: 'user' as const, definitionMutable: true },
+    };
+    const block = runtime.createBlockRootNodeV2(
+      schema.createBlockInstanceV2(
+        { ...definition, contentHash: schema.blockDefinitionContentHashV2(definition) },
+        { instanceId: 'media-label-import-block', position: { x: 0, y: 800 }, size: { width: 400, height: 500 } },
+      ),
+    );
+    const broken = {
+      id: 'retained-input-as-output',
+      source: block.id,
+      sourceHandle: crossing.blockCrossingHandleV2({
+        direction: 'input',
+        nodeId: savedOwner.id,
+        fieldOrPortId: 'repo_id',
+      }),
+      target: 'retained-input-target',
+      targetHandle: 'input',
+    };
+    useFlowStore.getState().replaceGraph(
+      {
+        nodes: [
+          ...branches.flatMap((graph) => graph.nodes),
+          block,
+          {
+            id: broken.target,
+            type: 'custom',
+            position: { x: 900, y: 800 },
+            data: {
+              module: 'custom.Values',
+              action: 'Input',
+              type: 'custom',
+              category: 'test',
+              label: 'Input',
+              params: { input: { type: 'str', display: 'input' } },
+            },
+          },
+        ],
+        edges: [...branches.flatMap((graph) => graph.edges), broken],
+        viewport: { x: 0, y: 0, zoom: 1 },
+      },
+      { clearRemovedCache: false },
+    );
+    useFlowStore.getState().resetHistory();
+    mountMediaAttachmentProbe(owners[0]!, owners[1]!, decoders[1]!);
+    return { owners, decoders, brokenEdgeId: broken.id };
+  }, starter!);
+  const probe = page.getByTestId('mounted-media-attachment');
+  const picker = probe.getByRole('button', { name: 'Media input source', exact: true });
+  await picker.click();
+  const first = 'Decode Latents · Images · Qwen/Qwen-Image · Branch 1';
+  const second = 'Decode Latents · Images · Qwen/Qwen-Image-2512';
+  const third = 'Decode Latents · Images · Qwen/Qwen-Image · Branch 2';
+  await expect(page.getByRole('option', { name: first, exact: true })).toBeVisible();
+  await expect(page.getByRole('option', { name: third, exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('option', { name: 'Saved image branch · Result · Qwen/Qwen-Image-2512', exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().edges.some((edge) => edge.id === id),
+      ids.brokenEdgeId,
+    ),
+  ).toBe(true);
+  await page.getByRole('option', { name: second, exact: true }).click();
+  await expect(picker).toHaveText(second);
+  await probe.getByRole('button', { name: 'Use the same source model', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  await picker.click();
+  await expect(
+    page.getByRole('option', { name: 'Decode Latents · Images · Qwen/Qwen-Image · Branch 3', exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await probe.getByRole('button', { name: 'Remove selected source', exact: true }).click();
+  await expect(picker).toHaveText('Add Load Image');
+  let starterRequests = 0;
+  await page.route('**/operations/starter*', (route) => {
+    starterRequests += 1;
+    return route.abort();
+  });
+  await probe.getByRole('button', { name: 'Attach input', exact: true }).click();
+  await expect(probe).toContainText(
+    'The selected source is no longer compatible. Choose a source for this input role.',
+  );
+  expect(starterRequests).toBe(0);
+  await probe.getByRole('button', { name: 'Undo source edit', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  await probe.getByRole('button', { name: 'Undo source edit', exact: true }).click();
+  await expect(picker).toHaveText(second);
+  await probe.getByRole('button', { name: 'Redo source edit', exact: true }).click();
+  await expect(picker).toHaveText(third);
+  expect(
+    await page.evaluate(
+      async (id) =>
+        (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().nodes.some((node) => node.id === id),
+      ids.decoders[1]!,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('media-source-model-branches.png'), animations: 'disabled' });
+});
+
+test('mocked Gallery opens every ordered collection image before and after history reload', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const mediaPaths = [0, 1, 2].map((index) => `@data/studio/outputs/ordered-layer-${index}.webp`);
+  const mediaItems = mediaPaths.map((backendPath, index) => ({
+    index,
+    url: `/file?file=${encodeURIComponent(backendPath)}`,
+    backendPath,
+    displayType: 'image',
+    label: `Layer ${index + 1}`,
+    taskId: 'ordered-layers-task',
+    clientRunId: 'ordered-layers-client',
+    runInputHash: 'ordered-layers-input',
+    attemptIndex: 0,
+    width: 2,
+    height: 2,
+  }));
+  const output = {
+    id: 'ordered-layers-output',
+    url: mediaItems[0]!.url,
+    displayType: 'image_collection',
+    modelType: 'QwenImageLayeredModularPipeline',
+    modelLabel: 'Ordered collection',
+    mode: 'layer_decomposition',
+    prompt: 'Keep all three recorded layers.',
+    taskId: 'ordered-layers-task',
+    clientRunId: 'ordered-layers-client',
+    runInputHash: 'ordered-layers-input',
+    nodeId: 'preview',
+    attemptIndex: 0,
+    createdAt: 1,
+    mediaItems,
+  };
+  let graphPosts = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/graph' && request.method() === 'POST') graphPosts += 1;
+  });
+  await page.route('**/studio_outputs**', (route) => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({
+      json: { error: false, outputs: [output], revision: 1 },
+    });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  for (let reload = 0; reload < 2; reload += 1) {
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await page.getByTestId('topbar-gallery').click();
+    const gallery = page.getByTestId('gallery-panel');
+    await expect(gallery.getByTestId('gallery-output-0').getByRole('img')).toHaveCount(3);
+    // Both existing full-size entry points must preserve the collection.
+    if (reload === 0) await gallery.getByTestId('gallery-open-0').click();
+    else await gallery.getByRole('button', { name: /^Root \| Ordered collection \|/ }).click();
+    for (let index = 0; index < 3; index += 1) {
+      const dialog = page.getByRole('dialog', {
+        name: `Image ${index + 1} of 3`,
+        exact: true,
+      });
+      await expect(dialog).toHaveCount(1);
+      await expect(dialog.getByRole('heading', { name: `Image ${index + 1} of 3`, exact: true })).toBeVisible();
+      const image = dialog.locator('img.max-h-full.max-w-full');
+      await expect(image).toHaveCount(1);
+      await expect(image).toBeVisible();
+      await expect
+        .poll(() =>
+          image.evaluate((element: HTMLImageElement) => ({
+            file: new URL(element.currentSrc).searchParams.get('file'),
+            width: element.naturalWidth,
+            height: element.naturalHeight,
+          })),
+        )
+        .toEqual({ file: mediaPaths[index], width: 2, height: 2 });
+      await expect(dialog.getByRole('button', { name: /^Show image [123]$/ })).toHaveCount(3);
+      if (index < 2) await dialog.getByRole('button', { name: 'Next image', exact: true }).click();
+    }
+    await page.getByRole('button', { name: 'Previous image', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Image 2 of 3', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Image 2 of 3', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Show image 1', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Image 1 of 3', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Image 1 of 3', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+    expect((await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.outputs[0]))!.mediaItems).toMatchObject(
+      mediaItems,
+    );
+    if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
+  }
+  expect(graphPosts).toBe(0);
 });

@@ -44,7 +44,10 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 576 bytes; retain lazy authoring and the independent deferred-chunk ceiling.
 // Owned metadata waiting and fresh-document hydration add 280 bytes to this
 // shared startup chunk (463950 measured). Bound the necessary fix by 320 bytes.
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 768 + 1280 + 256 + 576 + 320;
+// Combined Windows recovery, checkpoint, preview and complete-scope Auto fixes
+// measure 464333 bytes after reusing normalized attention/progress/preview
+// values. Bound their remaining combined cost with 512 bytes; no new imports.
+const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 768 + 1280 + 256 + 576 + 320 + 512;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -112,7 +115,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 768 + 1280 + 256 + 576 + 320;
 // no new dependencies or eager template-creation imports.
 // The same startup fix adds 277 bytes (642255 measured); deferred code falls
 // by 115 bytes. Add 320 here without changing lazy boundaries or chunk limits.
-const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 768 + 1280 + 384 + 576 + 320;
+// The same combined fixes measure 642639 startup bytes. Add the same bounded
+// 512 bytes without changing code-splitting boundaries or dependencies.
+const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 768 + 1280 + 384 + 576 + 320 + 512;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -223,7 +228,19 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // runtime restoration and the native recipe checks add 1316 bytes to the last
 // reviewed build. Bound these features and relocation at 8.5 KiB above the
 // former aggregate cap; startup and both per-chunk caps stay fixed.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704;
+// Preserving one declared media source across new required inputs adds 746
+// deferred gzip bytes (267236 -> 267982 measured). Its role, source, literal
+// and cycle guards stay in the existing lazy authoring chunk and reuse nanoid.
+// Allow 768 bytes; startup, dependencies and both per-chunk caps stay fixed.
+// Ordinary media-source labels add upstream repository/local context and
+// visible branch ordinals without changing ports or attachment authority.
+// Measured deferred aggregate is 268690 bytes (+588 from 268102); reuse the
+// existing Block projection and cache immutable instances. Allow 640 bytes;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+// Combined Windows and Linux correctness fixes measure 268989 deferred bytes
+// after shared media-driver/preview reuse. Add 256 bounded bytes; retain the
+// independent 65536-byte deferred-chunk ceiling and existing dependencies.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 256;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -13,7 +13,12 @@ import {
   isOwnWorkflowAcknowledgement,
   markBackendWorkflow,
 } from '../studio/useWorkflowBackendSync';
-import { isWebsocketMessage, type TaskWebsocketMessage, type WebsocketMessage } from '../types/api';
+import {
+  isWebsocketMessage,
+  type NodeWebsocketMessage,
+  type TaskWebsocketMessage,
+  type WebsocketMessage,
+} from '../types/api';
 import { useFlowStore, type CustomNodeType } from './useFlowStore';
 import { NodeParams, useNodesStore } from './useNodeStore';
 import { useRunIssueStore } from './useRunIssueStore';
@@ -222,34 +227,14 @@ function shouldApplyWorkflowCanvasMutation(
   return studio.workflowTabs.length <= 1;
 }
 
-function nodeExecutionMetadata(message: WebsocketMessage) {
-  if (!('node' in message)) return undefined;
-  const executionProgress = executionProgressFrom({
-    status: 'status' in message ? message.status : undefined,
-    phase: 'phase' in message ? message.phase : undefined,
-    message: 'message' in message ? message.message : undefined,
-    component: 'component' in message ? message.component : undefined,
-    shard_current: 'shard_current' in message ? message.shard_current : undefined,
-    shard_total: 'shard_total' in message ? message.shard_total : undefined,
-    current_step: 'current_step' in message ? message.current_step : undefined,
-    total_steps: 'total_steps' in message ? message.total_steps : undefined,
-    average_step_seconds: 'average_step_seconds' in message ? message.average_step_seconds : undefined,
-    eta_seconds: 'eta_seconds' in message ? message.eta_seconds : undefined,
-    elapsed_seconds: 'elapsed_seconds' in message ? message.elapsed_seconds : undefined,
-    attempt_index: 'attempt_index' in message ? message.attempt_index : undefined,
-    last_heartbeat_at: 'last_heartbeat_at' in message ? message.last_heartbeat_at : undefined,
-    updated_at: 'updated_at' in message ? message.updated_at : undefined,
-    resource_snapshot: 'resource_snapshot' in message ? message.resource_snapshot : undefined,
-    phase_timings: 'phase_timings' in message ? message.phase_timings : undefined,
-  });
+function nodeExecutionMetadata(message: NodeWebsocketMessage | TaskWebsocketMessage) {
   return {
-    activeTaskId: 'task_id' in message ? (message.task_id ?? null) : null,
-    attemptIndex:
-      'attempt_index' in message && typeof message.attempt_index === 'number' ? message.attempt_index : undefined,
-    executionStatus: 'status' in message ? message.status : undefined,
-    executionPhase: 'phase' in message ? message.phase : undefined,
-    progressMessage: 'message' in message ? message.message : undefined,
-    executionProgress,
+    activeTaskId: message.task_id ?? null,
+    attemptIndex: typeof message.attempt_index === 'number' ? message.attempt_index : undefined,
+    executionStatus: message.status,
+    executionPhase: message.phase,
+    progressMessage: message.message,
+    executionProgress: executionProgressFrom(message),
   };
 }
 
@@ -443,7 +428,9 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       // Reconnect may follow package repair or a worker replacement. Use the
       // discovery request gate so an older runtime response cannot restore
       // the previous worker's Setup state.
-      void useNodesStore.getState().fetchRuntimeStatus();
+      void useNodesStore
+        .getState()
+        .fetchRuntimeStatus(context.ws?.url ? new URL(context.ws.url).origin.replace(/^ws/, 'http') : undefined);
       if (instance !== useNodesStore.getState().instance) {
         const workflowContext = captureWorkflowOperationContext();
         const schemaPending = useStudioStore.getState().graphBinding ? markStudioGraphDefinitionPending() : false;

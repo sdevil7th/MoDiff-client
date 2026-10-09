@@ -161,6 +161,35 @@ test('supervisor queue reads use the verified bound port and preserve it while h
   assert.deepEqual(requests, ['http://127.0.0.1:43001/queue']);
 });
 
+test('an unmapped custom supervisor is diagnosed with bounded backoff and no local service request', async () => {
+  const config = (await server.ssrLoadModule('/app.config.ts')).default;
+  const previous = { ...config };
+  Object.assign(config, {
+    backendAddress: 'http://127.0.0.1:18088',
+    supervisorAddress: 'http://127.0.0.1:18089',
+    supervisorAddressExplicit: false,
+  });
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    throw new Error('Unmapped supervisor must not request another local service.');
+  };
+  try {
+    controlModule.updateWorkerControl(
+      controlModule.parseWorkerControl(
+        { available: true, address: 'http://127.0.0.1:43001' },
+        { host: '127.0.0.1', port: 8088, scheme: 'http' },
+      ),
+    );
+    await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+    assert.match(taskStoreModule.useTaskStore.getState().supervisorControlError, /supervisor.*configured backend/i);
+    for (let index = 0; index < 20; index++) await taskStoreModule.useTaskStore.getState().fetchSupervisorTasks();
+    assert.equal(requests, 0);
+  } finally {
+    Object.assign(config, previous);
+  }
+});
+
 test('a delayed queue fetch cannot overwrite a newer websocket queue revision', async () => {
   const call = deferred();
   globalThis.fetch = () => call.promise;

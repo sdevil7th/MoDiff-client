@@ -473,7 +473,7 @@ type NodesStore = {
   addCustomModule: (source: ExtensionImport) => Promise<CustomModuleActionResult>;
   updateCustomModule: (name: string) => Promise<CustomModuleActionResult>;
   setCustomModuleEnabled: (name: string, enabled: boolean, codeHash?: string) => Promise<CustomModuleActionResult>;
-  fetchRuntimeStatus: () => Promise<void>;
+  fetchRuntimeStatus: (address?: string) => Promise<void>;
   fetchOptionalRuntimes: () => Promise<void>;
   setRuntimeResources: (snapshot: RuntimeResourceSnapshot | null) => void;
   fetchNodes: () => Promise<void>;
@@ -669,12 +669,12 @@ function parseArrayResponse(value: unknown, label: string) {
   return value;
 }
 
-function parseRuntimeStatus(value: unknown) {
+function parseRuntimeStatus(value: unknown, backendAddress: string) {
   const payload = payloadRecord(value, 'The runtime status response is invalid.');
   return {
     ...payload,
     runtimeEnvironment: parseRuntimeEnvironment(payload),
-    workerControl: parseWorkerControl(payload.workerControl),
+    workerControl: parseWorkerControl(payload.workerControl, payload.server, backendAddress),
   } as RuntimeStatus;
 }
 
@@ -1362,17 +1362,18 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       `Could not ${action} ${name}.`,
     );
   },
-  fetchRuntimeStatus: async () => {
+  fetchRuntimeStatus: async (address = config.serverAddress) => {
     const controlRead = beginWorkerControlRead();
+    const backendAddress = address === config.serverAddress ? config.backendAddress : address;
     const previousFingerprint = get().runtimeStatus?.runtime_fingerprint;
     await runDiscoveryRequest(
       'runtime',
       set,
       (signal) =>
-        requestJson(`${config.serverAddress}/runtime/status`, {
+        requestJson(`${address}/runtime/status`, {
           signal,
           timeoutMs: 120_000,
-          parse: parseRuntimeStatus,
+          parse: (value) => parseRuntimeStatus(value, backendAddress),
         }),
       (runtimeStatus) => {
         updateWorkerControl(runtimeStatus.workerControl, controlRead);

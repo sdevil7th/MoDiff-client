@@ -15,6 +15,8 @@ export function resolveStudioExecutionSpecValues(
   } = {},
 ) {
   const candidate = options.candidate ?? null;
+  const attentionBackend =
+    typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto';
   const audioTemplateBaseModel = options.audioTemplateBaseModel ?? null;
   const quantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
   const bindsDefaultRevision = spec.bindings.some(([, , source]) => source === 'defaultRevision');
@@ -63,8 +65,7 @@ export function resolveStudioExecutionSpecValues(
     quantizationMode,
     quantizedComponents: ['transformer'],
     deviceMapNone: 'none',
-    attentionBackend:
-      typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto',
+    attentionBackend,
     nativeMath: '_native_math',
     empty: '',
     true: true,
@@ -194,9 +195,7 @@ export function resolveStudioExecutionSpecValues(
   }
   values.pipelineQuantizedComponents = quantizationMode === 'none' ? [] : values.quantizedComponents;
   values.autoOffload = values.offloadMode !== 'none';
-  values.nativeFlashAttention =
-    candidate?.attentionBackend ??
-    (typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto');
+  values.nativeFlashAttention = candidate?.attentionBackend ?? attentionBackend;
   values.transformer = values.nativeFlashAttention === '_native_flash' ? 'transformer' : '';
   values.dualTransformer = values.nativeFlashAttention === '_native_flash' ? 'transformer,transformer_2' : '';
   values.dualQuantizedComponents = candidate?.quantizedComponents ?? ['transformer', 'transformer_2'];
