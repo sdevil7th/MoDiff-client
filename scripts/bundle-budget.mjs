@@ -240,7 +240,14 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Combined Windows and Linux correctness fixes measure 268989 deferred bytes
 // after shared media-driver/preview reuse. Add 256 bounded bytes; retain the
 // independent 65536-byte deferred-chunk ceiling and existing dependencies.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 256;
+// Bounded optional-runtime status retries, visible stale-progress errors and
+// status-only recovery measure 269147 deferred gzip bytes (+457 from 268690).
+// Allow 512 bytes for this correctness fix in the existing lazy workspace;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+// Preserve both reviewed allowances: 268800 + 256 + 512 = 269568 bytes.
+// The combined build measures 269414 deferred bytes, 642643 startup bytes and
+// a 464336-byte largest startup chunk; retain the existing startup ceilings.
+const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 256 + 512;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

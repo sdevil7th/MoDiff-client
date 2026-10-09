@@ -154,9 +154,18 @@ The combined Windows and Linux recovery, checkpoint, preview and complete-scope
 Auto fixes measure 642639 startup bytes, a 464333-byte largest startup chunk and
 268989 deferred bytes after sharing normalized attention/progress, preview
 identities and unique media drivers. These reviewed changes add bounded ceilings
-of 512 startup bytes and 256 deferred bytes, making the current deferred ceiling
+of 512 startup bytes and 256 deferred bytes, making the deferred ceiling at that stage
 269056 bytes. Earlier failed measurements remain failures for their original
 source and limits. No dependencies, lazy boundaries or deferred-chunk limit change.
+
+Bounded optional-runtime status polling then adds visible last-progress errors,
+eight-failure transient recovery and explicit status-only retry in the existing
+lazy workspace. Its reviewed upstream build adds 457 deferred bytes and allows
+512 bytes. Preserve that allowance alongside the Windows allowance:
+268800 + 256 + 512 = 269568 deferred bytes. The combined build measures 642643
+startup bytes, a 464336-byte largest startup chunk and 269414 deferred bytes.
+The startup ceilings remain 642816 and 464512 bytes, and the individual deferred
+chunk ceiling remains 65536 bytes. Dependencies and loading boundaries stay fixed.
 
 When updating selected loader field metadata, regenerate the paired
 `BlockDefinitionV2` catalog and frontend identity pins together. This metadata

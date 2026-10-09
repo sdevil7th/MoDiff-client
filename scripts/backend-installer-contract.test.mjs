@@ -120,8 +120,8 @@ test('README follows the paired install and development launcher contract', () =
   assert.ok(installStart > quickStart, 'Developer quick start must precede launcher installation');
   const quick = readme.slice(quickStart, installStart);
   for (const command of [
-    'git clone https://github.com/sdevil7th/MoDiff.git MoDiff',
-    'git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
+    'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff',
+    'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
     'cd MoDiff',
     'uv sync --extra cpu',
     'uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error',
@@ -139,9 +139,12 @@ test('README follows the paired install and development launcher contract', () =
   assert.ok(developmentEnd > developmentStart);
   const development = readme.slice(developmentStart, developmentEnd);
 
-  assert.match(readme, /git clone https:\/\/github\.com\/sdevil7th\/MoDiff\.git MoDiff/);
-  assert.match(readme, /git clone https:\/\/github\.com\/sdevil7th\/MoDiff-client\.git MoDiff-client/);
-  assert.match(readme, /https:\/\/github\.com\/sdevil7th\/MoDiff#install-and-run/);
+  assert.match(readme, /git clone --branch fix-ui-ux-issues https:\/\/github\.com\/sdevil7th\/MoDiff\.git MoDiff/);
+  assert.match(
+    readme,
+    /git clone --branch fix-ui-ux-issues https:\/\/github\.com\/sdevil7th\/MoDiff-client\.git MoDiff-client/,
+  );
+  assert.match(readme, /https:\/\/github\.com\/sdevil7th\/MoDiff\/tree\/fix-ui-ux-issues#install-and-run/);
   assert.match(development, /\.\/install-dev\.sh --accelerator auto/);
   assert.match(development, /\.\/run-dev\.sh/);
   assert.match(development, /\.\\install-dev\.ps1 -BackendPath \.\.\\MoDiff -Accelerator auto/);
