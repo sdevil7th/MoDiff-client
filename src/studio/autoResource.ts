@@ -611,6 +611,16 @@ export function modelInstallIsReady(
   return installedRunnable || autoPlanIsReady(plan, form);
 }
 
+export function modelInstallReadyReason(
+  installedRunnable: boolean,
+  installedReason: string,
+  plan: StudioAutoResourcePlan | null | undefined,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+) {
+  if (installedRunnable) return installedReason;
+  return autoPlanIsReady(plan, form) ? 'Required model artifacts are complete and available for this workflow.' : null;
+}
+
 function candidateRepo(candidate: StudioAutoResourceCandidate | null | undefined) {
   const repos = [
     candidate?.installTarget?.repo,

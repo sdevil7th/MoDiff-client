@@ -19,6 +19,7 @@ let studioStoreModule;
 let flowStoreModule;
 let originalFetch;
 let controlModule;
+let websocketMessagesModule;
 
 function requestStates() {
   return Object.fromEntries(
@@ -55,6 +56,7 @@ before(async () => {
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   controlModule = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
+  websocketMessagesModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   operationContractsModule = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   optionalRuntimesModule = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
   runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
@@ -2069,6 +2071,36 @@ test('a stale runtime response cannot overwrite current worker-control discovery
   first.resolve(jsonResponse({ ready: true, workerControl: { available: false, address: null } }));
   await older;
   assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:43001');
+});
+
+test('a replacement worker welcome refreshes runtime readiness and fences the old response', async () => {
+  const oldRead = deferred();
+  const replacementRead = deferred();
+  let runtimeReads = 0;
+  nodesStoreModule.useNodesStore.setState({
+    instance: 'old-worker',
+    runtimeStatus: { ready: false, packages: { transformers: { available: false } } },
+  });
+  globalThis.fetch = (url) => {
+    const pathname = new URL(url).pathname;
+    if (pathname === '/runtime/status') return ++runtimeReads === 1 ? oldRead.promise : replacementRead.promise;
+    if (pathname === '/nodes') return Promise.resolve(jsonResponse({ nodes: {}, instance: 'replacement-worker' }));
+    if (pathname === '/studio_outputs') return Promise.resolve(jsonResponse({ outputs: [] }));
+    throw new Error(`Unexpected request: ${pathname}`);
+  };
+  const older = nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  websocketMessagesModule.handleWebsocketMessage(
+    { type: 'welcome', sid: 'same-session', instance: 'replacement-worker', current: null, queued: {}, recent: [] },
+    { sid: 'same-session', setSid: () => {}, getSid: () => 'same-session', setLoopTimer: () => {} },
+  );
+  const welcomeRuntimeReads = runtimeReads;
+  replacementRead.resolve(jsonResponse({ ready: true, packages: { transformers: { available: true } } }));
+  for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve));
+  oldRead.resolve(jsonResponse({ ready: false, packages: { transformers: { available: false } } }));
+  await older;
+  assert.equal(welcomeRuntimeReads, 2);
+  assert.equal(nodesStoreModule.useNodesStore.getState().runtimeStatus.ready, true);
+  assert.equal(nodesStoreModule.useNodesStore.getState().runtimeStatus.packages.transformers.available, true);
 });
 
 test('runtime fingerprint changes invalidate every cached Auto plan', async () => {

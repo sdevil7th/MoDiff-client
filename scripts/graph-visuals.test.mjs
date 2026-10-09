@@ -3565,8 +3565,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     const i2vGenerate = i2vNodes.find((item) => item.id === i2vBinding.nodes.wanGenerate).data.params;
     const i2vImage = i2vNodes.find((item) => item.id === i2vBinding.nodes.loadImage).data.params;
     assert.deepEqual(i2vQuantization.components.value, ['transformer', 'transformer_2']);
-    assert.equal(i2vRecipe.attention_backend.value, '_native_flash');
-    assert.equal(i2vRecipe.attention_components.value, 'transformer,transformer_2');
+    assert.equal(i2vRecipe.attention_backend.value, 'auto');
+    assert.equal(i2vRecipe.attention_components.value, '');
     assert.equal(i2vRecipe.vae_tiling.value, true);
     assert.equal(i2vPipeline.pipeline_class.value, 'WanImageToVideoPipeline');
     assert.deepEqual(i2vPipeline.model_id.value, {
@@ -3614,8 +3614,8 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     assert.equal(ti2vPipeline.revision.value, 'b8fff7315c768468a5333511427288870b2e9635');
     assert.equal(ti2vPipeline.execution_profile_id.value, 'wan-22-ti2v-5b:direct');
     const ti2vRecipe = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.diffusersRecipe).data.params;
-    assert.equal(ti2vRecipe.attention_backend.value, '_native_flash');
-    assert.equal(ti2vRecipe.attention_components.value, 'transformer');
+    assert.equal(ti2vRecipe.attention_backend.value, 'auto');
+    assert.equal(ti2vRecipe.attention_components.value, '');
     assert.equal(ti2vRecipe.vae_tiling.value, true);
     const ti2vGenerate = ti2vNodes.find((item) => item.id === ti2vBinding.nodes.wanGenerate).data.params;
     assert.equal(ti2vGenerate.scheduler_flow_shift.value, 5);

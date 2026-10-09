@@ -177,6 +177,9 @@ If any step is missing, keep the profile visible as Expert-only or blocked with 
 ## Custom and multiple-Block workflow Auto
 
 The information button beside Resources opens Workflow resources in the right panel.
+Managed Studio workflows expose the same whole-workflow assessment and Auto check,
+with their selected-model options shown separately. A selected-model compatibility
+estimate does not establish combined workflow eligibility.
 The existing source-recipe assessment remains read-only. **Check Auto execution
 plan** also validates the actual executable graph through
 `POST /auto_resource/workflow` (`schemaVersion: 1`, `graph` containing the existing
@@ -226,6 +229,11 @@ resource changes or explicit movement form one Undo transaction. Interfaces,
 current values, external connections and preview references survive; the reusable
 library definition is not rewritten. Missing exact source metadata remains an
 explicit diagnostic.
+
+Every Automatic run, including a managed Studio workflow, obtains this complete
+plan before submission. The backend requires its receipt before runtime
+preparation; a primary-model candidate alone cannot authorize the complete graph
+or overwrite its planned resource fields.
 
 Run checks the graph again after planning and updates only supported visible
 resource controls. A `workflowAutoPlan` receipt binds the resulting API graph by

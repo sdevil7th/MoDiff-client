@@ -1184,6 +1184,15 @@ function Workflow() {
         maxZoom={1.5}
         colorMode={'dark'}
         deleteKeyCode={['Backspace', 'Delete']}
+        onBeforeDelete={async ({ nodes: removedNodes, edges: removedEdges }) => {
+          // React Flow normally emits edge removal before node removal, which
+          // would create two history entries for one keyboard action.
+          useFlowStore.getState().removeElements(
+            removedNodes.map((node) => node.id),
+            removedEdges.map((edge) => edge.id),
+          );
+          return false;
+        }}
         proOptions={{ hideAttribution: true }}
         // Composite execution children can be outside the viewport even while
         // their root is collapsed. Their retained graph edges still require

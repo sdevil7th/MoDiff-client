@@ -6,6 +6,7 @@ import config from '../../app.config';
 
 import { useFlowStore } from './useFlowStore';
 import { useSettingsStore } from './useSettingsStore';
+import { useNodesStore } from './useNodeStore';
 import { handleWebsocketMessage, parseWebsocketMessage } from './websocketMessageHandler';
 import { requestJson } from '../utils/requestJson';
 import { beginWorkerControlRead, parseWorkerControl, updateWorkerControl } from '../utils/supervisorControl';
@@ -28,6 +29,7 @@ export type WebsocketState = {
 export const useWebsocketStore = create<WebsocketState>((set, get) => {
   let generation = 0;
   let healthProbe: AbortController | undefined;
+  let probedRuntimeInstance: string | undefined;
 
   const clearPendingConnectionWork = () => {
     clearTimeout(get().connectionTimer);
@@ -56,12 +58,20 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
           }
           return {
             ready: value.ready,
+            instance:
+              'instance' in value && typeof value.instance === 'string' && value.instance.trim()
+                ? value.instance
+                : undefined,
             workerControl: parseWorkerControl('workerControl' in value ? value.workerControl : undefined),
           };
         },
       });
       if (owner !== generation || controller.signal.aborted) return;
       updateWorkerControl(status.workerControl, controlRead);
+      if (status.instance && status.instance !== probedRuntimeInstance) {
+        probedRuntimeInstance = status.instance;
+        void useNodesStore.getState().fetchRuntimeStatus();
+      }
       if (!status.ready) throw new Error('The backend is still starting.');
       // Only a successful websocket handshake resets its retry budget.
       get().connect();
@@ -175,6 +185,7 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
 
     disconnect: () => {
       generation += 1;
+      probedRuntimeInstance = undefined;
       clearPendingConnectionWork();
       const ws = get().ws;
       set({

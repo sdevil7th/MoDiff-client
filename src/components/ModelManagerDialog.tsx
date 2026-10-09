@@ -30,6 +30,7 @@ import {
   autoResourceInstallTarget,
   fetchAutoResourcePlans,
   modelInstallIsReady,
+  modelInstallReadyReason,
   type StudioAutoResourceInstallTarget,
   type StudioAutoResourcePlan,
 } from '../studio/autoResource';
@@ -397,7 +398,7 @@ function SupportedProfileRow({
       ? progress.error
       : 'This gated Hugging Face repository needs an accepted license and a configured read token.'
     : ready
-      ? status.reason
+      ? (modelInstallReadyReason(status.runnable, status.reason, autoPlan, form) ?? status.reason)
       : failed && progress?.error
         ? progress.error
         : (installTarget?.reason ?? compatibility.detail);

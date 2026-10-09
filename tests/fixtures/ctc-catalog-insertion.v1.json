@@ -1,0 +1,810 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": "modiff.huggingface_node_library and modiff.registered_block_v2_catalog; static contract, no model execution",
+  "catalogDefinition": {
+    "blockContractHash": "sha256:795270a92acbb34cd3e7361c9a9e95fc214245040235af6632f6597b34574850",
+    "blockPlacements": [
+      {
+        "blockDefinitionId": "transformers.composite-block:LoadCTCSpeechRecognitionModel:sha256:1bd3283e8aba82dd23dc86d62b3893eda2b36c0f7908cde557ff1b121fd068a2",
+        "legacyPath": "speechModel",
+        "order": 0,
+        "path": ["speechModel"]
+      },
+      {
+        "blockDefinitionId": "transformers.composite-block:Load:sha256:300ea7e970ebec08786628eb728c46bd6723ac9b162541842fa08688311f0018",
+        "legacyPath": "loadAudio",
+        "order": 1,
+        "path": ["loadAudio"]
+      },
+      {
+        "blockDefinitionId": "transformers.composite-block:TranscribeCTCAudio:sha256:998d2a8ed0551651630a4188249b9184ef745f67239146d21758066f1cbd7f44",
+        "legacyPath": "transcribeAudio",
+        "order": 2,
+        "path": ["transcribeAudio"]
+      },
+      {
+        "blockDefinitionId": "transformers.composite-block:DataViewer:sha256:d5cea36cedfc670d40d83078a9bad133fcad3635f1e40d902396a3015ac64ff9",
+        "legacyPath": "transcriptPreview",
+        "order": 3,
+        "path": ["transcriptPreview"]
+      }
+    ],
+    "blocksClass": "AutoModelForCTC",
+    "components": [
+      {
+        "creationMethod": "base_installation",
+        "name": "model_runtime",
+        "reuseKey": ["model_runtime"],
+        "type": "modiff.base-model-runtime@sha256:cc281f8fbae5093d68b4dd963a8f80e32b1589991c8cda97a3ec0f26c9e700db"
+      },
+      {
+        "creationMethod": "from_pretrained",
+        "name": "model",
+        "reuseKey": ["model", "revision", "dtype", "device"],
+        "type": "AutoModelForCTC"
+      }
+    ],
+    "contentHash": "sha256:0c03dcd8f16cf19c33a827aa802f22294eb20d9dceee73bfacd73b6f1a9ef67d",
+    "definitionKind": "studio_execution_composite",
+    "description": "Cluster Node containing an exact reviewed ASR loader, local audio input, bounded transcription action, and preview.",
+    "executionAdmissions": [
+      {
+        "adapterContractId": "transformers.composite-adapter:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+        "artifact": {
+          "repo": "facebook/wav2vec2-base-960h",
+          "revision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
+        },
+        "bindingSources": [
+          "artifact",
+          "defaultRevision",
+          "device",
+          "dtype",
+          "executionProfileId",
+          "pipelineClass",
+          "sourceAudio",
+          "speechChunkSeconds",
+          "speechStrideSeconds",
+          "speechTimestamps"
+        ],
+        "claim": "static_graph_contract_compatible",
+        "definitionId": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+        "dynamicFieldActions": [],
+        "executable": false,
+        "executionParameterSources": ["device"],
+        "id": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+        "instanceInputBindings": [
+          {
+            "bindingSource": "dtype",
+            "input": "dtype"
+          },
+          {
+            "bindingSource": "sourceAudio",
+            "input": "audio"
+          },
+          {
+            "bindingSource": "speechChunkSeconds",
+            "input": "chunk_length_seconds"
+          },
+          {
+            "bindingSource": "speechStrideSeconds",
+            "input": "stride_length_seconds"
+          },
+          {
+            "bindingSource": "speechTimestamps",
+            "input": "timestamps"
+          }
+        ],
+        "modelDependencies": [],
+        "publication": {
+          "autoEligible": false,
+          "executable": false,
+          "insertable": true,
+          "liveProof": false,
+          "readiness": "graph_qualified",
+          "reasons": [
+            {
+              "code": "runtime_resource_admission_required",
+              "message": "The materialized Cluster graph must pass runtime, artifact, and resource checks before Run is enabled."
+            },
+            {
+              "code": "live_output_review_pending",
+              "message": "The exact Cluster execution route has not received approved visible-frontend live-output evidence."
+            }
+          ],
+          "schemaVersion": 1
+        },
+        "reasons": [],
+        "schemaVersion": 4,
+        "sealedBindingValues": {
+          "artifact": "facebook/wav2vec2-base-960h",
+          "defaultRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+          "executionProfileId": "wav2vec2-base-960h:ctc-direct",
+          "pipelineClass": "AutoModelForCTC"
+        },
+        "status": "admitted",
+        "studioExecutionSpec": {
+          "contentHash": "studio-spec-v1-32eb7d06",
+          "executionProfileId": "wav2vec2-base-960h:ctc-direct",
+          "id": "wav2vec2-base-960h:speech-to-text:v1"
+        },
+        "studioMode": "speech_to_text"
+      }
+    ],
+    "executionClaim": "discovery_only",
+    "graphAdapterContracts": [
+      {
+        "actionSequence": ["speechModel", "loadAudio", "transcribeAudio", "transcriptPreview"],
+        "adapterId": "speech_to_text",
+        "id": "transformers.composite-adapter:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+        "requiredInputs": ["dtype", "audio"],
+        "schemaVersion": 1,
+        "source": "mode",
+        "stateEdges": [],
+        "upstreamBlockSequence": [
+          "modules.HuggingFaceSpeech.LoadCTCSpeechRecognitionModel",
+          "modules.Audio.Load",
+          "modules.HuggingFaceSpeech.TranscribeCTCAudio",
+          "modules.Primitive.DataViewer"
+        ],
+        "upstreamWorkflowId": "speech_to_text"
+      }
+    ],
+    "id": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+    "inputs": [
+      {
+        "default": "float32",
+        "description": "Model weight and compute dtype.",
+        "name": "dtype",
+        "required": true,
+        "type": "str"
+      },
+      {
+        "default": null,
+        "description": "Local audio input for speech recognition.",
+        "name": "audio",
+        "required": true,
+        "type": "audio"
+      },
+      {
+        "default": 30.0,
+        "description": "Bounded audio chunk length.",
+        "name": "chunk_length_seconds",
+        "required": false,
+        "type": "float"
+      },
+      {
+        "default": 5.0,
+        "description": "Bounded overlap between chunks.",
+        "name": "stride_length_seconds",
+        "required": false,
+        "type": "float"
+      },
+      {
+        "default": "word",
+        "description": "CTC timestamp detail: none or word.",
+        "name": "timestamps",
+        "required": false,
+        "type": "str"
+      }
+    ],
+    "integrationStatus": "reviewed_transformers_contract",
+    "label": "Wav2Vec2 Base 960h \u2014 Speech to Text",
+    "libraryRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+    "mutable": false,
+    "outputs": [
+      {
+        "default": null,
+        "description": "Normalized output from the reviewed Transformers task action.",
+        "name": "result",
+        "required": true,
+        "type": "object"
+      }
+    ],
+    "ownership": "library",
+    "pipelineClass": "HuggingFaceCTCSpeechRecognitionModel",
+    "pipelineKind": "sequential",
+    "provider": "transformers",
+    "publisher": "huggingface",
+    "requiredInputAlternatives": [],
+    "requiredInputs": ["dtype", "audio"],
+    "rootBlockDefinitionId": "transformers.composite-block:HuggingFaceCTCSpeechRecognitionModelSpeechToTextComposite:sha256:795270a92acbb34cd3e7361c9a9e95fc214245040235af6632f6597b34574850",
+    "schemaVersion": 6,
+    "stateKeys": [],
+    "steps": [
+      {
+        "className": "LoadCTCSpeechRecognitionModel",
+        "description": "Existing MoDiff node modules.HuggingFaceSpeech.LoadCTCSpeechRecognitionModel used by this reviewed Transformers composite.",
+        "kind": "block",
+        "path": "speechModel"
+      },
+      {
+        "className": "Load",
+        "description": "Existing MoDiff node modules.Audio.Load used by this reviewed Transformers composite.",
+        "kind": "block",
+        "path": "loadAudio"
+      },
+      {
+        "className": "TranscribeCTCAudio",
+        "description": "Existing MoDiff node modules.HuggingFaceSpeech.TranscribeCTCAudio used by this reviewed Transformers composite.",
+        "kind": "block",
+        "path": "transcribeAudio"
+      },
+      {
+        "className": "DataViewer",
+        "description": "Existing MoDiff node modules.Primitive.DataViewer used by this reviewed Transformers composite.",
+        "kind": "block",
+        "path": "transcriptPreview"
+      }
+    ],
+    "suggestedInputs": {
+      "schemaVersion": 1,
+      "source": {
+        "kind": "modiff_task_starter",
+        "label": "MoDiff task starter",
+        "url": ""
+      },
+      "values": {}
+    },
+    "surface": "transformers_cluster_nodes",
+    "taskContractId": "transformers.task.speech_to_text.v1",
+    "taskId": "speech_to_text",
+    "workflowId": "speech_to_text",
+    "workflowKind": "sequential"
+  },
+  "compiledEntry": {
+    "catalogDefinitionId": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+    "catalogDefinitionContentHash": "sha256:0c03dcd8f16cf19c33a827aa802f22294eb20d9dceee73bfacd73b6f1a9ef67d",
+    "admissionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+    "compiledDefinitionCanonicalSha256": "sha256:4b8f73034ef9305d920807d13e61b0adee8d150cc66b9bea486f9636e7275342",
+    "definition": {
+      "schemaVersion": 2,
+      "definitionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+      "displayName": "Wav2Vec2 Base 960h \u2014 Speech to Text",
+      "description": "Cluster Node containing an exact reviewed ASR loader, local audio input, bounded transcription action, and preview.",
+      "source": {
+        "kind": "transformers_catalog",
+        "catalogCategory": "transformers",
+        "provider": "huggingface",
+        "library": "transformers",
+        "libraryRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+        "pipelineClass": "HuggingFaceCTCSpeechRecognitionModel",
+        "blocksClass": "AutoModelForCTC",
+        "workflow": "speech_to_text",
+        "manifestDefinitionId": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+        "manifestContentHash": "sha256:0c03dcd8f16cf19c33a827aa802f22294eb20d9dceee73bfacd73b6f1a9ef67d",
+        "executionAdmissionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+        "repository": "facebook/wav2vec2-base-960h",
+        "repositoryRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
+      },
+      "graph": {
+        "nodes": [
+          {
+            "nodeId": "loadAudio",
+            "nodeType": "custom",
+            "semanticRole": "loadAudio",
+            "data": {
+              "type": "custom",
+              "module": "modules.Audio",
+              "action": "Load",
+              "params": {
+                "audio": {
+                  "type": "audio",
+                  "display": "output",
+                  "label": "Audio"
+                },
+                "channels": {
+                  "type": "int",
+                  "display": "output",
+                  "label": "Channels"
+                },
+                "duration_seconds": {
+                  "type": "float",
+                  "display": "output",
+                  "label": "Duration"
+                },
+                "file": {
+                  "type": "str",
+                  "display": "filebrowser",
+                  "label": false,
+                  "fieldOptions": {
+                    "fileTypes": ["audio"],
+                    "multiple": false
+                  }
+                },
+                "filename": {
+                  "type": "str",
+                  "display": "output",
+                  "label": "File"
+                },
+                "preview": {
+                  "type": "url",
+                  "display": "ui_audio",
+                  "dataSource": "filename"
+                },
+                "sample_rate": {
+                  "type": "int",
+                  "display": "output",
+                  "label": "Sample Rate"
+                }
+              },
+              "skipParamsCheck": false
+            }
+          },
+          {
+            "nodeId": "speechModel",
+            "nodeType": "custom",
+            "semanticRole": "speechModel",
+            "data": {
+              "type": "custom",
+              "module": "modules.HuggingFaceSpeech",
+              "action": "LoadCTCSpeechRecognitionModel",
+              "params": {
+                "device": {
+                  "type": "string",
+                  "label": "Device",
+                  "default": "cuda:0",
+                  "options": {
+                    "cuda:0": {
+                      "schemaVersion": 1,
+                      "value": "cuda:0",
+                      "label": "cuda:0",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    },
+                    "cpu:0": {
+                      "schemaVersion": 1,
+                      "value": "cpu:0",
+                      "label": "cpu:0",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    },
+                    "cpu": {
+                      "schemaVersion": 1,
+                      "value": "cpu",
+                      "label": "cpu",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    }
+                  }
+                },
+                "dtype": {
+                  "type": "string",
+                  "label": "DType",
+                  "default": "float32",
+                  "options": [
+                    {
+                      "schemaVersion": 1,
+                      "value": "float32",
+                      "label": "float32",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    },
+                    {
+                      "schemaVersion": 1,
+                      "value": "float16",
+                      "label": "float16",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    },
+                    {
+                      "schemaVersion": 1,
+                      "value": "bfloat16",
+                      "label": "bfloat16",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    }
+                  ]
+                },
+                "execution_profile_id": {
+                  "type": "string",
+                  "label": "Execution Profile",
+                  "default": "",
+                  "disabled": true,
+                  "hidden": true,
+                  "fieldOptions": {
+                    "noValidation": true
+                  },
+                  "value": "wav2vec2-base-960h:ctc-direct"
+                },
+                "model": {
+                  "type": "speech_recognition_model",
+                  "display": "output",
+                  "label": "Model"
+                },
+                "model_id": {
+                  "type": "string",
+                  "display": "modelselect",
+                  "label": "Model",
+                  "disabled": true,
+                  "fieldOptions": {
+                    "noValidation": true,
+                    "sources": ["hub", "local"],
+                    "filter": {
+                      "hub": {
+                        "className": ["Wav2Vec2ForCTC"]
+                      },
+                      "local": {
+                        "className": ["Wav2Vec2ForCTC"]
+                      }
+                    }
+                  },
+                  "value": {
+                    "source": "hub",
+                    "value": "facebook/wav2vec2-base-960h"
+                  }
+                },
+                "pipeline_class": {
+                  "type": "string",
+                  "label": "Pipeline Class",
+                  "default": "AutoModelForCTC",
+                  "disabled": true,
+                  "hidden": true,
+                  "fieldOptions": {
+                    "noValidation": true
+                  },
+                  "value": "AutoModelForCTC"
+                },
+                "resolved_artifact": {
+                  "type": "string",
+                  "display": "output",
+                  "label": "Resolved Artifact"
+                },
+                "revision": {
+                  "type": "string",
+                  "label": "Revision",
+                  "default": "",
+                  "disabled": true,
+                  "value": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
+                }
+              },
+              "skipParamsCheck": false
+            }
+          },
+          {
+            "nodeId": "transcribeAudio",
+            "nodeType": "custom",
+            "semanticRole": "transcribeAudio",
+            "data": {
+              "type": "custom",
+              "module": "modules.HuggingFaceSpeech",
+              "action": "TranscribeCTCAudio",
+              "params": {
+                "audio": {
+                  "type": "audio",
+                  "display": "input",
+                  "label": "Audio",
+                  "required": true
+                },
+                "chunk_length_seconds": {
+                  "type": "float",
+                  "label": "Chunk length",
+                  "default": 30,
+                  "min": 0,
+                  "max": 30
+                },
+                "duration_seconds": {
+                  "type": "float",
+                  "display": "output",
+                  "label": "Duration"
+                },
+                "model": {
+                  "type": "speech_recognition_model",
+                  "display": "input",
+                  "label": "Model",
+                  "required": true
+                },
+                "segments": {
+                  "type": "collection",
+                  "display": "output",
+                  "label": "Segments"
+                },
+                "stride_length_seconds": {
+                  "type": "float",
+                  "label": "Chunk stride",
+                  "default": 5,
+                  "min": 0,
+                  "max": 10
+                },
+                "text": {
+                  "type": "string",
+                  "display": "output",
+                  "label": "Text"
+                },
+                "timestamps": {
+                  "type": "string",
+                  "label": "Timestamps",
+                  "default": "word",
+                  "options": [
+                    {
+                      "schemaVersion": 1,
+                      "value": "none",
+                      "label": "none",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    },
+                    {
+                      "schemaVersion": 1,
+                      "value": "word",
+                      "label": "word",
+                      "compatibility": "compatible",
+                      "availability": "installed",
+                      "installationState": "installed"
+                    }
+                  ]
+                },
+                "transcript": {
+                  "type": "any",
+                  "display": "output",
+                  "label": "Transcript"
+                }
+              },
+              "skipParamsCheck": false
+            }
+          },
+          {
+            "nodeId": "transcriptPreview",
+            "nodeType": "custom",
+            "semanticRole": "transcriptPreview",
+            "data": {
+              "type": "custom",
+              "module": "modules.Primitive",
+              "action": "DataViewer",
+              "params": {
+                "output": {
+                  "type": "string",
+                  "display": "output",
+                  "label": "Output"
+                },
+                "preview": {
+                  "display": "ui_text",
+                  "label": "Preview",
+                  "dataSource": "output"
+                },
+                "value": {
+                  "type": "any",
+                  "display": "input",
+                  "label": "Data"
+                }
+              },
+              "skipParamsCheck": false
+            }
+          }
+        ],
+        "edges": [
+          {
+            "edgeId": "edge:loadAudio:audio:transcribeAudio:audio",
+            "sourceNodeId": "loadAudio",
+            "sourcePortId": "audio",
+            "targetNodeId": "transcribeAudio",
+            "targetPortId": "audio"
+          },
+          {
+            "edgeId": "edge:speechModel:model:transcribeAudio:model",
+            "sourceNodeId": "speechModel",
+            "sourcePortId": "model",
+            "targetNodeId": "transcribeAudio",
+            "targetPortId": "model"
+          },
+          {
+            "edgeId": "edge:transcribeAudio:transcript:transcriptPreview:value",
+            "sourceNodeId": "transcribeAudio",
+            "sourcePortId": "transcript",
+            "targetNodeId": "transcriptPreview",
+            "targetPortId": "value"
+          }
+        ],
+        "executionOrder": ["loadAudio", "speechModel", "transcribeAudio", "transcriptPreview"],
+        "graphHash": "block-graph-v2-f9d675ac"
+      },
+      "boundary": {
+        "mode": "explicit",
+        "inputs": [
+          {
+            "portId": "dtype",
+            "label": "dtype",
+            "valueType": "string",
+            "required": true,
+            "binding": {
+              "nodeId": "speechModel",
+              "fieldOrPortId": "dtype"
+            }
+          },
+          {
+            "portId": "audio",
+            "label": "audio",
+            "valueType": "audio",
+            "required": true,
+            "binding": {
+              "nodeId": "loadAudio",
+              "fieldOrPortId": "file"
+            }
+          },
+          {
+            "portId": "chunk_length_seconds",
+            "label": "chunk length seconds",
+            "valueType": "float",
+            "required": false,
+            "binding": {
+              "nodeId": "transcribeAudio",
+              "fieldOrPortId": "chunk_length_seconds"
+            }
+          },
+          {
+            "portId": "stride_length_seconds",
+            "label": "stride length seconds",
+            "valueType": "float",
+            "required": false,
+            "binding": {
+              "nodeId": "transcribeAudio",
+              "fieldOrPortId": "stride_length_seconds"
+            }
+          },
+          {
+            "portId": "timestamps",
+            "label": "timestamps",
+            "valueType": "string",
+            "required": false,
+            "binding": {
+              "nodeId": "transcribeAudio",
+              "fieldOrPortId": "timestamps"
+            }
+          }
+        ],
+        "outputs": [
+          {
+            "portId": "result",
+            "label": "result",
+            "valueType": "any",
+            "required": true,
+            "binding": {
+              "nodeId": "transcribeAudio",
+              "fieldOrPortId": "transcript"
+            }
+          }
+        ]
+      },
+      "controls": [
+        {
+          "controlId": "dtype",
+          "label": "dtype",
+          "binding": {
+            "nodeId": "speechModel",
+            "fieldId": "dtype"
+          },
+          "valueType": "string",
+          "defaultValue": "float32",
+          "required": true,
+          "order": 0,
+          "group": "Inputs",
+          "help": "Model weight and compute dtype."
+        },
+        {
+          "controlId": "audio",
+          "label": "audio",
+          "binding": {
+            "nodeId": "loadAudio",
+            "fieldId": "file"
+          },
+          "valueType": "string",
+          "required": true,
+          "order": 1,
+          "group": "Inputs",
+          "help": "Local audio input for speech recognition."
+        },
+        {
+          "controlId": "chunk_length_seconds",
+          "label": "chunk length seconds",
+          "binding": {
+            "nodeId": "transcribeAudio",
+            "fieldId": "chunk_length_seconds"
+          },
+          "valueType": "float",
+          "defaultValue": 30,
+          "required": false,
+          "order": 2,
+          "group": "Inputs",
+          "help": "Bounded audio chunk length."
+        },
+        {
+          "controlId": "stride_length_seconds",
+          "label": "stride length seconds",
+          "binding": {
+            "nodeId": "transcribeAudio",
+            "fieldId": "stride_length_seconds"
+          },
+          "valueType": "float",
+          "defaultValue": 5,
+          "required": false,
+          "order": 3,
+          "group": "Inputs",
+          "help": "Bounded overlap between chunks."
+        },
+        {
+          "controlId": "timestamps",
+          "label": "timestamps",
+          "binding": {
+            "nodeId": "transcribeAudio",
+            "fieldId": "timestamps"
+          },
+          "valueType": "string",
+          "defaultValue": "word",
+          "required": false,
+          "order": 4,
+          "group": "Inputs",
+          "help": "CTC timestamp detail: none or word."
+        },
+        {
+          "controlId": "device",
+          "label": "Device",
+          "binding": {
+            "nodeId": "speechModel",
+            "fieldId": "device"
+          },
+          "valueType": "string",
+          "defaultValue": "cuda:0",
+          "order": 5,
+          "group": "Generation"
+        }
+      ],
+      "suggestedInputs": [
+        {
+          "suggestionId": "creator-example",
+          "label": "MoDiff task starter",
+          "values": {}
+        }
+      ],
+      "previews": [
+        {
+          "nodeId": "loadAudio",
+          "outputPortId": "preview",
+          "mediaType": "audio",
+          "primary": true
+        },
+        {
+          "nodeId": "transcriptPreview",
+          "outputPortId": "preview",
+          "mediaType": "text"
+        }
+      ],
+      "ownership": {
+        "kind": "registered",
+        "definitionMutable": false
+      },
+      "contentHash": "block-definition-v2-e6518c32"
+    },
+    "values": {
+      "dtype": "float32",
+      "audio": null,
+      "chunk_length_seconds": 30,
+      "stride_length_seconds": 5,
+      "timestamps": "word",
+      "device": "cuda:0"
+    },
+    "internalLayout": {
+      "speechModel": {
+        "x": 24,
+        "y": 24
+      },
+      "loadAudio": {
+        "x": 24,
+        "y": 384
+      },
+      "transcribeAudio": {
+        "x": 504,
+        "y": 24
+      },
+      "transcriptPreview": {
+        "x": 984,
+        "y": 24
+      }
+    },
+    "internalLayoutMode": "root"
+  }
+}

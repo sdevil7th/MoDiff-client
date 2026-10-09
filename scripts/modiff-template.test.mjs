@@ -169,6 +169,31 @@ test('an installed Expert-only artifact remains ready in Model Manager without a
   assert.equal(autoResourceModule.modelInstallIsReady(false, expertOnlyPlan), false);
 });
 
+test('model Ready detail follows complete Auto artifacts instead of an incomplete install destination', () => {
+  const missing = 'The installed snapshot does not include the exact revision and files required by this workflow';
+  const plan = {
+    error: false,
+    selectedCandidate: {
+      id: 'complete-external-snapshot',
+      installed: true,
+      artifactStatus: { installed: true, complete: true },
+      artifactValidation: { repairRequired: false },
+    },
+  };
+  assert.equal(autoResourceModule.modelInstallIsReady(false, plan), true);
+  assert.equal(
+    autoResourceModule.modelInstallReadyReason(false, missing, plan),
+    'Required model artifacts are complete and available for this workflow.',
+  );
+  assert.equal(
+    autoResourceModule.modelInstallReadyReason(true, 'Available in the configured cache', plan),
+    'Available in the configured cache',
+  );
+  const incomplete = { ...plan, selectedCandidate: { ...plan.selectedCandidate, artifactStatus: { complete: false } } };
+  assert.equal(autoResourceModule.modelInstallIsReady(false, incomplete), false);
+  assert.equal(autoResourceModule.modelInstallReadyReason(false, missing, incomplete), null);
+});
+
 test('every public Studio template resolves an exact canonical workflow contract', async () => {
   const manifest = JSON.parse(
     await readFile(path.join(ROOT, '..', 'MoDiff', 'data', 'workflow-library-manifest.json'), 'utf8'),

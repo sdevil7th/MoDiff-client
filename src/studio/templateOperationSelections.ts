@@ -51,12 +51,13 @@ function recipes(ids: StudioTemplateId[], selection: StudioTemplateExecutionSele
   );
 }
 
-// These fresh native recipes previously used the whole-pipeline recipe's
-// explicit VAE/attention settings. Original native recipes keep their defaults.
+// These policies apply only to newly created recipes. Saved graphs retain their
+// authored controls. Automatic attention avoids the forced math working set on
+// constrained devices; VAE slicing and tiling remain explicit.
 const PRESERVED_PIPELINE_POLICIES: Partial<
   Record<StudioTemplateId, NonNullable<StudioTemplateExecutionSelection['componentPolicy']>>
 > = Object.fromEntries([
-  ...STANDARD_Z_TEMPLATE_IDS.map((id) => [id, { attentionBackend: '_native_math', vaeSlicing: true, vaeTiling: true }]),
+  ...STANDARD_Z_TEMPLATE_IDS.map((id) => [id, { attentionBackend: 'auto', vaeSlicing: true, vaeTiling: true }]),
   ...[
     'qwen_text_rendering',
     'qwen_poster_logo_text',

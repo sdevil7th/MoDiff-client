@@ -514,6 +514,125 @@ function instance(id = 'instance-a', values = { prompt: '', steps: 0 }) {
   });
 }
 
+function composedTextPreviewFixture(id, value) {
+  const leaf = {
+    id: 'text',
+    selected: true,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Primitive',
+      action: 'Text',
+      params: {
+        text: { type: 'str', display: 'textarea', value: 'creator text' },
+        output: { type: 'str', display: 'output' },
+        preview: { type: 'text', display: 'ui_text', dataSource: 'output', hidden: true },
+      },
+    },
+  };
+  const definition = schema.migrateUserBlockDefinitionV1({
+    id: `definition-${id}`,
+    name: id,
+    version: 1,
+    nodes: [leaf],
+    edges: [],
+    inputs: [{ id: 'text-input', label: 'Input', type: 'str', nodeId: leaf.id, paramKey: 'text' }],
+    outputs: [{ id: 'text-output', label: 'Output', type: 'str', nodeId: leaf.id, paramKey: 'output' }],
+    exposedParams: [{ id: 'message', kind: 'graph-param', label: 'Message', nodeId: leaf.id, paramKey: 'text' }],
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const root = runtime.createBlockRootNodeV2(
+    schema.createBlockInstanceV2(definition, {
+      instanceId: id,
+      position: { x: 0, y: 0 },
+      size: { width: 300, height: 300 },
+      values: { message: value },
+    }),
+  );
+  root.selected = true;
+  return { root, leaf };
+}
+
+for (const count of [2, 3]) {
+  test(`composing ${count} connected Blocks keeps all child previews with one outer primary`, async () => {
+    const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+    const roots = Array.from(
+      { length: count },
+      (_, index) => composedTextPreviewFixture(`sibling-${index}`, `edited text ${index}`).root,
+    );
+    const graph = {
+      nodes: roots,
+      edges: roots.slice(1).map((root, index) => ({
+        id: `wire-${index}`,
+        source: roots[index].id,
+        sourceHandle: 'text-output',
+        target: root.id,
+        targetHandle: 'text-input',
+      })),
+    };
+    const before = structuredClone(graph);
+    const draft = creation.createUserBlockDraftV2(graph, []);
+    assert.equal(draft.ok, true);
+    const prepared = creation.prepareUserBlockCreationV2(draft, draft.block);
+    const parent = prepared.graph.nodes.find((node) => node.data.blockInstanceV2).data.blockInstanceV2;
+    assert.equal(parent.definitionSnapshot.previews.length, count);
+    assert.equal(parent.definitionSnapshot.previews.filter((preview) => preview.primary).length, 1);
+    assert.match(parent.definitionSnapshot.previews.find((preview) => preview.primary).nodeId, /sibling-0/);
+    const local = parent.definitionSnapshot.graph.nodes.filter((node) => node.containerInterface);
+    assert.equal(local.length, count);
+    for (const node of local)
+      assert.equal(node.containerInterface.previews.filter((preview) => preview.primary).length, 1);
+    const execution = runtime.expandBlockGraphV2ForExecution(prepared.graph.nodes, prepared.graph.edges);
+    const leaves = execution.nodes.filter((node) => node.data.action === 'Text');
+    assert.equal(leaves.length, count);
+    assert.equal(execution.edges.length, count - 1);
+    for (const [index, node] of leaves.entries()) assert.equal(node.data.params.text.value, `edited text ${index}`);
+    for (const edge of execution.edges) {
+      assert.equal(edge.sourceHandle, 'output');
+      assert.equal(edge.targetHandle, 'text');
+    }
+    assert.deepEqual(graph, before, 'composition must preserve input graph and immutable child snapshots');
+  });
+}
+
+test('composing an ordinary preview with a nested Block preserves the outer primary and child interface', async () => {
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const { root, leaf } = composedTextPreviewFixture('nested-text', 'nested edit');
+  leaf.id = 'outer-text';
+  leaf.data.params.text.value = 'outer edit';
+  const graph = {
+    nodes: [leaf, root],
+    edges: [{ id: 'outer-wire', source: leaf.id, sourceHandle: 'output', target: root.id, targetHandle: 'text-input' }],
+  };
+  const before = structuredClone(graph);
+  const draft = creation.createUserBlockDraftV2(graph, []);
+  assert.equal(draft.ok, true);
+  const prepared = creation.prepareUserBlockCreationV2(draft, draft.block);
+  const definition = prepared.definition;
+  assert.equal(definition.previews.length, 2);
+  assert.deepEqual(
+    definition.previews.filter((preview) => preview.primary).map((preview) => preview.nodeId),
+    ['outer-text'],
+  );
+  assert.equal(
+    definition.graph.nodes.find((node) => node.containerInterface).containerInterface.previews[0].primary,
+    true,
+  );
+  const execution = runtime.expandBlockGraphV2ForExecution(prepared.graph.nodes, prepared.graph.edges);
+  const leaves = execution.nodes.filter((node) => node.data.action === 'Text');
+  assert.equal(leaves.length, 2);
+  assert.equal(execution.edges.length, 1);
+  const outer = leaves.find((node) => node.data.params.text.value === 'outer edit');
+  const nested = leaves.find((node) => node.data.params.text.value === 'nested edit');
+  assert.ok(outer);
+  assert.ok(nested);
+  assert.equal(execution.edges[0].source, outer.id);
+  assert.equal(execution.edges[0].target, nested.id);
+  assert.deepEqual(graph, before);
+});
+
 test('outside LoRA connects to an undeclared internal input and survives collapse, persistence and explicit moves', async () => {
   const crossing = await server.ssrLoadModule('/src/studio/blockCrossingConnectionsV2.ts');
   const persistence = await server.ssrLoadModule('/src/studio/blockDefinitionPersistenceV2.ts');
@@ -2227,6 +2346,161 @@ test('saved Block previews resolve exact retained media without changing graph o
   const canonical = runtime.canonicalizePersistedBlockGraphV2(retained, []);
   const reopened = runtime.materializeBlockProjectionV2(JSON.parse(JSON.stringify(canonical.nodes[0])));
   assert.equal(reopened.nodes[0].data.blockInstanceV2.previewStates[0].mediaReference, output.url);
+});
+
+test('retained Block text stays text and only an exact current slot advances its task', async () => {
+  const { withDurableBlockPreviewsV2 } = await server.ssrLoadModule('/src/studio/blockPreviewPersistenceV2.ts');
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const leaf = {
+    id: 'text-leaf',
+    selected: true,
+    position: { x: 0, y: 0 },
+    type: 'custom',
+    data: {
+      label: 'Text',
+      module: 'modules.Primitive',
+      action: 'Text',
+      type: 'Text',
+      params: {
+        text: { type: 'str', display: 'textarea', value: 'Original text' },
+        output: { type: 'str', display: 'output' },
+        preview: { type: 'text', display: 'ui_text', dataSource: 'output', hidden: true },
+      },
+    },
+  };
+  const draft = users.createUserBlockFromSelection({ nodes: [leaf], edges: [] }, 'Text Block');
+  const prepared = creation.prepareUserBlockCreationV2(draft, draft.block);
+  const root = prepared.graph.nodes.find((node) => node.data.blockInstanceV2);
+  const binding = root.data.blockInstanceV2.previewStates[0].binding;
+  const original = runtime.setBlockPreviewStateV2(root.data.blockInstanceV2, binding, {
+    taskId: 'text-task',
+    mediaReference: 'Original text',
+    status: 'complete',
+  });
+  const nodes = [runtime.createBlockRootNodeV2(original)];
+  const output = {
+    id: 'text-output',
+    taskId: 'text-task',
+    displayType: 'text',
+    nodeId: runtime.blockProjectionNodeIdV2(root.id, binding.nodeId),
+    fieldKey: binding.outputPortId,
+    value: ['Original text'],
+    url: '/file?file=retained.txt',
+    backendMediaPath: '@data/retained.txt',
+    mediaItems: [{ value: ['Original text'], url: '/file?file=retained.txt', backendPath: '@data/retained.txt' }],
+  };
+  assert.equal(withDurableBlockPreviewsV2(nodes, [output]), nodes);
+  const broken = [
+    {
+      ...nodes[0],
+      data: {
+        ...nodes[0].data,
+        blockInstanceV2: {
+          ...original,
+          previewStates: original.previewStates.map((preview) => ({ ...preview, mediaReference: output.url })),
+        },
+      },
+    },
+  ];
+  assert.equal(
+    withDurableBlockPreviewsV2(broken, [output])[0].data.blockInstanceV2.previewStates[0].mediaReference,
+    'Original text',
+  );
+  assert.equal(withDurableBlockPreviewsV2(broken, [{ ...output, fieldKey: 'other' }]), broken);
+  const newer = { ...output, id: 'new-text', taskId: 'new-task', value: ['Edited text', 'Second text'] };
+  const slot = {
+    workflowTabId: 'text-workflow',
+    nodeId: output.nodeId,
+    fieldKey: output.fieldKey,
+    status: 'ready',
+    currentOutputId: newer.id,
+  };
+  const current = { workflowTabId: 'text-workflow', previewSlots: { slot } };
+  const refreshed = withDurableBlockPreviewsV2(nodes, [newer, output], current);
+  assert.equal(refreshed[0].data.blockInstanceV2.previewStates[0].mediaReference, 'Edited text');
+  assert.equal(refreshed[0].data.blockInstanceV2.previewStates[0].taskId, 'new-task');
+  assert.equal(withDurableBlockPreviewsV2(nodes, [newer], { ...current, workflowTabId: 'other' }), nodes);
+  assert.equal(withDurableBlockPreviewsV2(nodes, [newer]), nodes);
+});
+
+test('newly created Blocks expose editable text but exclude output preview controls', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const leaf = {
+    id: 'text-leaf',
+    selected: true,
+    position: { x: 0, y: 0 },
+    type: 'custom',
+    data: {
+      label: 'Text',
+      module: 'modules.Primitive',
+      action: 'Text',
+      type: 'Text',
+      params: {
+        text: { type: 'str', display: 'textarea', value: 'Editable text' },
+        output: { type: 'str', display: 'output' },
+        preview: { type: 'text', display: 'ui_text', dataSource: 'output', value: 'Old preview' },
+      },
+    },
+  };
+  const draft = users.createUserBlockFromSelection({ nodes: [leaf], edges: [] }, 'Text Block');
+  assert.equal(draft.ok, true);
+  assert.deepEqual(
+    draft.block.exposedParams.map((param) => param.paramKey),
+    ['text'],
+  );
+  assert.ok(Object.values(draft.blockNode.data.params).some((param) => param.display === 'ui_text'));
+  assert.equal(leaf.data.params.preview.value, 'Old preview');
+});
+
+test('legacy exposed preview controls project current instance output without rewriting their contract', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const leaf = {
+    id: 'legacy-text',
+    selected: true,
+    position: { x: 0, y: 0 },
+    type: 'custom',
+    data: {
+      label: 'Text',
+      module: 'modules.Primitive',
+      action: 'Text',
+      type: 'Text',
+      params: {
+        text: { type: 'str', display: 'textarea', value: 'Text input' },
+        output: { type: 'str', display: 'output' },
+        preview: {
+          type: 'text',
+          display: 'ui_text',
+          dataSource: 'output',
+          value: 'Old preview',
+          artifacts: [{ url: 'Old preview', taskId: 'old-task' }],
+        },
+      },
+    },
+  };
+  const draft = users.createUserBlockFromSelection({ nodes: [leaf], edges: [] }, 'Legacy Text');
+  draft.block.exposedParams.push({
+    id: 'legacy-preview-control',
+    kind: 'graph-param',
+    label: 'Preview',
+    nodeId: leaf.id,
+    paramKey: 'preview',
+  });
+  const prepared = creation.prepareUserBlockCreationV2(draft, draft.block);
+  const root = prepared.graph.nodes.find((node) => node.data.blockInstanceV2);
+  const original = root.data.blockInstanceV2;
+  const changed = runtime.setBlockPreviewStateV2(original, original.previewStates[0].binding, {
+    taskId: 'new-task',
+    mediaReference: 'Current preview',
+    status: 'complete',
+  });
+  const control = Object.values(runtime.blockControlParamsV2(changed)).find((param) => param.display === 'ui_text');
+  assert.equal(control.value, 'Current preview');
+  assert.deepEqual(control.artifacts, []);
+  assert.deepEqual(changed.definitionSnapshot, original.definitionSnapshot);
+  assert.deepEqual(changed.effectiveGraph, original.effectiveGraph);
+  assert.deepEqual(changed.values, original.values);
 });
 
 test('preview updates remain instance-local run state and preserve semantic authority', () => {

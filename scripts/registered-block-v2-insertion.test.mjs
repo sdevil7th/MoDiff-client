@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { after, before, beforeEach, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1277,6 +1278,31 @@ test('a fresh Qwen registered route rejects matching stale ambient defaults and 
     blockRuntime.blockViewModelV2(unchangedSibling.data.blockInstanceV2).controlParams.guidanceScale.value,
     4,
   );
+});
+
+test('fresh CTC catalog insertion preserves its declared word timestamps instead of generic segment defaults', async () => {
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ctc-catalog-insertion.v1.json'), 'utf8'));
+  const definition = fixture.catalogDefinition;
+  const entry = fixture.compiledEntry;
+  libraryStore.useHuggingFaceNodeLibraryStore.setState({
+    library: fixtureLibrary([definition], []),
+    loaded: true,
+    error: null,
+  });
+  globalThis.fetch = async (url) => {
+    assert.ok(String(url).includes('/huggingface/registered-block-v2?'));
+    return new Response(JSON.stringify({ error: false, schemaVersion: 1, entry }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  const ambient = modelProfiles.getFormDefaultsForRegisteredRoute('speech_to_text', definition.pipelineClass);
+  assert.equal(ambient.speechTimestamps, 'segment');
+  assert.equal(entry.values.timestamps, 'word');
+  const root = await insertion.createHuggingFaceClusterForGraph(definition, { x: 80, y: 90 }, ambient);
+  assert.equal(root.data.blockInstanceV2.values.timestamps, 'word');
+  assert.deepEqual(root.data.blockInstanceV2.definitionSnapshot, entry.definition);
+  assert.equal(blockRuntime.blockViewModelV2(root.data.blockInstanceV2).controlParams.timestamps.value, 'word');
 });
 
 test('a backend-defined route without a legacy Studio profile retains compiled creator defaults', async () => {

@@ -26,13 +26,31 @@ export function withDurableBlockPreviewsV2(
         : undefined;
       const currentOutput =
         slot?.status === 'ready' && slot.currentOutputId
-          ? outputs.find((output) => output.id === slot.currentOutputId)
+          ? outputs.find(
+              (output) =>
+                output.id === slot.currentOutputId &&
+                output.nodeId === slot.nodeId &&
+                output.fieldKey === slot.fieldKey &&
+                (!output.workflowTabId || output.workflowTabId === current?.workflowTabId),
+            )
           : undefined;
-      const currentUrl = currentOutput?.mediaItems?.[0]?.backendPath
-        ? currentOutput.mediaItems[0].url
-        : currentOutput?.backendMediaPath || currentOutput?.backendImagePath
-          ? currentOutput.url
-          : undefined;
+      const isText = preview.binding.mediaType === 'text';
+      const textReference = (output: StudioOutput) => {
+        const values = Array.isArray(output.value) ? output.value : [output.value];
+        return values.find(
+          (value): value is string => typeof value === 'string' && Boolean(value.trim()) && value.length <= 8192,
+        );
+      };
+      const currentUrl =
+        isText && currentOutput?.displayType === 'text'
+          ? textReference(currentOutput)
+          : isText
+            ? undefined
+            : currentOutput?.mediaItems?.[0]?.backendPath
+              ? currentOutput.mediaItems[0].url
+              : currentOutput?.backendMediaPath || currentOutput?.backendImagePath
+                ? currentOutput.url
+                : undefined;
       if (currentOutput?.taskId && currentUrl) {
         if (
           preview.taskId === currentOutput.taskId &&
@@ -47,6 +65,20 @@ export function withDurableBlockPreviewsV2(
       for (const output of outputs) {
         // Never substitute the most recent output from this node or another task.
         if (output.taskId !== preview.taskId) continue;
+        if (isText) {
+          // A retained .txt URL is an export asset, never the displayed text.
+          // Repair older saved previews only using this task's exact field.
+          if (
+            output.displayType !== 'text' ||
+            output.nodeId !== blockProjectionNodeIdV2(node.id, preview.binding.nodeId) ||
+            output.fieldKey !== preview.binding.outputPortId
+          )
+            continue;
+          const reference = textReference(output);
+          if (!reference || reference === preview.mediaReference) return preview;
+          previewChanged = true;
+          return { ...preview, mediaReference: reference };
+        }
         const items = output.mediaItems ?? [];
         const exactItem = items.find(
           (item) =>

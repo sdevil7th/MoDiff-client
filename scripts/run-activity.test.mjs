@@ -16,6 +16,26 @@ let taskStoreModule;
 let server;
 let originalFetch;
 
+test('Queue terminal details supersede stale progress while retaining failure diagnostics', () => {
+  const stale = {
+    message: 'Running modules.Primitive.DataViewer',
+    phase: 'executing',
+    current_step: 2,
+    total_steps: 4,
+  };
+  assert.equal(activityModule.runActivityDetailForTask({ ...stale, status: 'completed' }), 'Completed');
+  assert.equal(activityModule.runActivityDetailForTask({ ...stale, status: 'cancelled' }), 'Cancelled');
+  assert.equal(
+    activityModule.runActivityDetailForTask({ ...stale, status: 'failed', error: 'Load failed' }),
+    'Load failed',
+  );
+  assert.equal(
+    activityModule.runActivityDetailForTask({ status: 'failed', message: 'Worker exited' }),
+    'Worker exited',
+  );
+  assert.match(activityModule.runActivityDetailForTask({ ...stale, status: 'running' }), /Running|2/u);
+});
+
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -256,7 +276,134 @@ test('same-text run notifications remain individually actionable by task', () =>
   );
 });
 
-test('the browser crash checkpoint remains bounded and always retains the active workflow', () => {
+test('the browser checkpoint preserves every dirty document beyond twelve tabs', () => {
+  const tabs = Array.from({ length: 15 }, (_, index) => ({
+    id: `unsaved-${index}`,
+    title: `Unsaved ${index}`,
+    createdAt: index,
+    updatedAt: index,
+    dirty: true,
+    source: 'manual',
+    snapshot: {
+      nodes: [
+        {
+          id: `text-${index}`,
+          position: { x: index, y: 0 },
+          type: 'custom',
+          data: { module: 'modules.Primitive', action: 'Text', params: { value: { value: `Keep ${index}` } } },
+        },
+      ],
+      edges: [{ id: `wire-${index}`, source: `text-${index}`, target: `viewer-${index}` }],
+    },
+  }));
+  const checkpoint = studioStoreModule.workflowTabsForLocalCheckpoint(tabs, 'unsaved-14');
+  assert.deepEqual(checkpoint, tabs);
+  const store = studioStoreModule.useStudioStore;
+  const before = store.getState();
+  try {
+    store.setState({ workflowTabs: tabs, activeWorkflowTabId: 'unsaved-14' });
+    assert.deepEqual(JSON.parse(localStorage.getItem('modiff.studio')).state.workflowTabs, tabs);
+  } finally {
+    store.setState(before);
+  }
+});
+
+test('checkpoint quota failure visibly requests preservation and clears only after a successful write', () => {
+  const write = localStorage.setItem;
+  const warn = console.warn;
+  const store = studioStoreModule.useStudioStore;
+  const messages = [];
+  try {
+    console.warn = (...args) => messages.push(args);
+    localStorage.setItem = () => {
+      throw new DOMException('Full', 'QuotaExceededError');
+    };
+    store.setState({ launcherDismissed: true });
+    store.setState({ launcherDismissed: false });
+    const warnings = snackbarModule.getToastItems().filter((item) => item.id === 'studio-checkpoint-write-failed');
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].persist, true);
+    assert.match(warnings[0].message, /Save or export unsaved workflows before refreshing/);
+    localStorage.setItem = write;
+    store.setState({ launcherDismissed: true });
+    assert.equal(
+      snackbarModule.getToastItems().some((item) => item.id === 'studio-checkpoint-write-failed'),
+      false,
+    );
+  } finally {
+    localStorage.setItem = write;
+    console.warn = warn;
+    store.setState({ launcherDismissed: false });
+  }
+});
+
+for (const label of ['flow', 'settings']) {
+  test(`${label} mutations survive checkpoint quota failures with a visible preservation warning`, () => {
+    const store = label === 'flow' ? flowStoreModule.useFlowStore : settingsStoreModule.useSettingsStore;
+    const before = store.getState();
+    const write = localStorage.setItem;
+    const warn = console.warn;
+    const mutation = label === 'flow' ? { viewport: { x: 17, y: 19, zoom: 0.75 } } : { isRightPanelOpen: false };
+    try {
+      console.warn = () => {};
+      localStorage.setItem = () => {
+        throw new DOMException('Full', 'QuotaExceededError');
+      };
+      assert.doesNotThrow(() => store.setState(mutation));
+      for (const [key, value] of Object.entries(mutation)) assert.deepEqual(store.getState()[key], value);
+      assert.equal(
+        snackbarModule.getToastItems().filter((item) => item.id === 'studio-checkpoint-write-failed').length,
+        1,
+      );
+    } finally {
+      localStorage.setItem = write;
+      console.warn = warn;
+      store.setState(before);
+    }
+  });
+}
+
+test('checkpoint warning clears only after every failed namespace has recovered', () => {
+  const flow = flowStoreModule.useFlowStore;
+  const settings = settingsStoreModule.useSettingsStore;
+  const studio = studioStoreModule.useStudioStore;
+  const before = [flow.getState(), settings.getState(), studio.getState()];
+  const write = localStorage.setItem;
+  const warn = console.warn;
+  const failed = new Set(['modiff.flow', 'modiff.settings']);
+  try {
+    console.warn = () => {};
+    localStorage.setItem = (name, value) => {
+      if (failed.has(name)) throw new DOMException('Full', 'QuotaExceededError');
+      return write.call(localStorage, name, value);
+    };
+    assert.doesNotThrow(() => flow.setState({ viewport: { x: 17, y: 19, zoom: 0.75 } }));
+    assert.doesNotThrow(() => settings.setState({ isRightPanelOpen: false }));
+    studio.setState({ launcherDismissed: true });
+    assert.equal(
+      snackbarModule.getToastItems().filter((item) => item.id === 'studio-checkpoint-write-failed').length,
+      1,
+    );
+    failed.delete('modiff.flow');
+    flow.setState(before[0]);
+    assert.equal(
+      snackbarModule.getToastItems().some((item) => item.id === 'studio-checkpoint-write-failed'),
+      true,
+    );
+    failed.delete('modiff.settings');
+    settings.setState(before[1]);
+    assert.equal(
+      snackbarModule.getToastItems().some((item) => item.id === 'studio-checkpoint-write-failed'),
+      false,
+    );
+  } finally {
+    localStorage.setItem = write;
+    console.warn = warn;
+    [flow, settings, studio].forEach((store, index) => store.setState(before[index]));
+  }
+});
+
+test('the browser crash checkpoint bounds saved tabs and retains every dirty and active workflow', () => {
   const tabs = Array.from({ length: 40 }, (_, index) => ({
     id: `workflow-${index}`,
     title: `Workflow ${index}`,
@@ -268,8 +415,13 @@ test('the browser crash checkpoint remains bounded and always retains the active
   }));
   const checkpoint = studioStoreModule.workflowTabsForLocalCheckpoint(tabs, 'workflow-2');
 
-  assert.equal(checkpoint.length, 12);
+  assert.equal(checkpoint.length, 15);
   assert.ok(checkpoint.some((tab) => tab.id === 'workflow-2'));
+  assert.ok(tabs.filter((tab) => tab.dirty).every((tab) => checkpoint.includes(tab)));
+  const savedTabs = tabs.map((tab) => ({ ...tab, dirty: false }));
+  const savedCheckpoint = studioStoreModule.workflowTabsForLocalCheckpoint(savedTabs, 'workflow-2');
+  assert.equal(savedCheckpoint.length, 12);
+  assert.ok(savedCheckpoint.some((tab) => tab.id === 'workflow-2'));
   assert.deepEqual(
     checkpoint,
     tabs.filter((tab) => checkpoint.includes(tab)),

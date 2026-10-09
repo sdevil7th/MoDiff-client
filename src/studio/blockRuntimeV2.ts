@@ -362,6 +362,22 @@ function optionalValue(value: BlockJsonValue | undefined) {
   return value === undefined ? {} : { value: cloneJson(value) };
 }
 
+function currentPreviewValue(base: NodeParams | undefined, preview: BlockPreviewStateV2 | undefined) {
+  if (preview?.mediaReference === undefined) return {};
+  return {
+    value: preview.mediaReference,
+    // Immutable source artifacts must not override a newer instance preview.
+    artifacts: Array.isArray(base?.artifacts)
+      ? base.artifacts.filter(
+          (artifact: unknown) =>
+            isRecord(artifact) &&
+            artifact.url === preview.mediaReference &&
+            (!preview.taskId || (artifact.taskId ?? artifact.task_id) === preview.taskId),
+        )
+      : [],
+  };
+}
+
 /** Body controls. They intentionally do not use input/output display modes. */
 export function blockControlParamsV2(instanceValue: BlockInstanceV2): Record<string, NodeParams> {
   const instance = normalizeBlockInstanceV2(instanceValue);
@@ -373,6 +389,12 @@ function controlParamsForNormalizedInstanceV2(instance: BlockInstanceV2): Record
     instance.effectiveInterface.controls.map((control) => {
       const base = sourceParam(instance, control.binding.nodeId, control.binding.fieldId);
       const display = base?.display === 'input' || base?.display === 'output' ? undefined : base?.display;
+      const preview = base?.display?.startsWith('ui_')
+        ? instance.previewStates.find(
+            (state) =>
+              state.binding.nodeId === control.binding.nodeId && state.binding.outputPortId === control.binding.fieldId,
+          )
+        : undefined;
       return [
         control.controlId,
         {
@@ -386,6 +408,9 @@ function controlParamsForNormalizedInstanceV2(instance: BlockInstanceV2): Record
           hidden: false,
           ...(display ? { display } : { display: undefined }),
           ...optionalValue(blockInstanceValueV2(instance, control.controlId)),
+          // Older creation dialogs also exposed output previews as controls.
+          // Project current run state without changing that saved contract.
+          ...currentPreviewValue(base, preview),
           ...(control.defaultValue === undefined ? {} : { default: cloneJson(control.defaultValue) }),
           ...(control.required === undefined ? {} : { required: control.required }),
           disabled: Boolean(control.sealed) || Boolean(base?.disabled),
@@ -480,21 +505,7 @@ function previewViewsForNormalizedInstanceV2(
           label: base?.label ?? 'Preview',
           type: base?.type ?? binding.mediaType,
           display: PREVIEW_DISPLAY_V2[binding.mediaType],
-          ...(preview.mediaReference === undefined
-            ? {}
-            : {
-                value: preview.mediaReference,
-                // A saved source field can retain artifacts from an earlier run.
-                // Its URL must not override the current instance's media reference.
-                artifacts: Array.isArray(base?.artifacts)
-                  ? base.artifacts.filter(
-                      (artifact: unknown) =>
-                        isRecord(artifact) &&
-                        artifact.url === preview.mediaReference &&
-                        (!preview.taskId || (artifact.taskId ?? artifact.task_id) === preview.taskId),
-                    )
-                  : [],
-              }),
+          ...currentPreviewValue(base, preview),
           fieldOptions: {
             ...(isRecord(base?.fieldOptions) ? cloneJson(base.fieldOptions) : {}),
             blockPreviewBindingV2: {

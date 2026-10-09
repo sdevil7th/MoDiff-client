@@ -85,6 +85,7 @@ function editableParamEntries(node: CustomNodeType) {
     ([key, param]) =>
       param.display !== 'input' &&
       param.display !== 'output' &&
+      !USER_BLOCK_PREVIEW_DISPLAYS.has(param.display ?? '') &&
       !param.hidden &&
       !param.isInput &&
       !['image', 'output', 'images', 'latents'].includes(key),

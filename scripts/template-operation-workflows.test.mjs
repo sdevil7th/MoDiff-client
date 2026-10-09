@@ -18,6 +18,25 @@ let server,
   studioStore,
   lifecycle;
 let publicOperations, starterRequests, qwenInpaintCandidate, qwenInpaintCandidateFixture;
+const automaticAttentionZTemplates = new Set([
+  'z_image_quick_concept',
+  'z_image_product_mockup',
+  'z_image_poster',
+  'z_image_lora_style',
+  'z_image_cinematic_contact_sheet',
+  'low_vram',
+  'fast_lora',
+]);
+test('fresh Z recipes use automatic attention without changing VAE or adapter controls', () => {
+  for (const id of automaticAttentionZTemplates) {
+    const template = templates.find((item) => item.id === id);
+    assert.deepEqual(template.executionSelection.componentPolicy, {
+      attentionBackend: 'auto',
+      vaeSlicing: true,
+      vaeTiling: true,
+    });
+  }
+});
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -327,8 +346,10 @@ test('all image templates select an exact developer operation recipe without cha
     if (template.executionSelection.implementation === 'native_stages')
       assert.deepEqual(
         template.executionSelection.componentPolicy ?? null,
-        expected.originalComponentPolicy,
-        `${template.id} preserves exactly its original component policy`,
+        automaticAttentionZTemplates.has(template.id)
+          ? { ...expected.originalComponentPolicy, attentionBackend: 'auto' }
+          : expected.originalComponentPolicy,
+        `${template.id} retains its reviewed component policy`,
       );
   }
 });
@@ -400,6 +421,36 @@ function selectedForm(template) {
     controlImage: 'control.png',
   };
 }
+
+test('shared execution bindings do not infer forced flash from a CUDA device', async () => {
+  const cluster = await server.ssrLoadModule('/src/studio/huggingFaceClusterRuntime.ts');
+  const form = { ...defaults, device: 'cuda:0', attentionBackend: 'auto' };
+  const spec = { bindings: [], autoFields: [], defaultRepo: 'reviewed/model' };
+  const admission = { executionParameterSources: ['nativeFlashAttention', 'transformer', 'dualTransformer'] };
+  for (const policy of ['auto', '_native_math', '_native_flash']) {
+    const authored = { ...form, attentionBackend: policy };
+    const expected = {
+      nativeFlashAttention: policy,
+      transformer: policy === '_native_flash' ? 'transformer' : '',
+      dualTransformer: policy === '_native_flash' ? 'transformer,transformer_2' : '',
+    };
+    const resolved = values.resolveStudioExecutionSpecValues(authored, spec, undefined);
+    assert.deepEqual(Object.fromEntries(Object.keys(expected).map((key) => [key, resolved[key]])), expected);
+    assert.deepEqual(
+      cluster.huggingFaceClusterExecutionParameterValues(admission, authored, null, ['transformer'], '', false),
+      expected,
+    );
+  }
+  const candidate = { attentionBackend: 'native' };
+  assert.equal(
+    values.resolveStudioExecutionSpecValues(form, spec, undefined, { candidate }).nativeFlashAttention,
+    'native',
+  );
+  assert.equal(
+    cluster.huggingFaceClusterExecutionParameterValues(admission, form, candidate).nativeFlashAttention,
+    'native',
+  );
+});
 
 test('all seven converted Z recipes bind the authored negative text to the real guided encoder', async (t) => {
   const converted = templates.filter(

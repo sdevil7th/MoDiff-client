@@ -10,7 +10,7 @@ import { backendWorkflowTab, markBackendWorkflow, markWorkflowTabOpen } from './
 import { enqueueSnackbar } from '../ui/snackbar';
 import { requestJson } from '../utils/requestJson';
 import { runtimeProgressTarget } from './userBlocks';
-import { executionProgressFrom } from './executionProgress';
+import { executionProgressDetail, executionProgressFrom } from './executionProgress';
 
 export type RunActivityStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -62,6 +62,15 @@ export function runActivityTargetForTask(
 
 export function runActivityLabelForTask(task: Task | SessionRun, fallback = 'Graph execution') {
   return usableWorkflowName(task.workflow_title) || usableWorkflowName(task.name) || fallback;
+}
+
+/** Terminal status takes precedence over progress retained in older receipts. */
+export function runActivityDetailForTask(task: Task | SessionRun, fallbackStatus: RunActivityStatus = 'queued') {
+  const status = task.status ?? fallbackStatus;
+  if (status === 'completed') return 'Completed';
+  if (status === 'cancelled') return task.error || 'Cancelled';
+  if (status === 'failed') return task.error || task.message || 'Failed';
+  return executionProgressDetail(executionProgressFrom(task)) || task.message || status;
 }
 
 function taskForActivity(taskId: string) {

@@ -91,6 +91,7 @@ web._runtime_choice_capabilities_cache = build_runtime_capabilities(
     torch_module=SimpleNamespace(
         version=SimpleNamespace(hip="reviewed-contract", cuda=None),
         cuda=SimpleNamespace(is_bf16_supported=lambda: True),
+        backends=SimpleNamespace(cuda=SimpleNamespace(is_flash_attention_available=lambda: True)),
         nn=SimpleNamespace(attention=object()),
     ),
     package_available=lambda _name: False,

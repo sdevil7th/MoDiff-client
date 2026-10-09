@@ -14443,7 +14443,7 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
     });
 });
 
-test('Wan A14B resident I2V templates retain VAE tiling and configure both native-flash experts', async ({ page }) => {
+test('Wan A14B resident I2V templates retain VAE tiling and automatic attention', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Wan-AI/Wan2.2-I2V-A14B-Diffusers');
   mockDownloadCalls = 0;
@@ -14520,8 +14520,8 @@ test('Wan A14B resident I2V templates retain VAE tiling and configure both nativ
       pipelineClass: 'WanImageToVideoPipeline',
       offloadMode: 'none',
       vaeTiling: true,
-      attentionBackend: '_native_flash',
-      attentionComponents: 'transformer,transformer_2',
+      attentionBackend: 'auto',
+      attentionComponents: '',
       referenceImages: ['mock-rally-keyframe.webp'],
       referenceEdge: true,
     });
@@ -16439,8 +16439,8 @@ test('backend Studio execution specs materialize exact image, video, and audio r
   expect(ti2v.pipeline?.model_id?.value).toBe('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
   expect(ti2v.pipeline?.revision?.value).toBe('b8fff7315c768468a5333511427288870b2e9635');
   expect(ti2v.pipeline?.execution_profile_id?.value).toBe('wan-22-ti2v-5b:direct');
-  expect(ti2v.recipe?.attention_backend?.value).toBe('_native_flash');
-  expect(ti2v.recipe?.attention_components?.value).toBe('transformer');
+  expect(ti2v.recipe?.attention_backend?.value).toBe('auto');
+  expect(ti2v.recipe?.attention_components?.value).toBe('');
   expect(ti2v.recipe?.vae_tiling?.value).toBe(true);
   expect(ti2v.generate?.scheduler_flow_shift?.value).toBe(5);
   expect(ti2v.generate?.use_guidance_scale_2?.value).toBe(false);
@@ -16479,8 +16479,8 @@ test('backend Studio execution specs materialize exact image, video, and audio r
     executionProfileId: 'wan-text-to-video:direct',
   });
   expect(wanT2v.pipeline?.pipeline_class?.value).toBe('WanPipeline');
-  expect(wanT2v.recipe?.attention_backend?.value).toBe('_native_flash');
-  expect(wanT2v.recipe?.attention_components?.value).toBe('transformer');
+  expect(wanT2v.recipe?.attention_backend?.value).toBe('auto');
+  expect(wanT2v.recipe?.attention_components?.value).toBe('');
   expect(wanT2v.generate?.scheduler_flow_shift?.value).toBe(5);
 
   const wanVaceT2v = await page.evaluate(async () => {
@@ -29809,3 +29809,130 @@ for (const templateId of [
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
     await expect.poll(api).toEqual(before);
   });
+
+for (const selection of ['connected-node', 'edge-only', 'mixed'] as const) {
+  test(`native Delete ${selection} is restored by one Undo`, async ({ page }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await page.evaluate(async (selection) => {
+      const [{ useFlowStore }, { useStudioStore }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/stores/useStudioStore.ts'),
+      ]);
+      useStudioStore.getState().clearGraphBinding();
+      const nodes = ['source', 'target', 'other'].map((id, index) => ({
+        id: `delete-${id}`,
+        type: 'custom' as const,
+        position: { x: 100 + index * 320, y: 160 },
+        selected: id === 'target' && selection !== 'edge-only',
+        data: {
+          type: 'custom' as const,
+          module: 'modules.Test',
+          action: 'Utility',
+          label: id,
+          category: 'Test',
+          params: {
+            input: { type: 'string', display: 'input', value: '' },
+            output: { type: 'string', display: 'output' },
+          },
+        },
+      }));
+      const edges = ['target', 'other'].map((id) => ({
+        id: `delete-edge-${id}`,
+        source: 'delete-source',
+        target: `delete-${id}`,
+        sourceHandle: 'output',
+        targetHandle: 'input',
+        selected: id === 'other' && selection !== 'connected-node',
+      }));
+      useFlowStore.setState({ nodes, edges, viewport: { x: 0, y: 0, zoom: 0.7 } });
+      useFlowStore.getState().resetHistory();
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+    }, selection);
+    await expect(page.locator('.react-flow__node')).toHaveCount(3);
+    await page.getByTestId('topbar-resource-policy').focus();
+    const signature = () =>
+      page.evaluate(async () => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const state = useFlowStore.getState();
+        return {
+          nodes: state.nodes.map((node) => node.id).sort(),
+          edges: state.edges.map((edge) => edge.id).sort(),
+        };
+      });
+    const original = await signature();
+    await page.keyboard.press('Delete');
+    const deleted = {
+      nodes: selection === 'edge-only' ? original.nodes : ['delete-other', 'delete-source'],
+      edges: selection === 'mixed' ? [] : [selection === 'edge-only' ? 'delete-edge-target' : 'delete-edge-other'],
+    };
+    await expect.poll(signature).toEqual(deleted);
+    await page.keyboard.press('Control+z');
+    await expect.poll(signature).toEqual(original);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(signature).toEqual(deleted);
+  });
+}
+
+test('managed Studio resources and Auto Run check the whole graph before submitting', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const plans: Array<{ graph: { nodes: unknown; paths: unknown } }> = [];
+  let submitted = 0;
+  await page.route('**/auto_resource/workflow', async (route) => {
+    plans.push(route.request().postDataJSON());
+    await route.fulfill({
+      json: {
+        schemaVersion: 1,
+        graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+        plannedGraphHash: `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+        canAutoRun: false,
+        issues: ['The complete workflow needs a reviewed auxiliary recipe'],
+        message: 'Whole workflow refused by the test transport',
+        patches: [],
+        loaders: [],
+        requirements: {},
+        available: {},
+        sharedMemory: false,
+      },
+    });
+  });
+  await page.route('**/graph', async (route) => {
+    submitted++;
+    await route.fulfill({ json: { error: false, task_id: 'must-not-submit', sid: 'mock-sid', message: 'queued' } });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  // Seed a saved managed document; the actions under test are native.
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('z_image_quick_concept'));
+  await waitForOperationGraphToSettle(page);
+  await setWorkflowResourceMode(page, 'auto');
+  expect(await page.evaluate(() => Boolean(window.__MODIFF_E2E__!.getState().studio.graphBinding))).toBe(true);
+  const readExecution = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const graph = useFlowStore.getState().exportGraph('mock-sid');
+      return { nodes: graph.nodes, paths: graph.paths };
+    });
+  const before = await readExecution();
+  await page.getByTestId('topbar-workflow-resources').click();
+  await expect(page.getByTestId('workflow-resource-assessment')).toBeVisible();
+  await expect(page.getByTestId('compatibility-panel')).toContainText('Selected model');
+  await page.getByTestId('plan-workflow-auto').click();
+  await expect(page.getByTestId('workflow-auto-plan')).toContainText('Auto needs attention');
+  await expect(page.getByTestId('workflow-auto-plan')).toContainText('reviewed auxiliary recipe');
+  expect(plans).toHaveLength(1);
+  expect({ nodes: plans[0]!.graph.nodes, paths: plans[0]!.graph.paths }).toEqual(before);
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+  await page.getByTestId('studio-run').click();
+  await expect.poll(() => plans.length).toBe(2);
+  await expect(page.getByText(/Auto cannot run this workflow: The complete workflow needs/u).first()).toBeVisible();
+  expect(submitted).toBe(0);
+  expect(await readExecution()).toEqual(before);
+});

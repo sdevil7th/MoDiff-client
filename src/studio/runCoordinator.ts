@@ -96,6 +96,7 @@ export async function coordinateGraphRun({
     } else await prepareHuggingFaceClustersForRun(clusterInstanceIds);
   }
   const manualMode = useStudioStore.getState().form.resourceMode === 'expert';
+  const wholeWorkflowAuto = !manualMode;
   // An exact catalog/source receipt does not carry executable resource hints.
   // Every custom graph, including one untouched registered Block, must plan
   // the lowered execution scope before it can submit in Auto.
@@ -189,7 +190,9 @@ export async function coordinateGraphRun({
   let exportedGraph = lowerModularComposition
     ? lowerModularComposition(preparedGraph ?? currentFlowGraph)
     : (preparedGraph ?? currentFlowGraph);
-  if (workflowAuto) {
+  // Managed Studio graphs retain their existing source-authority checks above,
+  // and every Auto run also plans its complete lowered execution scope.
+  if (wholeWorkflowAuto) {
     exportedGraph = await (
       await import('./workflowAutoExecutionV2')
     ).prepareWorkflowAutoExecutionV2(exportedGraph, legacyPreparation);
@@ -281,16 +284,21 @@ export async function coordinateGraphRun({
       ? applyStudioRuntimeHints(graphWithRegisteredBlockRuntimeHints, identity)
       : graphWithRegisteredBlockRuntimeHints;
   const graphWithExecutionAuthority = workflowAuto
+    ? graphWithManagedMetadata
+    : applyHuggingFaceClusterRuntimeHints(graphWithManagedMetadata, { strict: !manualMode });
+  // Studio/Cluster metadata may replace runtime hints. Restore the independent
+  // whole-workflow receipt after those existing provenance projections.
+  const graphWithWorkflowAutoPlan = wholeWorkflowAuto
     ? {
-        ...graphWithManagedMetadata,
+        ...graphWithExecutionAuthority,
         runtimeHints: {
-          ...graphWithManagedMetadata.runtimeHints,
+          ...graphWithExecutionAuthority.runtimeHints,
           resourceMode: 'auto' as const,
           workflowAutoPlan: exportedGraph.runtimeHints!.workflowAutoPlan,
         },
       }
-    : applyHuggingFaceClusterRuntimeHints(graphWithManagedMetadata, { strict: !manualMode });
-  const submittedGraph = applyRunCorrelationHints(graphWithExecutionAuthority, identity, {
+    : graphWithExecutionAuthority;
+  const submittedGraph = applyRunCorrelationHints(graphWithWorkflowAutoPlan, identity, {
     targetNodeId: executionTargetNodeId,
     formSnapshot: exactRunForm,
   });

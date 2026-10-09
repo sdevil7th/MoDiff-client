@@ -87,6 +87,11 @@ Mutation logic is split into:
 
 The store persists only nodes, edges, and viewport under `modiff.flow`. Runtime, history, and in-flight state are not persisted. A legacy `reactflow` key is migrated when present.
 
+Native Delete uses `removeElements` in one history transaction, including selected
+nodes, descendants, incident edges and separately selected edges. The existing
+Block deletion checks run before removing any selected wires. One Undo restores
+the complete graph; a rejected structural deletion leaves the selection intact.
+
 Encode Inputs uses the ordinary node surface. Supported inactive image-encoding
 sockets are derived read-only from backend operation contracts. Connecting one
 uses `encodingNodeConnection` and the existing route planner to materialize real
@@ -942,6 +947,20 @@ account action and install recovery uses the backend's structured error code.
 
 ## Websocket And Task State
 
+Every welcome refreshes authoritative runtime readiness, including after worker
+replacement or package repair. The existing discovery request gate discards older
+responses so they cannot restore stale Setup errors after the replacement is ready.
+During HTTP recovery, a validated new backend instance also triggers one runtime
+read while health is unready. Setup can therefore show repair requirements before
+the readiness gate permits reconnecting. Repeated probes for the same instance
+do not repeatedly inspect the runtime, and stale connection probes cannot refresh it.
+
+Fresh executable attention bindings use the authored automatic policy unless a
+reviewed candidate explicitly supplies another backend. The disabled registered
+compiler skeleton retains its existing metadata identity; qualification replaces
+its provisional attention values before enabling children. A CUDA device does
+not by itself authorize forced native flash attention.
+
 - `src/stores/useWebsocketStore.ts` owns connection/session identity, reconnect state, and loop timers.
 - `src/components/WebsocketProvider.tsx` connects the store to React lifecycle.
 - `src/stores/websocketMessageHandler.ts` validates/routes runtime messages.
@@ -1004,8 +1023,18 @@ Tab arrangement is browser-local presentation. `moveWorkflowTab` resolves source
 and destination IDs against current state and changes only the array order.
 Pointer previews stay outside the store until drop; structural tab changes cancel
 an in-flight gesture. Backend document-sync signatures are order-independent.
-The bounded local checkpoint selects active/dirty/recent tabs but preserves their
-original relative order, both when writing and restoring older checkpoints.
+The local checkpoint selects at most twelve active/recent saved tabs and retains
+every dirty tab, preserving their original relative order both when writing and
+restoring older checkpoints. Unsaved edits must not disappear merely because
+more tabs are open. A failed browser storage write leaves editing usable and
+shows a persistent warning to Save or export before refreshing. Flow, settings,
+and Studio use the shared `checkpointStorage.ts` adapter so failed writes cannot
+abort canvas edits or panel actions. The warning clears only after every failed
+storage key has recovered; a successful unrelated write cannot clear it.
+Background sync durably saves
+recovery drafts on the backend; explicit Save places the current document in
+the named workflow library. Neither can be assumed to have succeeded while
+its persistence request is failing.
 
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
 
@@ -1473,3 +1502,14 @@ Block preview projections retain source-field artifact metadata only when its
 URL and available task identity match the current instance media reference.
 Older cached artifacts stay in the immutable source snapshot but cannot override
 a newer rendered output, including after save/reload or explicit legacy conversion.
+
+Durable Block text previews display the text value from the exact task and
+field, rather than the retained `.txt` download URL. Only an explicit current
+preview slot for the active workflow can advance the preview to a different
+task. New Block creation excludes output preview fields from editable controls;
+existing saved definitions remain intact. Legacy preview controls also project
+the matching instance preview and cannot display stale source artifacts.
+
+Queue rows and tooltips give completed/cancelled/failed states priority over
+retained progress messages. Failure diagnostics remain visible, including for
+older backend receipts.

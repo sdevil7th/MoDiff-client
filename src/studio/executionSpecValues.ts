@@ -195,7 +195,8 @@ export function resolveStudioExecutionSpecValues(
   values.pipelineQuantizedComponents = quantizationMode === 'none' ? [] : values.quantizedComponents;
   values.autoOffload = values.offloadMode !== 'none';
   values.nativeFlashAttention =
-    candidate?.attentionBackend ?? (form.device.startsWith('cuda') ? '_native_flash' : 'auto');
+    candidate?.attentionBackend ??
+    (typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto');
   values.transformer = values.nativeFlashAttention === '_native_flash' ? 'transformer' : '';
   values.dualTransformer = values.nativeFlashAttention === '_native_flash' ? 'transformer,transformer_2' : '';
   values.dualQuantizedComponents = candidate?.quantizedComponents ?? ['transformer', 'transformer_2'];

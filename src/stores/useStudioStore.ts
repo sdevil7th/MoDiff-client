@@ -49,6 +49,7 @@ import { STUDIO_TEMPLATES, getPreset } from '../studio/templates';
 import { adoptManagedWorkflowGraph, inferStudioFormFromWorkflow } from '../studio/workflowInference';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
 import { createLatestRequestGate, formatRequestError, requestBlob } from '../utils/requestJson';
+import { createResilientCheckpointStorage } from '../utils/checkpointStorage';
 import type { MediaArtifact } from '../utils/imageArtifacts';
 import { autoPlanKeyForForm, autoResourcePlanTargetMatches, type StudioAutoResourcePlan } from '../studio/autoResource';
 import type {
@@ -724,9 +725,9 @@ function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
 const MAX_LOCAL_WORKFLOW_TABS = 12;
 
 /**
- * Workflow documents are backend-owned. localStorage is only a bounded crash
- * checkpoint for tabs currently in use; mirroring a large saved-workflow
- * library here can exceed the browser's per-origin quota.
+ * Saved workflow documents are backend-owned. Keep their browser checkpoint
+ * bounded, but retain every dirty document: its unsaved edits may exist only in
+ * this browser. Preserve the original tab order in both cases.
  */
 export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkflowTabId: string | null) {
   const ranked = [...tabs].sort((left, right) => {
@@ -736,7 +737,14 @@ export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkfl
     return right.updatedAt - left.updatedAt;
   });
   const retained = new Set(ranked.slice(0, MAX_LOCAL_WORKFLOW_TABS));
-  return tabs.filter((tab) => retained.has(tab)).slice(0, MAX_LOCAL_WORKFLOW_TABS);
+  const retainedIds = new Set([...retained].map((tab) => tab.id));
+  for (const tab of ranked) {
+    if (tab.dirty && !retainedIds.has(tab.id)) {
+      retained.add(tab);
+      retainedIds.add(tab.id);
+    }
+  }
+  return tabs.filter((tab) => retained.has(tab)).slice(0, Math.max(MAX_LOCAL_WORKFLOW_TABS, retained.size));
 }
 
 function normalizePersistedStudioState(
@@ -1501,20 +1509,6 @@ function isNonEmptyPreviewValue(value: unknown) {
 
 const STUDIO_STORAGE_KEY = 'modiff.studio';
 migrateLocalStorageKey('studio', STUDIO_STORAGE_KEY);
-
-const resilientStudioStorage = {
-  getItem: (name: string) => localStorage.getItem(name),
-  removeItem: (name: string) => localStorage.removeItem(name),
-  setItem: (name: string, value: string) => {
-    try {
-      localStorage.setItem(name, value);
-    } catch (error) {
-      // The full documents remain on the backend. A failed browser checkpoint
-      // must not break tab switching or a notification click.
-      console.warn('Could not update the local Studio checkpoint; backend workflows remain available.', error);
-    }
-  },
-};
 
 export type WorkflowOperationContext = {
   workflowTabId: string | null;
@@ -3151,7 +3145,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
     }),
     {
       name: STUDIO_STORAGE_KEY,
-      storage: createJSONStorage(() => resilientStudioStorage),
+      storage: createJSONStorage(createResilientCheckpointStorage),
       partialize: (state) => ({
         selectedMode: state.selectedMode,
         form: state.form,

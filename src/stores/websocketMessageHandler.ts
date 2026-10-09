@@ -440,6 +440,10 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         console.info('Websocket sid changed');
       }
       const instance = message.instance ?? '';
+      // Reconnect may follow package repair or a worker replacement. Use the
+      // discovery request gate so an older runtime response cannot restore
+      // the previous worker's Setup state.
+      void useNodesStore.getState().fetchRuntimeStatus();
       if (instance !== useNodesStore.getState().instance) {
         const workflowContext = captureWorkflowOperationContext();
         const schemaPending = useStudioStore.getState().graphBinding ? markStudioGraphDefinitionPending() : false;

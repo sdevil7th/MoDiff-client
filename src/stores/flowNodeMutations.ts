@@ -39,7 +39,7 @@ export function addFlowNode(node: CustomNodeType, set: FlowStoreSet, get: FlowSt
 }
 
 export function removeFlowNodes(ids: string | string[], set: FlowStoreSet, get: FlowStoreGet) {
-  removeFlowNodesInvariant(ids, set, get);
+  return removeFlowNodesInvariant(ids, set, get);
 }
 
 export function removeFlowEdges(ids: string | string[], get: FlowStoreGet) {

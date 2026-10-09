@@ -3411,6 +3411,69 @@ function workflowPlan(ready) {
   };
 }
 
+test('managed Studio Auto checks the complete execution graph and refuses before submission', async () => {
+  studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+    graphBinding: {
+      mode: 'text_to_image',
+      modelType: 'ZImageModularPipeline',
+      nodes: { preview: 'preview' },
+      managedNodeIds: ['preview'],
+      managedEdgeIds: [],
+      fingerprint: 'managed-auto',
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  });
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), body: JSON.parse(init.body) });
+    return String(url).endsWith('/auto_resource/workflow')
+      ? jsonResponse(workflowPlan(false))
+      : jsonResponse({ task_id: 'must-not-submit', sid: 'session-1', message: 'queued' });
+  };
+  await assert.rejects(
+    coordinatorModule.coordinateGraphRun({
+      sid: 'session-1',
+      preparedGraph: graph(),
+      studioContext: { clearChangedPreviews: false },
+    }),
+    /No reviewed recipe/,
+  );
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].url.endsWith('/auto_resource/workflow'));
+  assert.deepEqual(requests[0].body.graph.nodes, graph().nodes);
+  assert.equal(studioStoreModule.useStudioStore.getState().currentRunContext, null);
+  assert.equal(Object.keys(taskStoreModule.useTaskStore.getState().queuedTasks).length, 0);
+});
+
+test('managed Studio Auto retains the whole graph receipt and correlation through runtime metadata', async () => {
+  studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+  });
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), body: JSON.parse(init.body) });
+    return String(url).endsWith('/auto_resource/workflow')
+      ? jsonResponse(workflowPlan(true))
+      : jsonResponse({ task_id: 'managed-whole-auto', sid: 'session-1', message: 'queued' });
+  };
+  const result = await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    preparedGraph: graph(),
+    studioContext: { clearChangedPreviews: false },
+  });
+  assert.equal(requests.length, 2);
+  assert.ok(requests[0].url.endsWith('/auto_resource/workflow'));
+  assert.ok(requests[1].url.endsWith('/graph'));
+  assert.equal(result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash, workflowPlan(true).plannedGraphHash);
+  assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
+  assert.equal(result.submittedGraph.runtimeHints.source, 'studio');
+  assert.equal(result.submittedGraph.runtimeHints.clientRunId, result.context.clientRunId);
+  assert.equal(result.submittedGraph.runtimeHints.runInputHash, result.context.runInputHash);
+  assert.equal(result.response.task_id, 'managed-whole-auto');
+});
+
 test('Auto refuses a stale plan if the workflow changes while planning', async () => {
   studioStoreModule.useStudioStore.setState({
     form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },

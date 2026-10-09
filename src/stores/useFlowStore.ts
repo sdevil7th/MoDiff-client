@@ -12,6 +12,7 @@ import { nanoid } from 'nanoid';
 
 import type { ApiGraphExport } from '../types/api';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
+import { createResilientCheckpointStorage } from '../utils/checkpointStorage';
 import { arrangeGraphNodes } from '../workflow/graphLayout';
 import {
   handleConnect,
@@ -188,6 +189,7 @@ export type FlowStore = {
   addNodeWithConnection: (node: CustomNodeType, connection?: CustomConnection) => void;
   removeNodes: (ids: string | string[]) => void;
   removeEdges: (id: string | string[]) => void;
+  removeElements: (nodeIds: string[], edgeIds: string[]) => void;
   clearWorkflow: () => void;
   replaceGraph: (replacement: FlowGraphReplacement, options?: ReplaceGraphOptions) => void;
   getParam: <K extends keyof NodeParams>(id: string, param: string, key: K) => NodeParams[K] | null;
@@ -1641,6 +1643,13 @@ export const useFlowStore = create<FlowStore>()(
       removeEdges: (ids: string | string[]) => {
         get().withHistory('Remove edges', () => removeFlowEdges(ids, get));
       },
+      removeElements: (nodeIds, edgeIds) => {
+        get().withHistory('Delete selection', () => {
+          // A rejected Block deletion must also retain the selected wires.
+          if (!removeFlowNodes(nodeIds, set, get)) return;
+          removeFlowEdges(edgeIds, get);
+        });
+      },
       clearWorkflow: () => {
         get().withHistory('Clear workflow', () => clearFlowWorkflow(set, get));
         useHuggingFaceClusterRuntimeStore.getState().clearAuthorities();
@@ -2668,7 +2677,7 @@ export const useFlowStore = create<FlowStore>()(
     }),
     {
       name: FLOW_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(createResilientCheckpointStorage),
       version: FLOW_STORAGE_VERSION,
       migrate: (persisted) => normalizePersistedFlowState(persisted),
       merge: (persisted, current) => ({

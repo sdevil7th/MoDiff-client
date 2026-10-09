@@ -16,6 +16,7 @@ let sockets;
 let probes;
 let timers;
 let nextTimer;
+let nodeStore, originalRuntimeRead, runtimeReads;
 
 class FakeSocket {
   static CONNECTING = 0;
@@ -78,6 +79,8 @@ before(async () => {
     appType: 'custom',
   });
   store = (await server.ssrLoadModule('/src/stores/useWebsocketStore.ts')).useWebsocketStore;
+  nodeStore = (await server.ssrLoadModule('/src/stores/useNodeStore.ts')).useNodesStore;
+  originalRuntimeRead = nodeStore.getState().fetchRuntimeStatus;
 });
 
 beforeEach(() => {
@@ -86,6 +89,12 @@ beforeEach(() => {
   probes = [];
   timers = new Map();
   nextTimer = 0;
+  runtimeReads = 0;
+  nodeStore.setState({
+    fetchRuntimeStatus: async () => {
+      runtimeReads += 1;
+    },
+  });
   globalThis.WebSocket = FakeSocket;
   globalThis.XMLHttpRequest = LegacyProbe;
   globalThis.setTimeout = (callback, delay) => {
@@ -107,6 +116,7 @@ beforeEach(() => {
 
 after(async () => {
   store?.getState().disconnect();
+  nodeStore?.setState({ fetchRuntimeStatus: originalRuntimeRead });
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
   globalThis.XMLHttpRequest = originalXhr;
@@ -147,6 +157,32 @@ test('a successful response with an unready or malformed health payload does not
     assert.equal(sockets.length, previous + 1);
     store.getState().disconnect();
   }
+});
+
+test('an unready replacement health instance refreshes runtime once without reconnecting', async () => {
+  const probe = enterHealthRecovery();
+  probe.respond(200, { error: false, ready: false, instance: 'broken-worker' });
+  await settle();
+  assert.equal(runtimeReads, 1);
+  assert.equal(sockets.length, 1);
+  const retry = [...timers.entries()].find(([, timer]) => timer.delay >= 2000 && timer.delay <= 3000);
+  timers.delete(retry[0]);
+  retry[1].callback();
+  probes.at(-1).respond(200, { error: false, ready: false, instance: 'broken-worker' });
+  await settle();
+  assert.equal(runtimeReads, 1, 'Repeated unready probes must not repeatedly read runtime metadata');
+  assert.equal(sockets.length, 1);
+});
+
+test('a stale unready health response cannot refresh runtime for a newer connection', async () => {
+  const probe = enterHealthRecovery();
+  store.getState().disconnect();
+  store.getState().connect();
+  sockets.at(-1).open();
+  probe.respond(200, { error: false, ready: false, instance: 'stale-worker' });
+  await settle();
+  assert.equal(runtimeReads, 0);
+  assert.equal(store.getState().isConnected, true);
 });
 
 test('disconnect aborts its health probe and a late successful response cannot reconnect', async () => {
