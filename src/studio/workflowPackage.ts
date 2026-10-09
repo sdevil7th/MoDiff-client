@@ -329,7 +329,28 @@ export function embedWorkflowPackageInPngBytes(bytes: Uint8Array, packageData: u
 }
 
 export async function createPngWithWorkflowMetadata(sourceUrl: string, packageData: unknown) {
-  const bytes = new Uint8Array(await requestArrayBuffer(sourceUrl));
+  let bytes = new Uint8Array(await requestArrayBuffer(sourceUrl));
+  if (!PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)) {
+    const image = await createImageBitmap(new Blob([bytes]));
+    const canvas = document.createElement('canvas');
+    try {
+      if (image.width * image.height > 64_000_000) {
+        throw new Error('Image is too large to export as PNG.');
+      }
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Could not create a PNG export canvas.');
+      context.drawImage(image, 0, 0);
+      const png = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not encode PNG.'))), 'image/png');
+      });
+      bytes = new Uint8Array(await png.arrayBuffer());
+    } finally {
+      image.close();
+      canvas.width = canvas.height = 0;
+    }
+  }
   const png = embedWorkflowPackageInPngBytes(bytes, packageData);
   return new Blob([png], { type: 'image/png' });
 }

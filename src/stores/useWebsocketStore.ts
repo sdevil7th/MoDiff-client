@@ -26,6 +26,21 @@ export type WebsocketState = {
   send: (message: unknown) => void;
 };
 
+function retireSocket(ws: WebSocket) {
+  ws.onclose = null;
+  ws.onmessage = null;
+  // StrictMode can retire a socket before its handshake completes. Closing it
+  // then emits a browser warning; detach it now and close after the handshake.
+  ws.onopen =
+    ws.readyState === WebSocket.CONNECTING
+      ? () => {
+          ws.onopen = null;
+          ws.close();
+        }
+      : null;
+  if (ws.readyState === WebSocket.OPEN) ws.close();
+}
+
 export const useWebsocketStore = create<WebsocketState>((set, get) => {
   let generation = 0;
   let healthProbe: AbortController | undefined;
@@ -118,8 +133,7 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
 
       const curr_ws = get().ws;
       if (curr_ws && curr_ws.readyState < WebSocket.CLOSING) {
-        curr_ws.onclose = null;
-        curr_ws.close();
+        retireSocket(curr_ws);
         set({ sid: null, ws: null, isConnected: false });
       }
 
@@ -205,10 +219,7 @@ export const useWebsocketStore = create<WebsocketState>((set, get) => {
         reconnectAttempts: 0,
       });
       if (ws) {
-        ws.onopen = null;
-        ws.onclose = null;
-        ws.onmessage = null;
-        ws.close();
+        retireSocket(ws);
       }
     },
 

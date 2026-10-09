@@ -1305,6 +1305,55 @@ test('fresh CTC catalog insertion preserves its declared word timestamps instead
   assert.equal(blockRuntime.blockViewModelV2(root.data.blockInstanceV2).controlParams.timestamps.value, 'word');
 });
 
+test('registered speech controls project exact uploaded media and transcription settings for Auto', async () => {
+  const fixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ctc-catalog-insertion.v1.json'), 'utf8'));
+  libraryStore.useHuggingFaceNodeLibraryStore.setState({
+    library: fixtureLibrary([fixture.catalogDefinition], []),
+    loaded: true,
+    error: null,
+  });
+  globalThis.fetch = async () => Response.json({ error: false, schemaVersion: 1, entry: fixture.compiledEntry });
+  const ambient = modelProfiles.getFormDefaultsForRegisteredRoute(
+    'speech_to_text',
+    fixture.catalogDefinition.pipelineClass,
+  );
+  const root = await insertion.createHuggingFaceClusterForGraph(fixture.catalogDefinition, { x: 80, y: 90 }, ambient);
+  const instance = blockSchema.normalizeBlockInstanceV2({
+    ...root.data.blockInstanceV2,
+    values: {
+      ...root.data.blockInstanceV2.values,
+      audio: '@data/audio/authored-speech.wav',
+      timestamps: 'none',
+      chunk_length_seconds: '12',
+      stride_length_seconds: '2',
+    },
+  });
+  const projected = blockRunForm.registeredBlockRunFormV2(instance, 'auto');
+  assert.ok(projected);
+  assert.equal(projected.form.sourceAudio, instance.values.audio);
+  assert.equal(projected.form.speechTimestamps, 'none');
+  assert.equal(projected.form.speechChunkSeconds, 12);
+  assert.equal(projected.form.speechStrideSeconds, 2);
+  assert.deepEqual(
+    instance.values,
+    projected.instance.values,
+    'Projection must not rewrite the authoritative instance',
+  );
+  const defaults = blockRunForm.registeredBlockRunFormV2(root.data.blockInstanceV2, 'auto');
+  assert.equal(defaults.form.speechTimestamps, 'word', 'Fresh declared timestamps must survive planning too');
+  const uploaded = blockSchema.normalizeBlockInstanceV2({
+    ...instance,
+    values: { ...instance.values, audio: [instance.values.audio] },
+  });
+  assert.equal(blockRunForm.registeredBlockRunFormV2(uploaded, 'auto').form.sourceAudio, instance.values.audio);
+  assert.deepEqual(uploaded.values.audio, [instance.values.audio]);
+  for (const field of ['sourceAudio', 'referenceAudio', 'sourceVideo', 'maskImage']) {
+    assert.equal(blockRunForm.projectBlockControlValueV2(['@data/input.bin'], '', field), '@data/input.bin');
+    assert.equal(blockRunForm.projectBlockControlValueV2(['first', 'second'], '', field), '');
+  }
+  assert.equal(blockRunForm.projectBlockControlValueV2(['float32'], '', 'dtype'), '');
+});
+
 test('a backend-defined route without a legacy Studio profile retains compiled creator defaults', async () => {
   const configured = fixture();
   const witness = configureFixture(configured);

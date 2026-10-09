@@ -26,11 +26,13 @@ class FakeSocket {
   static CLOSING = 2;
   static CLOSED = 3;
   readyState = FakeSocket.CONNECTING;
+  closeCalls = 0;
   constructor(url) {
     this.url = url;
     sockets.push(this);
   }
   close() {
+    this.closeCalls += 1;
     this.readyState = FakeSocket.CLOSED;
   }
   fail() {
@@ -143,6 +145,59 @@ function enterHealthRecovery() {
   assert.equal(probes.length, previousProbes + 1);
   return probes.at(-1);
 }
+
+test('disconnect retires a pending handshake without closing it early or changing its replacement', () => {
+  store.getState().connect();
+  const retired = sockets.at(-1);
+  store.getState().disconnect();
+  assert.equal(retired.closeCalls, 0, 'Closing CONNECTING sockets creates a browser console warning');
+  assert.equal(retired.onclose, null);
+  assert.equal(retired.onmessage, null);
+  assert.equal(store.getState().ws, null);
+
+  store.getState().connect();
+  const replacement = sockets.at(-1);
+  replacement.open();
+  retired.open();
+  assert.equal(retired.closeCalls, 1, 'The retired socket must close once its handshake completes');
+  assert.equal(store.getState().ws, replacement);
+  assert.equal(store.getState().isConnected, true);
+  assert.equal(runtimeReads, 0);
+  assert.equal(timers.size, 0);
+});
+
+test('replacing a stale pending socket uses the same handshake retirement', () => {
+  store.getState().connect();
+  const retired = sockets.at(-1);
+  store.setState({ isConnecting: false });
+  store.getState().connect();
+  const replacement = sockets.at(-1);
+  assert.equal(retired.closeCalls, 0);
+  retired.open();
+  assert.equal(retired.closeCalls, 1);
+  assert.equal(store.getState().ws, replacement);
+  assert.equal(store.getState().isConnected, false);
+  replacement.open();
+  assert.equal(store.getState().isConnected, true);
+});
+
+test('retirement closes open sockets but does not close terminal sockets or retry retired failures', () => {
+  for (const state of [FakeSocket.OPEN, FakeSocket.CLOSING, FakeSocket.CLOSED]) {
+    store.getState().connect();
+    const retired = sockets.at(-1);
+    retired.readyState = state;
+    store.getState().disconnect();
+    assert.equal(retired.closeCalls, state === FakeSocket.OPEN ? 1 : 0);
+    assert.equal(retired.onopen, null);
+  }
+  store.getState().connect();
+  const retired = sockets.at(-1);
+  store.getState().disconnect();
+  retired.fail();
+  assert.equal(timers.size, 0);
+  assert.equal(probes.length, 0);
+  assert.equal(store.getState().ws, null);
+});
 
 test('recovery checks backend health instead of a frontend favicon and rejects HTTP failures', async () => {
   const probe = enterHealthRecovery();

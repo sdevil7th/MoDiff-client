@@ -978,6 +978,9 @@ its provisional attention values before enabling children. A CUDA device does
 not by itself authorize forced native flash attention.
 
 - `src/stores/useWebsocketStore.ts` owns connection/session identity, reconnect state, and loop timers.
+- Retiring a pending socket detaches application callbacks immediately and closes
+  it after its handshake. Open sockets close immediately; retired sockets cannot
+  update a replacement connection or start recovery work.
 - `src/components/WebsocketProvider.tsx` connects the store to React lifecycle.
 - `src/stores/websocketMessageHandler.ts` validates/routes runtime messages.
 - `src/stores/useTaskStore.ts` owns the queue snapshot, current task, count, and progress presentation.
@@ -1011,6 +1014,12 @@ also check ownership. This prevents an unmounting template control from sending
 an empty request or changing controls in the incoming custom workflow.
 
 ## Studio Domain
+
+Registered Block planning projects declared speech controls, including audio,
+language, timestamps, chunk length and stride, into the corresponding task
+form fields. Single-file media controls project a native one-file upload list
+to its exact path without changing the instance. Multiple or substituted files
+remain subject to backend authority equality and filesystem validation.
 
 The `src/studio` directory contains domain logic rather than one monolithic component:
 
@@ -1355,6 +1364,11 @@ The lightbox retains the image URL sanitizer; raw base64 node-field values use
 their separate encoded-image input contract.
 
 Workflow packages are JSON. Image packages can also embed the `modiff.workflow` metadata key in PNG text chunks. Imported packages must be parsed/coerced at the boundary before they affect stores.
+
+Gallery's PNG package export preserves existing PNG image bytes and converts
+other decodable image formats, including JPEG and WebP, to PNG before embedding
+workflow metadata. Conversion uses the browser image codec and rejects images
+larger than 64 megapixels. Decode or encode failures remain visible export errors.
 
 Expert's **Export → Service package** lazily loads `ServiceExportDialog`. It reuses
 TopBar's existing Block/Modular lowering, checks the captured workflow context,
