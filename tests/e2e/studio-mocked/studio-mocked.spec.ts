@@ -29642,6 +29642,55 @@ async function openOptionalStageTemplate(page: Page, templateId: string, search:
   await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
 }
 
+test('full image template cards, details, artifact search and Model Manager focus show the selected variant', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  mockInstalledRepos.clear();
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ status: 200, json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/runtime/status**', (route) =>
+    route.fulfill({
+      json: {
+        ready: true,
+        runtime_profile: { requested: 'cpu', installed: 'cpu', status: 'ready', execution_ready: true },
+        missing_required_packages: [],
+        packages: Object.fromEntries(
+          ['torch', 'diffusers', 'transformers', 'peft'].map((name) => [name, { available: true }]),
+        ),
+      },
+    }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const browser = page.getByTestId('template-browser-dialog');
+  await browser.getByTestId('template-browser-category-all').click();
+  for (const [id, repo, label] of [
+    ['cosmos3_super_text_to_image', 'nvidia/Cosmos3-Super-Text2Image', 'Cosmos 3 Super'],
+    ['flux2_dev_text_to_image', 'black-forest-labs/FLUX.2-dev', 'FLUX.2-dev'],
+  ]) {
+    await browser.getByTestId('template-browser-search').fill(repo);
+    const card = browser.getByTestId(`template-browser-card-${id}`);
+    await expect(card.getByText(`${label} · Text to image`, { exact: true })).toBeVisible();
+    const poster = `/assets/${id === 'flux2_dev_text_to_image' ? 'flux2-dev' : 'cosmos3-super'}.card-poster.png`;
+    const artwork = card.getByRole('img', { name: 'Template preview', exact: true });
+    await expect(artwork).toHaveAttribute('src', poster);
+    await expect.poll(() => artwork.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
+    await card.getByTestId(`template-browser-use-${id}`).click();
+    await expect(browser.getByText(`${label} · Text to image`, { exact: true })).toHaveCount(2);
+  }
+  await page.getByTestId('template-card-readiness-flux2_dev_text_to_image').click();
+  const manager = page.getByTestId('model-manager-dialog');
+  await expect(manager).toBeVisible();
+  await expect(manager.getByTestId('model-manager-focus')).toContainText('FLUX.2-dev');
+  await expect(manager.getByTestId('model-manager-focus')).not.toContainText('Modular Diffusers');
+});
+
 async function optionalStageApi(page: Page) {
   return page.evaluate(() => {
     const hooks = window.__MODIFF_E2E__!;

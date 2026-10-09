@@ -38,7 +38,7 @@ const expected = {
 };
 let server, publicTemplates, candidates, builder, exactness, groups, operations, starterRequests, flowStore;
 let defaults, fixture, backendCaption, backendCaptionBytes;
-let readiness, usagePolicies;
+let readiness, usagePolicies, quality;
 const backend = path.resolve('../MoDiff');
 
 before(async () => {
@@ -62,12 +62,13 @@ before(async () => {
   });
   const module = await server.ssrLoadModule('/src/studio/templates.ts');
   publicTemplates = module.STUDIO_TEMPLATES;
-  candidates = candidateIds.map((id) => module.PLANNING_STUDIO_TEMPLATES.find((item) => item.id === id));
+  candidates = candidateIds.map((id) => module.STUDIO_TEMPLATES.find((item) => item.id === id));
   assert.ok(candidates.every(Boolean));
   builder = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
   readiness = await server.ssrLoadModule('/src/studio/templateReadiness.ts');
   usagePolicies = await server.ssrLoadModule('/src/studio/modelUsagePolicies.ts');
+  quality = await server.ssrLoadModule('/src/studio/templateQuality.ts');
   groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   starterRequests = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
@@ -120,18 +121,30 @@ function build(template, options = {}) {
   return { row, starter, form, graph, flat, api, nodes: Object.values(api.nodes) };
 }
 
-test('private full-model recipes do not alter the historical 54 public image recipes or publish proof', () => {
-  assert.equal(publicTemplates.filter((item) => item.example?.mediaType === 'image').length, 54);
+test('two experimental Custom recipes extend image coverage while preserving the historical 54 and publishing no proof', () => {
+  assert.equal(
+    publicTemplates.filter((item) => item.example?.mediaType === 'image' && !candidateIds.includes(item.id)).length,
+    54,
+  );
+  assert.equal(publicTemplates.filter((item) => item.example?.mediaType === 'image').length, 56);
   for (const template of candidates) {
     assert.equal(
       publicTemplates.some((item) => item.id === template.id),
-      false,
+      true,
     );
-    assert.equal(template.example.status, 'blocked');
-    assert.equal(template.difficulty, 'blocked');
-    assert.ok(template.example.blockReason);
-    for (const field of ['outputPath', 'mediaHash', 'runtimeFingerprint', 'verificationTimestamp', 'thumbnailPath'])
+    assert.equal(template.example.status, 'unverified');
+    assert.equal(template.difficulty, 'advanced');
+    assert.equal(template.readinessPolicy, 'runnable');
+    assert.equal(template.executionSelection.memoryPolicy, 'custom_experimental');
+    assert.equal(template.example.blockReason, undefined);
+    for (const field of ['outputPath', 'mediaHash', 'runtimeFingerprint', 'verificationTimestamp'])
       assert.equal(template.example[field], undefined);
+    const poster = `/assets/${template.id === 'flux2_dev_text_to_image' ? 'flux2-dev' : 'cosmos3-super'}.card-poster.png`;
+    assert.equal(template.example.thumbnailPath, poster);
+    const media = exactness.getTemplateCardMedia(template, null);
+    assert.equal(media.thumbnailPath, poster);
+    assert.equal(media.mediaPath, undefined, 'An editorial poster must not become generated output.');
+    assert.equal(media.beforePath, undefined);
     assert.equal(template.executionSelection.implementation, 'native_stages');
     assert.equal(
       template.executionSelection.guidancePolicy,
@@ -204,6 +217,9 @@ test('Cosmos publisher text comes from the actual backend starter and all safety
   assert.equal(prompt.params.prompt.value, sourcePrompt.value ?? sourcePrompt.default);
   assert.deepEqual(JSON.parse(prompt.params.prompt.value), backendCaption);
   assert.deepEqual(Buffer.from(prompt.params.prompt.value, 'utf8'), backendCaptionBytes);
+  const audit = quality.auditTemplateQuality(template, { prompt: prompt.params.prompt.value });
+  assert.equal(audit.promptResolution, 'backend_default');
+  assert.equal(audit.passed, true, JSON.stringify(audit.issues));
   assert.equal(template.prompt, '', 'Do not duplicate the publisher caption in frontend recipe data.');
   const promptNode = flat.nodes.find((node) => node.data.action === 'WorkflowCosmos3OmniTextEncode');
   assert.equal(promptNode.data.operationAuthoring.authored?.includes('prompt') ?? false, false);
@@ -237,6 +253,18 @@ test('Cosmos publisher text comes from the actual backend starter and all safety
     template.requiredBackendCapabilities.includes('modules.ModularDiffusers.WorkflowCosmos3OmniAfterDecode'),
     true,
   );
+});
+
+test('FLUX.2 retains its full concrete product prompt and native blank-negative recipe', () => {
+  const template = candidates.find((item) => item.id === 'flux2_dev_text_to_image');
+  const { nodes } = build(template);
+  const encoder = nodes.find((node) => node.action === 'EncodePrompt');
+  assert.equal(Buffer.byteLength(template.prompt, 'utf8'), 478);
+  assert.equal(encoder.params.prompt.value, template.prompt);
+  assert.equal(template.negativePrompt, '');
+  const audit = quality.auditTemplateQuality(template);
+  assert.equal(audit.negative.policy.declarationId, 'flux-native-conditioning');
+  assert.equal(audit.passed, true, JSON.stringify(audit.issues));
 });
 
 test('backend default is only initial provenance: authored text and later intentional clears export unchanged', () => {
@@ -450,7 +478,14 @@ test('explicit resolved Custom recipes check exact prerequisites without requiri
       assert.match(result.summary, /hardware fit and output quality remain experimental/u);
       assert.equal(result.issues.length, 0);
       assert.deepEqual(result.modelInstallTargets, []);
-      assert.equal(readiness.getTemplateReadiness(template, context).status, 'planning');
+      assert.equal(readiness.getTemplateReadiness(template, context).status, 'ready');
+      const blocked = {
+        ...structuredClone(template),
+        difficulty: 'blocked',
+        readinessPolicy: 'planning',
+        example: { ...template.example, status: 'blocked' },
+      };
+      assert.equal(readiness.getTemplateReadiness(blocked, context).status, 'planning');
     });
 });
 

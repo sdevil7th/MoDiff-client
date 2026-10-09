@@ -68,12 +68,12 @@ test('Cosmos Super uses its public OpenMDW terms while mandatory Guardrail keeps
 
 test('exact full-model template/install acknowledgements match and change on artifact or policy drift', () => {
   for (const id of ['flux2_dev_text_to_image', 'cosmos3_super_text_to_image']) {
-    const template = templates.PLANNING_STUDIO_TEMPLATES.find((item) => item.id === id);
+    const template = templates.STUDIO_TEMPLATES.find((item) => item.id === id);
     assert.ok(template);
-    assert.equal(template.example.status, 'blocked');
+    assert.equal(template.example.status, 'unverified');
     assert.equal(
       templates.STUDIO_TEMPLATES.some((item) => item.id === id),
-      false,
+      true,
     );
     const required = policies.acknowledgementRequiredForTemplate(template);
     const base = required.find((item) => item.repository === template.modelArtifact.value);

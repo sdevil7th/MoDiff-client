@@ -1605,6 +1605,8 @@ export type StudioTemplate = {
   label: string;
   mode: StudioMode;
   modelType: StudioModelType;
+  /** Exact recipe artifact name when one backend class serves several model variants. */
+  modelDisplayName?: string;
   intentGroup?: StudioTemplateIntentGroup;
   category?: StudioTemplateCategory;
   tags?: string[];

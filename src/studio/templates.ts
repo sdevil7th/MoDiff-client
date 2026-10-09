@@ -3964,17 +3964,18 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
 
 const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   ...BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow),
-  // Private qualification candidates: their original full-model contracts are
-  // explicit, but no output, Auto, Gallery or execution proof is claimed.
+  // Experimental Custom recipes use explicit full-model contracts; their
+  // availability does not publish output, Auto, Gallery or runtime proof.
   withTemplateRecipeDefaults(
     {
       id: 'flux2_dev_text_to_image',
       label: 'FLUX.2-dev — Text to Image: Morning Light Teapot',
+      modelDisplayName: 'FLUX.2-dev',
       mode: 'text_to_image',
       modelType: 'Flux2ModularPipeline',
       category: 'flux',
       tags: ['flux2', 'photography', 'product', 'full-model'],
-      difficulty: 'blocked',
+      difficulty: 'advanced',
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux2_dev_text_to_image,
       modelArtifact: {
         source: 'hub',
@@ -3995,8 +3996,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 20260905,
+        thumbnailPath: '/assets/flux2-dev.card-poster.png',
         modelRevision: '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c',
         lockedSettings: {
           width: 1024,
@@ -4013,7 +4015,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         },
         expectedOutput: { width: 1024, height: 1024 },
         runtimeEstimate: 'Pending measured full native workflow execution',
-        blockReason: 'Full native workflow execution, seeded repeat and image review are pending.',
+        notes: 'The card is an original editorial workflow illustration; a generated image example remains pending.',
       },
     },
     [
@@ -4026,11 +4028,12 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
     {
       id: 'cosmos3_super_text_to_image',
       label: 'Cosmos 3 Super — Text to Image: Publisher Caption',
+      modelDisplayName: 'Cosmos 3 Super',
       mode: 'text_to_image',
       modelType: 'Cosmos3OmniModularPipeline',
       category: 'concept',
       tags: ['cosmos3', 'publisher-recipe', 'full-model', 'safety-checked'],
-      difficulty: 'blocked',
+      difficulty: 'advanced',
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.cosmos3_super_text_to_image,
       modelArtifact: {
         source: 'hub',
@@ -4054,8 +4057,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 1143,
+        thumbnailPath: '/assets/cosmos3-super.card-poster.png',
         modelRevision: 'daf3d374804be4c512c2135568a7cb95d4341d79',
         lockedSettings: {
           width: 1024,
@@ -4072,10 +4076,8 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         },
         expectedOutput: { width: 1024, height: 1024, frames: 1 },
         runtimeEstimate: 'Pending measured full native workflow execution',
-        blockReason:
-          'Mandatory guardrail access/runtime and full native workflow execution, seeded repeat and image review are pending.',
         notes:
-          'The fresh graph inherits the exact resolved backend publisher caption; it remains editable. This is the original full model, not its separately published four-step variant.',
+          'The fresh graph inherits the exact resolved backend publisher caption; it remains editable. This is the original full model, not its separately published four-step variant. The card is an original editorial workflow illustration; a generated image example remains pending.',
       },
     },
     ['', ''],
@@ -4139,9 +4141,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   ),
 ];
 
-// Failed qualification contracts stay available to planning/reporting code, but
-// never appear as runnable browser templates. A template returns to the browser
-// only after its app-managed proof and modality review remove the blocked state.
+// Blocked contracts remain available to planning/reporting. Experimental Custom
+// recipes may be available with explicit prerequisites and unverified examples;
+// this source admission does not grant Auto, Gallery or runtime qualification.
 export const PLANNING_STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEMPLATES.filter(
   (template) => template.example?.status === 'blocked',
 );

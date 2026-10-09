@@ -25,12 +25,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { isWorkflowOperationCancelled, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import {
-  STUDIO_MODEL_LABELS,
-  STUDIO_MODE_LABELS,
-  getCatalogModelProfiles,
-  getFormDefaultsForMode,
-} from '../studio/modelProfiles';
+import { STUDIO_MODE_LABELS, getCatalogModelProfiles, getFormDefaultsForMode } from '../studio/modelProfiles';
 import {
   autoPlanKeyForForm,
   fetchAutoResourcePlans,
@@ -52,6 +47,7 @@ import {
   TEMPLATE_BROWSER_CATEGORIES,
   filterStudioTemplates,
   templateDisplayName,
+  templateModelDisplayName,
   templateMediaSlots,
   type TemplateBrowserCategoryId,
   type TemplateBrowserFilter,
@@ -783,7 +779,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       focus: {
         modelType: template.modelType,
         repo,
-        label: STUDIO_MODEL_LABELS[template.modelType],
+        label: templateModelDisplayName(template),
         source: 'template',
       },
     });
@@ -1198,7 +1194,7 @@ function TemplateBrowserCard({
             />
           </div>
           <p className="truncate text-sm font-semibold text-modiff-subtle-text">
-            {STUDIO_MODEL_LABELS[template.modelType]} · {STUDIO_MODE_LABELS[template.mode]}
+            {templateModelDisplayName(template)} · {STUDIO_MODE_LABELS[template.mode]}
           </p>
         </div>
 
@@ -1329,7 +1325,7 @@ function TemplateRecipeDetail({
                 {templateDisplayName(template)}
               </h2>
               <p className="mt-1 text-sm font-semibold text-modiff-subtle-text">
-                {STUDIO_MODEL_LABELS[template.modelType]} · {STUDIO_MODE_LABELS[template.mode]}
+                {templateModelDisplayName(template)} · {STUDIO_MODE_LABELS[template.mode]}
               </p>
             </div>
             <TemplateReadinessBadge readiness={readiness} />

@@ -46,6 +46,8 @@ function shellPublicAssetsPlugin(): Plugin {
     ['assets/modiff-icon-256.png', 'image/png'],
     // Locally authored editorial card, not a Gallery generation/publication.
     ['assets/minimax-chamber-pop.card-poster.png', 'image/png'],
+    ['assets/flux2-dev.card-poster.png', 'image/png'],
+    ['assets/cosmos3-super.card-poster.png', 'image/png'],
   ]);
   return {
     name: 'modiff-shell-public-assets',

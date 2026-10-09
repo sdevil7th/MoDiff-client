@@ -2639,14 +2639,29 @@ test('template prompts are unique, detailed, and not generic placeholders', () =
     assert.ok(template.intentGroup, `${template.id} has an intent group`);
     assert.ok(template.recipeSummary, `${template.id} has a recipe summary`);
     assert.ok(template.mediaSlots?.length > 0, `${template.id} has media placeholders`);
-    if (template.promptQualityPolicy === 'adapter_reference') {
+    const backendDefaultPrompt =
+      !template.prompt && template.executionSelection?.backendDefaultInputs?.includes('prompt');
+    if (backendDefaultPrompt) {
+      const pendingAudit = templateQualityModule.auditTemplateQuality(template);
+      assert.equal(pendingAudit.promptResolution, 'unresolved_backend_default');
+      assert.equal(pendingAudit.passed, false, `${template.id} needs its actual backend starter audit`);
+      assert.deepEqual(
+        pendingAudit.issues.map((issue) => issue.code),
+        ['unresolved_backend_default'],
+      );
+    } else if (template.promptQualityPolicy === 'adapter_reference') {
       assert.equal(template.category, 'lora', `${template.id} adapter reference prompts are limited to LoRA recipes`);
       assert.ok(template.prompt.length >= 20, `${template.id} retains a meaningful adapter reference prompt`);
     } else {
       assert.ok(template.prompt.length >= 120, `${template.id} prompt is detailed`);
     }
     const audit = templateQualityModule.auditTemplateQuality(template);
-    assert.deepEqual(audit.issues, [], `${template.id} has a modality-complete prompt and model-aware negative policy`);
+    if (!backendDefaultPrompt)
+      assert.deepEqual(
+        audit.issues,
+        [],
+        `${template.id} has a modality-complete prompt and model-aware negative policy`,
+      );
     for (const fragment of weakFragments) {
       assert.equal(
         template.prompt.toLowerCase().includes(fragment),
@@ -4162,10 +4177,9 @@ test('template browser exposes the complete workflow catalog across task and ada
 
 test('every template name identifies its exact model and operation', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
-  const { STUDIO_MODEL_LABELS } = profilesModule;
   for (const template of STUDIO_TEMPLATES) {
     assert.ok(
-      template.label.startsWith(`${STUDIO_MODEL_LABELS[template.modelType]} — `),
+      template.label.startsWith(`${browserModule.templateModelDisplayName(template)} — `),
       `${template.id} must begin with its model name`,
     );
     assert.doesNotMatch(template.label, /^(Low VRAM|High quality|Fast LoRA)$/i);
@@ -4173,6 +4187,22 @@ test('every template name identifies its exact model and operation', () => {
   assert.equal(
     STUDIO_TEMPLATES.find((template) => template.id === 'low_vram')?.label,
     'Z-Image Turbo — Text to Image: Auto-Offload Preview',
+  );
+});
+
+test('template artifact display names distinguish same-class variants without changing their backend identity', () => {
+  const cosmos = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'cosmos3_super_text_to_image');
+  const flux = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'flux2_dev_text_to_image');
+  assert.equal(browserModule.templateModelDisplayName(cosmos), 'Cosmos 3 Super');
+  assert.equal(browserModule.templateModelDisplayName(flux), 'FLUX.2-dev');
+  assert.equal(cosmos.modelType, 'Cosmos3OmniModularPipeline');
+  assert.equal(flux.modelType, 'Flux2ModularPipeline');
+  assert.ok(browserModule.templateSearchText(cosmos).includes('nvidia/cosmos3-super-text2image'));
+  const variant = { ...cosmos, modelDisplayName: 'Another exact artifact variant' };
+  assert.equal(browserModule.templateModelDisplayName(variant), 'Another exact artifact variant');
+  assert.equal(
+    browserModule.templateModelDisplayName({ ...variant, modelDisplayName: '  ' }),
+    profilesModule.STUDIO_MODEL_LABELS[cosmos.modelType],
   );
 });
 
