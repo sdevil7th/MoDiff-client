@@ -717,6 +717,8 @@ export async function addQualityVideoSequenceWorkflowBlock(
     setParamIfPresent(jobs, ['negative_prompt'], form.negativePrompt);
     setParamIfPresent(retain, ['quality'], 10);
     setParamIfPresent(retain, ['pin'], true);
+    // ExportAsset exposes FPS as a scalar control until its input socket is enabled.
+    setParamIfPresent(retain, ['fps'], true, 'isInput');
     setParamIfPresent(join, ['transition_seconds'], settings.transitionSeconds);
     setParamIfPresent(join, ['pin'], true);
 

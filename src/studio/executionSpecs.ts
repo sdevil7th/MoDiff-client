@@ -237,6 +237,7 @@ export function parseStudioExecutionSpecs(
 export function studioExecutionSpecRuntimeReceipt(
   binding: StudioGraphBinding | null,
   capabilities: readonly StudioModelProfile[],
+  executableNodes?: Readonly<Record<string, unknown>>,
 ) {
   if (!binding?.executionSpec) return undefined;
   const spec = capabilities
@@ -252,6 +253,20 @@ export function studioExecutionSpecRuntimeReceipt(
       return [role, nodeId];
     }),
   );
+  // These reviewed authoring transformations replace disabled base nodes.
+  // Their ordinary graph must not claim the obsolete single-shot runtime spec.
+  // Additive routes retain the receipt, and Auto contracts still require it at
+  // the backend whenever their selected plan declares that base specification.
+  const replacesBaseNodes = binding.controlled?.contractIds.some((id) =>
+    ['video-sequence.v1', 'quality-video.t2v.v1', 'quality-video.i2v.v1', 'lyric-video.v1'].includes(id),
+  );
+  if (
+    replacesBaseNodes &&
+    executableNodes &&
+    Object.values(nodes).some((id) => !Object.prototype.hasOwnProperty.call(executableNodes, id))
+  ) {
+    return undefined;
+  }
   return {
     schemaVersion: binding.executionSpec.schemaVersion,
     id: binding.executionSpec.id,

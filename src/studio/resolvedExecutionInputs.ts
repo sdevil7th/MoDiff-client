@@ -337,7 +337,10 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
 /** A custom or ambiguous captured model must not inherit the form's filter. */
 export function outputModelKey(output: StudioOutput): string {
   const receipt = output.resolvedExecutionInputs;
-  if (!receipt) return output.modelType;
+  if (!receipt)
+    return output.legacyRecordedFields && !output.legacyRecordedFields.includes('modelType')
+      ? 'uncaptured-model'
+      : output.modelType;
   const model = receipt.summary.modelType;
   return !resolvedInputUnavailable(receipt, 'modelType') && typeof model === 'string' && model.trim()
     ? model
@@ -381,6 +384,7 @@ export function outputNumericInputValue(
   }
   // Old records have no execution receipt. Keep their historical display;
   // the inspector explicitly labels these as legacy form/graph settings.
+  if (output.legacyRecordedFields && !output.legacyRecordedFields.includes(key)) return undefined;
   return key === 'numFrames' || key === 'fps' ? output.formSnapshot[key] : output[key];
 }
 

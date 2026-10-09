@@ -3273,7 +3273,7 @@ const mockRegistry = {
   }),
   'modules.Video.ExportAsset': nodeDef('modules.Video', 'ExportAsset', 'Video', {
     video: { type: 'video', display: 'input' },
-    fps: { type: 'float', display: 'input' },
+    fps: { type: 'float', default: 16 },
     quality: { type: 'int', value: 10 },
     pin: { type: 'bool', value: true },
     asset: { type: 'video_asset', display: 'output' },
@@ -12982,6 +12982,21 @@ test('controlled workflow transactions are idempotent across supported reverse c
     window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('quality_video_sequence', 'wan_21_t2v_13b_seed_vault'),
   );
   await assertContracts(['quality-video.t2v.v1', 'upscale.quality-loop.v1']);
+  const fpsConnection = await page.evaluate(() => {
+    const { nodes, edges } = window.__MODIFF_E2E__!.getState().flow;
+    const retain = nodes.find((node) => node.studioRole === 'qualityVideoRetain');
+    const generate = nodes.find((node) => node.studioRole === 'qualityVideoGenerate');
+    return {
+      connected: edges.some(
+        (edge) =>
+          edge.source === generate?.id &&
+          edge.sourceHandle === 'fps_out' &&
+          edge.target === retain?.id &&
+          edge.targetHandle === 'fps',
+      ),
+    };
+  });
+  expect(fpsConnection).toEqual({ connected: true });
 });
 
 test('Studio sticky prompt seals the measured header gap while the right panel scrolls', async ({ page }) => {
@@ -30617,6 +30632,9 @@ for (const displayType of ['text', 'json'] as const) {
     };
     await expect(card.getByTestId('gallery-output-text')).toHaveText(content);
     await expect(card).toContainText(`| ${label} |`);
+    await expect(card).toContainText('Task not captured');
+    await expect(card).toContainText('Seed not captured');
+    await expect(card).not.toContainText('Text to image');
     await expect(card.locator('img')).toHaveCount(0);
     await expect(card.getByRole('button', { name: 'Download PNG package', exact: true })).toHaveCount(0);
     await expect(card.getByTestId('gallery-compare-0')).toHaveCount(0);
@@ -30646,6 +30664,7 @@ for (const displayType of ['text', 'json'] as const) {
     await card.getByRole('button', { name: `Download ${displayType}`, exact: true }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`));
+    expect(download.suggestedFilename()).toMatch(/^modiff-uncaptured-model-/);
     expect(await fs.readFile((await download.path())!, 'utf8')).toBe(rawContent);
     if (displayType === 'text') {
       const bytes = await fs.readFile((await download.path())!);

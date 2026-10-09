@@ -37,6 +37,37 @@ test('SSR receipt imports and explicit watch requests allocate no filesystem wat
   assert.deepEqual(server.watcher.getWatched(), {});
 });
 
+test('receipt-free records never present coercion defaults as recorded task, model or numeric inputs', () => {
+  for (const displayType of ['text', 'json', 'image', 'video', 'audio']) {
+    const output = contracts.coerceStudioOutput({ id: 'unrecorded', url: '/asset', displayType });
+    for (const restored of [output, contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)))]) {
+      assert.equal(tasks.outputTaskDisplay(restored), 'Task not captured');
+      assert.equal(inputs.outputModelKey(restored), 'uncaptured-model');
+      assert.equal(restored.modelLabel, 'Model not captured');
+      for (const key of ['seed', 'width', 'height', 'steps', 'guidanceScale', 'numFrames', 'fps']) {
+        assert.equal(inputs.outputNumericInputValue(restored, key), undefined);
+      }
+    }
+  }
+});
+
+test('explicit legacy settings retain zero values and survive history without borrowing omitted fields', () => {
+  const output = contracts.coerceStudioOutput({
+    id: 'legacy-partial',
+    url: '/clip.mp4',
+    seed: 0,
+    formSnapshot: { mode: 'text_to_video', modelType: 'WanVideoPipeline', fps: 15, numFrames: 81 },
+  });
+  for (const restored of [output, contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)))]) {
+    assert.equal(tasks.outputTaskDisplay(restored), 'Text to video');
+    assert.equal(inputs.outputModelKey(restored), 'WanVideoPipeline');
+    assert.equal(inputs.outputNumericInputValue(restored, 'seed'), 0);
+    assert.equal(inputs.outputNumericInputValue(restored, 'fps'), 15);
+    assert.equal(inputs.outputNumericInputValue(restored, 'numFrames'), 81);
+    assert.equal(inputs.outputNumericInputValue(restored, 'steps'), undefined);
+  }
+});
+
 function capturedOutput(fields, extra = {}) {
   const evidence = receipt();
   evidence.nodes[0].fields = Object.fromEntries(

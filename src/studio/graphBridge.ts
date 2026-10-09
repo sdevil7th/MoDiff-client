@@ -817,13 +817,26 @@ function graphProofParamSchema(params: Record<string, NodeParams> | undefined) {
 function managedParamSchemaMatchesRegistry(
   params: Record<string, NodeParams>,
   reviewedParams: Record<string, NodeParams> | undefined,
+  controlledScalarInputs: readonly string[] = [],
 ) {
   if (!reviewedParams) return false;
   for (const [field, reviewedParam] of Object.entries(reviewedParams)) {
     const param = params[field];
     if (
       !param ||
-      REVIEWED_EXECUTION_PARAM_KEYS.some((key) => stableStringify(param[key]) !== stableStringify(reviewedParam[key]))
+      REVIEWED_EXECUTION_PARAM_KEYS.some((key) => {
+        // Reviewed controlled routes can enable a declared scalar's existing socket.
+        // Every other execution-schema field must still match the backend registry.
+        if (
+          key === 'isInput' &&
+          controlledScalarInputs.includes(field) &&
+          reviewedParam.display === undefined &&
+          reviewedParam.isInput !== true &&
+          param.isInput === true
+        )
+          return false;
+        return stableStringify(param[key]) !== stableStringify(reviewedParam[key]);
+      })
     ) {
       return false;
     }
@@ -1264,7 +1277,13 @@ function controlledGraphSemanticsAreValid(binding: StudioGraphBinding, form: Stu
     if (
       !node ||
       (node.data.studioRole !== 'qualityVideoLoop' &&
-        !managedParamSchemaMatchesRegistry(node.data.params, reviewedParams))
+        !managedParamSchemaMatchesRegistry(
+          node.data.params,
+          reviewedParams,
+          node.data.studioRole === 'qualityVideoRetain' && contractIds.some((id) => id.startsWith('quality-video.'))
+            ? ['fps']
+            : [],
+        ))
     ) {
       return false;
     }

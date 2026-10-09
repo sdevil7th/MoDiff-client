@@ -264,3 +264,25 @@ evidence to retain. Historical Gallery examples remain historical until a new
 execution has its own matching proof.
 
 For integrated static serving, follow [Build and deployment](deployment.md). For listener, connection, download, and accelerator recovery, see [Troubleshooting](troubleshooting.md).
+
+## Controlled video and historical output metadata
+
+Quality video sequences connect each generated shot's FPS to its retained asset.
+The builder enables that existing scalar input socket explicitly; the backend
+registry remains authoritative for the field's type and other execution schema.
+The controlled graph proof permits this FPS socket change only on its declared
+retention node and still checks the complete reviewed route.
+
+Sequence and quality-loop transformations disable their replaced single-shot
+nodes. Their submission carries the actual ordinary graph and controlled route
+identities without claiming that the removed nodes match the base single-shot
+runtime specification. Additive routes keep the base receipt. A selected Auto
+plan that requires a specification receipt still fails closed at the backend
+when it is missing; this correction does not qualify an unsupported Auto recipe.
+
+Receipt-free Gallery records retain only explicitly supplied historical fields
+for presentation. `legacyRecordedFields` preserves that presence through history
+coercion; it is not backend execution evidence. Missing task, model and seed are
+shown as uncaptured, and download names use an uncaptured model identifier.
+Actual resolved execution receipts continue to take precedence over historical
+form settings.

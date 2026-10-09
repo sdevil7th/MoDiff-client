@@ -3,7 +3,10 @@ import type { StudioOutput } from './types';
 
 export function outputTaskDisplay(output: StudioOutput): string {
   const receipt = output.resolvedExecutionInputs;
-  if (!receipt) return STUDIO_MODE_LABELS[output.mode];
+  if (!receipt)
+    return output.legacyRecordedFields && !output.legacyRecordedFields.includes('mode')
+      ? 'Task not captured'
+      : STUDIO_MODE_LABELS[output.mode];
   const task = receipt.graphTasks?.[0]?.task;
   const label = task && STUDIO_MODE_LABELS[task as keyof typeof STUDIO_MODE_LABELS];
   return typeof label === 'string' && receipt.graphTasks!.every((item) => item.task === task)

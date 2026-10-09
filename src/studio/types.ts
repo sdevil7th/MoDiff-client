@@ -1768,7 +1768,12 @@ export type StudioOutputProvenance = {
   };
 };
 
+export type LegacyStudioOutputField =
+  'mode' | 'modelType' | 'seed' | 'width' | 'height' | 'steps' | 'guidanceScale' | 'numFrames' | 'fps';
+
 export type StudioOutput = {
+  /** Presence in receipt-free historical metadata; never backend execution evidence. */
+  legacyRecordedFields?: LegacyStudioOutputField[];
   resolvedExecutionInputs?: import('./resolvedExecutionInputs').ResolvedExecutionInputs;
   id: string;
   clientRunId?: string;

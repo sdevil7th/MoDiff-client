@@ -57,12 +57,12 @@ function copyMetadata(output: StudioOutput) {
 }
 
 function downloadOutputPackage(output: StudioOutput) {
-  downloadJson(`modiff-${output.modelType}-${output.id}-workflow.json`, buildOutputWorkflowPackage(output));
+  downloadJson(`modiff-${outputModelKey(output)}-${output.id}-workflow.json`, buildOutputWorkflowPackage(output));
 }
 
 async function downloadOutputPngPackage(output: StudioOutput) {
   await downloadPngWithWorkflowMetadata(
-    `modiff-${output.modelType}-${output.id}-workflow.png`,
+    `modiff-${outputModelKey(output)}-${output.id}-workflow.png`,
     output.url,
     buildOutputWorkflowPackage(output),
   );
@@ -244,7 +244,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
         textOutputViewerOpener(
           output,
           `Gallery ${textType} output`,
-          `modiff-${output.modelType}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
+          `modiff-${outputModelKey(output)}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
         ),
       );
     } else if (isVideoOutput(output) || isAudioOutput(output)) {
@@ -596,7 +596,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                         if (textType) {
                           void exportMedia(
                             output.url,
-                            `modiff-${output.modelType}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
+                            `modiff-${outputModelKey(output)}-${output.id}.${textType === 'json' ? 'json' : 'txt'}`,
                             'text',
                             null,
                             { format: 'original' },
@@ -608,7 +608,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                         const kind = isAudioOutput(output) ? 'audio' : isVideoOutput(output) ? 'video' : 'image';
                         setMediaExportOpener({
                           source: output.url,
-                          filename: `modiff-${output.modelType}-${output.id}${
+                          filename: `modiff-${outputModelKey(output)}-${output.id}${
                             kind === 'audio' ? '.wav' : kind === 'video' ? '.mp4' : '.png'
                           }`,
                           kind,

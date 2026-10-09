@@ -167,6 +167,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   const studioExecutionSpec = studioExecutionSpecRuntimeReceipt(
     studio.graphBinding,
     useNodesStore.getState().studioModelCapabilities,
+    apiGraph.nodes,
   );
   const form = committedAutoCandidate
     ? {
