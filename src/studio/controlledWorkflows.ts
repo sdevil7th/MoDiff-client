@@ -686,12 +686,14 @@ export async function addQualityVideoSequenceWorkflowBlock(
     setParamIfPresent(recipe, ['device_map'], 'none');
     setParamIfPresent(recipe, ['offload_mode'], sequenceOffloadMode);
     setParamIfPresent(recipe, ['device'], executionDevice);
-    const supportsNativeFlash = executionDevice.startsWith('cuda');
-    setParamIfPresent(recipe, ['attention_backend'], supportsNativeFlash ? '_native_flash' : 'auto');
+    // A CUDA device does not prove that this Torch build contains flash SDPA.
+    // Preserve an explicit expert choice; ordinary authoring uses native auto.
+    const attentionBackend = executionForm.attentionBackend ?? 'auto';
+    setParamIfPresent(recipe, ['attention_backend'], attentionBackend);
     setParamIfPresent(
       recipe,
       ['attention_components'],
-      supportsNativeFlash ? (mode === 'text_to_video' ? 'transformer' : 'transformer,transformer_2') : '',
+      attentionBackend !== 'auto' ? (mode === 'text_to_video' ? 'transformer' : 'transformer,transformer_2') : '',
     );
     setParamIfPresent(recipe, ['vae_slicing'], true);
     // Video VAE decode can require substantially more memory than denoising.

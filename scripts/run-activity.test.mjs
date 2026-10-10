@@ -37,6 +37,23 @@ test('Queue terminal details supersede stale progress while retaining failure di
   assert.match(activityModule.runActivityDetailForTask({ ...stale, status: 'running' }), /Running|2/u);
 });
 
+test('Queue accepts batch upscale frame progress through the existing phase contract', () => {
+  const detail = activityModule.runActivityDetailForTask({
+    status: 'running',
+    phase: 'upscaling',
+    message: 'Upscaling frame 1/405',
+    current_step: 1,
+    total_steps: 405,
+    elapsed_seconds: 0.4,
+    average_step_seconds: 0.4,
+    eta_seconds: 161.6,
+  });
+  assert.match(detail, /Upscaling frame 1\/405/u);
+  assert.match(detail, /Phase: upscaling/u);
+  assert.match(detail, /Step 1\/405/u);
+  assert.match(detail, /ETA/u);
+});
+
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {

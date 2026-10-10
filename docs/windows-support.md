@@ -273,6 +273,12 @@ registry remains authoritative for the field's type and other execution schema.
 The controlled graph proof permits this FPS socket change only on its declared
 retention node and still checks the complete reviewed route.
 
+Quality sequence authoring uses automatic attention unless an operator supplies
+an explicit expert attention backend. A CUDA device name does not establish that
+the installed Torch build provides native flash SDPA. Explicit unsupported
+backends still fail before model loading; ordinary authoring must not insert one
+based only on the device name.
+
 Sequence and quality-loop transformations disable their replaced single-shot
 nodes. Their submission carries the actual ordinary graph and controlled route
 identities without claiming that the removed nodes match the base single-shot

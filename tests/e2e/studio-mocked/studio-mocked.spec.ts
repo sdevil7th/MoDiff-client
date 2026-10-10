@@ -12767,13 +12767,18 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
   const cases = [
+    ['wan_21_t2v_13b_seed_vault', ['quality-video.t2v.v1', 'upscale.quality-loop.v1'], {}],
+    [
+      'wan_21_t2v_13b_seed_vault',
+      ['quality-video.t2v.v1', 'upscale.quality-loop.v1'],
+      { attentionBackend: '_native_math' },
+    ],
     ['fast_lora', ['lora.diffusers-image.v1'], { resourceMode: 'expert' }],
     ['flux_lora_cinematic_octane_3d', ['lora.diffusers-image.v1'], {}],
     ['ace_step_custom_lora', ['lora.diffusers-audio.v1'], {}],
     ['qwen_upscale_finish', ['upscale.image.v1'], {}],
     ['ltx_video_animated_story', ['upscale.video.v1', 'video-sequence.v1'], {}],
     ['ltx_video_long_showcase', ['quality-video.i2v.v1', 'upscale.quality-loop.v1'], {}],
-    ['wan_21_t2v_13b_seed_vault', ['quality-video.t2v.v1', 'upscale.quality-loop.v1'], {}],
     ['wan_22_ti2v_5b_seed_vault', ['soundtrack.v1'], {}],
     ['ace_step_lyric_music_video', ['lyric-video.v1'], {}],
   ] as const;
@@ -12811,6 +12816,10 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
                 edge.targetHandle === 'fps',
             )
           : true,
+        qualityAttentionBackend:
+          current.flow.nodes.find((node) => node.studioRole === 'qualityVideoRecipe')?.params.attention_backend
+            ?.value ?? null,
+        operatorAttentionBackend: current.studio.form.attentionBackend ?? 'auto',
       };
     });
     expect(state).toEqual({
@@ -12821,7 +12830,17 @@ test('controlled workflow families seal and restore exact schema-v3 graph proofs
       graphHash: expect.stringMatching(/^graph-v1-/),
       divergence: null,
       qualityFps: true,
+      qualityAttentionBackend: expectedContracts.some((contract) => contract.startsWith('quality-video.'))
+        ? state.operatorAttentionBackend
+        : null,
+      operatorAttentionBackend: expect.any(String),
     });
+
+    if (templateId === 'wan_21_t2v_13b_seed_vault') {
+      expect(state.qualityAttentionBackend).toBe(
+        (formOverrides as { attentionBackend?: string }).attentionBackend ?? 'auto',
+      );
+    }
 
     if (templateId === 'qwen_upscale_finish') {
       const model = await page.evaluate(
