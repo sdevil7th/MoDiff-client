@@ -322,6 +322,16 @@ export function applyFlowNodeChangesInvariant(
   }
 }
 
+/** Cache flags are a replaceable view of the last server snapshot and current graph authority. */
+export function projectFlowCacheStatus(nodes: CustomNodeType[], cached: readonly string[] | null | undefined) {
+  if (cached == null) return nodes;
+  const targets = new Set(cached.map((id) => runtimeProgressTarget(nodes, id)));
+  return nodes.map((node) => {
+    const isCached = targets.has(node.id);
+    return Boolean(node.data.isCached) === isCached ? node : { ...node, data: { ...node.data, isCached } };
+  });
+}
+
 export function replaceFlowGraph(
   replacement: FlowGraphReplacement,
   options: FlowGraphReplacementOptions,
@@ -331,15 +341,7 @@ export function replaceFlowGraph(
   const previousNodes = get().nodes;
   const previousNodeIds = new Set(previousNodes.map((node) => node.id));
   const restored = withLiveFieldContracts(replacement.nodes);
-  const cached = get().runtimeCachedNodeIds;
-  const cachedSet = new Set(cached?.map((id) => runtimeProgressTarget(restored, id)));
-  const nodes =
-    cached == null
-      ? restored
-      : restored.map((node) => {
-          const isCached = cachedSet.has(node.id);
-          return Boolean(node.data.isCached) === isCached ? node : { ...node, data: { ...node.data, isCached } };
-        });
+  const nodes = projectFlowCacheStatus(restored, get().runtimeCachedNodeIds);
   const nextNodeIds = new Set(nodes.map((node) => node.id));
   const removedNodeIds = [...previousNodeIds].filter((nodeId) => !nextNodeIds.has(nodeId));
   const edges = decorateConnectionEdges(

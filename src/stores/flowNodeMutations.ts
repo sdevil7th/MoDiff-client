@@ -5,7 +5,12 @@ import type { NodeData, NodeParams } from './useNodeStore';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import type { NodeMemoryUsage } from '../types/api';
 import { deepEqual } from '../utils/deepEqual';
-import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
+import {
+  applyFlowNodeChangesInvariant,
+  projectFlowCacheStatus,
+  removeFlowNodesInvariant,
+  replaceFlowGraph,
+} from './flowGraphMutations';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import { normalizeBlockInstanceV2 } from '../studio/blockSchemaV2';
 import {
@@ -231,7 +236,8 @@ export function setFlowNodeSize(id: string, width: number, height: number, set: 
         ...state.edges.filter((edge) => edge.data?.blockProjectionOwnerId !== ownerId),
         ...projection.edges,
       ];
-      return { nodes, edges: decorateConnectionEdges(nodes, edges) };
+      const cachedNodes = projectFlowCacheStatus(nodes, state.runtimeCachedNodeIds);
+      return { nodes: cachedNodes, edges: decorateConnectionEdges(cachedNodes, edges) };
     }
 
     return { nodes: state.nodes.map((item) => (item.id === id ? { ...item, width, height } : item)) };

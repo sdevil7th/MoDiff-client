@@ -283,7 +283,10 @@ Execution-spec bindings distinguish empty text (`empty`) from an empty component
 selection (`emptyList`). Multiple-choice component fields retain arrays in fresh
 drafts and canonical exports, including when quantization is disabled. Backend
 validation remains authoritative for every selected component.
-Server-reported runtime cache IDs remain transient view metadata. A restored tab
+Server-reported runtime cache IDs remain transient view metadata. Block layout,
+control, child measurement and internal wiring reprojection must derive cache
+flags again from those IDs and the current exact graph, including the first
+collapsed minimum-height measurement after refresh. A restored tab
 reprojects them against its current exact owner graph, so reconnect cache state
 survives durable snapshot restoration. Native execution records the actual leaf
 ID; cache release retires the IDs acknowledged by the backend. These IDs are

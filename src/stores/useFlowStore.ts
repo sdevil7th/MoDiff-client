@@ -65,7 +65,12 @@ import {
   USER_BLOCK_COLLAPSED_WIDTH,
 } from '../studio/userBlocks';
 import { useUserBlockStore } from './useUserBlockStore';
-import { replaceFlowGraph, type FlowGraphReplacement, type FlowGraphReplacementOptions } from './flowGraphMutations';
+import {
+  projectFlowCacheStatus,
+  replaceFlowGraph,
+  type FlowGraphReplacement,
+  type FlowGraphReplacementOptions,
+} from './flowGraphMutations';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 import {
   collapseHuggingFaceClusterInstance,
@@ -636,7 +641,7 @@ function sameSnapshot(left: FlowHistorySnapshot, right: FlowHistorySnapshot) {
  * connector params are intentionally never copied into `NodeData.params`.
  */
 function projectBlockInstanceV2(
-  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  state: Pick<FlowStore, 'nodes' | 'edges'> & Partial<Pick<FlowStore, 'runtimeCachedNodeIds'>>,
   id: string,
   instance: NonNullable<NodeData['blockInstanceV2']>,
 ) {
@@ -695,7 +700,10 @@ function projectBlockInstanceV2(
     const data = isRecord(edge.data) ? edge.data : {};
     return data.blockProjectionOwnerId !== id;
   });
-  return { nodes, edges: [...retainedEdges, ...projection.edges] };
+  return {
+    nodes: projectFlowCacheStatus(nodes, state.runtimeCachedNodeIds),
+    edges: [...retainedEdges, ...projection.edges],
+  };
 }
 
 function ordinaryBlockGraphNodeV2(node: CustomNodeType): BlockGraphNodeV2 {
@@ -1534,7 +1542,7 @@ function moveProjectedSubtreeOutOfBlockV2(
 }
 
 function updateBlockInstanceV2(
-  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  state: Pick<FlowStore, 'nodes' | 'edges'> & Partial<Pick<FlowStore, 'runtimeCachedNodeIds'>>,
   id: string,
   reducer: (instance: NonNullable<NodeData['blockInstanceV2']>) => NonNullable<NodeData['blockInstanceV2']>,
 ) {

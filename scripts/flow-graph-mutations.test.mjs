@@ -228,6 +228,75 @@ test('executed cache records retain the exact runtime leaf when its owner is exp
   );
 });
 
+for (const mutation of ['minimum height', 'projection', 'control', 'presentation']) {
+  test(`a restored cached Block stays cached after ${mutation} reprojection`, () => {
+    const fixture = blockV2DeletionFixture(`rehydrated-cache-${mutation.replaceAll(' ', '-')}`);
+    const root = fixture.nodes.find((item) => item.id === fixture.rootId);
+    const collapsed = {
+      ...root,
+      data: {
+        ...root.data,
+        blockInstanceV2: blockRuntimeModule.setBlockPresentationV2(root.data.blockInstanceV2, { expanded: false }),
+      },
+    };
+    const graph = { nodes: [collapsed], edges: [] };
+    const store = () => flowStoreModule.useFlowStore.getState();
+    store().resetStatus([fixture.generateId]);
+    store().replaceGraph(graph);
+    assert.equal(store().nodes[0].data.isCached, true);
+    const apply = () => {
+      if (mutation === 'minimum height') store().ensureBlockMinimumHeightV2(fixture.rootId, 800);
+      if (mutation === 'projection') store().ensureBlockProjectionV2(fixture.rootId);
+      if (mutation === 'control') store().setBlockInstanceValueV2(fixture.rootId, 'prompt', 'edited prompt');
+      if (mutation === 'presentation')
+        store().setBlockPresentationV2(fixture.rootId, { size: { width: 1000, height: 800 } });
+    };
+    apply();
+    assert.equal(store().nodes.find((item) => item.id === fixture.rootId).data.isCached, true);
+    assert.deepEqual(store().runtimeCachedNodeIds, [fixture.generateId]);
+    store().setBlockPresentationV2(fixture.rootId, { expanded: true });
+    assert.equal(Boolean(store().nodes.find((item) => item.id === fixture.rootId).data.isCached), false);
+    assert.equal(store().nodes.find((item) => item.id === fixture.generateId).data.isCached, true);
+    store().setNodeCached(fixture.generateId, false);
+    store().setBlockPresentationV2(fixture.rootId, { expanded: false });
+    apply();
+    assert.equal(Boolean(store().nodes.find((item) => item.id === fixture.rootId).data.isCached), false);
+    assert.deepEqual(store().runtimeCachedNodeIds, []);
+    assert.equal(store().toObject().nodes[0].data.isCached, undefined);
+  });
+}
+
+test('measured projected children retain unrelated cached leaves when their Block is rebuilt', () => {
+  const fixture = blockV2DeletionFixture('measured-cache-owner');
+  const store = () => flowStoreModule.useFlowStore.getState();
+  store().replaceGraph(fixture);
+  store().resetStatus([fixture.generateId]);
+  store().setNodeSize(fixture.utilityId, 282, 300, { history: false });
+  assert.equal(store().nodes.find((item) => item.id === fixture.generateId).data.isCached, true);
+  assert.equal(Boolean(store().nodes.find((item) => item.id === fixture.utilityId).data.isCached), false);
+});
+
+test('internal edge removal and connection retain cached leaves when their owning Block is rebuilt', () => {
+  const fixture = blockV2DeletionFixture('rewired-cache-owner');
+  const store = () => flowStoreModule.useFlowStore.getState();
+  store().replaceGraph(fixture);
+  store().resetStatus([fixture.generateId]);
+  const internal = store().edges.find((item) => item.source === fixture.generateId);
+  assert.ok(internal);
+  store().onEdgesChange([{ id: internal.id, type: 'remove' }]);
+  assert.equal(store().nodes.find((item) => item.id === fixture.generateId).data.isCached, true);
+  assert.equal(Boolean(store().nodes.find((item) => item.id === fixture.utilityId).data.isCached), false);
+  store().onConnect({
+    source: fixture.generateId,
+    sourceHandle: 'images',
+    target: fixture.utilityId,
+    targetHandle: 'images',
+  });
+  assert.ok(store().edges.some((item) => item.source === fixture.generateId && item.target === fixture.utilityId));
+  assert.equal(store().nodes.find((item) => item.id === fixture.generateId).data.isCached, true);
+  assert.deepEqual(store().runtimeCachedNodeIds, [fixture.generateId]);
+});
+
 test('connection mutations enforce signal-driven component compatibility', () => {
   const schedulerOutput = (modelType) => ({
     scheduler: {
