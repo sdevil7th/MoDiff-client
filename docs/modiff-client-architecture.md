@@ -275,6 +275,19 @@ loaders for typed required media inputs before grouping. It reuses sources only
 for equal media roles, keeps masks separate from alpha-mask outputs, and reports
 missing/incompatible loader definitions. It does not touch existing documents,
 invent media for text-only routes, or infer a tensor from a path-only field.
+The declared `mask_composite` task belongs to the Image category, so its fresh
+draft includes separate ordinary image and mask loaders and a Preview. Its image
+loader accepts the ordered background and foreground inputs; the mask loader
+supplies the explicit mask pixels. Task categorization grants no runtime authority.
+Execution-spec bindings distinguish empty text (`empty`) from an empty component
+selection (`emptyList`). Multiple-choice component fields retain arrays in fresh
+drafts and canonical exports, including when quantization is disabled. Backend
+validation remains authoritative for every selected component.
+Server-reported runtime cache IDs remain transient view metadata. A restored tab
+reprojects them against its current exact owner graph, so reconnect cache state
+survives durable snapshot restoration. Native execution records the actual leaf
+ID; cache release retires the IDs acknowledged by the backend. These IDs are
+never saved as workflow authority and do not establish resource fit or reuse.
 
 The media attachment source picker retains the exact node/port values and graph
 ordering. Friendly node/field labels add the nearest upstream declared model

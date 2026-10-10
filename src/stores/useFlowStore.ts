@@ -173,6 +173,8 @@ export type FlowStore = {
   edges: Edge[];
   viewport: Viewport;
   lastExecutionTime: number;
+  // Server cache view metadata, never part of a persisted workflow snapshot.
+  runtimeCachedNodeIds: string[] | null;
   historyPast: FlowHistorySnapshot[];
   historyFuture: FlowHistorySnapshot[];
   historyTransaction: FlowHistoryTransaction | null;
@@ -278,6 +280,7 @@ export type FlowStore = {
     cached: boolean,
     memoryUsage?: NodeMemoryUsage,
     executionTime?: Record<string, number>,
+    runtimeNodeId?: string,
   ) => void;
   updateCacheStatus: (ids: string | string[]) => void;
   exportGraph: (
@@ -1576,6 +1579,7 @@ export const useFlowStore = create<FlowStore>()(
       historyFuture: [],
       historyTransaction: null,
       layoutRevision: 0,
+      runtimeCachedNodeIds: null,
 
       onNodesChange: async (changes: NodeChange<CustomNodeType>[]) => {
         const applyChanges = () => {
@@ -2482,8 +2486,9 @@ export const useFlowStore = create<FlowStore>()(
         isCached: boolean,
         memoryUsage?: NodeMemoryUsage,
         executionTime?: Record<string, number>,
+        runtimeNodeId?: string,
       ) => {
-        setFlowNodeCached(id, isCached, memoryUsage, executionTime, set);
+        setFlowNodeCached(id, isCached, memoryUsage, executionTime, set, runtimeNodeId);
       },
 
       updateCacheStatus: (ids: string | string[]) => {

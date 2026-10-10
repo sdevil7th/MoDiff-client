@@ -64,6 +64,7 @@ beforeEach(() => {
     edges: [],
     viewport: { x: 0, y: 0, zoom: 1 },
     lastExecutionTime: 0,
+    runtimeCachedNodeIds: null,
     historyPast: [],
     historyFuture: [],
     historyTransaction: null,
@@ -103,6 +104,54 @@ function cacheRequests() {
 }
 
 for (const method of ['updateCacheStatus', 'resetStatus']) {
+  test(`${method} retains a real cache snapshot received before the durable graph is restored`, () => {
+    const fixture = blockV2DeletionFixture('restore-cache-owner');
+    const root = fixture.nodes.find((item) => item.id === fixture.rootId);
+    const collapsed = {
+      ...root,
+      data: {
+        ...root.data,
+        isCached: false,
+        blockInstanceV2: blockRuntimeModule.setBlockPresentationV2(root.data.blockInstanceV2, { expanded: false }),
+      },
+    };
+    const restored = { nodes: [collapsed], edges: [], viewport: { x: 0, y: 0, zoom: 1 } };
+    const received = [fixture.generateId];
+    flowStoreModule.useFlowStore.getState()[method](received);
+    received.length = 0;
+    flowStoreModule.useFlowStore.getState().replaceGraph(structuredClone(restored));
+    assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.isCached, true);
+    flowStoreModule.useFlowStore.getState().replaceGraph(structuredClone(restored));
+    assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.isCached, true);
+    flowStoreModule.useFlowStore.getState()[method]([]);
+    flowStoreModule.useFlowStore.getState().replaceGraph(structuredClone(restored));
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().nodes[0].data.isCached,
+      false,
+      'empty server snapshot retires prior cache state',
+    );
+    flowStoreModule.useFlowStore.getState()[method]([fixture.generateId]);
+    flowStoreModule.useFlowStore.getState().replaceGraph(structuredClone(restored));
+    flowStoreModule.useFlowStore.getState().setNodeCached(fixture.generateId, false);
+    flowStoreModule.useFlowStore.getState().replaceGraph(structuredClone(restored));
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().nodes[0].data.isCached,
+      false,
+      'acknowledged leaf release must survive restoration',
+    );
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().toObject().runtimeCachedNodeIds,
+      undefined,
+      'cache snapshot is never workflow authority',
+    );
+    const persisted = JSON.parse(globalThis.localStorage.getItem('modiff.flow'));
+    assert.equal(
+      persisted.state.runtimeCachedNodeIds,
+      undefined,
+      'server cache IDs are not written to persistent storage',
+    );
+  });
+
   test(`${method} maps a cached hidden V2 leaf to its exact collapsed owner on reconnect`, () => {
     const fixture = blockV2DeletionFixture('cache-owner-exact');
     const root = fixture.nodes.find((item) => item.id === fixture.rootId);
@@ -144,6 +193,40 @@ for (const method of ['updateCacheStatus', 'resetStatus']) {
     assert.equal(Boolean(nodes.find((item) => item.id === fixture.utilityId).data.isCached), false);
   });
 }
+
+test('executed cache records retain the exact runtime leaf when its owner is expanded or restored', () => {
+  const fixture = blockV2DeletionFixture('executed-cache-leaf');
+  const root = fixture.nodes.find((item) => item.id === fixture.rootId);
+  const collapsed = {
+    ...root,
+    data: {
+      ...root.data,
+      isCached: false,
+      blockInstanceV2: blockRuntimeModule.setBlockPresentationV2(root.data.blockInstanceV2, { expanded: false }),
+    },
+  };
+  flowStoreModule.useFlowStore.setState({ nodes: [collapsed], edges: [] });
+  flowStoreModule.useFlowStore.getState().setNodeCached(fixture.rootId, true, undefined, undefined, fixture.generateId);
+  const durable = flowStoreModule.useFlowStore.getState().toObject();
+  assert.equal(durable.runtimeCachedNodeIds, undefined);
+  flowStoreModule.useFlowStore.getState().replaceGraph({ nodes: fixture.nodes, edges: fixture.edges });
+  const restored = flowStoreModule.useFlowStore.getState().nodes;
+  assert.equal(restored.find((item) => item.id === fixture.generateId).data.isCached, true);
+  assert.equal(Boolean(restored.find((item) => item.id === fixture.rootId).data.isCached), false);
+  assert.equal(Boolean(restored.find((item) => item.id === fixture.utilityId).data.isCached), false);
+  flowStoreModule.useFlowStore.getState().setNodeCached(fixture.utilityId, true);
+  flowStoreModule.useFlowStore.getState().setNodeCached(fixture.generateId, false);
+  flowStoreModule.useFlowStore.getState().replaceGraph({ nodes: fixture.nodes, edges: fixture.edges });
+  assert.equal(
+    Boolean(flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === fixture.generateId).data.isCached),
+    false,
+  );
+  assert.equal(
+    flowStoreModule.useFlowStore.getState().nodes.find((item) => item.id === fixture.utilityId).data.isCached,
+    true,
+    'exact release retains an unrelated cached node',
+  );
+});
 
 test('connection mutations enforce signal-driven component compatibility', () => {
   const schedulerOutput = (modelType) => ({

@@ -435,7 +435,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'zai-org/CogVideoX-2b' ||
           revision !== '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_slicing?.value !== true ||
@@ -457,7 +457,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'rhymes-ai/Allegro' ||
           revision !== 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||
@@ -486,7 +486,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'maxin-cn/Latte-1' ||
           revision !== '0653024365272f061fc44d1078134df22842b687' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||
@@ -515,7 +515,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'genmo/mochi-1-preview' ||
           revision !== '14be5fcea23095ed330cb214647916a451e38b6e' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||
@@ -552,7 +552,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'Efficient-Large-Model/SANA-Video_2B_480p_diffusers' ||
           revision !== 'db5f398b13ca086d09a50ce156c20527773841b1' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||

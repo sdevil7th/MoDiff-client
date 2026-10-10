@@ -33,6 +33,72 @@ after(async () => {
   await server?.close();
 });
 
+test('empty multiple-choice bindings preserve an empty list while text bindings stay scalar', async () => {
+  const modelType = 'DDPMPipeline';
+  const mode = 'unconditional_image';
+  const profile = {
+    id: 'ddpm-cifar10:direct',
+    modes: [mode],
+    loader_module: 'modules.DiffusersImage',
+    loader_action: 'LoadPipeline',
+    execution_path: 'diffusers-pipeline',
+    pipeline_class: modelType,
+    default_repo: modelProfilesModule.DDPM_CIFAR10_REPO,
+  };
+  const semantic = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'ddpm-empty-component-fixture:v1',
+    modelType,
+    mode,
+    executionProfileId: profile.id,
+    loaderModule: profile.loader_module,
+    loaderAction: profile.loader_action,
+    executionPath: profile.execution_path,
+    pipelineClass: modelType,
+    defaultRepo: profile.default_repo,
+    roles: [
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', 0, 0],
+      ['diffusersUnconditionalGenerate', 'modules.DiffusersImage.UnconditionalGenerate', 400, 0],
+      ['preview', 'modules.Image.Preview', 800, 0],
+    ],
+    edges: [
+      ['diffusersImagePipeline', 'pipeline', 'diffusersUnconditionalGenerate', 'pipeline'],
+      ['diffusersUnconditionalGenerate', 'images', 'preview', 'image'],
+    ],
+    bindings: [['diffusersImagePipeline', 'quantized_components', 'emptyList']],
+    autoFields: [],
+    actions: [],
+  };
+  const spec = {
+    ...semantic,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+  };
+  assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], modelType, [mode], [profile]), [spec]);
+  globalThis.window ??= { location: { origin: 'http://127.0.0.1:5191' } };
+  const valuesModule = await server.ssrLoadModule('/src/studio/executionSpecValues.ts');
+  const form = {
+    ...modelProfilesModule.DEFAULT_STUDIO_FORM,
+    ...modelProfilesModule.getFormDefaultsForMode(mode, modelType),
+  };
+  const before = structuredClone(form);
+  const first = valuesModule.resolveStudioExecutionSpecValues(
+    form,
+    spec,
+    modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+  );
+  assert.deepEqual(first.emptyList, []);
+  assert.equal(first.empty, '');
+  first.emptyList.push('transformer');
+  const second = valuesModule.resolveStudioExecutionSpecValues(
+    form,
+    spec,
+    modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+  );
+  assert.deepEqual(second.emptyList, [], 'Separate drafts must not share mutable component selections');
+  assert.deepEqual(form, before);
+});
+
 test('new outpaint forms fully repaint the extension without changing saved or inpaint settings', () => {
   for (const model of ['FluxFillPipeline', 'FluxKontextInpaintPipeline', 'Flux2KleinInpaintPipeline']) {
     const saved = { ...modelProfilesModule.getFormDefaultsForMode('outpaint', model), strength: 0.85 };

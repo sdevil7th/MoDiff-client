@@ -213,7 +213,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
   const handleRecompute = useCallback(async () => {
     try {
       const result = await recomputeNodeOutputs([node.id]);
-      if (result.nodes.length) setNodeCached(node.id, false);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar(
         result.nodes.length
           ? 'Outputs will recompute on the next Run. Loaded models are retained.'
@@ -227,8 +227,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
 
   const handleClearCache = useCallback(async () => {
     try {
-      await deleteNodeCache([node.id]);
-      setNodeCached(node.id, false);
+      const result = await deleteNodeCache([node.id]);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
       console.error('Failed to delete cache', error);

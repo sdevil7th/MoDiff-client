@@ -68,6 +68,7 @@ export function resolveStudioExecutionSpecValues(
     attentionBackend,
     nativeMath: '_native_math',
     empty: '',
+    emptyList: [],
     true: true,
     false: false,
     depth: 'depth',

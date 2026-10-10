@@ -502,6 +502,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
           true,
           message.hasChanged ? message.memoryUsage : undefined,
           message.hasChanged ? message.executionTime : undefined,
+          message.node,
         );
         scheduleNodeProgressClear(targetNodeId, message.task_id, message.attempt_index);
       }

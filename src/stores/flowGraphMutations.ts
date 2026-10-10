@@ -11,6 +11,7 @@ import {
 } from '../studio/blockRuntimeV2';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import { runtimeProgressTarget } from '../studio/userBlocks';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { useNodesStore } from './useNodeStore';
@@ -329,7 +330,16 @@ export function replaceFlowGraph(
 ) {
   const previousNodes = get().nodes;
   const previousNodeIds = new Set(previousNodes.map((node) => node.id));
-  const nodes = withLiveFieldContracts(replacement.nodes);
+  const restored = withLiveFieldContracts(replacement.nodes);
+  const cached = get().runtimeCachedNodeIds;
+  const cachedSet = new Set(cached?.map((id) => runtimeProgressTarget(restored, id)));
+  const nodes =
+    cached == null
+      ? restored
+      : restored.map((node) => {
+          const isCached = cachedSet.has(node.id);
+          return Boolean(node.data.isCached) === isCached ? node : { ...node, data: { ...node.data, isCached } };
+        });
   const nextNodeIds = new Set(nodes.map((node) => node.id));
   const removedNodeIds = [...previousNodeIds].filter((nodeId) => !nextNodeIds.has(nodeId));
   const edges = decorateConnectionEdges(

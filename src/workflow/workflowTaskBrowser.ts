@@ -8,7 +8,8 @@ export function workflowTaskCategory(task: string): WorkflowCategory {
   if (task.includes('video') || task === 'flf2v' || task.startsWith('character_')) return 'Video';
   if (task.includes('audio') || task.includes('speech') || task.includes('music')) return 'Audio';
   if (task.includes('3d')) return '3D';
-  if (/image|inpaint|outpaint|controlnet|ip_adapter|depth|layer_decomposition/.test(task)) return 'Image';
+  if (task === 'mask_composite' || /image|inpaint|outpaint|controlnet|ip_adapter|depth|layer_decomposition/.test(task))
+    return 'Image';
   return 'Text & Utilities';
 }
 

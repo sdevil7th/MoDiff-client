@@ -691,6 +691,62 @@ test('removed dynamic Guidance controls stay hidden without resetting execution 
   }
 });
 
+test('all built-in image task drafts connect their declared source and mask roles', async () => {
+  const { createWorkflowDraft } = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
+  const { workflowTaskCategory, workflowTaskCards } = await server.ssrLoadModule(
+    '/src/workflow/workflowTaskBrowser.ts',
+  );
+  const { unpackVisualOperationGroups } = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const tasks = [
+    'image_adjustment',
+    'image_filter',
+    'image_crop',
+    'image_upscale',
+    'image_stitch',
+    'image_tile',
+    'image_channels',
+    'mask_composite',
+  ];
+  const mediaRegistry = {
+    ...registry,
+    'modules.Image.Preview': {
+      type: 'custom',
+      module: 'modules.Image',
+      action: 'Preview',
+      label: 'Preview',
+      category: 'Image',
+      params: { image: { type: 'image', display: 'input' } },
+    },
+  };
+  for (const task of tasks) {
+    const starter = starters.find((s) => s.pipelineClass === 'BuiltinImageOperationV1' && s.task === task);
+    assert.ok(starter, `Missing real backend starter fixture: ${task}`);
+    assert.equal(workflowTaskCategory(task), 'Image', task);
+    assert.equal(workflowTaskCards([{ task }])[0].category, 'Image', task);
+    const before = structuredClone(starter);
+    const flat = unpackVisualOperationGroups(createWorkflowDraft(starter, mediaRegistry).graph).graph;
+    const process = flat.nodes.find((n) => n.data.action === 'ProcessImage');
+    const roles = task === 'mask_composite' ? ['image', 'mask'] : ['image'];
+    const sources = roles.map((role) => {
+      const wire = flat.edges.find((e) => e.target === process.id && e.targetHandle === role);
+      assert.ok(wire, `${task}: missing ${role} input`);
+      assert.equal(wire.sourceHandle, 'image', 'Explicit masks use the loaded pixels, not inferred alpha');
+      const source = flat.nodes.find((n) => n.id === wire.source);
+      assert.equal(source.data.module, 'modules.Image');
+      assert.equal(source.data.action, 'Load');
+      return source;
+    });
+    assert.equal(new Set(sources.map((n) => n.id)).size, roles.length);
+    if (task === 'mask_composite') assert.equal(sources[1].data.label, 'Load Mask');
+    const preview = flat.nodes.find((n) => n.data.action === 'Preview');
+    assert.ok(
+      flat.edges.some((e) => e.source === process.id && e.sourceHandle === 'output' && e.target === preview.id),
+    );
+    assert.equal(flat.nodes.length, roles.length + 2);
+    assert.deepEqual(starter, before, 'Creating a fresh draft must not rewrite the backend starter');
+  }
+});
+
 test('fresh image/audio workflows connect required media from separate loaders', async () => {
   const { createWorkflowDraft } = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
   const { unpackVisualOperationGroups } = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');

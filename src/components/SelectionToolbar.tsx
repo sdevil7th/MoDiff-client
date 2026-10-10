@@ -335,7 +335,7 @@ export function SelectionToolbar({
     if (!singleActionNode) return;
     try {
       const result = await recomputeNodeOutputs([singleActionNode.id]);
-      if (result.nodes.length) setNodeCached(singleActionNode.id, false);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar(
         result.nodes.length
           ? 'Outputs will recompute on the next Run. Loaded models are retained.'
@@ -350,8 +350,8 @@ export function SelectionToolbar({
   const handleClearCache = useCallback(async () => {
     if (!singleActionNode) return;
     try {
-      await deleteNodeCache([singleActionNode.id]);
-      setNodeCached(singleActionNode.id, false);
+      const result = await deleteNodeCache([singleActionNode.id]);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
