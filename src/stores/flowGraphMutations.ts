@@ -11,7 +11,7 @@ import {
 } from '../studio/blockRuntimeV2';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { operationAuthoring } from '../workflow/operationAuthoringHint';
-import { runtimeProgressTarget } from '../studio/userBlocks';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { useNodesStore } from './useNodeStore';
@@ -320,16 +320,6 @@ export function applyFlowNodeChangesInvariant(
     const nodes = applyRemainingChanges(remainingChanges, get().nodes);
     set({ nodes: persistFinalBlockV2ProjectionPositions(nodes, remainingChanges) });
   }
-}
-
-/** Cache flags are a replaceable view of the last server snapshot and current graph authority. */
-export function projectFlowCacheStatus(nodes: CustomNodeType[], cached: readonly string[] | null | undefined) {
-  if (cached == null) return nodes;
-  const targets = new Set(cached.map((id) => runtimeProgressTarget(nodes, id)));
-  return nodes.map((node) => {
-    const isCached = targets.has(node.id);
-    return Boolean(node.data.isCached) === isCached ? node : { ...node, data: { ...node.data, isCached } };
-  });
 }
 
 export function replaceFlowGraph(

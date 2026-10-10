@@ -26,7 +26,7 @@ import { decorateConnectionEdge, decorateConnectionEdges } from '../theme/connec
 import { enqueueSnackbar } from '../ui/snackbar';
 import { nodeConnectionSemanticsAreCompatible } from '../workflow/nodeConnectionMatching';
 import type { CustomConnection, CustomNodeType, FlowStore } from './useFlowStore';
-import { projectFlowCacheStatus } from './flowGraphMutations';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),

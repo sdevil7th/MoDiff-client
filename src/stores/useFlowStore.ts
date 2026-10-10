@@ -65,12 +65,8 @@ import {
   USER_BLOCK_COLLAPSED_WIDTH,
 } from '../studio/userBlocks';
 import { useUserBlockStore } from './useUserBlockStore';
-import {
-  projectFlowCacheStatus,
-  replaceFlowGraph,
-  type FlowGraphReplacement,
-  type FlowGraphReplacementOptions,
-} from './flowGraphMutations';
+import { replaceFlowGraph, type FlowGraphReplacement, type FlowGraphReplacementOptions } from './flowGraphMutations';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
 import {
   collapseHuggingFaceClusterInstance,

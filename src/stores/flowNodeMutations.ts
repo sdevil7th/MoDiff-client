@@ -5,12 +5,8 @@ import type { NodeData, NodeParams } from './useNodeStore';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import type { NodeMemoryUsage } from '../types/api';
 import { deepEqual } from '../utils/deepEqual';
-import {
-  applyFlowNodeChangesInvariant,
-  projectFlowCacheStatus,
-  removeFlowNodesInvariant,
-  replaceFlowGraph,
-} from './flowGraphMutations';
+import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import { normalizeBlockInstanceV2 } from '../studio/blockSchemaV2';
 import {
