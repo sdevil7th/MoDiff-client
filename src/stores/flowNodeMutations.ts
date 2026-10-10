@@ -17,7 +17,7 @@ import {
 } from '../studio/blockRuntimeV2';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
-import { collapsedUserBlockFieldTarget } from '../studio/userBlocks';
+import { collapsedUserBlockFieldTarget, runtimeProgressTarget } from '../studio/userBlocks';
 import { operationAuthoring } from '../workflow/operationAuthoringHint';
 import { workflowTaskCategory } from '../workflow/workflowTaskBrowser';
 
@@ -676,7 +676,7 @@ export function setFlowNodeCached(
 export function updateFlowCacheStatus(ids: string | string[], set: FlowStoreSet) {
   const cached = toArray(ids);
   set((state) => {
-    const cachedSet = new Set(cached);
+    const cachedSet = new Set(cached.map((id) => runtimeProgressTarget(state.nodes, id)));
     if (state.nodes.every((node) => Boolean(node.data.isCached) === cachedSet.has(node.id))) {
       return state;
     }
@@ -762,8 +762,8 @@ export function updateFlowNodeProgress(
 
 export function resetFlowStatus(cachedIds: string | string[], set: FlowStoreSet, get: FlowStoreGet) {
   void get;
-  const cachedSet = new Set(toArray(cachedIds));
   set((state) => {
+    const cachedSet = new Set(toArray(cachedIds).map((id) => runtimeProgressTarget(state.nodes, id)));
     let changed = state.lastExecutionTime !== 0;
     const nodes = state.nodes.map((node) => {
       const isCached = cachedSet.has(node.id);

@@ -456,7 +456,15 @@ function reconcileSnapshotGraphBinding(
 }
 
 function isInferredRecoveryBinding(binding: StudioGraphBinding | null) {
-  return Boolean(binding && binding.createdAt === 0 && binding.updatedAt === 0);
+  return Boolean(
+    binding &&
+    binding.createdAt === 0 &&
+    binding.updatedAt === 0 &&
+    !binding.executionSpec &&
+    !binding.controlled &&
+    !binding.finalizationProof &&
+    !binding.finalizationProofInvalid,
+  );
 }
 
 export function normalizeManagedSnapshotExecutionPlan(
@@ -591,28 +599,46 @@ function normalizeWorkflowSnapshot(
     // like one managed task graph.
     !nodes.some((node) => Boolean(node.data.blockInstanceV2 || node.data.operationAuthoring)) &&
     (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
+  // Old whole-image exports carry presentation roles, but no execution-spec
+  // receipt. Keep those exact ordinary nodes as the workflow authority rather
+  // than inventing a managed binding which the current contract must reject.
+  const ordinaryImageImport =
+    shouldRecoverManagedIdentity &&
+    nodes.some(
+      (node) =>
+        (node.data.module === 'modules.DiffusersImage' && node.data.action === 'LoadPipeline') ||
+        (node.data.module === 'modules.HuggingFaceTransformers' &&
+          ['LoadDepthEstimationModel', 'LoadImageTextToTextModel'].includes(node.data.action)) ||
+        (node.data.module === 'modules.ImageOperations' && node.data.action === 'ProcessImage') ||
+        (node.data.module === 'modules.Spandrel' && node.data.action === 'Upscaler'),
+    );
   const inferredManagedForm = shouldRecoverManagedIdentity
     ? resolveStudioResourceForm(inferStudioFormFromWorkflow(nodes, persistedStudioForm))
     : persistedStudioForm;
-  const adoptedGraph = shouldRecoverManagedIdentity
-    ? adoptManagedWorkflowGraph(nodes, edges as import('@xyflow/react').Edge[], inferredManagedForm)
-    : null;
-  const studioForm = adoptedGraph ? inferredManagedForm : persistedStudioForm;
+  const adoptedGraph =
+    shouldRecoverManagedIdentity && !ordinaryImageImport
+      ? adoptManagedWorkflowGraph(nodes, edges as import('@xyflow/react').Edge[], inferredManagedForm)
+      : null;
+  const studioForm = adoptedGraph || ordinaryImageImport ? inferredManagedForm : persistedStudioForm;
   const normalizedNodes = adoptedGraph?.nodes ?? nodes;
-  const executionNormalizedNodes = normalizeManagedSnapshotExecutionPlan(
-    normalizedNodes,
-    studioForm,
-    persistedGraphBinding ?? adoptedGraph?.binding ?? null,
-  );
-  const studioGraphBinding = reconcileSnapshotGraphBinding(
-    isInferredRecoveryBinding(persistedGraphBinding)
-      ? (adoptedGraph?.binding ?? null)
-      : (persistedGraphBinding ?? adoptedGraph?.binding ?? null),
-    executionNormalizedNodes,
-    edges,
-    studioForm,
-    Boolean(templateSourceId && activeTemplateId === templateSourceId && !persistedGraphBinding),
-  );
+  const executionNormalizedNodes = ordinaryImageImport
+    ? nodes
+    : normalizeManagedSnapshotExecutionPlan(
+        normalizedNodes,
+        studioForm,
+        persistedGraphBinding ?? adoptedGraph?.binding ?? null,
+      );
+  const studioGraphBinding = ordinaryImageImport
+    ? null
+    : reconcileSnapshotGraphBinding(
+        isInferredRecoveryBinding(persistedGraphBinding)
+          ? (adoptedGraph?.binding ?? null)
+          : (persistedGraphBinding ?? adoptedGraph?.binding ?? null),
+        executionNormalizedNodes,
+        edges,
+        studioForm,
+        Boolean(templateSourceId && activeTemplateId === templateSourceId && !persistedGraphBinding),
+      );
   return {
     nodes: executionNormalizedNodes,
     edges,

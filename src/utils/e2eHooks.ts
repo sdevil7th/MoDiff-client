@@ -31,7 +31,7 @@ import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates
 import { getFormDefaultsForMode } from '../studio/modelProfiles';
 import type { StudioTaskTemplateSkeleton } from '../studio/taskTemplateContracts';
 import { materializeTemplateDefaultInputs } from '../studio/templateInputs';
-import { createImageTemplateOperationWorkflow } from '../studio/templateWorkflow';
+import { createImageTemplateOperationWorkflow, normalizeTemplateRuntimeDevice } from '../studio/templateWorkflow';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { UserBlockDefinition } from '../studio/types';
 import { createUserBlockNode, normalizeUserBlockDefinition } from '../studio/userBlocks';
@@ -202,6 +202,7 @@ async function applyTaskTemplateSkeleton(templateId: string, formOverrides: Part
   };
   useStudioStore.getState().updateForm(form);
   const context = captureWorkflowOperationContext();
+  normalizeTemplateRuntimeDevice(context);
   await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
   const autoReady = await ensureStudioAutoPlanReadyForRun(context);
   if (!autoReady) {

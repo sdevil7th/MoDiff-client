@@ -102,6 +102,49 @@ function cacheRequests() {
   return requests.filter((request) => request.url.endsWith('/cache') && request.init.method === 'DELETE');
 }
 
+for (const method of ['updateCacheStatus', 'resetStatus']) {
+  test(`${method} maps a cached hidden V2 leaf to its exact collapsed owner on reconnect`, () => {
+    const fixture = blockV2DeletionFixture('cache-owner-exact');
+    const root = fixture.nodes.find((item) => item.id === fixture.rootId);
+    const collapsed = {
+      ...root,
+      data: {
+        ...root.data,
+        isCached: false,
+        blockInstanceV2: blockRuntimeModule.setBlockPresentationV2(root.data.blockInstanceV2, { expanded: false }),
+      },
+    };
+    flowStoreModule.useFlowStore.setState({ nodes: [collapsed], edges: [], lastExecutionTime: 12 });
+    flowStoreModule.useFlowStore.getState()[method]([fixture.generateId]);
+    assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.isCached, true);
+    const cachedRoot = flowStoreModule.useFlowStore.getState().nodes[0];
+    flowStoreModule.useFlowStore.getState()[method]([fixture.generateId]);
+    assert.equal(flowStoreModule.useFlowStore.getState().nodes[0], cachedRoot, 'same snapshot preserves node identity');
+    flowStoreModule.useFlowStore
+      .getState()
+      [method]([
+        blockRuntimeModule.blockProjectionNodeIdV2(`${fixture.rootId}-foreign`, 'generate'),
+        blockRuntimeModule.blockProjectionNodeIdV2(fixture.rootId, 'removed-stage'),
+        blockRuntimeModule.blockProjectionNodeIdV2(fixture.rootId, 'unknown-inner::generate'),
+      ]);
+    assert.equal(
+      flowStoreModule.useFlowStore.getState().nodes[0].data.isCached,
+      false,
+      'prefix resemblance grants no cache state',
+    );
+  });
+
+  test(`${method} keeps expanded cached leaves separate from their root`, () => {
+    const fixture = blockV2DeletionFixture('expanded-cache-owner');
+    flowStoreModule.useFlowStore.setState({ nodes: fixture.nodes, edges: fixture.edges });
+    flowStoreModule.useFlowStore.getState()[method]([fixture.generateId]);
+    const nodes = flowStoreModule.useFlowStore.getState().nodes;
+    assert.equal(Boolean(nodes.find((item) => item.id === fixture.rootId).data.isCached), false);
+    assert.equal(nodes.find((item) => item.id === fixture.generateId).data.isCached, true);
+    assert.equal(Boolean(nodes.find((item) => item.id === fixture.utilityId).data.isCached), false);
+  });
+}
+
 test('connection mutations enforce signal-driven component compatibility', () => {
   const schedulerOutput = (modelType) => ({
     scheduler: {

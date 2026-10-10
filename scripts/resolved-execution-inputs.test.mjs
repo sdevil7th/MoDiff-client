@@ -609,6 +609,70 @@ function taskHistoryOutput(graphTasks) {
   });
 }
 
+test('ordinary image task receipts survive history reload with strict owner identity', () => {
+  for (const [module, action, pipeline, task] of [
+    ['DiffusersImage', 'LoadPipeline', 'ZImageInpaintPipeline', 'outpaint'],
+    ['HuggingFaceTransformers', 'LoadDepthEstimationModel', 'AutoModelForDepthEstimation', 'depth_estimation'],
+    ['HuggingFaceTransformers', 'LoadImageTextToTextModel', 'AutoModelForImageTextToText', 'image_to_text'],
+    ['ImageOperations', 'ProcessImage', 'BuiltinImageOperationV1', 'image_crop'],
+  ]) {
+    const evidence = receipt();
+    evidence.nodes = [
+      {
+        nodeId: 'owner',
+        module: 'modules.' + module,
+        action,
+        fields: { pipeline_class: { value: pipeline, source: 'literal' } },
+        omittedFields: {},
+      },
+    ];
+    evidence.summary = { modelType: pipeline };
+    evidence.ambiguousFields = [];
+    evidence.unavailableFields = [];
+    evidence.graphTasks = [{ loaderId: 'owner', pipelineClass: pipeline, task }];
+    const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(evidence, identity), evidence);
+    let output = contracts.coerceStudioOutput({
+      id: 'ordinary-image',
+      url: '/image.webp',
+      ...identity,
+      mode: 'text_to_image',
+      formSnapshot: { mode: 'text_to_image' },
+      resolvedExecutionInputs: evidence,
+    });
+    for (let reload = 0; reload < 2; reload++) {
+      assert.equal(output.mode, task);
+      assert.equal(output.formSnapshot.mode, 'text_to_image');
+      output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+    }
+    for (const mutate of [
+      (e) => {
+        e.nodes[0].module = 'custom.Foreign';
+      },
+      (e) => {
+        e.graphTasks[0].pipelineClass = 'WrongClass';
+      },
+      (e) => {
+        e.nodes[0].fields = {};
+        e.summary = {};
+      },
+      (e) => {
+        e.graphTasks.push(e.graphTasks[0]);
+      },
+      (e) => {
+        e.truncated = true;
+      },
+      (e) => {
+        e.uncapturedNodeIds = ['missing'];
+      },
+    ]) {
+      const malformed = structuredClone(evidence);
+      mutate(malformed);
+      assert.equal(inputs.coerceResolvedExecutionInputs(malformed, identity), undefined);
+    }
+  }
+});
+
 const taskOwner = { loaderId: 'loader', pipelineClass: 'QwenImageEditPlusModularPipeline' };
 
 test('ambiguous consumed task stays explicitly uncaptured across history reload without borrowing the form', () => {

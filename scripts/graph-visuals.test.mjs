@@ -2190,7 +2190,7 @@ test('backend execution specs materialize exact image, video, and audio recipes 
     ['diffusersRecipe', 'vae_slicing', 'false'],
     ['diffusersRecipe', 'vae_tiling', 'false'],
     ['diffusersRecipe', 'regional_compile', 'false'],
-    ['diffusersRecipe', 'denoiser_cache', 'false'],
+    ['diffusersRecipe', 'denoiser_cache', 'denoiserCache'],
     ['diffusersRecipe', 'layerwise_casting', 'false'],
     ['diffusersRecipe', 'channels_last', 'false'],
     ['diffusersThreeDPipeline', 'model_id', 'artifact'],

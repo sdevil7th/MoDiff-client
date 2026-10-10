@@ -2576,6 +2576,67 @@ test('existing saved canonical imports are adopted during workflow-tab normaliza
   }
 });
 
+test('legacy whole image imports keep ordinary graph authority without inventing a managed receipt', async () => {
+  const graph = JSON.parse(
+    await readFile(
+      path.resolve(ROOT, '../MoDiff/data/graphs/studio/marigold-depth-pipeline/depth-estimation.json'),
+      'utf8',
+    ),
+  );
+  const previous = studioStoreModule.useStudioStore.getState().workflowTabs;
+  try {
+    studioStoreModule.useStudioStore.getState().mergeBackendWorkflow({
+      id: 'legacy-whole-image-import',
+      title: 'Depth',
+      createdAt: 1,
+      updatedAt: 1,
+      dirty: false,
+      source: 'import',
+      backendRevision: 1,
+      snapshot: {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        studioForm: profilesModule.DEFAULT_STUDIO_FORM,
+        studioGraphBinding: null,
+        selectedMode: 'text_to_image',
+        activeTemplateId: null,
+        sourceOutputId: null,
+      },
+    });
+    const snapshot = studioStoreModule.useStudioStore
+      .getState()
+      .workflowTabs.find((t) => t.id === 'legacy-whole-image-import').snapshot;
+    assert.equal(snapshot.studioGraphBinding, null);
+    assert.equal(snapshot.studioForm.mode, 'depth_estimation');
+    assert.equal(snapshot.studioForm.modelType, 'MarigoldDepthPipeline');
+    assert.deepEqual(snapshot.edges, graph.edges);
+    for (const node of graph.nodes) {
+      assert.deepEqual(snapshot.nodes.find((n) => n.id === node.id).data.params, node.data.params);
+    }
+    const binding = workflowInferenceModule.adoptManagedWorkflowGraph(
+      graph.nodes,
+      graph.edges,
+      snapshot.studioForm,
+    ).binding;
+    studioStoreModule.useStudioStore.getState().mergeBackendWorkflow({
+      id: 'explicit-image-receipt',
+      title: 'Explicit',
+      createdAt: 1,
+      updatedAt: 1,
+      dirty: false,
+      source: 'import',
+      backendRevision: 1,
+      snapshot: { ...snapshot, studioGraphBinding: { ...binding, finalizationProofInvalid: true } },
+    });
+    const explicit = studioStoreModule.useStudioStore
+      .getState()
+      .workflowTabs.find((t) => t.id === 'explicit-image-receipt');
+    assert.equal(explicit.snapshot.studioGraphBinding.finalizationProofInvalid, true);
+  } finally {
+    studioStoreModule.useStudioStore.setState({ workflowTabs: previous });
+  }
+});
+
 test('persisted inferred bindings self-repair stale model metadata from canonical nodes', () => {
   const graph = canonicalModularTextToImageGraph();
   const modelNode = graph.nodes.find((node) => node.id === 'models');

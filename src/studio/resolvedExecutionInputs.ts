@@ -81,6 +81,26 @@ const inputNames: Record<string, string> = {
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
 const nodeInputNames: Record<string, Record<string, string>> = {
+  ...Object.fromEntries(
+    [
+      'Generate',
+      'Edit',
+      'Inpaint',
+      'ControlGenerate',
+      'ControlEdit',
+      'ControlInpaint',
+      'LayerDecompose',
+      'UnconditionalGenerate',
+      'PredictMap',
+    ].map((action) => [`DiffusersImage.${action}`, { ...inputNames, executed_task: 'executedTask' }]),
+  ),
+  ...Object.fromEntries(
+    ['PredictDepth', 'GenerateImageVideoText'].map((action) => [
+      `HuggingFaceTransformers.${action}`,
+      { ...inputNames, executed_task: 'executedTask' },
+    ]),
+  ),
+  'ImageOperations.ProcessImage': { ...inputNames, executed_task: 'executedTask' },
   'ModularDiffusers.Guider': {
     ...inputNames,
     guider: 'guiderType',
@@ -106,6 +126,13 @@ const nodeInputNames: Record<string, Record<string, string>> = {
     scale: 'ipAdapterScale',
     layer_scales: 'ipAdapterLayerScales',
   },
+};
+const taskOwnerFields: Record<string, string> = {
+  'modules.ModularDiffusers.ModelsLoader': 'model_type',
+  'modules.DiffusersImage.LoadPipeline': 'pipeline_class',
+  'modules.HuggingFaceTransformers.LoadDepthEstimationModel': 'pipeline_class',
+  'modules.HuggingFaceTransformers.LoadImageTextToTextModel': 'pipeline_class',
+  'modules.ImageOperations.ProcessImage': 'pipeline_class',
 };
 const summaryNames = new Set([
   ...Object.values(inputNames),
@@ -243,14 +270,14 @@ export function coerceResolvedExecutionInputs(
         owners.has(item.loaderId)
       )
         return undefined;
-      const owner = value.nodes.find((node) => record(node) && node.nodeId === item.loaderId);
+      const owner: unknown = value.nodes.find((node) => record(node) && node.nodeId === item.loaderId);
+      const field = record(owner) ? taskOwnerFields[`${owner.module}.${owner.action}`] : undefined;
       if (
         !record(owner) ||
-        owner.module !== 'modules.ModularDiffusers' ||
-        owner.action !== 'ModelsLoader' ||
+        !field ||
         !record(owner.fields) ||
-        !record(owner.fields.model_type) ||
-        owner.fields.model_type.value !== item.pipelineClass
+        !record(owner.fields[field]) ||
+        owner.fields[field].value !== item.pipelineClass
       )
         return undefined;
       owners.add(item.loaderId);
@@ -259,7 +286,7 @@ export function coerceResolvedExecutionInputs(
   }
   if (graphTasks) {
     const loaders = value.nodes.filter(
-      (node) => record(node) && node.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+      (node) => record(node) && hasOwn(taskOwnerFields, `${node.module}.${node.action}`),
     );
     if (loaders.length !== graphTasks.length) return undefined;
   }
