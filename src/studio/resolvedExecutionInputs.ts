@@ -1,7 +1,11 @@
 import type { StudioMode, StudioModelType, StudioOutput } from './types';
 import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS } from './modelProfiles';
+import type { WeightLoadingMode } from '../types/api';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
+export type ModelWeightFormat = 'native' | 'fp8r' | 'nvfp4';
+export type TextGenerationOperation = 'standard' | 'enhance_prompt';
+export type PromptEnhancementSystemMode = 't2i' | 'i2i' | 't2i_bbox' | 'i2i_bbox';
 type InputField = {
   value: InputValue;
   source: 'literal' | 'connected' | 'override';
@@ -18,10 +22,19 @@ export type ResolvedExecutionInputs = {
     nodeId: string;
     module: string;
     action: string;
-    fields: Record<string, InputField>;
+    fields: Record<string, InputField> & {
+      weight_loading_mode?: InputField & { value: WeightLoadingMode };
+      weight_format?: InputField & { value: ModelWeightFormat };
+      operation?: InputField & { value: TextGenerationOperation };
+    };
     omittedFields: Record<string, string>;
   }[];
-  summary: Record<string, InputValue>;
+  summary: Record<string, InputValue> & {
+    weightLoadingMode?: WeightLoadingMode;
+    weightFormat?: ModelWeightFormat;
+    textOperation?: TextGenerationOperation;
+    systemPromptMode?: PromptEnhancementSystemMode;
+  };
   ambiguousFields: string[];
   unavailableFields: string[];
   uncapturedNodeIds: string[];
@@ -60,6 +73,7 @@ const inputNames: Record<string, string> = {
   pipeline_class: 'modelType',
   auto_offload: 'autoOffload',
   offload_mode: 'offloadMode',
+  weight_loading_mode: 'weightLoadingMode',
   attention_backend: 'attentionBackend',
   vae_slicing: 'vaeSlicing',
   enable_vae_slicing: 'vaeSlicing',
@@ -81,6 +95,8 @@ const inputNames: Record<string, string> = {
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
 const nodeInputNames: Record<string, Record<string, string>> = {
+  'ModularDiffusers.ModelsLoader': { ...inputNames, weight_format: 'weightFormat' },
+  'DiffusersImage.LoadPipeline': { ...inputNames, mode: 'executionMode' },
   ...Object.fromEntries(
     [
       'Generate',
@@ -92,14 +108,29 @@ const nodeInputNames: Record<string, Record<string, string>> = {
       'LayerDecompose',
       'UnconditionalGenerate',
       'PredictMap',
+      'EncodeInputs',
+      'Denoise',
+      'DecodeLatents',
     ].map((action) => [`DiffusersImage.${action}`, { ...inputNames, executed_task: 'executedTask' }]),
   ),
-  ...Object.fromEntries(
-    ['PredictDepth', 'GenerateImageVideoText'].map((action) => [
-      `HuggingFaceTransformers.${action}`,
-      { ...inputNames, executed_task: 'executedTask' },
-    ]),
-  ),
+  'HuggingFaceTransformers.PredictDepth': { ...inputNames, executed_task: 'executedTask' },
+  'HuggingFaceTransformers.GenerateImageVideoText': {
+    ...inputNames,
+    executed_task: 'executedTask',
+    operation: 'textOperation',
+    enhancement_max_new_tokens: 'enhancementMaxNewTokens',
+    prompt_adapter_id: 'promptAdapterId',
+    system_prompt_mode: 'systemPromptMode',
+    system_prompt_sha256: 'systemPromptSha256',
+    rendered_prompt_sha256: 'renderedPromptSha256',
+    rendered_prompt_utf8_bytes: 'renderedPromptUtf8Bytes',
+    rendered_input_ids_sha256: 'renderedInputIdsSha256',
+    reference_source_sha256: 'referenceSourceSha256',
+    processed_pixel_sha256: 'processedPixelSha256',
+    processed_pixel_shape: 'processedPixelShape',
+    processed_grid_sha256: 'processedGridSha256',
+    processed_grid_shape: 'processedGridShape',
+  },
   'ImageOperations.ProcessImage': { ...inputNames, executed_task: 'executedTask' },
   'ModularDiffusers.Guider': {
     ...inputNames,
@@ -152,6 +183,43 @@ const inputValue = (value: unknown): value is InputValue =>
   scalar(value) || (Array.isArray(value) && value.length <= 16 && value.every(scalar));
 const stringList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.length <= 4096 && value.every(text);
+
+// Captured observations only: neither an operation label nor an RGB hash grants
+// model, source-region, proposal Apply or resource authority.
+function textGenerationInputValue(key: string, value: InputValue): boolean {
+  const positiveInteger = (item: unknown): item is number =>
+    typeof item === 'number' && Number.isSafeInteger(item) && item > 0;
+  const fingerprint = (item: unknown) => typeof item === 'string' && /^sha256:[0-9a-f]{64}$/u.test(item);
+  switch (key) {
+    case 'operation':
+      return value === 'standard' || value === 'enhance_prompt';
+    case 'enhancement_max_new_tokens':
+      return positiveInteger(value) && value <= 3584;
+    case 'prompt_adapter_id':
+      return typeof value === 'string' && /^[a-z][a-z0-9-]{0,127}$/u.test(value);
+    case 'system_prompt_mode':
+      return value === 't2i' || value === 'i2i' || value === 't2i_bbox' || value === 'i2i_bbox';
+    case 'system_prompt_sha256':
+      return typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
+    case 'rendered_prompt_sha256':
+    case 'rendered_input_ids_sha256':
+    case 'processed_pixel_sha256':
+    case 'processed_grid_sha256':
+      return fingerprint(value);
+    case 'rendered_prompt_utf8_bytes':
+      return positiveInteger(value) && value <= 524_288;
+    case 'reference_source_sha256':
+      return Array.isArray(value) && value.length <= 10 && value.every(fingerprint);
+    case 'processed_pixel_shape':
+      return Array.isArray(value) && value.length === 2 && value.every(positiveInteger);
+    case 'processed_grid_shape':
+      return (
+        Array.isArray(value) && value.length === 2 && positiveInteger(value[0]) && value[0] <= 10 && value[1] === 3
+      );
+    default:
+      return true;
+  }
+}
 
 export function coerceResolvedExecutionInputs(
   value: unknown,
@@ -212,7 +280,13 @@ export function coerceResolvedExecutionInputs(
         !canonical ||
         !record(field) ||
         !inputValue(field.value) ||
-        !['literal', 'connected', 'override'].includes(String(field.source))
+        (scope === 'HuggingFaceTransformers.GenerateImageVideoText' && !textGenerationInputValue(key, field.value)) ||
+        (canonical === 'weightLoadingMode' && field.value !== 'cpu' && field.value !== 'cuda') ||
+        (canonical === 'weightFormat' &&
+          field.value !== 'native' &&
+          field.value !== 'fp8r' &&
+          field.value !== 'nvfp4') ||
+        (field.source !== 'literal' && field.source !== 'connected' && field.source !== 'override')
       )
         return undefined;
       if (

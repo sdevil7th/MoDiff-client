@@ -424,6 +424,17 @@ function controlParamsForNormalizedInstanceV2(instance: BlockInstanceV2): Record
 
 function connectorParam(instance: BlockInstanceV2, port: BlockPortV2, direction: 'input' | 'output'): NodeParams {
   const base = sourceParam(instance, port.binding.nodeId, port.binding.fieldOrPortId);
+  if (base?.signalCompatibility?.action === '$node') {
+    const actions = blockInputPortBindingsV2(port).map(
+      (binding) => instance.effectiveGraph.nodes.find((node) => node.nodeId === binding.nodeId)?.data.action,
+    );
+    const action = actions[0];
+    if (typeof action !== 'string' || !action || actions.some((value) => value !== action))
+      throw new Error(
+        `Cannot project action compatibility for Block port "${port.portId}": bound actions differ or are missing.`,
+      );
+    base.signalCompatibility.action = action;
+  }
   const value = direction === 'input' ? blockInstanceValueV2(instance, port.portId) : undefined;
   return {
     ...(base ? cloneJson(base) : {}),

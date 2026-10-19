@@ -1,4 +1,4 @@
-import type { StudioTemplateExecutionSelection, StudioTemplateId } from './types';
+import type { StudioMode, StudioTemplateExecutionSelection, StudioTemplateId } from './types';
 
 const STANDARD_Z_TEMPLATE_IDS: StudioTemplateId[] = [
   'z_image_quick_concept',
@@ -26,38 +26,10 @@ const STANDARD_FLUX_TEMPLATE_IDS: StudioTemplateId[] = [
   'flux_kontext_multi_reference',
 ];
 
-function recipes(ids: StudioTemplateId[], selection: StudioTemplateExecutionSelection) {
-  return Object.fromEntries(
-    ids.map((id) => [
-      id,
-      {
-        ...selection,
-        ...(PRESERVED_PIPELINE_POLICIES[id] ? { componentPolicy: PRESERVED_PIPELINE_POLICIES[id] } : {}),
-        ...(['z_image_lora_style', 'fast_lora'].includes(id) ? { loraPolicy: { defaultAdapterName: 'default' } } : {}),
-        ...(STANDARD_Z_TEMPLATE_IDS.includes(id)
-          ? { guidancePolicy: { enabled: true, useOriginalFormulation: true } }
-          : {}),
-        ...(STANDARD_FLUX_TEMPLATE_IDS.includes(id)
-          ? {
-              guidancePolicy: {
-                enabled: id !== 'flux_schnell_text_to_image',
-                useOriginalFormulation: false,
-                distilledGuidanceScale: id === 'flux_schnell_text_to_image' ? 0 : 3.5,
-              },
-            }
-          : {}),
-      },
-    ]),
-  );
-}
-
-// These policies apply only to newly created recipes. Saved graphs retain their
-// authored controls. Automatic attention avoids the forced math working set on
-// constrained devices; VAE slicing and tiling remain explicit.
-const PRESERVED_PIPELINE_POLICIES: Partial<
-  Record<StudioTemplateId, NonNullable<StudioTemplateExecutionSelection['componentPolicy']>>
-> = Object.fromEntries([
-  ...STANDARD_Z_TEMPLATE_IDS.map((id) => [id, { attentionBackend: 'auto', vaeSlicing: true, vaeTiling: true }]),
+// Curated IDs select a backend-owned recipe; frontend code applies its data
+// without interpreting model families, compatibility switches or wiring.
+const AUTHORING_RECIPES_BY_TEMPLATE_ID: Partial<Record<StudioTemplateId, string>> = Object.fromEntries([
+  ...STANDARD_Z_TEMPLATE_IDS.map((id) => [id, 'retained-z-image-text-to-image:v1']),
   ...[
     'qwen_text_rendering',
     'qwen_poster_logo_text',
@@ -67,24 +39,40 @@ const PRESERVED_PIPELINE_POLICIES: Partial<
     'qwen_low_vram_poster_layout',
     'qwen_upscale_finish',
     'high_quality',
-    'flux_schnell_text_to_image',
-    'flux_dev_expert_text_to_image',
-    'flux_lora_cinematic_octane_3d',
-    'flux_lora_ghibli_story',
-    'flux_lora_oil_painting',
-    'flux_lora_film_noir',
-    'flux_lora_retro_comic',
-    'flux_lora_watercolor',
-    'flux_lora_paper_cutout',
-    'flux_lora_photoreal_documentary',
-    'flux_kontext_edit',
-    'flux_krea_text_to_image',
-    'flux_kontext_multi_reference',
-    'flux2_klein_text_to_image',
-    'flux2_klein_edit',
-    'flux2_klein_multi_reference',
-  ].map((id) => [id, { attentionBackend: 'auto', vaeSlicing: true, vaeTiling: true }]),
+  ].map((id) => [id, 'retained-qwen-image-text-to-image:v1']),
+  ['flux_schnell_text_to_image', 'retained-flux-schnell-text-to-image:v1'],
+  ...STANDARD_FLUX_TEMPLATE_IDS.filter(
+    (id) =>
+      ![
+        'flux_schnell_text_to_image',
+        'flux_krea_text_to_image',
+        'flux_kontext_edit',
+        'flux_kontext_multi_reference',
+      ].includes(id),
+  ).map((id) => [id, 'retained-flux-dev-text-to-image:v1']),
+  ['flux_krea_text_to_image', 'retained-flux-krea-text-to-image:v1'],
+  ['flux_kontext_edit', 'retained-flux-kontext-edit:v1'],
+  ['flux_kontext_multi_reference', 'retained-flux-kontext-multi-reference:v1'],
+  ['flux2_klein_text_to_image', 'retained-flux2-klein-text-to-image:v1'],
+  ['flux2_klein_edit', 'retained-flux2-klein-edit:v1'],
+  ['flux2_klein_multi_reference', 'retained-flux2-klein-multi-reference:v1'],
+  ['qwen_inpaint_object_replace', 'retained-qwen-edit-inpaint:v1'],
+  ['qwen_inpaint_mask_draft', 'retained-qwen-edit-inpaint:v1'],
+  ['qwen_outpaint_aspect_template', 'retained-qwen-edit-outpaint:v1'],
+  ['qwen_outpaint_draft', 'retained-qwen-edit-outpaint:v1'],
 ]);
+function recipes(ids: StudioTemplateId[], selection: StudioTemplateExecutionSelection) {
+  return Object.fromEntries(
+    ids.map((id) => [
+      id,
+      {
+        ...selection,
+        ...(AUTHORING_RECIPES_BY_TEMPLATE_ID[id] ? { authoringRecipeId: AUTHORING_RECIPES_BY_TEMPLATE_ID[id] } : {}),
+        ...(['z_image_lora_style', 'fast_lora'].includes(id) ? { loraPolicy: { defaultAdapterName: 'default' } } : {}),
+      },
+    ]),
+  );
+}
 function native(
   pipelineClass: string,
   executionProfileId: string,
@@ -99,6 +87,7 @@ function native(
     task,
     bindingSpec: { modelType, mode },
     implementation: 'native_stages',
+    authoringRecipeId: 'generic-native-image:v1',
   };
 }
 function pipeline(
@@ -114,7 +103,7 @@ function pipeline(
     executionProfileId,
     task: mode,
     bindingSpec: { modelType, mode },
-    implementation: 'whole_pipeline',
+    implementation: 'pipeline_stages',
     note,
   };
 }
@@ -139,7 +128,7 @@ export function qwenInpaintNativeCandidateSelection(id: StudioTemplateId): Studi
       'modular_inpainting',
       'inpaint',
     ),
-    componentPolicy: { attentionBackend: 'auto', vaeSlicing: true, vaeTiling: true },
+    authoringRecipeId: AUTHORING_RECIPES_BY_TEMPLATE_ID[id],
     note: 'Native masked stages preserve the reviewed whole-template preprocessing and composite through an owned compatibility adapter.',
   };
 }
@@ -301,7 +290,7 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
         'flux-fill:direct',
         'FluxFillPipeline',
         'inpaint',
-        'The pinned upstream Fill task uses its complete specialized pipeline.',
+        'Encode Inputs encodes text only; official Fill Denoise retains source, mask and seed preparation, and Image Output decodes and composites.',
       ),
     ),
     ...recipes(
@@ -311,7 +300,7 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
         'flux-fill:direct',
         'FluxFillPipeline',
         'outpaint',
-        'The pinned upstream Fill task uses its complete specialized pipeline.',
+        'Encode Inputs encodes text only; official Fill Denoise retains source, mask and seed preparation, and Image Output decodes and composites.',
       ),
     ),
     ...recipes(
@@ -321,7 +310,7 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
         'flux-canny:direct',
         'FluxCannyPipeline',
         'control_image',
-        'The pinned upstream Canny task uses its specialized control transformer pipeline.',
+        'Encode Inputs prepares text and VAE control conditioning; Denoise uses the official latent sampler and Image Output decodes latents.',
       ),
     ),
     ...recipes(
@@ -331,7 +320,7 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
         'flux-depth:direct',
         'FluxDepthPipeline',
         'control_image',
-        'The pinned upstream Depth task uses its specialized control transformer pipeline.',
+        'Encode Inputs prepares text and VAE control conditioning; Denoise uses the official latent sampler and Image Output decodes latents.',
       ),
     ),
     ...recipes(
@@ -341,7 +330,7 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
         'flux-redux:direct',
         'FluxReduxPipeline',
         'edit_image',
-        'Retains the exact base pipeline and Redux prior conditioning at this upstream pin.',
+        'Encode Inputs runs the retained pinned Redux prior; Denoise uses the official base latent sampler and Image Output uses the matching VAE.',
       ),
     ),
     ...recipes(
@@ -351,7 +340,45 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
         'flux-redux:direct',
         'FluxReduxPipeline',
         'multi_image_reference_edit',
-        'Retains the exact base pipeline and ordered Redux prior conditioning at this upstream pin.',
+        'Encode Inputs runs the retained pinned Redux prior in reference order; Denoise uses the official base latent sampler and Image Output uses the matching VAE.',
       ),
     ),
+  };
+
+/** Audio retains the actual backend execution decomposition. Integrated
+ * generation is not presented as independent encoding/denoising/decoding. */
+export const AUDIO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateId, StudioTemplateExecutionSelection>> =
+  {
+    ...Object.fromEntries(
+      (
+        [
+          ['ace_step_text_to_audio', 'text_to_audio'],
+          ['ace_step_audio_variation', 'audio_variation'],
+          ['ace_step_audio_continuation', 'audio_continuation'],
+          ['ace_step_audio_repaint', 'audio_repaint'],
+          ['ace_step_chinese_new_year_lora', 'text_to_audio'],
+          ['ace_step_custom_lora', 'text_to_audio'],
+        ] as const satisfies readonly (readonly [StudioTemplateId, StudioMode])[]
+      ).map(([id, task]) => [
+        id,
+        {
+          schemaVersion: 1,
+          pipelineClass: 'AceStepPipeline',
+          task,
+          executionProfileId: 'ace-step-audio:direct',
+          bindingSpec: { modelType: 'AceStepAudioPipeline', mode: task },
+          implementation: 'whole_pipeline',
+          note: 'Model Setup owns configuration and the reviewed adapter; Generate Audio remains the real integrated pipeline action.',
+        } satisfies StudioTemplateExecutionSelection,
+      ]),
+    ),
+    minimax_music3_chamber_pop: {
+      schemaVersion: 1,
+      pipelineClass: 'MiniMaxMusic3ModularPipeline',
+      task: 'text_to_audio',
+      executionProfileId: 'minimax-music3:official-modular-workflow',
+      bindingSpec: { modelType: 'MiniMaxMusic3ModularPipeline', mode: 'text_to_audio' },
+      implementation: 'native_stages',
+      note: 'The real semantic generation and denoising stages feed Audio Output; no prompt encoder or Guider is invented.',
+    },
   };

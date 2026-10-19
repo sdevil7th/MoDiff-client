@@ -171,12 +171,12 @@ test('bundle and breakout preserve explicit component overrides and an unrelated
 });
 
 test('component rewiring uses visual stage projection while keeping wrappers, values and canonical leaves', () => {
-  const ordinary = graph(),
-    loader = owner(ordinary);
+  const ordinary = graph();
   const grouped = visual.groupNewOperationGraph(ordinary);
   const roots = grouped.nodes.filter((node) => visual.visualOperationGroup(node));
   const before = visual.unpackVisualOperationGroups(grouped).graph;
-  const bundled = bundle.setOperationComponentBundle(grouped, loader.id, 'bundle');
+  const projectedOwnerId = owner(before).id;
+  const bundled = bundle.setOperationComponentBundle(grouped, projectedOwnerId, 'bundle');
   for (const root of roots) {
     const after = bundled.nodes.find((node) => node.id === root.id);
     assert.equal(visual.visualOperationGroup(after), visual.visualOperationGroup(root));
@@ -190,7 +190,7 @@ test('component rewiring uses visual stage projection while keeping wrappers, va
   assert.deepEqual(lowered.nodes.map((node) => node.id).sort(), before.nodes.map((node) => node.id).sort());
   assert.deepEqual(semanticEdges(lowered), semanticEdges(before));
   const exposed = visual.unpackVisualOperationGroups(
-    bundle.setOperationComponentBundle(bundled, loader.id, 'components'),
+    bundle.setOperationComponentBundle(bundled, projectedOwnerId, 'components'),
   ).graph;
   assert.deepEqual(semanticEdges(exposed), semanticEdges(before));
 });

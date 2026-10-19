@@ -179,6 +179,46 @@ indices only when the backend also declares the path as a selectable option.
 Reserved/empty path segments, undeclared paths, operation ports and ordinary
 parameter names remain subject to strict validation.
 
+An optional `layout_conditioning` value uses the built-in `layout` editor only
+when its field declares `fieldOptions.layoutConditioning`. Version 1 retains
+its original placement/source grammar and declared reference count of 1–8.
+Version 2 declares explicit `place`, `relocate` and `remove` actions. Removal
+uses a null target box and requires a bound source; placement has no source.
+Both versions use normalized XYXY coordinates, at most 32 unique region IDs,
+4096 Unicode code points per description and a 64 KiB compact UTF-8 JSON limit.
+Text is preserved, including whitespace; unpaired surrogates are refused.
+Raw mode stores `null`. Edits use normal parameter history and Block bindings
+and never rewrite the prompt field. The backend owns effective serialization.
+
+Source tools remain disabled unless the selected version-2 descriptor declares
+`supportsBoundSourceRegions: true` and the operator reads an actual encoded
+reference summary through the ordinary cache route. The string output
+`layout_reference_summary` on the actual Image Encode supplier is joined to its producer's persisted task, attempt,
+run-input hash, workflow and exact current source ancestry. A genuine encoding
+cache hit may retain its earlier producer identity; the client does not relabel
+it as a fresh computation. Image Encode can publish a new summary independently
+of a Prompt that correctly refuses stale source IDs; re-encode that source branch,
+read its summary and explicitly rebind the saved region. The compatible Prompt
+summary remains available, but the widget reads the actual incoming supplier.
+The summary describes up to ten ordered references,
+their content identities and original/processed dimensions. It is local display
+context, not an opaque execution receipt. Source/owner/graph changes mark it
+stale, and each saved source region requires explicit rebind to a current ID.
+The backend independently verifies the same process-local receipt in Prompt and
+Denoise against actual images, processed tensors, owner and tensor versions.
+Imported counts or summary strings cannot grant execution authority. A declared
+editor does not grant model support, resource fit or runtime readiness.
+
+Generic workflow model descriptors can also carry optional immutable artifact
+inventories. Model Manager keeps the existing native selection as its default;
+`weightFormatSelections` adds up to two exact FP8R/NVFP4 repository, revision and
+file selections through the existing Install/Repair action. These rows require
+the existing public execution-profile and selected pipeline-support joins.
+Private or unavailable profiles are excluded even if raw capabilities contain
+download metadata. Installed files are labeled **Installed**, separately from
+execution support, qualification and required-runtime status. This discovery
+path does not extend the legacy Studio model union or infer Auto/template grants.
+
 Backend-resolved operation schemas suppress mount-time selector initialization
 and automatic signal actions that would replace exact-profile metadata with
 generic family defaults. Signal transport, connection-driven control visibility
@@ -208,6 +248,16 @@ write occurs. Task/model replacement keeps fresh runtime IDs where required;
 collapse/expand does not invalidate execution identity. Shared input edits and
 export resolve the same connected loader scope across group boundaries.
 
+The same projection supports direct audio Model Setup and native audio
+decode/export output groups. Audio Output derives its wording and preview from
+the contained media contracts and uses the existing `UIAudioField`. The ordinary
+node shell reserves the shared audio minimum width for declared Block previews
+as well as ordinary `ui_audio` parameters. Whole-pipeline audio generation stays
+integrated, and transcription retains text output. Backend-published selected
+adapter policies use the same strict profile/artifact/task join for image and
+audio; authoring permission does not enable Automatic memory planning or qualify
+model execution. See [audio workflow stages](audio-workflows.md).
+
 New eligible starters opt into grouping; saved workflows require an explicit
 group action. Complex manually nested/mirrored interfaces fail closed during
 automatic adaptation, with an explicit editing instruction instead of data loss.
@@ -218,20 +268,57 @@ still owns values, interfaces and execution. Inspection is read-only; Separate
 stages is an explicit undoable structural edit. The interface inspector includes
 visible optional encoding sockets and labels their deferred stage preparation.
 
-Optional image Model Setup, Prepare Mask and Image Output use that same ordinary
+Fresh eligible native image drafts present **Model Setup → Encode Inputs →
+Denoise → Image Output**. Encode Inputs contains its actual encoding and Guidance
+leaves. Its Guidance disclosure hides controls only; the backend-declared Enabled
+setting changes execution. A route without Guidance has no empty Guidance section.
+Combined input groups use presentation provenance `modiff.visual-stages.v2/inputs`
+so switching to a route without Guidance and back retains this layout. The graph
+and executor still use the existing Block V2 contract. Historical v1 groups retain
+their separate layout until the user selects **Combine encoding and Guidance**.
+Combine and Separate each commit one history transaction. Combine creates a new
+workflow-local definition from the current leaves; it never writes saved library
+definitions. Current values, control labels, seals and explicitly removed controls
+survive the conversion. Unsupported integrated or whole-pipeline tasks retain their
+actual operations; required media and additional branches remain visible separately.
+
+Image Model Setup, Prepare Mask and Image Output use that same ordinary
 node shell and `BlockInstanceV2` contract. `visualOperationGroups` selects only
 existing eligible leaves: a loader with connected built-in descriptor/configuration
 utilities, an exact Load Image/Outpaint Canvas pair feeding both image and mask
 to the same masked consumer, or a declared image decoder plus its direct previews.
-Single loaders/whole-pipeline previews and unrelated/shared modifiers are not
-wrapped. Explicit stage actions leave other instances untouched and commit one
-history transaction; opening documents and current template defaults do not
-opt into these additional groups. Output preview bindings use the existing V2
+Fresh native image drafts wrap a single eligible loader as Model Setup and its
+decoder/preview as Image Output. Whole-pipeline previews and unrelated/shared
+modifiers remain external. Prepare Mask remains an explicit optional grouping.
+Explicit stage actions leave other instances untouched and commit one history
+transaction; opening saved documents does not opt into new groups. Output preview bindings use the existing V2
 preview inventory and backend output-slot authority. Model Setup's projected
 loader resolves back to its unpacked runtime owner for the complete ordinary
 workflow planner, rather than adapting only the wrapper's implementation. Values,
 configured interfaces, immutable reusable snapshots and explicit save/separate
 behavior keep their existing authority.
+Model Setup's Adapters controls follow the real ordered adapter wires. The Add
+dialog keeps a local draft until a populated local selection or immutable Hub
+selection is accepted; blank rows never enter the executable graph. Hub adapters
+require an exact commit, contained Safetensors weight filename and expected SHA-256.
+Add, Remove and Move use the same graph transaction and Undo path. Native
+`previous_loras` chains and whole-pipeline `pipeline`/`output` chains keep their
+declared sockets and backend validation. Shared descriptor/configuration suppliers
+stay outside the wrapper; connected scalar suppliers and unrelated branches remain
+intact. Sealed controls cannot be changed or removed by these actions. A later
+whole-pipeline adapter cannot replace and unload earlier adapters silently.
+Current selected-profile `adapterAuthoring` metadata can grant image adapter
+edits for an exact task, immutable base pair and registered adapter transport,
+independently of aggregate capability and qualification flags. The execution
+profile parser validates its bounded schema; the permission resolver rechecks
+the current operation, profile, selectors, pins and registry before each edit.
+Absent policy retains canonical capability restrictions; malformed or mismatched
+policy does not fall back. Add checks the declared owned-row limit separately
+from permission to edit or reorder existing rows. Structural inspection and safe
+Remove can handle an existing bounded chain without granting new authoring.
+Other ordered-chain callers retain their legacy limit. This policy does not
+change the effective graph, runtime adapter validation, Auto admission or
+installation consent.
 Optional groups retain ordinary type-inferred scalar editors even when registry
 fields omit `display`. An empty or suppressed field label uses its field name
 in the explicit interface; the original leaf field and value remain unchanged.
@@ -1577,3 +1664,12 @@ the matching instance preview and cannot display stale source artifacts.
 Queue rows and tooltips give completed/cancelled/failed states priority over
 retained progress messages. Failure diagnostics remain visible, including for
 older backend receipts.
+
+Runtime Auto resource updates are applied only after the websocket handler
+checks the active run's ownership. Their current-value comparison uses the pure
+expanded-leaf export with seed randomization disabled; it never requests fresh
+ancillary execution authority or submits that snapshot. Connected resource fields,
+newer literal edits and conflicting shared Block controls continue to reject the
+update. Successful patches retain one Undo transaction. Actual Run and Preview
+still require their exact current ancillary execution scope before export and
+submission.

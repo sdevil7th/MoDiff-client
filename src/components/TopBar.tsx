@@ -53,6 +53,7 @@ import {
   inspectStudioGraphBindingDivergence,
   syncStudioGraphValues,
 } from '../studio/graphBridge';
+import { prepareExecutionScope, executionScopeRootIds } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { prepareHuggingFaceClustersForRun } from '../studio/huggingFaceClusterPreparation';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
@@ -432,8 +433,10 @@ function TopBar() {
 
   const buildTopBarWorkflowPackage = useCallback(async () => {
     const context = captureWorkflowOperationContext();
+    const pending = sid && isConnected ? prepareExecutionScope({ workflowContext: context }) : undefined;
+    const executionScope = pending ? await pending : undefined;
     const flow = useFlowStore.getState();
-    let apiGraph = sid ? exportGraph(sid, undefined, { randomizeSeeds: false }) : null;
+    let apiGraph = sid && isConnected ? exportGraph(sid, undefined, { randomizeSeeds: false, executionScope }) : null;
     if (apiGraph && graphBinding) apiGraph = applyStudioRuntimeHints(apiGraph);
     if (
       apiGraph &&
@@ -457,7 +460,7 @@ function TopBar() {
       }),
       apiGraph,
     };
-  }, [exportGraph, graphBinding, latestWorkflowOutput, sid]);
+  }, [exportGraph, graphBinding, latestWorkflowOutput, sid, isConnected]);
 
   const handleWorkflowPackageExportClick = useCallback(async () => {
     try {
@@ -533,7 +536,9 @@ function TopBar() {
     setIsSubmittingRun(true);
     const context = captureWorkflowOperationContext();
     try {
-      if (graphBinding) {
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      if (graphBinding && !executionScope) {
         const autoReady = await ensureStudioAutoPlanReadyForRun(context);
         if (!autoReady) {
           validateCurrentRun({ sid, isConnected, includeStudio: true });
@@ -541,8 +546,13 @@ function TopBar() {
         }
         await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
       }
-      await prepareHuggingFaceClustersForRun();
-      const validation = validateCurrentRun({ sid, isConnected, includeStudio: Boolean(graphBinding) });
+      await prepareHuggingFaceClustersForRun(executionScopeRootIds(executionScope));
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: Boolean(graphBinding) && !executionScope,
+        executionScope,
+      });
       if (!validation.canRun) return;
 
       if (requestedOption.id === 'run') {
@@ -558,6 +568,7 @@ function TopBar() {
         studioContext: graphBinding ? { clearChangedPreviews: !deferCanvasOwnership } : undefined,
         workflowContext: context,
         deferCanvasOwnership,
+        executionScope,
       });
       if (requestedOption.id === 'run' && deferCanvasOwnership && !result.response.error) {
         enqueueSnackbar('Run added to the queue. The current run will continue.', {

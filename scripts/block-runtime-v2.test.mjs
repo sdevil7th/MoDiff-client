@@ -3142,3 +3142,109 @@ test('missing required model inputs remain submission blockers in Custom memory 
     studioStore.useStudioStore.setState(original);
   }
 });
+
+function actionCompatibilityInstanceV2(mirroredAction) {
+  const base = definition();
+  const generate = base.graph.nodes.find((node) => node.nodeId === 'generate');
+  generate.data.params.prompt.signalCompatibility = { required: true, action: '$node' };
+  generate.data.params.images.signalCompatibility = { required: true, action: '$node' };
+  if (mirroredAction) {
+    const mirror = structuredClone(generate);
+    mirror.nodeId = 'nested-stage:generate';
+    mirror.data.action = mirroredAction;
+    base.graph.nodes.push(mirror);
+    base.graph.executionOrder.push(mirror.nodeId);
+    base.boundary.inputs[0].mirrorBindings = [{ nodeId: mirror.nodeId, fieldOrPortId: 'prompt' }];
+  }
+  base.graph.graphHash = schema.blockGraphHashV2(base.graph);
+  base.contentHash = schema.blockDefinitionContentHashV2(base);
+  return schema.createBlockInstanceV2(base, {
+    instanceId: 'action-compatibility',
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 300 },
+  });
+}
+
+test('Block ports preserve their exact bound action compatibility in both directions', async () => {
+  const matching = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  const current = actionCompatibilityInstanceV2();
+  const before = JSON.stringify(current);
+  const root = runtime.createBlockRootNodeV2(current);
+  const producer = {
+    module: 'custom.Source',
+    action: 'Load',
+    type: 'custom',
+    params: {
+      output: {
+        type: 'string',
+        display: 'output',
+        signal: {
+          value: { mode: 'text_to_image', connectionActions: { Generate: ['text_to_image'] } },
+        },
+      },
+    },
+  };
+  assert.equal(matching.nodeConnectionSemanticsAreCompatible(producer, 'output', root.data, 'prompt'), true);
+  const target = {
+    module: 'custom.Target',
+    action: 'Preview',
+    type: 'custom',
+    params: {
+      input: {
+        type: 'list[image]',
+        display: 'input',
+        signal: {
+          value: { mode: 'text_to_image', actions: { Generate: ['text_to_image'] } },
+        },
+      },
+    },
+  };
+  assert.equal(matching.nodeConnectionSemanticsAreCompatible(root.data, 'images', target, 'input'), true);
+  const ports = runtime.blockConnectorParamsV2(current);
+  assert.deepEqual(ports.inputs.prompt.signalCompatibility, { required: true, action: 'Generate' });
+  assert.deepEqual(ports.outputs.images.signalCompatibility, { required: true, action: 'Generate' });
+  assert.equal(JSON.stringify(current), before, 'projection cannot rewrite the immutable leaf contract');
+  for (const signal of [
+    undefined,
+    { value: { mode: 'foreign', actions: { Generate: ['text_to_image'] } } },
+    { value: { mode: 'text_to_image', actions: { Foreign: ['text_to_image'] } } },
+    { value: { mode: 'text_to_image', actions: {} } },
+  ]) {
+    const wrong = structuredClone(producer);
+    wrong.params.output.signal = signal;
+    assert.equal(matching.nodeConnectionSemanticsAreCompatible(wrong, 'output', root.data, 'prompt'), false);
+  }
+});
+
+test('Block action-bound mirrors require identical declared leaf actions and reject unknown bindings', () => {
+  assert.equal(
+    runtime.blockConnectorParamsV2(actionCompatibilityInstanceV2('Generate')).inputs.prompt.signalCompatibility.action,
+    'Generate',
+  );
+  assert.throws(
+    () => runtime.blockConnectorParamsV2(actionCompatibilityInstanceV2('DifferentAction')),
+    /bound actions differ or are missing/u,
+  );
+  const missing = actionCompatibilityInstanceV2();
+  missing.effectiveInterface.boundary.inputs[0].binding.nodeId = 'foreign:missing';
+  missing.effectiveInterface.effectiveInterfaceHash = schema.blockInterfaceHashV2(missing.effectiveInterface);
+  missing.customization.state = 'structure_changed';
+  assert.throws(() => runtime.blockConnectorParamsV2(missing), /unknown|missing/u);
+});
+
+test('Block literal action and native role/value signal declarations retain their exact semantics', () => {
+  const current = actionCompatibilityInstanceV2();
+  const generate = current.effectiveGraph.nodes.find((node) => node.nodeId === 'generate');
+  const contract = {
+    required: true,
+    action: 'FixedAction',
+    role: ['denoiser', 'encoder'],
+    values: { selected: ['own'] },
+  };
+  generate.data.params.prompt.signalCompatibility = contract;
+  current.effectiveGraph.graphHash = schema.blockGraphHashV2(current.effectiveGraph);
+  current.customization.effectiveGraphHash = current.effectiveGraph.graphHash;
+  current.customization.state = 'structure_changed';
+  current.authorities = [];
+  assert.deepEqual(runtime.blockConnectorParamsV2(current).inputs.prompt.signalCompatibility, contract);
+});

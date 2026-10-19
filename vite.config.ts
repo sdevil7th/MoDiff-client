@@ -267,6 +267,15 @@ const baseConfig: UserConfig = {
               priority: 10,
             },
             {
+              // These planners already load on demand. Their shared graph and
+              // schema vocabulary compresses once without making store or
+              // renderer dependencies part of this deferred authoring chunk.
+              name: 'operation-authoring-tools',
+              test: /\/src\/(?:workflow\/(?:operationAuthoring|visualOperationGroups|operationStarterRequest|modelSetupAdapters|selectedAudioAdapterAuthority)\.ts|studio\/(?:operationAuthoringRecipe|templateOperationWorkflow)\.ts)$/,
+              includeDependenciesRecursively: false,
+              priority: 10,
+            },
+            {
               name: (moduleId) => {
                 // Keep already-eager Studio catalogs/contracts and graph stores together so their
                 // repeated vocabulary compresses once within the bundle budget,

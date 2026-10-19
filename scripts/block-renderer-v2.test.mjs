@@ -2124,3 +2124,155 @@ test('connectable scalar controls retain inline editors and literal false, zero 
   assert.equal(controls.prompt.value, '');
   assert.deepEqual(node, before);
 });
+
+test('declared Block source fields preserve offload labels and alias-targeted edits', async () => {
+  const { createElement, Children, isValidElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { default: SelectField } = await server.ssrLoadModule('/src/fields/SelectField.tsx');
+  const { ModiffSelect } = await server.ssrLoadModule('/src/ui/index.ts');
+  const options = ['auto_cpu', 'none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'];
+  const check = (fieldKey, param, sourceKey = 'offload_mode') => {
+    const before = structuredClone(param);
+    const edits = [];
+    for (const [value, label] of [
+      ['group_disk', 'SSD group offload'],
+      ['auto_cpu', 'RAM/CPU model offload'],
+    ]) {
+      let select;
+      const props = {
+        nodeId: 'offload-view',
+        fieldKey,
+        label: 'Offload Mode',
+        display: 'select',
+        value,
+        default: 'none',
+        options: param.options,
+        fieldOptions: param.fieldOptions,
+        disabled: false,
+        hidden: false,
+        style: {},
+        dataType: 'string',
+        fieldType: 'select',
+        module: 'modiff.blocks',
+        action: 'BlockV2',
+        updateStore: (...args) => edits.push(args),
+      };
+      const visit = (element) => {
+        if (!isValidElement(element)) return;
+        if (element.type === ModiffSelect) select = element;
+        Children.forEach(element.props.children, visit);
+      };
+      function Render() {
+        const view = SelectField(props);
+        visit(view);
+        return view;
+      }
+      const markup = renderToStaticMarkup(createElement(Render));
+      assert.ok(select, 'the actual field renders the shared select');
+      if (sourceKey === 'offload_mode') {
+        assert.ok(markup.includes(label), `${fieldKey} renders ${label}`);
+        assert.deepEqual(
+          select.props.options.map(({ value }) => value),
+          options.slice(1),
+        );
+        assert.equal(select.props.options.find(({ value }) => value === 'group_disk').label, 'SSD group offload');
+      } else {
+        assert.ok(markup.includes(value), 'an unrelated selector keeps its declared labels');
+        assert.deepEqual(
+          select.props.options.map(({ value }) => value),
+          options,
+        );
+      }
+      select.props.onValueChange('group_disk');
+      assert.deepEqual(edits.at(-1), [fieldKey, 'group_disk'], 'edits retain the exact canvas alias and raw value');
+    }
+    assert.deepEqual(param, before, 'rendering does not normalize or mutate the graph field');
+  };
+  for (const [module, action] of [
+    ['modules.ModularDiffusers', 'ModelsLoader'],
+    ['modules.DiffusersImage', 'LoadPipeline'],
+    ['modules.DiffusersAudio', 'LoadPipeline'],
+  ]) {
+    const migrated = schema.migrateUserBlockDefinitionV1({
+      id: 'offload-rendering',
+      name: 'Offload rendering',
+      version: 1,
+      nodes: [
+        {
+          id: 'loader',
+          type: 'custom',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'custom',
+            module,
+            action,
+            label: 'Loader',
+            params: {
+              offload_mode: { type: 'string', options, value: 'group_disk' },
+            },
+          },
+        },
+      ],
+      edges: [],
+      inputs: [],
+      outputs: [],
+      exposedParams: [
+        {
+          id: 'placement-choice',
+          kind: 'graph-param',
+          label: 'Offload Mode',
+          nodeId: 'loader',
+          paramKey: 'offload_mode',
+        },
+      ],
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const graph = structuredClone(migrated.graph);
+    graph.nodes.unshift({
+      nodeId: 'stage',
+      nodeType: 'group',
+      data: { type: 'group', label: 'Stage', params: {} },
+      modularDiffusers: modularMetadata('stage', ['stage'], undefined, 'sequential'),
+    });
+    graph.nodes.find(({ nodeId }) => nodeId === 'loader').modularDiffusers = modularMetadata(
+      'loader',
+      ['stage', 'loader'],
+      ['stage'],
+    );
+    graph.executionOrder = ['stage', 'loader'];
+    graph.graphHash = schema.blockGraphHashV2(graph);
+    const definition = { ...migrated, graph };
+    definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+    const current = schema.createBlockInstanceV2(definition, {
+      instanceId: 'offload-root',
+      position: { x: 0, y: 0 },
+      size: { width: 500, height: 500 },
+    });
+    const before = structuredClone(current);
+    const root = runtime.blockControlParamsV2(current);
+    check('placement-choice', root['placement-choice']);
+    const projected = runtime.materializeBlockProjectionV2(
+      runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(current, { expanded: true })),
+    );
+    const stage = projected.nodes.find(({ data }) => data.blockProjectionNodeId === 'stage');
+    const alias = Object.entries(stage.data.params).find(
+      ([, field]) => field.fieldOptions?.blockBindingV2?.fieldOrPortId === 'offload_mode',
+    );
+    assert.ok(alias, 'a collapsed intermediate container exposes the real control alias');
+    assert.notEqual(alias[0], 'offload_mode');
+    check(...alias);
+    assert.deepEqual(current, before, 'all instance values, source declarations and execution graph remain unchanged');
+  }
+  check('offload_mode', { options });
+  check(
+    'different-setting',
+    { options, fieldOptions: { blockBindingV2: { schemaVersion: 2, fieldOrPortId: 'different-setting' } } },
+    'different-setting',
+  );
+  check(
+    'different-setting',
+    { options, fieldOptions: { blockBindingV2: { schemaVersion: 1, fieldOrPortId: 'offload_mode' } } },
+    'different-setting',
+  );
+});

@@ -8,25 +8,40 @@ Opening an existing saved workflow preserves its graph.
 
 ## Current template inventory
 
-All 54 image templates retain their creator prompts, seeds, sizes, inference
-settings, immutable model revisions and required input roles. Their fresh graphs
+The current inventory contains 56 image templates. The historical 54 converted
+templates retain their creator prompts, seeds, sizes, inference settings,
+immutable model revisions and required input roles. Their fresh graphs
 use explicit execution-profile selections rather than a family-wide default.
 
-| Native stage family        | Templates | Tasks                                       |
-| -------------------------- | --------: | ------------------------------------------- |
-| Z-Image Turbo              |         7 | Text to image and styles using LoRAs        |
-| Qwen Image                 |        10 | Text to image and ControlNet image layout   |
-| Qwen Image Edit            |         7 | Image editing, inpainting and outpainting   |
-| Qwen Image Edit Plus       |         7 | Single-image and multiple-reference editing |
-| Qwen Image Layered         |         1 | Layer decomposition                         |
-| FLUX Schnell, Dev and Krea |        11 | Text to image and styles using LoRAs        |
-| FLUX Kontext               |         2 | Single-image and multiple-reference editing |
-| FLUX.2 Klein               |         3 | Text to image and image/reference editing   |
+| Native stage family        | Templates | Tasks                                          |
+| -------------------------- | --------: | ---------------------------------------------- |
+| Z-Image Turbo              |         7 | Text to image and styles using LoRAs           |
+| Qwen Image                 |        10 | Text to image and ControlNet image layout      |
+| Qwen Image Edit            |         7 | Image editing, inpainting and outpainting      |
+| Qwen Image Edit Plus       |         7 | Single-image and multiple-reference editing    |
+| Qwen Image Layered         |         1 | Layer decomposition                            |
+| FLUX Schnell, Dev and Krea |        11 | Text to image and styles using LoRAs           |
+| FLUX Kontext               |         2 | Single-image and multiple-reference editing    |
+| FLUX.2 Klein               |         3 | Text to image and image/reference editing      |
+| FLUX.2 Dev                 |         1 | Full-model text to image                       |
+| Cosmos 3 Super             |         1 | Full-model text to image with mandatory safety |
 
-These 48 recipes contain real model loading, input encoding, denoising and latent
-decoding stages. **Encode Inputs** presents the relevant encoding stages together;
+The 48 historical native recipes and two additional full-model candidates contain
+real model loading, input encoding, denoising and latent decoding stages. The two
+full-model candidates remain separately unqualified; their presence does not
+establish Auto readiness or fit on ordinary hardware. Fresh eligible native graphs present **Model Setup → Encode Inputs
+→ Denoise → Image Output**. **Encode Inputs** presents the relevant encoding and
+actual Guidance stages together;
 the exported graph retains their distinct backend calls and typed connections.
 Image, mask, control and reference inputs remain separate when their roles differ.
+Model Setup includes exclusive connected LoRA/configuration leaves, while shared
+suppliers stay external. Image Output contains the real decoder and Preview Image.
+Additional media preparation, control, composite or upscale branches remain visible;
+the four-stage presentation is the core native diffusion path, not a limit on all
+workflow node counts. Existing saved layouts change only through explicit stage
+actions. Combine encoding and Guidance and Separate encoding stages each support
+one-step Undo. Inspecting or saving a workflow never changes a reusable library
+definition implicitly.
 
 The four Qwen masked-edit/outpaint templates use real native stages with a
 backend-owned compatibility path for their original image preparation and final
@@ -53,7 +68,10 @@ encoding or Guidance node merely to resemble another workflow.
 ## Guidance and preserved settings
 
 Qwen and Z-Image recipes contain a real **Guidance** owner whose Diffusers guider
-feeds both prompt encoding and denoising. Their **Encode Inputs** stages retain
+feeds both prompt encoding and denoising. This owner is inside Encode Inputs in
+fresh graphs. Closing its Guidance disclosure hides the controls without disabling
+execution; use its Enabled setting to change execution. Models without declared
+Guidance have no Guidance section. Their **Encode Inputs** stages retain
 the authored positive and negative prompts; disabled guidance does not encode
 an unused negative. Qwen retains the upstream classifier-free
 guidance formulation and the template's scale. The seven Z-Image templates
@@ -96,6 +114,19 @@ order. Native descriptor chains feed the one model owner through
 reference assembly, outpaint placement and the optional upscaler branch retain
 their declared recipe values. Every generator initialization retains the seed
 and the backend's device/state contract.
+Model Setup exposes owned adapters as ordered real-node rows. Add LoRA opens a
+draft form and inserts nothing until the selection is complete. Hub selections
+require the exact commit, Safetensors weight filename and expected SHA-256. Add,
+Remove and Move preserve other branches and support Undo; external shared suppliers
+remain connected. Editing this form or grouping stages does not install a runtime
+or load model weights. Normal model readiness and Run validation still apply.
+
+New image adapter edits also require the current selected backend capability,
+execution profile and its exact `repository_revisions` pair to agree with the
+registered adapter transport. An alias cannot override its native pipeline's
+declared restriction. Missing or unsupported authority disables Add and ordering;
+saved rows remain inspectable, and Remove can repair them through ordinary Undo
+without silently discarding their values or shared connections on import.
 
 The converted Z-Image LoRA Style and Fast LoRA recipes explicitly retain the
 original whole-pipeline adapter name `default`. Their creator settings omitted
@@ -135,8 +166,10 @@ npm run check:ui
 
 `template-operation-workflows.test.mjs` obtains the real selected backend
 starters, public capabilities and node schemas without constructing models or
-reading operator extensions. It checks all 54 creator contracts, typed graph
+reading operator extensions. Its historical migration fixture checks the original
+54 creator contracts, typed graph
 exports, component policies, shared guidance and seeds, controlled extras,
-save/restore, undo/redo and stale asynchronous construction. Those are contract
-tests. Real model generation, paired image comparison, visual review and hardware
-qualification remain separate evidence.
+save/restore, undo/redo and stale asynchronous construction. The current public
+catalog contains 56 image templates; additional native candidates have separate
+selected-recipe tests. Those are contract tests. Real model generation, paired
+image comparison, visual review and hardware qualification remain separate evidence.

@@ -39,6 +39,7 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { isUserBlockExpandedInstance } from '../studio/userBlocks';
 import { isHuggingFaceClusterExpanded } from '../studio/huggingFaceClusterGraph';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { prepareHuggingFaceClustersForRun } from '../studio/huggingFaceClusterPreparation';
 import { validateCurrentRun } from '../studio/runReadiness';
@@ -287,6 +288,8 @@ export function SelectionToolbar({
   const handleRunFromNode = useCallback(async () => {
     if (!singleActionNode) return;
     try {
+      const pending = prepareExecutionScope({ targetNodeId: singleActionNode.id });
+      const executionScope = pending ? await pending : undefined;
       if (singleActionNode.data.huggingFaceClusterRole === 'root' || singleActionNode.data.blockInstanceV2) {
         await prepareHuggingFaceClustersForRun([singleActionNode.id]);
       }
@@ -295,9 +298,10 @@ export function SelectionToolbar({
         isConnected,
         includeStudio: false,
         targetNodeId: singleActionNode.id,
+        executionScope,
       });
       if (!validation.canRun || !sid) return;
-      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id });
+      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id, executionScope });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       enqueueSnackbar(message, { variant: 'error', persist: true });

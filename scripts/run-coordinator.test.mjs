@@ -3708,7 +3708,8 @@ test('runtime resource-update messages reject non-resource fields and wrong valu
   assert.equal(websocketModule.parseWebsocketMessage(JSON.stringify(message)), null);
 });
 
-function resourceInputBlock(mirrored = false) {
+function resourceInputBlock(mirrored = false, field = 'offload_mode', control = false) {
+  const initialValue = field === 'weight_loading_mode' ? 'cpu' : 'none';
   const nodes = ['loader', ...(mirrored ? ['peer'] : [])].map((nodeId) => ({
     nodeId,
     nodeType: 'custom',
@@ -3717,7 +3718,7 @@ function resourceInputBlock(mirrored = false) {
       module: 'modules.Test',
       action: 'Loader',
       params: {
-        offload_mode: { type: 'string', value: 'none', isInput: true },
+        [field]: { type: 'string', value: initialValue, isInput: true },
         output: { type: 'pipeline', display: 'output' },
       },
     },
@@ -3738,13 +3739,26 @@ function resourceInputBlock(mirrored = false) {
           label: 'Offload',
           valueType: 'string',
           required: false,
-          binding: { nodeId: 'loader', fieldOrPortId: 'offload_mode' },
-          ...(mirrored ? { mirrorBindings: [{ nodeId: 'peer', fieldOrPortId: 'offload_mode' }] } : {}),
+          binding: { nodeId: 'loader', fieldOrPortId: field },
+          ...(mirrored ? { mirrorBindings: [{ nodeId: 'peer', fieldOrPortId: field }] } : {}),
         },
       ],
       outputs: [],
     },
-    controls: [],
+    controls: control
+      ? [
+          {
+            controlId: 'resource',
+            label: 'Resource',
+            valueType: 'string',
+            defaultValue: initialValue,
+            required: false,
+            order: 0,
+            binding: { nodeId: 'loader', fieldId: field },
+            ...(mirrored ? { mirrorBindings: [{ nodeId: 'peer', fieldId: field }] } : {}),
+          },
+        ]
+      : [],
     previews: [],
     ownership: { kind: 'user', definitionMutable: true },
   };
@@ -3754,7 +3768,7 @@ function resourceInputBlock(mirrored = false) {
       instanceId: 'resource-block',
       position: { x: 0, y: 0 },
       size: { width: 400, height: 320 },
-      values: { resource: 'none' },
+      values: { resource: initialValue },
     }),
   );
 }
@@ -3804,6 +3818,160 @@ test('Auto treats mirrored boundary resource inputs as one atomic resource group
   ]);
   flow.getState().undo();
   assert.deepEqual(exported(), before);
+});
+
+test('weight loading Auto plans accept only the declared cpu/cuda patch values', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  for (const value of ['cpu', 'cuda']) {
+    const plan = { ...workflowPlan(true), patches: [{ nodeId: 'loader', field: 'weight_loading_mode', value }] };
+    assert.deepEqual(auto.parseWorkflowAutoPlanV2(plan), plan);
+  }
+  for (const value of ['auto', 'CUDA', '', true, null, 0, { value: 'cuda' }])
+    assert.throws(
+      () =>
+        auto.parseWorkflowAutoPlanV2({
+          ...workflowPlan(true),
+          patches: [{ nodeId: 'loader', field: 'weight_loading_mode', value }],
+        }),
+      /invalid workflow Auto plan/,
+    );
+  assert.throws(
+    () =>
+      auto.parseWorkflowAutoPlanV2({
+        ...workflowPlan(true),
+        patches: [{ nodeId: 'loader', field: 'weight_loading_device', value: 'cuda' }],
+      }),
+    /invalid workflow Auto plan/,
+  );
+});
+
+test('weight loading runtime messages preserve the field-specific current and previous value contracts', () => {
+  const parsed = (update) =>
+    websocketModule.parseWebsocketMessage(
+      JSON.stringify({
+        type: 'auto_resource_plan_applied',
+        resourceUpdates: [{ nodeId: 'loader', ...update }],
+      }),
+    );
+  for (const value of ['cpu', 'cuda'])
+    for (const previousValue of [undefined, null, 'cpu', 'cuda'])
+      assert.ok(parsed({ field: 'weight_loading_mode', value, previousValue }));
+  for (const value of ['auto', 'CUDA', '', true, null, 1])
+    assert.equal(parsed({ field: 'weight_loading_mode', value }), null);
+  for (const previousValue of ['auto', 'CUDA', '', true, 1])
+    assert.equal(parsed({ field: 'weight_loading_mode', value: 'cuda', previousValue }), null);
+  assert.equal(parsed({ field: 'offload_mode', value: 'none', previousValue: false }), null);
+  assert.equal(parsed({ field: 'auto_offload', value: true, previousValue: 'false' }), null);
+  assert.ok(parsed({ field: 'offload_mode', value: 'none', previousValue: 'model_cpu' }));
+  assert.ok(parsed({ field: 'auto_offload', value: true, previousValue: false }));
+});
+
+test('weight loading mirrored inputs and controls carry one runtime group and one Undo', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const flow = flowStoreModule.useFlowStore;
+  for (const control of [false, true]) {
+    flow.getState().replaceGraph({ nodes: [resourceInputBlock(true, 'weight_loading_mode', control)], edges: [] });
+    const exported = () => flow.getState().exportGraph('', undefined, { randomizeSeeds: false });
+    const before = exported();
+    const definition = structuredClone(flow.getState().nodes[0].data.blockInstanceV2.definitionSnapshot);
+    const patches = ['loader', 'peer'].map((nodeId) => ({
+      nodeId: blockRuntimeModule.blockProjectionNodeIdV2('resource-block', nodeId),
+      field: 'weight_loading_mode',
+      value: 'cuda',
+    }));
+    assert.throws(() => auto.applyWorkflowAutoSettingsV2(before, patches.slice(0, 1)), /shared resource control/);
+    assert.deepEqual(exported(), before);
+    assert.throws(
+      () => auto.applyWorkflowAutoSettingsV2(before, [patches[0], { ...patches[1], value: 'cpu' }]),
+      /shared resource control/,
+    );
+    assert.deepEqual(exported(), before);
+    studioStoreModule.useStudioStore.setState({
+      form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+    });
+    globalThis.fetch = async () => jsonResponse({ ...workflowPlan(true), patches });
+    const historyCount = flow.getState().historyPast.length;
+    const submitted = await auto.prepareWorkflowAutoExecutionV2(before);
+    assert.deepEqual(exported().nodes, submitted.nodes);
+    assert.deepEqual(submitted.runtimeHints.workflowAutoPlan.resourceControlGroups, [
+      patches.map(({ nodeId, field }) => ({ nodeId, field })),
+    ]);
+    assert.equal(flow.getState().historyPast.length, historyCount + 1);
+    assert.deepEqual(flow.getState().nodes[0].data.blockInstanceV2.definitionSnapshot, definition);
+    flow.getState().undo();
+    assert.deepEqual(exported(), before);
+    flow.getState().redo();
+    assert.deepEqual(exported().nodes, submitted.nodes);
+    auto.applyRuntimeWorkflowAutoSettingsV2(
+      patches.map((patch) => ({ ...patch, value: 'cpu', previousValue: 'cuda' })),
+    );
+    assert.deepEqual(exported(), before);
+    const unchanged = flow.getState().toObject();
+    assert.throws(
+      () =>
+        auto.applyRuntimeWorkflowAutoSettingsV2(
+          patches.map((patch, index) => ({
+            ...patch,
+            previousValue: index === 0 ? 'cpu' : 'cuda',
+          })),
+        ),
+      /newer workflow edits/,
+    );
+    assert.deepEqual(flow.getState().toObject(), unchanged);
+  }
+});
+
+test('weight loading Auto settings roll back connected, missing and duplicate targets', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const node = (id, params) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module: 'modules.Test', action: 'Loader', params },
+  });
+  const field = { type: 'string', value: 'cpu', isInput: true };
+  const source = node('source', { output: { type: 'string', display: 'output', value: 'cpu' } });
+  const loader = node('loader', { weight_loading_mode: field });
+  const peer = node('peer', { weight_loading_mode: field });
+  for (const invalid of ['connected', 'missing', 'duplicate']) {
+    const edges =
+      invalid === 'connected'
+        ? [
+            {
+              id: 'connected-mode',
+              source: 'source',
+              sourceHandle: 'output',
+              target: 'peer',
+              targetHandle: 'weight_loading_mode',
+            },
+          ]
+        : [];
+    flow.getState().replaceGraph({
+      nodes: [
+        structuredClone(loader),
+        node('peer', invalid === 'missing' ? {} : structuredClone(peer.data.params)),
+        source,
+      ],
+      edges,
+    });
+    const before = flow.getState().toObject();
+    const historyCount = flow.getState().historyPast.length;
+    const graph = flow.getState().exportGraph('', undefined, { randomizeSeeds: false });
+    const patch = { nodeId: 'loader', field: 'weight_loading_mode', value: 'cuda' };
+    assert.throws(
+      () =>
+        auto.applyWorkflowAutoSettingsV2(graph, [
+          patch,
+          invalid === 'duplicate' ? patch : { ...patch, nodeId: 'peer' },
+        ]),
+      /missing, connected or repeated/,
+    );
+    assert.deepEqual(flow.getState().toObject(), before);
+    assert.equal(flow.getState().historyPast.length, historyCount);
+    assert.equal(flow.getState().historyTransaction, null);
+    assert.deepEqual(graph.nodes.loader.params.weight_loading_mode.value, 'cpu');
+  }
 });
 
 test('mixed legacy and Modular Auto reaches planning without committing a rejected conversion', async () => {

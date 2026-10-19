@@ -131,7 +131,24 @@ Grouping does not grant model capabilities or Automatic memory qualification.
 Whole-pipeline operations remain whole-pipeline operations; no fake encoder is
 inserted. A group with manually nested containers or mirrored custom interfaces
 requires explicit structural editing/ungrouping before automatic task adaptation.
-New audio grouping recipes and video simplification remain deferred.
+Audio supports the applicable Model Setup and Audio Output groups described
+below. Video simplification remains separate.
+
+## Audio stages
+
+The same stage actions offer **Group model setup** for eligible direct audio
+loaders and their exclusive configuration/adapter nodes. Native MiniMax retains
+Semantic Generation and Denoise; **Group audio output** combines its real decoder
+and Export Audio node. The group uses the existing player, file export and
+inspection/interface controls. Direct whole-pipeline Generate operations retain
+their separate exporter. Source audio and meaningful processing nodes remain
+connected outside those groups.
+
+Selected ACE branches can expose one owned adapter row when the backend declares
+the exact task, model revision and registered transport. Capacity restricts Add;
+the existing row can still be edited, replaced or removed. Other audio models do
+not inherit that permission. See [audio workflow stages](audio-workflows.md) for
+the full task, adapter and qualification boundaries.
 
 ## Optional image stages
 

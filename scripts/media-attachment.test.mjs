@@ -5,7 +5,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'vite';
 
-let server, attachment, authoring, starters;
+let server, attachment, authoring, starters, blockRuntime, operationContracts;
 const root = process.cwd();
 before(async () => {
   const storage = new Map();
@@ -28,6 +28,8 @@ before(async () => {
   });
   attachment = await server.ssrLoadModule('/src/workflow/mediaAttachment.ts');
   authoring = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
+  blockRuntime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  operationContracts = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   const backend = path.resolve(root, '../MoDiff');
   const python =
     process.env.MODIFF_BACKEND_PYTHON ||
@@ -44,6 +46,28 @@ before(async () => {
       );
 });
 after(async () => server?.close());
+
+// Explicit grouping regressions start from the historical separate Encoding
+// and Guidance document, rather than applying today's fresh four-stage policy.
+function legacyEncodingGroups(visual, graph) {
+  const owner = graph.nodes.find((node) =>
+    operationContracts.operationOwnsModel(authoring.operationAuthoring(node)?.operation),
+  );
+  assert.ok(owner);
+  return visual.groupOperationStages(graph, owner.id, ['inputs', 'guidance']);
+}
+
+// Match BlockOwnerChoices' real Model Setup owner mapping. This reads effective
+// controls without flattening or changing the graph being tested.
+function visibleModelOwner(visual, graph) {
+  const setup = graph.nodes.find((node) => visual.visualOperationGroup(node) === 'setup');
+  assert.ok(setup, 'a fresh native image branch has Model Setup');
+  const owner = blockRuntime
+    .blockOperationGraphV2(setup.data.blockInstanceV2)
+    .nodes.find((node) => operationContracts.operationOwnsModel(authoring.operationAuthoring(node)?.operation));
+  assert.ok(owner);
+  return { ...owner, id: visual.visualOperationOwnerId(graph, owner.data.blockProjectionNodeId, setup.id) };
+}
 
 test('media source labels distinguish same-pipeline repositories and same-repository branches without changing ports', async () => {
   const { mediaAttachmentSources } = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
@@ -283,7 +307,7 @@ test('optional stage groups retain executable leaves, previews and exact mask ge
   const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
   const starter = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'text_to_image');
-  const graph = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
+  const graph = legacyEncodingGroups(visual, authoring.createOperationStarter(starter, { x: 0, y: 0 }));
   const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
   const decoder = graph.nodes.find((n) => n.data.action === 'DecodeLatents');
   const image = decoder.data.operationAuthoring.operation.ports.find(
@@ -312,7 +336,7 @@ test('optional stage groups retain executable leaves, previews and exact mask ge
     target: 'preview',
     targetHandle: 'image',
   });
-  assert.deepEqual(visual.availableOperationStageGroups(graph, owner.id), ['output']);
+  assert.deepEqual(visual.availableOperationStageGroups(graph, owner.id), ['setup', 'output']);
   const before = visual.unpackVisualOperationGroups(graph).graph;
   const grouped = visual.groupOperationStages(graph, owner.id, ['output']);
   const output = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'output');
@@ -330,7 +354,7 @@ test('optional stage groups retain executable leaves, previews and exact mask ge
     'selected Image Output keeps the original upstream dependency closure',
   );
   for (const original of graph.nodes.filter((node) => visual.visualOperationGroup(node)))
-    assert.equal(
+    assert.deepEqual(
       grouped.nodes.find((node) => node.id === original.id),
       original,
       'other stage wrappers retain exact state',
@@ -354,7 +378,7 @@ test('optional stage groups retain executable leaves, previews and exact mask ge
       .sort(),
   });
   assert.deepEqual(signature(separated), signature(before));
-  assert.deepEqual(visual.availableOperationStageGroups(grouped, owner.id), []);
+  assert.deepEqual(visual.availableOperationStageGroups(grouped, owner.id), ['setup']);
   const completed = runtime.setBlockPreviewStateV2(
     output.data.blockInstanceV2,
     { nodeId: 'stage-preview', outputPortId: 'preview' },
@@ -452,7 +476,7 @@ test('optional stage groups retain executable leaves, previews and exact mask ge
   assert.deepEqual(signature(visual.unpackVisualOperationGroups(mask).graph), signature(maskGraph));
   const wrong = structuredClone(maskGraph);
   wrong.edges = wrong.edges.filter((e) => e.sourceHandle !== 'mask_image');
-  assert.deepEqual(visual.availableOperationStageGroups(wrong, maskOwner.id), []);
+  assert.deepEqual(visual.availableOperationStageGroups(wrong, maskOwner.id), ['setup']);
 });
 
 test('Model Setup retains loader ownership, ordered descriptors, task adaptation and independent reuse', async () => {
@@ -461,7 +485,7 @@ test('Model Setup retains loader ownership, ordered descriptors, task adaptation
   const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
   const persistence = await server.ssrLoadModule('/src/studio/blockDefinitionPersistenceV2.ts');
   const starter = starters.find((s) => s.pipelineClass === 'FluxModularPipeline' && s.task === 'text_to_image');
-  const graph = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
+  const graph = legacyEncodingGroups(visual, authoring.createOperationStarter(starter, { x: 0, y: 0 }));
   const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
   for (const id of ['lora-a', 'lora-b'])
     graph.nodes.push({
@@ -562,20 +586,58 @@ test('Model Setup retains loader ownership, ordered descriptors, task adaptation
     target: other.id,
     targetHandle: 'lora_list',
   });
-  assert.ok(
-    !visual.availableOperationStageGroups(shared, owner.id).includes('setup'),
-    'a modifier shared with another loader is not claimed exclusively',
-  );
+  function checkSharedSuppliers(graph, ownedAdapterIds = []) {
+    const before = structuredClone(graph);
+    assert.ok(visual.availableOperationStageGroups(graph, owner.id).includes('setup'));
+    const grouped = visual.groupOperationStages(graph, owner.id, ['setup']);
+    const setup = grouped.nodes.find((node) => visual.visualOperationGroup(node) === 'setup');
+    assert.deepEqual(
+      setup.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action),
+      ['ModelsLoader', ...ownedAdapterIds.map(() => 'Lora')],
+      'only the loader and its exclusive adapter suffix can be grouped',
+    );
+    const external = graph.nodes.filter((node) => node.data.action === 'Lora' && !ownedAdapterIds.includes(node.id));
+    for (const adapter of external)
+      assert.deepEqual(
+        grouped.nodes.find((node) => node.id === adapter.id),
+        adapter,
+      );
+    const flat = visual.unpackVisualOperationGroups(grouped).graph;
+    const currentOwner = visibleModelOwner(visual, grouped);
+    const mappedId = (id) => {
+      if (id === owner.id) return currentOwner.id;
+      if (!ownedAdapterIds.includes(id)) return id;
+      const original = graph.nodes.find((node) => node.id === id);
+      const child = setup.data.blockInstanceV2.effectiveGraph.nodes.find(
+        (node) => node.data.action === 'Lora' && node.data.label === original.data.label,
+      );
+      assert.ok(child, 'the owned adapter remains an actual setup leaf');
+      assert.deepEqual(child.data.params, original.data.params, 'grouping retains every owned adapter setting');
+      return `${setup.id}/${child.nodeId}`;
+    };
+    for (const edge of graph.edges.filter((edge) =>
+      graph.nodes.some((node) => node.data.action === 'Lora' && node.id === edge.source),
+    ))
+      assert.ok(
+        flat.edges.some(
+          (next) =>
+            next.source === mappedId(edge.source) &&
+            next.sourceHandle === edge.sourceHandle &&
+            next.target === mappedId(edge.target) &&
+            next.targetHandle === edge.targetHandle,
+        ),
+        'each shared chain and consumer retains its exact supplier and ports',
+      );
+    assert.deepEqual(graph, before, 'grouping does not mutate the shared source graph');
+  }
+  checkSharedSuppliers(shared);
   shared.edges = shared.edges.filter((edge) => edge.id !== 'shared-descriptors');
   shared.nodes.push({ ...structuredClone(shared.nodes.find((node) => node.id === 'lora-a')), id: 'lora-c' });
   shared.edges.push(
     { id: 'shared-chain', source: 'lora-a', sourceHandle: 'lora', target: 'lora-c', targetHandle: 'previous_loras' },
     { id: 'other-chain-owner', source: 'lora-c', sourceHandle: 'lora', target: other.id, targetHandle: 'lora_list' },
   );
-  assert.ok(
-    !visual.availableOperationStageGroups(shared, owner.id).includes('setup'),
-    'indirectly shared descriptor chains also retain separate ownership',
-  );
+  checkSharedSuppliers(shared, ['lora-b']);
 });
 
 test('removed dynamic Guidance controls stay hidden without resetting execution values', async () => {
@@ -587,7 +649,7 @@ test('removed dynamic Guidance controls stay hidden without resetting execution 
     (s) => s.pipelineClass === 'StableDiffusionXLModularPipeline' && s.task === 'text_to_image',
   );
   const grouped = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
-  const root = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'guidance');
+  const root = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'inputs');
   const unpacked = visual.unpackVisualOperationGroups(grouped, new Set([root.id]));
   const stage = unpacked.graph.nodes.find((n) => n.data.action === 'Guider');
   stage.data.params.dynamic_scale = { type: 'float', display: 'number', label: 'Dynamic Scale', default: 2.8 };
@@ -867,13 +929,11 @@ test('visual encoders and guidance preserve executable stages, typed wires, and 
     input,
     JSON.stringify(starter.nodes.map((item) => [item.operation.nodeType, item.operation.decomposition])),
   );
-  assert.ok(
-    guidance,
-    JSON.stringify(starter.nodes.map((item) => [item.operation.nodeType, item.operation.decomposition])),
-  );
-  assert.equal(grouped.nodes.length, graph.nodes.length - 1);
-  assert.equal(presentation.isFocusedGuidance(guidance.data.blockInstanceV2), true);
-  assert.deepEqual(guidance.data.blockInstanceV2.effectiveGraph.nodes.map((n) => n.data.action).sort(), [
+  assert.equal(guidance, undefined, 'fresh Guidance belongs to Encode Inputs');
+  assert.equal(grouped.nodes.length, 4);
+  assert.equal(presentation.isFocusedGuidance(input.data.blockInstanceV2), true);
+  assert.deepEqual(input.data.blockInstanceV2.effectiveGraph.nodes.map((n) => n.data.action).sort(), [
+    'EncodePrompt',
     'Guider',
     'Layers',
   ]);
@@ -952,7 +1012,8 @@ test('actual image-to-image model migration preserves one image source across al
       const fixture = qwenImageMigrationSource();
       const graph = grouped ? visual.groupNewOperationGraph(fixture.graph) : fixture.graph;
       const original = structuredClone(graph);
-      const plan = authoring.planOperationChange(graph, fixture.ownerId, fixture.target);
+      const ownerId = grouped ? visibleModelOwner(visual, graph).id : fixture.ownerId;
+      const plan = authoring.planOperationChange(graph, ownerId, fixture.target);
       const flat = visual.unpackVisualOperationGroups(plan.graph).graph;
       const consumers = flat.nodes.filter((node) => ['ImageEncode', 'EncodePrompt'].includes(node.data.action));
       assert.equal(consumers.length, 2);
@@ -1170,7 +1231,7 @@ test('custom mirrored interfaces reject adaptation without mutating their source
   const port = input.data.blockInstanceV2.effectiveInterface.boundary.inputs[0];
   port.mirrorBindings = [structuredClone(port.binding)];
   const before = structuredClone(graph);
-  const owner = graph.nodes.find((n) => n.data.action === 'ModelsLoader');
+  const owner = visibleModelOwner(visual, graph);
   assert.throws(() => authoring.planOperationChange(graph, owner.id, destination), /mirrored/);
   assert.deepEqual(graph, before);
 });
@@ -1185,7 +1246,7 @@ test('grouped image attachment adds only a visible source and retains the immuta
     (item) => item.pipelineClass === baseline.pipelineClass && item.task === 'image_to_image',
   );
   const graph = visual.groupNewOperationGraph(authoring.createOperationStarter(baseline, { x: 80, y: 120 }));
-  const owner = graph.nodes.find((node) => node.data.operationAuthoring?.operation.decomposition === 'loader');
+  const owner = visibleModelOwner(visual, graph);
   const input = graph.nodes.find((node) => visual.visualOperationGroup(node) === 'inputs');
   const definition = structuredClone(input.data.blockInstanceV2.definitionSnapshot);
   const choice = attachment
@@ -1221,11 +1282,82 @@ test('grouped image attachment adds only a visible source and retains the immuta
   );
 });
 
-test('whole-pipeline audio stays unchanged rather than inventing encoders', async () => {
+test('whole-pipeline audio preserves real leaves and API behind setup without inventing compute stages', async (t) => {
   const visual = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
-  const starter = starters.find((item) => item.pipelineClass === 'AceStepPipeline' && item.task === 'text_to_audio');
-  const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
-  assert.deepEqual(visual.groupNewOperationGraph(graph), graph);
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const wholeAudio = starters.filter((item) =>
+    item.nodes.some(
+      ({ node, operation }) =>
+        node.module === 'modules.DiffusersAudio' &&
+        node.action === 'Generate' &&
+        operation.decomposition === 'pipeline',
+    ),
+  );
+  assert.equal(wholeAudio.length, 7, 'four ACE tasks and the three other published integrated audio families');
+  const api = (graph) => {
+    const exported = useFlowStore
+      .getState()
+      .exportGraph('whole-audio-preservation', undefined, { sourceGraph: graph, randomizeSeeds: false });
+    const names = new Map(Object.entries(exported.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
+    assert.equal(
+      new Set(names.values()).size,
+      names.size,
+      'these bounded routes have unique executable action identities',
+    );
+    const normalize = (value) => {
+      if (Array.isArray(value)) return value.map(normalize);
+      if (value && typeof value === 'object')
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [
+            key,
+            key === 'sourceId' ? (names.get(item) ?? item) : normalize(item),
+          ]),
+        );
+      return value;
+    };
+    return {
+      nodes: Object.fromEntries(
+        [...names].map(([id, key]) => [key, normalize(exported.nodes[id])]).sort(([a], [b]) => a.localeCompare(b)),
+      ),
+      paths: exported.paths
+        .map((route) => route.map((id) => names.get(id) ?? id))
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    };
+  };
+  for (const starter of wholeAudio)
+    await t.test(`${starter.pipelineClass}:${starter.task}`, () => {
+      const graph = authoring.createOperationStarter(starter, { x: 0, y: 0 });
+      // Select the declared NONE CPU authoring route before recording either
+      // graph; the schema fixture does not claim an accelerator or model run.
+      for (const node of graph.nodes)
+        if (String(node.data.params.device?.value ?? node.data.params.device?.default ?? '').startsWith('cpu')) {
+          if (node.data.params.auto_offload) node.data.params.auto_offload.value = false;
+          if (node.data.params.offload_mode) node.data.params.offload_mode.value = 'none';
+        }
+      const before = structuredClone(graph);
+      const grouped = visual.groupNewOperationGraph(graph);
+      assert.deepEqual(grouped.nodes.map(visual.visualOperationGroup).filter(Boolean), ['setup']);
+      assert.equal(grouped.nodes.filter((node) => node.data.action === 'Generate').length, 1);
+      const flat = visual.unpackVisualOperationGroups(grouped).graph;
+      const leaves = (value) => value.nodes.map((node) => `${node.data.module}.${node.data.action}`).sort();
+      assert.deepEqual(
+        leaves(flat),
+        leaves(before),
+        'grouping cannot create an encoder, denoiser, decoder or output action',
+      );
+      assert.ok(
+        !flat.nodes.some((node) =>
+          ['EncodeInputs', 'EncodePrompt', 'Denoise', 'DecodeLatents'].includes(node.data.action),
+        ),
+      );
+      assert.deepEqual(
+        api(grouped),
+        api(before),
+        'all declared scalar values, model identity, inputs and executable wires survive',
+      );
+      assert.deepEqual(api(flat), api(before));
+      assert.deepEqual(graph, before, 'presentation does not mutate the creator graph');
+    });
 });
 
 test('grouped model changes retain prompts, a custom output branch and group identity', async () => {
@@ -1259,7 +1391,7 @@ test('grouped model changes retain prompts, a custom output branch and group ide
     targetHandle: 'input',
   });
   const graph = visual.groupNewOperationGraph(draft);
-  const owner = graph.nodes.find((node) => node.data.operationAuthoring?.operation.decomposition === 'loader');
+  const owner = visibleModelOwner(visual, graph);
   const input = graph.nodes.find((node) => visual.visualOperationGroup(node) === 'inputs');
   const before = structuredClone(graph);
   const plan = authoring.planOperationChange(graph, owner.id, target);
@@ -1311,7 +1443,7 @@ test('shared value edits preserve unrelated customized groups without rebuilding
   );
   const first = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 0 }));
   const other = visual.groupNewOperationGraph(authoring.createOperationStarter(starter, { x: 0, y: 1000 }));
-  const guide = other.nodes.find((n) => visual.visualOperationGroup(n) === 'guidance');
+  const guide = other.nodes.find((n) => visual.visualOperationGroup(n) === 'inputs');
   let instance = runtime.addBlockEffectiveGraphNodeV2(
     guide.data.blockInstanceV2,
     {

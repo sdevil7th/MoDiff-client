@@ -1,3 +1,51 @@
+// Final selected-parent field authority and owned Guidance presentation, plus
+// source-region removal and runtime Auto resource-update corrections, measure
+// startup/chunk/deferred gzip bytes 656112/477808/315072. Bound the completed
+// feature and correctness changes by another 128/128/896 bytes over the prior
+// caps 656004/477694/314230, leaving 20/14/54 bytes of measured headroom.
+// Dependencies, lazy boundaries, chunk rules, minifier and the independent
+// 65536-byte deferred chunk cap remain unchanged.
+// Optional prompt enhancement, strict consumed-input/summary validation and the
+// asynchronous exact execution scope measure startup/chunk/deferred gzip bytes
+// 655940/477635/314107 versus the accepted 650884/472574/291190 baseline.
+// Keep planner/declaration loading deferred: the async selector boundary removes
+// 31722 eager bytes, and separate saved-hint codecs remove another 5555 bytes.
+// Bound required feature growth at 5120/5120/23040 bytes over that baseline:
+// caps 656004/477694/314230 leave 64/59/123 bytes in this measured build.
+// Dependencies, chunk rules, minifier and the 65536-byte deferred chunk cap stay fixed.
+// Generic structured layout/reference editing, exact selected block-field schemas
+// and backend-owned format inventory measure startup/chunk/deferred
+// 650884/472574/291190 gzip bytes versus MAIN 648784/470476/283943.
+// The layout editor remains lazy (6540 bytes); Model Manager adds 602 lazy bytes.
+// Shared strict schema/inventory validation and renewed route pins add 2100 startup
+// bytes. Allow 2112 per startup cap and 7232 aggregate deferred bytes, leaving
+// 28/34/42 bytes. Dependencies, Vite/minifier/loading boundaries and the independent
+// 65536-byte deferred chunk cap remain unchanged.
+// Declared-source offload labels measure startup/chunk/deferred 648784/470476/283943
+// gzip bytes. Add 64 bytes to each startup cap, leaving 16/20 bytes of margin.
+// Dependencies, loading boundaries and both deferred caps remain unchanged.
+// Ordinary graph recovery measures startup/chunk/deferred 648736/470427/283981
+// gzip bytes. Retain both startup caps; add 32 deferred bytes, leaving 19 bytes.
+// Dependencies, loading boundaries and the individual deferred chunk cap stay fixed.
+// Generic audio setup/output, current adapter authority and seven selected audio
+// recipes measure startup/chunk/deferred 648723/470415/283916 gzip bytes.
+// Allow 896/896/2368 bytes over the prior caps, leaving 13/17/52 bytes.
+// Dependencies, minifier, loading boundaries and the 65536-byte chunk cap stay fixed.
+// Block bound-action projection and declared-role validation measure startup/chunk/
+// deferred 647825/469517/281574 bytes (+117/+118/+76 from 647708/469399/281498).
+// Add 64 bytes per cap: 647840/469536/281600, leaving 15/19/26 bytes of margin.
+// Dependencies, loading boundaries, minifier and the 65536 deferred chunk cap stay fixed.
+// The final six registered stage boundaries add 105 startup/chunk gzip bytes:
+// 647708/469399 versus the initial coherent 647603/469294 measurement.
+// Add 128 bytes to those two caps only: 647776/469472, leaving 68/73 bytes.
+// Final deferred total is 281498; its 281536 aggregate and 65536 chunk caps stay fixed.
+// Shared stage contracts and required-controls safety validation measure
+// startup/largest-startup/deferred 647603/469294/281513 gzip bytes in the
+// coherent build. Former caps 647072/468768/278976 miss by 531/526/2537 bytes.
+// Allow only 576 startup/largest bytes and 2560 aggregate deferred bytes;
+// new caps 647648/469344/281536 leave 45/50/23 bytes of measured headroom.
+// Dependencies, minifier settings and loading boundaries stay unchanged;
+// retain the independent 65536-byte limit for every deferred chunk.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -65,8 +113,56 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Retaining the server cache view through restored graphs and retiring only
 // acknowledged runtime leaves adds 738 startup gzip bytes (645816/467510).
 // Bound this shared correctness path by 768 bytes; deferred caps stay fixed.
+// Generic image stage/adapter metadata and ordered chain sharing add 375 gzip
+// bytes over the paired 467559-byte chunk baseline (467934 measured). Reserve
+// 384 bytes; graph creation and structural authoring remain deferred.
+// Finite manual float precision and exact step increments measure startup/chunk/
+// deferred 646464/468158/278511 bytes versus the accepted 646417/468111/278510
+// (+47/+47/+1 bytes), while retaining existing padding when it preserves the value.
+// Allow 64 bytes for startup and its largest chunk, with no dependency or loading changes.
+// Shared strict CPU/CUDA loading-policy validation measures startup/chunk/deferred
+// 646530/468224/278562 bytes versus the accepted numeric 646464/468158/278511
+// (+66/+66/+51). Sharing the predicate saves 20 startup bytes over the first
+// candidate. Existing headroom plus 64 additional startup/chunk bytes leaves
+// 30/32 bytes of margin; both deferred limits and lazy boundaries stay fixed.
+// Selected-profile image adapter permission and bounded owned-chain editing
+// measure startup/chunk/deferred 646923/468616/278913 bytes versus the accepted
+// 646530/468224/278562 baseline (+393/+392/+351). Allow 384 startup/chunk bytes
+// and 320 aggregate deferred bytes with existing headroom; dependencies, lazy
+// boundaries, minifier settings and the 64 KiB per-deferred-chunk cap stay fixed.
+// Authoritative image execution-mode bindings measure startup/chunk 647025/468717
+// gzip bytes versus the accepted 646923/468616 (+102/+101); deferred 278958
+// stays within its existing 278976 cap. Two semantics-preserving isolated
+// candidates still miss startup/chunk limits (646985/468683 and 647014/468706).
+// Retain the strict current-owner/parser checks and allow 128 startup/chunk
+// bytes only; dependencies, lazy boundaries, minifier and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
-  450 * 1024 + 768 + 1280 + 256 + 576 + 320 + 512 + 1536 + 32 + 128 + 384 + 384 + 768;
+  450 * 1024 +
+  896 +
+  768 +
+  1280 +
+  256 +
+  576 +
+  320 +
+  512 +
+  1536 +
+  32 +
+  128 +
+  384 +
+  384 +
+  768 +
+  384 +
+  64 +
+  64 +
+  384 +
+  128 +
+  576 +
+  128 +
+  64 +
+  64 +
+  2112 +
+  5086 +
+  128;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -139,7 +235,38 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same recipe metadata measures 643554 total startup bytes (+1378).
 // Allocate 1536 bytes for this feature, preserving the existing four assets.
 // Preserve both reviewed allowances: 642304 + 512 + 1536 = 644352 bytes.
-const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 768 + 1280 + 384 + 576 + 320 + 512 + 1536 + 32 + 128 + 384 + 384 + 768;
+// The same shared image metadata measures 646240 startup bytes, 373 above the
+// paired 645867-byte baseline. Reserve the same bounded 384-byte allowance.
+// Preserve the same bounded 64-byte numeric-field correction allowance.
+// Preserve the separately measured 64-byte shared loading-policy allowance above.
+// Preserve the measured 384-byte selected-image authoring allowance above.
+const MAX_STARTUP_GZIP_BYTES =
+  624 * 1024 +
+  896 +
+  768 +
+  1280 +
+  384 +
+  576 +
+  320 +
+  512 +
+  1536 +
+  32 +
+  128 +
+  384 +
+  384 +
+  768 +
+  384 +
+  64 +
+  64 +
+  384 +
+  128 +
+  576 +
+  128 +
+  64 +
+  64 +
+  2112 +
+  5092 +
+  128;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -283,8 +410,46 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // The shared 512-byte polling allowance above is counted once. Preserve the
 // separate Windows 256 + 1024 and incoming 128 + 2048 additions:
 // 268800 + 512 + 256 + 1024 + 128 + 2048 = 272768 bytes.
+// Owned image adapters, combined-stage controls and strict backend recipe
+// validation measure 277158 deferred bytes versus the paired 272631 baseline.
+// Sharing the already-lazy authoring planners saves 1450 bytes. Reserve only
+// 4608 additional bytes for this feature; no dependencies, eager authoring,
+// unsafe minifier rewrites or individual 64 KiB deferred limits are added.
+// Exact selected-image adapter authority, safe unsupported-row recovery and
+// typed direct-adapter/Cosmos output ownership add 1605 deferred gzip bytes to
+// the 276849-byte image-stage checkpoint. The validator is shared and remains
+// lazy. Measured aggregate is 278454; allow 1280 bytes above the previous cap
+// (278656 total), with existing headroom covering the rest of this correction.
+// Numeric precision measures 278511 deferred bytes, within the existing ceiling.
+// Keep both aggregate and individual deferred limits unchanged.
+// The selected-image authoring feature above uses 320 additional aggregate bytes;
+// the independently bounded 64 KiB deferred chunks and loading checks stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
-  248 * 1024 + 512 + 3328 + 128 + 256 + 128 + 384 + 8704 + 768 + 640 + 256 + 512 + 1024 + 128 + 2048;
+  248 * 1024 +
+  32 +
+  2368 +
+  512 +
+  3328 +
+  128 +
+  256 +
+  128 +
+  384 +
+  8704 +
+  768 +
+  640 +
+  256 +
+  512 +
+  1024 +
+  128 +
+  2048 +
+  4608 +
+  1280 +
+  320 +
+  2560 +
+  64 +
+  7232 +
+  22998 +
+  896;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

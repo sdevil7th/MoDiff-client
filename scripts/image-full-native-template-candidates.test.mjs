@@ -31,7 +31,6 @@ const expected = {
       'WorkflowCosmos3OmniTextEncode',
       'WorkflowCosmos3OmniDenoise',
       'WorkflowCosmos3OmniDecode',
-      'WorkflowCosmos3OmniAfterDecode',
       'Preview',
     ],
   },
@@ -85,6 +84,15 @@ before(async () => {
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
     }),
   );
+  const deviceField = fixture.recipes[0].starter.nodes.find((item) => item.operation.decomposition === 'loader').node
+    .params.device;
+  const fixtureDevice = deviceField.value ?? deviceField.default;
+  assert.equal(typeof fixtureDevice, 'string', 'Use the native fixture device without inventing GPU availability.');
+  defaults = {
+    ...defaults,
+    device: fixtureDevice,
+    ...(!fixtureDevice.startsWith('cuda') ? { autoOffload: false, offloadMode: 'none' } : {}),
+  };
   backendCaptionBytes = await readFile(path.join(backend, 'data/cosmos3-super-t2i-publisher-caption.v1.json'));
   backendCaption = JSON.parse(backendCaptionBytes);
 });
@@ -93,9 +101,10 @@ after(async () => server?.close());
 function build(template, options = {}) {
   const row = structuredClone(fixture.recipes.find((item) => item.id === template.id));
   row.capability = structuredClone(fixture.capabilities.find((item) => item.modelType === template.modelType));
+  if (options.historical) Object.assign(row, structuredClone(fixture.historicalCosmosImage));
   options.mutateRow?.(row);
   const contracts = operations.parseOperationContracts(
-    fixture.publicPayload.operationContracts,
+    options.historical ? row.operationContracts : fixture.publicPayload.operationContracts,
     fixture.publicPayload.operationContractSchemaVersion,
   );
   const starter = starterRequests.parseOperationStarter(
@@ -103,10 +112,18 @@ function build(template, options = {}) {
     row.starter.pipelineClass,
     row.starter.task,
     contracts,
+    options.historical ? {} : template.executionSelection,
   );
-  const form = { ...defaults, ...exactness.getTemplateLockedSettings(template), ...options.form };
+  const authored = { ...defaults, ...exactness.getTemplateLockedSettings(template) };
+  const form = {
+    ...authored,
+    ...(!authored.device.startsWith('cuda') ? { autoOffload: false, offloadMode: 'none' } : {}),
+    ...options.form,
+  };
+  const selectedTemplate = options.historical ? structuredClone(template) : template;
+  if (options.historical) delete selectedTemplate.executionSelection.authoringRecipeId;
   const graph = builder.createTemplateOperationGraph(
-    template,
+    selectedTemplate,
     form,
     starter,
     fixture.registry,
@@ -241,17 +258,20 @@ test('Cosmos publisher text comes from the actual backend starter and all safety
     assert.equal(param.sourceKey, output);
     wires += 1;
   }
-  assert.equal(wires, 8);
+  assert.equal(wires, 6);
   assert.equal(api.nodes[roleIds.get('preview')].params.image.sourceId, roleIds.get('decode'));
-  assert.equal(api.nodes[roleIds.get('afterDecode')].params.state_in.sourceId, roleIds.get('decode'));
-  assert.equal(api.nodes[roleIds.get('afterDecode')].params.block_path.value, 'after_decode');
+  assert.equal(roleIds.has('afterDecode'), false);
+  assert.equal(
+    nodes.some((node) => node.action === 'WorkflowCosmos3OmniAfterDecode'),
+    false,
+  );
   assert.equal(
     nodes.some((node) => node.action.includes('Distilled')),
     false,
   );
   assert.equal(
     template.requiredBackendCapabilities.includes('modules.ModularDiffusers.WorkflowCosmos3OmniAfterDecode'),
-    true,
+    false,
   );
 });
 
@@ -306,9 +326,9 @@ test('backend-default preservation fails closed without an exact declared text b
   assert.throws(
     () =>
       build(template, {
-        mutateRow: (row) => row.spec.bindings.push(['prompt', 'negative_prompt', 'prompt']),
+        mutateRow: (row) => row.starter.authoring.bindings.push(['prompt', 'negative_prompt', 'prompt']),
       }),
-    /needs one declared text binding/u,
+    /Invalid operation authoring recipe/u,
   );
 });
 
@@ -624,14 +644,29 @@ test('template terms identify the declared full checkpoint rather than a static 
   );
 });
 
-test('canonical native workflows keep declaration-bound auxiliary terminals and reject every unused branch', async (t) => {
+test('fresh Cosmos image graph has no auxiliary action stage or unused branch', async () => {
   const template = candidates.find((item) => item.id === 'cosmos3_super_text_to_image');
   const built = build(template);
+  const workflow = { id: `${template.modelType}:${template.mode}`, modelType: template.modelType, mode: template.mode };
+  verifyNoDeadWorkflowNodes(workflow, built.flat);
+  assert.deepEqual(built.row.spec.auxiliaryTerminalRoles, []);
+  assert.equal(
+    built.flat.nodes.some((node) => node.data.action === 'WorkflowCosmos3OmniAfterDecode'),
+    false,
+  );
+  const graph = structuredClone(built.flat);
+  graph.nodes.push({ id: 'stray', data: { module: 'modules.Image', action: 'Load', params: {} } });
+  assert.throws(() => verifyNoDeadWorkflowNodes(workflow, graph), /contains isolated nodes: stray/);
+});
+
+test('historical native Cosmos image workflows keep their declared auxiliary terminal and reject every unused branch', async (t) => {
+  const template = candidates.find((item) => item.id === 'cosmos3_super_text_to_image');
+  const built = build(template, { historical: true });
   const workflow = { id: `${template.modelType}:${template.mode}`, modelType: template.modelType, mode: template.mode };
   const source = {
     executionSpec: built.row.spec,
     operationContracts: operations.parseOperationContracts(
-      fixture.publicPayload.operationContracts,
+      built.row.operationContracts,
       fixture.publicPayload.operationContractSchemaVersion,
     ),
   };
@@ -718,9 +753,18 @@ test('canonical native workflows keep declaration-bound auxiliary terminals and 
 
 test('canonical generator and verifier parse the same independent source before emitting an auxiliary binding', async () => {
   const template = candidates.find((item) => item.id === 'cosmos3_super_text_to_image');
-  const built = build(template);
+  const built = build(template, { historical: true });
+  const historicalPayload = structuredClone(fixture.publicPayload);
+  const historicalCapability = historicalPayload.capabilities.find((item) => item.modelType === template.modelType);
+  historicalCapability.studioExecutionSpecs = historicalCapability.studioExecutionSpecs.map((spec) =>
+    spec.id === built.row.spec.id ? structuredClone(built.row.spec) : spec,
+  );
+  historicalPayload.operationContracts = historicalPayload.operationContracts.filter(
+    (operation) => !(operation.pipelineClass === 'Cosmos3OmniModularPipeline' && operation.task === 'text_to_image'),
+  );
+  historicalPayload.operationContracts.push(...built.row.operationContracts);
   const selected = [fixture.capabilities.find((item) => item.modelType === template.modelType)];
-  const parsed = await parseCanonicalAuxiliarySources(fixture.publicPayload, selected, server);
+  const parsed = await parseCanonicalAuxiliarySources(historicalPayload, selected, server);
   const source = parsed.sources.get(`${template.modelType}|${template.mode}`);
   assert.ok(source);
   assert.equal(parsed.sources.has('Flux2ModularPipeline|text_to_image'), false);
@@ -728,7 +772,7 @@ test('canonical generator and verifier parse the same independent source before 
   attachCanonicalAuxiliaryBinding(workflow, built.graph, parsed);
   assert.ok(workflow.auxiliaryTerminalBinding);
   verifyNoDeadWorkflowNodes(workflow, parsed.unpackGraph(built.graph), source);
-  const changed = structuredClone(fixture.publicPayload);
+  const changed = structuredClone(historicalPayload);
   changed.capabilities.find((item) => item.modelType === template.modelType).studioExecutionSpecs[0].contentHash =
     'studio-spec-v1-ffffffff';
   await assert.rejects(

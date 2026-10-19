@@ -77,7 +77,7 @@ const AUDIO_CASE = soundModel
 
 async function ready(page: Page) {
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 180_000 });
-  const advanced = page.getByRole('button', { name: /Advanced workflow/u });
+  const advanced = page.getByTestId('launcher-mode-advanced_workflow');
   if (await advanced.isVisible().catch(() => false)) await advanced.click();
 }
 
@@ -485,9 +485,6 @@ test('Audio Block preserves full-setting native edits and generates audio when a
   await ready(page);
   await page.getByTestId('workflow-tab-new').click();
   await ready(page);
-  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
-  if ((await auto.getAttribute('aria-checked')) !== 'false')
-    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   const search = page.getByLabel('Search nodes');
   if (!(await search.isVisible())) await page.getByTestId('left-tab-nodes').click();
   await search.fill(AUDIO_CASE.search);

@@ -21,6 +21,14 @@ import {
   refreshHandleConnectionStatus,
   updateSignalsForEdges,
 } from './flowConnectionMutations';
+import {
+  assertPreparedExecutionScope,
+  hasAncillaryExecutionClaim,
+  recordExecutionScopeExport,
+  type PreparedExecutionScope,
+} from '../workflow/prepareExecutionScope';
+import { canonicalBlockStringifyV2 } from '../studio/blockSchemaV2';
+import { lowerReviewedLoopConnectionsV2 } from '../studio/reviewedLoopConnectionsV2';
 import { buildApiGraphExport } from './flowGraphExport';
 import {
   addFlowNode,
@@ -287,7 +295,11 @@ export type FlowStore = {
   exportGraph: (
     sid: string,
     targetNodeId?: string,
-    options?: { randomizeSeeds?: boolean; sourceGraph?: { nodes: CustomNodeType[]; edges: Edge[] } },
+    options?: {
+      randomizeSeeds?: boolean;
+      sourceGraph?: { nodes: CustomNodeType[]; edges: Edge[] };
+      executionScope?: PreparedExecutionScope;
+    },
   ) => APIGraphExport;
   updateProgress: (
     id: string,
@@ -557,6 +569,18 @@ export function normalizePersistedFlowState(value: unknown): FlowHistorySnapshot
     edges: canonical.edges,
     viewport: persistedViewport(record.viewport),
   };
+}
+
+export function expandFlowExecutionGraph(nodes: CustomNodeType[], edges: Edge[], targetNodeId?: string) {
+  const durable = withoutBlockCompilationTransientsV2(nodes, edges);
+  const expanded = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
+  const boundaries = expandHuggingFaceClusterBoundaryEdges(expanded);
+  const executable = expandBlockGraphV2ForExecution(boundaries.nodes, boundaries.edges, targetNodeId);
+  return lowerReviewedLoopConnectionsV2(executable.nodes, executable.edges);
+}
+
+export function flowExecutionScopeSourceKey(nodes: CustomNodeType[], edges: Edge[]) {
+  return canonicalBlockStringifyV2({ nodes: nodes.map(durableFlowNodeSnapshot), edges });
 }
 
 export function durableFlowNodeSnapshot(node: CustomNodeType) {
@@ -2501,22 +2525,38 @@ export const useFlowStore = create<FlowStore>()(
 
       exportGraph: (sid: string, targetNodeId?: string, options = {}) => {
         const { nodes, edges } = options.sourceGraph ?? get();
-        const durable = withoutBlockCompilationTransientsV2(nodes, edges);
-        const expanded = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
-        const withClusterBoundaries = expandHuggingFaceClusterBoundaryEdges(expanded);
-        const executable = expandBlockGraphV2ForExecution(
-          withClusterBoundaries.nodes,
-          withClusterBoundaries.edges,
-          targetNodeId,
-        );
-        return buildApiGraphExport({
-          nodes: executable.nodes,
-          edges: executable.edges,
+        const claimed = hasAncillaryExecutionClaim(nodes);
+        const scope = claimed
+          ? assertPreparedExecutionScope(
+              options.executionScope,
+              flowExecutionScopeSourceKey(nodes, edges),
+              targetNodeId,
+            )
+          : undefined;
+        const executable = expandFlowExecutionGraph(nodes, edges, claimed ? undefined : targetNodeId);
+        const included = scope ? new Set(scope.nodeIds) : undefined;
+        const graph = buildApiGraphExport({
+          nodes: included
+            ? executable.nodes.filter(
+                (node) => included.has(node.id) || node.data.type === 'loop' || node.data.type === 'group',
+              )
+            : executable.nodes,
+          edges: included
+            ? executable.edges.filter((edge) => included.has(edge.source) && included.has(edge.target))
+            : executable.edges,
           sid,
-          targetNodeIds: resolveFlowExecutionTargetNodeIds(nodes, targetNodeId, edges),
+          targetNodeIds: scope?.targetNodeIds ?? resolveFlowExecutionTargetNodeIds(nodes, targetNodeId, edges),
           setParam: get().setParam,
           randomizeSeeds: options.randomizeSeeds,
         });
+        if (scope?.purpose) graph.runtimeHints = { ...graph.runtimeHints, executionPurpose: scope.purpose };
+        if (claimed && options.executionScope)
+          recordExecutionScopeExport(
+            options.executionScope,
+            flowExecutionScopeSourceKey(get().nodes, get().edges),
+            graph,
+          );
+        return graph;
       },
       updateProgress: (id: string, progress: number, metadata) => {
         updateFlowNodeProgress(id, progress, metadata, set);

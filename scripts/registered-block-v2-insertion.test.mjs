@@ -319,6 +319,10 @@ function fixture() {
   const definitionId = 'diffusers.modular:QwenImageModularPipeline:text2image';
   const admissionId = 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image';
   const adapterId = 'diffusers.modular-adapter:QwenImageModularPipeline:text2image:mode:text_to_image';
+  const route = routeModule.REGISTERED_BLOCK_V2_ROUTES.find(
+    (candidate) => candidate.definitionId === definitionId && candidate.admissionId === admissionId,
+  );
+  assert.ok(route, 'The synthetic interaction fixture needs an exact current registered route.');
   const receipt = {
     id: 'qwen-image-2512:modular-text-to-image:v1',
     contentHash: 'studio-spec-v1-f4c15e0d',
@@ -377,7 +381,7 @@ function fixture() {
     definitionKind: 'modular_pipeline_workflow',
     ownership: 'library',
     mutable: false,
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: route.libraryRevision,
     pipelineClass: 'QwenImageModularPipeline',
     blocksClass: 'QwenImageAutoBlocks',
     pipelineKind: 'auto',
@@ -422,7 +426,7 @@ function fixture() {
         url: 'https://huggingface.co/Qwen/Qwen-Image-2512/blob/' + '25468b98e3276ca6700de15c6628e51b7de54a26/README.md',
       },
     },
-    contentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
+    contentHash: route.definitionContentHash,
   };
   const executionSpec = {
     schemaVersion: 1,
@@ -489,6 +493,7 @@ function fluxFixture() {
   Object.assign(definition, {
     id: definitionId,
     pipelineClass: 'FluxModularPipeline',
+    libraryRevision: route.libraryRevision,
     blocksClass: 'FluxAutoBlocks',
     label: 'Flux — Text To Image',
     inputs: [{ ...definition.inputs[0], type: 'opaque' }],
@@ -899,6 +904,24 @@ test('a template skeleton cannot force Expert before its managed binding is read
   const finished = topBarAutoPolicy.resolveTopBarAutoPolicyV2(input);
   assert.equal(finished.customGraphActive, true);
   assert.equal(finished.autoUnavailable, false);
+});
+
+test('synthetic insertion fixtures follow exact current routes while the old identity stays refused', () => {
+  for (const configured of [fixture(), fluxFixture()]) {
+    assert.ok(routeModule.registeredBlockV2Route(configured.definition, configured.admission));
+  }
+  const { definition, admission } = fixture();
+  const oldIdentity = {
+    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    contentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
+  };
+  for (const stale of [
+    oldIdentity,
+    { libraryRevision: oldIdentity.libraryRevision },
+    { contentHash: oldIdentity.contentHash },
+  ]) {
+    assert.equal(routeModule.registeredBlockV2Route({ ...definition, ...stale }, admission), null);
+  }
 });
 
 test('Qwen text-to-image fetches one audited definition and inserts only one source-neutral V2 root', async () => {

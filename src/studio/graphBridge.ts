@@ -44,6 +44,7 @@ import { resolveStudioExecutionSpecValues } from './executionSpecValues';
 import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { hashString, stableStringify } from './templateExactness';
+import { orderedAdapterChainLinks } from './adapterChainLinks';
 import { STUDIO_TEMPLATES } from './templates';
 import {
   CONTROLLED_ROLE_NODE_KEYS,
@@ -1037,18 +1038,31 @@ function expectedControlledEdgeSpecs(
   const loraId = loraContractId(contractIds);
 
   if (loraId === 'lora.modular.v1') {
-    add(makeConnectionSpec(loraNodes[0]?.id, ['lora'], binding.nodes.models, ['lora_list', 'loras']));
+    if (binding.nodes.models)
+      for (const link of orderedAdapterChainLinks({
+        adapterIds: loraNodes.map((node) => node.id),
+        inputHandles: ['previous_loras'],
+        outputHandles: ['lora'],
+        target: { nodeId: binding.nodes.models, handles: ['lora_list', 'loras'] },
+      }))
+        add(makeConnectionSpec(link.source, link.sourceHandles, link.target, link.targetHandles));
+    else valid = false;
   } else if (loraId === 'lora.diffusers-image.v1' || loraId === 'lora.diffusers-audio.v1') {
     const pipeline =
       loraId === 'lora.diffusers-image.v1' ? binding.nodes.diffusersImagePipeline : binding.nodes.audioPipeline;
     const generate =
       loraId === 'lora.diffusers-image.v1' ? diffusersImageActionNode(binding) : binding.nodes.audioGenerate;
     remove((spec) => spec.source === pipeline && spec.target === generate);
-    add(makeConnectionSpec(pipeline, ['pipeline'], loraNodes[0]?.id, ['pipeline']));
-    for (let index = 1; index < loraNodes.length; index += 1) {
-      add(makeConnectionSpec(loraNodes[index - 1]?.id, ['output'], loraNodes[index]?.id, ['pipeline']));
-    }
-    add(makeConnectionSpec(loraNodes[loraNodes.length - 1]?.id, ['output'], generate, ['pipeline']));
+    if (pipeline && generate)
+      for (const link of orderedAdapterChainLinks({
+        adapterIds: loraNodes.map((node) => node.id),
+        inputHandles: ['pipeline'],
+        outputHandles: ['output'],
+        source: { nodeId: pipeline, handles: ['pipeline'] },
+        target: { nodeId: generate, handles: ['pipeline'] },
+      }))
+        add(makeConnectionSpec(link.source, link.sourceHandles, link.target, link.targetHandles));
+    else valid = false;
   }
 
   const sequence = id('videoSequence');

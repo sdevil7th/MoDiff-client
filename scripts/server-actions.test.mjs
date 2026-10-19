@@ -11,6 +11,7 @@ let actionsModule;
 let originalFetch;
 let server;
 let controlModule;
+let cleanupFeedbackModule;
 
 before(async () => {
   globalThis.window = {
@@ -26,6 +27,7 @@ before(async () => {
     appType: 'custom',
   });
   actionsModule = await server.ssrLoadModule('/src/utils/serverActions.ts');
+  cleanupFeedbackModule = await server.ssrLoadModule('/src/utils/runtimeCleanupFeedback.ts');
   controlModule = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
   originalFetch = globalThis.fetch;
 });
@@ -554,6 +556,67 @@ test('empty cache deletion is a no-op and does not contact the backend', async (
   const result = await actionsModule.deleteNodeCache([]);
   assert.equal(calls, 0);
   assert.deepEqual(result.nodes, []);
+});
+
+test('accelerator cleanup preserves partial-cleanup reasons and permits zero released files', async () => {
+  const clean = {
+    error: false,
+    message: 'Accelerator cleanup complete.',
+    released_node_count: 1,
+    released_model_count: 0,
+    released_diffusers_component_count: 0,
+    released_diffusers_offload_file_count: 0,
+    allocator_trimmed: false,
+    cleanup_errors: [],
+    before: null,
+    after: null,
+  };
+  const partial = {
+    ...clean,
+    cleanup_errors: ['Diffusers disk offload cache: live hook storage was preserved.'],
+  };
+  for (const receipt of [clean, partial, { error: false, message: 'Legacy cleanup complete.' }]) {
+    globalThis.fetch = async () => jsonResponse(receipt);
+    assert.deepEqual(await actionsModule.cleanupGpuMemory(), receipt);
+  }
+  assert.deepEqual(cleanupFeedbackModule.runtimeCleanupFeedback(clean), {
+    state: 'success',
+    message: clean.message,
+  });
+  assert.deepEqual(cleanupFeedbackModule.runtimeCleanupFeedback(partial), {
+    state: 'warning',
+    message: `${partial.message}\n${partial.cleanup_errors[0]}`,
+  });
+  assert.equal(cleanupFeedbackModule.runtimeCleanupFeedback({ ...clean, cleanup_errors: [' ', ''] }).state, 'success');
+  assert.equal(cleanupFeedbackModule.runtimeCleanupFeedback({ error: false }).state, 'success');
+});
+
+test('accelerator cleanup rejects invalid or unbounded cleanup details without treating them as success', () => {
+  for (const cleanup_errors of [
+    null,
+    'preserved',
+    [false],
+    [{}],
+    Array.from({ length: 65 }, () => 'warning'),
+    ['x'.repeat(8193)],
+  ]) {
+    assert.throws(
+      () => cleanupFeedbackModule.runtimeCleanupFeedback({ error: false, cleanup_errors }),
+      /cleanup details/,
+    );
+  }
+});
+
+test('accelerator cleanup retains actual application and HTTP failures', async () => {
+  const message = 'Accelerator cleanup cannot run while model work or cache cleanup is active.';
+  for (const status of [200, 409]) {
+    globalThis.fetch = async () => jsonResponse({ error: true, message, cleanup_errors: [] }, status);
+    await assert.rejects(actionsModule.cleanupGpuMemory(), (error) => {
+      assert.equal(error.kind, status === 200 ? 'application' : 'http');
+      assert.equal(error.message, message);
+      return true;
+    });
+  }
 });
 
 test('GPU cleanup and Hugging Face deletion use hash-bound planning and mutation methods', async () => {

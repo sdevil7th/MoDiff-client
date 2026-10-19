@@ -343,3 +343,67 @@ test('integrated model operations keep whole-call discovery and strict v3 identi
   assert.equal(contracts.operationOwnsModel(undefined), false);
   assert.throws(() => contracts.parseOperationContracts([{ ...value, nodeType: 'loader' }], 3));
 });
+
+// Schema tests only; this fixture is not an
+// authoring permission, runtime route or model qualification.
+function modeOwnerOperation() {
+  return {
+    ...operation(),
+    operationId: 'diffusion.load_models',
+    nodeKey: 'modules.ModularDiffusers.ModelsLoader',
+    nodeType: 'loader',
+    blockName: null,
+    decomposition: 'loader',
+  };
+}
+test('v3 preserves optional bounded backend execution mode while legacy bindings remain unchanged', () => {
+  const legacy = modeOwnerOperation();
+  assert.deepEqual(contracts.parseOperationContracts([legacy], 3), [legacy]);
+  assert.equal(Object.hasOwn(contracts.parseOperationContracts([legacy], 3)[0].binding, 'executionMode'), false);
+  for (const mode of ['text_to_image', 'edit_image', `a${'b'.repeat(63)}`]) {
+    const value = structuredClone(legacy);
+    value.binding.executionMode = mode;
+    assert.deepEqual(contracts.parseOperationContracts([value], 3), [value]);
+    assert.deepEqual(contracts.parseOperationContracts(JSON.parse(JSON.stringify([value])), 3), [value]);
+  }
+});
+test('v3 rejects malformed present execution modes and preserves exact binding keys', () => {
+  for (const mode of [
+    undefined,
+    null,
+    false,
+    1,
+    {},
+    [],
+    '',
+    'Edit_Image',
+    '1edit',
+    'edit-image',
+    'edit.image',
+    'edit_image\n',
+    ' edit_image',
+    'edit_image ',
+    'a'.repeat(65),
+    '__proto__',
+    'constructor',
+    'prototype',
+  ]) {
+    const value = modeOwnerOperation();
+    value.binding.executionMode = mode;
+    assert.throws(() => contracts.parseOperationContracts([value], 3), /Invalid backend operation contract/);
+  }
+  const extra = modeOwnerOperation();
+  extra.binding.executionMode = 'edit_image';
+  extra.binding.unreviewed = true;
+  assert.throws(() => contracts.parseOperationContracts([extra], 3));
+  const inherited = modeOwnerOperation();
+  inherited.binding = Object.assign(Object.create({ executionMode: 'edit_image' }), inherited.binding);
+  const parsed = contracts.parseOperationContracts([inherited], 3)[0];
+  assert.equal(Object.hasOwn(parsed.binding, 'executionMode'), false);
+});
+
+test('v3 rejects execution-mode annotations on non-model-owner contracts', () => {
+  const value = operation();
+  value.binding.executionMode = 'edit_image';
+  assert.throws(() => contracts.parseOperationContracts([value], 3), /Invalid backend operation contract/);
+});

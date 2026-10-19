@@ -744,6 +744,7 @@ export function reviewedModularGraphV2(
       block.inputs,
       block.outputs,
       isLoopMember ? 'loop_member' : isLoopOwner ? 'loop_owner' : 'step',
+      block,
     );
     paramsByPath.set(key, params);
   });

@@ -75,6 +75,19 @@ test('empty multiple-choice bindings preserve an empty list while text bindings 
     contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
   };
   assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], modelType, [mode], [profile]), [spec]);
+  const withWeightFormat = { ...semantic, bindings: [['diffusersImagePipeline', 'weight_format', 'weightFormat']] };
+  const weightSpec = {
+    ...withWeightFormat,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(withWeightFormat))}`,
+  };
+  assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([weightSpec], modelType, [mode], [profile]), [
+    weightSpec,
+  ]);
+  for (const source of ['weight_format', 'WeightFormat', ['weightFormat'], null]) {
+    const invalid = { ...withWeightFormat, bindings: [['diffusersImagePipeline', 'weight_format', source]] };
+    invalid.contentHash = `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(invalid))}`;
+    assert.throws(() => executionSpecsModule.parseStudioExecutionSpecs([invalid], modelType, [mode], [profile]));
+  }
   globalThis.window ??= { location: { origin: 'http://127.0.0.1:5191' } };
   const valuesModule = await server.ssrLoadModule('/src/studio/executionSpecValues.ts');
   const form = {
@@ -82,6 +95,14 @@ test('empty multiple-choice bindings preserve an empty list while text bindings 
     ...modelProfilesModule.getFormDefaultsForMode(mode, modelType),
   };
   const before = structuredClone(form);
+  assert.equal(
+    valuesModule.resolveStudioExecutionSpecValues(
+      form,
+      weightSpec,
+      modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+    ).weightFormat,
+    'native',
+  );
   const first = valuesModule.resolveStudioExecutionSpecValues(
     form,
     spec,

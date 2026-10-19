@@ -48,7 +48,7 @@ export type OperationContract = {
   support: 'declared';
   ports: OperationPort[];
   workflowId?: string | null;
-  binding?: { pipelineClass: string; values: Record<string, string> };
+  binding?: { pipelineClass: string; values: Record<string, string>; executionMode?: string };
 };
 
 export function operationOwnsModel(
@@ -293,7 +293,19 @@ export function parseOperationContracts(value: unknown, schemaVersion: unknown):
     const workflowId = !v3 || item.workflowId === null ? null : identifier(item.workflowId);
     let binding: OperationContract['binding'];
     if (v3) {
-      const value = record(item.binding, ['pipelineClass', 'values']);
+      const hasExecutionMode =
+        typeof item.binding === 'object' &&
+        item.binding !== null &&
+        Object.prototype.hasOwnProperty.call(item.binding, 'executionMode');
+      const value = record(item.binding, ['pipelineClass', 'values', ...(hasExecutionMode ? ['executionMode'] : [])]);
+      const executionMode = hasExecutionMode ? boundedText(value.executionMode, 64) : undefined;
+      if (
+        executionMode !== undefined &&
+        (!/^[a-z][a-z0-9_]{0,63}$/u.test(executionMode) ||
+          RESERVED.has(executionMode) ||
+          (item.decomposition !== 'loader' && item.decomposition !== 'integrated'))
+      )
+        invalid();
       if (
         typeof value.values !== 'object' ||
         !value.values ||
@@ -303,6 +315,7 @@ export function parseOperationContracts(value: unknown, schemaVersion: unknown):
         invalid();
       binding = {
         pipelineClass: identifier(value.pipelineClass),
+        ...(executionMode === undefined ? {} : { executionMode }),
         values: Object.fromEntries(
           Object.entries(value.values).map(([key, value]) => [identifier(key), identifier(value)]),
         ),

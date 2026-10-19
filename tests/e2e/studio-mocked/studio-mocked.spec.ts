@@ -8,7 +8,13 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { attachResizeObserverDiagnostics, installResizeObserverDiagnostics } from '../resize-observer-diagnostics';
-import { IMAGE_TEMPLATE_EXECUTION_SELECTIONS } from '../../../src/studio/templateOperationSelections';
+import {
+  IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
+  AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
+} from '../../../src/studio/templateOperationSelections';
+import { STUDIO_TEMPLATES } from '../../../src/studio/templates';
+import { REGISTERED_BLOCK_V2_ROUTES } from '../../../src/studio/registeredBlockV2Routes';
+import { acknowledgementRequiredForTemplate } from '../../../src/studio/modelUsagePolicies';
 import type { NodeData } from '../../../src/stores/useNodeStore';
 import type { StudioExecutionSpec, StudioModelProfile } from '../../../src/studio/types';
 import type { OperationStarter } from '../../../src/workflow/operationAuthoring';
@@ -542,7 +548,7 @@ declare global {
         edges: Array<{ id: string; source: string; target: string }>;
         viewport: { x: number; y: number; zoom: number };
       };
-      exportAuthorizedApiGraph: () => ApiGraphExport;
+      exportAuthorizedApiGraph: () => Promise<ApiGraphExport>;
       setGraphScenarioForTest: (
         scenario:
           | 'empty'
@@ -3646,8 +3652,14 @@ const mockHuggingFaceNodeLibrary = (() => {
 })();
 
 function mockGraphQualifiedQwenNodeLibrary() {
+  const currentRoute = REGISTERED_BLOCK_V2_ROUTES.find(
+    (candidate) =>
+      candidate.definitionId === 'diffusers.modular:QwenImageModularPipeline:text2image' &&
+      candidate.admissionId === 'diffusers.cluster-admission:QwenImageModularPipeline:text2image:mode:text_to_image',
+  );
+  if (!currentRoute) throw new Error('The mocked Qwen fixture needs an exact current registered route.');
   const library = structuredClone(mockHuggingFaceNodeLibrary);
-  library.diffusersRevision = 'fbf49e7f35857f76bc57b177e26f12b03687c668';
+  library.diffusersRevision = currentRoute.libraryRevision;
   library.definitions.forEach((definition) => {
     definition.libraryRevision = library.diffusersRevision;
   });
@@ -3804,8 +3816,8 @@ function mockGraphQualifiedQwenNodeLibrary() {
   );
   const sealedSources = new Set(Object.keys(sealedBindingValues));
   qwen.schemaVersion = 6;
-  qwen.libraryRevision = 'fbf49e7f35857f76bc57b177e26f12b03687c668';
-  qwen.contentHash = 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393';
+  qwen.libraryRevision = currentRoute.libraryRevision;
+  qwen.contentHash = currentRoute.definitionContentHash;
   qwen.integrationStatus = 'reviewed_modular_workflow_route';
   qwen.suggestedInputs = {
     schemaVersion: 1,
@@ -4314,7 +4326,11 @@ type ImageTemplateSchemaFixture = {
   recipes: { id: string; starter: OperationStarter; spec: StudioExecutionSpec; capability: StudioModelProfile }[];
   registry: Record<string, NodeData>;
   capabilities: StudioModelProfile[];
-  publicPayload: { operationContracts: OperationContract[]; pipelineSupport: PipelineSupport[] };
+  publicPayload: {
+    capabilities: StudioModelProfile[];
+    operationContracts: OperationContract[];
+    pipelineSupport: PipelineSupport[];
+  };
 };
 let imageTemplateSchemaPromise: Promise<ImageTemplateSchemaFixture>;
 
@@ -4353,6 +4369,28 @@ async function imageTemplateSchemas() {
   return structuredClone(await imageTemplateSchemaPromise);
 }
 
+async function installImageFixtureRuntime(page: Page, templateId = 'z_image_quick_concept') {
+  // The starter's device schema comes from the real fixture interpreter. A
+  // synthetic CUDA status must not pretend that a CPU-only schema accepts it.
+  const parameter = (await imageTemplateSchemas()).recipes
+    .find((row) => row.id === templateId)!
+    .starter.nodes.find((node) => node.operation.decomposition === 'loader')!.node.params.device!;
+  const device = parameter.value ?? parameter.default;
+  if (typeof device !== 'string') throw new Error('The template fixture must declare its device.');
+  if (device.startsWith('cpu')) {
+    await page.route('**/runtime/status**', (route) =>
+      route.fulfill({
+        json: {
+          ready: true,
+          config: { hf_token_configured: mockHfTokenConfigured },
+          packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+        },
+      }),
+    );
+  }
+  return device;
+}
+
 function includeImageTemplateBindings(capabilities: StudioModelProfile[], fixture: ImageTemplateSchemaFixture) {
   // Legacy form fixtures did not need labels while their operation support
   // list was empty. The unified workflow browser now consumes these choices.
@@ -4360,9 +4398,18 @@ function includeImageTemplateBindings(capabilities: StudioModelProfile[], fixtur
     capability.label ??=
       fixture.capabilities.find((source) => source.modelType === capability.modelType)?.label ?? capability.modelType;
   const selected = new Map(fixture.recipes.map((row) => [`${row.spec.modelType}:${row.spec.mode}`, row.spec]));
+  const templateSelections = new Map(Object.entries(IMAGE_TEMPLATE_EXECUTION_SELECTIONS));
+  const selectedProfileIds = new Set(
+    fixture.recipes.flatMap((row) => {
+      const selection = templateSelections.get(row.id);
+      return selection ? [selection.executionProfileId] : [];
+    }),
+  );
   for (const source of fixture.capabilities) {
     const specs = source.studioExecutionSpecs?.filter((spec) => selected.has(`${spec.modelType}:${spec.mode}`)) ?? [];
-    if (!specs.length) continue;
+    const selectedSourceProfiles =
+      source.executionProfiles?.filter((profile) => selectedProfileIds.has(profile.id)) ?? [];
+    if (!specs.length && !selectedSourceProfiles.length) continue;
     const existing = capabilities.find((capability) => capability.modelType === source.modelType);
     if (!existing) {
       capabilities.push(source);
@@ -4388,7 +4435,10 @@ function includeImageTemplateBindings(capabilities: StudioModelProfile[], fixtur
       ...replacements,
     ];
     existing.studioExecutionSpecModes = existing.studioExecutionSpecs.map((spec) => spec.mode);
-    const selectedProfiles = new Set(specs.map((spec) => spec.executionProfileId));
+    const selectedProfiles = new Set([
+      ...specs.map((spec) => spec.executionProfileId),
+      ...selectedSourceProfiles.map((profile) => profile.id),
+    ]);
     existing.executionProfiles = [
       ...(existing.executionProfiles ?? []).filter((profile) => !selectedProfiles.has(profile.id)),
       ...(source.executionProfiles ?? [])
@@ -4986,6 +5036,7 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
       (row) =>
         row.starter.pipelineClass === selection.pipelineClass &&
         row.starter.task === selection.task &&
+        (!selection.authoringRecipeId || row.starter.authoring?.id === selection.authoringRecipeId) &&
         (!selection.executionProfileId ||
           IMAGE_TEMPLATE_EXECUTION_SELECTIONS[row.id as keyof typeof IMAGE_TEMPLATE_EXECUTION_SELECTIONS]
             ?.executionProfileId === selection.executionProfileId),
@@ -5553,8 +5604,38 @@ async function dismissTaskLauncher(page: Page) {
 // Legacy managed-graph regressions seed their existing document explicitly now
 // that Creator starts in Templates. This is fixture setup, not entry-flow proof;
 // the Creator/Developer tests below use native selection and creation gestures.
-async function seedLegacyManagedWorkflow(page: Page, mode: 'text_to_image' | 'inpaint' | 'outpaint') {
+async function seedLegacyManagedWorkflow(
+  page: Page,
+  mode: 'text_to_image' | 'inpaint' | 'outpaint',
+  fixtureDevice?: string,
+) {
   await page.getByTestId('launcher-mode-advanced_workflow').click();
+  if (fixtureDevice?.startsWith('cpu')) {
+    // Keep the legacy fixture's ordinary defaults selection, but complete its
+    // runtime normalization before capturing the finalization context.
+    await page.evaluate(async (value) => {
+      const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+      useStudioStore.getState().selectMode(value);
+    }, mode);
+    // Let the actual Studio runtime effect settle after opening its panel.
+    // Passing the already-selected mode would reset it back to CUDA defaults
+    // and deliberately trip the operation's stale-context protection.
+    await page.waitForFunction(
+      ({ mode, device }) => {
+        const state = window.__MODIFF_E2E__!.getState();
+        return (
+          state.nodes.discoveryRequests.runtime.status === 'success' &&
+          state.studio.form.mode === mode &&
+          state.studio.form.device === device &&
+          state.studio.form.autoOffload === false &&
+          state.studio.form.offloadMode === 'none'
+        );
+      },
+      { mode, device: fixtureDevice },
+    );
+    await page.evaluate(() => window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest());
+    return;
+  }
   await page.evaluate((value) => window.__MODIFF_E2E__!.startManagedGraphFinalizationForTest(value), mode);
 }
 
@@ -5695,6 +5776,18 @@ async function pinCurrentQwenRouteToMockRegistry(page: Page, compilerInstanceId:
     }
     const route = routes.registeredBlockV2Route(definition, admission);
     if (!route) throw new Error('The mocked Qwen admission has no registered V2 route.');
+    const historicalIdentity = {
+      libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+      contentHash: 'sha256:49cb50671b41cf2c03b22387cfe2cf1b37f16b2996961791505aef830817c393',
+    };
+    for (const stale of [
+      historicalIdentity,
+      { libraryRevision: historicalIdentity.libraryRevision },
+      { contentHash: historicalIdentity.contentHash },
+    ]) {
+      if (routes.registeredBlockV2Route({ ...definition, ...stale }, admission) !== null)
+        throw new Error('The historical or partially stale mocked Qwen identity must remain refused.');
+    }
     const legacyRoot = graph.createHuggingFaceClusterNode(
       definition,
       instanceId,
@@ -9197,7 +9290,7 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
   const registry = {
     ...Object.fromEntries(starters.flatMap((s) => s.nodes.map((n) => [n.operation.nodeKey, n.node]))),
     'modules.Image.Load': mockRegistry['modules.Image.Load'],
-    'modules.Image.Preview': mockRegistry['modules.Image.Preview'],
+    'modules.Image.Preview': mockGraphQualifiedQwenRegistry['modules.Image.Preview'],
     'modules.Audio.Preview': nodeDef('modules.Audio', 'Preview', 'audio', {
       audio: { type: 'audio', display: 'input' },
     }),
@@ -10044,6 +10137,16 @@ for (const invalidation of ['target', 'close', 'edit'] as const) {
       .click();
     await page.getByTestId('left-tab-nodes').click();
     await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    // This race test exercises the ordinary loader inspector. Fresh starters
+    // now present its loader inside Model Setup; use the real Separate action.
+    const setupId = await page.evaluate(
+      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.label === 'Model Setup')!.id,
+    );
+    const setup = page.getByTestId(`setup-node-${setupId}`);
+    await setup.getByRole('button', { name: 'Model Setup options', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Separate model setup stages', exact: true }).click();
+    await expect(setup).toHaveCount(0);
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
     const loaderId = await page.evaluate(
       () => window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.action === 'ModelsLoader')!.id,
     );
@@ -10790,6 +10893,7 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
   await ensureFrontend();
   await installMockRoutes(page);
+  await installImageFixtureRuntime(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
@@ -10832,11 +10936,18 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
     .toBeGreaterThan(0);
   await expect(page.getByTestId('studio-task-model-summary')).toContainText('Custom graph');
   expect(
-    await page.evaluate(
-      () =>
-        window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'ModelsLoader')?.params.repo_id
-          .value,
-    ),
+    await page.evaluate(async () => {
+      const [{ useFlowStore }, { blockOperationGraphV2 }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+      ]);
+      // Read the real loader's effective controls without changing the fresh
+      // Model Setup presentation or the launcher/document state under test.
+      const setup = useFlowStore.getState().nodes.find((node) => node.data.label === 'Model Setup')!;
+      return blockOperationGraphV2(setup.data.blockInstanceV2!).nodes.find(
+        (node) => node.data.action === 'ModelsLoader',
+      )!.data.params.repo_id.value;
+    }),
   ).toEqual({ source: 'hub', value: 'Tongyi-MAI/Z-Image-Turbo' });
 
   await page.getByTestId('topbar-new-workflow').click();
@@ -13092,8 +13203,15 @@ test('mocked audio template stays managed after a page reload', async ({ page })
   mockIncludeOutpaintNode = true;
   mockDynamicModularFields = false;
   await bootMockedTemplateBrowser(page);
-  await page.getByTestId('template-browser-category-audio').click();
-  await page.getByTestId('template-browser-create-card-ace_step_text_to_audio').click();
+  await page.getByTestId('template-browser-dialog').getByRole('button', { name: 'Close' }).click();
+  // Saved managed document fixture; current audio authoring and reload are covered separately.
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const template = window.__MODIFF_E2E__!.listTemplates().find((item) => item.id === 'ace_step_text_to_audio');
+    if (!template) throw new Error('The saved audio template fixture is unavailable.');
+    useStudioStore.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest(template.id);
+  });
   await expect(page.getByTestId('template-browser-dialog')).toHaveCount(0);
 
   await expect
@@ -13355,8 +13473,9 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
+  // Historical managed audio cache is the stale document in this persistence race.
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('ace_step_text_to_audio');
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('ace_step_text_to_audio');
   });
   const audioCanvas = await page.evaluate(() => {
     const persisted = JSON.parse(window.localStorage.getItem('modiff.flow') ?? '{}') as {
@@ -13998,6 +14117,91 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   expect(tabState.studio.activeWorkflowTabId).toBeTruthy();
 });
 
+test('legacy CPU Task changes rebuild the supported graph and preserve authored prompts in both directions', async ({
+  page,
+}) => {
+  mockIncludeQuantizationNode = true;
+  mockIncludeOutpaintNode = true;
+  mockDynamicModularFields = false;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  const modelType = fixture.recipes.find((row) => row.id === 'z_image_quick_concept')!.spec.modelType;
+  const source = fixture.capabilities.find((capability) => capability.modelType === modelType)!;
+  expect(source.revisionCandidates?.length).toBeGreaterThan(0);
+  expect(source.revisionCandidates!.every((revision) => /^[a-f0-9]{40}$/iu.test(revision))).toBe(true);
+  const native = fixture.recipes.find((row) => row.id === 'z_image_quick_concept')!.starter;
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        instance: 'mock',
+        nodes: {
+          ...fixture.registry,
+          ...mockRegistry,
+          ...Object.fromEntries(native.nodes.map(({ node }) => [`${node.module}.${node.action}`, node])),
+        },
+      },
+    }),
+  );
+  await page.route('**/model_capabilities**', (route) => {
+    const capabilities = includeImageTemplateBindings(mockStudioExecutionCapabilities(), fixture);
+    const capability = capabilities.find((candidate) => candidate.modelType === modelType)!;
+    // The source-derived modular spec consumes this immutable default revision;
+    // the older whole-pipeline mock did not need to publish its candidates.
+    capability.revisionCandidates = [...source.revisionCandidates!];
+    return route.fulfill({
+      json: {
+        schemaVersion: 2,
+        capabilities,
+        studioExecutionSpecs: capabilities.flatMap((candidate) => candidate.studioExecutionSpecs ?? []),
+        operationContractSchemaVersion: 3,
+        operationContracts: fixture.publicPayload.operationContracts,
+        pipelineSupportSchemaVersion: 1,
+        pipelineSupport: fixture.publicPayload.pipelineSupport,
+      },
+    });
+  });
+  const fixtureDevice = await installImageFixtureRuntime(page);
+  expect(fixtureDevice).toMatch(/^cpu(?::0)?$/u);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await seedLegacyManagedWorkflow(page, 'text_to_image', fixtureDevice);
+  const prompt = 'Preserve this authored prompt while changing the CPU task.';
+  await page.getByTestId('studio-prompt-input').getByRole('textbox').fill(prompt);
+  for (const [label, mode] of [
+    ['Modular text to image', 'modular_text_to_image'],
+    ['Text to image', 'text_to_image'],
+  ]) {
+    await page.getByTestId('studio-task-select').click();
+    await page.getByRole('option', { name: label, exact: true }).click();
+    await expect
+      .poll(async () => {
+        const state = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
+        return {
+          formMode: state.studio.form.mode,
+          bindingMode: state.studio.graphBinding?.mode,
+          device: state.studio.form.device,
+          offloadMode: state.studio.form.offloadMode,
+          prompt: state.studio.form.prompt,
+          graphPrompt: state.flow.nodes.some((node) => node.params.prompt?.value === prompt),
+          finalization: state.studio.graphFinalization?.status,
+          lastError: state.studio.lastError,
+        };
+      })
+      .toEqual({
+        formMode: mode,
+        bindingMode: mode,
+        device: fixtureDevice,
+        offloadMode: 'none',
+        prompt,
+        graphPrompt: true,
+        finalization: 'complete',
+        lastError: null,
+      });
+  }
+});
+
 test('mocked Studio blanks the canvas while creating a template workflow', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
@@ -14007,15 +14211,19 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  const fixtureDevice = await installImageFixtureRuntime(page);
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await seedLegacyManagedWorkflow(page, 'text_to_image');
+  await seedLegacyManagedWorkflow(page, 'text_to_image', fixtureDevice);
   await expect(page.getByTestId('studio-panel')).toBeVisible();
-  await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('z_image_quick_concept');
-  });
+  await page.evaluate(async (device) => {
+    await window.__MODIFF_E2E__!.applyTemplate(
+      'z_image_quick_concept',
+      device.startsWith('cpu') ? { device, autoOffload: false, offloadMode: 'none' } : undefined,
+    );
+  }, fixtureDevice);
   await expect
     .poll(async () => {
       const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
@@ -14025,7 +14233,7 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
       };
     })
     .toEqual({
-      nodeCount: 6,
+      nodeCount: 5,
       transition: null,
     });
 
@@ -14087,7 +14295,7 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
     .toEqual({
       activeTemplateId: 'z_image_quick_concept',
       transition: null,
-      visibleNodeCount: 6,
+      visibleNodeCount: 5,
     });
   const transitionSamples = await page.evaluate(() => {
     type TemplateGraphSample = {
@@ -14631,11 +14839,12 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
   mockDynamicModularFields = false;
   await ensureFrontend();
   await installMockRoutes(page);
+  const fixtureDevice = await installImageFixtureRuntime(page, 'qwen_low_vram_product_concept');
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
-  await seedLegacyManagedWorkflow(page, 'text_to_image');
+  await seedLegacyManagedWorkflow(page, 'text_to_image', fixtureDevice);
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await openTemplateBrowser(page);
   await page.getByTestId('template-browser-category-all').click();
@@ -14660,41 +14869,52 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
     .toEqual({
       activeTemplateId: 'qwen_low_vram_product_concept',
       transition: null,
-      visibleNodeCount: 6,
+      // This mixed legacy registry declares selected_image rather than the
+      // actual preview field, so its ordinary Preview remains external.
+      visibleNodeCount: 5,
       finalization: undefined,
     });
 
   await expect
     .poll(
-      async () => {
-        const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-        const pipelineNode = current.flow.nodes.find(
-          (node) => node.action === 'ModelsLoader' && node.module === 'modules.ModularDiffusers',
-        );
-        const generateNode = current.flow.nodes.find(
-          (node) => node.action === 'Denoise' && node.module === 'modules.ModularDiffusers',
-        );
-        const encoding = current.flow.nodes.find((node) => node.label === 'Encode Inputs');
-        const promptNode = encoding?.blockInstanceV2?.effectiveGraph.nodes.find(
-          (node) => node.data.action === 'EncodePrompt',
-        );
-        const pipelineEdge = current.flow.edges.find(
-          (edge) => edge.source === pipelineNode?.id && edge.target === generateNode?.id,
-        );
-        return {
-          finalization: current.studio.graphFinalization?.status,
-          promptValue: promptNode?.data.params?.prompt?.value,
-          offloadMode: pipelineNode?.params?.offload_mode?.value,
-          pipelineClass: pipelineNode?.params?.model_type?.value,
-          pipelineEdge: Boolean(pipelineEdge),
-        };
-      },
+      () =>
+        page.evaluate(async () => {
+          const { blockOperationGraphV2 } = await import('/src/studio/blockRuntimeV2.ts');
+          const current = window.__MODIFF_E2E__!.getState();
+          const setup = current.flow.nodes.find((node) => node.label === 'Model Setup');
+          const pipelineNode =
+            setup?.blockInstanceV2 &&
+            blockOperationGraphV2(setup.blockInstanceV2).nodes.find(
+              (node) => node.data.action === 'ModelsLoader' && node.data.module === 'modules.ModularDiffusers',
+            );
+          const generateNode = current.flow.nodes.find(
+            (node) => node.action === 'Denoise' && node.module === 'modules.ModularDiffusers',
+          );
+          const encoding = current.flow.nodes.find((node) => node.label === 'Encode Inputs');
+          const promptNode =
+            encoding?.blockInstanceV2 &&
+            blockOperationGraphV2(encoding.blockInstanceV2).nodes.find((node) => node.data.action === 'EncodePrompt');
+          const pipelineEdge = current.flow.edges.find(
+            (edge) =>
+              edge.source === setup?.id &&
+              edge.target === generateNode?.id &&
+              edge.sourceHandle === `${pipelineNode?.data.blockProjectionNodeId}:unet_out` &&
+              edge.targetHandle === 'unet',
+          );
+          return {
+            finalization: current.studio.graphFinalization?.status,
+            promptValue: promptNode?.data.params?.prompt?.value,
+            offloadMode: pipelineNode?.data.params?.offload_mode?.value,
+            pipelineClass: pipelineNode?.data.params?.model_type?.value,
+            pipelineEdge: Boolean(pipelineEdge),
+          };
+        }),
       { timeout: 10_000 },
     )
     .toEqual({
       finalization: undefined,
       promptValue: await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.prompt),
-      offloadMode: 'model_cpu',
+      offloadMode: fixtureDevice.startsWith('cpu') ? 'none' : 'model_cpu',
       pipelineClass: 'QwenImageModularPipeline',
       pipelineEdge: true,
     });
@@ -18898,6 +19118,105 @@ test('session activity and generation notifications open the originating workflo
   await page.getByTestId('queue-failed-run-notification-failure-task').click();
   await expect(failureDialog).toBeVisible();
   await expect(failureDialog).toContainText('A deliberately verbose backend exception');
+});
+
+test('runtime cleanup displays partial warnings and restores clean success without changing the graph', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
+  const initialGraph = await page.evaluate(() => {
+    const flow = window.__MODIFF_E2E__!.getState().flow;
+    return { nodes: flow.nodes, edges: flow.edges };
+  });
+  const preserved = 'Diffusers disk offload cache: live hook storage was preserved.';
+  const complete =
+    'Accelerator cleanup complete. Released 0 cached node object(s), 0 managed model(s), 0 Modular Diffusers component(s), and 0 Diffusers disk offload file(s).';
+  const clean = {
+    error: false,
+    message: complete,
+    released_node_count: 0,
+    released_model_count: 0,
+    released_diffusers_component_count: 0,
+    released_diffusers_offload_file_count: 0,
+    allocator_trimmed: false,
+    cleanup_errors: [] as string[],
+    before: null,
+    after: null,
+  };
+  const responses = [
+    {
+      status: 200,
+      body: {
+        ...clean,
+        message: `${complete} Some cleanup calls reported errors but references were dropped where possible.`,
+        cleanup_errors: [preserved],
+      },
+    },
+    { status: 200, body: clean },
+    {
+      status: 409,
+      body: {
+        error: true,
+        message: 'Accelerator cleanup cannot run while model work or cache cleanup is active.',
+      },
+    },
+  ];
+  const requests: Array<{ method: string; body: string | null }> = [];
+  await page.route('**/runtime/gpu_cleanup', async (route) => {
+    requests.push({ method: route.request().method(), body: route.request().postData() });
+    const response = responses[requests.length - 1];
+    if (!response) throw new Error('Unexpected extra accelerator cleanup request.');
+    await route.fulfill({
+      status: response.status,
+      contentType: 'application/json',
+      body: JSON.stringify(response.body),
+    });
+  });
+  // Diagnostic setup opens the existing remediation surface, without executing a model.
+  await page.evaluate(async () => {
+    const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
+    useRunIssueStore.getState().showIssues([
+      {
+        id: 'cleanup-warning-proof',
+        category: 'hardware_fit',
+        severity: 'warning',
+        blocking: false,
+        action: 'cleanup_gpu',
+        message: 'Release cached model state before retrying.',
+      },
+    ]);
+  });
+  const dialog = page.getByTestId('run-issues-dialog');
+  const cleanup = dialog.getByRole('button', { name: 'Release accelerator cache', exact: true });
+  const status = dialog.locator('footer p');
+  await expect(dialog).toBeVisible();
+  await cleanup.click();
+  await expect(status).toContainText(preserved);
+  await expect(status).toHaveClass(/text-modiff-warning/);
+  await expect(status).not.toHaveClass(/text-modiff-green/);
+  await expect(status).toContainText(complete);
+  await expect(status).toHaveAttribute('aria-live', 'polite');
+  await expect(cleanup).toBeEnabled();
+  await verifyCompactDialog(page, dialog, 'cleanup-partial-warning');
+  await cleanup.click();
+  await expect(status).toHaveText(complete);
+  await expect(status).toHaveClass(/text-modiff-green/);
+  await expect(status).not.toContainText(preserved);
+  await cleanup.click();
+  await expect(status).toHaveText('Accelerator cleanup cannot run while model work or cache cleanup is active.');
+  await expect(status).toHaveClass(/text-modiff-red/);
+  expect(requests).toEqual(Array.from({ length: 3 }, () => ({ method: 'POST', body: null })));
+  expect(
+    await page.evaluate(() => {
+      const flow = window.__MODIFF_E2E__!.getState().flow;
+      return { nodes: flow.nodes, edges: flow.edges };
+    }),
+  ).toEqual(initialGraph);
 });
 
 test('a recovered native worker crash opens an explicit failure with a lower-memory action', async ({ page }) => {
@@ -26428,9 +26747,9 @@ async function openDeveloperWorkflows(page: Page) {
 }
 
 for (const [task, , count, output] of [
-  ['text_to_image', 'QwenImageModularPipeline', 6, 'modules.Image'],
-  ['image_to_image', 'FluxModularPipeline', 7, 'modules.Image'],
-  ['edit_image', 'FluxKontextModularPipeline', 7, 'modules.Image'],
+  ['text_to_image', 'QwenImageModularPipeline', 4, 'modules.Image'],
+  ['image_to_image', 'FluxModularPipeline', 5, 'modules.Image'],
+  ['edit_image', 'FluxKontextModularPipeline', 5, 'modules.Image'],
   ['text_to_audio', 'StableAudioPipeline', 3, 'modules.Audio'],
   ['image_upscale', 'SpandrelImageUpscaleV1', 3, 'modules.Image'],
 ] as const) {
@@ -26442,11 +26761,16 @@ for (const [task, , count, output] of [
     await expect(modal).toHaveCount(0);
     const read = () =>
       page.evaluate((module) => {
-        const { flow, studio } = window.__MODIFF_E2E__!.getState();
-        const preview = flow.nodes.find((n) => n.module === module && n.action === 'Preview');
+        const { studio } = window.__MODIFF_E2E__!.getState();
+        const document = window.__MODIFF_E2E__!.exportWorkflowGraph();
+        const preview = document.nodes.find(
+          (node) =>
+            (node.data.module === module && node.data.action === 'Preview') ||
+            node.data.blockInstanceV2?.previewStates.some((preview) => preview.binding.mediaType === 'image'),
+        );
         return {
-          count: flow.nodes.length,
-          connected: Boolean(preview && flow.edges.some((e) => e.target === preview.id)),
+          count: document.nodes.length,
+          connected: Boolean(preview && document.edges.some((edge) => edge.target === preview.id)),
           binding: studio.graphBinding,
         };
       }, output);
@@ -26628,12 +26952,12 @@ test('Gallery creation survives CPU runtime discovery while capabilities are pen
       page.locator('.react-flow__node').filter({ has: page.getByText('Encode Inputs', { exact: true }) }),
     ).toHaveCount(1);
     await expect(
-      page.locator('.react-flow__node').filter({ has: page.getByText('Guidance', { exact: true }) }),
+      page.locator('[data-testid^="encoding-node-"]').getByRole('button', { name: 'Guidance', exact: true }),
     ).toHaveCount(1);
-    const result = await page.evaluate(() => {
+    const result = await page.evaluate(async () => {
       const hooks = window.__MODIFF_E2E__!;
       hooks.setWebsocketConnection({ sid: 'cpu-template-creation', isConnected: true });
-      const graph = hooks.exportAuthorizedApiGraph();
+      const graph = await hooks.exportAuthorizedApiGraph();
       return {
         studio: hooks.getState().studio,
         owner: Object.values(graph.nodes).find((node) => node.action === 'ModelsLoader'),
@@ -26660,6 +26984,7 @@ test('Templates opens an editable workflow in the unified editor', async ({ page
   mockIncludeQuantizationNode = true;
   await ensureFrontend();
   await installMockRoutes(page);
+  await installImageFixtureRuntime(page, 'z_image_quick_concept');
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await openTemplateBrowser(page);
   const modal = page.getByTestId('template-browser-dialog');
@@ -26697,6 +27022,7 @@ test('Templates opens an editable workflow in the unified editor', async ({ page
 test('Schnell template keeps its full creator token limit through ordinary authoring and reload', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
+  await installImageFixtureRuntime(page, 'flux_schnell_text_to_image');
   const fixture = await imageTemplateSchemas();
   await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
   await page.route('**/nodes**', (route) =>
@@ -26710,10 +27036,10 @@ test('Schnell template keeps its full creator token limit through ordinary autho
   await modal.getByTestId('template-browser-create-flux_schnell_text_to_image').click();
   await expect(modal).toHaveCount(0);
   const read = () =>
-    page.evaluate(() => {
+    page.evaluate(async () => {
       const hooks = window.__MODIFF_E2E__!;
       hooks.setWebsocketConnection({ sid: 'schnell-token-recipe', isConnected: true });
-      const graph = hooks.exportAuthorizedApiGraph();
+      const graph = await hooks.exportAuthorizedApiGraph();
       const prompt = Object.values(graph.nodes).find((node) => node.action === 'EncodePrompt');
       const denoise = Object.values(graph.nodes).find((node) => node.action === 'Denoise');
       const owner = Object.values(graph.nodes).find((node) => node.action === 'ModelsLoader');
@@ -26757,6 +27083,7 @@ for (const [templateId, search, scale, negativePrompt] of [
     mockInstalledRepos.add('youknownothing/v1-realism-v1-adapter-ZIT-lora');
     await ensureFrontend();
     await installMockRoutes(page);
+    await installImageFixtureRuntime(page, templateId);
     const fixture = await imageTemplateSchemas();
     await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
     await page.route('**/nodes**', (route) =>
@@ -26775,7 +27102,7 @@ for (const [templateId, search, scale, negativePrompt] of [
       page.evaluate(() => {
         const hooks = window.__MODIFF_E2E__!;
         hooks.setWebsocketConnection({ sid: 'z-default-adapter-browser-proof', isConnected: true });
-        return hooks.exportAuthorizedApiGraph() as ApiGraphExport;
+        return hooks.exportAuthorizedApiGraph();
       });
     const graph = await read();
     const nodes = Object.entries(graph.nodes);
@@ -26842,7 +27169,7 @@ test('Developer Workflows abandons pending creation when switching documents', a
   await page.getByRole('button', { name: 'New workflow tab', exact: true }).click();
   await modal.getByTestId('workflow-task-edit_image').click();
   await expect(modal).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(7);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(5);
   const readGraph = () =>
     page.evaluate(() => {
       const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
@@ -29401,7 +29728,7 @@ test('task sidebar preserves the current document and explicit Save promotes its
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
     .not.toBe(first);
-  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(7);
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBe(5);
   await page.getByTestId(`workflow-tab-${first}`).click();
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.map((n) => n.id))).toEqual(original);
   await page.screenshot({ path: test.info().outputPath('shared-task-sidebar.png'), animations: 'disabled' });
@@ -29422,7 +29749,9 @@ test('Restore model defaults resets the prompt through the same undoable graph t
   const encoder = graph.nodes.find((n) =>
     n.data.blockInstanceV2?.effectiveGraph.nodes.some((member) => member.data.action === 'EncodePrompt'),
   )!;
-  const loader = graph.nodes.find((n) => n.data.action === 'ModelsLoader')!;
+  const loader = graph.nodes.find((n) =>
+    n.data.blockInstanceV2?.effectiveGraph.nodes.some((member) => member.data.action === 'ModelsLoader'),
+  )!;
   const promptControl = encoder.data.blockInstanceV2!.effectiveInterface.controls.find(
     (control) => control.binding.fieldId === 'prompt',
   )!;
@@ -29654,6 +29983,7 @@ async function openOptionalStageTemplate(page: Page, templateId: string, search:
   await page.setViewportSize({ width: 1920, height: 1200 });
   await ensureFrontend();
   await installMockRoutes(page);
+  await installImageFixtureRuntime(page, templateId);
   const fixture = await imageTemplateSchemas();
   await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
   await page.route('**/nodes**', (route) =>
@@ -29728,10 +30058,10 @@ test('full image template cards, details, artifact search and Model Manager focu
 });
 
 async function optionalStageApi(page: Page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const hooks = window.__MODIFF_E2E__!;
     hooks.setWebsocketConnection({ sid: 'optional-stage-contract', isConnected: true });
-    const api = hooks.exportAuthorizedApiGraph();
+    const api = await hooks.exportAuthorizedApiGraph();
     const identities = new Map(Object.entries(api.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
     // These single-branch fixtures have one instance per implementation key.
     // Compare consumed parameters and source/port bindings across explicit
@@ -29759,6 +30089,18 @@ test('optional Model Setup and Image Output preserve native stages, task review,
   page,
 }) => {
   await openOptionalStageTemplate(page, 'flux_lora_ghibli_story', 'ghibli');
+  // Recreate the historical v1 presentation explicitly as compatibility setup.
+  // Fresh image templates now start with setup and output already grouped.
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { unpackVisualOperationGroups, groupOperationStages } =
+      await import('/src/workflow/visualOperationGroups.ts');
+    const flow = useFlowStore.getState();
+    const flat = unpackVisualOperationGroups(flow.toObject()).graph;
+    const owner = flat.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+    flow.replaceGraph(groupOperationStages(flat, owner.id));
+  });
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
   const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   const before = await optionalStageApi(page);
   const owner = (await graph()).nodes.find((node) => node.data.action === 'ModelsLoader')!;
@@ -29857,6 +30199,726 @@ test('optional Model Setup and Image Output preserve native stages, task review,
   expect(await optionalStageApi(page)).toEqual(before);
 });
 
+test('fresh image four-stage controls keep Guidance execution distinct from disclosure and legacy Combine is atomic', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  expect((await graph()).nodes.map((node) => node.data.label).sort()).toEqual([
+    'Denoise',
+    'Encode Inputs',
+    'Image Output',
+    'Model Setup',
+  ]);
+  const input = (await graph()).nodes.find((node) => node.data.label === 'Encode Inputs')!;
+  const node = page.getByTestId(`encoding-node-${input.id}`);
+  const before = await optionalStageApi(page);
+  const disclosure = node.getByRole('button', { name: 'Guidance', exact: true });
+  const enabled = node.getByRole('switch', { name: 'Enabled', exact: true });
+  await expect(enabled).toBeChecked();
+  await disclosure.click();
+  await expect(enabled).toBeHidden();
+  expect(await optionalStageApi(page)).toEqual(before);
+  await disclosure.click();
+  await enabled.click();
+  await expect(enabled).not.toBeChecked();
+  expect((await optionalStageApi(page))['modules.ModularDiffusers.Guider'].params.enabled.value).toBe(false);
+  await enabled.click();
+  await expect.poll(() => optionalStageApi(page)).toEqual(before);
+  // Open a deliberately saved legacy v1 layout; viewing it does not combine it.
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { unpackVisualOperationGroups, groupOperationStages } =
+      await import('/src/workflow/visualOperationGroups.ts');
+    const flat = unpackVisualOperationGroups(useFlowStore.getState().toObject()).graph;
+    const owner = flat.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+    useFlowStore
+      .getState()
+      .replaceGraph(groupOperationStages(flat, owner.id, ['inputs', 'guidance', 'setup', 'output']));
+  });
+  const legacy = await graph();
+  const legacyInput = legacy.nodes.find((node) => node.data.label === 'Encode Inputs')!;
+  const legacyNode = page.getByTestId(`encoding-node-${legacyInput.id}`);
+  expect(legacy.nodes).toHaveLength(5);
+  const api = await optionalStageApi(page);
+  await legacyNode.getByRole('button', { name: 'Encode Inputs options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Combine encoding and Guidance', exact: true }).click();
+  await expect.poll(async () => (await graph()).nodes.length).toBe(4);
+  expect(await optionalStageApi(page)).toEqual(api);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await graph()).nodes.length).toBe(5);
+  expect(await optionalStageApi(page)).toEqual(api);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(async () => (await graph()).nodes.length).toBe(4);
+  await legacyNode.getByRole('button', { name: 'Encode Inputs options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Separate encoding stages', exact: true }).click();
+  await expect(legacyNode).toHaveCount(0);
+  expect(await optionalStageApi(page)).toEqual(api);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(legacyNode).toBeVisible();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(legacyNode).toBeVisible();
+  expect((await graph()).nodes).toHaveLength(4);
+  expect(await optionalStageApi(page)).toEqual(api);
+});
+
+test('Model Setup adapter dialog inserts only populated immutable rows and add, reorder, remove, Undo survive reload', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const setup = (await graph()).nodes.find((node) => node.data.label === 'Model Setup')!;
+  const node = page.getByTestId(`setup-node-${setup.id}`);
+  const initial = await optionalStageApi(page);
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      requests.push(request.url());
+  });
+  const orderedModels = () =>
+    page.evaluate(async () => {
+      const hooks = window.__MODIFF_E2E__!;
+      hooks.setWebsocketConnection({ sid: 'adapter-ui-contract', isConnected: true });
+      const api = await hooks.exportAuthorizedApiGraph();
+      const owner = Object.values(api.nodes).find((entry) => entry.action === 'ModelsLoader')!;
+      const ordered: string[] = [];
+      let id = owner.params.lora_list?.sourceId;
+      while (id) {
+        const adapter = api.nodes[id]!;
+        ordered.unshift((adapter.params.model.value as { value: string }).value);
+        id = adapter.params.previous_loras?.sourceId;
+      }
+      return ordered;
+    });
+  const orderedScales = () =>
+    page.evaluate(async () => {
+      const hooks = window.__MODIFF_E2E__!;
+      hooks.setWebsocketConnection({ sid: 'adapter-ui-contract', isConnected: true });
+      const api = await hooks.exportAuthorizedApiGraph();
+      const owner = Object.values(api.nodes).find((entry) => entry.action === 'ModelsLoader')!;
+      const ordered: unknown[] = [];
+      let id = owner.params.lora_list?.sourceId;
+      while (id) {
+        const adapter = api.nodes[id]!;
+        ordered.unshift(adapter.params.scale.value);
+        id = adapter.params.previous_loras?.sourceId;
+      }
+      return ordered;
+    });
+  await node.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
+  await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Select a Hub or local LoRA');
+  expect(await optionalStageApi(page)).toEqual(initial);
+  await dialog.getByLabel('Model', { exact: true }).fill('review/first-adapter');
+  await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('commit revision');
+  expect(await orderedModels()).toEqual([]);
+  await dialog.getByLabel('Revision', { exact: true }).fill('a'.repeat(40));
+  await dialog.getByLabel('Expected SHA-256', { exact: true }).fill('b'.repeat(64));
+  await dialog.getByLabel('Weight Name', { exact: true }).fill('first.safetensors');
+  await dialog.getByLabel('Scale', { exact: true }).fill('0.8');
+  await dialog.getByLabel('Scale', { exact: true }).press('Tab');
+  await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(orderedModels).toEqual(['review/first-adapter']);
+  await node.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
+  await dialog.getByLabel('Model', { exact: true }).fill('review/second-adapter');
+  await dialog.getByLabel('Revision', { exact: true }).fill('c'.repeat(40));
+  await dialog.getByLabel('Expected SHA-256', { exact: true }).fill('d'.repeat(64));
+  await dialog.getByLabel('Weight Name', { exact: true }).fill('second.safetensors');
+  await dialog.getByLabel('Scale', { exact: true }).fill('0.35');
+  await dialog.getByLabel('Scale', { exact: true }).press('Tab');
+  await expect(dialog.getByLabel('Scale', { exact: true })).toHaveValue('0.35');
+  await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(orderedModels).toEqual(['review/first-adapter', 'review/second-adapter']);
+  await expect.poll(orderedScales).toEqual(['0.8', '0.35']);
+  const secondScale = node.getByRole('region', { name: 'Adapter 2', exact: true }).getByLabel('Scale', { exact: true });
+  await secondScale.fill('0.355');
+  await secondScale.press('Tab');
+  await expect.poll(orderedScales).toEqual(['0.8', '0.355']);
+  await secondScale.fill('0.35');
+  await secondScale.press('Tab');
+  await expect.poll(orderedScales).toEqual(['0.8', '0.35']);
+  await node
+    .getByRole('region', { name: 'Adapter 2', exact: true })
+    .getByRole('button', { name: 'Move up', exact: true })
+    .click();
+  await expect.poll(orderedModels).toEqual(['review/second-adapter', 'review/first-adapter']);
+  await expect.poll(orderedScales).toEqual(['0.35', '0.8']);
+  await node
+    .getByRole('region', { name: 'Adapter 1', exact: true })
+    .getByRole('button', { name: 'Remove', exact: true })
+    .click();
+  await expect.poll(orderedModels).toEqual(['review/first-adapter']);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(orderedModels).toEqual(['review/second-adapter', 'review/first-adapter']);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(node).toBeVisible();
+  await expect.poll(orderedModels).toEqual(['review/second-adapter', 'review/first-adapter']);
+  expect((await graph()).nodes).toHaveLength(4);
+  await expect.poll(orderedScales).toEqual(['0.35', '0.8']);
+  await expect(
+    node.getByRole('region', { name: 'Adapter 1', exact: true }).getByLabel('Scale', { exact: true }),
+  ).toHaveValue('0.35');
+  expect(requests).toEqual([]);
+});
+
+test('selected FLUX image adapter policy enables original two-row editing, reorder, Undo and reload without promoting runtime support', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'flux_lora_cinematic_octane_3d', 'Cinematic Octane');
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const setup = (await graph()).nodes.find((node) => node.data.label === 'Model Setup')!;
+  const node = page.getByTestId(`setup-node-${setup.id}`);
+  const orderedAdapters = () =>
+    page.evaluate(async () => {
+      const hooks = window.__MODIFF_E2E__!;
+      hooks.setWebsocketConnection({ sid: 'selected-policy-ui-contract', isConnected: true });
+      const api = await hooks.exportAuthorizedApiGraph();
+      const owner = Object.values(api.nodes).find((entry) => entry.action === 'ModelsLoader')!;
+      const ordered: Array<Record<string, unknown>> = [];
+      let id = owner.params.lora_list?.sourceId;
+      while (id) {
+        const adapter = api.nodes[id]!;
+        ordered.unshift(
+          Object.fromEntries(
+            ['model', 'revision', 'expected_sha256', 'weight_name', 'adapter_name', 'scale'].map((field) => [
+              field,
+              adapter.params[field].value,
+            ]),
+          ),
+        );
+        id = adapter.params.previous_loras?.sourceId;
+      }
+      return ordered;
+    });
+  const original = await orderedAdapters();
+  expect(original).toHaveLength(2);
+  expect(original.map((adapter) => Number(adapter.scale))).toEqual([0.8, 0.18]);
+  const broadSupport = await page.evaluate(
+    () =>
+      window
+        .__MODIFF_E2E__!.getState()
+        .nodes.studioModelCapabilities.find((item) => item.modelType === 'FluxModularPipeline')!.supportsLora,
+  );
+  expect(broadSupport).toBe(false);
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  const second = node.getByRole('region', { name: 'Adapter 2', exact: true });
+  const scale = second.getByLabel('Scale', { exact: true });
+  await expect(scale).toBeEnabled();
+  await scale.fill('0.355');
+  await scale.press('Tab');
+  await expect.poll(async () => Number((await orderedAdapters())[1].scale)).toBe(0.355);
+  await scale.fill('0.18');
+  await scale.press('Tab');
+  await expect.poll(async () => (await orderedAdapters()).map((adapter) => Number(adapter.scale))).toEqual([0.8, 0.18]);
+  const unchanged = await orderedAdapters();
+  await second.getByRole('button', { name: 'Move up', exact: true }).click();
+  await expect.poll(orderedAdapters).toEqual([...unchanged].reverse());
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(orderedAdapters).toEqual(unchanged);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(orderedAdapters).toEqual([...unchanged].reverse());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(node).toBeVisible();
+  await expect.poll(orderedAdapters).toEqual([...unchanged].reverse());
+  expect((await graph()).nodes.map((entry) => entry.data.label).sort()).toEqual([
+    'Denoise',
+    'Encode Inputs',
+    'Image Output',
+    'Model Setup',
+  ]);
+});
+
+async function assertSelectedAliasAdapterAuthoring(
+  page: Page,
+  selection: {
+    templateId: string;
+    profileId: string;
+    denoiseAction?: string;
+    search: string;
+    reviewTerms: boolean;
+    embeddedGuidance: number;
+    guiderEnabled: boolean | null;
+    task?: string;
+    executionMode?: string;
+    policyTasks?: string[];
+    visibleLabels?: string[];
+    referenceCount?: number;
+  },
+) {
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      mutations.push(request.url());
+  });
+  await openOptionalStageTemplate(page, selection.templateId, selection.search, selection.reviewTerms);
+  const setup = (await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).nodes.find(
+    (node) => node.data.label === 'Model Setup',
+  )!;
+  const node = page.getByTestId(`setup-node-${setup.id}`);
+  const snapshot = () =>
+    page.evaluate(
+      async ({ profileId, denoiseAction }) => {
+        const hooks = window.__MODIFF_E2E__!;
+        hooks.setWebsocketConnection({ sid: 'own-alias-authoring-contract', isConnected: true });
+        const api = await hooks.exportAuthorizedApiGraph();
+        const owner = Object.values(api.nodes).find((entry) => entry.action === 'ModelsLoader')!;
+        const ordered: Array<Record<string, unknown>> = [];
+        let id = owner.params.lora_list?.sourceId;
+        while (id) {
+          const adapter = api.nodes[id]!;
+          ordered.unshift(
+            Object.fromEntries(
+              ['model', 'revision', 'expected_sha256', 'weight_name', 'adapter_name', 'scale'].map((field) => [
+                field,
+                adapter.params[field].value,
+              ]),
+            ),
+          );
+          id = adapter.params.previous_loras?.sourceId;
+        }
+        const core = Object.entries(api.nodes).filter(([, entry]) => entry.action !== 'Lora');
+        const identities = new Map(core.map(([id, entry]) => [id, `${entry.module}.${entry.action}`]));
+        const state = hooks.getState().nodes;
+        const profile = state.studioModelCapabilities
+          .flatMap((capability) => capability.executionProfiles ?? [])
+          .find((candidate) => candidate.id === profileId)!;
+        return {
+          ordered,
+          profile,
+          canonicalSupportsLora: state.studioModelCapabilities.find(
+            (capability) => capability.modelType === owner.params.model_type.value,
+          )!.supportsLora,
+          repository: owner.params.repo_id.value,
+          revision: owner.params.revision.value,
+          guiderEnabled:
+            Object.values(api.nodes).find((entry) => entry.action === 'Guider')?.params.enabled.value ?? null,
+          referenceFiles: Object.values(api.nodes)
+            .filter((entry) => entry.module === 'modules.Image' && entry.action === 'Load')
+            .flatMap((entry) => {
+              const value = entry.params.file.value;
+              return Array.isArray(value) ? value : value ? [value] : [];
+            }),
+          embeddedGuidance: Object.values(api.nodes).find((entry) => entry.action === denoiseAction)!.params
+            .guidance_scale.value,
+          core: Object.fromEntries(
+            core.map(([id, entry]) => [
+              identities.get(id),
+              {
+                ...entry,
+                params: Object.fromEntries(
+                  Object.entries(entry.params)
+                    .filter(([field]) => field !== 'lora_list')
+                    .map(([field, value]) => [
+                      field,
+                      { ...value, ...(value.sourceId ? { sourceId: identities.get(value.sourceId) } : {}) },
+                    ]),
+                ),
+              },
+            ]),
+          ),
+        };
+      },
+      { profileId: selection.profileId, denoiseAction: selection.denoiseAction ?? 'Denoise' },
+    );
+  const baseline = await snapshot();
+  expect(baseline.ordered).toEqual([]);
+  expect(baseline.canonicalSupportsLora).toBe(false);
+  expect(baseline.profile.adapterAuthoring!.tasks).toEqual(selection.policyTasks ?? ['text_to_image']);
+  expect(baseline.profile.adapterAuthoring!.tasks).toContain(
+    selection.executionMode ?? selection.task ?? 'text_to_image',
+  );
+  if (selection.referenceCount !== undefined) expect(baseline.referenceFiles).toHaveLength(selection.referenceCount);
+  expect(baseline.profile.adapterAuthoring!.repositoryRevisions).toContainEqual({
+    repo: (baseline.repository as { value: string }).value,
+    revision: baseline.revision,
+  });
+  expect(baseline.guiderEnabled).toBe(selection.guiderEnabled);
+  expect(Number(baseline.embeddedGuidance)).toBe(selection.embeddedGuidance);
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  const retainedAdapters = await page.evaluate(async () => {
+    const { STUDIO_TEMPLATES } = await import('/src/studio/templates.ts');
+    const settings = STUDIO_TEMPLATES.find((template) => template.id === 'flux_lora_cinematic_octane_3d')!
+      .workflowBlockSettings!.lora!;
+    // These real immutable identities are reused only for metadata authoring;
+    // this mocked test makes no compatibility or adapter-inference claim.
+    return [settings, ...settings.additionalAdapters!];
+  });
+  expect(retainedAdapters).toHaveLength(2);
+  for (const [index, adapter] of retainedAdapters.entries()) {
+    await node.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
+    await dialog.getByLabel('Model', { exact: true }).fill(adapter.model!.value);
+    await dialog.getByLabel('Revision', { exact: true }).fill(adapter.model!.revision!);
+    await dialog.getByLabel('Expected SHA-256', { exact: true }).fill(adapter.model!.sha256!);
+    await dialog.getByLabel('Weight Name', { exact: true }).fill(adapter.weightName!);
+    await dialog.getByLabel('Adapter Name', { exact: true }).fill(adapter.adapterName!);
+    await dialog.getByLabel('Scale', { exact: true }).fill(index === 0 ? '0.8' : '0.35');
+    await dialog.getByLabel('Scale', { exact: true }).press('Tab');
+    await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  const original = (await snapshot()).ordered;
+  expect(original.map((adapter) => Number(adapter.scale))).toEqual([0.8, 0.35]);
+  for (const [index, adapter] of original.entries()) {
+    expect(adapter.model).toEqual({ source: 'hub', value: retainedAdapters[index]!.model!.value });
+    expect(adapter.revision).toBe(retainedAdapters[index]!.model!.revision);
+    expect(adapter.expected_sha256).toBe(retainedAdapters[index]!.model!.sha256);
+    expect(adapter.weight_name).toBe(retainedAdapters[index]!.weightName);
+    expect(adapter.adapter_name).toBe(retainedAdapters[index]!.adapterName);
+  }
+  const second = node.getByRole('region', { name: 'Adapter 2', exact: true });
+  await second.getByLabel('Scale', { exact: true }).fill('0.355');
+  await second.getByLabel('Scale', { exact: true }).press('Tab');
+  await expect.poll(async () => Number((await snapshot()).ordered[1]!.scale)).toBe(0.355);
+  await second.getByLabel('Scale', { exact: true }).fill('0.35');
+  await second.getByLabel('Scale', { exact: true }).press('Tab');
+  await second.getByRole('button', { name: 'Move up', exact: true }).click();
+  await expect.poll(async () => (await snapshot()).ordered).toEqual([...original].reverse());
+  await node
+    .getByRole('region', { name: 'Adapter 1', exact: true })
+    .getByRole('button', { name: 'Remove', exact: true })
+    .click();
+  await expect.poll(async () => (await snapshot()).ordered).toEqual(original.slice(0, 1));
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await snapshot()).ordered).toEqual([...original].reverse());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(node).toBeVisible();
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  await expect.poll(async () => (await snapshot()).ordered).toEqual([...original].reverse());
+  const restored = await snapshot();
+  expect(restored.core).toEqual(baseline.core);
+  expect(restored.profile).toEqual(baseline.profile);
+  expect(restored.referenceFiles).toEqual(baseline.referenceFiles);
+  expect(restored.guiderEnabled).toBe(selection.guiderEnabled);
+  expect(Number(restored.embeddedGuidance)).toBe(selection.embeddedGuidance);
+  expect(restored.canonicalSupportsLora).toBe(false);
+  expect(
+    (await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).nodes
+      .map((entry) => entry.data.label)
+      .sort(),
+  ).toEqual(selection.visibleLabels ?? ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup']);
+  expect(mutations).toEqual([]);
+}
+
+test('selected Schnell image policy preserves original guidance through adapter Add, edit, reorder, Remove, Undo and reload', async ({
+  page,
+}) => {
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: 'flux_schnell_text_to_image',
+    profileId: 'flux-schnell:modular',
+    search: 'Coastal Wall',
+    reviewTerms: false,
+    embeddedGuidance: 0,
+    guiderEnabled: false,
+  });
+});
+
+test('selected Krea image policy preserves original guidance through adapter Add, edit, reorder, Remove, Undo and reload', async ({
+  page,
+}) => {
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: 'flux_krea_text_to_image',
+    profileId: 'flux-krea:modular',
+    search: 'Editorial Portrait',
+    reviewTerms: true,
+    embeddedGuidance: 3.5,
+    guiderEnabled: true,
+  });
+});
+
+test('selected image adapter capacity keeps 32 owned rows editable while Add remains disabled', async ({ page }) => {
+  await openOptionalStageTemplate(page, 'flux_lora_ghibli_story', 'Ghibli');
+  const rootId = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    const { modelSetupAdapterChain, planModelSetupAdapterEdit } = await import('/src/workflow/modelSetupAdapters.ts');
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    let graph = useFlowStore.getState().toObject();
+    const setup = graph.nodes.find((node) => node.data.label === 'Model Setup')!;
+    const authority = useNodesStore.getState();
+    // Capacity fixture uses the ordinary planner and real published selected
+    // policy; no template/profile permissions or immutable controls are invented.
+    while (modelSetupAdapterChain(graph, setup.id).adapters.length < 32)
+      graph = planModelSetupAdapterEdit(
+        graph,
+        setup.id,
+        {
+          kind: 'add',
+          registry: authority.nodesRegistry,
+          values: { model: { source: 'local', value: 'metadata-only.safetensors' } },
+        },
+        authority,
+      );
+    useFlowStore.getState().replaceGraph(graph);
+    useFlowStore.getState().resetHistory();
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return setup.id;
+  });
+  const node = page.getByTestId(`setup-node-${rootId}`);
+  await expect(node.getByRole('region', { name: /^Adapter \d+$/u })).toHaveCount(32);
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+  const first = node.getByRole('region', { name: 'Adapter 1', exact: true });
+  await expect(first.getByLabel('Scale', { exact: true })).toBeEnabled();
+  await expect(first.getByRole('button', { name: 'Move down', exact: true })).toBeEnabled();
+  await expect(first.getByRole('button', { name: 'Remove', exact: true })).toBeEnabled();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(node.getByRole('region', { name: /^Adapter \d+$/u })).toHaveCount(32);
+  await expect(first.getByLabel('Scale', { exact: true })).toBeEnabled();
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+});
+
+test('ordinary numeric fields preserve imported and typed float precision through increments, Undo and reload', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+  await dismissTaskLauncher(page);
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { prepareWorkflowForManualInsertion } = await import('/src/studio/manualGraphInsertion.ts');
+    prepareWorkflowForManualInsertion();
+    // Ordinary imported control metadata; no executable node or model is run.
+    useFlowStore.getState().replaceGraph({
+      nodes: [
+        {
+          id: 'numeric-precision',
+          type: 'custom',
+          position: { x: 120, y: 100 },
+          data: {
+            type: 'custom',
+            module: 'custom.Fixture',
+            action: 'Numeric',
+            category: 'test',
+            label: 'Numeric precision',
+            params: {
+              stepped: {
+                label: 'Stepped float',
+                type: 'float',
+                display: 'slider',
+                value: 0.35,
+                default: 0.125,
+                min: -20,
+                max: 20,
+                step: 0.1,
+              },
+              padded: { label: 'Padded float', type: 'float', display: 'number', value: 16, step: 0.1 },
+              whole_step: { label: 'Whole step float', type: 'float', display: 'number', value: 1.5, step: 1 },
+              unstepped: {
+                label: 'Unstepped float',
+                type: 'float',
+                display: 'number',
+                value: 0.125,
+                default: 0.125,
+                min: -1,
+                max: 1,
+              },
+              tiny: { label: 'Tiny float', type: 'float', display: 'number', value: -1.25e-7, step: 1e-8 },
+              ultra: { label: 'Ultra small float', type: 'float', display: 'number', value: 1e-120, step: 0.1 },
+              integer: { label: 'Integer', type: 'int', display: 'number', value: 4, default: 3, min: 1, max: 6 },
+            },
+          },
+        },
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    });
+    useFlowStore.getState().resetHistory();
+  });
+  const node = page.locator('.react-flow__node[data-id="numeric-precision"]');
+  const stepped = node.getByLabel('Stepped float', { exact: true });
+  const padded = node.getByLabel('Padded float', { exact: true });
+  const whole = node.getByLabel('Whole step float', { exact: true });
+  const unstepped = node.getByLabel('Unstepped float', { exact: true });
+  const tiny = node.getByLabel('Tiny float', { exact: true });
+  const ultra = node.getByLabel('Ultra small float', { exact: true });
+  const integer = node.getByLabel('Integer', { exact: true });
+  const values = () =>
+    page.evaluate(() => {
+      const node = window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.find((node) => node.id === 'numeric-precision')!;
+      return Object.fromEntries(Object.entries(node.data.params).map(([key, field]) => [key, field.value]));
+    });
+  await expect(stepped).toHaveValue('0.35');
+  await expect(padded).toHaveValue('16.0');
+  await expect(whole).toHaveValue('1.5');
+  await expect(unstepped).toHaveValue('0.125');
+  await expect(tiny).toHaveValue('-1.25e-7');
+  await expect(ultra).toHaveValue('1e-120');
+  for (const input of [stepped, padded, whole, unstepped, tiny, ultra]) {
+    await input.focus();
+    await input.press('Tab');
+  }
+  expect(await values()).toMatchObject({
+    stepped: '0.35',
+    padded: '16.0',
+    whole_step: '1.5',
+    unstepped: '0.125',
+    tiny: '-1.25e-7',
+    ultra: '1e-120',
+  });
+  expect(Number((await values()).padded)).toBe(16);
+  await node.getByRole('button', { name: 'Increase Stepped float', exact: true }).click();
+  await expect(stepped).toHaveValue('0.45');
+  await node.getByRole('button', { name: 'Decrease Stepped float', exact: true }).click();
+  await expect(stepped).toHaveValue('0.35');
+  await stepped.focus();
+  await stepped.press('ArrowDown');
+  await stepped.press('Enter');
+  await expect(stepped).toHaveValue('0.25');
+  await stepped.focus();
+  await stepped.press('ArrowUp');
+  await stepped.press('Tab');
+  await expect(stepped).toHaveValue('0.35');
+  await node.getByRole('button', { name: 'Increase Tiny float', exact: true }).click();
+  await expect(tiny).toHaveValue('-1.15e-7');
+  await node.getByRole('button', { name: 'Decrease Tiny float', exact: true }).click();
+  await expect(tiny).toHaveValue('-1.25e-7');
+  await node.getByRole('button', { name: 'Increase Ultra small float', exact: true }).click();
+  await expect(ultra).toHaveValue('0.1');
+  await unstepped.fill('-0.125');
+  await unstepped.press('Enter');
+  await expect(unstepped).toHaveValue('-0.125');
+  await unstepped.fill('99');
+  await unstepped.press('Tab');
+  await expect(unstepped).toHaveValue('1.0');
+  expect(Number((await values()).unstepped)).toBe(1);
+  await unstepped.fill('Infinity');
+  await unstepped.press('Tab');
+  await expect(unstepped).toHaveValue('0.125');
+  await stepped.fill('Infinity');
+  await stepped.press('Tab');
+  await expect(stepped).toHaveValue('0.125');
+  await stepped.fill('0.35');
+  await stepped.press('Tab');
+  await integer.fill('4.7');
+  await integer.press('Tab');
+  await expect(integer).toHaveValue('5');
+  await integer.fill('99');
+  await integer.press('Enter');
+  await expect(integer).toHaveValue('6');
+  await expect(node.getByRole('button', { name: 'Increase Integer', exact: true })).toBeDisabled();
+  await integer.fill('-99');
+  await integer.press('Tab');
+  await expect(integer).toHaveValue('1');
+  await stepped.fill('0.65');
+  await stepped.press('Escape');
+  await expect(stepped).toHaveValue('0.35');
+  await page.evaluate(async () => (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().resetHistory());
+  await stepped.fill('0.65');
+  await stepped.press('Tab');
+  await expect.poll(values).toMatchObject({ stepped: '0.65' });
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(stepped).toHaveValue('0.35');
+  const saved = await values();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(stepped).toHaveValue('0.35');
+  await expect(padded).toHaveValue('16.0');
+  expect(await values()).toEqual(saved);
+  expect(Number((await values()).padded)).toBe(16);
+});
+
+async function withdrawSelectedImageAdapterPolicy(page: Page, profileId: string) {
+  const fixture = await imageTemplateSchemas();
+  let removed = 0;
+  const withdraw = (value: unknown) => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach(withdraw);
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.id === profileId && Object.hasOwn(record, 'adapterAuthoring')) {
+      delete record.adapterAuthoring;
+      removed += 1;
+    }
+    Object.values(record).forEach(withdraw);
+  };
+  // Withdraw the existing selected declaration in every public copy. No broad
+  // support flag, other policy, registry descriptor or graph value is altered.
+  withdraw(fixture.publicPayload);
+  expect(removed).toBeGreaterThanOrEqual(2);
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.evaluate(async () => {
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    await useNodesStore.getState().fetchStudioModelCapabilities();
+  });
+}
+
+test('unsupported image Model Setup disables Add LoRA and Cosmos retains four actual visible stages', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'cosmos3_super_text_to_image', 'Cosmos 3 Super');
+  await withdrawSelectedImageAdapterPolicy(page, 'cosmos3-super-text-to-image:official-modular-workflow');
+  const graph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  expect(graph.nodes.map((node) => node.data.label).sort()).toEqual([
+    'Denoise',
+    'Encode Inputs',
+    'Image Output',
+    'Model Setup',
+  ]);
+  const setup = graph.nodes.find((node) => node.data.label === 'Model Setup')!;
+  const node = page.getByTestId(`setup-node-${setup.id}`);
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+  await expect(node).toContainText('The selected image model does not support LoRA.');
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(graph);
+});
+
+test('an image adapter draft rechecks withdrawn current support while existing rows remain inspectable and removable', async ({
+  page,
+}) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const setup = (await graph()).nodes.find((node) => node.data.label === 'Model Setup')!;
+  const node = page.getByTestId(`setup-node-${setup.id}`);
+  await node.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
+  await dialog.getByLabel('Model', { exact: true }).fill('review/retained-adapter');
+  await dialog.getByLabel('Revision', { exact: true }).fill('a'.repeat(40));
+  await dialog.getByLabel('Expected SHA-256', { exact: true }).fill('b'.repeat(64));
+  await dialog.getByLabel('Weight Name', { exact: true }).fill('retained.safetensors');
+  await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(node.getByRole('region', { name: 'Adapter 1', exact: true })).toBeVisible();
+  await node.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+  const before = await graph();
+  const fixture = await imageTemplateSchemas();
+  for (const capability of fixture.publicPayload.capabilities)
+    if (capability.modelType === 'QwenImageModularPipeline') capability.supportsLora = false;
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
+  await page.evaluate(async () => {
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    await useNodesStore.getState().fetchStudioModelCapabilities();
+  });
+  await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('does not support LoRA');
+  expect(await graph()).toEqual(before);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+  const row = node.getByRole('region', { name: 'Adapter 1', exact: true });
+  await expect(row.getByLabel('Model', { exact: true })).toHaveValue('review/retained-adapter');
+  await expect(row.getByLabel('Model', { exact: true })).toBeDisabled();
+  await row.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(row).toBeVisible();
+  await expect(row.getByLabel('Model', { exact: true })).toHaveValue('review/retained-adapter');
+});
+
 test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and geometry across edit, separate and reload', async ({
   page,
 }) => {
@@ -29870,7 +30932,10 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
     const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
     const { createNodeFromRegistry } = await import('/src/workflow/nodeFactory.ts');
     const { prepareWorkflowForManualInsertion } = await import('/src/studio/manualGraphInsertion.ts');
-    const graph = useFlowStore.getState().toObject();
+    const { unpackVisualOperationGroups } = await import('/src/workflow/visualOperationGroupProjection.ts');
+    const { restoreVisualOperationGroups } = await import('/src/workflow/visualOperationGroups.ts');
+    const unpacked = unpackVisualOperationGroups(useFlowStore.getState().toObject());
+    const graph = unpacked.graph;
     const consumer = graph.nodes.find(
       (node) =>
         node.data.operationAuthoring?.operation.task === 'outpaint' &&
@@ -29900,8 +30965,20 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
       feather: 8,
     }))
       canvas.data.params[field].value = value;
-    consumer.data.params.width.isInput = true;
-    consumer.data.params.height.isInput = true;
+    const geometry = graph.nodes.filter(
+      (node) =>
+        node.data.operationAuthoring?.operation.pipelineClass ===
+          consumer.data.operationAuthoring!.operation.pipelineClass &&
+        node.data.operationAuthoring?.operation.task === consumer.data.operationAuthoring!.operation.task &&
+        node.data.params.width &&
+        node.data.params.height &&
+        !graph.edges.some((edge) => edge.target === node.id && ['width', 'height'].includes(edge.targetHandle ?? '')),
+    );
+    if (!geometry.includes(consumer)) throw new Error('Missing source-consuming geometry control.');
+    for (const node of geometry) {
+      node.data.params.width.isInput = true;
+      node.data.params.height.isInput = true;
+    }
     const edges = graph.edges.filter((edge) => edge.id !== image.id && edge.id !== mask.id);
     if (edges.some((edge) => edge.source === mask.source || edge.target === mask.source))
       throw new Error('Mask fixture has another consumer');
@@ -29915,8 +30992,6 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
     for (const [output, input] of [
       ['canvas', 'image'],
       ['mask_image', 'mask_image'],
-      ['width_out', 'width'],
-      ['height_out', 'height'],
     ])
       edges.push({
         id: `mask-canvas-${input}`,
@@ -29925,50 +31000,83 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
         target: consumer.id,
         targetHandle: input,
       });
+    for (const node of geometry)
+      for (const [output, input] of [
+        ['width_out', 'width'],
+        ['height_out', 'height'],
+      ])
+        edges.push({
+          id: `mask-canvas-${node.id}-${input}`,
+          source: canvas.id,
+          sourceHandle: output,
+          target: node.id,
+          targetHandle: input,
+        });
     prepareWorkflowForManualInsertion();
     useFlowStore
       .getState()
-      .replaceGraph({ nodes: [...graph.nodes.filter((node) => node.id !== mask.source), canvas], edges });
+      .replaceGraph(
+        restoreVisualOperationGroups(
+          { nodes: [...graph.nodes.filter((node) => node.id !== mask.source), canvas], edges },
+          unpacked,
+        ),
+      );
   });
   await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
   const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   const before = await optionalStageApi(page);
-  const owner = (await graph()).nodes.find((node) => node.data.action === 'LoadPipeline')!;
-  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
-  await loader.locator('header').first().click();
-  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
-  await page
-    .getByRole('dialog', { name: 'Node inspector', exact: true })
-    .getByRole('button', { name: 'Workflow stage actions', exact: true })
-    .click();
+  const owner = (await graph()).nodes.find((node) => node.data.label === 'Model Setup')!;
+  const loader = page.getByTestId(`setup-node-${owner.id}`);
+  await loader.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Group image output', exact: true })).toHaveCount(0);
   await page.getByRole('menuitem', { name: 'Group mask preparation', exact: true }).click();
   await expect
     .poll(async () => {
       if ((await graph()).nodes.some((node) => node.data.label === 'Prepare Mask')) return 'grouped';
-      return (
-        (
-          await page.getByRole('dialog', { name: 'Node inspector', exact: true }).getByRole('alert').allTextContents()
-        ).join('; ') || 'waiting'
-      );
+      return (await loader.getByRole('alert').allTextContents()).join('; ') || 'waiting';
     })
     .toBe('grouped');
   await page.keyboard.press('Escape');
   const prepared = (await graph()).nodes.find((node) => node.data.label === 'Prepare Mask')!;
   const node = page.getByTestId(`mask-node-${prepared.id}`);
+  // This manually inserted supplier composition now has two grouped stages
+  // in the former loader column. Arrange their actual rendered bounds before
+  // exercising pointer-driven controls on the expanded mask stage.
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
   await expect(node).toBeVisible();
   expect(prepared.data.blockInstanceV2!.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
     'Load',
     'OutpaintCanvas',
   ]);
   expect(await optionalStageApi(page)).toEqual(before);
-  const consumer = (await graph()).nodes.find(
-    (node) =>
-      node.data.operationAuthoring?.operation.task === 'outpaint' &&
-      node.data.params.image &&
-      node.data.params.mask_image,
-  )!;
-  const consumerKey = `${consumer.data.module}.${consumer.data.action}`;
+  const consumers = await page.evaluate(async () => {
+    const { unpackVisualOperationGroups } = await import('/src/workflow/visualOperationGroupProjection.ts');
+    const flat = unpackVisualOperationGroups(window.__MODIFF_E2E__!.exportWorkflowGraph()).graph;
+    const consumer = flat.nodes.find(
+      (entry) =>
+        entry.data.operationAuthoring?.operation.task === 'outpaint' &&
+        entry.data.params.image &&
+        entry.data.params.mask_image,
+    )!;
+    if (!consumer) throw new Error('Missing actual source/mask consumer.');
+    const canvas = flat.nodes.find(
+      (entry) => entry.data.module === 'modules.DiffusersImage' && entry.data.action === 'OutpaintCanvas',
+    )!;
+    const geometry = flat.nodes.filter((entry) =>
+      flat.edges.some(
+        (edge) =>
+          edge.source === canvas.id &&
+          edge.sourceHandle === 'width_out' &&
+          edge.target === entry.id &&
+          edge.targetHandle === 'width',
+      ),
+    );
+    return {
+      media: `${consumer.data.module}.${consumer.data.action}`,
+      geometry: geometry.map((entry) => `${entry.data.module}.${entry.data.action}`),
+    };
+  });
+  const consumerKey = consumers.media;
   const feather = node.getByLabel(/^Mask feather$/i);
   await feather.fill('0');
   await feather.press('Enter');
@@ -29978,6 +31086,17 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
   expect(edited[consumerKey].params.mask_image.sourceKey).toBe('mask_image');
   expect(edited[consumerKey].params.width.sourceKey).toBe('width_out');
   expect(edited[consumerKey].params.height.sourceKey).toBe('height_out');
+  expect(consumers.geometry).toContain(consumerKey);
+  for (const key of consumers.geometry) {
+    expect(edited[key].params.width).toMatchObject({
+      sourceId: 'modules.DiffusersImage.OutpaintCanvas',
+      sourceKey: 'width_out',
+    });
+    expect(edited[key].params.height).toMatchObject({
+      sourceId: 'modules.DiffusersImage.OutpaintCanvas',
+      sourceKey: 'height_out',
+    });
+  }
   await node.getByRole('button', { name: 'Prepare Mask options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Separate mask preparation stages', exact: true }).click();
   await expect(node).toHaveCount(0);
@@ -29999,15 +31118,10 @@ test('optional declared component bundle preserves Qwen stages, controls, breako
   const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   const original = await graph();
   const before = await optionalStageApi(page);
-  const owner = original.nodes.find((node) => node.data.action === 'ModelsLoader')!;
-  const loader = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  const owner = original.nodes.find((node) => node.data.label === 'Model Setup')!;
+  const loader = page.getByTestId(`setup-node-${owner.id}`);
   const menu = async () => {
-    await loader.locator('header').first().click();
-    await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
-    await page
-      .getByRole('dialog', { name: 'Node inspector', exact: true })
-      .getByRole('button', { name: 'Workflow stage actions', exact: true })
-      .click();
+    await loader.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
   };
   await menu();
   await page.getByRole('menuitem', { name: 'Use component bundle', exact: true }).click();
@@ -30717,3 +31831,1090 @@ for (const displayType of ['text', 'json'] as const) {
     });
   });
 }
+
+// These five literal cases use the existing normal UI
+// helper with the declared stage/task/Guider
+// differences. No model compatibility or adapter inference is claimed.
+// reviewTerms comes from current modelUsagePolicies, not assumed dialog timing.
+test('selected Kontext edit image policy preserves media, guidance and stages through adapter editing and reload', async ({
+  page,
+}) => {
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: 'flux_kontext_edit',
+    referenceCount: 1,
+    profileId: 'flux-kontext:modular',
+    search: 'Material Replacement',
+    reviewTerms: true,
+    task: 'edit_image',
+    policyTasks: ['edit_image'],
+    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    embeddedGuidance: 3.5,
+    guiderEnabled: true,
+  });
+});
+test('selected Kontext multi-reference image policy preserves composition, guidance and stages through adapter editing and reload', async ({
+  page,
+}) => {
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: 'flux_kontext_multi_reference',
+    referenceCount: 2,
+    executionMode: 'edit_image',
+    profileId: 'flux-kontext:modular',
+    search: 'Material Transfer',
+    reviewTerms: true,
+    task: 'multi_image_reference_edit',
+    policyTasks: ['edit_image'],
+    visibleLabels: ['Compose References', 'Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    embeddedGuidance: 3.5,
+    guiderEnabled: true,
+  });
+});
+test('selected Klein text-to-image policy preserves guidance and stages through adapter editing and reload', async ({
+  page,
+}) => {
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: 'flux2_klein_text_to_image',
+    referenceCount: 0,
+    profileId: 'flux2-klein:modular',
+    search: 'Glass Material Study',
+    reviewTerms: false,
+    task: 'text_to_image',
+    policyTasks: ['text_to_image', 'edit_image'],
+    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup'],
+    embeddedGuidance: 1,
+    guiderEnabled: null,
+  });
+});
+test('selected Klein edit image policy preserves media, guidance and stages through adapter editing and reload', async ({
+  page,
+}) => {
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: 'flux2_klein_edit',
+    referenceCount: 1,
+    profileId: 'flux2-klein:modular',
+    search: 'Material Change',
+    reviewTerms: false,
+    task: 'edit_image',
+    policyTasks: ['text_to_image', 'edit_image'],
+    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    embeddedGuidance: 1,
+    guiderEnabled: null,
+  });
+});
+test('selected Klein multi-reference image policy preserves media, guidance and stages through adapter editing and reload', async ({
+  page,
+}) => {
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: 'flux2_klein_multi_reference',
+    referenceCount: 2,
+    executionMode: 'edit_image',
+    profileId: 'flux2-klein:modular',
+    search: 'Material Fusion',
+    reviewTerms: false,
+    task: 'multi_image_reference_edit',
+    policyTasks: ['text_to_image', 'edit_image'],
+    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    embeddedGuidance: 1,
+    guiderEnabled: null,
+  });
+});
+
+const stagedTemplateExpectedLabels: Record<string, string[]> = {
+  flux_fill_inpaint: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Load Image', 'Model Setup'],
+  flux_fill_outpaint: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Load Image', 'Model Setup'],
+  flux_control_canny: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+  flux_depth_control: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+  flux_redux_edit: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+  flux_redux_multi_reference: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+};
+
+/** Normal UI authoring, persistence and ordinary API export only. The immutable
+ * adapter identities are metadata specimens, not compatibility/inference proof. */
+async function assertImagePipelineStageAdapterAuthoring(page: Page, templateId: string, search: string) {
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      mutations.push(request.url());
+  });
+  const template = STUDIO_TEMPLATES.find((item) => item.id === templateId)!;
+  const reviewTerms = acknowledgementRequiredForTemplate(template).length > 0;
+  await openOptionalStageTemplate(page, templateId, search, reviewTerms);
+  const fixture = (await imageTemplateSchemas()).recipes.find((item) => item.id === templateId)!;
+  const expectedLoader = fixture.starter.nodes.find((item) => item.operation.decomposition === 'loader')!.node;
+  const setup = (await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).nodes.find(
+    (entry) => entry.data.label === 'Model Setup',
+  )!;
+  const node = page.getByTestId(`setup-node-${setup.id}`);
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  const snapshot = () =>
+    page.evaluate(async () => {
+      const hooks = window.__MODIFF_E2E__!;
+      hooks.setWebsocketConnection({ sid: 'image-stage-authoring-contract', isConnected: true });
+      const api = await hooks.exportAuthorizedApiGraph();
+      const entries = Object.entries(api.nodes);
+      const [ownerId, owner] = entries.find(
+        ([, entry]) => entry.module === 'modules.DiffusersImage' && entry.action === 'LoadPipeline',
+      )!;
+      const stage = (action: string) =>
+        entries.find(([, entry]) => entry.module === 'modules.DiffusersImage' && entry.action === action)!;
+      const [encodeId] = stage('EncodeInputs');
+      const [denoiseId, denoise] = stage('Denoise');
+      const [decodeId, decode] = stage('DecodeLatents');
+      const stageIds = [encodeId, denoiseId, decodeId];
+      const suppliers = stageIds.map((id) => api.nodes[id]!.params.pipeline.sourceId);
+      const ordered: Array<{ id: string; values: Record<string, unknown> }> = [];
+      let id = suppliers[0];
+      while (id && id !== ownerId) {
+        if (ordered.length >= 32 || ordered.some((entry) => entry.id === id)) throw new Error('Invalid adapter chain.');
+        const adapter = api.nodes[id]!;
+        if (adapter.module !== 'modules.DiffusersImage' || adapter.action !== 'LoadAdapter')
+          throw new Error('Foreign stage supplier.');
+        ordered.unshift({
+          id,
+          values: Object.fromEntries(
+            [
+              'adapter_path',
+              'revision',
+              'expected_sha256',
+              'weight_name',
+              'adapter_name',
+              'replace_existing',
+              'scale',
+            ].map((field) => [field, adapter.params[field].value]),
+          ),
+        });
+        id = adapter.params.pipeline.sourceId;
+      }
+      if (id !== ownerId) throw new Error('Unbound adapter chain.');
+      const adapterIds = new Set(ordered.map((entry) => entry.id));
+      const state = hooks.getState().nodes;
+      const selectedId = owner.params.execution_profile_id.value;
+      const capability = state.studioModelCapabilities.find((item) =>
+        item.executionProfiles?.some((profile) => profile.id === selectedId),
+      )!;
+      const profile = capability.executionProfiles!.find((entry) => entry.id === selectedId)!;
+      return {
+        ordered,
+        ownerId,
+        stageIds,
+        suppliers,
+        profile,
+        supportsLora: capability.supportsLora,
+        repository: owner.params.model_id.value,
+        revision: owner.params.revision.value,
+        materialWires: {
+          conditioning: denoise.params.encoded_inputs,
+          latents: decode.params.latents,
+          binding: decode.params.latent_binding,
+          width: decode.params.width,
+          height: decode.params.height,
+        },
+        encodeId,
+        denoiseId,
+        decodeId,
+        // Only the intentional ordered pipeline prefix changes; every original
+        // executable field, source-media connection and sampler scalar remains.
+        core: Object.fromEntries(
+          entries
+            .filter(([id]) => !adapterIds.has(id))
+            .map(([id, entry]) => [
+              id,
+              {
+                ...entry,
+                params: Object.fromEntries(
+                  Object.entries(entry.params).map(([name, value]) => [
+                    name,
+                    {
+                      ...value,
+                      ...(value.sourceId && adapterIds.has(value.sourceId)
+                        ? { sourceId: ownerId, sourceKey: 'pipeline' }
+                        : {}),
+                    },
+                  ]),
+                ),
+              },
+            ]),
+        ),
+        labels: hooks
+          .exportWorkflowGraph()
+          .nodes.map((entry) => entry.data.label)
+          .sort(),
+      };
+    });
+  const baseline = await snapshot();
+  expect(baseline.repository).toEqual(expectedLoader.params.model_id.value);
+  expect(baseline.revision).toBe(expectedLoader.params.revision.value);
+  expect(baseline.profile.id).toBe(template.executionSelection!.executionProfileId);
+  expect(baseline.ordered).toEqual([]);
+  expect(baseline.suppliers).toEqual(Array(3).fill(baseline.ownerId));
+  expect(baseline.materialWires).toMatchObject({
+    conditioning: { sourceId: baseline.encodeId, sourceKey: 'encoded_inputs' },
+    latents: { sourceId: baseline.denoiseId, sourceKey: 'latents_out' },
+    binding: { sourceId: baseline.denoiseId, sourceKey: 'latent_binding' },
+    width: { sourceId: baseline.denoiseId, sourceKey: 'width_out' },
+    height: { sourceId: baseline.denoiseId, sourceKey: 'height_out' },
+  });
+  const expectedLabels = stagedTemplateExpectedLabels[templateId]!;
+  expect(baseline.labels).toEqual(expectedLabels);
+  const identities = STUDIO_TEMPLATES.find((item) => item.id === 'flux_lora_cinematic_octane_3d')!
+    .workflowBlockSettings!.lora!;
+  const adapters = [identities, ...identities.additionalAdapters!];
+  expect(adapters).toHaveLength(2);
+  for (const [index, adapter] of adapters.entries()) {
+    await node.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
+    await dialog.getByLabel('Adapter', { exact: true }).fill(adapter.model!.value);
+    await dialog.getByLabel('Revision', { exact: true }).fill(adapter.model!.revision!);
+    await dialog.getByLabel('Expected SHA-256', { exact: true }).fill(adapter.model!.sha256!);
+    await dialog.getByLabel('Weight name', { exact: true }).fill(adapter.weightName!);
+    await dialog.getByLabel('Adapter name', { exact: true }).fill(adapter.adapterName!);
+    await dialog.getByLabel('Scale', { exact: true }).fill(index === 0 ? '0.8' : '0.35');
+    await dialog.getByLabel('Scale', { exact: true }).press('Tab');
+    const replace = dialog.getByRole('switch', { name: 'Replace existing adapters', exact: true });
+    await expect(replace).toHaveAttribute('aria-checked', index === 0 ? 'true' : 'false');
+    if (index === 0) await replace.click();
+    await expect(replace).toHaveAttribute('aria-checked', 'false');
+    await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  const two = await snapshot();
+  expect(two.ordered.map((entry) => Number(entry.values.scale))).toEqual([0.8, 0.35]);
+  expect(two.suppliers).toEqual(Array(3).fill(two.ordered[1]!.id));
+  expect(two.ordered.every((entry) => entry.values.replace_existing === false)).toBe(true);
+  for (const [index, entry] of two.ordered.entries()) {
+    expect(entry.values.adapter_path).toEqual({ source: 'hub', value: adapters[index]!.model!.value });
+    expect(entry.values.revision).toBe(adapters[index]!.model!.revision);
+    expect(entry.values.expected_sha256).toBe(adapters[index]!.model!.sha256);
+    expect(entry.values.weight_name).toBe(adapters[index]!.weightName);
+    expect(entry.values.adapter_name).toBe(adapters[index]!.adapterName);
+  }
+  const second = node.getByRole('region', { name: 'Adapter 2', exact: true });
+  await second.getByLabel('Scale', { exact: true }).fill('0.355');
+  await second.getByLabel('Scale', { exact: true }).press('Tab');
+  await expect.poll(async () => Number((await snapshot()).ordered[1]!.values.scale)).toBe(0.355);
+  await second.getByLabel('Scale', { exact: true }).fill('0.35');
+  await second.getByLabel('Scale', { exact: true }).press('Tab');
+  await second.getByRole('button', { name: 'Move up', exact: true }).click();
+  await expect.poll(async () => (await snapshot()).ordered).toEqual([...two.ordered].reverse());
+  await node
+    .getByRole('region', { name: 'Adapter 1', exact: true })
+    .getByRole('button', { name: 'Remove', exact: true })
+    .click();
+  await expect.poll(async () => (await snapshot()).ordered).toEqual(two.ordered.slice(0, 1));
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(async () => (await snapshot()).ordered).toEqual([...two.ordered].reverse());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(node).toBeVisible();
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  await expect.poll(async () => (await snapshot()).ordered).toEqual([...two.ordered].reverse());
+  const restored = await snapshot();
+  expect(restored.suppliers).toEqual(Array(3).fill(restored.ordered[1]!.id));
+  expect(restored.core).toEqual(baseline.core);
+  expect(restored.materialWires).toEqual(baseline.materialWires);
+  expect(restored.profile).toEqual(baseline.profile);
+  expect(restored.supportsLora).toBe(baseline.supportsLora);
+  expect(restored.labels).toEqual(expectedLabels);
+  expect(mutations).toEqual([]);
+}
+
+test('staged Fill inpaint preserves source and mask through ordered adapter editing and reload', async ({ page }) => {
+  await assertImagePipelineStageAdapterAuthoring(page, 'flux_fill_inpaint', 'Masked Object Replacement');
+});
+test('staged Fill outpaint preserves expanded canvas and mask through ordered adapter editing and reload', async ({
+  page,
+}) => {
+  await assertImagePipelineStageAdapterAuthoring(page, 'flux_fill_outpaint', 'Canvas Expansion');
+});
+test('staged Canny preserves control and latent geometry through ordered adapter editing and reload', async ({
+  page,
+}) => {
+  await assertImagePipelineStageAdapterAuthoring(page, 'flux_control_canny', 'Edge-Guided Architecture');
+});
+test('staged Depth preserves control and latent geometry through ordered adapter editing and reload', async ({
+  page,
+}) => {
+  await assertImagePipelineStageAdapterAuthoring(page, 'flux_depth_control', 'Depth-Guided Architecture');
+});
+test('staged Redux edit preserves conditioning and NONE-only adapter authoring through reload', async ({ page }) => {
+  await assertImagePipelineStageAdapterAuthoring(page, 'flux_redux_edit', 'Documentary Watchmaker');
+});
+test('staged Redux multi-reference preserves every source and ordered adapter authoring through reload', async ({
+  page,
+}) => {
+  await assertImagePipelineStageAdapterAuthoring(page, 'flux_redux_multi_reference', 'Rain Courier');
+});
+
+test('selected Cosmos NONE policy preserves actual stages through adapter Add, edit, Move, recovery Remove, Undo and reload', async ({
+  page,
+}) => {
+  const template = STUDIO_TEMPLATES.find((entry) => entry.id === 'cosmos3_super_text_to_image')!;
+  const fixture = (await imageTemplateSchemas()).recipes.find((entry) => entry.id === template.id)!;
+  const denoise = fixture.starter.nodes.find((entry) => entry.operation.nodeType === 'denoise')!.node;
+  await assertSelectedAliasAdapterAuthoring(page, {
+    templateId: template.id,
+    profileId: template.executionSelection!.executionProfileId,
+    denoiseAction: denoise.action,
+    search: 'Cosmos 3 Super',
+    reviewTerms: acknowledgementRequiredForTemplate(template).length > 0,
+    embeddedGuidance: Number(denoise.params.guidance_scale!.value ?? denoise.params.guidance_scale!.default),
+    guiderEnabled: null,
+  });
+  const setup = (await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).nodes.find(
+    (entry) => entry.data.label === 'Model Setup',
+  )!;
+  const node = page.getByTestId(`setup-node-${setup.id}`);
+  const owner = await page.evaluate(async () =>
+    Object.values((await window.__MODIFF_E2E__!.exportAuthorizedApiGraph()).nodes).find(
+      (entry) => entry.action === 'ModelsLoader',
+    )!,
+  );
+  expect(owner.params.offload_mode.value).toBe('none');
+  expect(owner.params.auto_offload.value).toBe(false);
+  expect(owner.params.weight_loading_mode.value).toBe('cpu');
+  expect(owner.params.trust_remote_code.value).toBe(false);
+  for (const name of ['quant_config', 'unet', 'vae', 'controlnet'])
+    expect(owner.params[name]).toEqual({ display: 'input' });
+  const second = node.getByRole('region', { name: 'Adapter 2', exact: true });
+  await node.getByLabel('Offload Mode', { exact: true }).click();
+  await page.getByRole('option', { name: 'RAM/CPU group offload', exact: true }).click();
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+  await expect(second.getByRole('button', { name: 'Move up', exact: true })).toBeDisabled();
+  await expect(node).toContainText('effective offload_mode');
+  await expect(second.getByRole('button', { name: 'Remove', exact: true })).toBeEnabled();
+  await second.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(second).toHaveCount(0);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(second).toBeVisible();
+  await expect(second.getByRole('button', { name: 'Move up', exact: true })).toBeDisabled();
+  await node.getByLabel('Offload Mode', { exact: true }).click();
+  await page.getByRole('option', { name: 'Off', exact: true }).click();
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  await expect(second.getByRole('button', { name: 'Move up', exact: true })).toBeEnabled();
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await withdrawSelectedImageAdapterPolicy(page, template.executionSelection!.executionProfileId);
+  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+  await expect(second.getByRole('button', { name: 'Move up', exact: true })).toBeDisabled();
+  await expect(node).toContainText('The selected image model does not support LoRA.');
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  await expect(second.getByRole('button', { name: 'Remove', exact: true })).toBeEnabled();
+  await second.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(second).toHaveCount(0);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(second).toBeVisible();
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+});
+
+type AudioTemplateSchemaFixture = ImageTemplateSchemaFixture & {
+  selections: Record<
+    string,
+    { pipelineClass: string; task: string; executionProfileId: string; repository: string; authoringRecipeId?: string }
+  >;
+};
+let audioTemplateSchemaPromise: Promise<AudioTemplateSchemaFixture>;
+async function audioTemplateSchemas(page: Page) {
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.join(CLIENT_ROOT, 'scripts', 'template-operation-fixtures.py');
+  const command = process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
+  const args = process.platform === 'win32' ? [script] : [python, script];
+  const capture = (selections: Array<{ id: string; selection: object }>): Promise<ImageTemplateSchemaFixture> =>
+    new Promise((resolve, reject) => {
+      const child = execFile(
+        command,
+        args,
+        {
+          cwd: BACKEND_ROOT,
+          env: {
+            ...process.env,
+            PYTHONDONTWRITEBYTECODE: '1',
+            CUDA_VISIBLE_DEVICES: '',
+            HF_HUB_OFFLINE: '1',
+            TRANSFORMERS_OFFLINE: '1',
+          },
+          timeout: 90_000,
+          maxBuffer: 64 * 1024 * 1024,
+        },
+        (error, stdout) => {
+          if (error) return reject(error);
+          try {
+            resolve(JSON.parse(stdout));
+          } catch (failure) {
+            reject(failure);
+          }
+        },
+      );
+      child.stdin!.end(JSON.stringify(selections));
+    });
+  audioTemplateSchemaPromise ??= (async () => {
+    const initial = Object.entries(AUDIO_TEMPLATE_EXECUTION_SELECTIONS).map(([id, selection]) => ({ id, selection }));
+    // This first capture supplies current public authority only. Its default
+    // starter is not accepted as the selected alternate-template artifact.
+    const authority = await capture(initial);
+    // Parse real publication in its served browser environment. A Node import
+    // of useNodeStore would execute app.config's import.meta.env/window reads.
+    // This bootstrap creates no template and supplies no selected-route proof.
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    const parsed = await page.evaluate(
+      async ({ payload, ids }) => {
+        const storeModule: typeof import('../../../src/stores/useNodeStore') = await import(
+          new URL('/src/stores/useNodeStore.ts', location.origin).href
+        );
+        const templateModule: typeof import('../../../src/studio/templates') = await import(
+          new URL('/src/studio/templates.ts', location.origin).href
+        );
+        const selectionModule: typeof import('../../../src/studio/templateModelSelection') = await import(
+          new URL('/src/studio/templateModelSelection.ts', location.origin).href
+        );
+        const capabilities = storeModule.parseStudioModelCapabilities(payload).capabilities;
+        const repositories = ids.map((id) => {
+          const template = templateModule.STUDIO_TEMPLATES.find((item) => item.id === id);
+          const model = template && selectionModule.resolveTemplateModelSelection(template, capabilities);
+          if (!model) throw new Error(`No current immutable audio template selection for ${id}.`);
+          return { id, repository: model.repository };
+        });
+        return { capabilities, repositories };
+      },
+      { payload: authority.publicPayload, ids: initial.map(({ id }) => id) },
+    );
+    const selections: AudioTemplateSchemaFixture['selections'] = {};
+    const selected = initial.map(({ id, selection }) => {
+      const model = parsed.repositories.find((item) => item.id === id);
+      if (!model) throw new Error(`No current immutable audio template selection for ${id}.`);
+      selections[id] = {
+        pipelineClass: selection.pipelineClass,
+        task: selection.task,
+        executionProfileId: selection.executionProfileId,
+        repository: model.repository,
+        ...(selection.authoringRecipeId ? { authoringRecipeId: selection.authoringRecipeId } : {}),
+      };
+      return { id, selection: { ...selection, repository: model.repository } };
+    });
+    return { ...(await capture(selected)), capabilities: parsed.capabilities, selections };
+  })();
+  return structuredClone(await audioTemplateSchemaPromise);
+}
+
+async function openAudioStageTemplate(
+  page: Page,
+  templateId: (typeof STUDIO_TEMPLATES)[number]['id'],
+  viaHook = false,
+) {
+  const mutations: string[] = [];
+  const starterRequests: Record<string, unknown>[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      mutations.push(request.url());
+  });
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await audioTemplateSchemas(page);
+  const recipe = fixture.recipes.find((row) => row.id === templateId);
+  if (!recipe) throw new Error('The selected real audio producer fixture is missing.');
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } },
+    }),
+  );
+  await page.route('**/operations/starter', (route) => {
+    const selected: unknown = route.request().postDataJSON();
+    if (!audioRecord(selected)) throw new Error('Audio starter request is not an object.');
+    starterRequests.push(structuredClone(selected));
+    const rows = fixture.recipes.filter((row) => {
+      const expected = fixture.selections[row.id];
+      const entries = (value: Record<string, unknown>) =>
+        Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+      return expected && JSON.stringify(entries(expected)) === JSON.stringify(entries(selected));
+    });
+    // Multiple authored templates can intentionally share this exact starter.
+    const starter = rows[0]?.starter;
+    if (rows.some((row) => JSON.stringify(row.starter) !== JSON.stringify(starter)))
+      throw new Error('Ambiguous selected audio starter fixture.');
+    return route.fulfill({
+      status: starter ? 200 : 400,
+      json: starter ?? { error: 'Unknown exact audio template execution selection' },
+    });
+  });
+  // Replace the old reduced audio callback mock only for exact recorded inputs.
+  // These canonical signals/overlays are actual producer output, never a policy
+  // invented by this test. Unrelated callback families use the maintained mock.
+  await page.route('**/fields/action', async (route) => {
+    const request = route.request().postDataJSON();
+    if (request.module !== 'modules.DiffusersAudio' || request.fn !== 'update_audio_contract') return route.fallback();
+    const values = request.values ?? {};
+    const signal = values.audio_contract;
+    const pipeline = values.pipeline_class ?? signal?.pipelineClass;
+    const task = values.mode ?? signal?.mode;
+    const repository = values.model_id?.value ?? signal?.repository;
+    const row = fixture.recipes.find(
+      (candidate) =>
+        candidate.starter.pipelineClass === pipeline &&
+        candidate.starter.task === task &&
+        candidate.starter.nodes.some(
+          (entry) =>
+            entry.node.action === 'LoadPipeline' &&
+            entry.node.params.model_id?.value &&
+            (entry.node.params.model_id.value as { value?: string }).value === repository,
+        ),
+    );
+    if (!row) throw new Error('No exact recorded audio field-action fixture.');
+    const node = row.starter.nodes.find((entry) => entry.node.action === request.action)?.node;
+    if (!node) throw new Error('Audio callback action is not recorded.');
+    const canonical = node.params.audio_contract?.value as
+      | {
+          taskType: string;
+          fieldParams: Record<string, unknown>;
+        }
+      | undefined;
+    if (!canonical) throw new Error('Recorded selected audio contract is absent.');
+    const pipelineParam = node.params.pipeline;
+    const modeParam = node.params.mode;
+    if (request.action === 'LoadPipeline' && (!pipelineParam || !modeParam))
+      throw new Error('Recorded audio loader pipeline/mode fields are absent.');
+    const params =
+      request.action === 'LoadPipeline'
+        ? {
+            pipeline: { signal: pipelineParam!.signal },
+            mode: {
+              options: modeParam!.options,
+              value: modeParam!.value,
+            },
+          }
+        : canonical.fieldParams;
+    await page.evaluate(
+      ({ request, canonical, params }) => {
+        const scope = {
+          node: request.node,
+          workflow_tab_id: request.workflowTabId,
+          workflow_canvas_epoch: request.workflowCanvasEpoch,
+          workflow_form_epoch: request.workflowFormEpoch,
+        };
+        for (const [field, value] of Object.entries(params))
+          window.__MODIFF_E2E__!.sendWebsocketMessage({
+            type: 'set_field_params',
+            ...scope,
+            field,
+            params: value,
+          });
+        window.__MODIFF_E2E__!.sendWebsocketMessage({
+          type: 'set_field_value',
+          ...scope,
+          fields: {
+            audio_contract: canonical,
+            ...(request.action === 'Generate' ? { task_type: canonical.taskType } : {}),
+          },
+        });
+      },
+      { request, canonical, params },
+    );
+    return route.fulfill({ json: { error: false } });
+  });
+  const loader = recipe.starter.nodes.find((entry) => entry.operation.decomposition === 'loader')?.node;
+  const deviceParam = loader?.params.device;
+  if (!deviceParam) throw new Error('Recorded audio loader device field is absent.');
+  const device = String(deviceParam.value ?? deviceParam.default);
+  if (device.startsWith('cpu'))
+    await page.route('**/runtime/status**', (route) =>
+      route.fulfill({
+        json: {
+          ready: true,
+          config: { hf_token_configured: false },
+          packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+        },
+      }),
+    );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  if (viaHook) {
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await page.evaluate((id) => window.__MODIFF_E2E__!.applyTemplate(id), templateId);
+  } else {
+    await openTemplateBrowser(page);
+    const browser = page.getByTestId('template-browser-dialog');
+    await browser.getByTestId('template-browser-category-all').click();
+    const template = STUDIO_TEMPLATES.find((entry) => entry.id === templateId)!;
+    await browser.getByTestId('template-browser-search').fill(template.label);
+    await browser.getByTestId(`template-browser-use-${templateId}`).click();
+    await browser.getByTestId(`template-browser-create-${templateId}`).click();
+    if (acknowledgementRequiredForTemplate(template).length) {
+      const terms = page.getByRole('dialog', { name: 'Review model terms', exact: true });
+      await terms.getByRole('button', { name: 'I have reviewed and agree \u2014 Create graph', exact: true }).click();
+    }
+    await expect(browser).toHaveCount(0);
+  }
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = window.__MODIFF_E2E__!.getState();
+        if (
+          !state ||
+          typeof state !== 'object' ||
+          !('studio' in state) ||
+          !state.studio ||
+          typeof state.studio !== 'object' ||
+          !('canvasTransition' in state.studio)
+        )
+          throw new Error('Current Studio canvas transition is absent.');
+        return state.studio.canvasTransition;
+      }),
+    )
+    .toBeNull();
+  await assertUnifiedWorkspace(page, 'expert');
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  return { fixture, recipe, mutations, starterRequests };
+}
+
+type AudioApiSnapshot = Pick<ApiGraphExport, 'nodes' | 'paths'>;
+function audioRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+function audioJsonValue(value: unknown, depth = 0): boolean {
+  if (depth > 64) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every((item) => audioJsonValue(item, depth + 1));
+  return audioRecord(value) && Object.values(value).every((item) => audioJsonValue(item, depth + 1));
+}
+function audioApiShape(value: unknown): value is AudioApiSnapshot {
+  return (
+    audioRecord(value) &&
+    audioRecord(value.nodes) &&
+    Array.isArray(value.paths) &&
+    value.paths.every((row) => Array.isArray(row) && row.every((id) => typeof id === 'string')) &&
+    Object.values(value.nodes).every(
+      (node) =>
+        audioRecord(node) &&
+        typeof node.module === 'string' &&
+        typeof node.action === 'string' &&
+        audioRecord(node.params) &&
+        Object.values(node.params).every(
+          (param) =>
+            audioRecord(param) &&
+            (param.value === undefined || audioJsonValue(param.value)) &&
+            (param.sourceId === undefined || typeof param.sourceId === 'string') &&
+            (param.sourceKey === undefined || typeof param.sourceKey === 'string') &&
+            (param.spawn === undefined || typeof param.spawn === 'boolean') &&
+            (param.display === undefined ||
+              typeof param.display === 'string' ||
+              (Array.isArray(param.display) && param.display.every((item) => typeof item === 'string'))),
+        ),
+    )
+  );
+}
+async function audioApiSnapshot(page: Page): Promise<AudioApiSnapshot> {
+  const api: unknown = await page.evaluate(() => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'audio-authoring-contract', isConnected: true });
+    return window.__MODIFF_E2E__!.exportAuthorizedApiGraph();
+  });
+  if (!audioApiShape(api)) throw new Error('Audio authoring API export has an invalid current shape.');
+  return { nodes: api.nodes, paths: api.paths };
+}
+function audioApiValue(node: ApiGraphExport['nodes'][string], field: string) {
+  const param = node.params[field];
+  if (!param) throw new Error(`Audio authoring export lacks ${field}.`);
+  return param.value;
+}
+function audioApiPaths(api: AudioApiSnapshot) {
+  return api.paths
+    .map((path) =>
+      path.map((id) => {
+        const node = api.nodes[id];
+        if (!node) throw new Error('Audio execution path references a missing node.');
+        return `${node.module}.${node.action}`;
+      }),
+    )
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+}
+function audioConsumers(api: AudioApiSnapshot) {
+  const names = new Map(Object.entries(api.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
+  if (new Set(names.values()).size !== names.size) throw new Error('Ambiguous audio consumer identity.');
+  return Object.fromEntries(
+    Object.entries(api.nodes).map(([id, node]) => [
+      names.get(id),
+      {
+        ...node,
+        params: Object.fromEntries(
+          Object.entries(node.params).map(([field, param]) => {
+            if (param.sourceId && !names.has(param.sourceId)) throw new Error('Missing audio consumer supplier.');
+            const value = { ...param, ...(param.sourceId ? { sourceId: names.get(param.sourceId)! } : {}) };
+            // Playback is retained separately by grouped preview state and by
+            // ordinary ui_audio values; neither is a computational input.
+            if (param.display === 'ui_audio') delete value.value;
+            return [field, value];
+          }),
+        ),
+      },
+    ]),
+  );
+}
+async function audioWorkflowNodeId(page: Page, label: string): Promise<string> {
+  const graph: unknown = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  if (!audioRecord(graph) || !Array.isArray(graph.nodes)) throw new Error('Current workflow export is absent.');
+  const matches = graph.nodes.filter(
+    (node) => audioRecord(node) && audioRecord(node.data) && node.data.label === label,
+  );
+  if (matches.length !== 1 || !audioRecord(matches[0]) || typeof matches[0].id !== 'string')
+    throw new Error(`Expected one current ${label} node.`);
+  return matches[0].id;
+}
+
+test('MiniMax real Audio Output preserves leaves and supports contained playback, Separate, Undo and reload', async ({
+  page,
+}) => {
+  const { mutations } = await openAudioStageTemplate(page, 'minimax_music3_chamber_pop');
+  const baseline = await audioApiSnapshot(page);
+  expect(
+    Object.values(baseline.nodes)
+      .map((node) => `${node.module}.${node.action}`)
+      .sort(),
+  ).toEqual([
+    'modules.Audio.Export',
+    'modules.ModularDiffusers.ModelsLoader',
+    'modules.ModularDiffusers.WorkflowDecodeAudio',
+    'modules.ModularDiffusers.WorkflowDenoise',
+    'modules.ModularDiffusers.WorkflowSemanticGeneration',
+  ]);
+  const root = await audioWorkflowNodeId(page, 'Audio Output');
+  const output = page.getByTestId(`output-node-${root}`);
+  await expect(output).toBeVisible();
+  await expect(output.getByRole('button', { name: 'Audio Output options', exact: true })).toBeVisible();
+  // Use CustomNode's actual document-backed resize handler, as the maintained
+  // native node resize tests do. No second store or test-only size mutation.
+  const grip = output.getByTestId('node-resize-grip');
+  const nativeResize = async (dx: number, dy: number) => {
+    await grip.scrollIntoViewIfNeeded();
+    await expect(grip).toBeVisible();
+    const gripBounds = await grip.boundingBox();
+    expect(gripBounds).not.toBeNull();
+    expect(
+      await grip.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        return hit === element || (hit !== null && element.contains(hit));
+      }),
+    ).toBe(true);
+    const start = { x: gripBounds!.x + gripBounds!.width / 2, y: gripBounds!.y + gripBounds!.height / 2 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + dx, start.y + dy, { steps: 8 });
+    await page.mouse.up();
+  };
+  const originalWidth = await output.evaluate((element) => element.clientWidth);
+  await nativeResize(180, 40);
+  await expect.poll(() => output.evaluate((element) => element.clientWidth)).toBeGreaterThan(originalWidth + 80);
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  await nativeResize(-600, 0);
+  // The declared node minimum includes its two border pixels.
+  await expect.poll(() => output.evaluate((element) => (element as HTMLElement).offsetWidth)).toBe(368);
+  // Synthetic PCM16 mono fixture for mocked player behavior, not trained output.
+  // Match the maintained deterministic WAV pattern without private Gallery media.
+  const sampleRate = 8000;
+  const samples = sampleRate * 2;
+  const source = Buffer.alloc(44 + samples * 2);
+  source.write('RIFF');
+  source.writeUInt32LE(source.length - 8, 4);
+  source.write('WAVEfmt ', 8);
+  source.writeUInt32LE(16, 16);
+  source.writeUInt16LE(1, 20);
+  source.writeUInt16LE(1, 22);
+  source.writeUInt32LE(sampleRate, 24);
+  source.writeUInt32LE(sampleRate * 2, 28);
+  source.writeUInt16LE(2, 32);
+  source.writeUInt16LE(16, 34);
+  source.write('data', 36);
+  source.writeUInt32LE(samples * 2, 40);
+  for (let index = 0; index < samples; index++)
+    source.writeInt16LE(Math.round(Math.sin((index * Math.PI) / 20) * 1000), 44 + index * 2);
+  await page.route('**/cache/audio-stage-current.wav**', async (route) =>
+    route.fulfill({
+      contentType: 'audio/wav',
+      body: source,
+    }),
+  );
+  const exporterId = Object.entries(baseline.nodes).find(
+    ([, node]) => node.module === 'modules.Audio' && node.action === 'Export',
+  )![0];
+  await page.evaluate((node) => {
+    window.__MODIFF_E2E__!.startStudioRunForTest({
+      clientRunId: 'mock-audio-playback',
+      runInputHash: 'mock-audio-playback-input',
+      taskId: 'mock-audio-playback-task',
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'update_value',
+      node,
+      key: 'preview',
+      data_type: 'url',
+      task_id: 'mock-audio-playback-task',
+      client_run_id: 'mock-audio-playback',
+      run_input_hash: 'mock-audio-playback-input',
+      value: ['/cache/audio-stage-current.wav'],
+    });
+  }, exporterId);
+  const audio = output.locator('audio');
+  await expect(audio).toHaveCount(1);
+  await expect.poll(() => audio.evaluate((element) => (element as HTMLAudioElement).readyState)).toBeGreaterThan(0);
+  await audio.scrollIntoViewIfNeeded();
+  const containment = await output.evaluate((element) => {
+    const player = element.querySelector('audio')!;
+    const body = element.querySelector('[data-testid^="node-scroll-body-"]');
+    if (!body || !body.contains(player)) throw new Error('The audio player is outside its editable node body.');
+    const bounds = player.getBoundingClientRect();
+    const inside = (parent: Element) => {
+      const rect = parent.getBoundingClientRect();
+      return (
+        bounds.left >= rect.left - 1 &&
+        bounds.right <= rect.right + 1 &&
+        bounds.top >= rect.top - 1 &&
+        bounds.bottom <= rect.bottom + 1
+      );
+    };
+    const ancestors = [];
+    for (let parent = player.parentElement; parent && element.contains(parent); parent = parent.parentElement) {
+      ancestors.push({ name: parent.getAttribute('data-testid') ?? parent.tagName, containsPlayer: inside(parent) });
+      if (parent === element) break;
+    }
+    return {
+      ready: Number.isFinite(player.duration) && player.duration > 0,
+      ownerContainsPlayer: inside(element),
+      editableBodyContainsPlayer: inside(body),
+      editableBodyOverflow: body.scrollWidth - body.clientWidth,
+      ancestors,
+    };
+  });
+  expect(containment.ready).toBe(true);
+  expect(containment.ownerContainsPlayer).toBe(true);
+  expect(containment.editableBodyContainsPlayer).toBe(true);
+  expect(containment.editableBodyOverflow).toBeLessThanOrEqual(1);
+  expect(containment.ancestors.length).toBeGreaterThan(1);
+  expect(containment.ancestors.filter((ancestor) => !ancestor.containsPlayer)).toEqual([]);
+  await audio.evaluate(async (element) => {
+    const a = element as HTMLAudioElement;
+    await a.play();
+    a.currentTime = Math.min(2, a.duration / 2);
+    a.pause();
+  });
+  await output.getByRole('button', { name: 'Audio actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Playback 1.25\u00d7', exact: true }).click();
+  expect(await audio.evaluate((element) => (element as HTMLAudioElement).playbackRate)).toBe(1.25);
+  await output.getByRole('button', { name: 'Audio actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: /^Download/u }).click();
+  const download = page.getByTestId('media-export-dialog');
+  await expect(download.getByLabel('Download format')).toBeVisible();
+  await download.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(download).toHaveCount(0);
+  const baselineConsumers = audioConsumers(await audioApiSnapshot(page));
+  const baselinePaths = audioApiPaths(await audioApiSnapshot(page));
+  await output.getByRole('button', { name: 'Audio Output options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Separate audio output stages', exact: true }).click();
+  await expect(output).toHaveCount(0);
+  expect(audioConsumers(await audioApiSnapshot(page))).toEqual(baselineConsumers);
+  expect(audioApiPaths(await audioApiSnapshot(page))).toEqual(baselinePaths);
+  await expect(page.locator('audio')).toHaveCount(1);
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect(output).toBeVisible();
+  expect(audioConsumers(await audioApiSnapshot(page))).toEqual(baselineConsumers);
+  expect(audioApiPaths(await audioApiSnapshot(page))).toEqual(baselinePaths);
+  await expect(output.locator('audio')).toHaveCount(1);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`output-node-${root}`)).toBeVisible();
+  expect(audioConsumers(await audioApiSnapshot(page))).toEqual(baselineConsumers);
+  expect(audioApiPaths(await audioApiSnapshot(page))).toEqual(baselinePaths);
+  await expect(page.getByTestId(`output-node-${root}`).locator('audio')).toHaveCount(1);
+  expect(mutations).toEqual([]);
+});
+
+test('ACE selected max-one audio setup keeps its row editable and Remove Undo reload preserves exact API', async ({
+  page,
+}) => {
+  const { fixture, mutations } = await openAudioStageTemplate(page, 'ace_step_chinese_new_year_lora');
+  const populated = await audioApiSnapshot(page);
+  const root = await audioWorkflowNodeId(page, 'Model Setup');
+  const setup = page.getByTestId(`setup-node-${root}`);
+  const add = setup.getByRole('button', { name: 'Add LoRA', exact: true });
+  const owner = Object.values(populated.nodes).find(
+    (node) => node.module === 'modules.DiffusersAudio' && node.action === 'LoadPipeline',
+  )!;
+  const profile = fixture.capabilities
+    .find((capability) => capability.modelType === 'AceStepAudioPipeline')!
+    .executionProfiles!.find((entry) => entry.id === 'ace-step-audio:direct')!;
+  expect(profile.adapterAuthoring?.mediaKind).toBe('audio');
+  expect(profile.adapterAuthoring?.maxOwnedAdapters).toBe(1);
+  expect(audioApiValue(owner, 'mode')).toBe('text_to_audio');
+  // CNY keeps its own Runware base. Never use this adapter to claim an XL pair.
+  expect(audioApiValue(owner, 'model_id')).toEqual({ source: 'hub', value: 'Runware/acestep-v15-turbo-diffusers' });
+  expect(audioApiValue(owner, 'revision')).toBe('be23effe449c5957947f3020fd63bee23c64abe4');
+  await expect(add).toBeDisabled();
+  await setup
+    .getByRole('region', { name: 'Adapter 1', exact: true })
+    .getByRole('button', { name: 'Remove', exact: true })
+    .click();
+  await expect(add).toBeEnabled();
+  const baseline = await audioApiSnapshot(page);
+  const specimen = STUDIO_TEMPLATES.find((entry) => entry.id === 'ace_step_chinese_new_year_lora')!
+    .workflowBlockSettings!.lora!;
+  await add.click();
+  const dialog = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
+  await dialog.getByLabel('LoRA', { exact: true }).fill(specimen.model!.value);
+  await dialog.getByLabel('Revision', { exact: true }).fill(specimen.model!.revision!);
+  await dialog.getByLabel('Expected SHA-256', { exact: true }).fill(specimen.model!.sha256!);
+  await dialog.getByLabel('Weight name', { exact: true }).fill(specimen.weightName!);
+  await dialog.getByLabel('Adapter name', { exact: true }).fill('audio_authoring_specimen');
+  await dialog.getByLabel('Strength', { exact: true }).fill('0.5');
+  await dialog.getByLabel('Strength', { exact: true }).press('Tab');
+  await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(add).toBeDisabled();
+  const row = setup.getByRole('region', { name: 'Adapter 1', exact: true });
+  await expect(row.getByLabel('Strength', { exact: true })).toBeEnabled();
+  await expect(row.getByRole('button', { name: 'Move up', exact: true })).toBeDisabled();
+  await expect(row.getByRole('button', { name: 'Move down', exact: true })).toBeDisabled();
+  const adapter = async () =>
+    Object.entries((await audioApiSnapshot(page)).nodes).find(
+      ([, node]) => node.module === 'modules.DiffusersAudio' && node.action === 'LoadAdapter',
+    );
+  expect(audioApiValue((await adapter())![1], 'adapter_path')).toEqual({ source: 'hub', value: specimen.model!.value });
+  expect(audioApiValue((await adapter())![1], 'revision')).toBe(specimen.model!.revision);
+  expect(audioApiValue((await adapter())![1], 'expected_sha256')).toBe(specimen.model!.sha256);
+  await row.getByLabel('Strength', { exact: true }).fill('0.55');
+  await row.getByLabel('Strength', { exact: true }).press('Tab');
+  await expect.poll(async () => Number(audioApiValue((await adapter())![1], 'scale'))).toBe(0.55);
+  const edited = await audioApiSnapshot(page);
+  // Replacement uses the real one-row dialog at capacity; it is not a second
+  // Add or a claim of different trained adapter bytes.
+  await row.getByRole('button', { name: 'Replace LoRA', exact: true }).click();
+  const replaceDialog = page.getByRole('dialog', { name: 'Replace LoRA', exact: true });
+  await expect(replaceDialog.getByLabel('LoRA', { exact: true })).toHaveValue(specimen.model!.value);
+  await expect(replaceDialog.getByLabel('Revision', { exact: true })).toHaveValue(specimen.model!.revision!);
+  await expect(replaceDialog.getByLabel('Expected SHA-256', { exact: true })).toHaveValue(specimen.model!.sha256!);
+  await replaceDialog.getByLabel('Adapter name', { exact: true }).fill('audio_authoring_replacement');
+  await replaceDialog.getByRole('button', { name: 'Replace adapter', exact: true }).click();
+  await expect(replaceDialog).toHaveCount(0);
+  await expect(add).toBeDisabled();
+  await expect(row.getByLabel('Strength', { exact: true })).toBeEnabled();
+  await expect
+    .poll(async () => audioApiValue((await adapter())![1], 'adapter_name'))
+    .toBe('audio_authoring_replacement');
+  expect(
+    Object.values((await audioApiSnapshot(page)).nodes).filter((node) => node.action === 'LoadAdapter'),
+  ).toHaveLength(1);
+  const replaced = await audioApiSnapshot(page);
+  await row.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect.poll(() => audioApiSnapshot(page)).toEqual(baseline);
+  await expect(add).toBeEnabled();
+  await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(() => audioApiSnapshot(page)).toEqual(replaced);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`setup-node-${root}`)).toBeVisible();
+  expect(await audioApiSnapshot(page)).toEqual(replaced);
+  expect(edited).not.toEqual(replaced);
+  expect(mutations).toEqual([]);
+});
+
+test('ACE audio variation hook keeps the current selected starter and task instead of legacy Auto authoring', async ({
+  page,
+}) => {
+  const { fixture, mutations, starterRequests } = await openAudioStageTemplate(page, 'ace_step_audio_variation', true);
+  const api = await audioApiSnapshot(page);
+  const selected = fixture.selections.ace_step_audio_variation;
+  if (!selected) throw new Error('The current audio variation selection is missing.');
+  expect(starterRequests).toContainEqual(selected);
+  const loaders = Object.values(api.nodes).filter(
+    (node) => node.module === 'modules.DiffusersAudio' && node.action === 'LoadPipeline',
+  );
+  const generators = Object.values(api.nodes).filter(
+    (node) => node.module === 'modules.DiffusersAudio' && node.action === 'Generate',
+  );
+  expect(loaders).toHaveLength(1);
+  expect(generators).toHaveLength(1);
+  expect(audioApiValue(loaders[0]!, 'mode')).toBe('audio_variation');
+  expect(audioApiValue(loaders[0]!, 'model_id')).toEqual({ source: 'hub', value: selected.repository });
+  expect(audioApiValue(generators[0]!, 'task_type')).toBe('cover');
+  expect(Object.values(api.nodes).some((node) => node.module === 'modules.Audio' && node.action === 'Load')).toBe(true);
+  await expect(page.getByTestId(`setup-node-${await audioWorkflowNodeId(page, 'Model Setup')}`)).toBeVisible();
+  expect(mutations).toEqual([]);
+});
+
+test('aliased audio Model Setup renders human offload choices and preserves the selected raw value on reload', async ({
+  page,
+}) => {
+  const { mutations } = await openAudioStageTemplate(page, 'ace_step_text_to_audio');
+  const root = await audioWorkflowNodeId(page, 'Model Setup');
+  const setup = page.getByTestId(`setup-node-${root}`);
+  const offload = setup.getByRole('button', { name: 'Offload Mode', exact: true });
+  if (!(await offload.isVisible())) await setup.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await expect(offload).toBeVisible();
+  const before = await audioApiSnapshot(page);
+  const owners = Object.entries(before.nodes).filter(
+    ([, node]) => node.module === 'modules.DiffusersAudio' && node.action === 'LoadPipeline',
+  );
+  expect(owners).toHaveLength(1);
+  const [ownerId, owner] = owners[0]!;
+  expect(audioApiValue(owner, 'device')).toMatch(/^cpu(?::0)?$/u);
+  expect(audioApiValue(owner, 'offload_mode')).toBe('none');
+  expect(audioApiValue(owner, 'auto_offload')).toBe(false);
+  // Inspect the actual stored graph without bypassing the authorized export's
+  // CPU/offload consistency checks while this intentionally invalid choice is saved.
+  const stored = () =>
+    page.evaluate(async () => {
+      const [{ useFlowStore }, { expandBlockGraphV2ForExecution }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+      ]);
+      const flow = useFlowStore.getState();
+      const graph = expandBlockGraphV2ForExecution(flow.nodes, flow.edges);
+      return {
+        nodes: Object.fromEntries(
+          graph.nodes.map((node) => [
+            node.id,
+            { module: node.data.module, action: node.data.action, params: node.data.params },
+          ]),
+        ),
+        edges: graph.edges,
+      };
+    });
+  const beforeStored = await stored();
+  await offload.click();
+  const choices = page.getByRole('listbox', { name: 'Offload Mode', exact: true });
+  await expect(choices).toBeVisible();
+  await expect(choices.getByRole('option', { name: 'auto_cpu', exact: true })).toHaveCount(0);
+  for (const label of [
+    'Off',
+    'RAM/CPU model offload',
+    'RAM/CPU sequential offload',
+    'RAM/CPU group offload',
+    'SSD group offload',
+  ])
+    await expect(choices.getByRole('option', { name: label, exact: true })).toBeVisible();
+  await choices.getByRole('option', { name: 'SSD group offload', exact: true }).click();
+  await expect(offload).toHaveText('SSD group offload');
+  const afterStored = await stored();
+  expect(afterStored.nodes[ownerId]!.params.offload_mode!.value).toBe('group_disk');
+  const restored = structuredClone(afterStored);
+  restored.nodes[ownerId]!.params.offload_mode = structuredClone(beforeStored.nodes[ownerId]!.params.offload_mode!);
+  expect(restored).toEqual(beforeStored);
+  await expect(audioApiSnapshot(page)).rejects.toThrow(
+    /Auto offload is disabled.*selected offload mode is group_disk/u,
+  );
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId(`setup-node-${root}`)).toBeVisible();
+  expect(await stored()).toEqual(afterStored);
+  await setWorkflowResourceMode(page, 'expert');
+  expect(await stored()).toEqual(afterStored);
+  await expect(offload).toBeVisible({ timeout: 30_000 });
+  await expect(offload).toHaveText('SSD group offload');
+  // Restore the original valid CPU setting through the same visible control.
+  // The original Auto flag is unchanged; no accelerator authority is fabricated.
+  await offload.click();
+  await page.getByRole('option', { name: 'Off', exact: true }).click();
+  await expect(offload).toHaveText('Off');
+  expect(await stored()).toEqual(beforeStored);
+  expect(await audioApiSnapshot(page)).toEqual(before);
+  expect(mutations).toEqual([]);
+});

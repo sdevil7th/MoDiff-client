@@ -25,6 +25,16 @@ function asString(value: unknown, fallback = '') {
 }
 
 export default function SelectField(props: FieldProps) {
+  const binding = props.fieldOptions?.blockBindingV2;
+  const fieldKey =
+    binding &&
+    typeof binding === 'object' &&
+    'schemaVersion' in binding &&
+    binding.schemaVersion === 2 &&
+    'fieldOrPortId' in binding &&
+    typeof binding.fieldOrPortId === 'string'
+      ? binding.fieldOrPortId
+      : props.fieldKey;
   const multiple = Boolean(props.fieldOptions?.multiple);
   const placeholder = asString(props.fieldOptions?.placeholder);
   const currValue = multiple
@@ -33,17 +43,15 @@ export default function SelectField(props: FieldProps) {
         ? [props.value]
         : []
       : props.value
-    : props.fieldKey === 'offload_mode' && props.value === 'auto_cpu'
+    : fieldKey === 'offload_mode' && props.value === 'auto_cpu'
       ? 'model_cpu'
       : props.value;
 
   const entries: RuntimeOptionEntry[] = runtimeOptionEntries(props.options)
     .map((entry) =>
-      entry.type === 'option'
-        ? { ...entry, label: productOptionLabel(props.fieldKey, entry.value, entry.label) }
-        : entry,
+      entry.type === 'option' ? { ...entry, label: productOptionLabel(fieldKey, entry.value, entry.label) } : entry,
     )
-    .filter((entry) => props.fieldKey !== 'offload_mode' || entry.type === 'header' || entry.value !== 'auto_cpu');
+    .filter((entry) => fieldKey !== 'offload_mode' || entry.type === 'header' || entry.value !== 'auto_cpu');
 
   const configuredOptionEntries = entries.filter(
     (entry): entry is Extract<RuntimeOptionEntry, { type: 'option' }> => entry.type === 'option',

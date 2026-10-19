@@ -8,7 +8,7 @@ import type { StudioExecutionSpec, StudioFormState, StudioModelProfile, StudioTe
  * Explicit crop overrides remain useful for bounded differential tests. */
 export function createQwenInpaintNativeCandidateGraph(
   template: StudioTemplate,
-  form: StudioFormState & { paddingMaskCrop?: number | null },
+  form: StudioFormState,
   starter: OperationStarter,
   registry: Record<string, NodeData>,
   spec: StudioExecutionSpec,

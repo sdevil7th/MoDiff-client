@@ -454,24 +454,30 @@ test('gallery harness loads all Studio templates from the TypeScript runtime', (
 });
 
 test('Qwen gallery candidates use the runtime locked settings and hashes', () => {
+  const creatorBaseline = JSON.parse(
+    readFileSync(new URL('../tests/fixtures/image-template-creator-contracts.v1.json', import.meta.url), 'utf8'),
+  );
   const expectedHashes = {
     qwen_low_vram_text_rendering: {
       width: 1024,
       height: 1024,
       promptSettingsHash: 'ps_c32e6c86',
-      templateLockHash: 'tpl_76f378d2',
+      templateLockHash: 'tpl_eb899725',
+      historicalTemplateLockHash: 'tpl_76f378d2',
     },
     qwen_low_vram_product_concept: {
       width: 1024,
       height: 768,
       promptSettingsHash: 'ps_2eeea545',
-      templateLockHash: 'tpl_b9f47949',
+      templateLockHash: 'tpl_763e4b50',
+      historicalTemplateLockHash: 'tpl_b9f47949',
     },
     qwen_low_vram_poster_layout: {
       width: 768,
       height: 1024,
       promptSettingsHash: 'ps_124204d1',
-      templateLockHash: 'tpl_e5832679',
+      templateLockHash: 'tpl_b1b11c5a',
+      historicalTemplateLockHash: 'tpl_e5832679',
     },
   };
 
@@ -480,6 +486,37 @@ test('Qwen gallery candidates use the runtime locked settings and hashes', () =>
     assert.ok(template, `${templateId} loaded from STUDIO_TEMPLATES`);
     const candidate = buildTemplateCandidate(runtime, template);
 
+    assert.deepEqual(
+      candidate.lockedSettings,
+      creatorBaseline.templates.find((item) => item.templateId === templateId).contract.lockedSettings,
+      'the complete retained creative contract remains unchanged',
+    );
+    assert.equal(template.executionSelection.authoringRecipeId, 'retained-qwen-image-text-to-image:v1');
+    // The lock includes authoring metadata. Moving the preserved component
+    // policy into a backend recipe changes it without rebinding historical media.
+    const historicalTemplate = structuredClone(template);
+    delete historicalTemplate.executionSelection.authoringRecipeId;
+    historicalTemplate.executionSelection.componentPolicy = {
+      attentionBackend: 'auto',
+      vaeSlicing: true,
+      vaeTiling: true,
+    };
+    assert.equal(runtime.templateLockHash(historicalTemplate), hashes.historicalTemplateLockHash);
+    const historicalEntry = {
+      templateId,
+      modelRevision: template.example.modelRevision,
+      templateLockHash: hashes.historicalTemplateLockHash,
+      promptSettingsHash: hashes.promptSettingsHash,
+      mediaType: 'image',
+      graphHash: 'sha256:canonical-graph-v1:test',
+      mediaHash: 'sha256:decoded-rgba:test',
+      provenanceHash: 'sha256:canonical-json:test',
+      qualityReviewHash: 'sha256:canonical-json:test',
+      qualityReviewStatus: 'approved_exact',
+    };
+    const historicalManifest = { schemaVersion: 2, examples: [historicalEntry] };
+    assert.equal(runtime.findManifestEntry(historicalTemplate, historicalManifest), historicalEntry);
+    assert.equal(runtime.findManifestEntry(template, historicalManifest), undefined);
     assert.deepEqual(candidate.lockedSettings, runtime.lockedSettingsForTemplate(template));
     assert.equal(candidate.promptSettingsHash, runtime.promptSettingsHash(template));
     assert.equal(candidate.templateLockHash, runtime.templateLockHash(template));

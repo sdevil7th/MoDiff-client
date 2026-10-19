@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
+import fs from 'node:fs';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 let server, authoring, requests, drafts, choices;
 const originalFetch = globalThis.fetch;
@@ -1772,6 +1775,237 @@ test('workflow discovery retains backend models absent from the legacy Studio un
   unavailable.capabilities[0].executionProfiles[0].public = false;
   unavailable.capabilities[1].executionProfiles[0].pipeline_class = 'OtherPipeline';
   assert.deepEqual(choices.parseWorkflowModelDescriptors(unavailable, support), []);
+});
+
+test('generic public model inventory preserves native defaults and exact additional format Install/Repair selections', async () => {
+  const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
+  const actual = JSON.parse(
+    fs.readFileSync(new URL('../tests/fixtures/weight-format-selections.v1.json', import.meta.url), 'utf8'),
+  );
+  for (const row of actual.rows) {
+    // A future public declaration exercises generic discovery. The file rows
+    // are the actual backend selector output, not a public/runtime grant for
+    // the private identities from which that pure fixture was captured.
+    const model = {
+      modelType: 'FutureNativePipeline',
+      label: 'Future image',
+      defaultRepo: row.repo,
+      executionStatus: 'expert_only',
+      qualificationStatus: 'graph-contract-only',
+      autoEligible: false,
+      templateEligible: false,
+      revisionCandidates: [row.revision],
+      downloadFiles: ['model_index.json', 'transformer/model.safetensors'],
+      weightFormatSelections: row.weightFormatSelections,
+      executionProfiles: [
+        {
+          id: 'future-native',
+          model_type: 'FutureNativePipeline',
+          pipeline_class: 'FutureNativePipeline',
+          default_repo: row.repo,
+          public: true,
+        },
+      ],
+    };
+    const support = [
+      {
+        pipelineClass: model.modelType,
+        tasks: [
+          {
+            task: 'text_to_image',
+            operationIds: ['load', 'encode', 'denoise', 'decode'],
+            executionProfileIds: ['future-native'],
+          },
+        ],
+      },
+    ];
+    const payload = { schemaVersion: 2, capabilities: [model] };
+    const [descriptor] = choices.parseWorkflowModelDescriptors(payload, support);
+    assert.ok(descriptor);
+    const rows = inventory.workflowModelArtifactRows(descriptor);
+    assert.deepEqual(
+      rows.map((item) => item.weightFormat),
+      ['native', 'fp8r', 'nvfp4'],
+    );
+    assert.equal(new Set(rows.map((item) => item.id)).size, 3);
+    assert.deepEqual(rows[0].selection.downloadFiles, model.downloadFiles);
+    for (const [index, format] of rows.entries()) {
+      const state = inventory.workflowModelArtifactStatus(format, descriptor, [], [], null);
+      assert.equal(state.installTarget.actionLabel, 'Install');
+      assert.equal(state.installTarget.repo, index ? row.weightFormatSelections[index - 1].repo : row.repo);
+      assert.equal(state.installTarget.revision, row.revision);
+      assert.deepEqual(state.installTarget.files, format.selection.downloadFiles);
+      assert.notEqual(state.installTarget.files, format.selection.downloadFiles);
+      assert.match(state.reason, /readiness.*separately/);
+      assert.equal(descriptor.autoEligible, undefined);
+      assert.equal(descriptor.templateEligible, undefined);
+    }
+    const [native, fp8] = rows;
+    const nativeCache = [
+      {
+        id: row.repo,
+        complete: true,
+        installed: true,
+        planned_revision: row.revision,
+        planned_files: native.selection.downloadFiles,
+      },
+    ];
+    const repair = inventory.workflowModelArtifactStatus(fp8, descriptor, nativeCache, [], null);
+    assert.equal(repair.installTarget.actionLabel, 'Repair');
+    assert.deepEqual(repair.installTarget.files, row.weightFormatSelections[0].downloadFiles);
+    const installed = inventory.workflowModelArtifactStatus(
+      fp8,
+      descriptor,
+      [{ ...nativeCache[0], planned_files: fp8.selection.downloadFiles }],
+      [],
+      null,
+    );
+    assert.equal(installed.status.runnable, true);
+    assert.equal(installed.installTarget, null);
+    assert.match(installed.reason, /Execution readiness still depends/);
+    const privatePayload = structuredClone(payload);
+    privatePayload.capabilities[0].executionProfiles[0].public = false;
+    privatePayload.capabilities[0].weightFormatSelections = [{ malicious: true }];
+    assert.deepEqual(choices.parseWorkflowModelDescriptors(privatePayload, support), []);
+    assert.deepEqual(choices.parseWorkflowModelDescriptors(payload, []), []);
+    const foreignRepository = structuredClone(payload);
+    foreignRepository.capabilities[0].executionProfiles[0].default_repo = 'another/model';
+    const [foreignDescriptor] = choices.parseWorkflowModelDescriptors(foreignRepository, support);
+    assert.equal(foreignDescriptor.inventory.nativeSelection, undefined);
+    assert.equal(foreignDescriptor.inventory.weightFormatSelections, undefined);
+    assert.deepEqual(
+      inventory.workflowModelArtifactRows(foreignDescriptor).map((item) => item.weightFormat),
+      ['native'],
+    );
+    assert.equal(
+      inventory.workflowModelArtifactStatus(
+        inventory.workflowModelArtifactRows(foreignDescriptor)[0],
+        foreignDescriptor,
+        [],
+        [],
+        null,
+      ).installTarget,
+      null,
+    );
+    assert.deepEqual(
+      choices.parseWorkflowModelDescriptors(
+        { ...payload, capabilities: [{ ...model, executionProfiles: [] }] },
+        support,
+      ),
+      [],
+    );
+    const requirement = {
+      schemaVersion: 1,
+      delivery: 'optional_overlay',
+      requiredNow: true,
+      profileIds: ['reviewed-runtime'],
+      executionProfileIds: ['future-native'],
+      state: 'missing',
+      reason: 'runtime_missing',
+    };
+    const runtimeDescriptor = {
+      ...descriptor,
+      inventory: { ...descriptor.inventory, optionalRuntimeRequirement: requirement },
+    };
+    const blocked = inventory.workflowModelArtifactStatus(fp8, runtimeDescriptor, [], [], null);
+    assert.equal(blocked.installTarget, null);
+    assert.match(blocked.reason, /runtime is missing/);
+    runtimeDescriptor.inventory.optionalRuntimeRequirement.state = 'active';
+    assert.ok(inventory.workflowModelArtifactStatus(fp8, runtimeDescriptor, [], [], null).installTarget);
+    const rowComponent = (await server.ssrLoadModule('/src/components/WorkflowModelInventoryRow.tsx')).default;
+    const markup = renderToStaticMarkup(
+      React.createElement(rowComponent, {
+        descriptor,
+        cache: [],
+        local: [],
+        diagnostics: null,
+        installProgress: {},
+        activeInstallCount: 0,
+        hfTokenConfigured: true,
+        onConfigureHfToken: () => {},
+        onInstall: async () => {},
+      }),
+    );
+    assert.match(markup, /Weight format for Future image/);
+    assert.match(markup, /Native/);
+    assert.match(markup, /Install/);
+    assert.doesNotMatch(markup, />Ready</);
+  }
+});
+
+test('format inventory parser refuses malformed identity, file patterns and unreviewed runtime values', async () => {
+  const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
+  const valid = {
+    weightFormat: 'fp8r',
+    repo: 'owner/model',
+    revision: 'a'.repeat(40),
+    downloadFiles: ['config.json', 'variants/fp8r/model.safetensors'],
+  };
+  assert.equal(inventory.parseWeightFormatSelections(undefined), undefined);
+  assert.deepEqual(inventory.parseWeightFormatSelections([valid]), [valid]);
+  for (const malformed of [
+    null,
+    {},
+    [],
+    [valid, valid],
+    [valid, { ...valid, weightFormat: 'nvfp4' }, valid],
+    ...['native', ['fp8r'], null, true, 'FP8R'].map((weightFormat) => [{ ...valid, weightFormat }]),
+    ...['main', 'A'.repeat(40), '', null].map((revision) => [{ ...valid, revision }]),
+    ...['../model', 'owner/model/extra', '/owner/model', ['owner/model']].map((repo) => [{ ...valid, repo }]),
+    ...[
+      [],
+      ['../model'],
+      ['/model'],
+      ['a//b'],
+      ['a/./b'],
+      ['a\\b'],
+      ['*.safetensors'],
+      ['a?.json'],
+      ['a\u0000b'],
+      ['same', 'same'],
+    ].map((downloadFiles) => [{ ...valid, downloadFiles }]),
+    [{ ...valid, unexpected: true }],
+    [{ ...valid, sourceId: 'foreign' }],
+  ])
+    assert.throws(() => inventory.parseWeightFormatSelections(malformed), /artifact selection/);
+  for (const entry of [
+    Object.defineProperty({ ...valid }, 'repo', {
+      get() {
+        throw new Error('must not execute');
+      },
+      enumerable: true,
+    }),
+    Object.defineProperty({ ...valid }, 'hidden', { value: true }),
+    { ...valid, [Symbol('foreign')]: true },
+    Object.assign(Object.create(valid), { weightFormat: 'fp8r' }),
+  ])
+    assert.throws(() => inventory.parseWeightFormatSelections([entry]), /artifact selection/);
+  assert.equal(inventory.parseWorkflowModelInventory({}, 'owner/model'), undefined);
+  assert.deepEqual(
+    inventory
+      .workflowModelArtifactRows({ profileId: 'old', repo: 'owner/model', label: 'Old' })
+      .map((row) => row.weightFormat),
+    ['native'],
+  );
+  assert.equal(
+    inventory.workflowModelArtifactStatus(
+      inventory.workflowModelArtifactRows({ profileId: 'old', repo: 'owner/model', label: 'Old' })[0],
+      { repo: 'owner/model', label: 'Old' },
+      [],
+      [],
+      null,
+    ).installTarget,
+    null,
+  );
+  for (const executionStatus of [['supported'], true, 'unqualified', null])
+    assert.throws(
+      () => inventory.parseWorkflowModelInventory({ executionStatus }, 'owner/model'),
+      /artifact selection/,
+    );
+  assert.throws(
+    () => inventory.parseWorkflowModelInventory({ optionalRuntimeRequirement: { state: 'active' } }, 'owner/model'),
+    /runtime contract/,
+  );
 });
 
 for (const prefix of ['node-', '_', '-']) {

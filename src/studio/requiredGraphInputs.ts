@@ -32,11 +32,19 @@ export function inspectRequiredGraphInputs(
         !param.required ||
         param.disabled ||
         param.display === 'output' ||
-        !(param.isInput || param.display === 'input')
+        !(param.isInput || param.display === 'input' || param.display === 'modelselect')
       )
         continue;
-      const value = saved.value ?? saved.default ?? param.default;
-      if (value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length)) continue;
+      const selected = saved.value ?? saved.default ?? param.default;
+      const value =
+        param.display === 'modelselect' && selected && typeof selected === 'object' && !Array.isArray(selected)
+          ? 'value' in selected
+            ? selected.value
+            : undefined
+          : selected;
+      const present = param.display === 'modelselect' && typeof value === 'string' ? value.trim() : value;
+      if (present !== undefined && present !== null && present !== '' && (!Array.isArray(present) || present.length))
+        continue;
       const supplied = graph.edges.some((edge) => {
         if (edge.target !== node.id || edge.targetHandle !== field) return false;
         const source = enabled.get(edge.source)?.data.params[edge.sourceHandle ?? ''];

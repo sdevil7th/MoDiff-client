@@ -1,3 +1,4 @@
+import { promptEnhancementParentFromHint } from '../studio/promptEnhancementParent';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { OperationAuthoring } from './operationAuthoring';
 import { parseOperationContracts } from './operationContracts';
@@ -52,6 +53,7 @@ export function operationAuthoring(node: CustomNodeType): OperationAuthoring | n
   )
     return null;
   try {
+    promptEnhancementParentFromHint(hint);
     const [operation] = parseOperationContracts([hint.operation], 3);
     if (!operation || operation.nodeKey !== `${node.data.module}.${node.data.action}`) return null;
     if (

@@ -274,6 +274,8 @@ The [developer authoring guide](docs/developer-first-node-ux.md) covers optional
 Model Setup, Prepare Mask and Image Output groups, reversible component bundle
 wiring, and the existing inspection/reuse controls. These explicit actions keep
 saved graphs and template defaults intact.
+The [audio workflow guide](docs/audio-workflows.md) covers audio Model Setup,
+MiniMax's real stages, Audio Output and selected adapter ownership.
 
 ## Workspace And Memory
 

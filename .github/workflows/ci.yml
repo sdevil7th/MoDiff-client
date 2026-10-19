@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Paired AMD/Linux and preserved Windows runtime, workflow and Block contracts.
-          ref: 661efe87a40c122b0692e32dde7e8bd55ed98ceb
+          # Paired image stages, scoped enhancement and FLUX3 evaluation contracts.
+          ref: d8c1a77a2c3975ca905e342c7e38b7dd64077813
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

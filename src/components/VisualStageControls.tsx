@@ -20,6 +20,8 @@ import {
   availableOperationStageGroups,
   visualOperationOwnerId,
 } from '../workflow/visualOperationGroups';
+import { visualStagePresentation } from '../workflow/visualOperationGroupProjection';
+import { workflowTaskCategory } from '../workflow/workflowTaskBrowser';
 import MediaAttachmentControls from './MediaAttachmentControls';
 import { useNodesStore } from '../stores/useNodeStore';
 import {
@@ -114,7 +116,14 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
                   guidance: 'Group guidance',
                   setup: 'Group model setup',
                   mask: 'Group mask preparation',
-                  output: 'Group image output',
+                  output: `Group ${
+                    visualStagePresentation(
+                      'output',
+                      workflowTaskCategory(node.data.operationAuthoring?.operation.task ?? '') === 'Audio'
+                        ? 'audio'
+                        : null,
+                    ).name
+                  }`,
                 }[group]
               }
             </ModiffMenuAction>

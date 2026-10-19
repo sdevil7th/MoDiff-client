@@ -1,3 +1,6 @@
+import type { PromptEnhancementParent } from '../studio/promptEnhancementAuthoring';
+import { refreshPromptEnhancementParents } from '../studio/promptEnhancementAuthoring';
+import { ancillaryBindingsFromHint, type AncillaryInstanceBinding } from '../studio/ancillaryOperations';
 import { operationOwnsModel } from './operationContracts';
 import type { Edge } from '@xyflow/react';
 import { nanoid } from 'nanoid';
@@ -14,6 +17,7 @@ import { preservedMediaFanout } from './operationMediaMigration';
 import { createNodeFromRegistry } from './nodeFactory';
 import { acceptsOperationValue as acceptsValue } from './operationFieldValue';
 import { operationScope } from './operationScope';
+import type { OperationAuthoringRecipe } from '../studio/operationAuthoringRecipe';
 export { operationScope } from './operationScope';
 import {
   unpackVisualOperationGroups,
@@ -26,6 +30,8 @@ export type InactiveOperationDraft = { routeKey: string; nodes: CustomNodeType[]
 /** Advisory provenance for ordinary nodes. It grants no execution authority. */
 export type OperationAuthoring = {
   schemaVersion: 1;
+  ancillaryBindings?: AncillaryInstanceBinding[];
+  ancillaryParent?: PromptEnhancementParent;
   operation: OperationContract;
   defaults: Record<string, unknown>;
   retained: RetainedOperationSetting[];
@@ -35,6 +41,7 @@ export type OperationAuthoring = {
   sharedInputs?: { field: string; name: string; loaderId: string; groupId: string }[];
 };
 export type OperationStarter = {
+  authoring?: OperationAuthoringRecipe;
   pipelineClass: string;
   task: string;
   workflowId: string | null;
@@ -278,6 +285,13 @@ function attachSharedInputs(nodes: CustomNodeType[], starter: OperationStarter, 
     }
 }
 
+function assertDetachedEnhancement(scope: CustomNodeType[]) {
+  if (scope.some((node) => ancillaryBindingsFromHint(node.data.operationAuthoring)))
+    throw new Error(
+      'Disable prompt enhancement before changing this parent model or task. Your authored inputs have not changed.',
+    );
+}
+
 /** Follow existing canonical connections from one loader. Custom branches are
  * preserved, and an unrelated loader/Block is never adopted into this scope. */
 
@@ -318,6 +332,7 @@ export function planPristineOperationChange(
 ): OperationChangePlan | null {
   if (graph.nodes.some(visualOperationGroup)) return null;
   const scope = operationScope(graph, loaderId);
+  assertDetachedEnhancement(scope);
   const root = scope.find((n) => n.id === loaderId)!;
   const hint = operationAuthoring(root)!;
   if (
@@ -403,7 +418,11 @@ export function planPristineOperationChange(
     edges.push(candidates[0]!);
   }
   return {
-    graph: { nodes: [...outside, ...fresh.nodes], edges: [...edges, ...fresh.edges] },
+    graph: refreshPromptEnhancementParents(
+      { nodes: [...outside, ...fresh.nodes], edges: [...edges, ...fresh.edges] },
+      starter.authoring,
+      fresh.nodes.map((node) => node.id),
+    ),
     changes: [
       'Replace the untouched starter with the selected model’s connected operations; preserve preview nodes and unrelated branches.',
     ],
@@ -438,6 +457,7 @@ export function planOperationChange(
     return { ...plan, graph: restoreVisualOperationGroups(plan.graph, unpacked, plan.replacements) };
   }
   const scope = operationScope(graph, loaderId);
+  assertDetachedEnhancement(scope);
   const root = scope.find((n) => n.id === loaderId)!;
   if (options.preserveValues && operationAuthoring(root)!.operation.pipelineClass !== starter.pipelineClass)
     throw new Error('Preserving all current values is only supported within the same pipeline.');
@@ -1208,7 +1228,11 @@ export function planOperationChange(
       'An inactive stage identity is now used by another node. Nothing changed; restore it in a separate workflow.',
     );
   return {
-    graph: { nodes, edges },
+    graph: refreshPromptEnhancementParents(
+      { nodes, edges },
+      starter.authoring,
+      migrated.map((node) => node.id),
+    ),
     changes,
     diagnostics,
     review: {

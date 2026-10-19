@@ -2,6 +2,7 @@ import { enqueueSnackbar } from '../ui/snackbar';
 import { deepEqual } from '../utils/deepEqual';
 import { markStudioGraphDefinitionPending, syncStudioGraphDefinition } from '../studio/graphBridge';
 import { collapsedHuggingFaceClusterPreviewTarget } from '../studio/huggingFaceClusterGraph';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { blockPreviewTargetV2, collapsedUserBlockPreviewTarget, runtimeProgressTarget } from '../studio/userBlocks';
@@ -536,13 +537,15 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
             if (studio.activeWorkflowTabId !== workflowTabId) return;
             const workflowContext = captureWorkflowOperationContext();
             try {
-              if (studio.graphBinding) {
+              const pending = prepareExecutionScope({ workflowContext });
+              const executionScope = pending ? await pending : undefined;
+              if (studio.graphBinding && !executionScope) {
                 const autoReady = await ensureStudioAutoPlanReadyForRun(workflowContext);
                 if (!autoReady) return;
                 await coordinateGraphRun({ sid, studioContext: {}, workflowContext });
                 return;
               }
-              await coordinateGraphRun({ sid, workflowContext });
+              await coordinateGraphRun({ sid, workflowContext, executionScope });
             } catch (error) {
               if (!isWorkflowOperationCancelled(error)) {
                 console.error('Could not queue the next loop run', error);

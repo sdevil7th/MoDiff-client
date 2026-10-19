@@ -1,3 +1,4 @@
+import { hasAncillaryExecutionClaim, type PreparedExecutionScope } from '../workflow/prepareExecutionScope';
 import { inspectRequiredGraphInputs } from './requiredGraphInputs';
 import {
   useFlowStore,
@@ -7,7 +8,13 @@ import {
 import { buildApiGraphExport } from '../stores/flowGraphExport';
 import { useNodesStore } from '../stores/useNodeStore';
 import { runtimeFailureTargetsActiveWorkflow, useRunIssueStore } from '../stores/useRunIssueStore';
-import { currentAutoResourcePlanTarget, useStudioStore } from '../stores/useStudioStore';
+import {
+  advanceWorkflowOperationContext,
+  assertWorkflowOperationContext,
+  currentAutoResourcePlanTarget,
+  useStudioStore,
+  type WorkflowOperationContext,
+} from '../stores/useStudioStore';
 import { useTaskStore, type Task } from '../stores/useTaskStore';
 import { getStudioModelCacheStatus } from './modelCache';
 import {
@@ -16,6 +23,7 @@ import {
   type WorkflowGraphArtifactReference,
 } from './artifactRequirements';
 import {
+  DEFAULT_STUDIO_FORM,
   getProfileForForm,
   getStudioModelDisplayName,
   normalizeStudioOffloadMode,
@@ -370,6 +378,19 @@ export function runtimeDeviceIsAvailable(status: RuntimeStatus | null, device: s
   if (normalized.startsWith('mps')) return Boolean(getRuntimeMpsDevice(status, device));
   if (normalized.startsWith('cpu')) return true;
   return false;
+}
+
+/** Commit the existing runtime fallback before an owned graph build awaits metadata. */
+export function normalizeStudioRuntimeDevice(context: WorkflowOperationContext) {
+  assertWorkflowOperationContext(context);
+  const runtime = useNodesStore.getState().runtimeStatus;
+  if (!runtime) return;
+  const form = useStudioStore.getState().form;
+  const device = getPreferredRuntimeDevice(runtime);
+  if (device === form.device || runtimeDeviceIsAvailable(runtime, form.device)) return;
+  if (form.device !== DEFAULT_STUDIO_FORM.device && !form.device.toLowerCase().startsWith('cuda')) return;
+  useStudioStore.getState().updateForm({ device });
+  advanceWorkflowOperationContext(context);
 }
 
 function cudaTotalBytes(status: RuntimeStatus | null, device: string) {
@@ -885,12 +906,25 @@ export function collectGraphDeviceOffloadIssues(graph = executableFlowGraph()): 
   });
 }
 
-function executableFlowGraph(targetNodeId?: string) {
+function executableFlowGraph(targetNodeId?: string, executionScope?: PreparedExecutionScope) {
   const { nodes, edges } = useFlowStore.getState();
   const durable = withoutBlockCompilationTransientsV2(nodes, edges);
   const userBlocks = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
   const legacyClusters = expandHuggingFaceClusterBoundaryEdges(userBlocks);
   const execution = expandBlockGraphV2ForExecution(legacyClusters.nodes, legacyClusters.edges, targetNodeId);
+  if (hasAncillaryExecutionClaim(nodes)) {
+    const graph = useFlowStore
+      .getState()
+      .exportGraph('readiness', targetNodeId, { randomizeSeeds: false, executionScope });
+    const ids = new Set(Object.keys(graph.nodes));
+    return {
+      nodes: execution.nodes.filter((node) => ids.has(node.id)),
+      edges: execution.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target)),
+      ...(graph.runtimeHints?.executionPurpose?.kind === 'explicit_preview'
+        ? { previewOutputNodeId: graph.runtimeHints.executionPurpose.target.nodeId }
+        : {}),
+    };
+  }
   if (!targetNodeId) return execution;
   // Use the same target/dependency closure as selected Run. This is inspection:
   // randomized fields must not write back into the user's saved instance.
@@ -1011,7 +1045,9 @@ function collectGraphStructureIssues(graph = executableFlowGraph()): RunReadines
     ];
   }
 
-  const outputNodes = executableNodes.filter(isOutputLikeNode);
+  const outputNodes = executableNodes.filter(
+    (node) => isOutputLikeNode(node) || ('previewOutputNodeId' in graph && node.id === graph.previewOutputNodeId),
+  );
   if (outputNodes.length === 0) {
     if (preparableClusters.length > 0) return [];
     return [
@@ -1752,6 +1788,7 @@ export function collectRunReadinessIssues(options: {
   isConnected: boolean;
   includeStudio?: boolean;
   targetNodeId?: string;
+  executionScope?: PreparedExecutionScope;
 }) {
   const issues: RunReadinessIssue[] = [];
   const studioState = useStudioStore.getState();
@@ -1837,7 +1874,7 @@ export function collectRunReadinessIssues(options: {
 
   let executionGraph: ReturnType<typeof executableFlowGraph> | null = null;
   try {
-    executionGraph = executableFlowGraph(options.targetNodeId);
+    executionGraph = executableFlowGraph(options.targetNodeId, options.executionScope);
   } catch (error) {
     issues.push(invalidCompositeExecutionGraphIssue(error));
   }
@@ -2026,6 +2063,7 @@ export function validateCurrentRun(options: {
   includeStudio?: boolean;
   showDialog?: boolean;
   targetNodeId?: string;
+  executionScope?: PreparedExecutionScope;
 }) {
   const issues = collectRunReadinessIssues(options);
   applyRunReadinessToGraph(issues);

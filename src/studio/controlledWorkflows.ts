@@ -24,6 +24,7 @@ import {
 } from './controlledWorkflowContracts';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { loraWorkflowFieldValues, upscaleWorkflowFieldValues } from './controlledWorkflowValues';
+import { MAX_ORDERED_ADAPTERS, orderedAdapterChainLinks } from './adapterChainLinks';
 import type {
   StudioAudioFitSettings,
   StudioFormState,
@@ -289,9 +290,11 @@ export async function addLoraWorkflowBlock(
   const adapterSettings: StudioTemplateLoraSettings[] = settings
     ? [settings, ...(settings.additionalAdapters ?? [])]
     : [];
-  if (adapterSettings.length > 1 && !usesDirectDiffusersImage) {
+  if (adapterSettings.length > 1 && !usesDirectDiffusersImage && (!modelsNode || binding?.nodes.videoExport)) {
     throw new Error('Multiple LoRA adapters currently require the Diffusers image pipeline.');
   }
+  if (adapterSettings.length > MAX_ORDERED_ADAPTERS)
+    throw new Error(`A LoRA chain supports at most ${MAX_ORDERED_ADAPTERS} adapters.`);
   const effectiveSettings = adapterSettings.length > 0 ? adapterSettings : [undefined];
   const basePosition = positionNear(
     modelsNode ?? directPipelineNode ?? audioPipelineNode,
@@ -304,6 +307,23 @@ export async function addLoraWorkflowBlock(
       ? 'lora.diffusers-image.v1'
       : 'lora.modular.v1';
   const loraNode = runControlledGraphTransaction(context, contractId, () => {
+    const currentAdapters = useFlowStore
+      .getState()
+      .nodes.filter(
+        (node) => node.data.studioRole === 'loraAdapter' || node.data.studioRole?.startsWith('loraAdapter:'),
+      );
+    const currentAdapterIds = new Set(currentAdapters.map((node) => node.id));
+    const sink = modelsNode ?? directGenerateNode ?? audioGenerateNode;
+    if (
+      useFlowStore
+        .getState()
+        .edges.some(
+          (edge) => currentAdapterIds.has(edge.source) && !currentAdapterIds.has(edge.target) && edge.target !== sink,
+        )
+    )
+      throw new Error(
+        'This LoRA chain is shared with another consumer. Edit its ordinary graph connections to preserve that branch.',
+      );
     const expectedRoles = new Set(
       effectiveSettings.map((_, index) => (index === 0 ? 'loraAdapter' : `loraAdapter:${index}`)),
     );
@@ -344,20 +364,43 @@ export async function addLoraWorkflowBlock(
         .filter(
           (edge) =>
             (edge.source === sourcePipelineNode &&
+              edge.sourceHandle === 'pipeline' &&
+              edge.targetHandle === 'pipeline' &&
               (edge.target === targetGenerateNode || loraNodes.includes(edge.target))) ||
             (loraNodes.includes(edge.source) &&
+              edge.sourceHandle === 'output' &&
+              edge.targetHandle === 'pipeline' &&
               (edge.target === targetGenerateNode || loraNodes.includes(edge.target))),
         )
         .map((edge) => edge.id);
       if (bypassEdges.length > 0) flow.removeEdges(bypassEdges);
-      connected = ensureConnection(sourcePipelineNode, ['pipeline'], loraNodes[0], ['pipeline']);
-      for (let index = 1; index < loraNodes.length && connected; index += 1) {
-        connected = ensureConnection(loraNodes[index - 1], ['output'], loraNodes[index], ['pipeline']);
-      }
-      connected =
-        connected && ensureConnection(loraNodes[loraNodes.length - 1], ['output'], targetGenerateNode, ['pipeline']);
+      if (sourcePipelineNode && targetGenerateNode)
+        connected = orderedAdapterChainLinks({
+          adapterIds: loraNodes,
+          inputHandles: ['pipeline'],
+          outputHandles: ['output'],
+          source: { nodeId: sourcePipelineNode, handles: ['pipeline'] },
+          target: { nodeId: targetGenerateNode, handles: ['pipeline'] },
+        }).every((link) => ensureConnection(link.source, link.sourceHandles, link.target, link.targetHandles));
     } else {
-      connected = ensureConnection(primaryLoraNode, ['lora'], modelsNode, ['lora_list', 'loras']);
+      const flow = useFlowStore.getState();
+      const staleChainEdges = flow.edges
+        .filter(
+          (edge) =>
+            loraNodes.includes(edge.source) &&
+            edge.sourceHandle === 'lora' &&
+            ((loraNodes.includes(edge.target) && edge.targetHandle === 'previous_loras') ||
+              (edge.target === modelsNode && ['lora_list', 'loras'].includes(edge.targetHandle ?? ''))),
+        )
+        .map((edge) => edge.id);
+      if (staleChainEdges.length > 0) flow.removeEdges(staleChainEdges);
+      if (modelsNode)
+        connected = orderedAdapterChainLinks({
+          adapterIds: loraNodes,
+          inputHandles: ['previous_loras'],
+          outputHandles: ['lora'],
+          target: { nodeId: modelsNode, handles: ['lora_list', 'loras'] },
+        }).every((link) => ensureConnection(link.source, link.sourceHandles, link.target, link.targetHandles));
     }
     if (!connected) {
       throw new Error('LoRA node was created, but its pipeline connection could not be completed.');

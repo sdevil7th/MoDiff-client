@@ -127,8 +127,8 @@ test('the Modular Diffusers catalog exposes every exact block once and retains a
     conditional.pipelines.flatMap((pipeline) => pipeline.placements.map(({ blockDefinitionId }) => blockDefinitionId)),
   );
 
-  assert.equal(expectedPlacements, 1051);
-  assert.equal(expectedDefinitions.size, 598);
+  assert.equal(expectedPlacements, 1105);
+  assert.equal(expectedDefinitions.size, 626);
   assert.equal(section.entries.length, expectedDefinitions.size);
   assert.equal(new Set(section.entries.map(({ id }) => id)).size, expectedDefinitions.size);
   assert.equal(
@@ -162,13 +162,78 @@ after(async () => {
   await server?.close();
 });
 
-test('all 94 reviewed workflows map every selected step into the exact unpruned hierarchy', () => {
+test('the newly reviewed Flux3 workflows retain exact active branches and loop members', () => {
+  const conditional = conditionalModule.parseHuggingFaceModularConditionalSnapshot(
+    JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-conditional-contracts.json'), 'utf8')),
+  );
+  const selected = JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-block-contracts.json'), 'utf8'));
+  assert.equal(conditional.diffusersRevision, '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941');
+  const blocks = new Map(conditional.blockDefinitions.map((block) => [block.id, block]));
+  for (const pipelineClass of ['Flux3ModularPipeline', 'Flux3DistilledModularPipeline']) {
+    const pipeline = conditional.pipelines.find((item) => item.pipelineClass === pipelineClass);
+    assert.ok(pipeline);
+    assert.equal(pipeline.placements.length, 27);
+    const workflows = selected.workflows.filter((item) => item.pipelineClass === pipelineClass);
+    assert.deepEqual(workflows.map(({ workflowId }) => workflowId).sort(), ['image_conditioned', 'text2image']);
+    for (const workflow of workflows) {
+      const imageConditioned = workflow.workflowId === 'image_conditioned';
+      const branch = workflow.workflowId;
+      const hierarchy = reviewedGraphModule.reviewedWorkflowHierarchyV2(conditional, {
+        provider: 'diffusers',
+        libraryRevision: selected.diffusersRevision,
+        pipelineClass,
+        workflowId: workflow.workflowId,
+        blockPlacements: workflow.placements,
+      });
+      assert.ok(hierarchy);
+      const denoiseSteps = [
+        'input',
+        ...(imageConditioned ? ['cond_input'] : []),
+        'prepare_latents',
+        ...(imageConditioned ? ['prepare_image_cond_latents'] : []),
+        'set_timesteps',
+        'prepare_rope_inputs',
+        'denoise',
+        'denoise/denoiser',
+        'denoise/after_denoiser',
+        'after_denoise',
+      ];
+      const active = [...hierarchy.fullPlacementBySelectedPath.values()];
+      assert.deepEqual(
+        active.map(({ path }) => path.join('/')),
+        [
+          'text_encoder',
+          ...(imageConditioned
+            ? ['vae_encoder/image_conditioning/preprocess', 'vae_encoder/image_conditioning/encode']
+            : []),
+          ...denoiseSteps.map((step) => `denoise/${branch}/${step}`),
+          'decode',
+        ],
+      );
+      assert.equal(active.length, imageConditioned ? 14 : 10);
+      assert.deepEqual(
+        hierarchy.structuralPlacements.map(({ placement }) => placement.path.join('/')),
+        [
+          ...(imageConditioned ? ['vae_encoder', 'vae_encoder/image_conditioning'] : []),
+          'denoise',
+          `denoise/${branch}`,
+        ],
+      );
+      const loop = active.find(({ path }) => path.join('/') === `denoise/${branch}/denoise`);
+      assert.equal(blocks.get(loop.blockDefinitionId).kind, 'loop');
+      const inactive = imageConditioned ? 'text2image' : 'image_conditioned';
+      assert.ok(active.every(({ path }) => path[0] !== 'denoise' || path[1] !== inactive));
+    }
+  }
+});
+
+test('all 98 reviewed workflows map every selected step into the exact unpruned hierarchy', () => {
   const conditional = conditionalModule.parseHuggingFaceModularConditionalSnapshot(
     JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-conditional-contracts.json'), 'utf8')),
   );
   const selected = JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-block-contracts.json'), 'utf8'));
   assert.equal(selected.diffusersRevision, conditional.diffusersRevision);
-  assert.equal(selected.workflows.length, 94);
+  assert.equal(selected.workflows.length, 98);
 
   let maximumDepth = 0;
   let structuralPlacements = 0;
@@ -215,7 +280,7 @@ test('all 94 reviewed workflows map every selected step into the exact unpruned 
   assert.ok(structuralPlacements > 400, 'the audit unexpectedly flattened away reviewed containers');
 });
 
-test('all 94 reviewed workflows compile to one V2 graph with progressively projected nested containers', () => {
+test('all 98 reviewed workflows compile to one V2 graph with progressively projected nested containers', () => {
   const conditional = conditionalModule.parseHuggingFaceModularConditionalSnapshot(
     JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-conditional-contracts.json'), 'utf8')),
   );
@@ -688,10 +753,10 @@ test('all 94 reviewed workflows compile to one V2 graph with progressively proje
       ordinaryNodeNestedParent: utilityParent ?? null,
     });
   }
-  assert.equal(definitions.length, 94);
-  assert.equal(nodeCount, 1796);
+  assert.equal(definitions.length, 98);
+  assert.equal(nodeCount, 1860);
   assert.equal(maximumDepth, 5);
-  assert.equal(parameterLocalityChecks, 94);
+  assert.equal(parameterLocalityChecks, 98);
   assert.ok(subtreeSaveChecks > 1400);
   if (process.env.MODIFF_HIERARCHY_AUDIT_OUTPUT) {
     writeFileSync(

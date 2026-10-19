@@ -1,3 +1,4 @@
+import type { AncillaryExecutionPurpose } from '../studio/ancillaryOperations';
 import type { HfDownloadProgress } from '../stores/useNodeStore';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import type { StudioMode, StudioPreviewSlot } from '../studio/types';
@@ -40,6 +41,7 @@ export type ApiGraphLoopExport = {
 };
 
 export type ApiGraphRuntimeHints = {
+  executionPurpose?: AncillaryExecutionPurpose;
   /**
    * Correlation and workflow fields are attached to every graph submission.
    * Studio-managed runs additionally provide the resource/model fields below.
@@ -318,6 +320,30 @@ export type ResourceRetryWebsocketMessage = BaseWebsocketMessage<'resource_retry
   errors?: unknown;
 };
 
+export type WeightLoadingMode = 'cpu' | 'cuda';
+
+type WorkflowResourceValues = {
+  offload_mode: string;
+  auto_offload: boolean;
+  weight_loading_mode: WeightLoadingMode;
+};
+
+export type WorkflowResourceUpdate = {
+  [Field in keyof WorkflowResourceValues]: {
+    nodeId: string;
+    field: Field;
+    value: WorkflowResourceValues[Field];
+    previousValue?: WorkflowResourceValues[Field] | null;
+  };
+}[keyof WorkflowResourceValues];
+
+export type WorkflowResourcePatch = {
+  [Field in WorkflowResourceUpdate['field']]: Pick<
+    Extract<WorkflowResourceUpdate, { field: Field }>,
+    'nodeId' | 'field' | 'value'
+  >;
+}[WorkflowResourceUpdate['field']];
+
 export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
   'auto_resource_plan_applied' | 'auto_resource_cleanup' | 'runtime_resource_cleanup' | 'auto_retry_requires_approval'
 > & {
@@ -333,12 +359,7 @@ export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
   candidateId?: string;
   message?: string;
   updatedNodes?: string[];
-  resourceUpdates?: {
-    nodeId: string;
-    field: 'offload_mode' | 'auto_offload';
-    value: string | boolean;
-    previousValue?: string | boolean | null;
-  }[];
+  resourceUpdates?: WorkflowResourceUpdate[];
   retryPlans?: JsonObject[];
   performed?: boolean;
   reasons?: string[];
@@ -429,6 +450,14 @@ const websocketMessageTypes = new Set<WebsocketMessage['type']>([
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+export function isWorkflowResourceValue(field: unknown, value: unknown): boolean {
+  return (
+    (field === 'offload_mode' && typeof value === 'string') ||
+    (field === 'auto_offload' && typeof value === 'boolean') ||
+    (field === 'weight_loading_mode' && (value === 'cpu' || value === 'cuda'))
+  );
 }
 
 function isBoundedRecord(value: unknown, valueIsValid: (item: unknown) => boolean = () => true) {
@@ -691,11 +720,8 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
               (item) =>
                 isRecord(item) &&
                 typeof item.nodeId === 'string' &&
-                ((item.field === 'offload_mode' && typeof item.value === 'string') ||
-                  (item.field === 'auto_offload' && typeof item.value === 'boolean')) &&
-                (item.previousValue == null ||
-                  typeof item.previousValue === 'string' ||
-                  typeof item.previousValue === 'boolean'),
+                isWorkflowResourceValue(item.field, item.value) &&
+                (item.previousValue == null || isWorkflowResourceValue(item.field, item.previousValue)),
             ),
         )
       );

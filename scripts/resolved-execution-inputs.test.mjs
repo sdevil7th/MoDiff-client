@@ -219,6 +219,50 @@ function receipt() {
   };
 }
 
+test('only the actual native loader capture accepts the exact consumed weight format', () => {
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  const make = (value, module = 'modules.ModularDiffusers', action = 'ModelsLoader') => {
+    const capture = receipt();
+    capture.nodes.push({
+      nodeId: 'weight-owner',
+      module,
+      action,
+      fields: { weight_format: { value, source: 'literal' } },
+      omittedFields: {},
+    });
+    capture.summary.weightFormat = value;
+    return capture;
+  };
+  for (const value of ['native', 'fp8r', 'nvfp4']) {
+    for (const module of ['modules.ModularDiffusers', 'ModularDiffusers']) {
+      const evidence = make(value, module);
+      assert.deepEqual(inputs.coerceResolvedExecutionInputs(evidence, identity), evidence);
+      const restored = contracts.coerceStudioOutput({
+        id: 'weights',
+        url: '/out.png',
+        ...identity,
+        resolvedExecutionInputs: JSON.parse(JSON.stringify(evidence)),
+      });
+      assert.equal(restored.resolvedExecutionInputs.summary.weightFormat, value);
+      const forged = structuredClone(evidence);
+      forged.summary.weightFormat = value === 'native' ? 'fp8r' : 'native';
+      assert.equal(inputs.coerceResolvedExecutionInputs(forged, identity), undefined);
+    }
+  }
+  for (const invalid of ['', 'auto', 'FP8R', true, null, 1, ['native'], {}])
+    assert.equal(inputs.coerceResolvedExecutionInputs(make(invalid), identity), undefined);
+  for (const [module, action] of [
+    ['modules.ModularDiffusers', 'EncodePrompt'],
+    ['modules.DiffusersImage', 'LoadPipeline'],
+    ['modules.Foreign', 'ModelsLoader'],
+  ])
+    assert.equal(inputs.coerceResolvedExecutionInputs(make('native', module, action), identity), undefined);
+  const wrongLabel = make('native');
+  wrongLabel.summary = { ...receipt().summary, weight_format: 'native' };
+  assert.equal(inputs.coerceResolvedExecutionInputs(wrongLabel, identity), undefined);
+  assert.equal(inputs.coerceResolvedExecutionInputs(receipt(), identity).summary.weightFormat, undefined);
+});
+
 test('merged video metadata keeps requested, consumed and encoded dimensions distinct', () => {
   const value = contracts.coerceStudioOutput({
     id: 'video',
@@ -334,6 +378,72 @@ test('captured native and whole-pipeline attention/VAE policies survive history 
   assert.deepEqual(inputs.coerceResolvedExecutionInputs(mixed, identity), mixed);
 });
 
+test('captured weight loading mode preserves its cpu/cuda value through output history', () => {
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  for (const value of ['cpu', 'cuda']) {
+    const capture = receipt();
+    capture.nodes.push({
+      nodeId: 'loader',
+      module: 'modules.ModularDiffusers',
+      action: 'ModelsLoader',
+      fields: { weight_loading_mode: { value, source: 'literal' } },
+      omittedFields: {},
+    });
+    capture.summary.weightLoadingMode = value;
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture);
+    const restored = contracts.coerceStudioOutput(
+      JSON.parse(
+        JSON.stringify({
+          id: 'weight-loading',
+          url: '/image.webp',
+          ...identity,
+          resolvedExecutionInputs: capture,
+        }),
+      ),
+    );
+    assert.deepEqual(restored.resolvedExecutionInputs, capture);
+    assert.equal(restored.resolvedExecutionInputs.summary.weightLoadingMode, value);
+    const forged = structuredClone(capture);
+    forged.summary.weightLoadingMode = value === 'cpu' ? 'cuda' : 'cpu';
+    assert.equal(inputs.coerceResolvedExecutionInputs(forged, identity), undefined);
+  }
+  for (const value of ['auto', 'CUDA', '', true, null, 1, ['cpu']]) {
+    const capture = receipt();
+    capture.nodes.push({
+      nodeId: 'loader',
+      module: 'modules.ModularDiffusers',
+      action: 'ModelsLoader',
+      fields: { weight_loading_mode: { value, source: 'literal' } },
+      omittedFields: {},
+    });
+    capture.summary.weightLoadingMode = value;
+    assert.equal(inputs.coerceResolvedExecutionInputs(capture, identity), undefined);
+  }
+  assert.equal(inputs.coerceResolvedExecutionInputs(receipt(), identity).summary.weightLoadingMode, undefined);
+  const mixed = receipt();
+  mixed.nodes.push(
+    ...['cpu', 'cuda'].map((value) => ({
+      nodeId: `loader-${value}`,
+      module: 'modules.ModularDiffusers',
+      action: 'ModelsLoader',
+      fields: { weight_loading_mode: { value, source: 'literal' } },
+      omittedFields: {},
+    })),
+  );
+  mixed.ambiguousFields = ['weightLoadingMode'];
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(mixed, identity), mixed);
+  const omitted = receipt();
+  omitted.nodes.push({
+    nodeId: 'loader',
+    module: 'modules.ModularDiffusers',
+    action: 'ModelsLoader',
+    fields: {},
+    omittedFields: { weight_loading_mode: 'opaque input' },
+  });
+  omitted.unavailableFields = ['weightLoadingMode'];
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(omitted, identity), omitted);
+});
+
 test('every backend capture field survives client history parsing with node-scoped adapter identity', () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
   const python =
@@ -347,13 +457,23 @@ test('every backend capture field survives client history parsing with node-scop
 import json
 from modiff.execution_input_provenance import FIELD_NAMES, NODE_FIELD_NAMES, capture_generation_inputs, build_resolved_execution_inputs
 cases = []
-for prefix in ("", "modules."):
+for prefix, weight_mode in [(p, w) for p in ("", "modules.") for w in ("cpu", "cuda")]:
     nodes, records = {}, {}
     scopes = [("DiffusersImage", "Generate", FIELD_NAMES), *[(m, a, fields) for (m, a), fields in NODE_FIELD_NAMES.items()], ("Text", "ProcessText", {"pipeline_class": "dataOperationType"})]
     for index, (module, action, fields) in enumerate(scopes):
         key = str(index)
         node = {"module": prefix + module, "action": action, "params": {}}
         args = {name: "scope-" + str(index) + "-" + name for name in fields}
+        if "weight_loading_mode" in args: args["weight_loading_mode"] = weight_mode
+        if "weight_format" in args: args["weight_format"] = "native"
+        enhancement = {"operation": "enhance_prompt", "enhancement_max_new_tokens": 2,
+                       "prompt_adapter_id": "transformers-prompt-enhancement-v1", "system_prompt_mode": "i2i",
+                       "system_prompt_sha256": "a" * 64, "rendered_prompt_sha256": "sha256:" + "b" * 64,
+                       "rendered_prompt_utf8_bytes": 64, "rendered_input_ids_sha256": "sha256:" + "c" * 64,
+                       "reference_source_sha256": ["sha256:" + "d" * 64],
+                       "processed_pixel_sha256": "sha256:" + "e" * 64, "processed_pixel_shape": [4, 5],
+                       "processed_grid_sha256": "sha256:" + "f" * 64, "processed_grid_shape": [1, 3]}
+        args.update({name: value for name, value in enhancement.items() if name in args})
         for name in ("conditioning_scale", "control_mode", "prompt_embeds_scale", "pooled_prompt_embeds_scale"):
             if name in args: args[name] = [0.4, 0.2]
         if "shared_conditions" in args: args["shared_conditions"] = True
@@ -780,5 +900,423 @@ test('attention context reuse survives receipts and rejects a contradictory summ
     assert.deepEqual(inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(value)), identity), value);
     value.summary.attentionContextReuse = !enabled;
     assert.equal(inputs.coerceResolvedExecutionInputs(value, identity), undefined);
+  }
+});
+
+test('image stage receipts keep loader execution mode and each consumed stage task scoped to their actual actions', () => {
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  for (const [action, field, label] of [
+    ['LoadPipeline', 'mode', 'executionMode'],
+    ['EncodeInputs', 'executed_task', 'executedTask'],
+    ['Denoise', 'executed_task', 'executedTask'],
+    ['DecodeLatents', 'executed_task', 'executedTask'],
+  ]) {
+    const value = receipt();
+    value.nodes = [
+      {
+        nodeId: 'stage',
+        module: 'modules.DiffusersImage',
+        action,
+        fields: { [field]: { value: 'control_image', source: 'literal' } },
+        omittedFields: {},
+      },
+    ];
+    value.summary = { [label]: 'control_image' };
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(value, identity), value);
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(value)), identity), value);
+    const omitted = structuredClone(value);
+    omitted.nodes[0].fields = {};
+    omitted.nodes[0].omittedFields = { [field]: 'unsupported-value' };
+    omitted.summary = {};
+    omitted.unavailableFields = [label];
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(omitted, identity), omitted);
+    for (const mutate of [
+      (copy) => {
+        copy.nodes[0].action = 'UnreviewedAction';
+      },
+      (copy) => {
+        copy.nodes[0].module = 'modules.Foreign';
+      },
+      (copy) => {
+        copy.nodes[0].fields.unknown_mode = copy.nodes[0].fields[field];
+      },
+      (copy) => {
+        copy.summary[label] = 'foreign_task';
+      },
+      (copy) => {
+        copy.summary = { [label === 'executedTask' ? 'executionMode' : 'executedTask']: 'control_image' };
+      },
+    ]) {
+      const copy = structuredClone(value);
+      mutate(copy);
+      assert.equal(inputs.coerceResolvedExecutionInputs(copy, identity), undefined);
+    }
+  }
+  const foreignField = receipt();
+  foreignField.nodes = [
+    {
+      nodeId: 'denoise',
+      module: 'modules.DiffusersImage',
+      action: 'Denoise',
+      fields: { mode: { value: 'control_image', source: 'literal' } },
+      omittedFields: {},
+    },
+  ];
+  foreignField.summary = { executionMode: 'control_image' };
+  assert.equal(inputs.coerceResolvedExecutionInputs(foreignField, identity), undefined);
+});
+
+// Frozen NodeBase/official tiny CPU producer captures, not HTTP or trained-model proof.
+const textGenerationProducerReceipts = {
+  'enhance-two-references': {
+    schemaVersion: 1,
+    source: 'backend-execution',
+    taskId: 'pup-cpu-unit-enhance-two-references',
+    attemptIndex: 0,
+    nodeId: 'enhancement-two-reference-producer',
+    nodes: [
+      {
+        nodeId: 'enhancement-two-reference-producer',
+        module: 'modules.HuggingFaceTransformers',
+        action: 'GenerateImageVideoText',
+        fields: {
+          operation: {
+            value: 'enhance_prompt',
+            source: 'literal',
+          },
+          enhancement_max_new_tokens: {
+            value: 2,
+            source: 'literal',
+          },
+          prompt_adapter_id: {
+            value: 'transformers-prompt-enhancement-v1',
+            source: 'literal',
+          },
+          system_prompt_mode: {
+            value: 'i2i',
+            source: 'literal',
+          },
+          system_prompt_sha256: {
+            value: '95cec384d5b6d341caa9fb3f2c7ca45ee80c2364b3a95d4044aebf976f6dd3bf',
+            source: 'literal',
+          },
+          rendered_prompt_sha256: {
+            value: 'sha256:e583f6f3e687f148de99dfb5a343cbbc41176639a63f587cbc67e0d662afda5f',
+            source: 'literal',
+          },
+          rendered_prompt_utf8_bytes: {
+            value: 2895,
+            source: 'literal',
+          },
+          rendered_input_ids_sha256: {
+            value: 'sha256:4cbd5087487435586ea6a9296a7ff22994a1501d25eaded251eff78080d866e5',
+            source: 'literal',
+          },
+          reference_source_sha256: {
+            value: [
+              'sha256:b89644f82b4521c8f0367c253020a36500bff049786d8b77237ad17ea3dcbed8',
+              'sha256:d44a7e0346e4324df997c774a567940899789649018fb6a6072ef28a95e9bd50',
+            ],
+            source: 'literal',
+          },
+          processed_pixel_sha256: {
+            value: 'sha256:c6f80e90f8455363b22d0f1be2fd04f399761bc6580448d2c32c717b2353fea2',
+            source: 'literal',
+          },
+          processed_pixel_shape: {
+            value: [512, 1536],
+            source: 'literal',
+          },
+          processed_grid_sha256: {
+            value: 'sha256:63a4454b5f1dd1e3fe5850ed8174d35d1346744920630f0e7b8ef547b1b86ba6',
+            source: 'literal',
+          },
+          processed_grid_shape: {
+            value: [2, 3],
+            source: 'literal',
+          },
+          prompt: {
+            value: 'Combine the red and blue squares.',
+            source: 'literal',
+          },
+        },
+        omittedFields: {},
+      },
+    ],
+    summary: {
+      textOperation: 'enhance_prompt',
+      enhancementMaxNewTokens: 2,
+      promptAdapterId: 'transformers-prompt-enhancement-v1',
+      systemPromptMode: 'i2i',
+      systemPromptSha256: '95cec384d5b6d341caa9fb3f2c7ca45ee80c2364b3a95d4044aebf976f6dd3bf',
+      renderedPromptSha256: 'sha256:e583f6f3e687f148de99dfb5a343cbbc41176639a63f587cbc67e0d662afda5f',
+      renderedPromptUtf8Bytes: 2895,
+      renderedInputIdsSha256: 'sha256:4cbd5087487435586ea6a9296a7ff22994a1501d25eaded251eff78080d866e5',
+      referenceSourceSha256: [
+        'sha256:b89644f82b4521c8f0367c253020a36500bff049786d8b77237ad17ea3dcbed8',
+        'sha256:d44a7e0346e4324df997c774a567940899789649018fb6a6072ef28a95e9bd50',
+      ],
+      processedPixelSha256: 'sha256:c6f80e90f8455363b22d0f1be2fd04f399761bc6580448d2c32c717b2353fea2',
+      processedPixelShape: [512, 1536],
+      processedGridSha256: 'sha256:63a4454b5f1dd1e3fe5850ed8174d35d1346744920630f0e7b8ef547b1b86ba6',
+      processedGridShape: [2, 3],
+      prompt: 'Combine the red and blue squares.',
+    },
+    ambiguousFields: [],
+    unavailableFields: [],
+    uncapturedNodeIds: [],
+    truncated: false,
+  },
+  'standard-fresh-defaults': {
+    schemaVersion: 1,
+    source: 'backend-execution',
+    taskId: 'pup-cpu-unit-standard-fresh-defaults',
+    attemptIndex: 0,
+    nodeId: 'standard-fresh-defaults',
+    nodes: [
+      {
+        nodeId: 'standard-fresh-defaults',
+        module: 'modules.HuggingFaceTransformers',
+        action: 'GenerateImageVideoText',
+        fields: {
+          prompt: {
+            value: 'Describe the red square.',
+            source: 'literal',
+          },
+          operation: {
+            value: 'standard',
+            source: 'literal',
+          },
+          executed_task: {
+            value: 'image_to_text',
+            source: 'literal',
+          },
+        },
+        omittedFields: {},
+      },
+    ],
+    summary: {
+      prompt: 'Describe the red square.',
+      textOperation: 'standard',
+      executedTask: 'image_to_text',
+    },
+    ambiguousFields: [],
+    unavailableFields: [],
+    uncapturedNodeIds: [],
+    truncated: false,
+  },
+  'standard-legacy-omitted': {
+    schemaVersion: 1,
+    source: 'backend-execution',
+    taskId: 'pup-cpu-unit-standard-legacy-omitted',
+    attemptIndex: 0,
+    nodeId: 'standard-legacy-omitted',
+    nodes: [
+      {
+        nodeId: 'standard-legacy-omitted',
+        module: 'modules.HuggingFaceTransformers',
+        action: 'GenerateImageVideoText',
+        fields: {
+          prompt: {
+            value: 'Describe the blue square.',
+            source: 'literal',
+          },
+          executed_task: {
+            value: 'image_to_text',
+            source: 'literal',
+          },
+        },
+        omittedFields: {},
+      },
+    ],
+    summary: {
+      prompt: 'Describe the blue square.',
+      executedTask: 'image_to_text',
+    },
+    ambiguousFields: [],
+    unavailableFields: [],
+    uncapturedNodeIds: [],
+    truncated: false,
+  },
+};
+
+test('paired backend prompt-enhancement and ordinary receipts survive exact history roundtrip', () => {
+  for (const [name, capture] of Object.entries(textGenerationProducerReceipts)) {
+    const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture, name);
+    const output = contracts.coerceStudioOutput({
+      id: name,
+      url: '/unit-text',
+      displayType: 'text',
+      ...identity,
+      prompt: 'stale form fallback',
+      formSnapshot: { prompt: 'stale form fallback' },
+      resolvedExecutionInputs: capture,
+    });
+    assert.deepEqual(output.resolvedExecutionInputs, capture);
+    assert.equal(output.prompt, capture.summary.prompt);
+    assert.equal(output.formSnapshot.prompt, 'stale form fallback');
+    assert.deepEqual(contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output))).resolvedExecutionInputs, capture);
+  }
+  assert.equal(textGenerationProducerReceipts['standard-fresh-defaults'].summary.textOperation, 'standard');
+  assert.equal(textGenerationProducerReceipts['standard-fresh-defaults'].summary.enhancementMaxNewTokens, undefined);
+  assert.equal(textGenerationProducerReceipts['standard-legacy-omitted'].summary.textOperation, undefined);
+  const enhanced = textGenerationProducerReceipts['enhance-two-references'];
+  assert.equal(enhanced.summary.textOperation, 'enhance_prompt');
+  assert.equal(enhanced.summary.referenceSourceSha256.length, 2);
+  assert.notEqual(enhanced.summary.referenceSourceSha256[0], enhanced.summary.referenceSourceSha256[1]);
+  assert.equal(enhanced.summary.modelType, undefined, 'capture does not grant an image model identity');
+});
+
+const enhancementNames = {
+  operation: 'textOperation',
+  enhancement_max_new_tokens: 'enhancementMaxNewTokens',
+  prompt_adapter_id: 'promptAdapterId',
+  system_prompt_mode: 'systemPromptMode',
+  system_prompt_sha256: 'systemPromptSha256',
+  rendered_prompt_sha256: 'renderedPromptSha256',
+  rendered_prompt_utf8_bytes: 'renderedPromptUtf8Bytes',
+  rendered_input_ids_sha256: 'renderedInputIdsSha256',
+  reference_source_sha256: 'referenceSourceSha256',
+  processed_pixel_sha256: 'processedPixelSha256',
+  processed_pixel_shape: 'processedPixelShape',
+  processed_grid_sha256: 'processedGridSha256',
+  processed_grid_shape: 'processedGridShape',
+};
+
+function enhancementReceipt() {
+  return structuredClone(textGenerationProducerReceipts['enhance-two-references']);
+}
+
+function enhancementIdentity(capture) {
+  return { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+}
+
+test('enhancement observations reject malformed scalars, hashes, counts and tensor shapes without coercion', () => {
+  const invalid = {
+    operation: ['', 'enhance', ['enhance_prompt'], true, null, 1],
+    enhancement_max_new_tokens: [0, -1, 3585, 1.5, '2', true, null],
+    prompt_adapter_id: ['', 'bad id', 'Uppercase', 'a'.repeat(129), [], null],
+    system_prompt_mode: ['', 'bbox', ['i2i'], true, null],
+    system_prompt_sha256: ['sha256:' + 'a'.repeat(64), 'a'.repeat(63), 'A'.repeat(64), null],
+    rendered_prompt_sha256: ['a'.repeat(64), 'sha256:' + 'a'.repeat(63), 'sha256:' + 'A'.repeat(64), null],
+    rendered_prompt_utf8_bytes: [0, -1, 524289, 1.5, '3', true, null],
+    rendered_input_ids_sha256: ['', 'a'.repeat(64), null],
+    reference_source_sha256: [
+      null,
+      ['bad'],
+      ['sha256:' + 'a'.repeat(64)].flatMap((hash) => Array(11).fill(hash)),
+      [[]],
+    ],
+    processed_pixel_sha256: ['', 'a'.repeat(64), null],
+    processed_pixel_shape: [
+      [],
+      [1],
+      [1, 2, 3],
+      [true, 2],
+      [0, 2],
+      [1.5, 2],
+      ['1', 2],
+      [Number.MAX_SAFE_INTEGER + 1, 2],
+    ],
+    processed_grid_sha256: ['', 'a'.repeat(64), null],
+    processed_grid_shape: [[], [0, 3], [11, 3], [2, 4], [2.5, 3], ['2', 3], [2, true]],
+  };
+  for (const [key, values] of Object.entries(invalid))
+    for (const value of values) {
+      const capture = enhancementReceipt();
+      capture.nodes[0].fields[key].value = value;
+      capture.summary[enhancementNames[key]] = value;
+      assert.equal(
+        inputs.coerceResolvedExecutionInputs(capture, enhancementIdentity(capture)),
+        undefined,
+        `${key}: ${JSON.stringify(value)}`,
+      );
+    }
+});
+
+test('enhancement observations are scoped to the exact generic generation action and output identity', () => {
+  for (const [module, action] of [
+    ['modules.HuggingFaceTransformers', 'PredictDepth'],
+    ['modules.HuggingFaceTransformers', 'LoadImageTextToTextModel'],
+    ['modules.ModularDiffusers', 'EncodePrompt'],
+    ['modules.Foreign', 'GenerateImageVideoText'],
+  ]) {
+    const capture = enhancementReceipt();
+    Object.assign(capture.nodes[0], { module, action });
+    assert.equal(inputs.coerceResolvedExecutionInputs(capture, enhancementIdentity(capture)), undefined);
+  }
+  for (const patch of [{ taskId: 'other' }, { attemptIndex: 1 }, { nodeId: 'other' }]) {
+    const capture = enhancementReceipt();
+    assert.equal(
+      inputs.coerceResolvedExecutionInputs(capture, { ...enhancementIdentity(capture), ...patch }),
+      undefined,
+    );
+  }
+  const capture = enhancementReceipt();
+  capture.nodes[0].module = 'HuggingFaceTransformers';
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, enhancementIdentity(capture)), capture);
+  capture.nodes[0].fields.reference_id = { value: 'not-vae-authority', source: 'literal' };
+  assert.equal(inputs.coerceResolvedExecutionInputs(capture, enhancementIdentity(capture)), undefined);
+});
+
+test('enhancement text-only, bounded endpoints, missing observations and ambiguity retain existing receipt rules', () => {
+  const capture = enhancementReceipt();
+  capture.nodes[0].fields.enhancement_max_new_tokens.value = capture.summary.enhancementMaxNewTokens = 3584;
+  capture.nodes[0].fields.rendered_prompt_utf8_bytes.value = capture.summary.renderedPromptUtf8Bytes = 524288;
+  capture.nodes[0].fields.reference_source_sha256.value = capture.summary.referenceSourceSha256 = [];
+  capture.nodes[0].fields.system_prompt_mode.value = capture.summary.systemPromptMode = 't2i';
+  for (const key of [
+    'processed_pixel_sha256',
+    'processed_pixel_shape',
+    'processed_grid_sha256',
+    'processed_grid_shape',
+  ]) {
+    delete capture.nodes[0].fields[key];
+    delete capture.summary[enhancementNames[key]];
+  }
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, enhancementIdentity(capture)), capture);
+  const missing = enhancementReceipt();
+  delete missing.nodes[0].fields.processed_pixel_sha256;
+  delete missing.summary.processedPixelSha256;
+  missing.nodes[0].omittedFields.processed_pixel_sha256 = 'record-size-limit';
+  missing.unavailableFields = ['processedPixelSha256'];
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(missing, enhancementIdentity(missing)), missing);
+  const mixed = enhancementReceipt();
+  mixed.nodes.push({
+    nodeId: 'encoder',
+    module: 'modules.ModularDiffusers',
+    action: 'EncodePrompt',
+    fields: {
+      prompt: {
+        value: 'An explicitly applied proposal.',
+        source: 'connected',
+        sourceNodeId: mixed.nodes[0].nodeId,
+        sourcePortId: 'text',
+      },
+    },
+    omittedFields: {},
+  });
+  delete mixed.summary.prompt;
+  mixed.ambiguousFields = ['prompt'];
+  const output = contracts.coerceStudioOutput({
+    id: 'mixed-prompt',
+    url: '/out.png',
+    ...enhancementIdentity(mixed),
+    prompt: 'wrong fallback',
+    formSnapshot: { prompt: 'wrong fallback' },
+    resolvedExecutionInputs: mixed,
+  });
+  assert.deepEqual(output.resolvedExecutionInputs, mixed);
+  assert.equal(output.prompt, '');
+  assert.equal(output.formSnapshot.prompt, 'wrong fallback');
+  assert.equal(output.resolvedExecutionInputs.nodes[0].fields.prompt.value, 'Combine the red and blue squares.');
+});
+
+test('enhancement observation origins reject coercible arrays, objects and booleans', () => {
+  for (const source of [['literal'], ['connected'], ['override'], { value: 'literal' }, false, true, 1, null]) {
+    const capture = enhancementReceipt();
+    capture.nodes[0].fields.operation.source = source;
+    assert.equal(inputs.coerceResolvedExecutionInputs(capture, enhancementIdentity(capture)), undefined);
   }
 });

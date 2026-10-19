@@ -70,6 +70,7 @@ import { useStudioReadiness } from '../studio/useStudioReadiness';
 import { summarizeRunReadinessIssues, useRunReadinessIssues } from '../studio/useRunReadinessIssues';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun, useStudioRunActions } from '../studio/useStudioRunActions';
@@ -497,7 +498,7 @@ export default function StudioPanel() {
     }
   }, []);
 
-  const handleExportApiGraph = useCallback(() => {
+  const handleExportApiGraph = useCallback(async () => {
     if (!sid) {
       enqueueSnackbar('Connect to the MoDiff server before exporting the API graph.', {
         variant: 'error',
@@ -505,13 +506,20 @@ export default function StudioPanel() {
       });
       return;
     }
-    const apiGraph = applyStudioRuntimeHints(useFlowStore.getState().exportGraph(sid));
-    const blob = new Blob([JSON.stringify(apiGraph, null, 2)], { type: 'application/json' });
-    const anchor = document.createElement('a');
-    anchor.href = URL.createObjectURL(blob);
-    anchor.download = 'modiff-api-graph.json';
-    anchor.click();
-    URL.revokeObjectURL(anchor.href);
+    try {
+      const pending = prepareExecutionScope();
+      const executionScope = pending ? await pending : undefined;
+      const exported = useFlowStore.getState().exportGraph(sid, undefined, { executionScope, randomizeSeeds: false });
+      const apiGraph = executionScope ? exported : applyStudioRuntimeHints(exported);
+      const blob = new Blob([JSON.stringify(apiGraph, null, 2)], { type: 'application/json' });
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = 'modiff-api-graph.json';
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, 'Could not export this workflow.'), { variant: 'error' });
+    }
   }, [sid]);
 
   const restoreLatestOutput = useCallback(() => {
@@ -542,12 +550,15 @@ export default function StudioPanel() {
     try {
       useStudioStore.getState().restoreWorkflowFromOutput(latest);
       const context = captureWorkflowOperationContext();
-      const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
       if (!autoReady) return;
       await coordinateGraphRun({
         sid,
         studioContext: { forceDeterministic: !latest.formSnapshot.randomSeed },
         workflowContext: context,
+        executionScope,
       });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
@@ -599,13 +610,16 @@ export default function StudioPanel() {
           advanceWorkflowOperationContext(context);
           const nextForm = useStudioStore.getState().form;
           syncStudioGraphValues(nextForm);
-          const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+          const pending = prepareExecutionScope({ workflowContext: context });
+          const executionScope = pending ? await pending : undefined;
+          const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
           if (!autoReady) break;
-          await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
+          if (!executionScope) await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
           assertWorkflowOperationContext(context);
           const { response } = await coordinateGraphRun({
             sid,
             workflowContext: context,
+            executionScope,
             studioContext: {
               forceDeterministic: true,
               variation: {

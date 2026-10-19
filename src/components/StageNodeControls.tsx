@@ -6,6 +6,8 @@ import { visualOperationGroup } from '../workflow/visualOperationGroupProjection
 import { ModiffDisclosure } from '../ui';
 import { BlockOwnerChoices } from './OperationOwnerControls';
 import NodeContent from './NodeContent';
+import ModelSetupAdapterControls from './ModelSetupAdapterControls';
+import { isModelSetupAdapter } from '../workflow/modelSetupAdapters';
 
 /** The same exposed fields, model planner and preview authority as Block V2,
  * presented within the ordinary node shell. No second state or executor. */
@@ -24,18 +26,24 @@ export default function StageNodeControls({
       .nodes.filter((n) => operationOwnsModel(n.data.operationAuthoring?.operation))
       .map((n) => n.data.blockProjectionNodeId),
   );
+  const adapters = new Set(
+    blockOperationGraphV2(instance)
+      .nodes.filter(isModelSetupAdapter)
+      .map((node) => node.data.blockProjectionNodeId),
+  );
   const controls = instance.effectiveInterface.controls.filter(
     (control) =>
       !(
         setup &&
         owners.has(control.binding.nodeId) &&
         ['repo_id', 'model_id', 'model_type'].includes(control.binding.fieldId)
-      ),
+      ) && !(setup && adapters.has(control.binding.nodeId)),
   );
   const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))];
   return (
     <div className="nodrag nowheel grid gap-2">
       {setup ? <BlockOwnerChoices node={node} /> : null}
+      {setup ? <ModelSetupAdapterControls node={node} updateStore={updateStore} /> : null}
       {groups.map((group) => (
         <ModiffDisclosure key={group} label={group} defaultOpen unmount={false} panelClassName="grid gap-2 px-1 pt-2">
           <NodeContent

@@ -20,8 +20,8 @@ import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
 import {
   visualOperationGroup,
-  VISUAL_STAGE_LABELS,
-  VISUAL_STAGE_NAMES,
+  visualOperationGroupMedia,
+  visualStagePresentation,
 } from '../workflow/visualOperationGroupProjection';
 const StageNodeControls = lazy(() => import('./StageNodeControls'));
 
@@ -31,8 +31,7 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
   const instance = node.data.blockInstanceV2!;
   const guidance = isFocusedGuidance(instance);
   const kind = visualOperationGroup({ ...node, position: instance.presentation.position })!;
-  const label = VISUAL_STAGE_LABELS[kind];
-  const stagesLabel = VISUAL_STAGE_NAMES[kind];
+  const { label, name: stagesLabel } = visualStagePresentation(kind, visualOperationGroupMedia(node));
   const view = useMemo(() => blockViewModelV2(instance), [instance]);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [interfaceOpen, setInterfaceOpen] = useState(false);
@@ -76,15 +75,17 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
         {...node}
         surface={{
           testId: `${kind === 'inputs' ? 'encoding' : kind}-node-${node.id}`,
-          controls: guidance ? (
-            <GuidanceNodeControls instance={instance} />
-          ) : kind === 'inputs' ? (
-            <EncodingNodeControls instance={instance} updateStore={update} />
-          ) : (
-            <Suspense fallback={<p role="status">Loading stage controls…</p>}>
-              <StageNodeControls node={{ ...node, position: view.position }} updateStore={update} />
-            </Suspense>
-          ),
+          hasAudioPreview: view.previewViews.some((preview) => preview.binding.mediaType === 'audio'),
+          controls:
+            kind === 'inputs' ? (
+              <EncodingNodeControls instance={instance} updateStore={update} />
+            ) : guidance ? (
+              <GuidanceNodeControls instance={instance} />
+            ) : (
+              <Suspense fallback={<p role="status">Loading stage controls…</p>}>
+                <StageNodeControls node={{ ...node, position: view.position }} updateStore={update} />
+              </Suspense>
+            ),
           actions: (
             <EncodingNodeMenu
               node={{ ...node, position: view.position }}

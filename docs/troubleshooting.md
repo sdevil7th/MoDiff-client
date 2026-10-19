@@ -202,6 +202,11 @@ Use Auto for the first known recipe. Switch to Expert only when you intend to di
 4. Retry with a known Auto recipe, smaller spatial/temporal inputs, fewer frames, or a lighter model.
 5. Restart the backend if the runtime remains unhealthy.
 
+Cleanup warnings appear with the server's exact reasons. For example, live
+offload hooks can retain their disk files even after other caches are released.
+A zero released-file count alone does not mean cleanup failed: files may already
+have been reclaimed when their owners were released.
+
 An Auto recipe can reduce risk but cannot guarantee success under changing memory pressure. Include the selected model, task, dimensions/frames, and the redacted exception type in a bug report.
 
 ## A Run Is Taking Much Longer Than Expected

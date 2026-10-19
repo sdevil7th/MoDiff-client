@@ -24,7 +24,10 @@ import {
   normalizePortableWorkflowDataReference,
   normalizePortableWorkflowFieldState,
 } from './workflow-library-contract.mjs';
-import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
+import {
+  compareCanonicalWorkflowRecordIds,
+  retainUnselectedCurrentWorkflowRecords,
+} from './workflow-library-manifest-state.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -9190,6 +9193,38 @@ test('targeted generation drops stale pairs and retains only current unselected 
   assert.deepEqual(retainUnselectedCurrentWorkflowRecords(records, capabilities, null), []);
 });
 
+test('pair-only canonical publication preserves codepoint order and unselected record contents', () => {
+  const ids = [
+    'Cosmos3OmniModularPipeline:text_to_image',
+    'LTX2Pipeline:text_to_video',
+    'LatentConsistencyModelPipeline:text_to_image',
+    'LongCatAudioDiTPipeline:text_to_audio',
+    'PRXPipeline:text_to_image',
+    'PixArtSigmaPipeline:text_to_image',
+  ];
+  const records = ids.map((id) => {
+    const [modelType, mode] = id.split(':');
+    return { id, modelType, mode, graphHash: `original-${id}`, runtimeQualificationStatus: 'unqualified' };
+  });
+  const capabilities = records.map(({ modelType, mode }) => ({ modelType, runnableModes: [mode] }));
+  const selected = { ...records[0], graphHash: 'reviewed-new-cosmos-graph' };
+  const unselected = retainUnselectedCurrentWorkflowRecords(
+    records,
+    capabilities,
+    'Cosmos3OmniModularPipeline|text_to_image',
+  );
+  const published = [...unselected, selected].sort(compareCanonicalWorkflowRecordIds);
+
+  assert.deepEqual(
+    published.map(({ id }) => id),
+    ids,
+  );
+  assert.equal(published[0], selected);
+  assert.deepEqual(published.slice(1), records.slice(1));
+  for (let index = 1; index < records.length; index++) assert.equal(published[index], records[index]);
+  assert.equal(compareCanonicalWorkflowRecordIds(selected, { ...selected }), 0);
+});
+
 test('canonical workflow generation persists the final layout and library open does not rearrange it', () => {
   const generator = fs.readFileSync(path.join(ROOT, 'scripts', 'workflow-library-generator.mjs'), 'utf8');
   const graphList = fs.readFileSync(path.join(ROOT, 'src', 'components', 'GraphList.tsx'), 'utf8');
@@ -9199,7 +9234,9 @@ test('canonical workflow generation persists the final layout and library open d
   const navigationIndex = generator.indexOf("currentPage.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' })");
   const prepareIndex = generator.indexOf('prepareWorkflowGraphForExport');
   const preCanonicalArrangeIndex = generator.indexOf('const arrangedBeforeCanonicalIds = await arrangeSnapshot(graph)');
-  const canonicalizeIndex = generator.indexOf('canonicalizeGraphIds(arrangedBeforeCanonicalIds)');
+  const canonicalizeIndex = generator.indexOf(
+    'canonicalizeGraphIds(arrangedBeforeCanonicalIds, remapOperationAuthoring)',
+  );
   const metadataIndex = generator.indexOf('addLayoutMetadata(repeated)');
   assert.match(generator, /installEphemeralWorkflowStorage/);
   assert.match(generator, /listTaskTemplateSkeletons/);

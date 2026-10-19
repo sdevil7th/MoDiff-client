@@ -4,7 +4,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
-import { workflowNodeAttentionBackendError, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import {
+  workflowNodeAttentionBackendError,
+  workflowNodeDeviceOffloadError,
+  verifyCanonicalImagePipelineStages,
+} from './workflow-library-contract.mjs';
 import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
 import { parseCanonicalAuxiliarySources } from './workflow-library-auxiliary-sources.mjs';
 
@@ -113,7 +117,7 @@ function verifyCanonicalLayout(workflow, graph, graphLayout) {
   }
 }
 
-function verifyWorkflow(workflow, expectedTier, graphLayout) {
+function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts) {
   if (pairs.has(workflow.id)) throw new Error(`Duplicate canonical workflow: ${workflow.id}`);
   pairs.add(workflow.id);
   if (workflow.supportTier !== expectedTier) throw new Error(`${workflow.id} is not in the ${expectedTier} tier.`);
@@ -137,6 +141,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
   const raw = readFileSync(graphPath, 'utf8');
   const graph = JSON.parse(raw);
   verifyCanonicalLayout(workflow, graph, graphLayout);
+  verifyCanonicalImagePipelineStages(workflow, graph, imageStageContracts);
   const dependencyGraph = workflow.auxiliaryTerminalBinding ? unpackCanonicalGraph(graph) : graph;
   verifyNoDeadWorkflowNodes(
     workflow,
@@ -155,14 +160,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
       }
     }
     if (node?.data?.action === 'DiffusersExecutionRecipe') {
-      const params = node.data.params ?? {};
-      const attentionBackend = params.attention_backend?.value;
-      const device = params.device?.value;
       const attentionError = workflowNodeAttentionBackendError(node);
       if (attentionError) throw new Error(`${workflow.id} ${attentionError}.`);
-      if (String(attentionBackend ?? '').startsWith('_native_') && String(device ?? '').startsWith('cpu')) {
-        throw new Error(`${workflow.id} selects accelerator attention ${attentionBackend} on ${device}.`);
-      }
     }
     const offloadError = workflowNodeDeviceOffloadError(node);
     if (offloadError) throw new Error(`${workflow.id} ${offloadError}.`);
@@ -735,6 +734,10 @@ const layoutModuleServer = await createServer({
 });
 try {
   const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
+  const imageStageContracts = {
+    ...(await layoutModuleServer.ssrLoadModule('/src/workflow/imagePipelineStageContracts.ts')),
+    ...(await layoutModuleServer.ssrLoadModule('/src/workflow/operationContracts.ts')),
+  };
   const sourceBoundWorkflows = [...manifest.workflows, ...(manifest.experimentalWorkflows ?? [])].filter((workflow) =>
     Object.prototype.hasOwnProperty.call(workflow, 'auxiliaryTerminalBinding'),
   );
@@ -777,7 +780,7 @@ try {
   if (requestedPair && selectedCanonicalCount !== 1) {
     throw new Error(`The requested canonical workflow pair is not unique: ${requestedPair}.`);
   }
-  for (const workflow of selectedSupported) verifyWorkflow(workflow, 'supported', graphLayout);
+  for (const workflow of selectedSupported) verifyWorkflow(workflow, 'supported', graphLayout, imageStageContracts);
 
   const expectedExperimentalCount = Number(manifest.experimentalWorkflowCount ?? 0);
   if (!Number.isInteger(expectedExperimentalCount) || expectedExperimentalCount < 0) {
@@ -791,7 +794,8 @@ try {
       `Expected ${expectedExperimentalCount} qualified experimental workflows, found ${manifest.experimentalWorkflows?.length ?? 0}.`,
     );
   }
-  for (const workflow of selectedExperimental) verifyWorkflow(workflow, 'experimental', graphLayout);
+  for (const workflow of selectedExperimental)
+    verifyWorkflow(workflow, 'experimental', graphLayout, imageStageContracts);
 
   process.stdout.write(
     `Verified ${selectedSupported.length} supported and ${selectedExperimental.length} qualified experimental portable workflows with deterministic canonical layouts.\n`,

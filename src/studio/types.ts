@@ -841,6 +841,8 @@ export type StudioFormState = {
   referenceImages: string[];
   referenceVideos: string[];
   maskImage: string;
+  /** Optional authored crop padding for an image task that declares the field. */
+  paddingMaskCrop?: number | null;
   controlImage: string;
   controlMode: number;
   ipAdapterImage: string;
@@ -885,6 +887,28 @@ export type StudioInpaintContractStatus = {
   missingInputs?: string[];
 };
 
+/** Selected-profile graph authoring permission; not runtime or Auto qualification. */
+export type StudioImageAdapterAuthoringPolicy = {
+  schemaVersion: 1;
+  mediaKind: 'image';
+  adapterNodeKey: 'modules.ModularDiffusers.Lora' | 'modules.DiffusersImage.LoadAdapter';
+  tasks: string[];
+  maxOwnedAdapters: number;
+  repositoryRevisions: Array<{ repo: string; revision: string }>;
+  /** Exact declared effective controls for Add/Move; Remove remains structural recovery. */
+  requiredControls?: Record<string, string | boolean | null>;
+};
+
+export type StudioAudioAdapterAuthoringPolicy = Omit<
+  StudioImageAdapterAuthoringPolicy,
+  'mediaKind' | 'adapterNodeKey' | 'maxOwnedAdapters'
+> & {
+  mediaKind: 'audio';
+  adapterNodeKey: 'modules.DiffusersAudio.LoadAdapter';
+  maxOwnedAdapters: 1;
+};
+export type StudioAdapterAuthoringPolicy = StudioImageAdapterAuthoringPolicy | StudioAudioAdapterAuthoringPolicy;
+
 export type StudioExecutionProfile = {
   id: string;
   model_type: StudioModelType;
@@ -897,6 +921,9 @@ export type StudioExecutionProfile = {
   default_repo: string;
   fallback_repo?: string | null;
   compatible_repos?: string[];
+  /** Current backend-reviewed immutable artifact pairs for selected adapter authoring. */
+  repository_revisions?: Array<{ repo: string; revision: string }>;
+  adapterAuthoring?: StudioAdapterAuthoringPolicy;
   quantizable_components: string[];
   default_quantized_components: string[];
   supported_offload_modes: StudioOffloadMode[];
@@ -1577,24 +1604,14 @@ export type StudioTemplateExecutionSelection = {
   executionProfileId: string;
   /** Existing backend recipe supplies semantic field/utility bindings only. */
   bindingSpec: { modelType: StudioModelType; mode: StudioMode };
-  implementation: 'native_stages' | 'whole_pipeline';
+  implementation: 'native_stages' | 'pipeline_stages' | 'whole_pipeline';
   /** Fresh authoring only: an empty initial text input retains its resolved
    * backend default. Authored text and subsequent edits always take priority. */
   backendDefaultInputs?: Array<'prompt' | 'negativePrompt'>;
   /** Explicit initial recipe policy; Auto and Gallery qualification stay separate. */
   memoryPolicy?: 'custom_experimental';
-  /** Explicit old whole-pipeline component policies for converted recipes. */
-  componentPolicy?: {
-    attentionBackend: 'auto' | '_native_math';
-    vaeSlicing: boolean;
-    vaeTiling: boolean;
-  };
-  guidancePolicy?: {
-    enabled: boolean;
-    useOriginalFormulation: boolean;
-    /** FLUX true CFG and transformer embedded guidance are distinct controls. */
-    distilledGuidanceScale?: number;
-  };
+  /** Exact backend declaration for fresh graph bindings and initial controls. */
+  authoringRecipeId?: string;
   /** Original whole-pipeline default identity for a single native descriptor. */
   loraPolicy?: { defaultAdapterName: string };
   note?: string;

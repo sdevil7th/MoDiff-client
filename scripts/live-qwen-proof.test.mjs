@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
@@ -15,6 +18,7 @@ import {
 } from './live-qwen-proof.mjs';
 import {
   backendSourceEvidence,
+  backendSourceIdentity,
   canonicalGraphIdentity,
   compareRunProvenance,
   createRunProvenance,
@@ -31,6 +35,77 @@ import {
 } from './live-proof-provenance.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('backend Git identity accepts only its exact repository and linked worktree', () => {
+  const temporary = mkdtempSync(resolve(tmpdir(), 'modiff-exact-git-root-'));
+  const repository = resolve(temporary, 'repository');
+  const worktree = resolve(temporary, 'linked');
+  const backend = resolve(ROOT, '../MoDiff');
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    resolve(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  let linked = false;
+  function git(...args) {
+    const result = spawnSync('git', ['-c', 'core.hooksPath=', ...args], {
+      cwd: repository,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    assert.equal(result.status, 0, result.stderr || result.error?.message);
+    return result.stdout.trim();
+  }
+  function agreesWithWorker(root) {
+    const observed = spawnSync(
+      python,
+      [
+        '-I',
+        '-B',
+        '-c',
+        'import json,sys; sys.path.insert(0,sys.argv[1]); from modiff.backend_source_identity import backend_source_identity; print(json.dumps(backend_source_identity(sys.argv[2])))',
+        backend,
+        root,
+      ],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    assert.equal(observed.status, 0, observed.stderr || observed.error?.message);
+    const worker = JSON.parse(observed.stdout);
+    const client = backendSourceIdentity(root);
+    assert.equal(worker.gitCommit, client.gitCommit);
+    assert.equal(worker.fingerprint, client.fingerprint);
+    return client;
+  }
+  try {
+    mkdirSync(repository);
+    writeFileSync(resolve(repository, 'main.py'), "print('identity')\n");
+    writeFileSync(resolve(repository, 'pyproject.toml'), '[project]\nname = "identity"\n');
+    git('init', '--template=');
+    git('add', 'main.py', 'pyproject.toml');
+    git(
+      '-c',
+      'user.name=MoDiff fixture',
+      '-c',
+      'user.email=fixture@example.invalid',
+      'commit',
+      '--no-gpg-sign',
+      '-m',
+      'source fixture',
+    );
+    const commit = git('rev-parse', 'HEAD');
+    assert.equal(agreesWithWorker(repository).gitCommit, commit);
+    git('worktree', 'add', '--detach', worktree, 'HEAD');
+    linked = true;
+    assert.equal(agreesWithWorker(worktree).gitCommit, commit);
+    const copied = resolve(repository, 'copied-backend');
+    mkdirSync(copied);
+    for (const name of ['main.py', 'pyproject.toml'])
+      writeFileSync(resolve(copied, name), readFileSync(resolve(repository, name)));
+    assert.equal(agreesWithWorker(copied).gitCommit, null);
+  } finally {
+    if (linked) git('worktree', 'remove', '--force', worktree);
+    assert.equal(dirname(temporary), resolve(tmpdir()));
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
 
 test('execution identity ignores admission-proof status while locking the actual resource plan', () => {
   const graph = {
@@ -147,6 +222,48 @@ test('live proof rejects missing or changing backend source identity', () => {
     /changed while the live proof was running/,
   );
   assert.match(backendSourceDriftBlocker(stable, null), /could not be captured/);
+});
+
+test('backend source identity orders normalized paths before hashing shared directory prefixes', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-source-identity-'));
+  const sources = [
+    ['main.py', "print('identity')\n"],
+    ['pyproject.toml', '[project]\nname = "identity"\n'],
+    ['modules/ImageFilters/main.py', 'FILTER = 1\n'],
+    ['modules/ImageOperations/main.py', 'OPERATION = 1\n'],
+    ['modules/Image/main.py', 'IMAGE = 1\n'],
+    ['modules/VideoColor/main.py', 'COLOR = 1\n'],
+    ['modules/VideoConditioning/main.py', 'CONDITIONING = 1\n'],
+    ['modules/Video/main.py', 'VIDEO = 1\n'],
+  ];
+  try {
+    for (const [relativePath, contents] of sources) {
+      const target = resolve(root, relativePath);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, contents, 'utf8');
+    }
+    const expectedFiles = [...sources]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([relativePath, contents]) => ({
+        path: relativePath,
+        sha256: createHash('sha256').update(contents).digest('hex'),
+      }));
+    const identity = backendSourceIdentity(root);
+    assert.equal(identity.gitCommit, null);
+    assert.deepEqual(identity.files, expectedFiles);
+    assert.equal(
+      identity.fingerprint,
+      sha256Value('backend-source-v1', {
+        files: expectedFiles,
+        gitCommit: null,
+      }),
+    );
+
+    writeFileSync(resolve(root, 'modules/Image/main.py'), 'IMAGE = 2\n', 'utf8');
+    assert.notEqual(backendSourceIdentity(root).fingerprint, identity.fingerprint);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('source evidence binds both filesystem snapshots to the executing worker startup claim', () => {

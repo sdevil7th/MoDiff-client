@@ -21,6 +21,7 @@ import { decorateConnectionEdges } from '../theme/connectionTypes';
 import { collapsedUserBlockFieldTarget, runtimeProgressTarget } from '../studio/userBlocks';
 import { operationAuthoring } from '../workflow/operationAuthoringHint';
 import { workflowTaskCategory } from '../workflow/workflowTaskBrowser';
+import { isFocusedImageEncoding } from '../workflow/encodingNodePresentation';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -83,7 +84,8 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
       const owners = state.nodes.filter((candidate) => {
         const instance = candidate.data.blockInstanceV2;
         return (
-          instance?.definitionSnapshot.source.provider === 'modiff.visual-stages.v1/inputs' &&
+          isFocusedImageEncoding(instance) &&
+          instance &&
           instance.effectiveGraph.nodes.some((stage) => {
             const data = stage.data as unknown as NodeData;
             const task = data.operationAuthoring?.operation.task;

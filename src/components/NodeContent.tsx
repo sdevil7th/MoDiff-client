@@ -52,6 +52,8 @@ import UIImagecompareField from '../fields/UIImagecompareField';
 const UIVideoField = lazy(() => import('../fields/UIVideoField'));
 const UIAudioField = lazy(() => import('../fields/UIAudioField'));
 const SplineField = lazy(() => import('../fields/SplineField'));
+const LayoutConditioningField = lazy(() => import('../fields/LayoutConditioningField'));
+const PromptEnhancementControls = lazy(() => import('./PromptEnhancementControls'));
 
 export type FieldProps = {
   nodeId: string;
@@ -380,6 +382,13 @@ const NodeContent = memo(function NodeContent({
 
   return (
     <>
+      {graphNode?.data.operationAuthoring?.ancillaryParent &&
+      !graphNode.data.blockInstanceV2 &&
+      !graphNode.data.blockProjectionOwnerId ? (
+        <Suspense fallback={null}>
+          <PromptEnhancementControls ownerId={graphNode.id} />
+        </Suspense>
+      ) : null}
       {encodeImageSummary}
       {resolutionNotice}
       {orderedMainFields}
@@ -610,6 +619,12 @@ const FieldMemo = memo((props: FieldProps) => {
       return <ModelSelectField {...props} />;
     case 'layerconfig':
       return <LayerConfigField {...props} />;
+    case 'layout':
+      return (
+        <Suspense fallback={<div role="status">Loading layout editor...</div>}>
+          <LayoutConditioningField {...props} />
+        </Suspense>
+      );
     case 'selectdialog':
       return <SelectDialogField {...props} />;
     case 'ui_text':

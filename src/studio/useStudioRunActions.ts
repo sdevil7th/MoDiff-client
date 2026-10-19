@@ -18,7 +18,7 @@ import {
   getStudioGraphShapeKey,
   syncStudioGraphValues,
 } from './graphBridge';
-import { validateCurrentRun } from './runReadiness';
+import { normalizeStudioRuntimeDevice, validateCurrentRun } from './runReadiness';
 import {
   autoPlanIsReady,
   autoPlanKeyForForm,
@@ -26,6 +26,7 @@ import {
   formPatchForAutoCandidate,
   selectedAutoCandidate,
 } from './autoResource';
+import { prepareExecutionScope, executionScopeRootIds } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from './runCoordinator';
 import { prepareHuggingFaceClustersForRun } from './huggingFaceClusterPreparation';
 import { materializeTemplateDefaultInputs } from './templateInputs';
@@ -205,6 +206,7 @@ export function useStudioRunActions({
       const context = captureWorkflowOperationContext();
       setIsWorking(true);
       try {
+        normalizeStudioRuntimeDevice(context);
         await createOrUpdateStudioGraph(useStudioStore.getState().form, context);
       } catch (error) {
         if (isWorkflowOperationCancelled(error)) return;
@@ -259,12 +261,14 @@ export function useStudioRunActions({
     const context = captureWorkflowOperationContext();
     setIsWorking(true);
     try {
-      const autoReady = await ensureAutoPlanReady(context);
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      const autoReady = executionScope ? true : await ensureAutoPlanReady(context);
       if (!autoReady) return;
-      await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
+      if (!executionScope) await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
       assertWorkflowOperationContext(context);
-      await prepareHuggingFaceClustersForRun();
-      const validation = validateCurrentRun({ sid, isConnected, includeStudio: true });
+      await prepareHuggingFaceClustersForRun(executionScopeRootIds(executionScope));
+      const validation = validateCurrentRun({ sid, isConnected, includeStudio: !executionScope, executionScope });
       if (!validation.canRun) {
         const message = validation.blocking[0]?.message || 'This Studio workflow is not ready to run.';
         useStudioStore.getState().setLastError(message);
@@ -272,7 +276,12 @@ export function useStudioRunActions({
       }
 
       useStudioStore.getState().addPromptHistory(useStudioStore.getState().form.prompt);
-      await coordinateGraphRun({ sid, studioContext: {}, workflowContext: context });
+      await coordinateGraphRun({
+        sid,
+        studioContext: executionScope ? undefined : {},
+        workflowContext: context,
+        executionScope,
+      });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
       const message = String(error);

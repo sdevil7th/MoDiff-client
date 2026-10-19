@@ -80,6 +80,7 @@ import {
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import { TemplateUsageTermsDialog } from './TemplateUsageTermsDialog';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
+import WorkflowModelInventoryRow from './WorkflowModelInventoryRow';
 
 interface Revision {
   hash: string;
@@ -477,6 +478,7 @@ function ModelManagerDialog({
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
   const studioModelCapabilitiesAuthoritative = useNodesStore((state) => state.studioModelCapabilitiesAuthoritative);
   const refreshModelIndexes = useNodesStore((state) => state.refreshModelIndexes);
   const fetchRegistry = useNodesStore((state) => state.fetchRegistry);
@@ -600,6 +602,11 @@ function ModelManagerDialog({
   const supportedGroups = useMemo(
     () => groupedItems(supportedProfiles, (profile) => supportedModelGroup(profile.surfaceCategory)),
     [supportedProfiles],
+  );
+  const supportedWorkflowModels = workflowModelDescriptors.filter((descriptor) =>
+    `${descriptor.label} ${descriptor.repo} ${descriptor.pipeline}`
+      .toLowerCase()
+      .includes(cacheSearch.trim().toLowerCase()),
   );
 
   useEffect(() => {
@@ -1267,8 +1274,12 @@ function ModelManagerDialog({
             ) : null}
 
             {inventoryView === 'all' || inventoryView === 'supported' ? (
-              <InventorySection count={supportedProfiles.length} testId="model-manager-supported" title="Supported">
-                {supportedGroups.length === 0 ? (
+              <InventorySection
+                count={supportedProfiles.length + supportedWorkflowModels.length}
+                testId="model-manager-supported"
+                title="Supported"
+              >
+                {supportedGroups.length === 0 && supportedWorkflowModels.length === 0 ? (
                   <div className="rounded-modiff-compact border border-modiff-border bg-modiff-bg p-3 text-xs text-modiff-subtle-text">
                     No supported models match the current filter.
                     {cacheSearch ? (
@@ -1318,6 +1329,23 @@ function ModelManagerDialog({
                     </div>
                   ))
                 )}
+                {supportedWorkflowModels.map((descriptor) => (
+                  <WorkflowModelInventoryRow
+                    key={descriptor.profileId}
+                    descriptor={descriptor}
+                    cache={compactHfCache}
+                    local={localModels}
+                    diagnostics={modelCacheDiagnostics}
+                    installProgress={hfDownloadProgress}
+                    activeInstallCount={activeInstallCount}
+                    hfTokenConfigured={Boolean(runtimeStatus?.config?.hf_token_configured)}
+                    onConfigureHfToken={(repo) => {
+                      setHfAccessRepo(repo);
+                      setHfTokenEditorOpen(true);
+                    }}
+                    onInstall={handleInstall}
+                  />
+                ))}
               </InventorySection>
             ) : null}
 

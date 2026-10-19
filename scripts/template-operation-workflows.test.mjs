@@ -18,6 +18,39 @@ let server,
   studioStore,
   lifecycle;
 let publicOperations, starterRequests, qwenInpaintCandidate, qwenInpaintCandidateFixture;
+function recipeSelection(row) {
+  return templates.find((template) => template.id === row.id).executionSelection;
+}
+function initialValue(row, role, field) {
+  return row.starter.authoring?.initialValues.find(
+    ([targetRole, targetField]) => targetRole === role && targetField === field,
+  )?.[2];
+}
+function componentPolicy(row) {
+  const attentionBackend = initialValue(row, 'models', 'attention_backend');
+  return attentionBackend === undefined
+    ? null
+    : {
+        attentionBackend,
+        vaeSlicing: initialValue(row, 'models', 'vae_slicing'),
+        vaeTiling: initialValue(row, 'models', 'vae_tiling'),
+      };
+}
+function declaredFixtureDevice(row) {
+  const field = row.starter.nodes.find((item) => item.operation.decomposition === 'loader').node.params.device;
+  const device = field.value ?? field.default;
+  assert.equal(typeof device, 'string', 'Author against the device declared by the native metadata fixture.');
+  return device;
+}
+function fixtureRuntimeSettings(row, form) {
+  const device = declaredFixtureDevice(row);
+  return {
+    device,
+    ...(!device.startsWith('cuda')
+      ? { autoOffload: false, offloadMode: 'none' }
+      : { autoOffload: form.autoOffload, offloadMode: form.offloadMode }),
+  };
+}
 const automaticAttentionZTemplates = new Set([
   'z_image_quick_concept',
   'z_image_product_mockup',
@@ -30,7 +63,7 @@ const automaticAttentionZTemplates = new Set([
 test('fresh Z recipes use automatic attention without changing VAE or adapter controls', () => {
   for (const id of automaticAttentionZTemplates) {
     const template = templates.find((item) => item.id === id);
-    assert.deepEqual(template.executionSelection.componentPolicy, {
+    assert.deepEqual(componentPolicy(fixture.recipes.find((row) => row.id === id)), {
       attentionBackend: 'auto',
       vaeSlicing: true,
       vaeTiling: true,
@@ -89,13 +122,14 @@ before(async () => {
         maxBuffer: 64 * 1024 * 1024,
         input: JSON.stringify(
           templates
-            .filter((item) => item.executionSelection)
+            .filter((item) => item.executionSelection && item.example?.mediaType === 'image')
             .map((item) => ({ id: item.id, selection: item.executionSelection })),
         ),
         stdio: ['pipe', 'pipe', 'pipe'],
       },
     ),
   );
+  defaults = { ...defaults, ...fixtureRuntimeSettings(fixture.recipes[0], defaults) };
   const { qwenInpaintNativeCandidateSelection } = await server.ssrLoadModule(
     '/src/studio/templateOperationSelections.ts',
   );
@@ -139,6 +173,7 @@ test('four fresh Qwen masked templates preserve creator settings and use actual 
         row.starter.pipelineClass,
         row.starter.task,
         contracts,
+        recipeSelection(row),
       );
       for (const action of ['ModelsLoader', 'ImageEncode']) {
         const field = starter.nodes.find((item) => item.node.action === action).node.params.inpaint_compatibility;
@@ -234,6 +269,7 @@ test('private Qwen candidate inherits authored crop padding and honors explicit 
     row.starter.pipelineClass,
     row.starter.task,
     contracts,
+    recipeSelection(row),
   );
   const template = templates.find((item) => item.id === row.id);
   const form = { ...selectedForm(template), paddingMaskCrop: 96 };
@@ -263,41 +299,24 @@ test('private Qwen candidate inherits authored crop padding and honors explicit 
   }
 });
 
-test('fresh Qwen masked compatibility rejects missing or different reviewed workflow identities', () => {
+test('fresh masked authoring rejects mismatched authoritative workflow identities', async () => {
   const row = qwenInpaintCandidateFixture.recipes.find((item) => item.id === 'qwen_inpaint_object_replace');
-  const template = templates.find((item) => item.id === row.id);
+  const operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const contracts = operations.parseOperationContracts(qwenInpaintCandidateFixture.publicPayload.operationContracts, 3);
   for (const workflowId of [null, 'image_conditioned']) {
-    const starter = structuredClone(row.starter);
-    starter.workflowId = workflowId;
-    const before = structuredClone(starter);
-    assert.throws(
-      () =>
-        builder.createTemplateOperationGraph(
-          template,
-          selectedForm(template),
-          starter,
-          fixture.registry,
-          row.spec,
-          row.capability,
-        ),
-      /requires the reviewed image_conditioned_inpainting workflow/,
+    const value = structuredClone(row.starter);
+    value.workflowId = workflowId;
+    const before = structuredClone(value);
+    assert.throws(() =>
+      starterRequests.parseOperationStarter(value, value.pipelineClass, value.task, contracts, recipeSelection(row)),
     );
-    assert.deepEqual(starter, before);
+    assert.deepEqual(value, before);
   }
-  const starter = structuredClone(row.starter);
-  const owner = starter.nodes.find((item) => item.operation.nodeType === 'loader');
-  owner.operation.binding.values.workflow_id = 'image_conditioned';
-  assert.throws(
-    () =>
-      builder.createTemplateOperationGraph(
-        template,
-        selectedForm(template),
-        starter,
-        fixture.registry,
-        row.spec,
-        row.capability,
-      ),
-    /requires the reviewed image_conditioned_inpainting workflow/,
+  const value = structuredClone(row.starter);
+  value.nodes.find((item) => item.operation.nodeType === 'loader').operation.binding.values.workflow_id =
+    'image_conditioned';
+  assert.throws(() =>
+    starterRequests.parseOperationStarter(value, value.pipelineClass, value.task, contracts, recipeSelection(row)),
   );
 });
 
@@ -324,6 +343,7 @@ test('the real public capability and every selected starter response pass produc
       row.starter.pipelineClass,
       row.starter.task,
       publicOperations,
+      recipeSelection(row),
     );
     assert.equal(parsed.nodes.length, row.starter.nodes.length, row.id);
   }
@@ -351,7 +371,7 @@ test('the historical 54 image templates select exact developer operations withou
     assert.ok(template.executionSelection.pipelineClass);
     if (template.executionSelection.implementation === 'native_stages')
       assert.deepEqual(
-        template.executionSelection.componentPolicy ?? null,
+        componentPolicy(fixture.recipes.find((row) => row.id === template.id)),
         automaticAttentionZTemplates.has(template.id)
           ? { ...expected.originalComponentPolicy, attentionBackend: 'auto' }
           : expected.originalComponentPolicy,
@@ -366,39 +386,22 @@ test('execution selection changes invalidate current exactness while preserving 
   assert.notEqual(exactness.getTemplateLockHash(template), exactness.getTemplateLockHash(historical));
 });
 
-test('only the seven converted Z recipes preserve the observed standard-pipeline CFG formulation', () => {
-  const converted = new Set([
-    'z_image_quick_concept',
-    'z_image_product_mockup',
-    'z_image_poster',
-    'z_image_lora_style',
-    'z_image_cinematic_contact_sheet',
-    'low_vram',
-    'fast_lora',
-  ]);
+test('only the seven converted Z recipes declare their observed CFG formulation in the backend', () => {
   const images = templates.filter((template) => template.example?.mediaType === 'image');
-  assert.equal(
-    images.filter(
-      (template) =>
-        template.executionSelection.pipelineClass === 'ZImageModularPipeline' &&
-        template.executionSelection.guidancePolicy,
-    ).length,
-    7,
+  const converted = images.filter(
+    (template) => template.executionSelection.authoringRecipeId === 'retained-z-image-text-to-image:v1',
   );
-  for (const template of images) {
-    if (!converted.has(template.id)) {
-      if (!['FluxModularPipeline', 'FluxKontextModularPipeline'].includes(template.executionSelection.pipelineClass))
-        assert.equal(template.executionSelection.guidancePolicy, undefined, template.id);
-      continue;
-    }
-    assert.deepEqual(template.executionSelection.guidancePolicy, { enabled: true, useOriginalFormulation: true });
+  assert.equal(converted.length, 7);
+  for (const template of converted) {
+    const row = fixture.recipes.find((item) => item.id === template.id);
+    assert.equal(initialValue(row, 'guider', 'enabled'), true);
+    assert.equal(initialValue(row, 'guider', 'use_original_formulation'), true);
     const previous = {
       ...template,
-      executionSelection: { ...template.executionSelection, guidancePolicy: undefined },
+      executionSelection: { ...template.executionSelection, authoringRecipeId: undefined },
     };
     assert.notEqual(exactness.getTemplateLockHash(template), exactness.getTemplateLockHash(previous));
-    const starter = fixture.recipes.find((row) => row.id === template.id).starter;
-    const guider = starter.nodes.find((node) => node.operation.operationId === 'diffusion.guidance');
+    const guider = row.starter.nodes.find((node) => node.operation.operationId === 'diffusion.guidance');
     assert.equal(guider.node.params.enabled.value, false, 'ordinary upstream developer starter remains disabled');
     assert.equal(guider.node.params.use_original_formulation.value, false);
   }
@@ -419,9 +422,13 @@ test('historical approved image remains visible without becoming proof of the cu
 });
 
 function selectedForm(template) {
+  const authored = { ...defaults, ...exactness.getTemplateLockedSettings(template) };
   return {
-    ...defaults,
-    ...exactness.getTemplateLockedSettings(template),
+    ...authored,
+    ...fixtureRuntimeSettings(
+      fixture.recipes.find((row) => row.id === template.id),
+      authored,
+    ),
     referenceImages: ['source.png', 'reference-second.png', 'reference-third.png'],
     maskImage: 'mask.png',
     controlImage: 'control.png',
@@ -536,7 +543,32 @@ test('only the two converted single-LoRA Z recipes preserve the original whole-p
     const api = flowStore
       .getState()
       .exportGraph('exact-adapter-names', undefined, { sourceGraph: graph, randomizeSeeds: false });
-    const loras = Object.values(api.nodes).filter((node) => node.action === 'Lora' || node.action === 'LoadAdapter');
+    const loraEntries = Object.entries(api.nodes).filter(
+      ([, node]) => node.action === 'Lora' || node.action === 'LoadAdapter',
+    );
+    const loras = [];
+    if (loraEntries.some(([, node]) => node.action === 'Lora')) {
+      let sourceId = Object.values(api.nodes).find((node) => node.action === 'ModelsLoader').params.lora_list.sourceId;
+      const visited = new Set();
+      while (sourceId) {
+        assert.equal(visited.has(sourceId), false, 'the actual adapter supplier chain cannot cycle');
+        visited.add(sourceId);
+        const node = api.nodes[sourceId];
+        assert.equal(node.action, 'Lora');
+        loras.unshift(node);
+        sourceId = node.params.previous_loras.sourceId;
+      }
+    } else {
+      let sourceId = Object.entries(api.nodes).find(([, node]) => node.action === 'LoadPipeline')[0];
+      while (true) {
+        const next = loraEntries.find(([, node]) => node.params.pipeline.sourceId === sourceId);
+        if (!next) break;
+        assert.equal(loras.includes(next[1]), false, 'the actual adapter supplier chain cannot cycle');
+        loras.push(next[1]);
+        sourceId = next[0];
+      }
+    }
+    assert.equal(loras.length, loraEntries.length, 'every adapter participates in the actual ordered supplier chain');
     const settings = template.workflowBlockSettings.lora;
     const adapters = [settings, ...(settings.additionalAdapters ?? [])];
     assert.equal(loras.length, adapters.length, template.id);
@@ -613,15 +645,11 @@ test('the thirteen converted Flux recipes preserve true CFG separately from orig
   const images = templates.filter((template) => template.example?.mediaType === 'image');
   const converted = images.filter((template) => preservedEmbeddedGuidance(template) !== undefined);
   assert.equal(converted.length, 13);
-  assert.equal(images.filter((template) => template.executionSelection.guidancePolicy).length, 20);
   for (const template of converted) {
-    const policy = template.executionSelection.guidancePolicy;
-    assert.deepEqual(policy, {
-      enabled: template.id !== 'flux_schnell_text_to_image',
-      useOriginalFormulation: false,
-      distilledGuidanceScale: preservedEmbeddedGuidance(template),
-    });
     const row = fixture.recipes.find((item) => item.id === template.id);
+    assert.equal(initialValue(row, 'guider', 'enabled'), template.id !== 'flux_schnell_text_to_image');
+    assert.equal(initialValue(row, 'guider', 'use_original_formulation'), false);
+    assert.equal(initialValue(row, 'denoise', 'guidance_scale'), preservedEmbeddedGuidance(template));
     const ordinary = row.starter.nodes.find((item) => item.operation.operationId === 'diffusion.guidance');
     assert.ok(ordinary, 'the actual selected backend starter declares a CFG owner');
     assert.equal(
@@ -785,6 +813,7 @@ test('all54 image recipes construct and export the exact backend developer stage
           row.starter.pipelineClass,
           row.starter.task,
           publicOperations,
+          recipeSelection(row),
         ),
         fixture.registry,
         row.spec,
@@ -817,18 +846,15 @@ test('all54 image recipes construct and export the exact backend developer stage
       const expected = values.resolveStudioExecutionSpecValues(form, row.spec, row.capability, {
         defaultModelRevision: revision,
       });
+      const declarations = row.starter.authoring ?? row.spec;
       const claimed = new Set();
-      for (const [role, key] of row.spec.roles) {
-        if (role === 'loadMask' && ['qwen_outpaint_aspect_template', 'qwen_outpaint_draft'].includes(template.id)) {
-          assert.ok(flat.nodes.some((node) => node.data.action === 'OutpaintCanvas'));
-          continue;
-        }
+      for (const [role, key] of declarations.roles) {
         const node = flat.nodes.find(
           (item) => `${item.data.module}.${item.data.action}` === key && !claimed.has(item.id),
         );
         assert.ok(node, role);
         claimed.add(node.id);
-        for (const [boundRole, field, source] of row.spec.bindings)
+        for (const [boundRole, field, source] of declarations.bindings)
           if (boundRole === role) {
             if (
               node.id === owner.id &&
@@ -880,15 +906,18 @@ test('all54 image recipes construct and export the exact backend developer stage
       );
       assert.equal(
         graph.nodes.some((node) => groups.visualOperationGroup(node) === 'guidance'),
-        Boolean(guider),
-        'Guidance contains the actual backend-declared guidance owner only',
+        false,
+        'fresh guidance is grouped inside the meaningful input stage',
       );
       if (guider) {
         assert.equal(guider.data.params.guider.value, 'ClassifierFreeGuidance');
         assert.equal(guider.data.params.guidance_scale.value, form.guidanceScale);
         const original = row.starter.nodes.find((node) => node.operation.operationId === 'diffusion.guidance').node
           .params;
-        const policy = template.executionSelection.guidancePolicy;
+        const policy = {
+          enabled: initialValue(row, 'guider', 'enabled'),
+          useOriginalFormulation: initialValue(row, 'guider', 'use_original_formulation'),
+        };
         assert.equal(guider.data.params.enabled.value, policy?.enabled ?? original.enabled.value);
         const exportedGuider = Object.values(api.nodes).find((node) => node.action === 'Guider');
         assert.ok(exportedGuider, 'the actual guidance owner is exported for execution');
@@ -910,7 +939,7 @@ test('all54 image recipes construct and export the exact backend developer stage
           'EncodePrompt',
         ]);
       }
-      const policy = template.executionSelection.componentPolicy;
+      const policy = componentPolicy(row);
       if (policy) {
         assert.equal(owner.data.params.attention_backend.value, policy.attentionBackend);
         assert.equal(owner.data.params.vae_slicing.value, policy.vaeSlicing);
@@ -991,6 +1020,7 @@ test('all54 exported image consumers independently retain the preserved creator 
     'LoadPipeline',
     'ModelsLoader',
     'AutoModelLoader',
+    'Guider',
   ]);
   for (const row of fixture.recipes)
     await t.test(row.id, () => {
@@ -1013,6 +1043,19 @@ test('all54 exported image consumers independently retain the preserved creator 
         for (const [field, formField] of Object.entries(fields)) {
           const param = node.params[field];
           if (!param || param.display === 'output') continue;
+          if (
+            field === 'guidance_scale' &&
+            node.action === 'Denoise' &&
+            node.params.guider?.sourceId &&
+            preservedEmbeddedGuidance(template) === undefined
+          ) {
+            const guiderId = node.params.guider.sourceId;
+            assert.equal(api.nodes[guiderId].action, 'Guider');
+            assert.equal(api.nodes[guiderId].params.guidance_scale.value, form.guidanceScale);
+            const encoder = Object.values(api.nodes).find((item) => item.action === 'EncodePrompt');
+            assert.equal(encoder.params.guider.sourceId, guiderId, 'both genuine CFG consumers share the same Guider');
+            continue;
+          }
           if (param.sourceId) {
             assert.ok(
               ['width', 'height'].includes(field) && template.mode === 'outpaint',
@@ -1074,6 +1117,7 @@ function prepareLifecycleFixture(templateId) {
   studio.setState({ workflowCanvasHydrated: true });
   const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
   studio.getState().applyTemplate(template);
+  studio.getState().updateForm(fixtureRuntimeSettings(row, studio.getState().form));
   nodeStore.setState({
     nodesRegistry: fixture.registry,
     operationContracts: row.starter.nodes.map((item) => item.operation),
@@ -1179,6 +1223,7 @@ test('both Qwen ControlNet templates retain the exact creator API packet through
             row.starter.pipelineClass,
             row.starter.task,
             publicOperations,
+            recipeSelection(row),
           ),
           fixture.registry,
           row.spec,
@@ -1205,8 +1250,13 @@ test('both Qwen ControlNet templates retain the exact creator API packet through
           ),
           'ordinary creation must retain the required ControlNet component wire',
         );
-        function canonicalApi(api, graph) {
-          const names = new Map(graph.nodes.map((node) => [node.id, `${node.data.module}.${node.data.action}`]));
+        function canonicalApi(api) {
+          const names = new Map(Object.entries(api.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
+          assert.equal(
+            new Set(names.values()).size,
+            names.size,
+            'this recipe has unique executable operation identities',
+          );
           return Object.fromEntries(
             Object.entries(api.nodes).map(([id, node]) => [
               names.get(id),
@@ -1279,6 +1329,7 @@ test('fresh developer template commits once, preserves creator provenance, and r
         pipelineClass: template.executionSelection.pipelineClass,
         task: template.executionSelection.task,
         executionProfileId: template.executionSelection.executionProfileId,
+        authoringRecipeId: template.executionSelection.authoringRecipeId,
       });
       return Response.json(row.starter);
     };
@@ -1496,6 +1547,14 @@ test('template-owned normalization preserves available devices and explicit XPU 
     },
     { device: 'xpu:0', runtime: { packages: { torch: { cuda_available: false } } }, expected: 'xpu:0' },
     { device: 'mps:0', runtime: { packages: { torch: { cuda_available: false } } }, expected: 'mps:0' },
+    { device: 'unknown:0', runtime: { packages: { torch: { cuda_available: false } } }, expected: 'unknown:0' },
+    {
+      device: 'cuda:2',
+      runtime: {
+        packages: { torch: { cuda_available: true, cuda_device_count: 3, cuda_devices: [{ index: 2 }] } },
+      },
+      expected: 'cuda:2',
+    },
     { device: 'cuda:0', runtime: { packages: { torch: { cuda_available: false } } }, expected: 'cpu:0' },
   ])
     await t.test(`${scenario.device} → ${scenario.expected}`, () => {
@@ -1514,6 +1573,31 @@ test('template-owned normalization preserves available devices and explicit XPU 
       } finally {
         nodeStore.setState(previous[0]);
         studioStore.useStudioStore.setState(previous[1]);
+      }
+    });
+});
+
+test('owned runtime normalization never adopts a newer document or creative edit', async (t) => {
+  for (const edit of ['document', 'form'])
+    await t.test(edit, () => {
+      const previous = [flowStore.getState(), nodeStore.getState(), studioStore.useStudioStore.getState()];
+      try {
+        const { studio, context } = prepareLifecycleFixture('z_image_quick_concept');
+        nodeStore.setState({ runtimeStatus: { packages: { torch: { cuda_available: false } } } });
+        if (edit === 'document') studio.getState().createWorkflowTab('Newer document');
+        else studio.getState().updateForm({ prompt: 'An explicit newer prompt' });
+        const form = structuredClone(studio.getState().form);
+        const captured = { ...context };
+        assert.throws(
+          () => lifecycle.normalizeTemplateRuntimeDevice(context),
+          (error) => studioStore.isWorkflowOperationCancelled(error),
+        );
+        assert.deepEqual(studio.getState().form, form);
+        assert.deepEqual(context, captured, 'a stale caller cannot advance into the newer operation');
+      } finally {
+        flowStore.setState(previous[0]);
+        nodeStore.setState(previous[1]);
+        studioStore.useStudioStore.setState(previous[2]);
       }
     });
 });
@@ -1538,25 +1622,60 @@ test('ordinary Auto ControlNet creation keeps the auxiliary component resident w
           autoOffload: true,
           offloadMode: 'model_cpu',
           dtype: 'bfloat16',
-          device: 'cuda:0',
+          device: declaredFixtureDevice(row),
         });
         const form = structuredClone(studio.getState().form);
-        assert.equal(form.autoOffload, true);
-        assert.equal(form.offloadMode, 'model_cpu');
+        assert.equal(form.autoOffload, form.device.startsWith('cuda'));
+        assert.equal(form.offloadMode, form.device.startsWith('cuda') ? 'model_cpu' : 'none');
         globalThis.fetch = async () => Response.json(row.starter);
         await lifecycle.createImageTemplateOperationWorkflow(
           template,
           form,
           studioStore.captureWorkflowOperationContext(),
         );
-        const api = flowStore
-          .getState()
-          .exportGraph('control-auto-component-placement', undefined, { randomizeSeeds: false });
+        // Verify placement semantics independently from the host form policy.
+        // This authors a requested offload plan, never a fabricated GPU device.
+        const placementGraph = builder.createTemplateOperationGraph(
+          template,
+          { ...form, autoOffload: true, offloadMode: 'model_cpu' },
+          starterRequests.parseOperationStarter(
+            row.starter,
+            row.starter.pipelineClass,
+            row.starter.task,
+            publicOperations,
+            template.executionSelection,
+          ),
+          fixture.registry,
+          row.spec,
+          row.capability,
+        );
+        const authoredGraph = groups.unpackVisualOperationGroups(placementGraph).graph;
+        const authoredBase = authoredGraph.nodes.find((node) => node.data.action === 'ModelsLoader');
+        const authoredAuxiliary = authoredGraph.nodes.find((node) => node.data.action === 'AutoModelLoader');
+        assert.equal(authoredBase.data.params.auto_offload.value, true);
+        assert.equal(authoredBase.data.params.offload_mode.value, 'model_cpu');
+        assert.equal(authoredAuxiliary.data.params.auto_offload.value, false);
+        assert.equal(authoredAuxiliary.data.params.offload_mode.value, 'none');
+        // CPU metadata cannot prove GPU offload execution. The ordinary form
+        // normalizes the plan, and export also rejects an unnormalized request.
+        if (!form.device.startsWith('cuda')) {
+          assert.throws(
+            () =>
+              flowStore.getState().exportGraph('control-auto-component-placement', undefined, {
+                sourceGraph: placementGraph,
+                randomizeSeeds: false,
+              }),
+            /execution cannot use model_cpu offload/,
+          );
+        }
+        const api = flowStore.getState().exportGraph('control-auto-component-placement', undefined, {
+          randomizeSeeds: false,
+        });
         const base = Object.values(api.nodes).find((node) => node.action === 'ModelsLoader');
         const auxiliary = Object.values(api.nodes).find((node) => node.action === 'AutoModelLoader');
         assert.ok(base && auxiliary);
-        assert.equal(base.params.auto_offload.value, true);
-        assert.equal(base.params.offload_mode.value, 'model_cpu');
+        assert.equal(base.params.auto_offload.value, form.device.startsWith('cuda'));
+        assert.equal(base.params.offload_mode.value, form.device.startsWith('cuda') ? 'model_cpu' : 'none');
         assert.equal(auxiliary.params.auto_offload.value, false);
         assert.equal(auxiliary.params.offload_mode.value, 'none');
         for (const field of ['device', 'dtype']) assert.equal(auxiliary.params[field].value, base.params[field].value);
@@ -1712,6 +1831,7 @@ test('all four actual Qwen native inpaint candidates preserve their full API pac
           row.starter.pipelineClass,
           row.starter.task,
           contracts,
+          recipeSelection(row),
         );
         const candidate = qwenInpaintCandidate.createQwenInpaintNativeCandidateGraph(
           template,
@@ -1771,6 +1891,7 @@ test('all four actual Qwen native recipes recover their coherent runtime setting
     awayRow.starter.pipelineClass,
     awayRow.starter.task,
     awayContracts,
+    recipeSelection(awayRow),
   );
   for (const row of qwenInpaintCandidateFixture.recipes)
     await t.test(row.id, () => {
@@ -1780,6 +1901,7 @@ test('all four actual Qwen native recipes recover their coherent runtime setting
         row.starter.pipelineClass,
         row.starter.task,
         contracts,
+        recipeSelection(row),
       );
       const candidate = qwenInpaintCandidate.createQwenInpaintNativeCandidateGraph(
         template,
@@ -1838,5 +1960,342 @@ test('all four actual Qwen native recipes recover their coherent runtime setting
           'native',
           `${action}: explicit defaults reset retains the selected starter's runtime setting`,
         );
+    });
+});
+
+test('six pipeline-stage image selections describe real encoding and latent output without claiming native modular execution', () => {
+  const expected = [
+    'flux_fill_inpaint',
+    'flux_control_canny',
+    'flux_fill_outpaint',
+    'flux_depth_control',
+    'flux_redux_edit',
+    'flux_redux_multi_reference',
+  ];
+  const selected = templates.filter((template) => template.executionSelection?.implementation === 'pipeline_stages');
+  assert.deepEqual(selected.map((template) => template.id).sort(), [...expected].sort());
+  for (const template of selected) {
+    const row = fixture.recipes.find((item) => item.id === template.id);
+    assert.ok(row);
+    const owner = row.starter.nodes.find((item) => item.operation.decomposition === 'loader').node;
+    assert.equal(owner.params.execution_profile_id.value, template.executionSelection.executionProfileId);
+    assert.equal(row.starter.pipelineClass, template.executionSelection.pipelineClass);
+    const actions = row.starter.nodes.map((item) => item.node.action);
+    for (const action of ['LoadPipeline', 'EncodeInputs', 'Denoise', 'DecodeLatents'])
+      assert.equal(actions.filter((item) => item === action).length, 1);
+    assert.equal(
+      actions.some((action) => ['Inpaint', 'ControlGenerate', 'Edit'].includes(action)),
+      false,
+    );
+    assert.match(template.executionSelection.note, /Encode Inputs/);
+    if (template.id.startsWith('flux_fill_')) assert.match(template.executionSelection.note, /text only/);
+    assert.equal(template.executionSelection.memoryPolicy, undefined);
+  }
+});
+
+const stagedImageStarterIds = [
+  'flux_fill_inpaint',
+  'flux_fill_outpaint',
+  'flux_control_canny',
+  'flux_depth_control',
+  'flux_redux_edit',
+  'flux_redux_multi_reference',
+];
+
+let currentImageStarterAlternativesValue;
+async function currentImageStarterAlternatives() {
+  if (currentImageStarterAlternativesValue) return currentImageStarterAlternativesValue;
+  const selected = stagedImageStarterIds.map((id) => fixture.recipes.find((row) => row.id === id));
+  assert.ok(selected.every(Boolean));
+  const backend = path.resolve('../MoDiff');
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const script = path.resolve('scripts/template-operation-fixtures.py');
+  const whole = JSON.parse(
+    execFileSync(
+      process.platform === 'win32' ? python : path.join(backend, 'scripts/with-runtime-env.sh'),
+      process.platform === 'win32' ? [script] : [python, script],
+      {
+        cwd: backend,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: 90_000,
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+        input: JSON.stringify(
+          selected.map((row) => ({
+            id: row.id,
+            selection: {
+              pipelineClass: row.starter.pipelineClass,
+              task: row.starter.task,
+            },
+          })),
+        ),
+      },
+    ),
+  );
+  const module = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const operations = module.parseOperationContracts(fixture.publicPayload.operationContracts, 3);
+  assert.deepEqual(whole.publicPayload.operationContracts, fixture.publicPayload.operationContracts);
+  currentImageStarterAlternativesValue = { selected, whole: whole.recipes, operations };
+  return currentImageStarterAlternativesValue;
+}
+
+test('current image catalogs retain both complete staged and historical whole starters under exact authority', async (t) => {
+  const { selected, whole, operations } = await currentImageStarterAlternatives();
+  for (const row of selected)
+    await t.test(row.id, () => {
+      const selectedRoute = starterRequests.parseOperationStarter(
+        row.starter,
+        row.starter.pipelineClass,
+        row.starter.task,
+        operations,
+        recipeSelection(row),
+      );
+      assert.equal(selectedRoute.nodes.length, 4);
+      assert.equal(selectedRoute.edges.length, 8);
+      const legacy = whole.find((item) => item.id === row.id).starter;
+      const wholeRoute = starterRequests.parseOperationStarter(legacy, legacy.pipelineClass, legacy.task, operations);
+      assert.equal(wholeRoute.nodes.length, 2);
+      assert.equal(wholeRoute.edges.length, 1);
+      for (const route of [selectedRoute, wholeRoute]) {
+        const ids = new Set(route.nodes.map((item) => item.operation.operationId));
+        assert.ok(route.requiredInputs.every((input) => ids.has(input.operationId)));
+        assert.ok(route.sharedInputs.every((group) => group.members.every((member) => ids.has(member.operationId))));
+      }
+      assert.equal(
+        operations.filter(
+          (operation) => operation.pipelineClass === row.starter.pipelineClass && operation.task === row.starter.task,
+        ).length,
+        5,
+      );
+    });
+});
+
+test('alternate image starter membership rejects partial mixed foreign and noncurrent routes before authoring', async (t) => {
+  const { selected, whole, operations } = await currentImageStarterAlternatives();
+  for (const row of selected) {
+    const original = structuredClone(row.starter);
+    const legacy = whole.find((item) => item.id === row.id).starter;
+    const deny = async (name, mutate) =>
+      t.test(`${row.id}/${name}`, () => {
+        const value = structuredClone(original),
+          metadata = structuredClone(operations);
+        mutate(value, metadata);
+        assert.throws(() =>
+          starterRequests.parseOperationStarter(value, value.pipelineClass, value.task, metadata, recipeSelection(row)),
+        );
+        assert.deepEqual(row.starter, original);
+      });
+    for (const kind of ['image_encoder', 'denoise', 'decoder'])
+      await deny(`missing ${kind}`, (value) => {
+        const id = value.nodes.find((item) => item.operation.nodeType === kind).operation.operationId;
+        value.nodes = value.nodes.filter((item) => item.operation.operationId !== id);
+        value.edges = value.edges.filter((edge) => edge.source !== id && edge.target !== id);
+        value.requiredInputs = value.requiredInputs.filter((input) => input.operationId !== id);
+        value.sharedInputs = value.sharedInputs.filter((group) =>
+          group.members.every((member) => member.operationId !== id),
+        );
+      });
+    await deny('duplicate stage', (value) => value.nodes.push(structuredClone(value.nodes[1])));
+    await deny('extra owner', (value) =>
+      value.nodes.push(structuredClone(value.nodes.find((item) => item.operation.decomposition === 'loader'))),
+    );
+    await deny('whole mixed with complete stages', (value) =>
+      value.nodes.push(structuredClone(legacy.nodes.find((item) => item.operation.decomposition === 'pipeline'))),
+    );
+    for (const handle of ['encoded_inputs', 'latents', 'latent_binding', 'width', 'height'])
+      await deny(`missing ${handle}`, (value) => {
+        const edge = value.edges.find((item) => item.targetHandle === handle);
+        assert.ok(edge);
+        value.edges.splice(value.edges.indexOf(edge), 1);
+      });
+    await deny('competing width', (value) =>
+      value.edges.push(structuredClone(value.edges.find((edge) => edge.targetHandle === 'width'))),
+    );
+    await deny('stale stage DTO', (value) => {
+      value.nodes.find((item) => item.operation.nodeType === 'denoise').operation.support = 'unsupported';
+    });
+    await deny('foreign node task', (value) => {
+      value.nodes.find((item) => item.operation.nodeType === 'denoise').operation.task = 'foreign_image_task';
+    });
+    await deny('partial catalog', (value, metadata) => {
+      const index = metadata.findIndex(
+        (item) => item.pipelineClass === value.pipelineClass && item.task === value.task && item.nodeType === 'decoder',
+      );
+      metadata.splice(index, 1);
+    });
+    await deny('duplicate catalog authority', (value, metadata) =>
+      metadata.push(
+        structuredClone(
+          metadata.find(
+            (item) =>
+              item.pipelineClass === value.pipelineClass && item.task === value.task && item.nodeType === 'decoder',
+          ),
+        ),
+      ),
+    );
+    await deny('extra catalog operation', (value, metadata) => {
+      const extra = structuredClone(
+        metadata.find(
+          (item) =>
+            item.pipelineClass === value.pipelineClass && item.task === value.task && item.nodeType === 'decoder',
+        ),
+      );
+      extra.operationId = 'extra.decode';
+      metadata.push(extra);
+    });
+    await t.test(`${row.id}/wrong selected profile`, () =>
+      assert.throws(() =>
+        starterRequests.parseOperationStarter(original, original.pipelineClass, original.task, operations, {
+          executionProfileId: 'foreign:direct',
+        }),
+      ),
+    );
+    await t.test(`${row.id}/whole plus partial stage`, () => {
+      const mixed = structuredClone(legacy);
+      mixed.nodes.push(structuredClone(original.nodes.find((item) => item.operation.nodeType === 'denoise')));
+      assert.throws(() => starterRequests.parseOperationStarter(mixed, mixed.pipelineClass, mixed.task, operations));
+    });
+  }
+});
+
+const canonicalImageStageRoleTemplates = [
+  'flux_control_canny',
+  'flux_depth_control',
+  'flux_fill_inpaint',
+  'flux_fill_outpaint',
+  'flux_redux_edit',
+  'flux_redux_multi_reference',
+];
+
+let declaredImageRoleOperations;
+async function declaredImageRoleInputs(id) {
+  if (!declaredImageRoleOperations) {
+    const current = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+    declaredImageRoleOperations = current.parseOperationContracts(
+      fixture.publicPayload.operationContracts,
+      fixture.publicPayload.operationContractSchemaVersion,
+    );
+  }
+  const row = fixture.recipes.find((item) => item.id === id);
+  const template = templates.find((item) => item.id === id);
+  assert.ok(row && template);
+  return {
+    row,
+    template,
+    starter: starterRequests.parseOperationStarter(
+      structuredClone(row.starter),
+      row.starter.pipelineClass,
+      row.starter.task,
+      declaredImageRoleOperations,
+      recipeSelection(row),
+    ),
+    spec: structuredClone(row.spec),
+  };
+}
+
+function buildDeclaredImageRoles(input) {
+  return builder.createTemplateOperationGraph(
+    input.template,
+    selectedForm(input.template),
+    input.starter,
+    fixture.registry,
+    input.spec,
+    input.row.capability,
+  );
+}
+
+for (const id of canonicalImageStageRoleTemplates)
+  test(`declared role join preserves ${id} through actual factory, grouping and canonical leaves`, async () => {
+    const input = await declaredImageRoleInputs(id);
+    const original = structuredClone(input);
+    const grouped = buildDeclaredImageRoles(input);
+    assert.ok(grouped.nodes.some((node) => node.data.blockInstanceV2));
+    const flat = groups.unpackVisualOperationGroups(grouped).graph;
+    const declaration = input.starter.authoring ?? input.spec;
+    const actual = new Map();
+    for (const node of flat.nodes) {
+      if (node.data.studioRole === undefined) continue;
+      assert.ok(!actual.has(node.data.studioRole), 'Declared roles remain unique after flattening.');
+      actual.set(node.data.studioRole, node);
+    }
+    assert.equal(actual.size, declaration.roles.length);
+    for (const [role, key] of declaration.roles) {
+      const node = actual.get(role);
+      assert.ok(node, `Missing exact declared role ${role}`);
+      assert.equal(`${node.data.module}.${node.data.action}`, key);
+      assert.notEqual(node.data.studioOwned, true, 'A role annotation grants no managed runtime ownership.');
+    }
+    assert.deepEqual(input, original, 'Factory role assignment cannot mutate source declarations.');
+    const persisted = groups.unpackVisualOperationGroups(JSON.parse(JSON.stringify(grouped))).graph;
+    assert.deepEqual(
+      persisted.nodes.map((node) => [node.id, node.data.studioRole]),
+      flat.nodes.map((node) => [node.id, node.data.studioRole]),
+    );
+    assert.deepEqual(persisted.edges, flat.edges);
+  });
+
+test('declared role join refuses duplicate role rows without altering source inputs', async () => {
+  for (const id of canonicalImageStageRoleTemplates) {
+    const input = await declaredImageRoleInputs(id);
+    const declaration = input.starter.authoring ?? input.spec;
+    declaration.roles.push(structuredClone(declaration.roles[0]));
+    const original = structuredClone(input);
+    assert.throws(() => buildDeclaredImageRoles(input), /role .*duplicated|operation role .*missing/);
+    assert.deepEqual(input, original);
+  }
+});
+
+test('declared role join refuses a foreign role annotation on an otherwise exact resolved owner', async () => {
+  for (const id of canonicalImageStageRoleTemplates) {
+    const input = await declaredImageRoleInputs(id);
+    const owner = input.starter.nodes.find((node) => node.operation.decomposition === 'loader');
+    owner.node.studioRole = 'foreign_role';
+    const original = structuredClone(input);
+    assert.throws(() => buildDeclaredImageRoles(input), /role does not match its backend declaration/);
+    assert.deepEqual(input, original);
+  }
+});
+
+test('ordinary image template hydration preserves provenance without recovering a managed receipt', async (t) => {
+  for (const id of ['flux_schnell_text_to_image', 'z_image_quick_concept'])
+    await t.test(id, async () => {
+      const previous = [flowStore.getState(), nodeStore.getState(), studioStore.useStudioStore.getState()];
+      const originalFetch = globalThis.fetch;
+      try {
+        const { row, template, tabId, studio, context } = prepareLifecycleFixture(id);
+        globalThis.fetch = async () => Response.json(row.starter);
+        await lifecycle.createTemplateOperationWorkflow(template, studio.getState().form, context);
+        const graph = flowStore.getState().toObject();
+        const expectedApi = flowStore.getState().exportGraph('restored-template', undefined, { randomizeSeeds: false });
+        const saved = structuredClone(studio.getState().workflowTabs.find((tab) => tab.id === tabId));
+        assert.equal(saved.source, 'template');
+        assert.equal(saved.snapshot.activeTemplateId, id);
+        assert.equal(saved.snapshot.studioGraphBinding, null);
+        // A fresh page reads this persisted document through the ordinary backend merge.
+        studio.setState({ workflowTabs: [], activeWorkflowTabId: tabId });
+        studio.getState().mergeBackendWorkflow({ ...saved, revision: 1 });
+        assert.equal(studio.getState().graphBinding, null);
+        assert.equal(studio.getState().activeTemplateId, id);
+        const restored = studio.getState().workflowTabs.find((tab) => tab.id === tabId);
+        assert.equal(restored.source, 'template');
+        assert.equal(restored.sourceLabel, id);
+        assert.deepEqual(
+          flowStore.getState().toObject(),
+          graph,
+          'hydration must not promote role labels into ownership',
+        );
+        assert.deepEqual(
+          flowStore.getState().exportGraph('restored-template', undefined, { randomizeSeeds: false }),
+          expectedApi,
+          'all creator values and supplier wires survive the backend hydration path',
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+        flowStore.setState(previous[0]);
+        nodeStore.setState(previous[1]);
+        studioStore.useStudioStore.setState(previous[2]);
+      }
     });
 });

@@ -1,8 +1,8 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import type { BlockInstanceV2 } from '../studio/blockSchemaV2';
-import { blockOperationGraphV2, blockViewModelV2 } from '../studio/blockRuntimeV2';
+import { blockOperationGraphV2, blockViewModelV2, blockProjectionNodeIdV2 } from '../studio/blockRuntimeV2';
 import { ModiffDisclosure } from '../ui';
 import { encodingControlParam } from '../workflow/encodingNodePresentation';
 import { sharedOperationInput } from '../workflow/operationSharedInputs';
@@ -11,6 +11,9 @@ import { EncodeImageSummary } from './EncodeImageSummary';
 import { useNodesStore } from '../stores/useNodeStore';
 import { optionalEncodingImageInput } from '../workflow/encodingOptionalInput';
 import NodeContent from './NodeContent';
+import GuidanceNodeControls from './GuidanceNodeControls';
+import { ancillaryBindingsFromHint } from '../studio/ancillaryBindings';
+const PromptEnhancementControls = lazy(() => import('./PromptEnhancementControls'));
 
 /** One visual encoder; disclosures do not participate in execution or persistence. */
 export default function EncodingNodeControls({
@@ -30,7 +33,7 @@ export default function EncodingNodeControls({
   const summaries = nodes.find((node) => node.id === instance.instanceId)?.data.uiState?.encodingSummaries;
   const seedLinks = useMemo(() => {
     try {
-      const flat = unpackVisualOperationGroups({ nodes, edges }, new Set([instance.instanceId])).graph;
+      const flat = unpackVisualOperationGroups({ nodes, edges }).graph;
       return new Map(
         stages.map((stage) => {
           const shared = sharedOperationInput(
@@ -53,7 +56,31 @@ export default function EncodingNodeControls({
       return new Map<string | undefined, unknown[]>();
     }
   }, [edges, instance.instanceId, nodes, stages]);
-  const groups = [...new Set(instance.effectiveInterface.controls.map((control) => control.group ?? 'Settings'))];
+  const guidanceIds = new Set(
+    stages
+      .filter((stage) =>
+        ['guidance', 'guidance_layers'].includes(stage.data.operationAuthoring?.operation.nodeType ?? ''),
+      )
+      .map((stage) => stage.data.blockProjectionNodeId),
+  );
+  const enhancementOwners = stages.filter((stage) => stage.data.operationAuthoring?.ancillaryParent);
+  const enhancementChildren = new Set(
+    enhancementOwners.flatMap((stage) => {
+      try {
+        return (ancillaryBindingsFromHint(stage.data.operationAuthoring) ?? []).flatMap((binding) =>
+          Object.values(binding.roleNodes),
+        );
+      } catch {
+        return [];
+      }
+    }),
+  );
+  const encodingControls = instance.effectiveInterface.controls.filter(
+    (control) =>
+      !guidanceIds.has(control.binding.nodeId) &&
+      !enhancementChildren.has(blockProjectionNodeIdV2(instance.instanceId, control.binding.nodeId)),
+  );
+  const groups = [...new Set(encodingControls.map((control) => control.group ?? 'Settings'))];
   const images = stages.filter((stage) =>
     ['vae_encoder', 'image_encoder'].includes(stage.data.operationAuthoring?.operation.nodeType ?? ''),
   );
@@ -86,10 +113,59 @@ export default function EncodingNodeControls({
       data-encoding-content
       data-testid={`encoding-controls-${instance.instanceId}`}
     >
+      {enhancementOwners.map((owner) => (
+        <Suspense key={owner.id} fallback={null}>
+          <PromptEnhancementControls
+            ownerId={owner.id}
+            renderSettings={(declaration) => {
+              const binding = owner.data.operationAuthoring?.ancillaryBindings?.find(
+                (binding) => binding.contractId === declaration.id,
+              );
+              if (!binding) return null;
+              return declaration.roles.map(([role]) => {
+                const id = binding.roleNodes[role];
+                const stage = stages.find((stage) => stage.id === id);
+                if (!stage) return null;
+                const excluded =
+                  role === declaration.bindings.request.role
+                    ? new Set([
+                        declaration.bindings.request.promptField,
+                        declaration.bindings.request.layoutField,
+                        declaration.bindings.request.imagesField,
+                      ])
+                    : new Set<string>();
+                const controls = instance.effectiveInterface.controls.filter(
+                  (control) =>
+                    blockProjectionNodeIdV2(instance.instanceId, control.binding.nodeId) === id &&
+                    !excluded.has(control.binding.fieldId),
+                );
+                const params = Object.fromEntries(
+                  controls
+                    .map((control) => [control.controlId, view.controlParams[control.controlId]!])
+                    .filter(([, param]) => param),
+                );
+                return (
+                  <div key={role} className="grid min-w-0 gap-2">
+                    <div className="text-modiff-metadata font-semibold text-modiff-subtle-text">{stage.data.label}</div>
+                    <NodeContent
+                      nodeId={instance.instanceId}
+                      controlIdPrefix={`enhancement-${instance.instanceId}-${role}`}
+                      params={params}
+                      updateStore={updateStore}
+                      module={view.source.provider ?? 'MoDiff'}
+                      action="BlockV2"
+                      mode="controls"
+                      hidePreviews
+                    />
+                  </div>
+                );
+              });
+            }}
+          />
+        </Suspense>
+      ))}
       {groups.map((group) => {
-        const controls = instance.effectiveInterface.controls.filter(
-          (control) => (control.group ?? 'Settings') === group,
-        );
+        const controls = encodingControls.filter((control) => (control.group ?? 'Settings') === group);
         const promptSources = [
           ...new Set(
             controls
@@ -197,6 +273,19 @@ export default function EncodingNodeControls({
           </ModiffDisclosure>
         );
       })}
+      {guidanceIds.size ? (
+        <ModiffDisclosure
+          label="Guidance"
+          defaultOpen
+          unmount={false}
+          panelClassName="grid min-w-0 grid-cols-1 gap-2 px-1 pt-2"
+        >
+          <p className="text-xs text-modiff-subtle-text">
+            Guidance affects input conditioning and denoising. Closing this section keeps its settings active.
+          </p>
+          <GuidanceNodeControls instance={instance} />
+        </ModiffDisclosure>
+      ) : null}
     </div>
   );
 }

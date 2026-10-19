@@ -14,14 +14,16 @@ import {
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { createOrUpdateStudioGraph } from '../studio/graphBridge';
 import { autoProofIsReady, formPatchForAutoCandidate } from '../studio/autoResource';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { getFormDefaultsForModel, getProfileForForm, STUDIO_OFFLOAD_RUNTIME_LABELS } from '../studio/modelProfiles';
 import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import type { RunReadinessIssue, RuntimeFailure } from '../studio/types';
 import { IssueCard, ModiffButton, ModiffDialog, ProgressBar, Spinner, type IssueCardTone } from '../ui';
 import { cleanupGpuMemory } from '../utils/serverActions';
+import { runtimeCleanupFeedback } from '../utils/runtimeCleanupFeedback';
 
-type CleanupState = 'idle' | 'running' | 'success' | 'error';
+type CleanupState = 'idle' | 'running' | 'success' | 'warning' | 'error';
 
 function issueTone(severity: RunReadinessIssue['severity']): IssueCardTone {
   if (severity === 'success') return 'success';
@@ -99,6 +101,9 @@ export default function RunIssuesDialog() {
     };
     const context = captureWorkflowOperationContext();
     try {
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      if (executionScope) throw new Error('Use the current workflow Auto plan for this declared ancillary graph.');
       applyAutoResourcePlan(nextPlan, patch);
       advanceWorkflowOperationContext(context);
       await createOrUpdateStudioGraph(useStudioStore.getState().form, context);
@@ -191,17 +196,10 @@ export default function RunIssuesDialog() {
     setCleanupMessage('Releasing cached models, nodes, and accelerator memory...');
 
     try {
-      const data: unknown = await cleanupGpuMemory();
-      const responseMessage = cleanupResponseMessage(data);
-      if (cleanupResponseHasError(data)) {
-        throw new Error(responseMessage ?? 'Accelerator cleanup failed.');
-      }
-      const message =
-        responseMessage ??
-        'Accelerator cache released. Cached model state was dropped, so rerun the workflow to rebuild outputs; this action does not intentionally stop the backend.';
-      setCleanupState('success');
+      const { state, message } = runtimeCleanupFeedback(await cleanupGpuMemory());
+      setCleanupState(state);
       setCleanupMessage(message);
-      enqueueSnackbar(message, { variant: 'success', autoHideDuration: 5200 });
+      enqueueSnackbar(message, { variant: state, autoHideDuration: 5200 });
     } catch (error) {
       const message = cleanupErrorMessage(error);
       setCleanupState('error');
@@ -456,29 +454,12 @@ function failureUserMessage(failure: RuntimeFailure) {
   return 'The generation could not finish. Check the highlighted step and try again.';
 }
 
-function cleanupResponseHasError(data: unknown) {
-  return isRecord(data) && Boolean(data.error);
-}
-
-function cleanupResponseMessage(data: unknown) {
-  if (!isRecord(data)) return null;
-  return stringValue(data.message) ?? stringValue(data.error);
-}
-
 function cleanupErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('Failed to fetch')) {
     return 'MoDiff backend did not answer the cleanup request. This button does not intentionally stop the backend; restart the backend if it is no longer running, then rerun the workflow.';
   }
   return message || 'Accelerator cleanup failed.';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function stringValue(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function RunDialogFooter({
@@ -496,13 +477,17 @@ function RunDialogFooter({
       ? 'text-modiff-red'
       : cleanupState === 'success'
         ? 'text-modiff-green'
-        : 'text-modiff-subtle-text';
+        : cleanupState === 'warning'
+          ? 'text-modiff-warning'
+          : 'text-modiff-subtle-text';
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
       {hasCleanupStatus ? (
         <div className="min-w-0 flex-1 text-xs">
-          <p className={statusClass}>{cleanupMessage}</p>
+          <p className={`max-h-40 overflow-auto whitespace-pre-wrap break-words ${statusClass}`} aria-live="polite">
+            {cleanupMessage}
+          </p>
           {cleanupState === 'running' ? (
             <ProgressBar value={null} className="mt-2 max-w-80 rounded-modiff-compact" />
           ) : null}

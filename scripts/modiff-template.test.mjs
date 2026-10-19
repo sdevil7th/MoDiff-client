@@ -6648,6 +6648,40 @@ test('canonical workflows reject retired or mutable Hub attention backends', () 
   assert.equal(workflowNodeAttentionBackendError({ data: { params: {} } }), null);
 });
 
+test('canonical workflows allow only portable native math attention on CPU', () => {
+  const node = (backend, device, options = []) => ({
+    data: {
+      params: {
+        attention_backend: { value: backend, options },
+        device: { value: device },
+      },
+    },
+  });
+  for (const device of ['cpu', 'cpu:0']) {
+    for (const backend of ['auto', 'inherit', 'native', '_native_math'])
+      assert.equal(workflowNodeAttentionBackendError(node(backend, device)), null, `${backend} on ${device}`);
+    for (const backend of [
+      '_native_flash',
+      '_native_efficient',
+      '_native_cudnn',
+      '_native_future',
+      '_native_math_extra',
+      ['_native_math'],
+    ])
+      assert.match(workflowNodeAttentionBackendError(node(backend, device)), /selects accelerator attention/);
+    for (const backend of ['aiter', 'aiter_fa2_hub']) {
+      assert.match(workflowNodeAttentionBackendError(node(backend, device)), /unsupported attention/);
+      assert.match(
+        workflowNodeAttentionBackendError(node('_native_math', device, ['auto', { value: backend }])),
+        /unsupported attention/,
+      );
+    }
+  }
+  for (const backend of ['_native_math', '_native_flash', '_native_efficient', '_native_cudnn'])
+    assert.equal(workflowNodeAttentionBackendError(node(backend, 'cuda:0')), null);
+  assert.match(workflowNodeAttentionBackendError(node('auto', 'cuda:0', { aiter: 'Retired' })), /aiter/);
+});
+
 test('Hub-backed adapter member filenames are not treated as standalone local models', () => {
   const references = runReadinessModule.collectNodeModelReferences({
     id: 'audio-lora',
@@ -7453,5 +7487,48 @@ test('template creation waits for initial capabilities and cannot continue into 
     nodeStore.setState(previousNodes);
     studioStore.setState(previousStudio);
     flowStore.setState(previousFlow);
+  }
+});
+
+test('legacy template provenance still recovers its original role-marked managed graph', () => {
+  const graph = canonicalModularTextToImageGraph();
+  const roles = ['models', 'prompt', 'denoise', 'decode', 'preview'];
+  graph.nodes = graph.nodes.map((node, index) => ({
+    ...node,
+    data: { ...node.data, studioRole: roles[index] },
+  }));
+  const studio = studioStoreModule.useStudioStore;
+  const before = studio.getState();
+  const beforeFlow = flowStoreModule.useFlowStore.getState();
+  try {
+    studio.getState().mergeBackendWorkflow({
+      id: 'legacy-template-role-recovery',
+      title: 'Saved Z template',
+      source: 'template',
+      sourceLabel: 'z_image_quick_concept',
+      revision: 1,
+      snapshot: { ...graph, studioForm: profilesModule.DEFAULT_STUDIO_FORM, selectedMode: 'text_to_image' },
+    });
+    const saved = studio.getState().workflowTabs.find((tab) => tab.id === 'legacy-template-role-recovery');
+    assert.equal(saved.source, 'template');
+    assert.equal(saved.snapshot.activeTemplateId, 'z_image_quick_concept');
+    assert.deepEqual(
+      saved.snapshot.studioGraphBinding.managedNodeIds,
+      graph.nodes.map((node) => node.id),
+    );
+    assert.deepEqual(
+      saved.snapshot.studioGraphBinding.managedEdgeIds,
+      graph.edges.map((edge) => edge.id),
+    );
+    assert.deepEqual(
+      saved.snapshot.nodes.map((node) => node.position),
+      graph.nodes.map((node) => node.position),
+    );
+    assert.deepEqual(saved.snapshot.edges, graph.edges);
+    assert.deepEqual(saved.snapshot.viewport, graph.viewport);
+    assert.ok(saved.snapshot.nodes.every((node) => node.data.studioOwned));
+  } finally {
+    studio.setState(before);
+    flowStoreModule.useFlowStore.setState(beforeFlow);
   }
 });

@@ -1,6 +1,6 @@
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData } from '../stores/useNodeStore';
-import type { BlockJsonValue } from '../studio/blockSchemaV2';
+import { blockInstancePreviewBindingsV2, type BlockJsonValue } from '../studio/blockSchemaV2';
 import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { blockConnectionTargetsV2 } from '../studio/blockCrossingConnectionsV2';
 import { setBlockFieldValuesV1 } from '../studio/blockContainerEditingV1';
@@ -11,6 +11,7 @@ import { remapOperationAuthoring, sharedOperationInput } from './operationShared
  * renderer/store. Structural grouping stays in its on-demand planner module. */
 export type VisualOperationGroup = 'inputs' | 'guidance' | 'setup' | 'mask' | 'output';
 export const VISUAL_STAGE_PROVIDER = 'modiff.visual-stages.v1/';
+export const COMBINED_INPUT_PROVIDER = 'modiff.visual-stages.v2/inputs';
 export const VISUAL_STAGE_LABELS = {
   inputs: 'Encode Inputs',
   guidance: 'Guidance',
@@ -26,10 +27,52 @@ export const VISUAL_STAGE_NAMES = {
   output: 'image output',
 };
 
+/** Media changes presentation wording only; it never grants execution. */
+export function visualStagePresentation(kind: VisualOperationGroup, media?: 'image' | 'audio' | null) {
+  return kind === 'output' && media === 'audio'
+    ? { label: 'Audio Output', name: 'audio output' }
+    : { label: VISUAL_STAGE_LABELS[kind], name: VISUAL_STAGE_NAMES[kind] };
+}
+
+export function visualOperationGroupMedia(node: Pick<CustomNodeType, 'data'>): 'image' | 'audio' | null {
+  const instance = node.data.blockInstanceV2;
+  const object = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value && typeof value === 'object' && !Array.isArray(value));
+  const declaredMedia = new Set<'image' | 'audio'>();
+  for (const node of instance?.effectiveGraph.nodes ?? []) {
+    const hint = node.data.operationAuthoring;
+    const operation = object(hint) && hint.operation;
+    if (
+      !object(operation) ||
+      !Array.isArray(operation.ports) ||
+      !(
+        operation.operationId === 'diffusion.decode_latents' ||
+        operation.nodeType === 'decoder' ||
+        operation.nodeType === 'decode'
+      )
+    )
+      continue;
+    for (const port of operation.ports) {
+      if (!object(port) || port.direction !== 'output' || !Array.isArray(port.types)) continue;
+      for (const media of ['image', 'audio'] as const) if (port.types.includes(media)) declaredMedia.add(media);
+    }
+  }
+  // Removing or adding a player does not change the real output stage's media.
+  if (declaredMedia.size === 1) return declaredMedia.has('audio') ? 'audio' : 'image';
+  const previews = instance ? blockInstancePreviewBindingsV2(instance.definitionSnapshot, instance.effectiveGraph) : [];
+  const media = new Set(previews.map((preview) => preview.mediaType));
+  return media.size === 1 && (media.has('image') || media.has('audio'))
+    ? media.has('audio')
+      ? 'audio'
+      : 'image'
+    : null;
+}
+
 /** Presentation provenance only; never execution permission or a model selector. */
 export function visualOperationGroup(node: CustomNodeType): VisualOperationGroup | null {
   const source = node.data.blockInstanceV2?.definitionSnapshot.source;
   if (source?.kind !== 'user') return null;
+  if (source.provider === COMBINED_INPUT_PROVIDER) return 'inputs';
   return (
     (Object.keys(VISUAL_STAGE_LABELS) as VisualOperationGroup[]).find(
       (kind) => source.provider === `${VISUAL_STAGE_PROVIDER}${kind}`,
@@ -74,6 +117,13 @@ function projectVisualOperationGroups(
   const semantic = new Map<string, Map<string, string>>();
   const nodes = graph.nodes.filter((node) => !ids.has(node.id) && !ids.has(node.data.blockProjectionOwnerId ?? ''));
   const internalEdges: OperationGraph['edges'] = [];
+  // Resolve references across all groups before reading a leaf. Otherwise an
+  // input group preceding Model Setup can retain an obsolete loader reference.
+  for (const root of roots) {
+    const instance = root.data.blockInstanceV2!;
+    for (const node of blockOperationGraphV2(instance).nodes)
+      projected.set(node.id, `${root.id}/${node.data.blockProjectionNodeId}`);
+  }
   for (const root of roots) {
     const instance = root.data.blockInstanceV2!;
     if (
@@ -140,7 +190,13 @@ function projectVisualOperationGroups(
         })),
       );
     });
-  const result = { nodes, edges: [...edges, ...internalEdges] };
+  const result = {
+    nodes: nodes.map((node) => {
+      const hint = remapOperationAuthoring(node.data.operationAuthoring, (id) => projected.get(id) ?? id);
+      return hint ? { ...node, data: { ...node.data, operationAuthoring: hint } } : node;
+    }),
+    edges: [...edges, ...internalEdges],
+  };
   if (new Set(nodes.map((node) => node.id)).size !== nodes.length)
     throw new Error('Visual group node identity collision.');
   return { graph: result, roots, members };

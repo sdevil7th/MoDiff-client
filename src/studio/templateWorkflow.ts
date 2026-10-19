@@ -1,3 +1,4 @@
+import { resolveTemplateModelSelection } from './templateModelSelection';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -20,8 +21,7 @@ import {
   selectedAutoCandidate,
 } from './autoResource';
 import { getTemplateLockedSettings } from './templateExactness';
-import { DEFAULT_STUDIO_FORM } from './modelProfiles';
-import { getPreferredRuntimeDevice, runtimeDeviceIsAvailable } from './runReadiness';
+import { normalizeStudioRuntimeDevice } from './runReadiness';
 import { exactStudioExecutionSpecForForm } from './executionSpecs';
 import { materializeTemplateDefaultInputs } from './templateInputs';
 import { waitForGraphNodeMeasurements } from '../workflow/graphLayout';
@@ -160,28 +160,23 @@ export async function waitForTemplateRuntimeDiscovery(context: WorkflowOperation
 
 /** Apply the existing device fallback while this transaction still owns the form. */
 export function normalizeTemplateRuntimeDevice(context: WorkflowOperationContext) {
-  assertWorkflowOperationContext(context);
-  const runtime = useNodesStore.getState().runtimeStatus;
-  if (!runtime) return;
-  const form = useStudioStore.getState().form;
-  const device = getPreferredRuntimeDevice(runtime);
-  if (device === form.device || runtimeDeviceIsAvailable(runtime, form.device)) return;
-  if (form.device !== DEFAULT_STUDIO_FORM.device && !form.device.toLowerCase().startsWith('cuda')) return;
-  assertWorkflowOperationContext(context);
-  useStudioStore.getState().updateForm({ device });
-  advanceWorkflowOperationContext(context);
+  normalizeStudioRuntimeDevice(context);
 }
 
 /** Shared by interactive creation and the template generation harness. */
-export async function createImageTemplateOperationWorkflow(
+export async function createTemplateOperationWorkflow(
   template: StudioTemplate,
   form: StudioFormState,
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
 ) {
   assertWorkflowOperationContext(context);
   const selection = template.executionSelection;
-  if (!selection || template.example?.mediaType !== 'image')
-    throw new Error('Select an image template operation recipe.');
+  if (
+    !selection ||
+    !['image', 'audio'].includes(template.example?.mediaType ?? '') ||
+    template.outputKinds?.includes('video')
+  )
+    throw new Error('Select an image or audio template operation recipe.');
   // Preserve the pre-loading graph so edits during lazy module loading remain
   // protected by the ordinary transaction's exact signature check.
   const previousGraph = structuredClone(useFlowStore.getState().toObject());
@@ -207,18 +202,26 @@ export async function createImageTemplateOperationWorkflow(
   );
   if (!spec || !capability)
     throw new Error('The selected template execution specification is unavailable. Refresh model capabilities.');
+  const selected =
+    template.example?.mediaType === 'audio'
+      ? resolveTemplateModelSelection(template, nodesStore.studioModelCapabilities)
+      : null;
+  if (template.example?.mediaType === 'audio' && !selected)
+    throw new Error('The selected audio template needs one reviewed immutable model revision. Refresh capabilities.');
   const starter = await requestOperationStarter(
     selection.pipelineClass,
     selection.task,
     nodesStore.operationContracts,
     undefined,
     selection.executionProfileId,
+    selection.authoringRecipeId,
+    selected?.repository,
   );
   assertWorkflowOperationContext(context);
   const registryKeys = [
-    ...spec.roles.map(([, key]) => key),
+    ...(starter.authoring ?? spec).roles.map(([, key]) => key),
     ...(template.workflowBlocks?.includes('lora')
-      ? ['modules.ModularDiffusers.Lora', 'modules.DiffusersImage.LoadAdapter']
+      ? ['modules.ModularDiffusers.Lora', 'modules.DiffusersImage.LoadAdapter', 'modules.DiffusersAudio.LoadAdapter']
       : []),
     ...(template.workflowBlocks?.includes('upscaler') ? ['modules.Spandrel.Upscaler'] : []),
   ];
@@ -233,6 +236,7 @@ export async function createImageTemplateOperationWorkflow(
     useNodesStore.getState().nodesRegistry,
     spec,
     capability,
+    useNodesStore.getState(),
   );
   assertWorkflowOperationContext(context);
   commitOperationGraph(graph, context, signature, `Create ${template.label}`);
@@ -284,8 +288,8 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     after = useStudioStore.getState().form;
     await waitForTemplateCanvasPaint();
     assertWorkflowOperationContext(context);
-    if (template.executionSelection && template.example?.mediaType === 'image') {
-      const result = await createImageTemplateOperationWorkflow(template, after, context);
+    if (template.executionSelection && ['image', 'audio'].includes(template.example?.mediaType ?? '')) {
+      const result = await createTemplateOperationWorkflow(template, after, context);
       warnings = result.warnings;
       graphCreated = true;
     } else {
@@ -366,3 +370,5 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
 
   return { graphCreated, graphError, warnings };
 }
+
+export const createImageTemplateOperationWorkflow = createTemplateOperationWorkflow;

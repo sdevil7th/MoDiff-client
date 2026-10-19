@@ -20,14 +20,28 @@ export function resolveTemplateModelSelection(template: StudioTemplate, capabili
     !/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/u.test(profile.default_repo)
   )
     return null;
-  const artifact = template.modelArtifact;
-  const revision = artifact?.revision ?? template.example?.modelRevision;
+  const audio = template.example?.mediaType === 'audio';
+  const artifact = template.modelArtifact ?? (audio ? template.workflowBlockSettings?.lora?.baseModel : undefined);
+  const repository = artifact?.value ?? profile.default_repo;
+  const exampleRevision = template.example?.modelRevision;
+  const declared = profile.repository_revisions?.filter((pair) => pair.repo === repository);
+  const revision =
+    artifact?.revision ??
+    (audio && !/^[a-f0-9]{40}$/u.test(exampleRevision ?? '')
+      ? declared?.length === 1
+        ? declared[0]!.revision
+        : undefined
+      : exampleRevision);
   if (
     !revision ||
     !/^[a-f0-9]{40}$/u.test(revision) ||
-    (artifact && (artifact.source !== 'hub' || artifact.value !== profile.default_repo)) ||
-    (template.example?.modelRevision && template.example.modelRevision !== revision)
+    (artifact && artifact.source !== 'hub') ||
+    ![profile.default_repo, profile.fallback_repo, ...(profile.compatible_repos ?? [])].includes(repository) ||
+    (!audio && repository !== profile.default_repo) ||
+    (audio && declared && (declared.length !== 1 || declared[0]!.revision !== revision)) ||
+    (audio && repository !== profile.default_repo && declared?.length !== 1) ||
+    (exampleRevision && (!audio || /^[a-f0-9]{40}$/u.test(exampleRevision)) && exampleRevision !== revision)
   )
     return null;
-  return { capability, profile, repository: profile.default_repo, revision };
+  return { capability, profile, repository, revision };
 }

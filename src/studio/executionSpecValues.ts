@@ -60,14 +60,17 @@ export function resolveStudioExecutionSpecValues(
   const hasDistinctLastImage = spec.bindings.some(([, , source]) => source === 'lastImage');
   const values: Record<string, unknown> = {
     ...form,
-    paddingMaskCrop: (form as StudioFormState & { paddingMaskCrop?: number | null }).paddingMaskCrop ?? null,
+    paddingMaskCrop: form.paddingMaskCrop ?? null,
     referenceImages: hasDistinctLastImage ? form.referenceImages.slice(0, 1) : [...form.referenceImages],
     quantizationMode,
     quantizedComponents: ['transformer'],
     deviceMapNone: 'none',
+    weightFormat: 'native',
     attentionBackend,
     nativeMath: '_native_math',
     empty: '',
+    fp16: 'fp16',
+    ordinary: 'ordinary',
     emptyList: [],
     true: true,
     false: false,

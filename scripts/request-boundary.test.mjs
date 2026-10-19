@@ -264,6 +264,50 @@ test('binary request helpers consume blobs and array buffers through the shared 
   assert.deepEqual(new Uint8Array(await requestModule.requestArrayBuffer('/bytes')), bytes);
 });
 
+test('response readers retain shared cancellation and timeout through streamed body consumption', async (t) => {
+  for (const mode of ['aborted', 'timeout'])
+    await t.test(mode, async () => {
+      const controller = new AbortController();
+      let bodyStarted;
+      const started = new Promise((resolve) => {
+        bodyStarted = resolve;
+      });
+      globalThis.fetch = async (_url, init) => {
+        assert.equal(init.cache, 'no-store');
+        return new Response(
+          new ReadableStream({
+            start(stream) {
+              init.signal.addEventListener('abort', () => stream.error(init.signal.reason), { once: true });
+            },
+            pull() {
+              bodyStarted();
+            },
+          }),
+        );
+      };
+      const pending = requestModule.requestWithResponse(
+        '/streamed',
+        {
+          signal: controller.signal,
+          timeoutMs: mode === 'timeout' ? 20 : 1000,
+          cache: 'no-store',
+        },
+        async (response) => {
+          const reader = response.body.getReader();
+          try {
+            return await reader.read();
+          } finally {
+            reader.releaseLock();
+          }
+        },
+      );
+      const rejected = assert.rejects(pending, (error) => error.kind === mode && error.url === '/streamed');
+      await started;
+      if (mode === 'aborted') controller.abort(new Error('Unit caller cancelled its read.'));
+      await rejected;
+    });
+});
+
 test('binary HTTP failures preserve structured backend messages', async () => {
   globalThis.fetch = async () => jsonResponse({ error: true, message: 'Media is unavailable.' }, 404);
 

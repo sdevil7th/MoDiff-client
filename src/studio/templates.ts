@@ -10,7 +10,10 @@ import type {
   StudioTemplateReadinessPolicy,
   StudioTemplateWorkflowBlockSettings,
 } from './types';
-import { IMAGE_TEMPLATE_EXECUTION_SELECTIONS } from './templateOperationSelections';
+import {
+  IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
+  AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
+} from './templateOperationSelections';
 import {
   DEFAULT_STUDIO_FORM,
   MINIMAX_MUSIC3_REVISION,
@@ -216,7 +219,7 @@ const ACE_STEP_CNY_LORA: NonNullable<StudioTemplateWorkflowBlockSettings['lora']
     value: 'ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA',
     revision: 'cb829a12775740c830a6d49795f16913065dc492',
     sha256: '78650245c79cbfda7169eae34eb2ccb5f5e639b31a99da0a153a5bbd74194b0d',
-    byteSize: 88100000,
+    byteSize: 88130280,
     license: 'CreativeML OpenRAIL-M metadata; model card limits use to research/academic and prohibits commercial use',
   },
   weightName: 'adapter_model.safetensors',
@@ -3918,7 +3921,8 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
   const normalized = withTemplateRecipeDefaults(
     {
       ...template,
-      executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id],
+      executionSelection:
+        IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id] ?? AUDIO_TEMPLATE_EXECUTION_SELECTIONS[template.id],
       inputBindings: [
         ...(template.inputBindings ?? []).filter((binding) => binding.origin !== 'template'),
         ...generatedInputBindings.filter(
@@ -4045,7 +4049,6 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.ModularDiffusers.WorkflowCosmos3OmniTextEncode',
         'modules.ModularDiffusers.WorkflowCosmos3OmniDenoise',
         'modules.ModularDiffusers.WorkflowCosmos3OmniDecode',
-        'modules.ModularDiffusers.WorkflowCosmos3OmniAfterDecode',
         'modules.Image.Preview',
       ],
       vramEstimate: '132 GB full BF16 weights plus execution and mandatory safety memory',
@@ -4088,6 +4091,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'minimax_music3_chamber_pop',
+      executionSelection: AUDIO_TEMPLATE_EXECUTION_SELECTIONS.minimax_music3_chamber_pop,
       label: 'MiniMax Music 3 (Modular Cluster) — Text to Audio: Leave a Little Light',
       mode: 'text_to_audio',
       modelType: 'MiniMaxMusic3ModularPipeline',

@@ -1,16 +1,19 @@
 import { operationOwnsModel } from './operationContracts';
+import { declaredImagePipelineStageContracts } from './imagePipelineStageContracts';
 import config from '../../app.config';
 import { requestJson } from '../utils/requestJson';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { boundedText, identifier, record, parseOperationContracts, type OperationContract } from './operationContracts';
 import { parseResolvedOperation } from './operationResolution';
 import type { OperationStarter } from './operationAuthoring';
+import { parseOperationAuthoringRecipe, type OperationAuthoringSelection } from '../studio/operationAuthoringRecipe';
 
 export function parseOperationStarter(
   value: unknown,
   pipelineClass: string,
   task: string,
   operations: OperationContract[],
+  selection: OperationAuthoringSelection & { repository?: string } = {},
 ): OperationStarter {
   const payload = record(value, [
     'schemaVersion',
@@ -22,6 +25,7 @@ export function parseOperationStarter(
     'requiredInputs',
     'sharedInputs',
     'upstreamBlocks',
+    ...(selection.authoringRecipeId ? ['authoring'] : []),
   ]);
   const invalid = () => {
     throw new Error('Invalid operation starter. Reload capabilities and try again.');
@@ -53,10 +57,11 @@ export function parseOperationStarter(
   });
   const byId = new Map(nodes.map((n) => [n.operation.operationId, n]));
   const expected = operations.filter((o) => o.pipelineClass === pipelineClass && o.task === task);
+  if (byId.size !== nodes.length || nodes.filter((n) => operationOwnsModel(n.operation)).length !== 1) invalid();
+  const declaredWorkflows = new Set(nodes.map((node) => node.operation.workflowId).filter((id) => id !== null));
   if (
-    byId.size !== nodes.length ||
-    expected.length !== nodes.length ||
-    nodes.filter((n) => operationOwnsModel(n.operation)).length !== 1
+    declaredWorkflows.size > 1 ||
+    (payload.workflowId === null ? declaredWorkflows.size !== 0 : !declaredWorkflows.has(payload.workflowId as string))
   )
     invalid();
   const targets = new Set<string>();
@@ -84,6 +89,81 @@ export function parseOperationStarter(
     targets.add(key);
     return { source, sourceHandle, target, targetHandle };
   });
+  const stageKinds = new Set(['image_encoder', 'denoise', 'decoder']);
+  const owners = expected.filter(operationOwnsModel);
+  const stages = expected.filter(
+    (operation) => operation.decomposition === 'bundle' && stageKinds.has(operation.nodeType),
+  );
+  const whole = expected.filter(
+    (operation) => operation.decomposition === 'pipeline' && operation.nodeType === 'pipeline',
+  );
+  const alternateImageRoutes =
+    expected.length === 5 &&
+    owners.length === 1 &&
+    stages.length === 3 &&
+    whole.length === 1 &&
+    new Set(expected.map((operation) => operation.operationId)).size === 5 &&
+    new Set(stages.map((operation) => operation.nodeType)).size === 3;
+  if (alternateImageRoutes) {
+    const owner = owners[0]!;
+    const sameRoute = (route: OperationContract[]) =>
+      route.length === nodes.length && route.every((operation) => byId.has(operation.operationId));
+    const pipelineEdges = edges.filter((edge) => edge.source === owner.operationId);
+    const ownerNode = byId.get(owner.operationId)!;
+    if (
+      selection.executionProfileId &&
+      (ownerNode.node.params.execution_profile_id?.value ?? ownerNode.node.params.execution_profile_id?.default) !==
+        selection.executionProfileId
+    )
+      invalid();
+    const scope = owner.binding?.pipelineClass ?? owner.pipelineClass;
+    const outgoing = owner.ports.filter(
+      (port) =>
+        port.direction === 'output' &&
+        port.types.length === 1 &&
+        port.types[0] === 'image_diffusion_pipeline' &&
+        port.semantics?.kind === 'pipeline' &&
+        port.semantics.owner === 'same_loader' &&
+        port.semantics.scope === scope,
+    );
+    if (outgoing.length !== 1 || pipelineEdges.some((edge) => edge.sourceHandle !== outgoing[0]!.name)) invalid();
+    if (sameRoute([owner, ...stages])) {
+      if (
+        !declaredImagePipelineStageContracts(
+          nodes.map(({ operation, node }) => ({ id: operation.operationId, operation, params: node.params })),
+          owner.operationId,
+          edges,
+          pipelineEdges,
+        )
+      )
+        invalid();
+    } else if (sameRoute([owner, whole[0]!])) {
+      const consumer = whole[0]!;
+      const incoming = consumer.ports.filter(
+        (port) =>
+          port.direction === 'input' &&
+          port.types.length === 1 &&
+          port.types[0] === 'image_diffusion_pipeline' &&
+          port.semantics?.kind === 'pipeline' &&
+          port.semantics.owner === 'same_loader' &&
+          port.semantics.scope === scope,
+      );
+      if (
+        outgoing.length !== 1 ||
+        incoming.length !== 1 ||
+        edges.length !== 1 ||
+        edges[0]!.source !== owner.operationId ||
+        edges[0]!.sourceHandle !== outgoing[0]!.name ||
+        edges[0]!.target !== consumer.operationId ||
+        edges[0]!.targetHandle !== incoming[0]!.name ||
+        !consumer.ports.some(
+          (port) => port.direction === 'output' && port.types.includes('image') && port.semantics?.kind === 'media',
+        )
+      )
+        invalid();
+    } else invalid();
+  } else if (expected.length !== nodes.length) invalid();
+
   const visited = new Set<string>(),
     visiting = new Set<string>();
   function visit(id: string) {
@@ -128,7 +208,24 @@ export function parseOperationStarter(
     });
     return { name, members };
   });
+  if (selection.repository !== undefined) {
+    const owners = nodes.filter((row) => operationOwnsModel(row.operation));
+    const field = owners.length === 1 && (owners[0]!.node.params.repo_id ?? owners[0]!.node.params.model_id);
+    const value = field && (field.value ?? field.default);
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('source' in value) ||
+      value.source !== 'hub' ||
+      !('value' in value) ||
+      value.value !== selection.repository
+    )
+      invalid();
+  }
   return {
+    ...(selection.authoringRecipeId
+      ? { authoring: parseOperationAuthoringRecipe(payload.authoring, { ...selection, pipelineClass, task }) }
+      : {}),
     pipelineClass,
     task,
     workflowId: payload.workflowId as string | null,
@@ -146,13 +243,26 @@ export function requestOperationStarter(
   operations: OperationContract[],
   signal?: AbortSignal,
   executionProfileId?: string,
+  authoringRecipeId?: string,
+  repository?: string,
 ) {
   return requestJson(`${config.serverAddress}/operations/starter`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pipelineClass, task, ...(executionProfileId ? { executionProfileId } : {}) }),
+    body: JSON.stringify({
+      pipelineClass,
+      task,
+      ...(executionProfileId ? { executionProfileId } : {}),
+      ...(authoringRecipeId ? { authoringRecipeId } : {}),
+      ...(repository ? { repository } : {}),
+    }),
     signal,
-    parse: (value) => parseOperationStarter(value, pipelineClass, task, operations),
+    parse: (value) =>
+      parseOperationStarter(value, pipelineClass, task, operations, {
+        executionProfileId,
+        authoringRecipeId,
+        repository,
+      }),
   });
 }
 

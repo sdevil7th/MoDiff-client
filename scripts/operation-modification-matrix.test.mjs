@@ -322,6 +322,7 @@ test('ordinary same-pipeline profile and task Apply retains exact workflow bindi
     const contracts = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
     const request = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
     const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+    const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
     const operations = contracts.parseOperationContracts(
       profiles.publicPayload.operationContracts,
       profiles.publicPayload.operationContractSchemaVersion,
@@ -331,6 +332,14 @@ test('ordinary same-pipeline profile and task Apply retains exact workflow bindi
     );
     const owner = (graph) =>
       graph.nodes.find((node) => contracts.operationOwnsModel(a.operationAuthoring(node)?.operation));
+    // Resolve the current owner as Model Setup's actual controls do. Model/task
+    // changes can regroup or remove the wrapper, so do not reuse an old leaf ID.
+    function currentOwnerId(graph) {
+      const setup = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+      if (!setup) return owner(graph).id;
+      const projected = owner(runtime.blockOperationGraphV2(setup.data.blockInstanceV2));
+      return groups.visualOperationOwnerId(graph, projected.data.blockProjectionNodeId, setup.id);
+    }
     function checkBindings(graph, recipe) {
       const flat = groups.unpackVisualOperationGroups(graph).graph;
       for (const { operation } of recipe.nodes) {
@@ -357,9 +366,11 @@ test('ordinary same-pipeline profile and task Apply retains exact workflow bindi
       prompt.data.operationAuthoring.authored = ['prompt'];
       if (grouped) graph = groups.groupNewOperationGraph(graph);
       const before = structuredClone(graph);
-      const ownerId = loader.id;
       for (const preserveValues of [false, true]) {
-        const plan = a.planOperationChange(graph, ownerId, recipes[1], { replaceModel: true, preserveValues });
+        const plan = a.planOperationChange(graph, currentOwnerId(graph), recipes[1], {
+          replaceModel: true,
+          preserveValues,
+        });
         const next = checkBindings(plan.graph, recipes[1]);
         assert.equal(owner(next).data.params.repo_id.value.value, 'nvidia/Cosmos3-Super-Text2Image');
         assert.equal(owner(next).data.params.reviewed_variant.value, 'nvidia/Cosmos3-Super-Text2Image');
@@ -369,11 +380,15 @@ test('ordinary same-pipeline profile and task Apply retains exact workflow bindi
         );
         assert.equal(owner(next).data.params.revision.value, 'daf3d374804be4c512c2135568a7cb95d4341d79');
         assert.deepEqual(graph, before, 'Previewing a change must not mutate the source graph.');
-        const video = a.planOperationChange(plan.graph, ownerId, recipes[2], { replaceModel: true });
+        const video = a.planOperationChange(plan.graph, currentOwnerId(plan.graph), recipes[2], { replaceModel: true });
         checkBindings(video.graph, recipes[2]);
-        const returned = a.planOperationChange(video.graph, ownerId, recipes[0], { replaceModel: true });
+        const returned = a.planOperationChange(video.graph, currentOwnerId(video.graph), recipes[0], {
+          replaceModel: true,
+        });
         checkBindings(returned.graph, recipes[0]);
-        const reset = a.planOperationChange(returned.graph, ownerId, recipes[0], { restoreDefaults: true });
+        const reset = a.planOperationChange(returned.graph, currentOwnerId(returned.graph), recipes[0], {
+          restoreDefaults: true,
+        });
         checkBindings(reset.graph, recipes[0]);
       }
     }

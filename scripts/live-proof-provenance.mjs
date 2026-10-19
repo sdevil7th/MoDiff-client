@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
@@ -710,6 +710,17 @@ function sourceFilesUnder(target) {
 }
 
 function gitCommit(root) {
+  const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (topLevel.status !== 0 || !topLevel.stdout.trim()) return null;
+  try {
+    if (realpathSync(topLevel.stdout.trim()) !== realpathSync(root)) return null;
+  } catch {
+    return null;
+  }
   const result = spawnSync('git', ['rev-parse', 'HEAD'], {
     cwd: root,
     encoding: 'utf8',
@@ -727,12 +738,17 @@ export function backendSourceIdentity(backendRoot) {
     path.join(backendRoot, 'utils'),
   ];
   const files = [...new Set(targets.flatMap(sourceFilesUnder))]
-    // This identity is also captured by the Python worker before imports.
-    // Use language-independent Unicode/code-point ordering rather than the
-    // host locale so both processes hash the same ordered file inventory.
-    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    // The Python worker sorts POSIX paths before imports. Normalize separators
+    // before sorting: on Windows a backslash orders Image after ImageFilters.
     .map((file) => ({
-      path: path.relative(backendRoot, file).replaceAll('\\', '/'),
+      file,
+      relativePath: path.relative(backendRoot, file).replaceAll('\\', '/'),
+    }))
+    .sort((left, right) =>
+      left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0,
+    )
+    .map(({ file, relativePath }) => ({
+      path: relativePath,
       sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
     }));
   const payload = {

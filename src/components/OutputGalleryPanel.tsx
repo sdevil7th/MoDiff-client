@@ -34,6 +34,7 @@ import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils'
 import { outputText, outputTextType, textOutputViewerOpener } from '../studio/outputText';
 import { exportMedia } from '../studio/mediaCapabilities';
 import { validateCurrentRun } from '../studio/runReadiness';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { StudioImportedAsset, StudioOutput } from '../studio/types';
@@ -310,9 +311,16 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
     restoreWorkflowFromOutput(output);
     const context = captureWorkflowOperationContext();
     try {
-      const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
       if (!autoReady) return;
-      await coordinateGraphRun({ sid, studioContext: {}, workflowContext: context });
+      await coordinateGraphRun({
+        sid,
+        studioContext: executionScope ? undefined : {},
+        workflowContext: context,
+        executionScope,
+      });
       setGalleryLibraryOpen(false);
       setRightPanelOpen(true);
       setRightPanelTab('queue');

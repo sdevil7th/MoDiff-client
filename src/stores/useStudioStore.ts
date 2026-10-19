@@ -554,6 +554,9 @@ function normalizeWorkflowSnapshot(
     nodes: Array.isArray(value.nodes) ? safeCloneJson(value.nodes) : [],
     edges: Array.isArray(value.edges) ? safeCloneJson(value.edges) : [],
   });
+  const ordinaryOperationGraph = normalizedFlow.nodes.some((node) =>
+    Boolean(node.data.blockInstanceV2 || node.data.operationAuthoring),
+  );
   const seenNodeIds = new Set<string>();
   const nodes = normalizedFlow.nodes
     .filter((node) => {
@@ -562,7 +565,7 @@ function normalizeWorkflowSnapshot(
       return true;
     })
     .map((node) => {
-      if (!activeTemplateId || typeof node.data.studioRole !== 'string') return node;
+      if (!activeTemplateId || ordinaryOperationGraph || typeof node.data.studioRole !== 'string') return node;
       return { ...node, data: { ...node.data, studioOwned: true } };
     });
   const nodeIds = new Set(nodes.map((node) => node.id));
@@ -597,7 +600,7 @@ function normalizeWorkflowSnapshot(
     // Legacy template inference must never reinterpret, rebuild, or remove
     // registered/User Block roots merely because their internal actions look
     // like one managed task graph.
-    !nodes.some((node) => Boolean(node.data.blockInstanceV2 || node.data.operationAuthoring)) &&
+    !ordinaryOperationGraph &&
     (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
   // Old whole-image exports carry presentation roles, but no execution-spec
   // receipt. Keep those exact ordinary nodes as the workflow authority rather
@@ -621,13 +624,14 @@ function normalizeWorkflowSnapshot(
       : null;
   const studioForm = adoptedGraph || ordinaryImageImport ? inferredManagedForm : persistedStudioForm;
   const normalizedNodes = adoptedGraph?.nodes ?? nodes;
-  const executionNormalizedNodes = ordinaryImageImport
-    ? nodes
-    : normalizeManagedSnapshotExecutionPlan(
-        normalizedNodes,
-        studioForm,
-        persistedGraphBinding ?? adoptedGraph?.binding ?? null,
-      );
+  const executionNormalizedNodes =
+    ordinaryImageImport || ordinaryOperationGraph
+      ? nodes
+      : normalizeManagedSnapshotExecutionPlan(
+          normalizedNodes,
+          studioForm,
+          persistedGraphBinding ?? adoptedGraph?.binding ?? null,
+        );
   const studioGraphBinding = ordinaryImageImport
     ? null
     : reconcileSnapshotGraphBinding(
@@ -637,7 +641,12 @@ function normalizeWorkflowSnapshot(
         executionNormalizedNodes,
         edges,
         studioForm,
-        Boolean(templateSourceId && activeTemplateId === templateSourceId && !persistedGraphBinding),
+        Boolean(
+          !ordinaryOperationGraph &&
+          templateSourceId &&
+          activeTemplateId === templateSourceId &&
+          !persistedGraphBinding,
+        ),
       );
   return {
     nodes: executionNormalizedNodes,

@@ -7,7 +7,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'artifacts', 'playwright-report', 'test-results'] },
+  { ignores: ['dist', 'artifacts', 'playwright-report', 'test-results', 'reviews'] },
   {
     files: ['playwright.config.ts', 'tests/e2e/**/*.ts'],
     languageOptions: {

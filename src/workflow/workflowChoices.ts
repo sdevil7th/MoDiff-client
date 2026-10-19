@@ -2,6 +2,7 @@ import type { ModelCacheDiagnostics } from '../stores/useNodeStore';
 import type { StudioModelProfile } from '../studio/types';
 import { getRepoCacheStatus, getStudioModelCacheStatus, type StudioModelCacheStatus } from '../studio/modelCache';
 import type { PipelineSupport, PipelineTaskSupport } from './operationCatalog';
+import { parseWorkflowModelInventory, type WorkflowModelInventory } from './workflowModelInventory';
 
 export type WorkflowChoice = {
   id: string;
@@ -14,7 +15,13 @@ export type WorkflowChoice = {
   cache: StudioModelCacheStatus | null;
 };
 
-export type WorkflowModelDescriptor = { profileId: string; pipeline: string; label: string; repo: string };
+export type WorkflowModelDescriptor = {
+  profileId: string;
+  pipeline: string;
+  label: string;
+  repo: string;
+  inventory?: WorkflowModelInventory;
+};
 
 /** Presentation-only identities for generic workflows, independent of legacy Studio forms. */
 export function parseWorkflowModelDescriptors(
@@ -58,7 +65,9 @@ export function parseWorkflowModelDescriptors(
       if (text(profile.model_type) !== text(model.modelType) || seen.has(profileId)) invalid();
       if (profile.public !== undefined && typeof profile.public !== 'boolean') invalid();
       seen.add(profileId);
-      result.push({ profileId, pipeline, label: text(model.label), repo: text(profile.default_repo) });
+      const repo = text(profile.default_repo);
+      const inventory = parseWorkflowModelInventory(model, repo);
+      result.push({ profileId, pipeline, label: text(model.label), repo, ...(inventory ? { inventory } : {}) });
     }
   }
   return result;

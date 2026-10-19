@@ -202,6 +202,52 @@ function fluxExecutionProfile(
   };
 }
 
+test('execution-profile repository revisions are bounded, immutable and owned by that exact profile', () => {
+  const profile = {
+    ...fluxExecutionProfile(),
+    fallback_repo: 'review/fallback',
+    compatible_repos: ['review/compatible'],
+  };
+  const parse = (pairs) =>
+    optionalRuntimesModule.parseOptionalRuntimeExecutionProfiles(
+      [{ ...structuredClone(profile), ...(pairs === undefined ? {} : { repository_revisions: pairs }) }],
+      undefined,
+      (mode) => mode === 'text_to_image',
+    )[0];
+  const valid = [
+    { repo: profile.default_repo, revision: 'a'.repeat(40) },
+    { repo: profile.fallback_repo, revision: 'b'.repeat(40) },
+    { repo: profile.compatible_repos[0], revision: 'a'.repeat(40) },
+  ];
+  assert.deepEqual(parse(valid).repository_revisions, valid);
+  assert.deepEqual(
+    parse([valid[1]]).repository_revisions,
+    [valid[1]],
+    'A lowercase declared repository remains exact.',
+  );
+  assert.equal(
+    parse(undefined).repository_revisions,
+    undefined,
+    'Older metadata remains parseable without granting Add.',
+  );
+  assert.deepEqual(parse([]).repository_revisions, []);
+  for (const pairs of [
+    null,
+    {},
+    [null],
+    [{ ...valid[0], extra: true }],
+    [{ repo: 'unrelated/repository', revision: 'a'.repeat(40) }],
+    [{ repo: 'Review/Fallback', revision: valid[1].revision }],
+    [{ repo: profile.default_repo, revision: 'main' }],
+    [{ repo: profile.default_repo, revision: 'A'.repeat(40) }],
+    [{ repo: profile.default_repo, revision: 123 }],
+    [valid[0], valid[0]],
+    [valid[0], { ...valid[0], revision: 'b'.repeat(40) }],
+    Array.from({ length: 33 }, () => valid[0]),
+  ])
+    assert.throws(() => parse(pairs), /runtime contract/i);
+});
+
 function fluxExecutionSpec(overrides = {}) {
   const semantic = {
     schemaVersion: 1,
