@@ -127,7 +127,7 @@ test('bound reference summaries have exact bounded data and never substitute for
   assert.throws(() => layout.validateLayoutConditioningSupport(changed, bound), /rebind/);
 });
 
-test('normal ordinary and Block projection binds summaries to exact source ancestry and actual task snapshot', () => {
+test('ordinary and Block summaries bind durable source ancestry and task while excluding runtime signal payloads', () => {
   const source = {
     id: 'reference',
     type: 'custom',
@@ -139,7 +139,12 @@ test('normal ordinary and Block projection binds summaries to exact source ances
       module: 'modules.Test',
       action: 'EncodeReference',
       params: {
-        file: { type: 'string', display: 'text', value: 'reference-a.png' },
+        file: {
+          type: 'string',
+          display: 'text',
+          value: 'reference-a.png',
+          signal: { direction: 'input', origin: 'source-file', value: { runtimeModel: 'current-owner' } },
+        },
         reference_binding: { type: 'reference_conditioning', display: 'output' },
         layout_reference_summary: { type: 'string', display: 'output', hidden: true },
       },
@@ -230,6 +235,18 @@ test('normal ordinary and Block projection binds summaries to exact source ances
       );
   }
   const before = referenceContext.layoutReferenceContext([source, encode], edges, 'prompt', 'layout');
+  const changedPayload = structuredClone(source);
+  changedPayload.data.params.file.signal.value = { runtimeModel: 'refreshed-owner' };
+  assert.equal(
+    referenceContext.layoutReferenceContext([changedPayload, encode], edges, 'prompt', 'layout').key,
+    before.key,
+  );
+  const changedSignal = structuredClone(source);
+  changedSignal.data.params.file.signal.origin = 'different-source-declaration';
+  assert.notEqual(
+    referenceContext.layoutReferenceContext([changedSignal, encode], edges, 'prompt', 'layout').key,
+    before.key,
+  );
   const afterPrompt = structuredClone(encode);
   afterPrompt.data.params.prompt.value = 'Changed raw prompt';
   afterPrompt.data.params.layout.value = { schemaVersion: 2, coordinateSpace: 'normalized_xyxy', regions: [] };

@@ -202,7 +202,11 @@ Source tools remain disabled unless the selected version-2 descriptor declares
 `supportsBoundSourceRegions: true` and the operator reads an actual encoded
 reference summary through the ordinary cache route. The string output
 `layout_reference_summary` on the actual Image Encode supplier is joined to its producer's persisted task, attempt,
-run-input hash, workflow and exact current source ancestry. A genuine encoding
+run-input hash, workflow and exact current source ancestry. The comparison uses
+durable signal declarations: runtime `signal.value` payloads
+are discarded from both live and saved ancestry, matching task persistence.
+Source values, wiring, signal declarations and task identity remain checked.
+A genuine encoding
 cache hit may retain its earlier producer identity; the client does not relabel
 it as a fresh computation. Image Encode can publish a new summary independently
 of a Prompt that correctly refuses stale source IDs; re-encode that source branch,

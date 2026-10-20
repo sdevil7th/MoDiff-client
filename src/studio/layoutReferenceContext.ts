@@ -69,7 +69,14 @@ export function layoutReferenceContext(nodes: CustomNodeType[], edges: Edge[], n
             .filter(([, param]) => param.display !== 'output' && !param.display?.startsWith('ui_'))
             .map(([key, param]) => [
               key,
-              { value: param.value, default: param.default, type: param.type, signal: param.signal },
+              {
+                value: param.value,
+                default: param.default,
+                type: param.type,
+                // Persisted task snapshots discard runtime signal payloads.
+                // Keep declaration changes meaningful without comparing that volatile authority.
+                signal: param.signal ? { ...param.signal, value: undefined } : undefined,
+              },
             ]),
         ),
       }));
