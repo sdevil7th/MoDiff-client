@@ -609,6 +609,10 @@ export function durableFlowNodeSnapshot(node: CustomNodeType) {
         disabled: snapshot.data.uiState.disabled,
       }
     : undefined;
+  // Runtime status may create uiState without any authored UI setting.
+  if (snapshot.data.uiState && Object.values(snapshot.data.uiState).every((value) => value === undefined)) {
+    snapshot.data.uiState = undefined;
+  }
   Object.entries(snapshot.data.params).forEach(([name, param]) => {
     if (param.fieldOptions?.huggingFaceClusterPreviewSourceNodeId) {
       delete snapshot.data.params[name];

@@ -520,8 +520,48 @@ test('synthetic fresh and warm observations require task/request/source correlat
     });
 });
 
+test('normal running and completed node status cannot stale an otherwise unchanged Preview or Apply', async () => {
+  const { ownerId } = await setup();
+  await preview.enablePromptEnhancement(ownerId);
+  const run = await preview.startPromptEnhancementPreview(ownerId, child.id),
+    envelope = syntheticEnvelope(run);
+  const root = flow
+    .getState()
+    .nodes.find((node) =>
+      node.data.blockInstanceV2?.effectiveGraph.nodes.some(
+        (leaf) => runtime.blockProjectionNodeIdV2(node.id, leaf.nodeId) === ownerId,
+      ),
+    );
+  assert.equal(root.data.uiState, undefined);
+  const original = activeOwner(ownerId).data.params.prompt.value,
+    graphSignature = transaction.operationGraphSignature(flow.getState().toObject());
+  // The websocket status reducer materializes uiState even when there is no authored UI setting.
+  flow.getState().setNodeUiState(root.id, { validationSeverity: 'info', validationMessage: 'Running' });
+  flow.getState().updateProgress(root.id, -1, { activeTaskId: run.taskId, executionStatus: 'running' });
+  flow.getState().setNodeUiState(root.id, { validationSeverity: 'success', validationMessage: 'Completed' });
+  flow.getState().updateProgress(root.id, 0, { activeTaskId: run.taskId, executionStatus: 'completed' });
+  assert.equal(transaction.operationGraphSignature(flow.getState().toObject()), graphSignature);
+  const ticket = await preview.finishPromptEnhancementPreview(run);
+  assert.equal(activeOwner(ownerId).data.params.prompt.value, original);
+  await preview.applyPromptEnhancementPreview(ticket);
+  assert.equal(activeOwner(ownerId).data.params.prompt.value, JSON.parse(envelope.value).proposal.text);
+  flow.getState().undo();
+  assert.equal(activeOwner(ownerId).data.params.prompt.value, original);
+});
+
 test('synthetic observation drift, contradictory cache origin, duplicate JSON and later edits cannot mint or reuse Apply', async (t) => {
-  for (const fault of ['task', 'source', 'graph', 'request', 'consumed', 'digest', 'duplicate', 'later-edit'])
+  for (const fault of [
+    'task',
+    'source',
+    'graph',
+    'request',
+    'consumed',
+    'digest',
+    'duplicate',
+    'ui',
+    'wire',
+    'later-edit',
+  ])
     await t.test(fault, async () => {
       const { ownerId } = await setup();
       await preview.enablePromptEnhancement(ownerId);
@@ -536,6 +576,12 @@ test('synthetic observation drift, contradictory cache origin, duplicate JSON an
       if (fault === 'digest') envelope.observation.summarySha256 = sha('different summary bytes');
       cacheBody = JSON.stringify(envelope);
       if (fault === 'duplicate') cacheBody = cacheBody.replace('{"value":', '{"value":"discarded","value":');
+      if (fault === 'ui') flow.getState().setNodeUiState(flow.getState().nodes[0].id, { disabled: true });
+      if (fault === 'wire') {
+        const graph = flow.getState().toObject();
+        assert.ok(graph.edges.length);
+        flow.getState().replaceGraph({ ...graph, edges: graph.edges.slice(1) });
+      }
       const before = activeOwner(ownerId).data.params.prompt.value;
       if (fault === 'later-edit') {
         const ticket = await preview.finishPromptEnhancementPreview(run);

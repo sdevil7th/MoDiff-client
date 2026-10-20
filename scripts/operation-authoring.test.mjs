@@ -495,6 +495,7 @@ test('a reviewed model change survives delayed empty uiState enrichment without 
   delete before.nodes[1].data.uiState;
   const sibling = structuredClone(before.nodes[1]);
   sibling.id = 'independent-reviewed-stage';
+  sibling.data.uiState = { disabled: false };
   delete sibling.data.operationAuthoring;
   before.nodes.push(sibling);
   flow.replaceGraph(before);
@@ -502,20 +503,24 @@ test('a reviewed model change survives delayed empty uiState enrichment without 
   const context = captureWorkflowOperationContext();
   const signature = operationGraphSignature(before);
   const plan = authoring.planOperationChange(before, before.nodes[0].id, starter('OtherPipeline'));
+  const liveBefore = JSON.stringify(useFlowStore.getState().nodes);
   const enriched = structuredClone(before);
   enriched.nodes[0].data.uiState = {};
   enriched.nodes[1].data.uiState = {};
-  enriched.nodes[2].data.uiState = {};
+  enriched.nodes[2].data.uiState = { disabled: false };
   flow.replaceGraph(enriched);
+  for (const node of enriched.nodes.slice(0, 2))
+    assert.deepEqual(useFlowStore.getState().nodes.find((live) => live.id === node.id).data.uiState, {});
   assert.notEqual(
-    JSON.stringify(flow.toObject()),
-    JSON.stringify(before),
+    JSON.stringify(useFlowStore.getState().nodes),
+    liveBefore,
     'Exercise the actual delayed metadata difference.',
   );
+  assert.deepEqual(flow.toObject(), before, 'Empty presentation metadata is not a durable workflow edit.');
   assert.equal(operationGraphSignature(flow.toObject()), signature);
   commitOperationGraph(plan.graph, context, signature, 'Change model after presentation refresh');
   assert.equal(flow.toObject().nodes[0].data.params.pipeline_class.value, 'OtherPipeline');
-  assert.deepEqual(flow.toObject().nodes.find((node) => node.id === sibling.id).data.uiState, {});
+  assert.equal(flow.toObject().nodes.find((node) => node.id === sibling.id).data.uiState.disabled, false);
   assert.deepEqual(
     flow.toObject().nodes.find((node) => node.id === sibling.id).data.params,
     enriched.nodes[2].data.params,
@@ -523,8 +528,10 @@ test('a reviewed model change survives delayed empty uiState enrichment without 
   assert.equal(useFlowStore.getState().historyPast.length, 1);
   flow.undo();
   assert.equal(flow.toObject().nodes[0].data.params.pipeline_class.value, 'FuturePipeline');
+  assert.equal(flow.toObject().nodes.find((node) => node.id === sibling.id).data.uiState.disabled, false);
   flow.redo();
   assert.equal(flow.toObject().nodes[0].data.params.pipeline_class.value, 'OtherPipeline');
+  assert.equal(flow.toObject().nodes.find((node) => node.id === sibling.id).data.uiState.disabled, false);
 });
 
 test('preview normalization preserves every nonempty UI setting and authored graph mutation', async () => {

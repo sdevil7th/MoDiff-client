@@ -1698,3 +1698,9 @@ graph, active workflow epochs and current registry/operation metadata. Stale
 requests are aborted and cannot replace the current tab's result. Ordinary graphs
 remain synchronous and request no ancillary metadata. Run and Preview still
 resolve fresh declarations, and an unprepared synchronous export still refuses.
+
+Durable node snapshots treat absent UI state and UI state containing only live
+validation/status fields as the same authoring state. This keeps normal run
+status updates from invalidating an unchanged Preview. Explicit authored UI
+settings, including `false` and zero values, remain part of the source identity;
+input, wire, worker and proposal receipt changes still invalidate Apply.

@@ -1261,6 +1261,31 @@ test('graph replacement clears removed hidden V2 runtimes but not a retained col
   );
 });
 
+test('durable snapshots canonicalize status-only UI state while retaining explicit authored UI values', () => {
+  const { durableFlowNodeSnapshot, flowExecutionScopeSourceKey } = flowStoreModule;
+  const source = node('durable-ui-state', {});
+  const key = flowExecutionScopeSourceKey([source], []);
+  for (const uiState of [{}, { validationSeverity: 'info', validationMessage: 'Running' }]) {
+    const changed = { ...source, data: { ...source.data, uiState } };
+    assert.equal(durableFlowNodeSnapshot(changed).data.uiState, undefined);
+    assert.equal(flowExecutionScopeSourceKey([changed], []), key);
+    assert.deepEqual(changed.data.uiState, uiState, 'Snapshotting must not mutate the live status.');
+  }
+  for (const [field, value] of Object.entries({
+    collapsed: false,
+    blockExpanded: false,
+    blockCollapsedWidth: 0,
+    blockCollapsedHeight: 0,
+    clusterCollapsedWidth: 0,
+    clusterCollapsedHeight: 0,
+    disabled: false,
+  })) {
+    const changed = { ...source, data: { ...source.data, uiState: { [field]: value } } };
+    assert.equal(durableFlowNodeSnapshot(changed).data.uiState[field], value);
+    assert.notEqual(flowExecutionScopeSourceKey([changed], []), key, `${field} is an authored setting.`);
+  }
+});
+
 test('terminal cleanup is task-scoped and durable graph snapshots never retain execution state', () => {
   const completedTaskNode = node(
     'completed-task-node',
