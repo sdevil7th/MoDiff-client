@@ -1913,3 +1913,106 @@ test('native adapter workflow authority keeps explicit bindings ahead of declara
       assert.deepEqual(changed, before);
     });
 });
+
+test('ordinary public LoRA discovery keeps first adapters optional in fresh, restored and chained graphs', async () => {
+  const { buildGraphFixPlan } = await server.ssrLoadModule('/src/studio/graphFixer.ts');
+  const { createNodeFromRegistry } = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  const key = 'modules.ModularDiffusers.Lora';
+  const original = groups.unpackVisualOperationGroups(cases.get('flux_lora_ghibli_story').graph).graph;
+  const originalAdapters = original.nodes.filter((node) => `${node.data.module}.${node.data.action}` === key);
+  assert.equal(originalAdapters.length, 1);
+  const savedAdapter = originalAdapters[0];
+  assert.equal(
+    original.edges.some((edge) => edge.target === savedAdapter.id && edge.targetHandle === 'previous_loras'),
+    false,
+  );
+
+  // Create through the same ordinary node factory as insertion. Retain the
+  // reviewed template's real immutable adapter values; do not invent a model
+  // or substitute a handwritten optional-input definition for discovery.
+  const fresh = createNodeFromRegistry(key, fixture.registry, savedAdapter.position);
+  assert.ok(fresh);
+  fresh.id = savedAdapter.id;
+  for (const [field, param] of Object.entries(savedAdapter.data.params)) {
+    if (fresh.data.params[field] && Object.hasOwn(param, 'value'))
+      fresh.data.params[field].value = structuredClone(param.value);
+  }
+  assert.match(fresh.data.params.revision.value, /^[a-f0-9]{40}$/);
+  assert.match(fresh.data.params.expected_sha256.value, /^[a-f0-9]{64}$/);
+  const freshGraph = {
+    nodes: original.nodes.map((node) => (node.id === fresh.id ? fresh : structuredClone(node))),
+    edges: structuredClone(original.edges),
+  };
+  const predecessorIssues = (graph, registry = fixture.registry) => {
+    const ids = new Set(
+      graph.nodes.filter((node) => `${node.data.module}.${node.data.action}` === key).map((node) => node.id),
+    );
+    return buildGraphFixPlan({ ...graph, registry }).issues.filter(
+      (issue) =>
+        issue.kind === 'missing_input' && issue.targetHandle === 'previous_loras' && ids.has(issue.targetNodeId),
+    );
+  };
+  const before = structuredClone(freshGraph);
+  assert.deepEqual(predecessorIssues(freshGraph), [], 'A fresh singleton must not propose another Lora predecessor.');
+  assert.deepEqual(freshGraph, before);
+
+  // JSON restore deliberately retains the historical schema. The live fixer
+  // contract must override it only in its inspection copy, preserving authored
+  // values, edges and the saved schema even when its required bit is stale.
+  const historicalRegistry = structuredClone(fixture.registry);
+  delete historicalRegistry[key].params.previous_loras.required;
+  historicalRegistry[key].params.previous_loras.description =
+    'Append this adapter to the connected ordered descriptor or descriptor list.';
+  for (const staleRequired of [undefined, true]) {
+    const restored = JSON.parse(JSON.stringify(freshGraph));
+    const predecessor = restored.nodes.find((node) => node.id === savedAdapter.id).data.params.previous_loras;
+    delete predecessor.required;
+    if (staleRequired !== undefined) predecessor.required = staleRequired;
+    predecessor.description = 'Append this adapter to the connected ordered descriptor or descriptor list.';
+    const storedBefore = structuredClone(restored);
+    assert.equal(
+      predecessorIssues(restored, historicalRegistry).length,
+      1,
+      'The old public metadata reproduces the false Add Lora advisory.',
+    );
+    assert.deepEqual(predecessorIssues(restored), [], 'A saved singleton uses current explicit optional metadata.');
+    assert.deepEqual(restored, storedBefore, 'Inspection must not rewrite the restored contract.');
+  }
+
+  const caseWithChain = cases.get('flux_lora_cinematic_octane_3d');
+  const root = caseWithChain.graph.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+  const ordered = adapters.modelSetupAdapterChain(caseWithChain.graph, root.id).adapters.map((node) => node.id);
+  assert.equal(ordered.length, 2);
+  const chain = groups.unpackVisualOperationGroups(caseWithChain.graph).graph;
+  assert.ok(
+    chain.edges.some(
+      (edge) =>
+        edge.source === ordered[0] &&
+        edge.sourceHandle === 'lora' &&
+        edge.target === ordered[1] &&
+        edge.targetHandle === 'previous_loras',
+    ),
+  );
+  assert.equal(
+    chain.edges.some((edge) => edge.target === ordered[0] && edge.targetHandle === 'previous_loras'),
+    false,
+  );
+  const chainBefore = structuredClone(chain);
+  assert.deepEqual(
+    predecessorIssues(chain),
+    [],
+    'An ordered chain keeps its first adapter optional and its second wire intact.',
+  );
+  assert.deepEqual(chain, chainBefore);
+
+  // A genuine discovered required socket remains blocking. Optional chaining
+  // must not weaken the normal required-input contract for model consumers.
+  const encoder = createNodeFromRegistry('modules.ModularDiffusers.EncodePrompt', fixture.registry, { x: 0, y: 0 });
+  assert.ok(encoder);
+  assert.equal(encoder.data.params.text_encoders.required, true);
+  const requiredIssues = inspectRequiredGraphInputs([encoder], { nodes: [encoder], edges: [] }, fixture.registry);
+  assert.ok(
+    requiredIssues.some((issue) => issue.nodeId === encoder.id && issue.fieldId === 'text_encoders' && issue.blocking),
+  );
+});
