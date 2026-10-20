@@ -212,6 +212,32 @@ export function validateLayoutConditioningSupport(
   }
 }
 
+/** Authoring recovery only; full-layout validation and backend execution stay strict. */
+export function parseLayoutConditioningEdit(
+  value: unknown,
+  previous: unknown,
+  support: LayoutConditioningSupport,
+): LayoutConditioning | null {
+  const parsed = parseLayoutConditioning(value);
+  if (parsed?.schemaVersion !== 2 || support.schemaVersion !== 2 || !support.sourceRegions) {
+    validateLayoutConditioningSupport(parsed, support);
+    return parsed;
+  }
+  const before = parseLayoutConditioning(previous);
+  const saved = new Map(before?.schemaVersion === 2 ? before.regions.map((region) => [region.id, region]) : []);
+  // An explicit edit may retain an identical stale sibling while repairing,
+  // removing or reordering other regions. It cannot introduce/change stale data.
+  // Parse the whole layout first so IDs, geometry, schema and byte/count bounds
+  // still apply even to siblings whose current reference identity is deferred.
+  const changed = parsed.regions.filter((region) => {
+    const source = region.source;
+    const stale = source && source.expectedReferenceId !== support.references[source.referenceIndex]?.referenceId;
+    return !stale || JSON.stringify(saved.get(region.id)) !== JSON.stringify(region);
+  });
+  validateLayoutConditioningSupport({ ...parsed, regions: changed }, support);
+  return parsed;
+}
+
 /** Display metadata only. Actual conditioning still needs the backend receipt. */
 export function parseLayoutReferenceSummary(value: unknown): LayoutReferenceSummary {
   const item = record(

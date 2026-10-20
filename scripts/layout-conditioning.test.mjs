@@ -127,6 +127,179 @@ test('bound reference summaries have exact bounded data and never substitute for
   assert.throws(() => layout.validateLayoutConditioningSupport(changed, bound), /rebind/);
 });
 
+test('incremental bound edits preserve only identical existing stale siblings while full-layout validation still refuses', () => {
+  const ids = ['a', 'b', 'c'].map((letter) => `sha256:${letter.repeat(64)}`);
+  const previous = {
+    schemaVersion: 2,
+    coordinateSpace: 'normalized_xyxy',
+    regions: ids.map((expectedReferenceId, referenceIndex) =>
+      region({
+        id: `source_${referenceIndex}`,
+        action: 'relocate',
+        source: { referenceIndex, expectedReferenceId, box: [0, 0, 1, 1] },
+      }),
+    ),
+  };
+  const current = {
+    schemaVersion: 2,
+    sourceRegions: true,
+    references: [ids[1], ids[2], ids[0]].map((referenceId) => ({
+      referenceId,
+      sourceSize: [64, 48],
+      processedSize: [64, 48],
+    })),
+  };
+  const before = structuredClone(previous);
+  const partial = structuredClone(previous);
+  partial.regions[0].source.referenceIndex = 2;
+  assert.deepEqual(layout.parseLayoutConditioningEdit(partial, previous, current), partial);
+  assert.deepEqual(previous, before, 'A permitted edit must not silently rebind or mutate the other saved regions.');
+  assert.throws(() => layout.validateLayoutConditioningSupport(partial, current), /rebind/);
+  const reordered = { ...partial, regions: [partial.regions[2], partial.regions[0], partial.regions[1]] };
+  assert.deepEqual(layout.parseLayoutConditioningEdit(reordered, partial, current), reordered);
+  assert.throws(() => layout.validateLayoutConditioningSupport(reordered, current), /rebind/);
+  const removed = { ...partial, regions: partial.regions.slice(0, 2) };
+  assert.deepEqual(layout.parseLayoutConditioningEdit(removed, partial, current), removed);
+  assert.throws(() => layout.validateLayoutConditioningSupport(removed, current), /rebind/);
+  const repaired = structuredClone(removed);
+  repaired.regions[1].source.referenceIndex = 0;
+  assert.deepEqual(layout.parseLayoutConditioningEdit(repaired, removed, current), repaired);
+  layout.validateLayoutConditioningSupport(repaired, current);
+  const fewer = { ...current, references: [current.references[2]] };
+  const stillUnbound = structuredClone(previous);
+  stillUnbound.regions[0].source.referenceIndex = 0;
+  assert.deepEqual(layout.parseLayoutConditioningEdit(stillUnbound, previous, fewer), stillUnbound);
+  assert.throws(() => layout.validateLayoutConditioningSupport(stillUnbound, fewer), /no longer bound/);
+  const onlyValid = { ...repaired, regions: [repaired.regions[0]] };
+  assert.deepEqual(layout.parseLayoutConditioningEdit(onlyValid, removed, current), onlyValid);
+  layout.validateLayoutConditioningSupport(onlyValid, current);
+});
+
+test('incremental bound edits refuse changed or foreign stale data and retain global schema and capability boundaries', async (t) => {
+  const id = (letter) => `sha256:${letter.repeat(64)}`;
+  const previous = {
+    schemaVersion: 2,
+    coordinateSpace: 'normalized_xyxy',
+    regions: [
+      region({
+        id: 'first',
+        action: 'relocate',
+        source: { referenceIndex: 0, expectedReferenceId: id('a'), box: [0, 0, 1, 1] },
+      }),
+      region({
+        id: 'second',
+        action: 'remove',
+        targetBox: null,
+        source: { referenceIndex: 1, expectedReferenceId: id('b'), box: [0, 0, 1, 1] },
+      }),
+    ],
+  };
+  const current = {
+    schemaVersion: 2,
+    sourceRegions: true,
+    references: [id('b'), id('a')].map((referenceId) => ({
+      referenceId,
+      sourceSize: [64, 48],
+      processedSize: [64, 48],
+    })),
+  };
+  const partial = structuredClone(previous);
+  partial.regions[0].source.referenceIndex = 1;
+  for (const [name, change] of [
+    [
+      'description',
+      (next) => {
+        next.regions[1].description += ' changed';
+      },
+    ],
+    [
+      'source box',
+      (next) => {
+        next.regions[1].source.box[0] = 0.1;
+      },
+    ],
+    [
+      'foreign identity',
+      (next) => {
+        next.regions[1].source.expectedReferenceId = id('c');
+      },
+    ],
+    [
+      'renamed identity',
+      (next) => {
+        next.regions[1].id = 'unseen';
+      },
+    ],
+    [
+      'new stale sibling',
+      (next) => {
+        next.regions.push({ ...structuredClone(next.regions[1]), id: 'new' });
+      },
+    ],
+    [
+      'action',
+      (next) => {
+        next.regions[1].action = 'relocate';
+        next.regions[1].targetBox = [0, 0, 1, 1];
+      },
+    ],
+    [
+      'unknown property',
+      (next) => {
+        next.extra = true;
+      },
+    ],
+    [
+      'duplicate region ID',
+      (next) => {
+        next.regions[1].id = 'first';
+      },
+    ],
+    [
+      'schema',
+      (next) => {
+        next.schemaVersion = 3;
+      },
+    ],
+    [
+      'region count',
+      (next) => {
+        next.regions = Array.from({ length: 33 }, (_, index) => ({ ...next.regions[1], id: `r${index}` }));
+      },
+    ],
+    [
+      'total bytes',
+      (next) => {
+        next.regions = Array.from({ length: 20 }, (_, index) => ({
+          ...next.regions[1],
+          id: `r${index}`,
+          description: 'x'.repeat(4096),
+        }));
+      },
+    ],
+  ])
+    await t.test(name, () => {
+      const next = structuredClone(partial);
+      change(next);
+      assert.throws(() => layout.parseLayoutConditioningEdit(next, previous, current), /Invalid layout/);
+    });
+  for (const selected of [
+    { schemaVersion: 2, sourceRegions: false, supportsBoundSourceRegions: true },
+    { schemaVersion: 2, sourceRegions: false },
+    { schemaVersion: 1, sourceRegions: true, referenceCount: 2 },
+  ])
+    assert.throws(() => layout.parseLayoutConditioningEdit(partial, previous, selected), /unavailable/);
+  const legacy = {
+    schemaVersion: 1,
+    coordinateSpace: 'normalized_xyxy',
+    regions: [region({ source: { referenceIndex: 1, box: [0, 0, 1, 1] } })],
+  };
+  assert.throws(() => layout.parseLayoutConditioningEdit(legacy, legacy, current), /version two rebind/);
+  assert.throws(() => layout.parseLayoutConditioningEdit(partial, null, current), /rebind/);
+  assert.throws(() => layout.parseLayoutConditioningEdit(partial, { ...previous, extra: true }, current), /unknown/);
+  assert.equal(layout.parseLayoutConditioningEdit(null, previous, current), null);
+});
+
 test('ordinary and Block summaries bind durable source ancestry and task while excluding runtime signal payloads', () => {
   const source = {
     id: 'reference',

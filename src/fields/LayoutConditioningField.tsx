@@ -9,6 +9,7 @@ import {
   MAX_LAYOUT_REGIONS,
   nextLayoutRegionId,
   parseLayoutConditioning,
+  parseLayoutConditioningEdit,
   parseLayoutConditioningSupport,
   parseLayoutReferenceSummary,
   validateLayoutConditioningSupport,
@@ -258,8 +259,7 @@ export default function LayoutConditioningField(props: FieldProps) {
   const commit = (value: LayoutConditioning | null) => {
     if (props.disabled || !support) return;
     try {
-      const parsed = parseLayoutConditioning(value);
-      validateLayoutConditioningSupport(parsed, support);
+      const parsed = parseLayoutConditioningEdit(value, layout, support);
       props.updateStore(props.fieldKey, parsed);
       setError('');
       setEditing(null);

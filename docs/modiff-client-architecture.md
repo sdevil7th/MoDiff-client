@@ -220,6 +220,11 @@ The summary describes up to ten ordered references,
 their content identities and original/processed dimensions. It is local display
 context, not an opaque execution receipt. Source/owner/graph changes mark it
 stale, and each saved source region requires explicit rebind to a current ID.
+An explicit region edit may retain identical already-stale siblings so several
+regions can be rebound, removed or reordered one at a time. Every changed or new
+region must satisfy the current verified source context; the complete layout
+retains its error until all saved sources agree. Whole-layout validation and
+backend execution never use this authoring-only exception.
 The backend independently verifies the same process-local receipt in Prompt and
 Denoise against actual images, processed tensors, owner and tensor versions.
 Imported counts or summary strings cannot grant execution authority. A declared

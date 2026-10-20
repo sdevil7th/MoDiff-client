@@ -52,18 +52,20 @@ Auto/repeat checks on local ROCm remain separate from Windows or cloud hardware
 qualification. Changing a fresh template's execution selection invalidates its
 current exact-template evidence while retaining the historical example.
 
-The other six recipes retain explicit whole-pipeline operations:
+The other six recipes use generic pipeline stages while retaining their selected
+official pipeline's specialty conditioning and sampling contract:
 
-| Whole-pipeline path      | Templates | Preserved boundary                                    |
-| ------------------------ | --------: | ----------------------------------------------------- |
-| FLUX Fill                |         2 | Fill model, image and mask recipe                     |
-| FLUX Canny/Depth control |         2 | Selected control artifact and conditioning contract   |
-| FLUX Redux               |         2 | Selected base/prior models and reference conditioning |
+| Pipeline-stage path      | Templates | Preserved boundary                                                  |
+| ------------------------ | --------: | ------------------------------------------------------------------- |
+| FLUX Fill                |         2 | Text encoding, official image/mask sampling, decoding and composite |
+| FLUX Canny/Depth control |         2 | Text and VAE control encoding, official latent sampling and decode  |
+| FLUX Redux               |         2 | Pinned prior in reference order, matching base sampler and VAE      |
 
-These tasks lack a reviewed native-stage replacement for their exact selected
-artifact and parameter contract. Their graphs contain actual loading and
-generation operations, required utility nodes and previews. They do not gain an
-encoding or Guidance node merely to resemble another workflow.
+Their fresh graphs contain real **Load Pipeline → Encode Inputs → Denoise → Decode
+Latents** operations, required utility nodes and previews. These stages retain
+the official pipeline's denoising implementation rather than substituting an
+unreviewed native modular recipe. They do not add an unused Guidance owner.
+Existing saved whole-pipeline workflows retain their original route.
 
 ## Guidance and preserved settings
 
