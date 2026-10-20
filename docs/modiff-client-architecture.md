@@ -1681,3 +1681,12 @@ newer literal edits and conflicting shared Block controls continue to reject the
 update. Successful patches retain one Undo transaction. Actual Run and Preview
 still require their exact current ancillary execution scope before export and
 submission.
+
+Ancillary graph readiness resolves the current declaration asynchronously before
+the synchronous collector inspects its execution scope. While metadata is pending
+the graph shows Preparing; failed verification blocks Run with reload/reopen
+guidance. Consumers share a display-only witness tied to the complete durable
+graph, active workflow epochs and current registry/operation metadata. Stale
+requests are aborted and cannot replace the current tab's result. Ordinary graphs
+remain synchronous and request no ancillary metadata. Run and Preview still
+resolve fresh declarations, and an unprepared synchronous export still refuses.

@@ -22,6 +22,236 @@ import type { OperationContract } from '../../../src/workflow/operationContracts
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 
+test('mounted ancillary readiness resolves current declarations before classifying the graph', async ({ page }) => {
+  const renderErrors: string[] = [];
+  page.on('pageerror', (error) => renderErrors.push(error.message));
+  await ensureFrontend();
+  const fixture = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/ancillary-authoring.v1.json'), 'utf8'),
+  );
+  const actual = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/ancillary-starter.v1.json'), 'utf8'),
+  );
+  let requests = 0;
+  let rejectDeclaration = false;
+  let holdNext = true;
+  let releaseHeld: (() => void) | undefined;
+  await page.route('**/operations/starter', async (route) => {
+    requests++;
+    if (holdNext) {
+      holdNext = false;
+      await new Promise<void>((resolve) => {
+        releaseHeld = resolve;
+      });
+    }
+    await route.fulfill({ json: rejectDeclaration ? {} : actual.response }).catch(() => {});
+  });
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(
+    async ({ fixture, actual }) => {
+      const [{ useFlowStore }, { useStudioStore }, { useNodesStore }, { mountAncillaryReadinessProbe }] =
+        await Promise.all([
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/stores/useStudioStore.ts'),
+          import('/src/stores/useNodeStore.ts'),
+          import('/tests/e2e/studio-mocked/runReadinessFixture.tsx'),
+        ]);
+      const row = fixture.parents[0],
+        parent = JSON.parse(row.rawParentJson),
+        child = parent.ancillaryOperations[0];
+      const binding = {
+        contractId: child.id,
+        contentHash: child.contentHash,
+        parent: { ...child.parent, authoringContentHash: parent.contentHash },
+        parentRoleNodes: Object.fromEntries(parent.roles.map(([r]) => [r, `main-${r}`])),
+        roleNodes: Object.fromEntries(child.roles.map(([r]) => [r, `aux-${r}`])),
+      };
+      const registry = {
+        ...row.registry,
+        ...Object.fromEntries(actual.response.nodes.map(({ operation, node }) => [operation.nodeKey, node])),
+      };
+      const nodes = [
+        ...parent.roles.map((r) => [binding.parentRoleNodes, r]),
+        ...child.roles.map((r) => [binding.roleNodes, r]),
+      ].map(([map, [r, key, x, y]]) => ({
+        id: map[r],
+        type: 'custom',
+        position: { x, y },
+        data: structuredClone(registry[key]),
+      }));
+      for (const node of nodes) {
+        if (node.data.params.offload_mode) node.data.params.offload_mode.value = 'none';
+        if (node.data.params.auto_offload) node.data.params.auto_offload.value = false;
+      }
+      nodes.find((n) => n.id === binding.parentRoleNodes[child.bindings.owner.role]).data.operationAuthoring = {
+        ancillaryBindings: [binding],
+      };
+      const edges = [
+        ...parent.edges.map((r) => [binding.parentRoleNodes, r]),
+        ...child.edges.map((r) => [binding.roleNodes, r]),
+      ].map(([map, [a, b, c, d]], i) => ({
+        id: `e-${i}`,
+        source: map[a],
+        sourceHandle: b,
+        target: map[c],
+        targetHandle: d,
+      }));
+      for (const [role, name, value] of child.initialValues)
+        nodes.find((n) => n.id === binding.roleNodes[role]).data.params[name].value = structuredClone(value);
+      useStudioStore.setState({
+        form: { ...useStudioStore.getState().form, resourceMode: 'expert' },
+        graphBinding: null,
+      });
+      useNodesStore.setState({ nodesRegistry: registry, operationContracts: actual.operationContracts });
+      useFlowStore.setState({ nodes, edges });
+      mountAncillaryReadinessProbe();
+      mountAncillaryReadinessProbe();
+    },
+    { fixture, actual },
+  );
+  const probe = page.getByTestId('mounted-ancillary-readiness').first();
+  await expect.poll(() => requests).toBeGreaterThan(0);
+  await expect.poll(async () => JSON.parse((await probe.textContent()) || '{}').isPreparing).toBe(true);
+  releaseHeld!();
+  await expect.poll(async () => JSON.parse((await probe.textContent()) || '{}').isPreparing).toBe(false);
+  expect(
+    JSON.parse((await probe.textContent()) || '{}').issues.filter(
+      (issue) => issue.code === 'composite_execution_graph_invalid',
+    ),
+  ).toEqual([]);
+  await expect(probe).not.toContainText('ancillary_declaration_invalid');
+  expect(requests).toBe(2); // One declaration lookup plus its selected repository, shared by both consumers.
+  expect(
+    await page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      try {
+        useFlowStore.getState().exportGraph('unprepared');
+        return 'unexpected export';
+      } catch (error) {
+        return String(error);
+      }
+    }),
+  ).toMatch(/fresh execution scope/);
+
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    for (let i = 0; i < 40; i++)
+      useFlowStore.setState({
+        nodes: useFlowStore
+          .getState()
+          .nodes.map((node, index) =>
+            index ? node : { ...node, selected: Boolean(i % 2), data: { ...node.data, progress: i } },
+          ),
+      });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  expect(requests).toBe(2);
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    for (let i = 0; i < 8; i++) {
+      useFlowStore.setState({
+        nodes: useFlowStore
+          .getState()
+          .nodes.map((node, index) => (index ? node : { ...node, position: { x: i + 10, y: 20 } })),
+      });
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+  });
+  await expect.poll(async () => JSON.parse((await probe.textContent()) || '{}').isPreparing).toBe(false);
+  expect(requests).toBe(4); // One settled preparation for a geometry burst.
+  // A durable edit needs a new declaration; display preparation never grants export authority.
+  const before = requests;
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.getState().setParam('main-prompt', 'prompt', 'Edited authored prompt.');
+  });
+  await expect.poll(() => requests).toBeGreaterThan(before);
+  await expect.poll(async () => JSON.parse((await probe.textContent()) || '{}').isPreparing).toBe(false);
+  rejectDeclaration = true;
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    useStudioStore.setState({ activeWorkflowTabId: 'another-current-tab' });
+  });
+  await expect(probe).toContainText('ancillary_declaration_invalid');
+  rejectDeclaration = false;
+  await page.evaluate(async () => {
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    useNodesStore.setState({ nodesRegistry: { ...useNodesStore.getState().nodesRegistry } });
+  });
+  await expect.poll(async () => JSON.parse((await probe.textContent()) || '{}').isPreparing).toBe(false);
+  await expect(probe).not.toContainText('ancillary_declaration_invalid');
+  expect(requests).toBe(9);
+  // Advisory claim edits with unchanged node IDs must invalidate the display witness.
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.setState({
+      nodes: useFlowStore.getState().nodes.map((node) => {
+        if (!node.data.operationAuthoring?.ancillaryBindings) return node;
+        const changed = structuredClone(node);
+        changed.data.operationAuthoring.ancillaryBindings[0].contentHash = 'studio-ancillary-v1-deadbeef';
+        return changed;
+      }),
+    });
+  });
+  await expect(probe).toContainText('ancillary_declaration_invalid');
+  holdNext = true;
+  await page.evaluate(async (hash) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.setState({
+      nodes: useFlowStore.getState().nodes.map((node) => {
+        if (!node.data.operationAuthoring?.ancillaryBindings) return node;
+        const changed = structuredClone(node);
+        changed.data.operationAuthoring.ancillaryBindings[0].contentHash = hash;
+        return changed;
+      }),
+    });
+  }, JSON.parse(fixture.parents[0].rawParentJson).ancillaryOperations[0].contentHash);
+  await expect.poll(() => requests).toBe(12);
+  await expect.poll(async () => JSON.parse((await probe.textContent()) || '{}').isPreparing).toBe(true);
+  // A held response from the previous tab must not override its replacement.
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    useStudioStore.setState({ activeWorkflowTabId: 'replacement-current-tab' });
+  });
+  await expect.poll(() => requests).toBe(14);
+  await expect.poll(async () => JSON.parse((await probe.textContent()) || '{}').isPreparing).toBe(false);
+  releaseHeld!();
+  await expect(probe).not.toContainText('ancillary_declaration_invalid');
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.setState({ nodes: [], edges: [] });
+  });
+  await expect(probe).not.toContainText('ancillary_declaration_invalid');
+  expect(requests).toBe(14);
+  for (const malformed of [[], null, [{ parent: {} }]]) {
+    await page.evaluate(
+      async ({ data, malformed }) => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        useFlowStore.setState({
+          nodes: [
+            {
+              id: 'malformed-import',
+              type: 'custom',
+              position: { x: 0, y: 0 },
+              data: { ...data, operationAuthoring: { ancillaryBindings: malformed } },
+            },
+          ],
+          edges: [],
+        });
+      },
+      { data: actual.response.nodes[0].node, malformed },
+    );
+    await expect(probe).toContainText('ancillary_declaration_invalid');
+    expect(requests).toBe(14);
+  }
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.setState({ nodes: [], edges: [] });
+  });
+  await expect(probe).not.toContainText('ancillary_declaration_invalid');
+  expect(renderErrors).toEqual([]);
+});
+
 test('Advanced numeric values and step buttons fit a narrow scrolling node', async ({ page }) => {
   page.setDefaultTimeout(15_000);
   await ensureFrontend();

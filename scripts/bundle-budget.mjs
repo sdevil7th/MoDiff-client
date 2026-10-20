@@ -1,3 +1,9 @@
+// Shared ancillary readiness resolves the exact current declaration before the
+// synchronous collector inspects the scoped graph. Two consumers share one
+// display witness; pending/stale/error handling preserves fresh Run authority.
+// Measured startup/chunk/deferred gzip bytes are 656712/478407/316414 versus
+// 656178/477874/316369. Add 512 bytes to the existing two startup caps only;
+// dependencies, loading boundaries and both deferred caps remain unchanged.
 // Explicit private evaluation authoring adds a bounded lazy parser and Custom
 // memory guards. The first build measures startup/chunk/deferred gzip bytes
 // 656188/477881/316459 versus 656112/477808/315072. Reserve 128/128/1536
@@ -168,7 +174,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
   2112 +
   5086 +
   128 +
-  128;
+  128 +
+  512;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -273,7 +280,8 @@ const MAX_STARTUP_GZIP_BYTES =
   2112 +
   5092 +
   128 +
-  128;
+  128 +
+  512;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

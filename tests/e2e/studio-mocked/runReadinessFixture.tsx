@@ -48,3 +48,15 @@ export function mountRunReadinessProbe() {
   document.body.appendChild(host);
   createRoot(host).render(<ReadinessProbe />);
 }
+
+// eslint-disable-next-line react-refresh/only-export-components -- Isolated mounted-hook test entry point.
+function AncillaryReadinessProbe() {
+  const readiness = useRunReadinessIssues({ sid: 'mock-sid', isConnected: true, includeStudio: false });
+  return <output data-testid="mounted-ancillary-readiness">{JSON.stringify(readiness)}</output>;
+}
+
+export function mountAncillaryReadinessProbe() {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  createRoot(host).render(<AncillaryReadinessProbe />);
+}
