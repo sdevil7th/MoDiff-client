@@ -3,8 +3,10 @@ import { after, before, beforeEach, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-let server, origin, sync, studio, originalFetch;
+let server, origin, sync, studio, flow, drops, packages, notifications, defaultForm, originalFetch;
 const values = new Map();
 const storage = {
   getItem: (key) => values.get(key) ?? null,
@@ -30,6 +32,11 @@ before(async () => {
   origin = await server.ssrLoadModule('/src/studio/workflowDocumentOrigin.ts');
   studio = (await server.ssrLoadModule('/src/stores/useStudioStore.ts')).useStudioStore;
   sync = await server.ssrLoadModule('/src/studio/useWorkflowBackendSync.ts');
+  flow = (await server.ssrLoadModule('/src/stores/useFlowStore.ts')).useFlowStore;
+  drops = await server.ssrLoadModule('/src/workflow/useWorkflowDrop.ts');
+  packages = await server.ssrLoadModule('/src/studio/workflowPackage.ts');
+  notifications = await server.ssrLoadModule('/src/ui/snackbar.ts');
+  defaultForm = (await server.ssrLoadModule('/src/studio/modelProfiles.ts')).DEFAULT_STUDIO_FORM;
   originalFetch = globalThis.fetch;
 });
 beforeEach(() => {
@@ -148,3 +155,146 @@ test('a restored current-document ID never acquires freshness from backendRevisi
   assert.equal(origin.isFreshWorkflowId(id), false);
   assert.equal(serialized.includes('FreshWorkflow'), false);
 });
+
+for (const scenario of [
+  { name: 'bare graph without viewport', format: 'graph', expected: { x: 0, y: 0, zoom: 1 } },
+  { name: 'saved snapshot without viewport', format: 'snapshot' },
+  { name: 'normal export package without viewport', format: 'package' },
+  { name: 'saved snapshot with a valid viewport', format: 'snapshot', viewport: { x: -50, y: 80, zoom: 0.6 } },
+  { name: 'saved snapshot with null viewport', format: 'snapshot', viewport: null },
+  { name: 'saved snapshot with invalid zoom', format: 'snapshot', viewport: { x: 10, y: 20, zoom: 0 } },
+]) {
+  test(`workflow import viewport: ${scenario.name} retains the graph and reports success`, async () => {
+    const previousFlow = flow.getState();
+    const previousReader = globalThis.FileReader;
+    const previousFetch = globalThis.fetch;
+    const currentViewport = { x: 25, y: -30, zoom: 0.75 };
+    const operationAuthoring = {
+      schemaVersion: 1,
+      operation: { pipelineClass: 'TestPipeline', task: 'edit_image', operationId: 'image.load' },
+      authored: ['file'],
+    };
+    // Import preserves opaque operation provenance; it grants no execution.
+    const graph = {
+      nodes: [
+        {
+          id: 'retained-source',
+          type: 'custom',
+          position: { x: 10, y: 20 },
+          data: {
+            type: 'custom',
+            module: 'modules.Image',
+            action: 'Load',
+            label: 'Retained source',
+            params: {
+              file: { type: 'str', display: 'filebrowser', value: ['images/retained.png'] },
+              image: { type: 'image', display: 'output' },
+            },
+            operationAuthoring,
+          },
+        },
+        {
+          id: 'retained-preview',
+          type: 'custom',
+          position: { x: 300, y: 20 },
+          data: {
+            type: 'custom',
+            module: 'modules.Image',
+            action: 'Preview',
+            label: 'Retained preview',
+            params: { image: { type: 'image', display: 'input' } },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: 'retained-wire',
+          source: 'retained-source',
+          sourceHandle: 'image',
+          target: 'retained-preview',
+          targetHandle: 'image',
+        },
+      ],
+      ...(Object.hasOwn(scenario, 'viewport') ? { viewport: scenario.viewport } : {}),
+    };
+    const originalGraph = structuredClone(graph);
+    const form = { ...defaultForm, resourceMode: 'expert' };
+    const value =
+      scenario.format === 'snapshot'
+        ? {
+            ...graph,
+            studioForm: form,
+            studioGraphBinding: null,
+            selectedMode: form.mode,
+            activeTemplateId: null,
+            sourceOutputId: null,
+          }
+        : scenario.format === 'package'
+          ? packages.buildWorkflowPackage({ graph, form })
+          : graph;
+    const requests = [];
+    try {
+      globalThis.fetch = async (...args) => {
+        requests.push(args);
+        throw new Error('Import must not dispatch.');
+      };
+      flow.setState({ nodes: [], edges: [], viewport: { ...currentViewport } });
+      const previousViewport = flow.getState().viewport;
+      for (const toast of notifications.getToastItems()) notifications.closeSnackbar(toast.id);
+      let handleDrop;
+      function ImportProbe() {
+        ({ handleDrop } = drops.useWorkflowDrop({
+          addNode: () => assert.fail('A workflow import must not insert an unrelated node.'),
+          createWorkflowTab: studio.getState().createWorkflowTab,
+          edgeType: 'default',
+          nodesRegistry: {},
+          screenToFlowPosition: (position) => position,
+        }));
+        return null;
+      }
+      renderToStaticMarkup(React.createElement(ImportProbe));
+      globalThis.FileReader = class {
+        readAsText() {
+          this.onload({ target: { result: JSON.stringify(value) } });
+        }
+      };
+      const before = studio.getState().workflowTabs.length;
+      await handleDrop({
+        preventDefault() {},
+        dataTransfer: { files: { length: 1, item: () => ({ name: 'Imported.json', type: 'application/json' }) } },
+      });
+      assert.equal(studio.getState().workflowTabs.length, before + 1);
+      assert.deepEqual(
+        notifications.getToastItems().map(({ message, variant }) => ({ message, variant })),
+        [{ message: 'Workflow opened as a new tab', variant: 'success' }],
+      );
+      assert.deepEqual(
+        flow.getState().nodes.map((node) => node.id),
+        graph.nodes.map((node) => node.id),
+      );
+      assert.deepEqual(flow.getState().nodes[0].data.operationAuthoring, operationAuthoring);
+      assert.deepEqual(flow.getState().nodes[0].data.params.file.value, ['images/retained.png']);
+      assert.deepEqual(
+        flow.getState().edges.map(({ id, source, sourceHandle, target, targetHandle }) => ({
+          id,
+          source,
+          sourceHandle,
+          target,
+          targetHandle,
+        })),
+        graph.edges,
+      );
+      assert.deepEqual(
+        flow.getState().viewport,
+        scenario.expected ?? (scenario.viewport?.zoom > 0 ? scenario.viewport : currentViewport),
+      );
+      assert.notEqual(flow.getState().viewport, previousViewport);
+      assert.deepEqual(graph, originalGraph);
+      assert.deepEqual(requests, []);
+    } finally {
+      flow.setState(previousFlow);
+      globalThis.FileReader = previousReader;
+      globalThis.fetch = previousFetch;
+    }
+  });
+}

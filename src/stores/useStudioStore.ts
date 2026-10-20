@@ -723,7 +723,7 @@ function applyWorkflowSnapshot(snapshot: WorkflowTabSnapshot, workflowTabId: str
   flow.replaceGraph({
     nodes: retainedBlockNodes(cloneJson(snapshot.nodes) as typeof flow.nodes, workflowTabId),
     edges: cloneJson(snapshot.edges) as typeof flow.edges,
-    viewport: (cloneJson(snapshot.viewport) as typeof flow.viewport) ?? flow.viewport,
+    viewport: cloneJson(snapshot.viewport ?? flow.viewport) as typeof flow.viewport,
   });
   // Undo/redo belongs to the document whose graph produced it. A canvas
   // replacement must never leave another tab's snapshots armed.

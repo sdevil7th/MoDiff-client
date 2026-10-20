@@ -68,6 +68,10 @@ is cancelled. The activity shelf still reports a running task and opens it on
 explicit selection; a fresh empty session can recover its snapshot. Recovery
 must not mutate the running graph or steal the user's editing tab.
 
+Workflow snapshots and portable packages may omit the viewport. Import and
+restore retain the current valid camera when it is absent or rejected by the
+existing viewport normalizer, without changing graph content or provenance.
+
 ## Graph State And Mutations
 
 `src/stores/useFlowStore.ts` is the source of truth for:
