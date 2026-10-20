@@ -1,3 +1,9 @@
+// Owner-bound V2 preview lookup restores complete ordered media collections,
+// including declared legacy preview controls. Startup/chunk/deferred gzip bytes
+// measure 656925/478620/316464 versus 656739/478434/316484 before the fix.
+// Allow 192 bytes for the 186-byte shared correctness increase in each startup
+// cap, leaving 39/34 bytes. Keep strict binding validation, dependencies, loading
+// boundaries, minifier and both deferred caps unchanged.
 // Shared ancillary readiness resolves the exact current declaration before the
 // synchronous collector inspects the scoped graph. Two consumers share one
 // display witness; pending/stale/error handling preserves fresh Run authority.
@@ -175,7 +181,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
   5086 +
   128 +
   128 +
-  512;
+  512 +
+  192;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -281,7 +288,8 @@ const MAX_STARTUP_GZIP_BYTES =
   5092 +
   128 +
   128 +
-  512;
+  512 +
+  192;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

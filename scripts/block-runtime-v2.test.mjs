@@ -2348,6 +2348,116 @@ test('saved Block previews resolve exact retained media without changing graph o
   assert.equal(reopened.nodes[0].data.blockInstanceV2.previewStates[0].mediaReference, output.url);
 });
 
+test('V2 preview source resolves generated fields to the current ordered image collection', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const artifacts = await server.ssrLoadModule('/src/utils/imageArtifacts.ts');
+  const current = runtime.setBlockPreviewStateV2(
+    instance('collection-preview'),
+    { nodeId: 'preview', outputPortId: 'images' },
+    { mediaReference: '/file?file=@data/current-item-0.webp', taskId: 'current-task', status: 'complete' },
+  );
+  const before = structuredClone(current);
+  const view = runtime.blockPreviewViewsV2(current)[0];
+  const params = view.params[view.previewId];
+  const source = users.userBlockPreviewSource(current.instanceId, view.previewId, params.fieldOptions);
+  const canonical = { nodeId: runtime.blockProjectionNodeIdV2(current.instanceId, 'preview'), fieldKey: 'images' };
+  assert.deepEqual(source, canonical);
+  const output = {
+    id: 'current-output',
+    taskId: 'current-task',
+    mediaItems: [0, 1].map((index) => ({ index, url: `/file?file=@data/current-item-${index}.webp` })),
+  };
+  const key = studioStore.studioPreviewSlotKey(canonical.nodeId, canonical.fieldKey, 'current-workflow');
+  const slots = { [key]: { status: 'ready', currentOutputId: output.id } };
+  const selected = slots[studioStore.studioPreviewSlotKey(source.nodeId, source.fieldKey, 'current-workflow')];
+  assert.equal(selected.currentOutputId, output.id);
+  assert.deepEqual(
+    artifacts
+      .normalizeImageArtifacts({
+        value: output.mediaItems.map(({ url }) => url),
+        artifacts: output.mediaItems,
+        dataType: 'url',
+        mimeType: 'image/webp',
+      })
+      .map(({ index }) => index),
+    [0, 1],
+  );
+  assert.equal(params.value, '/file?file=@data/current-item-0.webp');
+  assert.deepEqual(current, before);
+});
+
+test('V2 preview source retains canonical ownership for nested containers and every media binding', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const ownerId = 'owned-block';
+  const nestedId = runtime.blockProjectionNodeIdV2(ownerId, 'nested-container');
+  for (const mediaType of ['image', 'video', 'audio', 'text', 'file']) {
+    const binding = { schemaVersion: 2, ownerId, nodeId: 'preview', outputPortId: 'output', mediaType };
+    const options = { blockPreviewBindingV2: binding };
+    const before = structuredClone(options);
+    const expected = { nodeId: runtime.blockProjectionNodeIdV2(ownerId, 'preview'), fieldKey: 'output' };
+    assert.deepEqual(users.userBlockPreviewSource(ownerId, 'generated-field', options), expected);
+    assert.deepEqual(users.userBlockPreviewSource(nestedId, 'generated-field', options), expected);
+    assert.deepEqual(options, before);
+  }
+  const leaf = runtime.blockProjectionNodeIdV2(ownerId, 'preview');
+  assert.deepEqual(users.userBlockPreviewSource(leaf, 'output'), { nodeId: leaf, fieldKey: 'output' });
+});
+
+test('V2 preview source preserves private-style fields admitted by the actual Block schema', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const declared = definition();
+  const preview = declared.graph.nodes.find(({ nodeId }) => nodeId === 'preview');
+  preview.data.params._images = preview.data.params.images;
+  declared.graph.graphHash = schema.blockGraphHashV2(declared.graph);
+  declared.previews[0].outputPortId = '_images';
+  declared.contentHash = schema.blockDefinitionContentHashV2(declared);
+  const current = schema.createBlockInstanceV2(declared, {
+    instanceId: 'private-field-preview',
+    position: { x: 0, y: 0 },
+    size: { width: 400, height: 420 },
+    values: { prompt: 'unchanged', steps: 16 },
+  });
+  const view = runtime.blockPreviewViewsV2(current)[0];
+  assert.deepEqual(
+    users.userBlockPreviewSource(current.instanceId, view.previewId, view.params[view.previewId].fieldOptions),
+    { nodeId: runtime.blockProjectionNodeIdV2(current.instanceId, 'preview'), fieldKey: '_images' },
+  );
+});
+
+test('V2 preview source rejects malformed and foreign ownership while preserving legacy fallback', async () => {
+  const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
+  const valid = { schemaVersion: 2, ownerId: 'owner', nodeId: 'preview', outputPortId: 'images', mediaType: 'image' };
+  for (const binding of [
+    null,
+    [],
+    { ...valid, schemaVersion: '2' },
+    { ...valid, ownerId: 'foreign-owner' },
+    { ...valid, ownerId: '' },
+    { ...valid, nodeId: 'x'.repeat(385) },
+    { ...valid, outputPortId: [] },
+    { ...valid, outputPortId: '1images' },
+    { ...valid, mediaType: 'unknown' },
+  ]) {
+    assert.deepEqual(users.userBlockPreviewSource('owner', 'generated-field', { blockPreviewBindingV2: binding }), {
+      nodeId: 'owner',
+      fieldKey: 'generated-field',
+    });
+  }
+  for (const caller of ['foreign-owner', 'block-v2-node:5:owner:4:wrong', 'block-v2-node:50:owner:7:preview']) {
+    assert.deepEqual(users.userBlockPreviewSource(caller, 'generated-field', { blockPreviewBindingV2: valid }), {
+      nodeId: caller,
+      fieldKey: 'generated-field',
+    });
+  }
+  assert.deepEqual(
+    users.userBlockPreviewSource('legacy-owner', 'generated-field', {
+      userBlockSourceNodeId: 'preview',
+      userBlockSourceFieldKey: 'images',
+    }),
+    { nodeId: 'legacy-owner__preview', fieldKey: 'images' },
+  );
+});
+
 test('retained Block text stays text and only an exact current slot advances its task', async () => {
   const { withDurableBlockPreviewsV2 } = await server.ssrLoadModule('/src/studio/blockPreviewPersistenceV2.ts');
   const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
@@ -2453,7 +2563,7 @@ test('newly created Blocks expose editable text but exclude output preview contr
   assert.equal(leaf.data.params.preview.value, 'Old preview');
 });
 
-test('legacy exposed preview controls project current instance output without rewriting their contract', async () => {
+test('V2 preview source restores legacy exposed preview controls without rewriting their contract', async () => {
   const users = await server.ssrLoadModule('/src/studio/userBlocks.ts');
   const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
   const leaf = {
@@ -2495,7 +2605,16 @@ test('legacy exposed preview controls project current instance output without re
     mediaReference: 'Current preview',
     status: 'complete',
   });
-  const control = Object.values(runtime.blockControlParamsV2(changed)).find((param) => param.display === 'ui_text');
+  const controls = runtime.blockControlParamsV2(changed);
+  const [controlId, control] = Object.entries(controls).find(([, param]) => param.display === 'ui_text');
+  const binding = changed.previewStates[0].binding;
+  assert.deepEqual(users.userBlockPreviewSource(changed.instanceId, controlId, control.fieldOptions), {
+    nodeId: runtime.blockProjectionNodeIdV2(changed.instanceId, binding.nodeId),
+    fieldKey: binding.outputPortId,
+  });
+  assert.equal(control.fieldOptions.blockBindingV2.direction, 'control');
+  for (const editable of Object.values(controls).filter((param) => param.display !== 'ui_text'))
+    assert.equal(editable.fieldOptions?.blockPreviewBindingV2, undefined);
   assert.equal(control.value, 'Current preview');
   assert.deepEqual(control.artifacts, []);
   assert.deepEqual(changed.definitionSnapshot, original.definitionSnapshot);

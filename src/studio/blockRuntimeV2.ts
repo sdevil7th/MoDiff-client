@@ -378,6 +378,18 @@ function currentPreviewValue(base: NodeParams | undefined, preview: BlockPreview
   };
 }
 
+function previewSourceFieldOptionsV2(instance: BlockInstanceV2, binding: BlockPreviewStateV2['binding']) {
+  return {
+    blockPreviewBindingV2: {
+      schemaVersion: 2,
+      ownerId: instance.instanceId,
+      nodeId: binding.nodeId,
+      outputPortId: binding.outputPortId,
+      mediaType: binding.mediaType,
+    },
+  };
+}
+
 /** Body controls. They intentionally do not use input/output display modes. */
 export function blockControlParamsV2(instanceValue: BlockInstanceV2): Record<string, NodeParams> {
   const instance = normalizeBlockInstanceV2(instanceValue);
@@ -415,7 +427,10 @@ function controlParamsForNormalizedInstanceV2(instance: BlockInstanceV2): Record
           ...(control.required === undefined ? {} : { required: control.required }),
           disabled: Boolean(control.sealed) || Boolean(base?.disabled),
           isInput: false,
-          fieldOptions: projectedBindingFieldOptions(base, instance, control.controlId, 'control', control.binding),
+          fieldOptions: {
+            ...projectedBindingFieldOptions(base, instance, control.controlId, 'control', control.binding),
+            ...(preview ? previewSourceFieldOptionsV2(instance, preview.binding) : {}),
+          },
         } satisfies NodeParams,
       ];
     }),
@@ -519,13 +534,7 @@ function previewViewsForNormalizedInstanceV2(
           ...currentPreviewValue(base, preview),
           fieldOptions: {
             ...(isRecord(base?.fieldOptions) ? cloneJson(base.fieldOptions) : {}),
-            blockPreviewBindingV2: {
-              schemaVersion: 2,
-              ownerId: instance.instanceId,
-              nodeId: binding.nodeId,
-              outputPortId: binding.outputPortId,
-              mediaType: binding.mediaType,
-            },
+            ...previewSourceFieldOptionsV2(instance, binding),
           },
         },
       },

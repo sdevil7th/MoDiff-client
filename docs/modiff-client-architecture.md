@@ -1679,6 +1679,14 @@ URL and available task identity match the current instance media reference.
 Older cached artifacts stay in the immutable source snapshot but cannot override
 a newer rendered output, including after save/reload or explicit legacy conversion.
 
+V2 preview fields resolve their declared, owner-bound source to the canonical
+execution node and output field before reading the active workflow's current
+preview slot. A ready slot supplies the complete ordered media collection;
+pending or failed slots retain their current-run status. The exact-task scalar
+reference remains the saved fallback when no current slot exists. This applies
+to collapsed and nested previews and older definitions that expose a declared
+output preview as a control, without changing their saved graph or interface.
+
 Durable Block text previews display the text value from the exact task and
 field, rather than the retained `.txt` download URL. Only an explicit current
 preview slot for the active workflow can advance the preview to a different

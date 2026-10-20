@@ -22,6 +22,75 @@ import type { OperationContract } from '../../../src/workflow/operationContracts
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 
+test('mounted V2 preview retains both current collection items through hydration and reload', async ({ page }) => {
+  const renderErrors: string[] = [];
+  page.on('pageerror', (error) => renderErrors.push(error.message));
+  await ensureFrontend();
+  let backend: unknown = { error: false, outputs: [], previewSlots: [], revision: 0 };
+  let graphPosts = 0;
+  await page.route('**/studio_outputs?*', (route) => route.fulfill({ json: backend }));
+  await page.route('**/graph', async (route) => {
+    if (route.request().method() === 'POST') graphPosts++;
+    await route.fulfill({ json: { error: true, message: 'This rendering fixture must not dispatch.' } });
+  });
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route('**/preview-fixture/*.png', (route) => route.fulfill({ body: pixel, contentType: 'image/png' }));
+  await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+  const fixture = await page.evaluate(async () => {
+    const { mountBlockPreviewProbe } = await import('/tests/e2e/studio-mocked/blockPreviewFixture.tsx');
+    return mountBlockPreviewProbe();
+  });
+  backend = fixture.backend;
+  const probe = page.getByTestId('mounted-v2-preview');
+  const currentImages = probe.locator('[data-testid^="node-preview-image-"] img');
+  await expect(currentImages).toHaveCount(1); // Exact-task persisted scalar fallback before backend hydration.
+  await page.evaluate(async () => {
+    const { hydrateBlockPreviewProbe } = await import('/tests/e2e/studio-mocked/blockPreviewFixture.tsx');
+    await hydrateBlockPreviewProbe();
+  });
+  await expect(currentImages).toHaveCount(2);
+  await expect(currentImages.nth(0)).toHaveAttribute('src', /\/preview-fixture\/item-0\.png$/);
+  await expect(currentImages.nth(1)).toHaveAttribute('src', /\/preview-fixture\/item-1\.png$/);
+  await probe.getByRole('button', { name: 'Open Preview 2 full-resolution preview', exact: true }).click();
+  const opened = await page.evaluate(async () => {
+    const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+    return useSettingsStore.getState().lightboxOpener;
+  });
+  if (!opened) throw new Error('The second collection image did not open its full-size preview.');
+  expect(opened.currentIndex).toBe(1);
+  expect(opened.images).toHaveLength(2);
+  expect(opened.images.map((url: string) => new URL(url).pathname)).toEqual([
+    '/preview-fixture/item-0.png',
+    '/preview-fixture/item-1.png',
+  ]);
+  await probe.getByRole('button', { name: 'Pending preview', exact: true }).click();
+  await expect(currentImages).toHaveCount(0);
+  await expect(probe).toContainText('Waiting for this run');
+  await probe.getByRole('button', { name: 'Failed preview', exact: true }).click();
+  await expect(currentImages).toHaveCount(0);
+  await expect(probe).toContainText('Run failed before producing a new output.');
+  await probe.getByRole('button', { name: 'Ready preview', exact: true }).click();
+  await expect(currentImages).toHaveCount(2);
+  await probe.getByRole('button', { name: 'Other workflow', exact: true }).click();
+  await expect(currentImages).toHaveCount(1); // No current collection borrowed across workflow authority.
+  await probe.getByRole('button', { name: 'Current workflow', exact: true }).click();
+  await expect(currentImages).toHaveCount(2);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.evaluate(async (root) => {
+    const { mountBlockPreviewProbe, hydrateBlockPreviewProbe } =
+      await import('/tests/e2e/studio-mocked/blockPreviewFixture.tsx');
+    mountBlockPreviewProbe(root);
+    await hydrateBlockPreviewProbe();
+  }, fixture.root);
+  await expect(currentImages).toHaveCount(2);
+  await expect(currentImages.nth(1)).toHaveAttribute('src', /\/preview-fixture\/item-1\.png$/);
+  expect(renderErrors).toEqual([]);
+  expect(graphPosts).toBe(0);
+});
+
 test('mounted ancillary readiness resolves current declarations before classifying the graph', async ({ page }) => {
   const renderErrors: string[] = [];
   page.on('pageerror', (error) => renderErrors.push(error.message));
