@@ -195,13 +195,39 @@ test('ordinary and Block summaries bind durable source ancestry and task while e
       size: { width: 368, height: 480 },
     }),
   );
+  const visualGroups = ['modiff.visual-stages.v1/inputs', 'modiff.visual-stages.v2/inputs'].map((provider, index) => {
+    const base = { ...definition, source: { kind: 'user', provider } };
+    const visualDefinition = schema.normalizeBlockDefinitionV2({
+      ...base,
+      contentHash: schema.blockDefinitionContentHashV2(base),
+    });
+    return runtime.createBlockRootNodeV2(
+      schema.createBlockInstanceV2(visualDefinition, {
+        instanceId: `visual-group-${index}`,
+        position: { x: 0, y: 0 },
+        size: { width: 368, height: 480 },
+      }),
+    );
+  });
+  const expanded = runtime.materializeBlockProjectionV2(
+    runtime.createBlockRootNodeV2(runtime.setBlockPresentationV2(grouped.data.blockInstanceV2, { expanded: true })),
+  );
   for (const graph of [
     { nodes: [source, encode], edges, nodeId: 'prompt' },
     { nodes: [grouped], edges: [], nodeId: 'group' },
+    ...visualGroups.map((root) => ({ nodes: [root], edges: [], nodeId: root.id })),
+    { ...expanded, nodeId: runtime.blockProjectionNodeIdV2('group', 'prompt') },
   ]) {
     const context = referenceContext.layoutReferenceContext(graph.nodes, graph.edges, graph.nodeId, 'layout');
     assert.ok(context);
     assert.notEqual(context.summaryNodeId, context.nodeId, 'the normal cache belongs to the actual image supplier');
+    assert.equal(
+      context.summaryNodeId,
+      flow
+        .expandFlowExecutionGraph(graph.nodes, graph.edges)
+        .nodes.find((node) => node.data.action === 'EncodeReference').id,
+      'cache reads use the same actual supplier identity as Run, including visual stage Blocks',
+    );
     const summary = {
       schemaVersion: 1,
       ownerFingerprint: 'sha256:' + 'a'.repeat(64),
@@ -235,6 +261,29 @@ test('ordinary and Block summaries bind durable source ancestry and task while e
       );
   }
   const before = referenceContext.layoutReferenceContext([source, encode], edges, 'prompt', 'layout');
+  assert.equal(referenceContext.layoutReferenceContext([grouped], [], 'group/unknown', 'layout'), null);
+  assert.equal(
+    referenceContext.layoutReferenceContext(
+      [grouped],
+      [],
+      runtime.blockProjectionNodeIdV2('group', 'unknown'),
+      'layout',
+    ),
+    null,
+  );
+  const forgedProjection = structuredClone(expanded);
+  forgedProjection.nodes.find(
+    (node) => node.id === runtime.blockProjectionNodeIdV2('group', 'prompt'),
+  ).data.blockProjectionNodeId = 'unknown';
+  assert.equal(
+    referenceContext.layoutReferenceContext(
+      forgedProjection.nodes,
+      forgedProjection.edges,
+      runtime.blockProjectionNodeIdV2('group', 'prompt'),
+      'layout',
+    ),
+    null,
+  );
   const changedPayload = structuredClone(source);
   changedPayload.data.params.file.signal.value = { runtimeModel: 'refreshed-owner' };
   assert.equal(

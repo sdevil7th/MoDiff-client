@@ -206,6 +206,10 @@ run-input hash, workflow and exact current source ancestry. The comparison uses
 durable signal declarations: runtime `signal.value` payloads
 are discarded from both live and saved ancestry, matching task persistence.
 Source values, wiring, signal declarations and task identity remain checked.
+Cache reads expand the same executable graph as Run and use its canonical leaf
+IDs for ordinary, visual-stage and expanded Blocks. A persisted snapshot may
+omit rendered children; those leaves are resolved only from the validated
+execution projection, never by guessing presentation aliases.
 A genuine encoding
 cache hit may retain its earlier producer identity; the client does not relabel
 it as a fresh computation. Image Encode can publish a new summary independently

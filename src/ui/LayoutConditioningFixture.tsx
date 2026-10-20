@@ -3,16 +3,22 @@ import NodeContent from '../components/NodeContent';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { graphNodeControlParams, updateGraphNodeControl } from '../studio/graphNodeControls';
-import { createBlockInstanceV2, migrateUserBlockDefinitionV1 } from '../studio/blockSchemaV2';
+import {
+  blockDefinitionContentHashV2,
+  createBlockInstanceV2,
+  migrateUserBlockDefinitionV1,
+  normalizeBlockDefinitionV2,
+} from '../studio/blockSchemaV2';
 import { createBlockRootNodeV2 } from '../studio/blockRuntimeV2';
 import { ModiffButton } from './primitives';
 
 const query = new URLSearchParams(window.location.search);
 const grouped = query.has('block');
+const visualStage = grouped && query.has('visual-stage');
 const defaulted = query.has('structured-default');
 const version = query.has('v2') ? 2 : 1;
 const boundReferences = query.has('bound-references');
-const fixtureId = grouped ? 'layout-block' : 'layout-ordinary';
+const fixtureId = visualStage ? 'layout-visual-stage' : grouped ? 'layout-block' : 'layout-ordinary';
 const initialLayout = {
   schemaVersion: version,
   coordinateSpace: 'normalized_xyxy',
@@ -70,7 +76,13 @@ const referenceNode: CustomNodeType = {
     label: 'Reference source',
     category: 'Control fixture',
     params: {
-      file: { type: 'string', display: 'text', label: 'Reference file', value: 'reference-a.png' },
+      file: {
+        type: 'string',
+        display: 'text',
+        label: 'Reference file',
+        value: 'reference-a.png',
+        signal: { direction: 'input', origin: 'reference-file', value: { runtimeOwner: 'current-owner' } },
+      },
       reference_binding: { type: 'reference_conditioning', display: 'output' },
       layout_reference_summary: { type: 'string', display: 'output', hidden: true },
     },
@@ -97,7 +109,7 @@ if (query.has('source-region'))
 
 // Development-only fixture using the same field and ordinary/Block control paths.
 if (query.has('layout-conditioning') && !useFlowStore.getState().nodes.some(({ id }) => id === fixtureId)) {
-  const definition = migrateUserBlockDefinitionV1({
+  const migrated = migrateUserBlockDefinitionV1({
     id: 'layout-controls',
     name: 'Encode Inputs',
     version: 1,
@@ -130,6 +142,10 @@ if (query.has('layout-conditioning') && !useFlowStore.getState().nodes.some(({ i
     createdAt: 1,
     updatedAt: 1,
   });
+  const visualBase = { ...migrated, source: { kind: 'user' as const, provider: 'modiff.visual-stages.v2/inputs' } };
+  const definition = visualStage
+    ? normalizeBlockDefinitionV2({ ...visualBase, contentHash: blockDefinitionContentHashV2(visualBase) })
+    : migrated;
   const root = grouped
     ? createBlockRootNodeV2(
         createBlockInstanceV2(definition, {

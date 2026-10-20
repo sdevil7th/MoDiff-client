@@ -200,11 +200,12 @@ test('layout default, unsupported source regions and disabled inputs keep their 
   await expect(node.getByRole('button', { name: 'Add region', exact: true })).toBeDisabled();
 });
 
-for (const grouped of [false, true]) {
-  test(`bound ${grouped ? 'Block' : 'ordinary'} source actions use task-matched summaries and require explicit rebind`, async ({
-    page,
-  }) => {
-    await page.goto(`/control-state-matrix.html?layout-conditioning&v2&bound-references${grouped ? '&block' : ''}`);
+for (const mode of ['ordinary', 'Block', 'visual stage Block']) {
+  const grouped = mode !== 'ordinary';
+  test(`bound ${mode} source actions use task-matched summaries and require explicit rebind`, async ({ page }) => {
+    await page.goto(
+      `/control-state-matrix.html?layout-conditioning&v2&bound-references${grouped ? '&block' : ''}${mode === 'visual stage Block' ? '&visual-stage' : ''}`,
+    );
     const node = widget(page);
     const snapshot = () => page.getByTestId('layout-snapshot').innerText().then(JSON.parse);
     let recorded = await snapshot();

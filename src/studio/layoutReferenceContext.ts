@@ -1,10 +1,9 @@
 import type { CustomNodeType } from '../stores/useFlowStore';
-import { normalizePersistedFlowState } from '../stores/useFlowStore';
+import { expandFlowExecutionGraph, normalizePersistedFlowState } from '../stores/useFlowStore';
 import type { LayoutReferenceSummary } from './layoutConditioning';
 import type { Edge } from '@xyflow/react';
-import { blockProjectionNodeIdV2, expandBlockGraphV2ForExecution } from './blockRuntimeV2';
+import { blockProjectionNodeIdV2 } from './blockRuntimeV2';
 import { stableStringify } from './stableHash';
-import { unpackVisualOperationGroups, visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 
 /** Resolve a declared layout control through the same flat projection as Run.
  * The key is display freshness only; it cannot mint backend conditioning.
@@ -12,25 +11,23 @@ import { unpackVisualOperationGroups, visualOperationGroup } from '../workflow/v
 export function layoutReferenceContext(nodes: CustomNodeType[], edges: Edge[], nodeId: string, fieldKey: string) {
   try {
     const owner = nodes.find((node) => node.id === nodeId);
-    if (!owner) return null;
     let target = nodeId;
     let field = fieldKey;
-    const instance = owner.data.blockInstanceV2;
-    if (instance) {
+    const instance = owner?.data.blockInstanceV2;
+    if (owner && instance) {
       const controls = instance.effectiveInterface.controls.filter((control) => control.controlId === fieldKey);
       if (controls.length !== 1 || controls[0]!.mirrorBindings?.length) return null;
       const binding = controls[0]!.binding;
-      target = visualOperationGroup(owner)
-        ? `${owner.id}/${binding.nodeId}`
-        : blockProjectionNodeIdV2(owner.id, binding.nodeId);
+      target = blockProjectionNodeIdV2(owner.id, binding.nodeId);
       field = binding.fieldId;
-    } else if (owner.data.blockProjectionOwnerId) {
+    } else if (owner?.data.blockProjectionOwnerId) {
       const root = nodes.find((node) => node.id === owner.data.blockProjectionOwnerId);
       if (!root?.data.blockInstanceV2 || !owner.data.blockProjectionNodeId) return null;
-      target = visualOperationGroup(root) ? `${root.id}/${owner.data.blockProjectionNodeId}` : nodeId;
+      target = blockProjectionNodeIdV2(root.id, owner.data.blockProjectionNodeId);
     }
-    const unpacked = unpackVisualOperationGroups({ nodes, edges }).graph;
-    const graph = expandBlockGraphV2ForExecution(unpacked.nodes, unpacked.edges);
+    // Canonical snapshots omit rendered children. Resolve their declared leaves
+    // through the same expansion as Run, never presentation-only slash aliases.
+    const graph = expandFlowExecutionGraph(nodes, edges);
     const leaf = graph.nodes.find((node) => node.id === target);
     if (
       leaf?.data.params[field]?.type !== 'layout_conditioning' ||
