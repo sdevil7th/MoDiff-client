@@ -1505,11 +1505,13 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           { parseOperationContracts },
           { parsePipelineSupport },
           { parseWorkflowModelDescriptors },
+          { parseEvaluationAuthoring },
           { optionalEncodingRoute },
         ] = await Promise.all([
           import('../workflow/operationContracts'),
           import('../workflow/operationCatalog'),
           import('../workflow/workflowChoices'),
+          import('../workflow/evaluationAuthoring'),
           import('../workflow/encodingImageRoute'),
         ]);
         bindEncodingRouteResolver(optionalEncodingRoute);
@@ -1529,15 +1531,15 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
               payload.pipelineSupportSchemaVersion,
               operationContracts,
             );
+            const evaluation = parseEvaluationAuthoring(payload, pipelineSupport, operationContracts);
             return {
               ...capabilities,
               operationContracts,
-              pipelineSupport,
-              workflowModelDescriptors: parseWorkflowModelDescriptors(
-                payload,
-                pipelineSupport,
-                capabilities.capabilities,
-              ),
+              pipelineSupport: evaluation.support,
+              workflowModelDescriptors: [
+                ...parseWorkflowModelDescriptors(payload, pipelineSupport, capabilities.capabilities),
+                ...evaluation.descriptors,
+              ],
             };
           },
         });

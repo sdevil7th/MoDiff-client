@@ -3,6 +3,7 @@ import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import { lazy, Suspense, useState } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { useStudioStore } from '../stores/useStudioStore';
 import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { operationAuthoring } from '../workflow/operationAuthoring';
 import { workflowChoices } from '../workflow/workflowChoices';
@@ -140,10 +141,15 @@ function OwnerChoices({
   const support = useNodesStore((state) => state.pipelineSupport);
   const models = useNodesStore((state) => state.studioModelCapabilities);
   const descriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const resourceMode = useStudioStore((state) => state.form.resourceMode);
   const [pipeline, setPipeline] = useState(pipelineClass);
   const [task, setTask] = useState(currentTask);
   const [profileId, setProfileId] = useState('');
-  const pipelines = support.filter((p) => p.tasks.some((t) => t.operationIds.length));
+  const pipelines = support.filter(
+    (p) =>
+      p.tasks.some((t) => t.operationIds.length) &&
+      (resourceMode === 'expert' || !descriptors.some((d) => d.pipeline === p.pipelineClass && d.evaluationOnly)),
+  );
   const entry = pipelines.find((p) => p.pipelineClass === pipeline);
   const tasks = entry?.tasks.filter((t) => t.operationIds.length) ?? [];
   const selected = tasks.find((t) => t.task === task);
@@ -155,7 +161,14 @@ function OwnerChoices({
     null,
     descriptors,
   ).flatMap((choice) =>
-    choice.profileId ? [{ value: choice.profileId, label: `${choice.label} · ${choice.repo}` }] : [],
+    choice.profileId
+      ? [
+          {
+            value: choice.profileId,
+            label: `${choice.label} · ${choice.repo}${choice.evaluationOnly ? ' · Evaluation · Custom memory' : ''}`,
+          },
+        ]
+      : [],
   );
   return (
     <ModiffDisclosure label="Change model / task" collapsible={!inline} panelClassName="grid gap-2 py-2">

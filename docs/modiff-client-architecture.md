@@ -145,6 +145,14 @@ enumeration stays in the popup's lazy `nodeConnectionSearch` module, outside
 canvas startup.
 
 Expert's Stages panel also resolves connected starters from `POST /operations/starter`.
+An explicitly validated evaluation runtime can publish a separate, bounded
+`evaluationAuthoring` namespace for Custom memory authoring. Its private profiles
+join the same generic model picker and starter path; they never enter the legacy
+Studio model union or grant Automatic, template, Gallery or live qualification.
+The parser rejects any collision with an existing public pipeline profile, and
+selection and Apply both require Custom memory. Ordinary runtime discovery omits
+the namespace and retains the existing choices.
+
 The backend supplies ordinary node schemas and reviewed connections; the client
 assigns canvas IDs through the normal node factory. The result is a normal graph,
 with no template receipt or additional execution representation. Users can build

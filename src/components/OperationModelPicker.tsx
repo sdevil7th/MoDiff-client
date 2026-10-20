@@ -59,6 +59,7 @@ export default function OperationModelPicker({
   const diagnostics = useNodesStore((s) => s.modelCacheDiagnostics);
   const operations = useNodesStore((s) => s.operationContracts);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
+  const resourceMode = useStudioStore((s) => s.form.resourceMode);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [installed, setInstalled] = useState(false);
@@ -76,7 +77,9 @@ export default function OperationModelPicker({
   const current = choices.find((c) => c.repo === value && c.pipeline === hint.operation.pipelineClass);
   const visible = choices.filter(
     (c) =>
-      (!installed || c.cache?.runnable) && `${c.label} ${c.repo}`.toLowerCase().includes(query.trim().toLowerCase()),
+      (!c.evaluationOnly || resourceMode === 'expert') &&
+      (!installed || c.cache?.runnable) &&
+      `${c.label} ${c.repo}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
   useEffect(() => {
@@ -95,6 +98,8 @@ export default function OperationModelPicker({
     setOpen(false);
   }
   function apply(candidate: Review) {
+    if (candidate.choice.evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+      throw new Error('Select Custom memory before choosing an evaluation model.');
     commitOperationGraph(
       candidate.plan.graph,
       candidate.context,
@@ -117,6 +122,8 @@ export default function OperationModelPicker({
     setError(null);
     setReview(null);
     try {
+      if (choice.evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+        throw new Error('Select Custom memory before choosing an evaluation model.');
       const starter = await requestOperationStarter(
         choice.pipeline,
         choice.task,
@@ -283,6 +290,9 @@ export default function OperationModelPicker({
               {workflowTaskLabel(hint.operation.task ?? '')}. Selecting a model updates its connected nodes. Nothing is
               downloaded or executed.
             </p>
+            {resourceMode !== 'expert' && choices.some((choice) => choice.evaluationOnly) ? (
+              <p className="text-sm text-modiff-subtle-text">Evaluation models are available with Custom memory.</p>
+            ) : null}
             <ModiffSearchInput
               aria-label="Search compatible models"
               placeholder="Search by model or repository"
@@ -328,6 +338,7 @@ export default function OperationModelPicker({
                         </span>
                       ) : null}
                       <span>{choice.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'}</span>
+                      {choice.evaluationOnly ? <span>Evaluation · Custom memory</span> : null}
                       {choice.support.dependencies === 'blocked' ? <span>Runtime setup required</span> : null}
                     </span>
                   </ModiffButton>

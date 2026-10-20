@@ -13,6 +13,7 @@ export type WorkflowChoice = {
   profileId?: string;
   support: PipelineTaskSupport;
   cache: StudioModelCacheStatus | null;
+  evaluationOnly?: true;
 };
 
 export type WorkflowModelDescriptor = {
@@ -21,6 +22,7 @@ export type WorkflowModelDescriptor = {
   label: string;
   repo: string;
   inventory?: WorkflowModelInventory;
+  evaluationOnly?: true;
 };
 
 /** Presentation-only identities for generic workflows, independent of legacy Studio forms. */
@@ -96,6 +98,7 @@ export function workflowChoices(
           profileId: string;
           label: string;
           repo: string;
+          evaluationOnly?: true;
         }>((id) => {
           const entry = profiles.get(id);
           if (entry)
@@ -115,13 +118,14 @@ export function workflowChoices(
               cache: null,
             },
           ];
-        return matches.map(({ model, profileId, label, repo }) => ({
+        return matches.map(({ model, profileId, label, repo, evaluationOnly }) => ({
           id: `${pipeline.pipelineClass}:${task.task}:${profileId}`,
           pipeline: pipeline.pipelineClass,
           task: task.task,
           label,
           repo,
           profileId,
+          ...(evaluationOnly ? { evaluationOnly } : {}),
           support: task,
           cache:
             model && model.defaultRepo === repo

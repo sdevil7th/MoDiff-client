@@ -52,6 +52,14 @@ export default function OperationGraphControls({
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
   const canvasEpoch = useStudioStore((s) => s.workflowCanvasEpoch);
   const operations = useNodesStore((s) => s.operationContracts);
+  const evaluationOnly = useNodesStore((s) =>
+    s.workflowModelDescriptors.some(
+      (descriptor) =>
+        descriptor.evaluationOnly &&
+        descriptor.pipeline === pipeline &&
+        (!executionProfileId || descriptor.profileId === executionProfileId),
+    ),
+  );
   const [chosenLoader, setLoader] = useState('');
   const loader = ownerId ?? chosenLoader;
   const [busy, setBusy] = useState(false);
@@ -88,6 +96,8 @@ export default function OperationGraphControls({
     setBusy(true);
     setError(null);
     try {
+      if (evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+        throw new Error('Select Custom memory before choosing an evaluation model.');
       const starter = await requestOperationStarter(pipeline, task, operations, controller.signal, executionProfileId);
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
@@ -124,6 +134,8 @@ export default function OperationGraphControls({
   function apply() {
     if (!preview) return;
     try {
+      if (evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+        throw new Error('Select Custom memory before choosing an evaluation model.');
       assertWorkflowOperationContext(preview.context, { includeForm: false });
       const flow = useFlowStore.getState();
       if (operationGraphPreviewSignature(flow.toObject()) !== preview.signature)

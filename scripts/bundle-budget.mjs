@@ -1,3 +1,8 @@
+// Explicit private evaluation authoring adds a bounded lazy parser and Custom
+// memory guards. The first build measures startup/chunk/deferred gzip bytes
+// 656188/477881/316459 versus 656112/477808/315072. Reserve 128/128/1536
+// additional bytes for the shared metadata and strict collision validation.
+// Dependencies, lazy boundaries, minifier and the deferred chunk cap stay fixed.
 // Final selected-parent field authority and owned Guidance presentation, plus
 // source-region removal and runtime Auto resource-update corrections, measure
 // startup/chunk/deferred gzip bytes 656112/477808/315072. Bound the completed
@@ -162,6 +167,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
   64 +
   2112 +
   5086 +
+  128 +
   128;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
@@ -266,6 +272,7 @@ const MAX_STARTUP_GZIP_BYTES =
   64 +
   2112 +
   5092 +
+  128 +
   128;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
@@ -449,7 +456,8 @@ const MAX_DEFERRED_GZIP_BYTES =
   64 +
   7232 +
   22998 +
-  896;
+  896 +
+  1536;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

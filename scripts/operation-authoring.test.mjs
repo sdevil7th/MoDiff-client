@@ -1777,6 +1777,166 @@ test('workflow discovery retains backend models absent from the legacy Studio un
   assert.deepEqual(choices.parseWorkflowModelDescriptors(unavailable, support), []);
 });
 
+test('evaluation authoring is an explicit private Expert namespace and cannot promote public discovery', async () => {
+  const evaluation = await server.ssrLoadModule('/src/workflow/evaluationAuthoring.ts');
+  const operations = starter().nodes.map((node) => node.operation);
+  const requirement = {
+    schemaVersion: 1,
+    delivery: 'base',
+    requiredNow: false,
+    profileIds: [],
+    executionProfileIds: ['future-evaluation'],
+    state: 'base_satisfied',
+    reason: 'base_runtime_ready',
+  };
+  const pipeline = {
+    pipelineClass: 'FuturePipeline',
+    coverage: 'research-blocked',
+    reason: 'Evaluation authoring only',
+    equivalentTo: [],
+    upstreamTasks: [{ task: 'text_to_image', source: 'modular', workflowId: 'text2image' }],
+    tasks: [
+      {
+        task: 'text_to_image',
+        execution: 'declared',
+        decomposition: 'stages',
+        operationIds: operations.map((op) => op.operationId),
+        executionProfileIds: ['future-evaluation'],
+        dependencies: 'ready',
+        runtimeRequirements: [requirement],
+      },
+    ],
+  };
+  const publicSupport = [
+    {
+      ...pipeline,
+      tasks: pipeline.tasks.map((task) => ({
+        ...task,
+        executionProfileIds: [],
+        dependencies: 'unknown',
+        runtimeRequirements: [],
+      })),
+    },
+  ];
+  const payload = {
+    schemaVersion: 2,
+    capabilities: [
+      {
+        modelType: 'FuturePipeline',
+        label: 'Future image',
+        executionProfiles: [],
+        defaultRepo: 'owner/future',
+        autoEligible: false,
+        templateEligible: false,
+        galleryEligible: false,
+        liveProof: false,
+      },
+    ],
+    evaluationAuthoring: {
+      schemaVersion: 1,
+      scope: 'expert-authoring',
+      autoEligible: false,
+      templateEligible: false,
+      galleryEligible: false,
+      executionProfiles: [
+        {
+          id: 'future-evaluation',
+          model_type: 'FuturePipeline',
+          pipeline_class: 'FuturePipeline',
+          default_repo: 'owner/future',
+          public: false,
+          live_proof: false,
+          modes: ['text_to_image'],
+        },
+      ],
+      pipelineSupport: [pipeline],
+    },
+  };
+  const before = structuredClone(payload);
+  const parsed = evaluation.parseEvaluationAuthoring(payload, publicSupport, operations);
+  assert.deepEqual(payload, before);
+  assert.equal(parsed.descriptors.length, 1);
+  assert.equal(parsed.descriptors[0].evaluationOnly, true);
+  assert.equal(parsed.descriptors[0].profileId, 'future-evaluation');
+  assert.deepEqual(choices.parseWorkflowModelDescriptors(payload, publicSupport), []);
+  const rows = choices.workflowChoices(parsed.support, [], [], [], null, parsed.descriptors);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].evaluationOnly, true);
+  const sharedPublicPipeline = structuredClone(publicSupport);
+  sharedPublicPipeline[0].tasks[0].executionProfileIds = ['public-profile'];
+  assert.throws(
+    () => evaluation.parseEvaluationAuthoring(payload, sharedPublicPipeline, operations),
+    /evaluation authoring/i,
+    'private metadata cannot replace any existing public profile on the same pipeline',
+  );
+  assert.deepEqual(sharedPublicPipeline[0].tasks[0].executionProfileIds, ['public-profile']);
+  const nodeStore = (await server.ssrLoadModule('/src/stores/useNodeStore.ts')).useNodesStore;
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          ...payload,
+          operationContractSchemaVersion: 3,
+          operationContracts: operations,
+          pipelineSupportSchemaVersion: 1,
+          pipelineSupport: publicSupport,
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+    await nodeStore.getState().fetchStudioModelCapabilities();
+    assert.equal(nodeStore.getState().discoveryRequests.capabilities.status, 'success');
+    assert.deepEqual(nodeStore.getState().workflowModelDescriptors, parsed.descriptors);
+    assert.deepEqual(nodeStore.getState().pipelineSupport, parsed.support);
+    assert.equal(
+      nodeStore.getState().studioModelCapabilities.some((model) => model.modelType === 'FuturePipeline'),
+      false,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+  assert.deepEqual(
+    evaluation.parseEvaluationAuthoring({ ...payload, evaluationAuthoring: undefined }, publicSupport, operations),
+    { support: publicSupport, descriptors: [] },
+  );
+  for (const alter of [
+    (p) => {
+      p.evaluationAuthoring.autoEligible = true;
+    },
+    (p) => {
+      p.evaluationAuthoring.scope = 'automatic';
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].public = true;
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].live_proof = true;
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].modes = ['edit_image'];
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].default_repo = 'owner/other';
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].modes.push('text_to_image');
+    },
+    (p) => {
+      p.evaluationAuthoring.pipelineSupport[0].tasks[0].executionProfileIds = ['other'];
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles.push(p.evaluationAuthoring.executionProfiles[0]);
+    },
+    (p) => {
+      p.evaluationAuthoring.unreviewed = true;
+    },
+  ]) {
+    const malformed = structuredClone(payload);
+    alter(malformed);
+    assert.throws(() => evaluation.parseEvaluationAuthoring(malformed, publicSupport, operations));
+  }
+});
+
 test('generic public model inventory preserves native defaults and exact additional format Install/Repair selections', async () => {
   const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
   const actual = JSON.parse(
