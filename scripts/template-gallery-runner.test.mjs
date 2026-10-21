@@ -845,7 +845,7 @@ test('resource qualification requires an explicit recipe override', () => {
 });
 
 test('gallery runner prevents two capture processes from sharing one app execution session', () => {
-  const directory = mkdtempSync('/tmp/modiff-gallery-lock-');
+  const directory = mkdtempSync(resolve(tmpdir(), 'modiff-gallery-lock-'));
   const lockPath = resolve(directory, '.runner.lock');
   const release = acquireRunnerLock(lockPath, process.pid);
   assert.throws(() => acquireRunnerLock(lockPath, process.pid), /Another template-gallery runner is active/);
