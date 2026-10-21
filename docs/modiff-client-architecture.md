@@ -439,6 +439,13 @@ inferred to be missing. A compatible enabled incoming connection satisfies this
 presence check; file existence and actual runtime objects still belong to backend
 validation.
 
+The ordinary Process Image palette facade resolves Image/Mask requirements from
+the cached backend operation contract for its current pipeline and operation.
+Graph Fix and required-input readiness share that read-only resolution: adjustment,
+tiling and stitching do not demand a mask; Mask Composite still does. Inspection
+preserves saved fields and wires. Unknown, computed or ambiguous task selections
+retain the existing inspection behavior rather than being declared optional.
+
 `blockControlConnectionsV2` resolves root and nested control aliases against the
 owning effective graph and external public-input wires. Connected body controls
 show their saved fallback read-only, with the source node/port and an explicit

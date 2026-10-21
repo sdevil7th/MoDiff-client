@@ -9505,6 +9505,218 @@ test('image pipeline drag-to-add excludes generation actions outside the selecte
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
 });
 
+test('raw Process Image task changes keep Mask repairs and readiness current', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const fixture = await imageTemplateSchemas();
+  const key = 'modules.ImageOperations.ProcessImage';
+  const raw = fixture.registry[key]!;
+  expect(raw.params.mask!.required).toBeUndefined();
+  expect(raw.params.mask!.hidden).not.toBe(true);
+  for (const task of ['image_stitch', 'mask_composite']) {
+    const contract = fixture.publicPayload.operationContracts.find(
+      (operation) => operation.nodeKey === key && operation.task === task,
+    )!;
+    expect(contract.ports.find((port) => port.name === 'mask')!.required).toBe(task === 'mask_composite');
+  }
+  // Use the real shared palette schema, not a task starter's already narrowed
+  // fields. All operation contracts remain the standard backend-owned fixture.
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        nodes: {
+          ...mockRegistry,
+          [key]: raw,
+          'modules.Image.Load': fixture.registry['modules.Image.Load'],
+          'modules.Image.Preview': fixture.registry['modules.Image.Preview'],
+        },
+      },
+    }),
+  );
+  let catalogAvailable = true;
+  await page.route('**/model_capabilities**', (route) => {
+    const capabilities = includeImageTemplateBindings(mockStudioExecutionCapabilities(), fixture);
+    return route.fulfill({
+      json: {
+        schemaVersion: 2,
+        capabilities,
+        studioExecutionSpecs: capabilities.flatMap((capability) => capability.studioExecutionSpecs ?? []),
+        operationContractSchemaVersion: 3,
+        operationContracts: catalogAvailable ? fixture.publicPayload.operationContracts : [],
+        pipelineSupportSchemaVersion: 1,
+        pipelineSupport: catalogAvailable ? fixture.publicPayload.pipelineSupport : [],
+      },
+    });
+  });
+  let graphPosts = 0;
+  await page.route('**/graph', (route) => {
+    if (route.request().method() === 'POST') graphPosts++;
+    return route.fulfill({ json: { error: true, message: 'Readiness regression must not dispatch.' } });
+  });
+  let uploads = 0;
+  await page.route('**/file', (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    uploads++;
+    return route.fulfill({ json: { path: [`@data/images/mask-hint-reference-${uploads}.png`] } });
+  });
+  const renderErrors: string[] = [];
+  page.on('pageerror', (error) => renderErrors.push(error.message));
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'image-mask-regression', isConnected: true }),
+  );
+  await dismissTaskLauncher(page);
+  await setWorkflowResourceMode(page, 'expert');
+  await openNodesLibrary(page);
+  await page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true }).check();
+  const add = async (module: string, action: string) => {
+    await page.getByLabel('Search nodes', { exact: true }).fill(action);
+    await page.getByTestId(`node-row-modules-${module}-${action}`).click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ({ module, action }) =>
+            window
+              .__MODIFF_E2E__!.getState()
+              .flow.nodes.filter((node) => node.module === `modules.${module}` && node.action === action).length,
+          { module, action },
+        ),
+      )
+      .toBe(1);
+    return page.evaluate(
+      ({ module, action }) =>
+        window
+          .__MODIFF_E2E__!.getState()
+          .flow.nodes.find((node) => node.module === `modules.${module}` && node.action === action)!.id,
+      { module, action },
+    );
+  };
+  const sourceId = await add('Image', 'Load');
+  const processId = await add('ImageOperations', 'ProcessImage');
+  const previewId = await add('Image', 'Preview');
+  const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await node(sourceId)
+    .locator('[data-key="file"] input[type="file"]')
+    .setInputFiles([
+      { name: 'first-reference.png', mimeType: 'image/png', buffer: pixel },
+      { name: 'second-reference.png', mimeType: 'image/png', buffer: pixel },
+    ]);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (id) =>
+          window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.find((node) => node.id === id)!.data.params.file!.value,
+        sourceId,
+      ),
+    )
+    .toEqual(['@data/images/mask-hint-reference-1.png', '@data/images/mask-hint-reference-2.png']);
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const wire = async (source: string, output: string, target: string, input: string) => {
+    const from = node(source).locator(`.react-flow__handle.source[data-handleid="${output}"]`);
+    const to = node(target).locator(`.react-flow__handle.target[data-handleid="${input}"]`);
+    await from.click({ trial: true });
+    await to.click({ trial: true });
+    const a = (await from.boundingBox())!,
+      b = (await to.boundingBox())!;
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 16 });
+    await page.mouse.up();
+  };
+  await wire(sourceId, 'image', processId, 'image');
+  await wire(processId, 'output', previewId, 'image');
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(2);
+  // Palette insertion selects every new node. Clear that selection before
+  // asking the side inspector to expose one node's controls.
+  await page.locator('.react-flow__pane').click({ position: { x: 80, y: 70 } });
+  const selectedNodes = page.locator('.react-flow__node.selected');
+  await expect(selectedNodes).toHaveCount(0);
+  await node(processId).locator('header').click();
+  await expect(selectedNodes).toHaveCount(1);
+  await expect(selectedNodes).toHaveAttribute('data-id', processId);
+  const operation = page.getByTestId('studio-custom-graph-inspector').getByLabel('Operation', { exact: true });
+  const select = async (task: string) => {
+    await operation.click();
+    await page.getByRole('option', { name: task, exact: true }).click();
+    await expect(operation).toHaveText(task);
+  };
+  const run = page.getByTestId('studio-run');
+  const fix = page.getByTestId('graph-fix');
+  const readiness = page.getByTestId('studio-run-readiness');
+  await select('image_stitch');
+  await expect(run).toBeEnabled();
+  await expect(fix).toBeDisabled();
+  await expect(readiness).toHaveText('Ready');
+  await select('mask_composite');
+  await expect(run).toBeDisabled();
+  await expect(readiness).toContainText('needs Mask before running');
+  await expect(fix).toBeEnabled();
+  await fix.click();
+  const dialog = page.getByTestId('graph-fix-dialog');
+  await expect(dialog).toContainText('needs Mask');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await select('image_stitch');
+  await expect(run).toBeEnabled();
+  await expect(fix).toBeDisabled();
+  await expect(readiness).toHaveText('Ready');
+
+  const graph = () =>
+    page.evaluate(() => {
+      const exported = window.__MODIFF_E2E__!.exportWorkflowGraph();
+      return {
+        nodes: exported.nodes.map(({ id, data }) => ({
+          id,
+          module: data.module,
+          action: data.action,
+          params: data.params,
+        })),
+        edges: exported.edges,
+      };
+    });
+  const beforeRefresh = await graph();
+  const refresh = () =>
+    page.evaluate(async () => {
+      // Existing fixture convention invokes the same public discovery action as
+      // Setup/Workflows. It does not inject a catalog or mutate the graph store.
+      const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+      await useNodesStore.getState().fetchStudioModelCapabilities();
+    });
+  // An unavailable catalog retains the old conservative repair heuristic.
+  // Restoring the exact real catalog must clear it without any graph edit.
+  catalogAvailable = false;
+  await refresh();
+  await expect(fix).toBeEnabled();
+  await fix.click();
+  await expect(dialog).toContainText('needs Mask');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  catalogAvailable = true;
+  await refresh();
+  await expect(fix).toBeDisabled();
+  await expect(run).toBeEnabled();
+  await expect(readiness).toHaveText('Ready');
+  expect(await graph()).toEqual(beforeRefresh);
+
+  await node(sourceId).locator('[data-testid^="graph-node-action-"]').click({ button: 'right' });
+  await page.getByTestId('node-menu-delete').click();
+  await expect
+    .poll(() =>
+      page.evaluate((id) => window.__MODIFF_E2E__!.getState().flow.nodes.some((node) => node.id === id), sourceId),
+    )
+    .toBe(false);
+  await expect(run).toBeDisabled();
+  await expect(readiness).toContainText('needs Image before running');
+  await fix.click();
+  await expect(dialog).toContainText('needs Image');
+  await expect(dialog).not.toContainText('needs Mask');
+  expect(graphPosts).toBe(0);
+  expect(renderErrors).toEqual([]);
+});
+
 let operationStarterFixturesPromise: Promise<import('../../../src/workflow/operationAuthoring').OperationStarter[]>;
 
 async function operationStarterFixtures() {

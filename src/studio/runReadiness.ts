@@ -1082,7 +1082,13 @@ function collectGraphStructureIssues(graph = executableFlowGraph()): RunReadines
     ];
   }
 
-  return inspectRequiredGraphInputs(useFlowStore.getState().nodes, graph, useNodesStore.getState().nodesRegistry);
+  const registry = useNodesStore.getState();
+  return inspectRequiredGraphInputs(
+    useFlowStore.getState().nodes,
+    graph,
+    registry.nodesRegistry,
+    registry.operationContracts,
+  );
 }
 
 function collectUserBlockCompositionIssues(): RunReadinessIssue[] {

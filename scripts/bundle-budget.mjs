@@ -1,3 +1,9 @@
+// Selected Process Image input requirements share the current operation contract
+// across readiness and graph recovery. The optimized build measures startup/
+// largest-startup/deferred gzip bytes 657234/478930/316398, versus the recorded
+// accepted 656925/478620/316464. Allow 288 bytes in each startup cap, leaving
+// 18/12 bytes of headroom; retain strict selector/port validation, dependencies,
+// loading boundaries, minifier and both deferred caps unchanged.
 // Owner-bound V2 preview lookup restores complete ordered media collections,
 // including declared legacy preview controls. Startup/chunk/deferred gzip bytes
 // measure 656925/478620/316464 versus 656739/478434/316484 before the fix.
@@ -182,7 +188,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
   128 +
   128 +
   512 +
-  192;
+  192 +
+  288;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -289,7 +296,8 @@ const MAX_STARTUP_GZIP_BYTES =
   128 +
   128 +
   512 +
-  192;
+  192 +
+  288;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

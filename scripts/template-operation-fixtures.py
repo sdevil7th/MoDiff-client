@@ -80,7 +80,8 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                     describe(key)
                 rows.append({"id": item["id"], "starter": starter, "spec": spec,
                              "capability": STUDIO_MODEL_CAPABILITIES[binding["modelType"]] if binding else None})
-            for key in ("modules.ModularDiffusers.Lora", "modules.DiffusersImage.LoadAdapter",
+            for key in ("modules.ImageOperations.ProcessImage", "modules.ModularDiffusers.Lora",
+                        "modules.DiffusersImage.LoadAdapter",
                         "modules.Spandrel.Upscaler", "modules.Image.Preview",
                         "modules.DiffusersImage.OutpaintCanvas", "modules.Audio.Export", "modules.Audio.Load",
                         "modules.DiffusersAudio.LoadAdapter"):

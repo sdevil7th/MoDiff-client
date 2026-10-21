@@ -15,6 +15,8 @@ import type { HuggingFaceNodeLibraryBlockDefinition } from './huggingFaceNodeLib
 import { isBlockRootV2Node, nodeConnectorParam, nodeConnectorParams } from './nodeConnectorResolution';
 import type { RunReadinessIssue } from './types';
 import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
+import type { OperationContract } from '../workflow/operationContracts';
+import { processImageInputRequirements } from '../workflow/processImageInputRequirements';
 
 export type GraphFixConfidence = 'safe' | 'choice';
 export type GraphFixExternalAction = 'open_model_manager' | 'open_assets' | 'open_setup' | 'inspect_node';
@@ -76,6 +78,7 @@ export type GraphFixContext = {
   nodes: CustomNodeType[];
   edges: Edge[];
   registry: Record<string, NodeData>;
+  operationContracts?: readonly OperationContract[];
   readinessIssues?: RunReadinessIssue[];
   modularBlockDefinitions?: readonly HuggingFaceNodeLibraryBlockDefinition[];
 };
@@ -125,24 +128,27 @@ function nodeRegistryKey(node: Pick<CustomNodeType, 'data'>) {
   return `${node.data.module}.${node.data.action}`;
 }
 
-function nodesWithLiveContracts(nodes: CustomNodeType[], registry: Record<string, NodeData>) {
+function nodesWithLiveContracts(context: GraphFixContext) {
+  const { nodes, registry } = context;
   return nodes.map((node) => {
     // Block V2 owns an immutable embedded definition snapshot. Applying a
     // registry contract to its empty root params would create a second socket
     // authority and make Graph Fix disagree with the canvas/runtime.
     if (isBlockRootV2Node(node)) return node;
     const definition = registry[nodeRegistryKey(node)];
-    if (!definition) return node;
+    const requirements = processImageInputRequirements(node, registry, context.operationContracts ?? [], context.edges);
+    if (!definition && !requirements) return node;
     const params = Object.fromEntries(
       Object.entries(node.data.params).map(([key, stored]) => {
-        const live = definition.params[key];
-        if (!live) return [key, stored];
+        const live = definition?.params[key];
+        if (!live && requirements?.[key] === undefined) return [key, stored];
         return [
           key,
           {
             ...stored,
-            type: live.type ?? stored.type,
-            required: live.required ?? stored.required,
+            type: live?.type ?? stored.type,
+            required: requirements?.[key]?.required ?? live?.required ?? stored.required,
+            hidden: requirements?.[key]?.hidden ?? stored.hidden,
           },
         ];
       }),
@@ -627,7 +633,7 @@ function outputCandidates(issueId: string, context: GraphFixContext, existingOut
 }
 
 export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
-  context = { ...context, nodes: nodesWithLiveContracts(context.nodes, context.registry) };
+  context = { ...context, nodes: nodesWithLiveContracts(context) };
   const issues: GraphFixIssue[] = [];
   const nodesById = new Map(context.nodes.map((node) => [node.id, node]));
   const validIncoming = new Set<string>();

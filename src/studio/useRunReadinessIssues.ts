@@ -133,6 +133,8 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
                 param.display === 'input' ||
                 // Optional loader pickers can supply a required downstream media input.
                 param.display === 'filebrowser' ||
+                key === 'operation' ||
+                key === 'pipeline_class' ||
                 /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key),
             )
             .map(([key, param]) => `${key}:${JSON.stringify(param.value ?? param.default ?? '')}`)
@@ -267,6 +269,7 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
     modelCacheDiagnostics,
     modularBlockDefinitions,
     nodesRegistry,
+    operationContracts,
     optionalRuntimeCatalog,
     queueRevision,
     runtimeResources,
@@ -280,5 +283,6 @@ export function useRunReadinessIssues({ sid, isConnected, includeStudio = true }
   return {
     ...decision,
     isPreparing,
+    operationContracts,
   };
 }

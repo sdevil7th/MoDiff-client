@@ -286,10 +286,19 @@ function TopBar() {
         nodes: graphFixNodes,
         edges: graphFixEdges,
         registry: nodesRegistry,
+        operationContracts: runReadiness.operationContracts,
         modularBlockDefinitions,
         readinessIssues: runReadiness.issues,
       }) ?? { issues: [], candidateCount: 0, canFix: false },
-    [graphFix.module, graphFixEdges, graphFixNodes, nodesRegistry, runReadiness.issues, modularBlockDefinitions],
+    [
+      graphFix.module,
+      graphFixEdges,
+      graphFixNodes,
+      nodesRegistry,
+      runReadiness.operationContracts,
+      runReadiness.issues,
+      modularBlockDefinitions,
+    ],
   );
   const blockingRunIssue = runReadiness.blockingIssues[0] ?? null;
   // Auto planning happens during startup/template preparation and whenever a
