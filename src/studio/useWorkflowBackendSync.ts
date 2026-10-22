@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import config from '../../app.config';
 import { useStudioStore } from '../stores/useStudioStore';
+import { useNodesStore } from '../stores/useNodeStore';
 import { RequestError, requestJson } from '../utils/requestJson';
 import { stableStringify } from './templateExactness';
 import type { WorkflowTab } from './types';
@@ -292,11 +293,20 @@ export function useWorkflowBackendSync() {
         // other saved document remains available from My workflows or a run.
         for (const tab of store.workflowTabs) {
           if (isWorkflowTabClosed(tab.id)) continue;
+          const cleanBaseline = tab.dirty ? undefined : (JSON.parse(JSON.stringify(tab)) as WorkflowTab);
           const backendTab = await readWorkflowForHydration(tab, controller.signal);
           if (cancelled) return;
+          const current = useStudioStore.getState();
+          if (isWorkflowTabClosed(tab.id) || !current.workflowTabs.some((item) => item.id === tab.id)) continue;
           if (backendTab && !tab.dirty) {
             markBackendWorkflow(backendTab);
-            store.mergeBackendWorkflow(backendTab);
+            current.mergeBackendWorkflow(backendTab, {
+              hydrationBaseline: cleanBaseline && {
+                tab: cleanBaseline,
+                canvasEpoch: store.workflowCanvasEpoch,
+                registry: useNodesStore.getState().nodesRegistry,
+              },
+            });
             continue;
           }
           // A new local document, or a synchronous checkpoint newer than the

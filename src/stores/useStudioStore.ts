@@ -3,6 +3,10 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
 import { forgetFreshWorkflowId, markFreshWorkflowId } from '../studio/workflowDocumentOrigin';
+import {
+  matchesCleanWorkflowHydrationBaseline,
+  type WorkflowHydrationBaseline,
+} from '../studio/workflowHydrationBaseline';
 import { applyResolvedExecutionInputs } from '../studio/resolvedExecutionInputs';
 import {
   DEFAULT_STUDIO_FORM,
@@ -235,7 +239,10 @@ type StudioActions = {
   closeWorkflowTab: (id: string) => void;
   moveWorkflowTab: (id: string, targetId: string, placement: 'before' | 'after') => void;
   renameWorkflowTab: (id: string, title: string) => void;
-  mergeBackendWorkflow: (tab: WorkflowTab, options?: { acknowledgement?: boolean }) => void;
+  mergeBackendWorkflow: (
+    tab: WorkflowTab,
+    options?: { acknowledgement?: boolean; hydrationBaseline?: WorkflowHydrationBaseline },
+  ) => void;
   removeBackendWorkflow: (id: string) => void;
   createAppModeConfig: (workflowTabId?: string | null) => string | null;
   updateAppModeConfig: (
@@ -2947,9 +2954,20 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           });
           return;
         }
+        const cleanHydrationBaseline = Boolean(
+          !options.acknowledgement &&
+          options.hydrationBaseline &&
+          existing &&
+          localDocument &&
+          state.activeWorkflowTabId === normalized.id &&
+          state.workflowCanvasEpoch === options.hydrationBaseline.canvasEpoch &&
+          existing.backendRevision === options.hydrationBaseline.tab.backendRevision &&
+          matchesCleanWorkflowHydrationBaseline(localDocument, options.hydrationBaseline),
+        );
         const hasUnsavedLocalDocument = Boolean(
           existing &&
           localDocument &&
+          !cleanHydrationBaseline &&
           (options.acknowledgement || existing.dirty || !sameWorkflowDocument(existing, localDocument)) &&
           !sameWorkflowDocument(localDocument, normalized),
         );

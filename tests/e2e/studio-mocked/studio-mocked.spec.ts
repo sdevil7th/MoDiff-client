@@ -16,11 +16,484 @@ import { STUDIO_TEMPLATES } from '../../../src/studio/templates';
 import { REGISTERED_BLOCK_V2_ROUTES } from '../../../src/studio/registeredBlockV2Routes';
 import { acknowledgementRequiredForTemplate } from '../../../src/studio/modelUsagePolicies';
 import type { NodeData } from '../../../src/stores/useNodeStore';
-import type { StudioExecutionSpec, StudioModelProfile } from '../../../src/studio/types';
+import type { StudioExecutionSpec, StudioModelProfile, WorkflowTabSnapshot } from '../../../src/studio/types';
+import { DEFAULT_STUDIO_FORM } from '../../../src/studio/modelProfiles';
 import type { OperationStarter } from '../../../src/workflow/operationAuthoring';
 import type { OperationContract } from '../../../src/workflow/operationContracts';
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
+
+function restorationSnapshot(text: string, preview: string, x: number): WorkflowTabSnapshot {
+  return {
+    nodes: [
+      {
+        id: 'restoration-text',
+        type: 'custom',
+        position: { x, y: 80 },
+        data: {
+          ...nodeDef('modules.Primitive', 'TextValue', 'primitive', {
+            text: { label: 'Text', type: 'string', display: 'text', value: text },
+            output: { type: 'string', display: 'output' },
+          }),
+          label: 'Restoration text',
+        },
+      },
+      {
+        id: 'restoration-preview',
+        type: 'custom',
+        position: { x: 500, y: 80 },
+        data: {
+          ...nodeDef('modules.Image', 'Preview', 'image', {
+            image: { type: 'image', display: 'input' },
+            preview: { type: 'url', display: 'ui_image', value: [preview] },
+          }),
+          label: 'Restoration preview',
+        },
+      },
+    ],
+    edges: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+    studioForm: structuredClone(DEFAULT_STUDIO_FORM),
+    studioGraphBinding: null,
+    selectedMode: DEFAULT_STUDIO_FORM.mode,
+    activeTemplateId: null,
+    sourceOutputId: null,
+    pinnedGraphInputIds: [],
+    autoFieldOverrides: {},
+  };
+}
+
+function restorationText(snapshot: WorkflowTabSnapshot) {
+  const node = snapshot.nodes.find((value) => (value as { id?: string }).id === 'restoration-text') as {
+    data: { params: { text: { value: string } } };
+  };
+  return node.data.params.text.value;
+}
+
+async function prepareRestorationStartup(page: Page, workflowId: string) {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const older = restorationSnapshot('Previously acknowledged text', '/preview-fixture/older.png', 80);
+  const newer = restorationSnapshot('Newer backend text', '/preview-fixture/newer.png', 140);
+  const initial = {
+    id: workflowId,
+    title: 'Disposable restoration regression',
+    intent: 'saved' as const,
+    source: 'manual' as const,
+    createdAt: 100,
+    updatedAt: 800,
+    revision: 8,
+    clientId: 'prior-fixture-session',
+    snapshot: older,
+  };
+  let backend = structuredClone(initial);
+  const events: Array<{
+    method: string;
+    revision?: number;
+    snapshot?: WorkflowTabSnapshot;
+    rejected?: boolean;
+    requestId?: number;
+    phase?: number;
+    stage?: string;
+    error?: string;
+  }> = [];
+  const hydrationRequests = new WeakMap<object, { requestId: number; phase?: number; revision: number }>();
+  let requestSequence = 0;
+  let phaseSequence = 0;
+  let heldGet: { arrived: () => void; released: Promise<void>; phase: number } | undefined;
+  let rejectNextPut = false;
+
+  // StrictMode can cancel and re-enter startup. Retain each actual request's
+  // lifecycle rather than mistaking the first intercepted GET for the live one.
+  page.on('requestfinished', (request) => {
+    const identity = hydrationRequests.get(request);
+    if (identity) events.push({ method: 'GET', ...identity, stage: 'finished' });
+  });
+  page.on('requestfailed', (request) => {
+    const identity = hydrationRequests.get(request);
+    if (identity) events.push({ method: 'GET', ...identity, stage: 'failed', error: request.failure()?.errorText });
+  });
+
+  await page.addInitScript(
+    ({ record }) => {
+      if (localStorage.getItem('modiff-restoration-fixture-seeded')) return;
+      localStorage.clear();
+      sessionStorage.clear();
+      localStorage.setItem('modiff-restoration-fixture-seeded', '1');
+      // This is a clean, acknowledged browser checkpoint, not an injected dirty state.
+      localStorage.setItem(
+        'modiff.studio',
+        JSON.stringify({
+          state: {
+            form: record.snapshot.studioForm,
+            selectedMode: record.snapshot.selectedMode,
+            workflowTabs: [{ ...record, backendRevision: record.revision, dirty: false }],
+            activeWorkflowTabId: record.id,
+            activeTemplateId: null,
+          },
+          version: 0,
+        }),
+      );
+      localStorage.setItem(
+        'modiff.flow',
+        JSON.stringify({
+          state: {
+            nodes: record.snapshot.nodes,
+            edges: record.snapshot.edges,
+            viewport: record.snapshot.viewport,
+          },
+          version: 1,
+        }),
+      );
+    },
+    { record: initial },
+  );
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: {
+        instance: 'mock',
+        nodes: {
+          ...mockRegistry,
+          'modules.Primitive.TextValue': nodeDef('modules.Primitive', 'TextValue', 'primitive', {
+            text: { label: 'Text', type: 'string', display: 'text', value: 'Previously acknowledged text' },
+            output: { type: 'string', display: 'output' },
+          }),
+        },
+      },
+    }),
+  );
+  await page.routeWebSocket('**/ws**', (socket) => {
+    socket.send(
+      JSON.stringify({ type: 'welcome', sid: 'restoration-fixture', instance: 'mock', current: null, queued: {} }),
+    );
+  });
+  await page.route(`**/workflows/${workflowId}`, async (route) => {
+    if (route.request().method() === 'GET') {
+      const response = structuredClone(backend);
+      const pending = heldGet;
+      const request = route.request();
+      const identity = { requestId: ++requestSequence, phase: pending?.phase, revision: response.revision };
+      hydrationRequests.set(request, identity);
+      events.push({ method: 'GET', ...identity, stage: 'requested' });
+      if (pending) {
+        pending.arrived();
+        await pending.released;
+      }
+      events.push({ method: 'GET', ...identity, stage: 'fulfillment-started' });
+      try {
+        await route.fulfill({ json: response });
+        events.push({ method: 'GET', ...identity, stage: 'fulfilled' });
+      } catch (error) {
+        const failure = request.failure();
+        events.push({ method: 'GET', ...identity, stage: 'fulfillment-error', error: String(error) });
+        // A request already failed in the browser remains evidence. Its
+        // still-live replacement must use the same phase-wide barrier.
+        if (!failure) throw error;
+      }
+      return;
+    }
+    if (route.request().method() === 'PUT') {
+      const payload = route.request().postDataJSON() as { snapshot: WorkflowTabSnapshot };
+      const rejected = rejectNextPut;
+      rejectNextPut = false;
+      events.push({ method: 'PUT', snapshot: structuredClone(payload.snapshot), rejected });
+      if (rejected) {
+        await route.abort('failed');
+        return;
+      }
+      backend = { ...backend, ...payload, revision: backend.revision + 1, updatedAt: Date.now() };
+      await route.fulfill({ json: backend });
+      return;
+    }
+    await route.fallback();
+  });
+  const currentUrl = '/preview-fixture/current-output.png';
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route('**/preview-fixture/*.png', (route) => route.fulfill({ body: pixel, contentType: 'image/png' }));
+  await page.route('**/studio_outputs**', (route) =>
+    route.fulfill({
+      json: {
+        error: false,
+        revision: 12,
+        previewSlots: [
+          {
+            schemaVersion: 1,
+            workflowTabId: workflowId,
+            nodeId: 'restoration-preview',
+            fieldKey: 'preview',
+            currentOutputId: 'restoration-current-output',
+            status: 'ready',
+            generation: 1,
+            attemptIndex: 0,
+            pendingClientRunId: null,
+            pendingTaskId: null,
+            updatedAt: 1200,
+          },
+        ],
+        outputs: [
+          {
+            id: 'restoration-current-output',
+            workflowTabId: workflowId,
+            nodeId: 'restoration-preview',
+            fieldKey: 'preview',
+            taskId: 'restoration-current-task',
+            attemptIndex: 0,
+            value: ['/preview-fixture/newer.png'],
+            url: currentUrl,
+            backendMediaPath: 'data/outputs/restoration-current.png',
+            displayType: 'image',
+            mediaItems: [
+              {
+                index: 0,
+                url: currentUrl,
+                backendPath: 'data/outputs/restoration-current.png',
+                displayType: 'image',
+                width: 1,
+                height: 1,
+                taskId: 'restoration-current-task',
+                attemptIndex: 0,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  let graphPosts = 0;
+  await page.route('**/graph', async (route) => {
+    if (route.request().method() === 'POST') graphPosts++;
+    await route.fulfill({ json: { error: true, message: 'Startup fixture must never execute.' } });
+  });
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00.000Z') });
+  await page.clock.pauseAt(new Date('2026-01-01T00:00:01.000Z'));
+  const read = () =>
+    page.evaluate(async () => {
+      const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+      const state = useStudioStore.getState();
+      const tab = state.workflowTabs.find((candidate) => candidate.id === state.activeWorkflowTabId);
+      return {
+        hydrated: state.workflowCanvasHydrated,
+        tab,
+        slots: state.previewSlots,
+        storage: localStorage.getItem('modiff.studio'),
+      };
+    });
+  const waitForCanvas = () => expect.poll(async () => (await read()).hydrated).toBe(true);
+  const assertCurrentPreview = async () => {
+    const image = page.getByTestId('node-preview-image-restoration-preview-preview-0').locator('img');
+    await expect(image).toHaveAttribute('src', /\/preview-fixture\/current-output\.png$/);
+    await expect
+      .poll(() =>
+        image.evaluate((element) => ({
+          width: (element as HTMLImageElement).naturalWidth,
+          height: (element as HTMLImageElement).naturalHeight,
+        })),
+      )
+      .toEqual({ width: 1, height: 1 });
+    expect(Object.values((await read()).slots)).toContainEqual(
+      expect.objectContaining({
+        workflowTabId: workflowId,
+        currentOutputId: 'restoration-current-output',
+        status: 'ready',
+      }),
+    );
+  };
+  return {
+    events,
+    read,
+    waitForCanvas,
+    assertCurrentPreview,
+    getBackend: () => structuredClone(backend),
+    graphPosts: () => graphPosts,
+    publishNewer: () => {
+      backend = { ...backend, revision: 12, snapshot: structuredClone(newer), updatedAt: 1200 };
+    },
+    rejectNextSave: () => {
+      rejectNextPut = true;
+    },
+    holdNextHydration: () => {
+      expect(heldGet).toBeUndefined();
+      let arrived!: () => void;
+      let unlock!: () => void;
+      const intercepted = new Promise<void>((resolve) => {
+        arrived = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        unlock = resolve;
+      });
+      const phase = ++phaseSequence;
+      const start = events.length;
+      const barrier = { arrived, released, phase };
+      heldGet = barrier;
+      return {
+        intercepted,
+        release: () => {
+          expect(heldGet).toBe(barrier);
+          events.push({ method: 'GET', phase, stage: 'barrier-released' });
+          heldGet = undefined;
+          unlock();
+        },
+        assertReleasedOrdering: async () => {
+          await expect
+            .poll(() =>
+              events.some(
+                (event) => event.phase === phase && event.stage === 'finished' && (event.revision ?? 0) >= 12,
+              ),
+            )
+            .toBe(true);
+          const releaseIndex = events.findIndex((event) => event.phase === phase && event.stage === 'barrier-released');
+          expect(releaseIndex).toBeGreaterThanOrEqual(start);
+          expect(
+            events.slice(start, releaseIndex).filter((event) => event.stage === 'requested').length,
+          ).toBeGreaterThan(0);
+          // Check every matching GET in the phase window, including any
+          // untagged request that would otherwise have bypassed the barrier.
+          expect(
+            events
+              .slice(start, releaseIndex)
+              .filter(
+                (event) =>
+                  event.method === 'GET' &&
+                  ['fulfillment-started', 'fulfilled', 'finished'].includes(event.stage ?? ''),
+              ),
+          ).toEqual([]);
+        },
+      };
+    },
+  };
+}
+
+test('startup hydration keeps a newer saved document across the canvas checkpoint delay', async ({ page }) => {
+  const fixture = await prepareRestorationStartup(page, 'clean-restoration-regression');
+  fixture.publishNewer();
+  const pending = fixture.holdNextHydration();
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await pending.intercepted;
+  await fixture.waitForCanvas();
+  const beforeDelay = await fixture.read();
+  await page.clock.runFor(400); // The real mounted WorkflowTabsBar owns its 350 ms checkpoint.
+  const afterDelay = await fixture.read();
+  pending.release();
+  await expect.poll(async () => (await fixture.read()).tab?.backendRevision ?? 0).toBeGreaterThanOrEqual(12);
+  await page.clock.runFor(1200); // Allow the real hydration/autosave hooks to settle.
+  await test.info().attach('restoration-startup-order.json', {
+    body: JSON.stringify(
+      { beforeDelay, afterDelay, events: fixture.events, final: await fixture.read(), backend: fixture.getBackend() },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+  await pending.assertReleasedOrdering();
+  await fixture.assertCurrentPreview(); // Separate durable-current authority from saved snapshot rollback.
+  expect(restorationText(fixture.getBackend().snapshot)).toBe('Newer backend text');
+  expect(restorationText((await fixture.read()).tab!.snapshot)).toBe('Newer backend text');
+  expect(fixture.graphPosts()).toBe(0);
+});
+
+test('startup hydration retains a real unsaved text edit after a failed save', async ({ page }) => {
+  const fixture = await prepareRestorationStartup(page, 'unsaved-restoration-regression');
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await fixture.waitForCanvas();
+  await page.clock.runFor(1200);
+  await expect.poll(async () => (await fixture.read()).tab?.dirty).toBe(false);
+  fixture.rejectNextSave();
+  const text = page
+    .locator('.react-flow__node[data-id="restoration-text"]')
+    .getByRole('textbox', { name: 'Text', exact: true });
+  await text.fill('Genuine unsaved operator edit');
+  await text.blur();
+  await page.clock.runFor(1200);
+  await expect.poll(() => fixture.events.some((event) => event.method === 'PUT' && event.rejected)).toBe(true);
+  const unsaved = await fixture.read();
+  expect(unsaved.tab?.dirty).toBe(true); // Produced by real UI editing and checkpoint/autosave, never set by the test.
+  expect(restorationText(unsaved.tab!.snapshot)).toBe('Genuine unsaved operator edit');
+  expect(restorationText(fixture.getBackend().snapshot)).toBe('Previously acknowledged text');
+  fixture.publishNewer();
+  const pending = fixture.holdNextHydration();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await pending.intercepted;
+  await fixture.waitForCanvas();
+  await page.clock.runFor(400);
+  pending.release();
+  await expect.poll(async () => (await fixture.read()).tab?.backendRevision ?? 0).toBeGreaterThanOrEqual(12);
+  await page.clock.runFor(1200);
+  await test.info().attach('restoration-unsaved-order.json', {
+    body: JSON.stringify(
+      { unsaved, events: fixture.events, final: await fixture.read(), backend: fixture.getBackend() },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+  await pending.assertReleasedOrdering();
+  await expect(text).toHaveValue('Genuine unsaved operator edit');
+  expect(restorationText(fixture.getBackend().snapshot)).toBe('Genuine unsaved operator edit');
+  expect(fixture.graphPosts()).toBe(0);
+});
+
+test('startup hydration keeps a real edit made while its backend read is pending', async ({ page }) => {
+  const fixture = await prepareRestorationStartup(page, 'pending-edit-restoration-regression');
+  fixture.publishNewer();
+  const pending = fixture.holdNextHydration();
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await pending.intercepted;
+  await fixture.waitForCanvas();
+  const text = page
+    .locator('.react-flow__node[data-id="restoration-text"]')
+    .getByRole('textbox', { name: 'Text', exact: true });
+  await text.fill('Operator edit during the pending read');
+  await text.blur();
+  const beforeRelease = await fixture.read();
+  // The real Auto-field blur checkpoints its override synchronously.
+  expect(beforeRelease.tab?.dirty).toBe(true);
+  expect(restorationText(beforeRelease.tab!.snapshot)).toBe('Operator edit during the pending read');
+  await expect(text).toHaveValue('Operator edit during the pending read');
+  pending.release();
+  await expect.poll(async () => (await fixture.read()).tab?.backendRevision ?? 0).toBeGreaterThanOrEqual(12);
+  await page.clock.runFor(1200);
+  await test.info().attach('restoration-pending-edit-order.json', {
+    body: JSON.stringify(
+      { beforeRelease, events: fixture.events, final: await fixture.read(), backend: fixture.getBackend() },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+  await pending.assertReleasedOrdering();
+  await expect(text).toHaveValue('Operator edit during the pending read');
+  expect(restorationText(fixture.getBackend().snapshot)).toBe('Operator edit during the pending read');
+  expect(restorationText((await fixture.read()).tab!.snapshot)).toBe('Operator edit during the pending read');
+  expect(fixture.graphPosts()).toBe(0);
+});
+
+test('startup hydration does not reopen a tab closed while its backend read is pending', async ({ page }) => {
+  const workflowId = 'closed-pending-restoration-regression';
+  const fixture = await prepareRestorationStartup(page, workflowId);
+  fixture.publishNewer();
+  const pending = fixture.holdNextHydration();
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await pending.intercepted;
+  await fixture.waitForCanvas();
+  await page.getByRole('button', { name: 'Close Disposable restoration regression', exact: true }).click();
+  const openIds = () => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.workflowTabs.map((tab) => tab.id));
+  await expect.poll(openIds).not.toContain(workflowId);
+  pending.release();
+  await page.clock.runFor(1200);
+  await pending.assertReleasedOrdering();
+  await expect.poll(openIds).not.toContain(workflowId);
+  expect(fixture.events.filter((event) => event.method === 'PUT')).toHaveLength(0);
+  expect(fixture.getBackend().revision).toBe(12);
+  expect(restorationText(fixture.getBackend().snapshot)).toBe('Newer backend text');
+  expect(fixture.graphPosts()).toBe(0);
+  await test.info().attach('restoration-closed-pending-order.json', {
+    body: JSON.stringify({ events: fixture.events, openIds: await openIds(), backend: fixture.getBackend() }, null, 2),
+    contentType: 'application/json',
+  });
+});
 
 test('mounted V2 preview retains both current collection items through hydration and reload', async ({ page }) => {
   const renderErrors: string[] = [];
@@ -8795,6 +9268,7 @@ test('model downloads show topbar activity, session progress, and completion not
   await installMockRoutes(page);
   await page.goto(FRONTEND_URL);
   await expect(page.getByText('MoDiff')).toBeVisible();
+  await page.waitForFunction(() => typeof window.__MODIFF_E2E__?.sendWebsocketMessage === 'function');
 
   await page.evaluate(() => {
     window.__MODIFF_E2E__!.sendWebsocketMessage({
@@ -30938,6 +31412,9 @@ test('selected FLUX image adapter policy enables original two-row editing, reord
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(orderedAdapters).toEqual([...unchanged].reverse());
   await page.reload({ waitUntil: 'domcontentloaded' });
+  // DEV bridge installation is async; painted controls do not establish its readiness.
+  await page.waitForFunction(() => typeof window.__MODIFF_E2E__?.exportWorkflowGraph === 'function');
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
   await expect(node).toBeVisible();
   await expect.poll(orderedAdapters).toEqual([...unchanged].reverse());
   expect((await graph()).nodes.map((entry) => entry.data.label).sort()).toEqual([
@@ -31103,6 +31580,9 @@ async function assertSelectedAliasAdapterAuthoring(
   await page.keyboard.press('Control+z');
   await expect.poll(async () => (await snapshot()).ordered).toEqual([...original].reverse());
   await page.reload({ waitUntil: 'domcontentloaded' });
+  // DEV bridge installation is async; painted controls do not establish its readiness.
+  await page.waitForFunction(() => typeof window.__MODIFF_E2E__?.exportWorkflowGraph === 'function');
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
   await expect(node).toBeVisible();
   await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
   await expect.poll(async () => (await snapshot()).ordered).toEqual([...original].reverse());
@@ -31335,6 +31815,9 @@ test('ordinary numeric fields preserve imported and typed float precision throug
   await expect(stepped).toHaveValue('0.35');
   const saved = await values();
   await page.reload({ waitUntil: 'domcontentloaded' });
+  // DEV bridge installation is async; painted controls do not establish its readiness.
+  await page.waitForFunction(() => typeof window.__MODIFF_E2E__?.exportWorkflowGraph === 'function');
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
   await expect(stepped).toHaveValue('0.35');
   await expect(padded).toHaveValue('16.0');
   expect(await values()).toEqual(saved);
@@ -32176,7 +32659,7 @@ test('mocked Gallery opens every ordered collection image before and after histo
       await expect
         .poll(() =>
           image.evaluate((element: HTMLImageElement) => ({
-            file: new URL(element.currentSrc).searchParams.get('file'),
+            file: element.currentSrc ? new URL(element.currentSrc).searchParams.get('file') : null,
             width: element.naturalWidth,
             height: element.naturalHeight,
           })),

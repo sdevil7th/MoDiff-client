@@ -1196,6 +1196,18 @@ recovery drafts on the backend; explicit Save places the current document in
 the named workflow library. Neither can be assumed to have succeeded while
 its persistence request is failing.
 
+Startup hydration captures each originally clean document before its backend
+read. A delayed canvas checkpoint may add passive connection flags and an empty
+preview declared by the current registry; these alone must not turn the older
+browser checkpoint into an authored update over the newer backend document.
+The startup merge compares that clean baseline within the same canvas and
+revision context. It recognizes only absent/false connection flags and exact
+registry-declared empty image previews; every other value, form, intent, layout,
+wire and definition stays exact. This comparison does not rewrite persisted
+snapshots or apply to own-save acknowledgements. Restored dirty documents,
+edits made during the read and active runs retain their existing protections,
+and a tab closed during the read is not reopened by its response.
+
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
 
 `graphNodeControls.ts` resolves inspector fields from ordinary parameters or the same `blockControlParamsV2`
