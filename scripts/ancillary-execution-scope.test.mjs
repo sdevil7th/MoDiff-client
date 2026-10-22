@@ -7,6 +7,9 @@ import { createServer } from 'vite';
 const ROOT = process.cwd();
 const cache = mkdtempSync(path.join(tmpdir(), 'modiff-ancillary-scope-'));
 const fixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ancillary-authoring.v1.json'), 'utf8'));
+const fp32Fixture = JSON.parse(
+  readFileSync(path.join(ROOT, 'tests/fixtures/ancillary-fp32-t2i-authoring.v1.json'), 'utf8'),
+);
 let server, select, exporter, hashes, runtime, schema, definitions, selectedStarter, previousWindow;
 before(async () => {
   previousWindow = globalThis.window;
@@ -44,8 +47,8 @@ after(async () => {
   if (previousWindow === undefined) delete globalThis.window;
   else globalThis.window = previousWindow;
 });
-function setup(index = 0) {
-  const row = fixture.parents[index],
+function setup(index = 0, document = fixture) {
+  const row = document.parents[index],
     parent = JSON.parse(row.rawParentJson),
     contract = parent.ancillaryOperations[0],
     registry = structuredClone(row.registry);
@@ -153,6 +156,71 @@ for (let index = 0; index < 4; index++) {
     assert.equal(JSON.stringify(f), before);
   });
 }
+test('actual FP32 T2I declaration selects only its provider Preview and preserves the ordinary image route', () => {
+  const f = setup(0, fp32Fixture),
+    before = JSON.stringify(f),
+    runtime = f.contract.verification.runtimeInputs,
+    request = f.contract.verification.requestInputs;
+  assert.equal(f.parent.id, 'flux3-klein:text-to-image:prompt-preview-fp32-authoring:v1');
+  assert.equal(f.contract.bindings.owner.referenceSource, null);
+  assert.equal(f.parent.roles.length, 5);
+  assert.equal(f.nodes.length, 7);
+  assert.equal(f.edges.length, 8);
+  const selected = (role, field) =>
+    f.contract.initialValues.find(([actualRole, actualField]) => actualRole === role && actualField === field)?.[2];
+  assert.equal(selected(runtime.role, runtime.dtypeField), 'float32');
+  assert.equal(selected(runtime.role, runtime.deviceField), 'cuda:0');
+  assert.equal(selected(runtime.role, runtime.quantizationField), 'none');
+  assert.equal(selected(request.role, request.maxInputTokensField), 4096);
+  const ordinary = run(f),
+    preview = run(f, 'explicit_preview');
+  assert.deepEqual(ids(ordinary.nodeIds), ids(Object.values(f.binding.parentRoleNodes)));
+  assert.deepEqual(ids(preview.nodeIds), ids(Object.values(f.binding.roleNodes)));
+  assert.deepEqual(Object.keys(api(f, ordinary.targetNodeIds).nodes).sort(), ids(ordinary.nodeIds));
+  const previewApi = api(f, preview.targetNodeIds);
+  assert.deepEqual(Object.keys(previewApi.nodes).sort(), ids(preview.nodeIds));
+  const images = previewApi.nodes[f.request.id].params[f.contract.bindings.request.imagesField];
+  assert.equal(images?.sourceId, undefined);
+  assert.equal(images?.value ?? null, null);
+  assert.equal(JSON.stringify(f), before);
+});
+
+for (const [name, field, value] of [
+  ['dtype', 'dtypeField', 'bfloat16'],
+  ['device', 'deviceField', 'cpu'],
+  ['quantization', 'quantizationField', 'bnb_4bit'],
+])
+  test(`actual FP32 T2I Preview refuses a changed ${name} literal`, () => {
+    const f = setup(0, fp32Fixture),
+      runtime = f.contract.verification.runtimeInputs,
+      provider = f.nodes.find((node) => node.id === f.binding.roleNodes[runtime.role]);
+    provider.data.params[runtime[field]].value = value;
+    assert.throws(() => run(f, 'explicit_preview'), /declared input selection changed/u);
+    assert.deepEqual(ids(run(f).nodeIds), ids(Object.values(f.binding.parentRoleNodes)));
+  });
+
+test('actual FP32 T2I Preview refuses a changed input-token bound', () => {
+  const f = setup(0, fp32Fixture),
+    request = f.contract.verification.requestInputs;
+  f.request.data.params[request.maxInputTokensField].value = 32768;
+  assert.throws(() => run(f, 'explicit_preview'), /declared input selection changed/u);
+});
+
+test('current legacy T2I declaration retains its NF4 recipe and refuses FP32 substitution', () => {
+  const f = setup(0, {
+      parents: [{ ...fp32Fixture.currentLegacyParent, registry: fp32Fixture.parents[0].registry }],
+    }),
+    runtime = f.contract.verification.runtimeInputs,
+    provider = f.nodes.find((node) => node.id === f.binding.roleNodes[runtime.role]);
+  assert.equal(f.parent.id, 'flux3-klein:text-to-image:prompt-preview-authoring:v1');
+  assert.equal(provider.data.params[runtime.dtypeField].value, 'bfloat16');
+  assert.equal(provider.data.params[runtime.quantizationField].value, 'bnb_4bit');
+  assert.deepEqual(ids(run(f, 'explicit_preview').nodeIds), ids(Object.values(f.binding.roleNodes)));
+  provider.data.params[runtime.dtypeField].value = 'float32';
+  provider.data.params[runtime.quantizationField].value = 'none';
+  assert.throws(() => run(f, 'explicit_preview'), /declared input selection changed/u);
+});
+
 test('unclaimed graphs retain the original all-sinks export and leaf target semantics', () => {
   const f = setup();
   delete f.owner.data.operationAuthoring;
