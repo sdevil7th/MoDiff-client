@@ -161,6 +161,8 @@ function assertDeclaredLayout(child: AncillaryOperation, layout: unknown) {
     )
   )
     invalidAncillary('this enhancement does not support authored layout objects. Keep the raw prompt/layout path.');
+  if (layout !== null && child.layoutPolicy !== 'preserve-authored-v1')
+    invalidAncillary('this enhancement does not declare lossless authored-layout preservation.');
 }
 
 export async function promptEnhancementPairHash(pair: AuthoredEnhancementPair): Promise<`sha256:${string}`> {
@@ -189,14 +191,6 @@ export async function planEnablePromptEnhancement(
   const { parseLayoutConditioning } = await import('./layoutConditioning');
   parseLayoutConditioning(pair.layout);
   assertDeclaredLayout(child, pair.layout);
-  if (pair.layout !== null) {
-    const layout = parseLayoutConditioning(pair.layout);
-    if (
-      !layout ||
-      layout.regions.some((region) => 'source' in region || ('action' in region && region.action !== 'place'))
-    )
-      invalidAncillary('enhancement does not support source-region or removal proposals; keep the raw prompt path.');
-  }
   const { createNodeFromRegistry } = await import('../workflow/nodeFactory');
   const children = child.roles.map(([role, key, x, y]) => {
     const node = createNodeFromRegistry(key, registry, { x: owner.position.x + x, y: owner.position.y + y });
@@ -340,6 +334,7 @@ export async function planApplyPromptEnhancement(
   const { canonicalBlockStringifyV2 } = await import('./blockSchemaV2');
   const authoredLayout = parseLayoutConditioning(original.layout),
     proposedLayout = parseLayoutConditioning(pair.layout);
+  assertDeclaredLayout(child, original.layout);
   const geometry = (layout: typeof authoredLayout) =>
     layout === null
       ? null
@@ -351,10 +346,7 @@ export async function planApplyPromptEnhancement(
             return copy;
           }),
         };
-  if (
-    proposedLayout?.regions.some((region) => 'source' in region || ('action' in region && region.action !== 'place')) ||
-    canonicalBlockStringifyV2(geometry(authoredLayout)) !== canonicalBlockStringifyV2(geometry(proposedLayout))
-  )
+  if (canonicalBlockStringifyV2(geometry(authoredLayout)) !== canonicalBlockStringifyV2(geometry(proposedLayout)))
     invalidAncillary('a prompt enhancement cannot change authored layout identities or geometry.');
   owner.data.params[child.bindings.owner.promptField]!.value = pair.prompt;
   owner.data.params[child.bindings.owner.layoutField]!.value = structuredClone(pair.layout);
@@ -440,10 +432,8 @@ export async function planRefreshPromptEnhancementRequest(
     owner.data.params[child.bindings.owner.layoutField]!.value = structuredClone(pair.layout);
   }
   const { parseLayoutConditioning } = await import('./layoutConditioning');
-  const layout = parseLayoutConditioning(pair.layout);
+  parseLayoutConditioning(pair.layout);
   assertDeclaredLayout(child, pair.layout);
-  if (layout?.regions.some((region) => 'source' in region || ('action' in region && region.action !== 'place')))
-    invalidAncillary('source-region and removal enhancement are unsupported; keep the raw prompt path.');
   request.data.params[child.bindings.request.promptField]!.value = pair.prompt;
   request.data.params[child.bindings.request.layoutField]!.value = structuredClone(pair.layout);
   delete selection.appliedPairSha256;

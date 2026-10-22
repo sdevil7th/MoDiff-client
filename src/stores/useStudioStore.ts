@@ -623,7 +623,12 @@ function normalizeWorkflowSnapshot(
         (node.data.module === 'modules.Spandrel' && node.data.action === 'Upscaler'),
     );
   const inferredManagedForm = shouldRecoverManagedIdentity
-    ? resolveStudioResourceForm(inferStudioFormFromWorkflow(nodes, persistedStudioForm))
+    ? resolveStudioResourceForm({
+        ...inferStudioFormFromWorkflow(nodes, persistedStudioForm),
+        // Graph inference refreshes the recipe summary, not the document's
+        // explicit memory policy. Missing/invalid legacy values already coerce to Auto.
+        resourceMode: persistedStudioForm.resourceMode,
+      })
     : persistedStudioForm;
   const adoptedGraph =
     shouldRecoverManagedIdentity && !ordinaryImageImport

@@ -87,11 +87,22 @@ proposal. Apply uses the ordinary Undo transaction. **Regenerate** reuses the
 original request after an untouched Apply; **Disable** preserves subsequent user
 edits. Reload requires a fresh verified Preview before applying a proposal.
 
-Current enhancement authoring permits plain text-to-image and image editing only.
-Structured-layout enhancement remains unavailable because its publisher output
-does not preserve the required authored region IDs, count and geometry. Client
-contract tests do not qualify generated images, browser Apply with a trained model,
-model turnover, Auto placement or any additional hardware.
+An enhancement declaration may additionally select `preserve-authored-v1` for
+structured layouts. Preview may enhance the caption and region descriptions only.
+This capability uses a distinct private version-two authoring recipe. Existing
+version-one plain recipes keep their exact declarations and bindings; importing
+an old document does not silently upgrade it to structured enhancement.
+The complete table must map one-to-one to the authored IDs, source image indices,
+source/target boxes and actions. A generated ID can be remapped only through a
+unique exact geometry/source/action match; ambiguous or changed regions are refused.
+Coordinates must map exactly to the publisher's integer grid and are never rounded.
+Existing reference bindings are retained, never created by enhancement. Apply
+does not grant a new source-region tool: `sourceRegions: false` retains that
+boundary while `layoutPolicy` admits preservation of an already authored DTO.
+The downstream encoder still checks the current reference binding. Apply
+changes the caption/layout pair in one Undo transaction. Native model output,
+browser Apply, model turnover, Auto placement and hardware fit require their own
+validation; a declaration or client contract test does not establish them.
 
 ## Group nodes into a reusable Block
 

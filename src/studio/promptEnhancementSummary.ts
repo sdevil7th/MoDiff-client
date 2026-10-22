@@ -81,10 +81,11 @@ export type EnhancementConsumedInput = {
 };
 export type EnhancementTargetRow =
   | { id: string; bbox: [number, number, number, number]; desc: string }
-  | { id: string; from: 'target'; src_bbox: null; tgt_bbox: [number, number, number, number]; desc: string };
+  | { id: string; from: string; src_bbox: number[] | null; tgt_bbox: number[] | null; desc: string };
 export type EnhancementStructuredProposal = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   caption: string;
+  rawCaption?: string;
   layoutConditioning: LayoutConditioning;
   rawTable: EnhancementTargetRow[];
 };
@@ -555,9 +556,8 @@ function targetLayout(value: unknown): LayoutConditioning {
   const parsed = parseLayoutConditioning(value);
   if (!parsed || parsed.regions.length === 0) invalid('expected authored target regions.');
   for (const region of parsed.regions) {
-    if (region.source || (region.action !== undefined && region.action !== 'place') || !region.targetBox)
-      invalid('source-region proposals are unsupported.');
-    upstreamBox(region.targetBox);
+    if (region.targetBox) upstreamBox(region.targetBox);
+    if (region.source) upstreamBox(region.source.box);
   }
   return parsed;
 }
@@ -567,47 +567,97 @@ function parseStructured(
   mode: PromptEnhancementMode,
   imageCount: number,
 ): EnhancementStructuredProposal {
-  const item = object(value, ['schemaVersion', 'caption', 'layoutConditioning', 'rawTable']);
-  if (item.schemaVersion !== 1) invalid('unsupported structured proposal.');
+  const version = value && typeof value === 'object' ? (value as Record<string, unknown>).schemaVersion : null;
+  const item = object(value, [
+    'schemaVersion',
+    'caption',
+    'layoutConditioning',
+    'rawTable',
+    ...(version === 2 ? ['rawCaption'] : []),
+  ]);
+  if (item.schemaVersion !== 1 && item.schemaVersion !== 2) invalid('unsupported structured proposal.');
   const caption = text(item.caption, 262144, 131072, true);
-  if (caption.includes('```') || JSON.stringify(item.rawTable).includes('```'))
+  const rawCaption = item.schemaVersion === 2 ? text(item.rawCaption, 262144, 131072, true) : caption;
+  if (caption.includes('```') || rawCaption.includes('```') || JSON.stringify(item.rawTable).includes('```'))
     invalid('structured output contains a Markdown fence.');
   const layout = targetLayout(item.layoutConditioning);
+  if (item.schemaVersion === 1 && layout.regions.some((region) => region.source))
+    invalid('source preservation requires a version two native-caption proposal.');
   const rows = list(item.rawTable, 32);
   if (rows.length !== layout.regions.length) invalid('target table differs from layout region count.');
-  const seen = new Set<string>();
+  const seen = new Set<string>(),
+    assigned = new Set<string>(),
+    mapping = new Map<string, string>();
+  const box = (value: unknown) => {
+    const result = list(value, 4).map((coordinate) => integer(coordinate, 0, 1000));
+    if (result.length !== 4 || result[0]! >= result[2]! || result[1]! >= result[3]!) invalid('invalid table box.');
+    return result;
+  };
+  const signature = (region: LayoutConditioning['regions'][number]) =>
+    canonicalBlockStringifyV2([
+      region.source?.referenceIndex ?? null,
+      region.source ? upstreamBox(region.source.box) : null,
+      region.targetBox ? upstreamBox(region.targetBox) : null,
+      region.action ?? (region.source ? 'relocate' : 'place'),
+    ]);
   for (const raw of rows) {
     const row = object(
       raw,
       mode === 't2i_bbox' ? ['id', 'bbox', 'desc'] : ['id', 'from', 'src_bbox', 'tgt_bbox', 'desc'],
     );
-    if (typeof row.id !== 'string' || seen.has(row.id)) invalid('duplicate or unknown target row.');
-    const region = layout.regions.find((region) => region.id === row.id);
-    if (!region || row.desc !== region.description) invalid('table description or ID differs from layout.');
+    if (
+      typeof row.id !== 'string' ||
+      !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(row.id) ||
+      /^ref_image_[0-9]+$/u.test(row.id) ||
+      seen.has(row.id)
+    )
+      invalid('duplicate or unknown target row.');
     text(row.desc, 16384, 4096, true);
     seen.add(row.id);
-    if (mode === 'i2i_bbox' && (row.from !== 'target' || row.src_bbox !== null))
-      invalid('source table mapping is unsupported.');
-    const box = list(mode === 't2i_bbox' ? row.bbox : row.tgt_bbox, 4).map((value) => integer(value, 0, 1000));
-    if (
-      box.length !== 4 ||
-      box[0]! >= box[2]! ||
-      box[1]! >= box[3]! ||
-      canonicalBlockStringifyV2(box) !== canonicalBlockStringifyV2(upstreamBox(region.targetBox!))
-    )
-      invalid('target table geometry differs from layout.');
+    let expected: unknown[];
+    if (mode === 't2i_bbox') expected = [null, null, box(row.bbox), 'place'];
+    else {
+      const reference = typeof row.from === 'string' ? /^ref_image_(0|[1-9][0-9]?)$/u.exec(row.from) : null;
+      const index = reference ? Number(reference[1]) : null;
+      if (!(row.from === 'target' && row.src_bbox === null) && !(index !== null && index < imageCount))
+        invalid('source table mapping differs from actual supplied images.');
+      const source = index === null ? null : box(row.src_bbox);
+      const target = row.tgt_bbox === null ? null : box(row.tgt_bbox);
+      if (index === null && target === null) invalid('placement requires target geometry.');
+      expected = [index, source, target, index === null ? 'place' : target === null ? 'remove' : 'relocate'];
+    }
+    let candidates = layout.regions.filter((region) => signature(region) === canonicalBlockStringifyV2(expected));
+    if (layout.regions.some((region) => region.id === row.id))
+      candidates = candidates.filter((region) => region.id === row.id);
+    const region = candidates[0];
+    if (candidates.length !== 1 || !region || assigned.has(region.id))
+      invalid('table has no unambiguous authored-region bijection.');
+    if (row.desc !== region.description) invalid('table description differs from layout.');
+    assigned.add(region.id);
+    mapping.set(row.id, region.id);
   }
-  const tags = [...caption.matchAll(/<([^<>]*)>/gu)].map((match) => match[1]!);
-  if (/[<>]/u.test(caption.replace(/<[^<>]*>/gu, ''))) invalid('caption has malformed tags.');
-  for (const region of layout.regions)
-    if (tags.filter((tag) => tag === region.id).length !== 1) invalid('caption must cite each target exactly once.');
+  const tags = [...rawCaption.matchAll(/<([^<>]*)>/gu)].map((match) => match[1]!);
+  if (/[<>]/u.test(rawCaption.replace(/<[^<>]*>/gu, ''))) invalid('caption has malformed tags.');
+  for (const identity of mapping.keys())
+    if (tags.filter((tag) => tag === identity).length !== 1) invalid('caption must cite each target exactly once.');
   for (const tag of tags) {
-    if (layout.regions.some((region) => region.id === tag)) continue;
+    if (mapping.has(tag)) continue;
     const reference = /^ref_image_(0|[1-9][0-9]?)$/u.exec(tag);
     if (!reference || Number(reference[1]) >= imageCount) invalid('caption cites an unknown reference.');
   }
+  if (
+    rawCaption.replace(/<([^<>]*)>/gu, (_match, identity: string) => `<${mapping.get(identity) ?? identity}>`) !==
+    caption
+  )
+    invalid('caption does not preserve the exact native-to-authored ID mapping.');
   jsonBudget(item, 262144);
-  return { schemaVersion: 1, caption, layoutConditioning: layout, rawTable: rows as EnhancementTargetRow[] };
+  return {
+    schemaVersion: item.schemaVersion,
+    caption,
+    ...(item.schemaVersion === 2 ? { rawCaption } : {}),
+    layoutConditioning: layout,
+    rawTable: rows as EnhancementTargetRow[],
+  };
 }
 
 function parseProposal(value: unknown, consumed: EnhancementConsumedInput, controls: PromptEnhancementControls) {
@@ -824,7 +874,6 @@ export async function verifyPromptEnhancementSummaryBindings(
   if (prompt.includes('\0')) invalid('authored prompt contains NUL.');
   if ((await sha256(prompt)) !== summary.request.authoredPromptSha256) invalid('authored prompt digest differs.');
   const layout = parseLayoutConditioning(expected.authoredLayout);
-  if (layout?.regions.some((region) => region.source)) invalid('source-region enhancement is unsupported.');
   const layoutKind = layout === null ? 'none' : 'object';
   if (summary.request.authoredLayoutKind !== layoutKind) invalid('authored layout representation differs.');
   const layoutDigest =

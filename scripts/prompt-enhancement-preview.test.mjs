@@ -259,6 +259,8 @@ function syntheticEnvelope(run, warm = false) {
   };
   const prompt = input(child.bindings.request.role, child.bindings.request.promptField),
     rendered = `Synthetic rendered ${prompt}`;
+  const authoredLayout = input(child.bindings.request.role, child.bindings.request.layoutField);
+  const mode = authoredLayout?.regions.length ? 't2i_bbox' : 't2i';
   const consumed = {
     schemaVersion: 1,
     renderedPrompt: rendered,
@@ -268,8 +270,8 @@ function syntheticEnvelope(run, warm = false) {
       operation: 'enhance_prompt',
       enhancement_max_new_tokens: controls.max_new_tokens,
       prompt_adapter_id: verification.adapter.id,
-      system_prompt_mode: 't2i',
-      system_prompt_sha256: verification.systemPromptSha256ByMode.t2i,
+      system_prompt_mode: mode,
+      system_prompt_sha256: verification.systemPromptSha256ByMode[mode],
       rendered_prompt_sha256: sha(rendered),
       rendered_prompt_utf8_bytes: Buffer.byteLength(rendered),
       rendered_input_ids_sha256: sha('synthetic input token IDs'),
@@ -283,23 +285,44 @@ function syntheticEnvelope(run, warm = false) {
     adapter: verification.adapter,
     request: {
       authoredPromptSha256: sha(prompt),
-      authoredLayoutKind: 'none',
-      authoredLayoutSha256: null,
+      authoredLayoutKind: authoredLayout === null ? 'none' : 'object',
+      authoredLayoutSha256: authoredLayout === null ? null : sha(canonical({ kind: 'object', value: authoredLayout })),
       controls,
       consumedInputSha256: sha(canonical(consumed)),
     },
     modelReceipt: receipt,
     consumedInput: consumed,
     proposal: {
-      mode: 't2i',
-      text: 'Synthetic independently reviewed proposal.',
-      structuredProposal: null,
+      mode,
+      text: mode === 't2i' ? 'Synthetic independently reviewed proposal.' : null,
+      structuredProposal:
+        mode === 't2i'
+          ? null
+          : {
+              schemaVersion: 2,
+              caption: authoredLayout.regions.map((region) => `Enhanced <${region.id}>.`).join(' '),
+              rawCaption: authoredLayout.regions.map((_region, index) => `Enhanced <native_${index}>.`).join(' '),
+              layoutConditioning: {
+                ...structuredClone(authoredLayout),
+                regions: authoredLayout.regions.map((region) => ({
+                  ...structuredClone(region),
+                  description: 'Enhanced description.',
+                })),
+              },
+              rawTable: authoredLayout.regions.map((region, index) => ({
+                id: `native_${index}`,
+                bbox: [region.targetBox[1], region.targetBox[0], region.targetBox[3], region.targetBox[2]].map(
+                  (value) => value * 1000,
+                ),
+                desc: 'Enhanced description.',
+              })),
+            },
       finishReason: 'stop',
       inputTokens: 7,
       generatedTokens: 3,
       applyRequired: true,
       applicationAllowed: true,
-      layoutOutputValidated: null,
+      layoutOutputValidated: mode === 't2i' ? null : true,
       semanticFidelityVerified: false,
       applicationBlockedReason: null,
     },
@@ -380,6 +403,62 @@ test('actual metadata remains private; Enable and atomic Apply use normal Undo/R
   await preview.disablePromptEnhancement(ownerId, child.id);
   assert.equal(activeOwner(ownerId).data.params.prompt.value, pair.prompt);
   assert.equal(flow.getState().nodes.length, 4);
+});
+
+test('declared structured Preview reaches paired Apply and one Undo without changing authored geometry', async () => {
+  const saved = structuredClone(parent);
+  const originalSelectionId = fixture.selection.authoringRecipeId;
+  try {
+    const { hashString, stableStringify } = await server.ssrLoadModule('/src/studio/stableHash.ts');
+    child.layoutPolicy = 'preserve-authored-v1';
+    parent.id = parent.id.replace(/:v1$/u, ':v2');
+    child.id = `${parent.id}:preview`;
+    child.parent.authoringRecipeId = parent.id;
+    fixture.selection.authoringRecipeId = parent.id;
+    child.verification.supportedPromptModes = ['t2i', 'i2i', 't2i_bbox', 'i2i_bbox'];
+    child.verification.layoutRequestSuffixSha256 = sha('synthetic declared preservation suffix');
+    const { contentHash: _childHash, ...childBody } = child;
+    child.contentHash = `studio-ancillary-v1-${hashString(stableStringify(childBody))}`;
+    const { contentHash: _parentHash, ...parentBody } = parent;
+    parent.contentHash = `studio-authoring-v1-${hashString(stableStringify(parentBody))}`;
+    const { ownerId } = await setup();
+    const layout = {
+      schemaVersion: 2,
+      coordinateSpace: 'normalized_xyxy',
+      regions: [
+        {
+          id: 'authored_object',
+          description: 'Original description.',
+          action: 'place',
+          targetBox: [0.1, 0.2, 0.4, 0.7],
+        },
+      ],
+    };
+    editOwnerField(ownerId, 'prompt', 'A scene with <authored_object>.');
+    editOwnerField(ownerId, 'layout_conditioning', layout);
+    await preview.enablePromptEnhancement(ownerId);
+    const run = await preview.startPromptEnhancementPreview(ownerId, child.id);
+    syntheticEnvelope(run);
+    const proposal = await preview.finishPromptEnhancementPreview(run);
+    assert.equal(preview.promptEnhancementPreviewDetails(proposal).proposal.structuredProposal.schemaVersion, 2);
+    const before = structuredClone(flow.getState().toObject());
+    flow.getState().resetHistory();
+    await preview.applyPromptEnhancementPreview(proposal);
+    assert.equal(activeOwner(ownerId).data.params.prompt.value, 'Enhanced <authored_object>.');
+    assert.deepEqual(
+      activeOwner(ownerId).data.params.layout_conditioning.value.regions[0].targetBox,
+      layout.regions[0].targetBox,
+    );
+    assert.equal(flow.getState().historyPast.length, 1);
+    flow.getState().undo();
+    assert.deepEqual(flow.getState().toObject(), before);
+  } finally {
+    fixture.selection.authoringRecipeId = originalSelectionId;
+    for (const key of Object.keys(child)) delete child[key];
+    Object.assign(child, saved.ancillaryOperations[0]);
+    for (const key of Object.keys(parent)) if (key !== 'ancillaryOperations') delete parent[key];
+    Object.assign(parent, { ...saved, ancillaryOperations: [child] });
+  }
 });
 
 test('normal unavailable metadata and concurrent document/session/task changes refuse before mutation or dispatch', async (t) => {

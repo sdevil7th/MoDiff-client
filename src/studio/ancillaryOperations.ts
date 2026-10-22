@@ -8,6 +8,7 @@ import { hashString, stableStringify } from './stableHash';
 export type AncillaryVerification = {
   schemaVersion: 1;
   supportedPromptModes: PromptEnhancementMode[];
+  layoutRequestSuffixSha256?: string;
   runtimeInputs: {
     role: string;
     modelField: string;
@@ -40,6 +41,7 @@ export type AncillaryOperation = {
   parent: AncillaryParentIdentity;
   executionPurpose: 'explicit_preview';
   sourceRegions: false;
+  layoutPolicy?: 'preserve-authored-v1';
   verification?: AncillaryVerification;
   roles: [string, string, number, number][];
   edges: [string, string, string, string][];
@@ -87,6 +89,9 @@ export function parseAncillaryOperations(value: unknown, context: AncillaryParen
       'initialValues',
       'adapter',
       'sourceRegions',
+      ...(raw && typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'layoutPolicy')
+        ? ['layoutPolicy']
+        : []),
       ...(raw && typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'verification')
         ? ['verification']
         : []),
@@ -103,6 +108,8 @@ export function parseAncillaryOperations(value: unknown, context: AncillaryParen
     )
       invalidAncillary('unsupported or duplicate declaration.');
     ids.add(id);
+    if (item.layoutPolicy !== undefined && item.layoutPolicy !== 'preserve-authored-v1')
+      invalidAncillary('unsupported authored-layout preservation policy.');
     const selected = parent(item.parent, false);
     for (const key of PARENT_KEYS) if (selected[key] !== context[key]) invalidAncillary('parent selection differs.');
     const roles = new Set<string>();
@@ -245,8 +252,12 @@ export function parseAncillaryVerification(value: unknown, adapter?: Record<stri
     'runtimeInputs',
     'requestInputs',
     'supportedPromptModes',
+    ...(value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'layoutRequestSuffixSha256')
+      ? ['layoutRequestSuffixSha256']
+      : []),
   ]);
   if (item.schemaVersion !== 1) invalidAncillary('unsupported verification metadata.');
+  if (item.layoutRequestSuffixSha256 !== undefined) text(item.layoutRequestSuffixSha256, 71, /^sha256:[0-9a-f]{64}$/u);
   const supported = collection(item.supportedPromptModes, 4, 1);
   if (
     new Set(supported).size !== supported.length ||

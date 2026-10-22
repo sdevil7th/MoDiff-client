@@ -60,6 +60,119 @@ function record(t) {
   return { ...t, revision: 1 };
 }
 
+function ordinaryImageSnapshot(module, action, resourceMode) {
+  const node = (id, module, action, params) => ({
+    id,
+    type: 'custom',
+    position: { x: 40, y: 80 },
+    data: { type: 'custom', module, action, label: action, params },
+  });
+  const studioForm = { ...defaultForm, resourceMode, prompt: 'Saved form summary' };
+  if (resourceMode === undefined) delete studioForm.resourceMode;
+  return {
+    nodes: [
+      node('source', 'modules.Image', 'Load', { image: { type: 'image', display: 'output', isConnected: true } }),
+      node('operation', module, action, {
+        operation: { type: 'string', value: 'image_upscale' },
+        images: { type: 'image', display: 'input', isConnected: true },
+        output: { type: 'image', display: 'output', isConnected: false },
+      }),
+      node('model', 'modules.ModularDiffusers', 'ModelsLoader', {
+        model_type: { type: 'string', value: 'SyntheticPipeline' },
+        dtype: { type: 'string', value: 'bfloat16' },
+        device: { type: 'string', value: 'cpu' },
+        offload_mode: { type: 'string', value: 'none' },
+        auto_offload: { type: 'boolean', value: false },
+      }),
+      node('prompt', 'modules.ModularDiffusers', 'EncodePrompt', {
+        prompt: { type: 'string', value: 'Current graph caption' },
+      }),
+    ],
+    edges: [
+      { id: 'source-wire', source: 'source', sourceHandle: 'image', target: 'operation', targetHandle: 'images' },
+    ],
+    viewport: { x: -20, y: 30, zoom: 0.75 },
+    studioForm,
+    selectedMode: studioForm.mode,
+    studioGraphBinding: null,
+    activeTemplateId: null,
+    sourceOutputId: null,
+  };
+}
+
+test('ordinary image document normalization preserves memory policy through import, switching and hydration', async (t) => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  const previousFetch = globalThis.fetch;
+  const wire = (edge) => [edge.id, edge.source, edge.sourceHandle, edge.target, edge.targetHandle];
+  try {
+    globalThis.fetch = async () => assert.fail('Document normalization must not dispatch a request.');
+    for (const [module, action] of [
+      ['modules.ImageOperations', 'ProcessImage'],
+      ['modules.DiffusersImage', 'LoadPipeline'],
+      ['modules.Spandrel', 'Upscaler'],
+    ]) {
+      for (const [label, value, expected] of [
+        ['Custom', 'expert', 'expert'],
+        ['Automatic', 'auto', 'auto'],
+        ['legacy manual', 'manual', 'expert'],
+        ['absent', undefined, 'auto'],
+        ['invalid', 'unrecognized-policy', 'auto'],
+      ]) {
+        await t.test(`${action}: ${label}`, () => {
+          studio.setState({ workflowTabs: [], activeWorkflowTabId: null });
+          const snapshot = ordinaryImageSnapshot(module, action, value);
+          const original = structuredClone(snapshot);
+          const id = studio.getState().createWorkflowTab('Saved image graph', snapshot, 'import');
+          const assertDocument = () => {
+            const saved = tab(id).snapshot;
+            assert.equal(saved.studioForm.resourceMode, expected);
+            assert.equal(studio.getState().form.resourceMode, expected);
+            assert.equal(
+              saved.studioForm.prompt,
+              'Current graph caption',
+              'Graph inference still refreshes its summary.',
+            );
+            assert.equal(saved.studioGraphBinding, null);
+            assert.deepEqual(
+              saved.nodes.map(({ id, data }) => [id, data.params]),
+              snapshot.nodes.map(({ id, data }) => [id, data.params]),
+            );
+            assert.deepEqual(saved.edges.map(wire), snapshot.edges.map(wire));
+            assert.deepEqual(saved.viewport, snapshot.viewport);
+          };
+          assertDocument();
+          studio.getState().createWorkflowTab('Another document');
+          studio.getState().switchWorkflowTab(id);
+          assertDocument();
+          studio.setState({ workflowTabs: [], activeWorkflowTabId: id });
+          studio.getState().mergeBackendWorkflow({
+            id,
+            title: 'Saved image graph',
+            source: 'import',
+            createdAt: 1,
+            updatedAt: 2,
+            revision: 1,
+            snapshot,
+          });
+          assertDocument();
+          assert.deepEqual(snapshot, original, 'Normalization cannot mutate the input document.');
+        });
+      }
+    }
+  } finally {
+    globalThis.fetch = previousFetch;
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
+});
+
+test('fresh ordinary graph inference still defaults to Automatic without a saved memory choice', async () => {
+  const inference = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  const snapshot = ordinaryImageSnapshot('modules.ImageOperations', 'ProcessImage', 'expert');
+  assert.equal(inference.inferStudioFormFromWorkflow(snapshot.nodes, snapshot.studioForm).resourceMode, 'auto');
+});
+
 test('a genuinely new tab skips its first GET and consumes its marker before the ordinary PUT', async () => {
   const id = studio.getState().createWorkflowTab();
   const t = tab(id);

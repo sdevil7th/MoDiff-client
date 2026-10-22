@@ -399,7 +399,13 @@ test('startup hydration retains a real unsaved text edit after a failed save', a
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await fixture.waitForCanvas();
   await page.clock.runFor(1200);
-  await expect.poll(async () => (await fixture.read()).tab?.dirty).toBe(false);
+  // The clock stays paused; late startup publications can schedule another autosave.
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(500);
+      return (await fixture.read()).tab?.dirty;
+    })
+    .toBe(false);
   fixture.rejectNextSave();
   const text = page
     .locator('.react-flow__node[data-id="restoration-text"]')
@@ -31531,7 +31537,8 @@ async function assertSelectedAliasAdapterAuthoring(
   });
   expect(baseline.guiderEnabled).toBe(selection.guiderEnabled);
   expect(Number(baseline.embeddedGuidance)).toBe(selection.embeddedGuidance);
-  await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  const addLora = node.getByRole('button', { name: 'Add LoRA', exact: true });
+  await expect(addLora).toBeEnabled();
   const retainedAdapters = await page.evaluate(async () => {
     const { STUDIO_TEMPLATES } = await import('/src/studio/templates.ts');
     const settings = STUDIO_TEMPLATES.find((template) => template.id === 'flux_lora_cinematic_octane_3d')!
@@ -31541,8 +31548,11 @@ async function assertSelectedAliasAdapterAuthoring(
     return [settings, ...settings.additionalAdapters!];
   });
   expect(retainedAdapters).toHaveLength(2);
+  // Arrange and visibility alone do not establish a hittable canvas target.
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  await addLora.click({ trial: true, timeout: 15_000 });
   for (const [index, adapter] of retainedAdapters.entries()) {
-    await node.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+    await addLora.click();
     const dialog = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
     await dialog.getByLabel('Model', { exact: true }).fill(adapter.model!.value);
     await dialog.getByLabel('Revision', { exact: true }).fill(adapter.model!.revision!);

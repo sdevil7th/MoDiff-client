@@ -1027,6 +1027,10 @@ is the single policy selector.
 
 Both storage keys and legacy normalizers remain unchanged. A restored workflow
 keeps its own resource settings while tabs share the global editing preference.
+Import, tab switching and backend hydration preserve the document's normalized
+memory policy before resolving an inferred image recipe. Graph-derived summaries
+may refresh; they must not replace an explicit Custom policy with Automatic.
+Missing or invalid legacy choices and fresh raw-graph inference still default to Automatic.
 Graph Fix and Run Issues may open Expert tools without changing execution policy.
 Older clients can read the same workflow fields but still couple their controls;
 independent behavior requires the matching updated client bundle.

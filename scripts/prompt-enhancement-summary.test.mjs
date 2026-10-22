@@ -2,11 +2,16 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
+const cache = mkdtempSync(path.join(tmpdir(), 'modiff-enhancement-summary-'));
 let server, contract, canonical;
 before(async () => {
   server = await createServer({
     configFile: false,
+    cacheDir: cache,
     logLevel: 'silent',
     appType: 'custom',
     optimizeDeps: { entries: [], noDiscovery: true },
@@ -15,7 +20,10 @@ before(async () => {
   contract = await server.ssrLoadModule('/src/studio/promptEnhancementSummary.ts');
   canonical = (await server.ssrLoadModule('/src/studio/blockSchemaV2.ts')).canonicalBlockStringifyV2;
 });
-after(async () => server?.close());
+after(async () => {
+  await server?.close();
+  rmSync(cache, { recursive: true, force: true });
+});
 
 const sha = (text) => `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
 const copy = (value) => structuredClone(value);
@@ -187,6 +195,48 @@ const layout = (version = 2) => ({
 const parse = (value) => contract.parsePromptEnhancementSummary(JSON.stringify(value));
 const verify = ({ value, expected }) =>
   contract.verifyPromptEnhancementSummaryBindings(JSON.stringify(value), expected);
+
+test('structured source proposals preserve authored binding and remap only a unique exact native table', async () => {
+  const authored = layout();
+  authored.regions[0].action = 'relocate';
+  authored.regions[0].source = { referenceIndex: 0, box: [0, 0, 1, 1], expectedReferenceId: sha('bound encoding') };
+  const input = fixture({ layout: authored, images: 1 });
+  const structured = input.value.proposal.structuredProposal;
+  structured.schemaVersion = 2;
+  structured.rawCaption = 'Move <circle_1> from <ref_image_0>.';
+  structured.caption = 'Move <region_1> from <ref_image_0>.';
+  Object.assign(structured.rawTable[0], { id: 'circle_1', from: 'ref_image_0', src_bbox: [0, 0, 1000, 1000] });
+  const result = await verify(input);
+  assert.deepEqual(result.proposal.structuredProposal.layoutConditioning.regions[0].source, authored.regions[0].source);
+  for (const mutate of [
+    (s) => {
+      s.rawTable[0].src_bbox[0] = 1;
+    },
+    (s) => {
+      s.rawTable[0].tgt_bbox[0] = 201;
+    },
+    (s) => {
+      s.caption = s.rawCaption;
+    },
+    (s) => {
+      s.rawCaption += ' <foreign>';
+    },
+    (s) => {
+      s.layoutConditioning.regions[0].source.expectedReferenceId = sha('stale binding');
+    },
+  ]) {
+    const changed = copy(input);
+    mutate(changed.value.proposal.structuredProposal);
+    await assert.rejects(verify(changed), /geometry|bijection|mapping|reference|caption/i);
+  }
+  const ambiguous = copy(input);
+  const s = ambiguous.value.proposal.structuredProposal;
+  s.layoutConditioning.regions.push({ ...copy(s.layoutConditioning.regions[0]), id: 'another' });
+  s.rawTable.push({ ...copy(s.rawTable[0]), id: 'circle_2' });
+  s.rawCaption += ' <circle_2>';
+  s.caption += ' <another>';
+  assert.throws(() => parse(ambiguous.value), /bijection/);
+});
 
 test('synthetic text, image and target-layout summaries parse and match external snapshots without granting Apply', async (t) => {
   for (const settings of [

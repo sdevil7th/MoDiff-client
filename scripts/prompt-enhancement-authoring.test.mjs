@@ -7,8 +7,9 @@ import { createServer } from 'vite';
 
 const declared = JSON.parse(readFileSync('tests/fixtures/ancillary-authoring.v1.json', 'utf8'));
 const actual = JSON.parse(readFileSync('tests/fixtures/ancillary-starter.v1.json', 'utf8'));
+const legacy = JSON.parse(readFileSync('tests/fixtures/prompt-enhancement-legacy-parent.v1.json', 'utf8'));
 const cache = mkdtempSync(path.join(tmpdir(), 'modiff-enhancement-authoring-'));
-let server, authoring, remap, metadata;
+let server, authoring, remap, metadata, stable;
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -27,6 +28,7 @@ before(async () => {
   });
   authoring = await server.ssrLoadModule('/src/studio/promptEnhancementAuthoring.ts');
   metadata = await server.ssrLoadModule('/src/studio/ancillaryOperations.ts');
+  stable = await server.ssrLoadModule('/src/studio/stableHash.ts');
   ({ remapOperationAuthoring: remap } = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts'));
 });
 after(async () => {
@@ -38,11 +40,23 @@ after(async () => {
 
 // Real constructor-trapped declaration/registry DTOs, with explicitly synthetic
 // authored scalar controls. This does not qualify the private profile or model.
-function setup() {
-  const parent = JSON.parse(declared.parents[0].rawParentJson);
-  assert.deepEqual(parent, actual.response.authoring);
+function setup(index = 0, preserve = false, capturedParent) {
+  const parent = capturedParent ? structuredClone(capturedParent) : JSON.parse(declared.parents[index].rawParentJson);
+  if (index === 0 && !preserve) assert.deepEqual(parent, actual.response.authoring);
+  if (preserve) {
+    const child = parent.ancillaryOperations[0];
+    parent.id = parent.id.replace(/:v1$/u, ':v2');
+    child.id = `${parent.id}:preview`;
+    child.parent.authoringRecipeId = parent.id;
+    child.layoutPolicy = 'preserve-authored-v1';
+    if (child.verification) child.verification.supportedPromptModes = ['t2i', 'i2i', 't2i_bbox', 'i2i_bbox'];
+    const { contentHash: _oldChild, ...semanticChild } = child;
+    child.contentHash = `studio-ancillary-v1-${stable.hashString(stable.stableStringify(semanticChild))}`;
+    const { contentHash: _oldParent, ...semanticParent } = parent;
+    parent.contentHash = `studio-authoring-v1-${stable.hashString(stable.stableStringify(semanticParent))}`;
+  }
   const registry = {
-    ...structuredClone(declared.parents[0].registry),
+    ...structuredClone(declared.parents[index].registry),
     ...Object.fromEntries(
       actual.response.nodes.map(({ operation, node }) => [operation.nodeKey, structuredClone(node)]),
     ),
@@ -160,6 +174,25 @@ test('Enable creates only the exact declared branch and leaves raw prompt/layout
   await assert.rejects(authoring.planEnablePromptEnhancement(next, owner.id, parent, child.id, registry), /disable/i);
 });
 
+test('retained plain v1 full declaration supports normal Disable and Enable without hash migration', async () => {
+  const { graph, parent, child, owner, registry } = setup(1, false, legacy.authoring);
+  const currentRegistry = JSON.parse(
+    readFileSync('tests/fixtures/prompt-enhancement-starter.v1.json', 'utf8'),
+  ).registry;
+  for (const [, key] of child.roles) registry[key] = structuredClone(currentRegistry[key]);
+  assert.equal(parent.contentHash, 'studio-authoring-v1-d43668d0');
+  assert.equal(child.contentHash, 'studio-ancillary-v1-95fc4619');
+  assert.deepEqual(child.verification.supportedPromptModes, ['t2i', 'i2i']);
+  assert.equal(Object.hasOwn(child, 'layoutPolicy'), false);
+  const enabled = await authoring.planEnablePromptEnhancement(graph, owner.id, parent, child.id, registry);
+  const disabled = await authoring.planDisablePromptEnhancement(enabled, owner.id, parent, child.id);
+  const reenabled = await authoring.planEnablePromptEnhancement(disabled, owner.id, parent, child.id, registry);
+  const binding = reenabled.nodes.find((node) => node.id === owner.id).data.operationAuthoring.ancillaryBindings[0];
+  assert.equal(binding.contentHash, child.contentHash);
+  assert.equal(binding.parent.authoringContentHash, parent.contentHash);
+  assert.deepEqual(parent, legacy.authoring);
+});
+
 test('Apply changes caption and layout together; Disable restores only untouched applied values', async () => {
   const { graph, parent, child, owner, registry } = setup();
   const enabled = await authoring.planEnablePromptEnhancement(graph, owner.id, parent, child.id, registry);
@@ -184,6 +217,90 @@ test('Apply changes caption and layout together; Disable restores only untouched
   await assert.rejects(
     authoring.planApplyPromptEnhancement(edited, owner.id, parent, child.id, pair, hash),
     /changed/i,
+  );
+});
+
+test('declared structured Apply is one Undo pair and refuses stale bindings or geometry without mutation', async () => {
+  const { graph, parent, child, owner, registry } = setup(1, true);
+  const layout = {
+    schemaVersion: 2,
+    coordinateSpace: 'normalized_xyxy',
+    regions: [
+      {
+        id: 'object',
+        description: 'Original object.',
+        action: 'relocate',
+        targetBox: [0.2, 0.2, 0.8, 0.8],
+        source: { referenceIndex: 0, box: [0, 0, 1, 1], expectedReferenceId: `sha256:${'a'.repeat(64)}` },
+      },
+    ],
+  };
+  owner.data.params.prompt.value = 'Move <object>.';
+  owner.data.params.layout_conditioning.value = structuredClone(layout);
+  const enabled = await authoring.planEnablePromptEnhancement(graph, owner.id, parent, child.id, registry);
+  const original = { prompt: 'Move <object>.', layout };
+  const hash = await authoring.promptEnhancementPairHash(original);
+  const proposed = structuredClone(original);
+  proposed.prompt = 'Move the detailed <object>.';
+  proposed.layout.regions[0].description = 'A detailed object.';
+  const { useFlowStore: flow } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const studio = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const transaction = await server.ssrLoadModule('/src/workflow/operationGraphTransaction.ts');
+  studio.useStudioStore.setState({
+    activeWorkflowTabId: 'structured-unit',
+    workflowCanvasEpoch: 1,
+    workflowFormEpoch: 1,
+    canvasTransition: null,
+    graphFinalization: null,
+  });
+  flow.getState().replaceGraph(enabled);
+  flow.getState().resetHistory();
+  const current = flow.getState().toObject();
+  const next = await authoring.planApplyPromptEnhancement(current, owner.id, parent, child.id, proposed, hash);
+  transaction.commitOperationGraph(
+    next,
+    studio.captureWorkflowOperationContext(),
+    transaction.operationGraphSignature(current),
+    'Apply structured enhancement',
+  );
+  assert.equal(flow.getState().historyPast.length, 1);
+  const pair = () => {
+    const current = flow.getState().nodes.find((node) => node.id === owner.id);
+    return { prompt: current.data.params.prompt.value, layout: current.data.params.layout_conditioning.value };
+  };
+  assert.deepEqual(pair(), proposed);
+  flow.getState().undo();
+  assert.deepEqual(pair(), original);
+  flow.getState().redo();
+  assert.deepEqual(pair(), proposed);
+  for (const mutate of [
+    (p) => {
+      p.layout.regions[0].source.expectedReferenceId = `sha256:${'b'.repeat(64)}`;
+    },
+    (p) => {
+      p.layout.regions[0].targetBox[0] = 0.201;
+    },
+    (p) => {
+      p.layout.regions[0].action = 'remove';
+      p.layout.regions[0].targetBox = null;
+    },
+  ]) {
+    const changed = structuredClone(proposed),
+      before = structuredClone(enabled);
+    mutate(changed);
+    await assert.rejects(
+      authoring.planApplyPromptEnhancement(enabled, owner.id, parent, child.id, changed, hash),
+      /identities|geometry/,
+    );
+    assert.deepEqual(enabled, before);
+  }
+  const stale = structuredClone(enabled);
+  stale.nodes.find(
+    (node) => node.id === owner.id,
+  ).data.params.layout_conditioning.value.regions[0].source.expectedReferenceId = `sha256:${'c'.repeat(64)}`;
+  await assert.rejects(
+    authoring.planApplyPromptEnhancement(stale, owner.id, parent, child.id, proposed, hash),
+    /changed/,
   );
 });
 

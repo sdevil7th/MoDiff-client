@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { before, after, test } from 'node:test';
 import { createServer } from 'vite';
 
 const ROOT = process.cwd();
+const cache = mkdtempSync(path.join(tmpdir(), 'modiff-ancillary-operations-'));
 const fixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ancillary-authoring.v1.json'), 'utf8'));
 let server, api, parse, hashes, remap;
 before(async () => {
   server = await createServer({
     root: ROOT,
     configFile: false,
+    cacheDir: cache,
     logLevel: 'silent',
     appType: 'custom',
     optimizeDeps: { entries: [], noDiscovery: true },
@@ -21,7 +24,10 @@ before(async () => {
   hashes = await server.ssrLoadModule('/src/studio/stableHash.ts');
   ({ remapOperationAuthoring: remap } = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts'));
 });
-after(async () => server?.close());
+after(async () => {
+  await server?.close();
+  rmSync(cache, { recursive: true, force: true });
+});
 const raw = (index = 0) => JSON.parse(fixture.parents[index].rawParentJson);
 function rehash(parent) {
   for (const child of parent.ancillaryOperations ?? []) {

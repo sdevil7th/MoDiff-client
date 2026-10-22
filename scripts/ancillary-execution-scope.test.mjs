@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { before, after, test } from 'node:test';
 import { createServer } from 'vite';
 const ROOT = process.cwd();
+const cache = mkdtempSync(path.join(tmpdir(), 'modiff-ancillary-scope-'));
 const fixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ancillary-authoring.v1.json'), 'utf8'));
 let server, select, exporter, hashes, runtime, schema, definitions, selectedStarter, previousWindow;
 before(async () => {
@@ -14,6 +16,7 @@ before(async () => {
   server = await createServer({
     root: ROOT,
     configFile: false,
+    cacheDir: cache,
     logLevel: 'silent',
     appType: 'custom',
     optimizeDeps: { entries: [], noDiscovery: true },
@@ -37,6 +40,7 @@ before(async () => {
 });
 after(async () => {
   await server?.close();
+  rmSync(cache, { recursive: true, force: true });
   if (previousWindow === undefined) delete globalThis.window;
   else globalThis.window = previousWindow;
 });
