@@ -1200,6 +1200,12 @@ recovery drafts on the backend; explicit Save places the current document in
 the named workflow library. Neither can be assumed to have succeeded while
 its persistence request is failing.
 
+An unchanged canvas checkpoint preserves the document's dirty marker and edit
+timestamp. Autosave rechecks the exact backend-owned document signature when its
+shared write chain reaches dispatch, so an acknowledged explicit Save is not
+followed by a duplicate PUT. Newer edits and a rejected save still require their
+normal persistence request; acknowledgement and hydration guards remain intact.
+
 Startup hydration captures each originally clean document before its backend
 read. A delayed canvas checkpoint may add passive connection flags and an empty
 preview declared by the current registry; these alone must not turn the older

@@ -145,6 +145,70 @@ test('explicit saves share one in-flight chain per workflow', async () => {
   }
 });
 
+for (const { editedWhileSaving, rejectedSave } of [
+  { editedWhileSaving: false, rejectedSave: false },
+  { editedWhileSaving: true, rejectedSave: false },
+  { editedWhileSaving: false, rejectedSave: true },
+]) {
+  const outcome = rejectedSave
+    ? 'retries a rejected save'
+    : editedWhileSaving
+      ? 'retains a newer edit'
+      : 'skips a duplicate';
+  test(`queued autosave ${outcome} after waiting for an explicit save`, async () => {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+    const errors = [];
+    globalThis.fetch = (_url, options) =>
+      new Promise((resolve, reject) => {
+        const body = JSON.parse(options.body);
+        calls.push({
+          body,
+          fail: () => reject(new Error('Explicit Save failed')),
+          finish: () =>
+            resolve(
+              new Response(JSON.stringify({ ...body, id: 'workflow-sync-test', revision: calls.length + 7 }), {
+                headers: { 'Content-Type': 'application/json' },
+              }),
+            ),
+        });
+      });
+    const saved = { ...workflowTab({ dirty: true, prompt: 'Explicit document' }), intent: 'saved' };
+    studio.useStudioStore.setState({ workflowTabs: [saved], activeWorkflowTabId: null });
+    const explicit = sync.saveWorkflowNow(saved, { merge: false });
+    const rejected = rejectedSave ? assert.rejects(explicit, /Explicit Save failed/u) : null;
+    await new Promise((resolve) => setImmediate(resolve));
+    const latest = editedWhileSaving
+      ? { ...saved, snapshot: { ...saved.snapshot, studioForm: { prompt: 'Newer local edit' } } }
+      : saved;
+    studio.useStudioStore.setState({ workflowTabs: [latest] });
+    sync.queueWorkflowPut(latest, (error) => errors.push(error));
+    try {
+      assert.equal(calls.length, 1);
+      if (rejectedSave) calls[0].fail();
+      else calls[0].finish();
+      await (rejected ?? explicit);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(calls.length, editedWhileSaving || rejectedSave ? 2 : 1);
+      if (editedWhileSaving || rejectedSave) {
+        assert.equal(
+          calls[1].body.snapshot.studioForm.prompt,
+          editedWhileSaving ? 'Newer local edit' : 'Explicit document',
+        );
+        assert.equal(studio.useStudioStore.getState().workflowTabs[0].dirty, true);
+      } else {
+        assert.equal(studio.useStudioStore.getState().workflowTabs[0].dirty, false);
+      }
+      assert.deepEqual(errors, []);
+    } finally {
+      calls.forEach((call) => call.finish());
+      await (rejected ?? explicit);
+      await new Promise((resolve) => setImmediate(resolve));
+      globalThis.fetch = originalFetch;
+    }
+  });
+}
+
 test('a delayed own-save acknowledgement never replaces a newer clean document', () => {
   const newer = workflowTab({ dirty: false, prompt: 'Restored by Redo' });
   studio.useStudioStore.setState({ workflowTabs: [newer], activeWorkflowTabId: null });
@@ -326,6 +390,48 @@ function startupHydrationFixture({ dirty = false } = {}) {
     options: { hydrationBaseline: { tab: structuredClone(normalized), canvasEpoch: 25, registry } },
   };
 }
+
+function checkpointedSavedWorkflow() {
+  startupHydrationFixture();
+  // Persist the passive registry/connection metadata once, as a successful PUT would.
+  studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+  const saved = { ...studio.useStudioStore.getState().workflowTabs[0], dirty: false, updatedAt: 1234 };
+  studio.useStudioStore.setState({ workflowTabs: [saved] });
+  sync.markBackendWorkflow(saved);
+  return saved;
+}
+
+test('unchanged canvas checkpoints preserve the saved marker and document timestamp', () => {
+  const saved = checkpointedSavedWorkflow();
+  for (let index = 0; index < 5; index += 1) {
+    studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+    const current = studio.useStudioStore.getState().workflowTabs[0];
+    assert.equal(current.dirty, false);
+    assert.equal(current.updatedAt, saved.updatedAt);
+    assert.equal(current, saved, 'an identical checkpoint must retain the document');
+  }
+});
+
+test('an unchanged checkpoint preserves an unsaved edit until its exact acknowledgement', () => {
+  checkpointedSavedWorkflow();
+  flow.useFlowStore.getState().setParamWithHistory('hydration-text', 'text', 'Keep this unsaved edit');
+  studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+  const edited = studio.useStudioStore.getState().workflowTabs[0];
+  assert.equal(edited.dirty, true);
+  assert.equal(edited.snapshot.nodes[0].data.params.text.value, 'Keep this unsaved edit');
+  assert.equal(sync.clearDirtyMarkerForExactBackendDocument(edited.id), false);
+  studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+  assert.equal(studio.useStudioStore.getState().workflowTabs[0], edited);
+});
+
+test('switching away from an unchanged saved canvas does not mark it unsaved', () => {
+  const saved = checkpointedSavedWorkflow();
+  const other = { ...structuredClone(saved), id: 'other-clean-workflow', title: 'Other workflow' };
+  studio.useStudioStore.setState({ workflowTabs: [saved, other] });
+  studio.useStudioStore.getState().switchWorkflowTab(other.id);
+  assert.equal(studio.useStudioStore.getState().workflowTabs[0], saved);
+  assert.equal(studio.useStudioStore.getState().workflowTabs[0].dirty, false);
+});
 
 test('startup hydration replaces a clean baseline after only passive registry and connection metadata', () => {
   const fixture = startupHydrationFixture();

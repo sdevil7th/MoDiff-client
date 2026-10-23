@@ -216,7 +216,7 @@ export async function deleteWorkflowNow(id: string) {
   useStudioStore.getState().removeBackendWorkflow(id);
 }
 
-function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => void) {
+export function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => void) {
   const signature = contentSignature(tab);
   pendingSignatures.set(tab.id, signature);
   const previous = saveChains.get(tab.id) ?? Promise.resolve();
@@ -225,6 +225,13 @@ function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => void) {
     .then(async () => {
       const current = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
       if (!current || contentSignature(current) !== signature) return;
+      // An explicit Save or websocket acknowledgement may have persisted this
+      // exact document while the autosave waited on the shared write chain.
+      if (backendSignatures.get(tab.id) === signature) {
+        if (pendingSignatures.get(tab.id) === signature) pendingSignatures.delete(tab.id);
+        clearDirtyMarkerForExactBackendDocument(tab.id);
+        return;
+      }
       try {
         const saved = await putWorkflow(current);
         if (!saved) return;

@@ -757,9 +757,13 @@ function retainActiveBlockPreviews() {
 function savedTabsWithActiveSnapshot(state: StudioState & StudioVolatileState) {
   if (!state.activeWorkflowTabId) return state.workflowTabs;
   const snapshot = currentWorkflowSnapshot(state);
-  return state.workflowTabs.map((tab) =>
-    tab.id === state.activeWorkflowTabId ? { ...tab, snapshot, updatedAt: Date.now(), dirty: true } : tab,
-  );
+  return state.workflowTabs.map((tab) => {
+    if (tab.id !== state.activeWorkflowTabId) return tab;
+    const current = { ...tab, snapshot };
+    // Canvas subscriptions also checkpoint passive updates and tab navigation.
+    // An identical document keeps its saved state, including pending real edits.
+    return sameWorkflowDocument(tab, current) ? tab : { ...current, updatedAt: Date.now(), dirty: true };
+  });
 }
 
 function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
@@ -2728,11 +2732,12 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
       },
 
       saveActiveWorkflowTab: (dirty = true) => {
-        set((state) => ({
-          workflowTabs: savedTabsWithActiveSnapshot(state).map((tab) =>
-            tab.id === state.activeWorkflowTabId ? { ...tab, dirty } : tab,
-          ),
-        }));
+        set((state) => {
+          const workflowTabs = savedTabsWithActiveSnapshot(state).map((tab) =>
+            tab.id === state.activeWorkflowTabId && !dirty && tab.dirty ? { ...tab, dirty: false } : tab,
+          );
+          return workflowTabs.every((tab, index) => tab === state.workflowTabs[index]) ? state : { workflowTabs };
+        });
       },
 
       createWorkflowTab: (title, snapshot, source = 'new', sourceLabel) => {
