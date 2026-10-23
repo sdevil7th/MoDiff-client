@@ -41,7 +41,7 @@ export type AncillaryOperation = {
   parent: AncillaryParentIdentity;
   executionPurpose: 'explicit_preview';
   sourceRegions: false;
-  layoutPolicy?: 'preserve-authored-v1';
+  layoutPolicy?: 'preserve-authored-v1' | 'append-details-preserve-layout-v1';
   verification?: AncillaryVerification;
   roles: [string, string, number, number][];
   edges: [string, string, string, string][];
@@ -108,7 +108,11 @@ export function parseAncillaryOperations(value: unknown, context: AncillaryParen
     )
       invalidAncillary('unsupported or duplicate declaration.');
     ids.add(id);
-    if (item.layoutPolicy !== undefined && item.layoutPolicy !== 'preserve-authored-v1')
+    if (
+      item.layoutPolicy !== undefined &&
+      item.layoutPolicy !== 'preserve-authored-v1' &&
+      item.layoutPolicy !== 'append-details-preserve-layout-v1'
+    )
       invalidAncillary('unsupported authored-layout preservation policy.');
     const selected = parent(item.parent, false);
     for (const key of PARENT_KEYS) if (selected[key] !== context[key]) invalidAncillary('parent selection differs.');
@@ -220,6 +224,17 @@ export function parseAncillaryOperations(value: unknown, context: AncillaryParen
         !assigned.has(`${verification.runtimeInputs.role}:${verification.runtimeInputs.revisionField}`))
     )
       invalidAncillary('verification needs its exact declared initial model and pin.');
+    if (
+      item.layoutPolicy === 'append-details-preserve-layout-v1' &&
+      (!verification ||
+        !(item.initialValues as unknown[][]).some(
+          ([role, field, value]) =>
+            role === verification.requestInputs.role &&
+            field === verification.requestInputs.operationField &&
+            value === 'enhance_prompt_append_details',
+        ))
+    )
+      invalidAncillary('append-details needs its declared operation and verification metadata.');
     if (Object.prototype.hasOwnProperty.call(item, 'fieldOverrides')) {
       const selected = new Set<string>();
       for (const raw of collection(item.fieldOverrides, 32)) {

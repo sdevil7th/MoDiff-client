@@ -39,6 +39,7 @@ export function commitOperationGraph(
   context: WorkflowOperationContext,
   signature: string,
   label: string,
+  options: { preserveSelection?: boolean } = {},
 ) {
   assertWorkflowOperationContext(context, { includeForm: false });
   const flow = useFlowStore.getState();
@@ -51,6 +52,11 @@ export function commitOperationGraph(
   try {
     const previousNodes = new Map(previous.nodes.map((node) => [node.id, node]));
     const currentNodes = new Map(current.nodes.map((node) => [node.id, node]));
+    // Only an explicit in-place refresh retains its mounted inspector. Ordinary
+    // graph replacements keep their established clear-selection behavior.
+    const retainSelection =
+      options.preserveSelection === true && !graph.nodes.some((node) => node.selected !== undefined);
+    const liveSelection = new Map(flow.nodes.map((node) => [node.id, node.selected]));
     flow.replaceGraph(
       {
         ...graph,
@@ -58,9 +64,12 @@ export function commitOperationGraph(
           const original = previousNodes.get(node.id);
           // Keep refreshed availability on untouched siblings, rather than
           // restoring the preview's older presentation metadata over them.
-          return original && JSON.stringify(reviewNode(node)) === JSON.stringify(reviewNode(original))
-            ? (currentNodes.get(node.id) ?? node)
-            : node;
+          const next =
+            original && JSON.stringify(reviewNode(node)) === JSON.stringify(reviewNode(original))
+              ? (currentNodes.get(node.id) ?? node)
+              : node;
+          const selected = liveSelection.get(node.id);
+          return retainSelection && selected !== undefined ? { ...next, selected } : next;
         }),
       },
       { clearRemovedCache: true },

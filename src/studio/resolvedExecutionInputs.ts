@@ -4,7 +4,7 @@ import type { WeightLoadingMode } from '../types/api';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
 export type ModelWeightFormat = 'native' | 'fp8r' | 'nvfp4';
-export type TextGenerationOperation = 'standard' | 'enhance_prompt';
+export type TextGenerationOperation = 'standard' | 'enhance_prompt' | 'enhance_prompt_append_details';
 export type PromptEnhancementSystemMode = 't2i' | 'i2i' | 't2i_bbox' | 'i2i_bbox';
 type InputField = {
   value: InputValue;
@@ -192,7 +192,7 @@ function textGenerationInputValue(key: string, value: InputValue): boolean {
   const fingerprint = (item: unknown) => typeof item === 'string' && /^sha256:[0-9a-f]{64}$/u.test(item);
   switch (key) {
     case 'operation':
-      return value === 'standard' || value === 'enhance_prompt';
+      return value === 'standard' || value === 'enhance_prompt' || value === 'enhance_prompt_append_details';
     case 'enhancement_max_new_tokens':
       return positiveInteger(value) && value <= 3584;
     case 'prompt_adapter_id':

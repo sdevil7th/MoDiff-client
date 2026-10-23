@@ -2631,6 +2631,33 @@ test('background cache preparation belongs to its task without notifying the act
   );
 });
 
+test('websocket parsing accepts a pre-node terminal failure without a null optional node name', () => {
+  // Producer contract: an ownership error can occur before execute_node supplies
+  // a node name. This is a serialized schema fixture, not a captured live frame.
+  const terminal = {
+    type: 'task_failed',
+    task_id: 'early-owner-failure',
+    sid: 'session-1',
+    node: null,
+    status: 'failed',
+    message: 'Ancillary owner boundary: foreign cached owner.',
+    exception_type: 'AncillaryOwnerError',
+    category: 'execution',
+    error_code: 'ancillary_owner_boundary',
+    oom: false,
+    current: null,
+    queued: {},
+  };
+  assert.deepEqual(websocketModule.parseWebsocketMessage(JSON.stringify(terminal)), terminal);
+  assert.equal(websocketModule.parseWebsocketMessage(JSON.stringify({ ...terminal, node_name: null })), null);
+  const knownNode = {
+    ...terminal,
+    node: 'provider',
+    node_name: 'modules.HuggingFaceTransformers.LoadImageTextToTextModel',
+  };
+  assert.deepEqual(websocketModule.parseWebsocketMessage(JSON.stringify(knownNode)), knownNode);
+});
+
 test('websocket parsing accepts handled Auto events and rejects malformed typed payloads', () => {
   assert.deepEqual(
     websocketModule.parseWebsocketMessage(

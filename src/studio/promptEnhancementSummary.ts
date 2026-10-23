@@ -64,7 +64,7 @@ export type EnhancementConsumedInput = {
   references: EnhancementReference[];
   processedImageGrid: [number, number, number][];
   fingerprints: {
-    operation: 'enhance_prompt';
+    operation: 'enhance_prompt' | 'enhance_prompt_append_details';
     enhancement_max_new_tokens: number;
     prompt_adapter_id: string;
     system_prompt_mode: PromptEnhancementMode;
@@ -82,13 +82,21 @@ export type EnhancementConsumedInput = {
 export type EnhancementTargetRow =
   | { id: string; bbox: [number, number, number, number]; desc: string }
   | { id: string; from: string; src_bbox: number[] | null; tgt_bbox: number[] | null; desc: string };
-export type EnhancementStructuredProposal = {
+type NativeStructuredProposal = {
   schemaVersion: 1 | 2;
   caption: string;
   rawCaption?: string;
   layoutConditioning: LayoutConditioning;
   rawTable: EnhancementTargetRow[];
 };
+export type ComposedEnhancementProposal = {
+  schemaVersion: 3;
+  kind: 'caption-append-preserve-layout-v1';
+  caption: string;
+  layoutConditioning: LayoutConditioning;
+  nativeText: string;
+};
+export type EnhancementStructuredProposal = NativeStructuredProposal | ComposedEnhancementProposal;
 type EnhancementCompletion = {
   finishReason: 'stop' | 'length';
   inputTokens: number;
@@ -109,13 +117,21 @@ export type EnhancementProposal = EnhancementCompletion &
     | {
         mode: 't2i_bbox' | 'i2i_bbox';
         text: null;
-        structuredProposal: EnhancementStructuredProposal;
+        structuredProposal: NativeStructuredProposal;
         applicationAllowed: true;
         layoutOutputValidated: true;
         applicationBlockedReason: null;
       }
     | {
-        mode: 't2i_bbox' | 'i2i_bbox';
+        mode: 't2i' | 'i2i';
+        text: null;
+        structuredProposal: ComposedEnhancementProposal;
+        applicationAllowed: true;
+        layoutOutputValidated: true;
+        applicationBlockedReason: null;
+      }
+    | {
+        mode: PromptEnhancementMode;
         text: null;
         structuredProposal: null;
         applicationAllowed: false;
@@ -488,7 +504,7 @@ function parseConsumed(
     ...(references.length ? processed : []),
   ]);
   if (
-    fingerprint.operation !== 'enhance_prompt' ||
+    (fingerprint.operation !== 'enhance_prompt' && fingerprint.operation !== 'enhance_prompt_append_details') ||
     fingerprint.enhancement_max_new_tokens !== controls.max_new_tokens ||
     fingerprint.prompt_adapter_id !== adapterId ||
     !MODES.some((mode) => mode === fingerprint.system_prompt_mode)
@@ -562,12 +578,161 @@ function targetLayout(value: unknown): LayoutConditioning {
   return parsed;
 }
 
+/** Detect only a bounded, genuine trailing dictionary table, matching the producer. */
+function decodeAppendTable(value: string): unknown {
+  // Match the producer's duplicate-key decoder without applying summary-envelope
+  // entry/key budgets to plain native text embedded inside a JSON string.
+  const stack: (Set<string> | null)[] = [];
+  for (let index = 0; index < value.length; index++) {
+    const character = value[index];
+    if (character === '"') {
+      let end = index + 1;
+      for (; end < value.length; end++) {
+        if (value[end] === '\\') end++;
+        else if (value[end] === '"') break;
+      }
+      const decoded: unknown = JSON.parse(value.slice(index, end + 1));
+      let next = end + 1;
+      while (next < value.length && /\s/u.test(value[next]!)) next++;
+      const keys = stack[stack.length - 1];
+      if (keys && value[next] === ':') {
+        if (typeof decoded !== 'string' || keys.has(decoded)) throw new Error('Duplicate native table key.');
+        keys.add(decoded);
+      }
+      index = end;
+    } else if (character === '{' || character === '[') stack.push(character === '{' ? new Set() : null);
+    else if (character === '}' || character === ']') stack.pop();
+  }
+  return JSON.parse(value);
+}
+
+function hasTrailingAppendTable(value: string): boolean {
+  // The producer's existing competing-region detector accepts JSON duplicate
+  // keys here, then its strict decoder handles other dictionary tables below.
+  let attempts = 0;
+  for (const match of value.matchAll(/\[\s*\{/gu)) {
+    if (attempts++ >= 32) invalid('native details contain too many JSON candidates.');
+    let rows: unknown;
+    try {
+      rows = JSON.parse(value.slice(match.index));
+    } catch {
+      continue;
+    }
+    if (
+      Array.isArray(rows) &&
+      rows.some(
+        (row) =>
+          row &&
+          typeof row === 'object' &&
+          !Array.isArray(row) &&
+          'id' in row &&
+          ['bbox', 'src_bbox', 'tgt_bbox'].some((key) => key in row),
+      )
+    )
+      return true;
+  }
+  attempts = 0;
+  for (let index = 0; index < value.length; index++)
+    if (value[index] === '[') {
+      if (attempts++ >= 32) invalid('native details contain too many JSON candidates.');
+      if (parseTrailingAppendTable(value.slice(index))) return true;
+    }
+  return false;
+}
+
+function parseTrailingAppendTable(value: string): boolean {
+  let start: number | null = null,
+    stack: string[] = [],
+    quoted = false,
+    escaped = false,
+    attempts = 0;
+  const decoded: { end: number; rows: unknown }[] = [];
+  const end = value.trimEnd().length;
+  for (let index = 0; index < value.length; index++) {
+    const character = value[index]!;
+    if (start === null) {
+      if (character === '[') {
+        if (++attempts > 32) return false;
+        start = index;
+        stack = ['['];
+        quoted = false;
+        escaped = false;
+      }
+      continue;
+    }
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') quoted = true;
+    else if (character === '[' || character === '{') {
+      stack.push(character);
+      if (stack.length > 8) return false;
+    } else if (character === ']' || character === '}') {
+      if (!stack.length || (stack[stack.length - 1] === '[' ? character !== ']' : character !== '}')) return false;
+      stack.pop();
+      if (!stack.length) {
+        try {
+          decoded.push({ end: index + 1, rows: decodeAppendTable(value.slice(start, index + 1)) });
+        } catch {
+          if (index + 1 === end) return false;
+        }
+        start = null;
+      }
+    }
+  }
+  if (start !== null || decoded.length !== 1 || decoded[0]!.end !== end) return false;
+  const rows = decoded[0]!.rows;
+  return (
+    Array.isArray(rows) &&
+    (!rows.length || rows.some((row) => row !== null && typeof row === 'object' && !Array.isArray(row)))
+  );
+}
+
 function parseStructured(
   value: unknown,
   mode: PromptEnhancementMode,
   imageCount: number,
 ): EnhancementStructuredProposal {
   const version = value && typeof value === 'object' ? (value as Record<string, unknown>).schemaVersion : null;
+  if (version === 3) {
+    const item = object(value, ['schemaVersion', 'kind', 'caption', 'layoutConditioning', 'nativeText']);
+    if (item.kind !== 'caption-append-preserve-layout-v1') invalid('unsupported composed proposal.');
+    const caption = text(item.caption, 262144, 131072, true);
+    const nativeText = text(item.nativeText, 262144, 131072, true);
+    if (
+      /[<>]/u.test(nativeText) ||
+      nativeText.includes('```') ||
+      nativeText.includes('~~~') ||
+      hasTrailingAppendTable(nativeText)
+    )
+      invalid('appended wording must be plain text without tags, Markdown fences or a trailing table.');
+    const layout = parseLayoutConditioning(item.layoutConditioning);
+    if (!layout?.regions.length) invalid('composed wording requires authored regions.');
+    const tags = [...caption.matchAll(/<([^<>]*)>/gu)].map((match) => match[1]!);
+    if (/[<>]/u.test(caption.replace(/<[^<>]*>/gu, ''))) invalid('authored caption has malformed tags.');
+    for (const region of layout.regions) {
+      if (tags.filter((tag) => tag === region.id).length !== 1)
+        invalid('authored caption must cite each region exactly once.');
+      if (region.source && region.source.referenceIndex >= imageCount)
+        invalid('authored source differs from actual references.');
+    }
+    for (const tag of tags) {
+      if (layout.regions.some((region) => region.id === tag)) continue;
+      const reference = /^ref_image_(0|[1-9][0-9]?)$/u.exec(tag);
+      if (!reference || Number(reference[1]) >= imageCount) invalid('authored caption cites an unknown reference.');
+    }
+    jsonBudget(item, 262144);
+    return {
+      schemaVersion: 3,
+      kind: 'caption-append-preserve-layout-v1',
+      caption,
+      layoutConditioning: layout,
+      nativeText,
+    };
+  }
   const item = object(value, [
     'schemaVersion',
     'caption',
@@ -676,13 +841,28 @@ function parseProposal(value: unknown, consumed: EnhancementConsumedInput, contr
   ]);
   if (item.mode !== consumed.fingerprints.system_prompt_mode) invalid('proposal mode differs from consumed input.');
   const mode = item.mode as PromptEnhancementMode;
+  const append = consumed.fingerprints.operation === 'enhance_prompt_append_details';
+  if (append && mode !== 't2i' && mode !== 'i2i') invalid('append-details requires a plain native prompt mode.');
   const generated = integer(item.generatedTokens, 1, controls.max_new_tokens);
   integer(item.inputTokens, 1, 32768);
   if (item.finishReason !== (generated === controls.max_new_tokens ? 'length' : 'stop'))
     invalid('finish reason differs from token count.');
   if (item.applyRequired !== true || item.semanticFidelityVerified !== false)
     invalid('proposal cannot assert implicit application or semantic fidelity.');
-  if (mode === 't2i' || mode === 'i2i') {
+  if (append) {
+    if (item.text !== null) invalid('composed public text must remain null.');
+    if (item.layoutOutputValidated === true) {
+      if (item.applicationAllowed !== true || item.applicationBlockedReason !== null)
+        invalid('contradictory composed flags.');
+      const structured = parseStructured(item.structuredProposal, mode, consumed.references.length);
+      if (structured.schemaVersion !== 3) invalid('append-details requires its composed proposal kind.');
+      item.structuredProposal = structured;
+    } else {
+      if (item.layoutOutputValidated !== false || item.applicationAllowed !== false || item.structuredProposal !== null)
+        invalid('contradictory rejected composition flags.');
+      text(item.applicationBlockedReason, 16384, 4096, true);
+    }
+  } else if (mode === 't2i' || mode === 'i2i') {
     text(item.text, 1048576, 262144, true);
     if (
       item.structuredProposal !== null ||
@@ -696,7 +876,9 @@ function parseProposal(value: unknown, consumed: EnhancementConsumedInput, contr
     if (item.layoutOutputValidated === true) {
       if (item.applicationAllowed !== true || item.applicationBlockedReason !== null)
         invalid('contradictory valid layout flags.');
-      item.structuredProposal = parseStructured(item.structuredProposal, mode, consumed.references.length);
+      const structured = parseStructured(item.structuredProposal, mode, consumed.references.length);
+      if (structured.schemaVersion === 3) invalid('proposal kind differs from the consumed operation.');
+      item.structuredProposal = structured;
     } else {
       if (item.layoutOutputValidated !== false || item.applicationAllowed !== false || item.structuredProposal !== null)
         invalid('contradictory invalid layout flags.');
@@ -762,6 +944,8 @@ export type ExpectedPromptEnhancementSummary = {
   controls: PromptEnhancementControls;
   systemPromptSha256: string;
   references: EnhancementReference[];
+  operation?: EnhancementConsumedInput['fingerprints']['operation'];
+  layoutPolicy?: 'preserve-authored-v1' | 'append-details-preserve-layout-v1';
 };
 
 async function sha256(value: string): Promise<SummarySha256> {
@@ -848,16 +1032,30 @@ export async function verifyPromptEnhancementSummaryBindings(
   expectedValue: ExpectedPromptEnhancementSummary,
 ): Promise<PromptEnhancementSummary> {
   const summary = parsePromptEnhancementSummary(raw);
-  const expected = object(expectedSnapshot(expectedValue), [
-    'producer',
-    'adapter',
-    'modelReceipt',
-    'authoredPrompt',
-    'authoredLayout',
-    'controls',
-    'systemPromptSha256',
-    'references',
-  ]);
+  const expected = object(
+    expectedSnapshot(expectedValue),
+    [
+      'producer',
+      'adapter',
+      'modelReceipt',
+      'authoredPrompt',
+      'authoredLayout',
+      'controls',
+      'systemPromptSha256',
+      'references',
+    ],
+    ['operation', 'layoutPolicy'],
+  );
+  const operation = expected.operation ?? 'enhance_prompt';
+  if (
+    (operation !== 'enhance_prompt' && operation !== 'enhance_prompt_append_details') ||
+    (expected.layoutPolicy !== undefined &&
+      expected.layoutPolicy !== 'preserve-authored-v1' &&
+      expected.layoutPolicy !== 'append-details-preserve-layout-v1') ||
+    (operation === 'enhance_prompt_append_details') !== (expected.layoutPolicy === 'append-details-preserve-layout-v1')
+  )
+    invalid('operation differs from the independently declared layout policy.');
+  equal(summary.consumedInput.fingerprints.operation, operation, 'consumed operation');
   equal(summary.producer, parseProducer(expected.producer), 'producer');
   equal(summary.adapter, expected.adapter, 'adapter');
   equal(summary.request.controls, parseControls(expected.controls), 'controls');
@@ -881,12 +1079,21 @@ export async function verifyPromptEnhancementSummaryBindings(
       ? null
       : await sha256(canonicalBlockStringifyV2({ kind: 'object', value: expected.authoredLayout }));
   if (layoutDigest !== summary.request.authoredLayoutSha256) invalid('authored layout digest differs.');
+  const append = operation === 'enhance_prompt_append_details';
   const bbox = summary.proposal.mode.endsWith('_bbox');
-  if (bbox !== Boolean(layout?.regions.length)) invalid('mode differs from authored regions.');
+  if (append ? bbox || !layout?.regions.length : bbox !== Boolean(layout?.regions.length))
+    invalid('mode differs from the independently declared authored layout policy.');
   if (summary.proposal.structuredProposal) {
-    targetLayout(layout);
-    const target = summary.proposal.structuredProposal.layoutConditioning;
-    equal(layoutGeometry(target), layoutGeometry(layout!), 'authored target geometry');
+    const structured = summary.proposal.structuredProposal;
+    if (structured.schemaVersion === 3) {
+      if (expected.layoutPolicy !== 'append-details-preserve-layout-v1')
+        invalid('composed wording has no current policy.');
+      equal(structured.caption, prompt + '\n\n' + structured.nativeText, 'exact authored caption composition');
+      equal(structured.layoutConditioning, expected.authoredLayout, 'complete authored layout');
+    } else {
+      targetLayout(layout);
+      equal(layoutGeometry(structured.layoutConditioning), layoutGeometry(layout!), 'authored target geometry');
+    }
   }
   if ((await sha256(canonicalBlockStringifyV2(summary.consumedInput))) !== summary.request.consumedInputSha256)
     invalid('consumed input digest differs.');

@@ -18,7 +18,7 @@ const worker = {
   backend_source: { fingerprint: `sha256:backend-source-v1:${'a'.repeat(64)}` },
 };
 let server, flow, studio, registry, socket, tasks, authoring, preview, runtime, canonical, transaction, Component;
-let originalFetch, calls, onMetadata, onRuntime, submitted, cacheBody, taskReplies;
+let originalFetch, calls, onMetadata, onRuntime, submitted, cacheBody, taskReplies, submissionId;
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -56,6 +56,7 @@ beforeEach(() => {
   onMetadata = null;
   onRuntime = null;
   submitted = null;
+  submissionId = 'synthetic-preview-B';
   cacheBody = null;
   taskReplies = new Map();
   studio.setState({
@@ -97,6 +98,7 @@ beforeEach(() => {
       return json(fixture.response);
     }
     if (endpoint === '/runtime/status') {
+      assert.equal(init.cache, 'no-store', 'Runtime identity reads must bypass HTTP caches.');
       onRuntime?.();
       return json(worker);
     }
@@ -105,7 +107,7 @@ beforeEach(() => {
       return json({
         error: false,
         sid: 'unit-preview-sid',
-        task_id: 'synthetic-preview-B',
+        task_id: submissionId,
         message: 'Synthetic transport only',
       });
     }
@@ -117,8 +119,14 @@ beforeEach(() => {
         ? cacheBody
         : new Response(cacheBody, { headers: { 'Content-Type': 'application/json' } });
     }
-    if (endpoint === '/cache' && init?.method === 'DELETE')
-      return json({ error: false, nodes: JSON.parse(init.body).nodes });
+    if (endpoint === '/cache' && init?.method === 'DELETE') {
+      const body = JSON.parse(init.body);
+      return json({
+        error: false,
+        nodes: body.nodes,
+        ...(body.scope === 'outputs' ? { scope: 'outputs', retainedModelNodes: [] } : {}),
+      });
+    }
     assert.fail(`Unexpected request ${endpoint}`);
   };
 });
@@ -200,7 +208,7 @@ function editOwnerField(ownerId, field, value) {
   flow.getState().replaceGraph({ ...graph, nodes: graph.nodes.map((node) => (node.id === root.id ? changed : node)) });
 }
 
-function syntheticEnvelope(run, warm = false) {
+function syntheticEnvelope(run, warm = false, nativeText = 'Synthetic appended wording.') {
   const binding = submitted.runtimeHints.executionPurpose.bindings[0],
     verification = child.verification;
   const input = (role, field) => submitted.nodes[binding.roleNodes[role]].params[field].value;
@@ -260,14 +268,15 @@ function syntheticEnvelope(run, warm = false) {
   const prompt = input(child.bindings.request.role, child.bindings.request.promptField),
     rendered = `Synthetic rendered ${prompt}`;
   const authoredLayout = input(child.bindings.request.role, child.bindings.request.layoutField);
-  const mode = authoredLayout?.regions.length ? 't2i_bbox' : 't2i';
+  const append = child.layoutPolicy === 'append-details-preserve-layout-v1';
+  const mode = authoredLayout?.regions.length && !append ? 't2i_bbox' : 't2i';
   const consumed = {
     schemaVersion: 1,
     renderedPrompt: rendered,
     references: [],
     processedImageGrid: [],
     fingerprints: {
-      operation: 'enhance_prompt',
+      operation: input(request.role, request.operationField),
       enhancement_max_new_tokens: controls.max_new_tokens,
       prompt_adapter_id: verification.adapter.id,
       system_prompt_mode: mode,
@@ -294,9 +303,16 @@ function syntheticEnvelope(run, warm = false) {
     consumedInput: consumed,
     proposal: {
       mode,
-      text: mode === 't2i' ? 'Synthetic independently reviewed proposal.' : null,
-      structuredProposal:
-        mode === 't2i'
+      text: mode === 't2i' && !append ? 'Synthetic independently reviewed proposal.' : null,
+      structuredProposal: append
+        ? {
+            schemaVersion: 3,
+            kind: 'caption-append-preserve-layout-v1',
+            caption: prompt + '\n\n' + nativeText,
+            layoutConditioning: structuredClone(authoredLayout),
+            nativeText,
+          }
+        : mode === 't2i'
           ? null
           : {
               schemaVersion: 2,
@@ -322,7 +338,7 @@ function syntheticEnvelope(run, warm = false) {
       generatedTokens: 3,
       applyRequired: true,
       applicationAllowed: true,
-      layoutOutputValidated: mode === 't2i' ? null : true,
+      layoutOutputValidated: mode === 't2i' && !append ? null : true,
       semanticFidelityVerified: false,
       applicationBlockedReason: null,
     },
@@ -461,6 +477,122 @@ test('declared structured Preview reaches paired Apply and one Undo without chan
   }
 });
 
+test('declared append-details Preview keeps the full layout and Regenerate never appends its own previous output', async () => {
+  const saved = structuredClone(parent),
+    originalSelectionId = fixture.selection.authoringRecipeId;
+  const operationField = fixture.registry['modules.HuggingFaceTransformers.GenerateImageVideoText'].params.operation;
+  const options = structuredClone(operationField.options);
+  try {
+    const { hashString, stableStringify } = await server.ssrLoadModule('/src/studio/stableHash.ts');
+    // Synthetic additive protocol variant. Real producer/native coverage is separate.
+    child.layoutPolicy = 'append-details-preserve-layout-v1';
+    parent.id = parent.id.replace(/:v1$/u, ':v3');
+    child.id = `${parent.id}:preview`;
+    child.parent.authoringRecipeId = parent.id;
+    fixture.selection.authoringRecipeId = parent.id;
+    child.initialValues.find(
+      ([role, field]) =>
+        role === child.verification.requestInputs.role && field === child.verification.requestInputs.operationField,
+    )[2] = 'enhance_prompt_append_details';
+    child.verification.supportedPromptModes = ['t2i', 'i2i'];
+    child.verification.layoutRequestSuffixSha256 = sha('synthetic declared append request');
+    operationField.options.push({
+      ...operationField.options.find((option) => option.value === 'enhance_prompt'),
+      value: 'enhance_prompt_append_details',
+      label: 'enhance_prompt_append_details',
+    });
+    const { contentHash: _childHash, ...childBody } = child;
+    child.contentHash = `studio-ancillary-v1-${hashString(stableStringify(childBody))}`;
+    const { contentHash: _parentHash, ...parentBody } = parent;
+    parent.contentHash = `studio-authoring-v1-${hashString(stableStringify(parentBody))}`;
+    const { ownerId } = await setup();
+    const layout = {
+      schemaVersion: 2,
+      coordinateSpace: 'normalized_xyxy',
+      regions: [
+        {
+          id: 'authored_object',
+          description: '  Original description.\n',
+          action: 'place',
+          targetBox: [0.10001, 0.2, 0.4, 0.7],
+        },
+      ],
+    };
+    const prompt = '  A scene with <authored_object>.\n';
+    editOwnerField(ownerId, 'prompt', prompt);
+    editOwnerField(ownerId, 'layout_conditioning', layout);
+    await preview.enablePromptEnhancement(ownerId);
+    const first = await preview.startPromptEnhancementPreview(ownerId, child.id);
+    const firstEnvelope = syntheticEnvelope(first, false, 'First proposed wording.');
+    const firstTicket = await preview.finishPromptEnhancementPreview(first);
+    const before = structuredClone(flow.getState().toObject());
+    const originalPairHash = await authoring.promptEnhancementPairHash({ prompt, layout });
+    await assert.rejects(
+      authoring.planApplyPromptEnhancement(
+        before,
+        ownerId,
+        parent,
+        child.id,
+        { prompt: 'Replacement caption <authored_object>.', layout },
+        originalPairHash,
+      ),
+      /caption prefix/,
+    );
+    const changedLayout = structuredClone(layout);
+    changedLayout.regions[0].description = 'Changed description';
+    await assert.rejects(
+      authoring.planApplyPromptEnhancement(
+        before,
+        ownerId,
+        parent,
+        child.id,
+        { prompt: prompt + '\n\nProposed wording.', layout: changedLayout },
+        originalPairHash,
+      ),
+      /any authored layout field/,
+    );
+    assert.deepEqual(flow.getState().toObject(), before);
+    flow.getState().resetHistory();
+    await preview.applyPromptEnhancementPreview(firstTicket);
+    assert.equal(activeOwner(ownerId).data.params.prompt.value, prompt + '\n\nFirst proposed wording.');
+    assert.deepEqual(activeOwner(ownerId).data.params.layout_conditioning.value, layout);
+    assert.equal(flow.getState().historyPast.length, 1);
+    flow.getState().undo();
+    assert.deepEqual(flow.getState().toObject(), before);
+    flow.getState().redo();
+    submissionId = 'synthetic-preview-C';
+    const second = await preview.startPromptEnhancementPreview(ownerId, child.id, true);
+    assert.notEqual(second.taskId, first.taskId);
+    const binding = submitted.runtimeHints.executionPurpose.bindings[0];
+    const request = submitted.nodes[binding.roleNodes[child.bindings.request.role]];
+    assert.equal(request.params.prompt.value, prompt, 'Regenerate submits the untouched original caption.');
+    assert.deepEqual(request.params.layout_conditioning.value, layout);
+    assert.ok(calls.includes('/cache'), 'Regenerate uses normal explicit recomputation.');
+    syntheticEnvelope(second, false, 'Second proposed wording.');
+    const secondTicket = await preview.finishPromptEnhancementPreview(second);
+    assert.notEqual(
+      JSON.parse(firstEnvelope.value).producer.taskId,
+      preview.promptEnhancementPreviewDetails(secondTicket).producer.taskId,
+    );
+    flow.getState().resetHistory();
+    await preview.applyPromptEnhancementPreview(secondTicket);
+    assert.equal(activeOwner(ownerId).data.params.prompt.value, prompt + '\n\nSecond proposed wording.');
+    assert.doesNotMatch(activeOwner(ownerId).data.params.prompt.value, /First proposed wording/);
+    assert.deepEqual(activeOwner(ownerId).data.params.layout_conditioning.value, layout);
+    assert.equal(flow.getState().historyPast.length, 1);
+    flow.getState().undo();
+    assert.equal(activeOwner(ownerId).data.params.prompt.value, prompt);
+    assert.deepEqual(activeOwner(ownerId).data.params.layout_conditioning.value, layout);
+  } finally {
+    operationField.options = options;
+    fixture.selection.authoringRecipeId = originalSelectionId;
+    for (const key of Object.keys(child)) delete child[key];
+    Object.assign(child, saved.ancillaryOperations[0]);
+    for (const key of Object.keys(parent)) if (key !== 'ancillaryOperations') delete parent[key];
+    Object.assign(parent, { ...saved, ancillaryOperations: [child] });
+  }
+});
+
 test('normal unavailable metadata and concurrent document/session/task changes refuse before mutation or dispatch', async (t) => {
   for (const failure of ['unavailable', 'document', 'session', 'task'])
     await t.test(failure, async () => {
@@ -551,6 +683,124 @@ test('Preview dispatch uses the selected ordinary scope and does not change the 
   assert.equal(activeOwner(ownerId).data.params.prompt.value, '  Authored unit prompt.\n');
 });
 
+test('request refresh keeps the selected inspector mounted through Preview verification and Apply', async () => {
+  await setup();
+  const { unpackVisualOperationGroups } = await server.ssrLoadModule('/src/workflow/visualOperationGroupProjection.ts');
+  const graph = unpackVisualOperationGroups(flow.getState().toObject()).graph;
+  flow.getState().replaceGraph(graph);
+  const owner = graph.nodes.find(
+    (node) => node.data.studioRole === child.bindings.owner.role && node.data.operationAuthoring?.ancillaryParent,
+  );
+  assert.ok(owner, 'The declared prompt owner must be present after normal ungrouping.');
+  const ownerId = owner.id;
+  await preview.enablePromptEnhancement(ownerId);
+  const edited = 'A later authored prompt requires a fresh ancillary request.';
+  flow.getState().setParamWithHistory(ownerId, child.bindings.owner.promptField, edited);
+  await flow.getState().onNodesChange([{ type: 'select', id: ownerId, selected: true }]);
+  const selectedIds = () =>
+    flow
+      .getState()
+      .nodes.filter((node) => node.selected)
+      .map((node) => node.id);
+  assert.deepEqual(selectedIds(), [ownerId]);
+  const binding = activeOwner(ownerId).data.operationAuthoring.ancillaryBindings[0];
+  const requestId = binding.roleNodes[child.bindings.request.role];
+  assert.notEqual(
+    flow.getState().nodes.find((node) => node.id === requestId).data.params[child.bindings.request.promptField].value,
+    edited,
+  );
+  const lostInspector = [];
+  const unsubscribe = flow.subscribe(() => {
+    // GraphNodeInputs mounts the selected node's controls only while selected.
+    if (!selectedIds().includes(ownerId)) lostInspector.push(true);
+  });
+  try {
+    const run = await preview.startPromptEnhancementPreview(ownerId, child.id);
+    assert.deepEqual(lostInspector, [], 'Request refresh must not unmount the action before it receives its run.');
+    assert.equal(submitted.nodes[requestId].params[child.bindings.request.promptField].value, edited);
+    assert.ok(
+      flow
+        .getState()
+        .toObject()
+        .nodes.every((node) => !Object.hasOwn(node, 'selected')),
+    );
+    const envelope = syntheticEnvelope(run);
+    const ticket = await preview.finishPromptEnhancementPreview(run);
+    assert.equal(preview.promptEnhancementPreviewDetails(ticket).producer.taskId, run.taskId);
+    await preview.applyPromptEnhancementPreview(ticket);
+    assert.equal(activeOwner(ownerId).data.params.prompt.value, JSON.parse(envelope.value).proposal.text);
+    assert.deepEqual(selectedIds(), [ownerId]);
+    await preview.disablePromptEnhancement(ownerId, child.id);
+    assert.deepEqual(selectedIds(), [ownerId]);
+    await preview.enablePromptEnhancement(ownerId, child.id);
+    assert.deepEqual(selectedIds(), [ownerId]);
+    assert.deepEqual(lostInspector, []);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test('ordinary graph replacements clear selection unless explicitly preserved', async (t) => {
+  const { captureWorkflowOperationContext } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  for (const preserveSelection of [false, true])
+    await t.test(preserveSelection ? 'explicit in-place refresh' : 'ordinary replacement', async () => {
+      await setup();
+      const selectedId = flow.getState().nodes[0].id;
+      await flow.getState().onNodesChange([{ type: 'select', id: selectedId, selected: true }]);
+      const before = flow.getState().toObject();
+      assert.ok(before.nodes.every((node) => !Object.hasOwn(node, 'selected')));
+      transaction.commitOperationGraph(
+        structuredClone(before),
+        captureWorkflowOperationContext(),
+        transaction.operationGraphSignature(before),
+        'Replace reviewed graph',
+        { preserveSelection },
+      );
+      assert.deepEqual(
+        flow
+          .getState()
+          .nodes.filter((node) => node.selected)
+          .map((node) => node.id),
+        preserveSelection ? [selectedId] : [],
+      );
+    });
+});
+
+test('an explicit operation selection plan can select a new node or clear the old selection', async (t) => {
+  const { createNodeFromRegistry } = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
+  const { captureWorkflowOperationContext } = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  for (const intent of ['new node', 'clear selection'])
+    await t.test(intent, async () => {
+      await setup();
+      const previousId = flow.getState().nodes[0].id;
+      await flow.getState().onNodesChange([{ type: 'select', id: previousId, selected: true }]);
+      const before = flow.getState().toObject();
+      const graph = structuredClone(before);
+      let nextId = null;
+      if (intent === 'new node') {
+        const next = createNodeFromRegistry('modules.Image.Preview', fixture.registry, { x: 2100, y: 0 });
+        assert.ok(next);
+        next.selected = true;
+        nextId = next.id;
+        graph.nodes.push(next);
+      } else graph.nodes[0].selected = false;
+      transaction.commitOperationGraph(
+        graph,
+        captureWorkflowOperationContext(),
+        transaction.operationGraphSignature(before),
+        'Explicit selection intent',
+        { preserveSelection: true },
+      );
+      assert.deepEqual(
+        flow
+          .getState()
+          .nodes.filter((node) => node.selected)
+          .map((node) => node.id),
+        nextId ? [nextId] : [],
+      );
+    });
+});
+
 test('a raw unclaimed text-generator graph still requires an ordinary visible output path', async () => {
   const { createNodeFromRegistry } = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
   const provider = createNodeFromRegistry(child.roles[0][1], fixture.registry, { x: 0, y: 0 });
@@ -596,6 +846,33 @@ test('synthetic fresh and warm observations require task/request/source correlat
       flow.getState().undo();
       assert.equal(activeOwner(ownerId).data.params.prompt.value, original);
       await assert.rejects(preview.applyPromptEnhancementPreview(ticket), /new verified Preview/i);
+    });
+});
+
+test('a verified Preview cannot Apply after a worker or backend source rollover, without changing the document', async (t) => {
+  for (const field of ['worker', 'source'])
+    await t.test(field, async () => {
+      const originalRuntime = structuredClone(worker);
+      try {
+        const { ownerId } = await setup();
+        await preview.enablePromptEnhancement(ownerId);
+        const run = await preview.startPromptEnhancementPreview(ownerId, child.id);
+        syntheticEnvelope(run);
+        const ticket = await preview.finishPromptEnhancementPreview(run);
+        const before = structuredClone(flow.getState().toObject());
+        const history = flow.getState().historyPast.length;
+        // Only the fresh Apply read observes the rollover; same DTOs/epochs stay unchanged.
+        onRuntime = () => {
+          if (field === 'worker') worker.instance = 'replacement-worker';
+          else worker.backend_source.fingerprint = `sha256:backend-source-v1:${'d'.repeat(64)}`;
+        };
+        await assert.rejects(preview.applyPromptEnhancementPreview(ticket), /worker or backend source changed/);
+        assert.deepEqual(flow.getState().toObject(), before);
+        assert.equal(flow.getState().historyPast.length, history);
+      } finally {
+        onRuntime = null;
+        Object.assign(worker, originalRuntime);
+      }
     });
 });
 

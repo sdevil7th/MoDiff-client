@@ -1,3 +1,7 @@
+// Aggregate release feature/correctness cost versus the accepted COMPLETE baseline:
+// deferred gzip 316833 -> 318426 (+1593). Raise 317015 to 318608, retaining
+// 182 bytes of headroom. This is not per-module attribution or an immediate
+// private-baseline measurement; startup/chunk caps and validators stay fixed.
 // Lossless structured prompt enhancement preserves authored layout/source bindings
 // and validates native ID mapping in deferred code. Measured deferred gzip grows
 // from 316480 to 316833 bytes (+353). Add exactly that feature cost to the prior
@@ -488,7 +492,8 @@ const MAX_DEFERRED_GZIP_BYTES =
   22998 +
   896 +
   1536 +
-  353;
+  353 +
+  1593;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -154,14 +154,34 @@ function authoredPair(graph: OperationGraph, ownerId: string, child: AncillaryOp
 
 function assertDeclaredLayout(child: AncillaryOperation, layout: unknown) {
   if (
+    child.layoutPolicy === 'append-details-preserve-layout-v1' &&
+    (!layout ||
+      typeof layout !== 'object' ||
+      !Array.isArray((layout as { regions?: unknown }).regions) ||
+      !(layout as { regions: unknown[] }).regions.length)
+  )
+    invalidAncillary('appended wording requires the current authored regions.');
+  if (
     layout !== null &&
     child.verification &&
     !child.verification.supportedPromptModes.some(
-      (mode) => mode === (child.bindings.owner.referenceSource ? 'i2i_bbox' : 't2i_bbox'),
+      (mode) =>
+        mode ===
+        (child.bindings.owner.referenceSource
+          ? child.layoutPolicy === 'append-details-preserve-layout-v1'
+            ? 'i2i'
+            : 'i2i_bbox'
+          : child.layoutPolicy === 'append-details-preserve-layout-v1'
+            ? 't2i'
+            : 't2i_bbox'),
     )
   )
     invalidAncillary('this enhancement does not support authored layout objects. Keep the raw prompt/layout path.');
-  if (layout !== null && child.layoutPolicy !== 'preserve-authored-v1')
+  if (
+    layout !== null &&
+    child.layoutPolicy !== 'preserve-authored-v1' &&
+    child.layoutPolicy !== 'append-details-preserve-layout-v1'
+  )
     invalidAncillary('this enhancement does not declare lossless authored-layout preservation.');
 }
 
@@ -348,6 +368,16 @@ export async function planApplyPromptEnhancement(
         };
   if (canonicalBlockStringifyV2(geometry(authoredLayout)) !== canonicalBlockStringifyV2(geometry(proposedLayout)))
     invalidAncillary('a prompt enhancement cannot change authored layout identities or geometry.');
+  if (
+    child.layoutPolicy === 'append-details-preserve-layout-v1' &&
+    (!pair.prompt.startsWith(original.prompt + '\n\n') || pair.prompt.length === original.prompt.length + 2)
+  )
+    invalidAncillary('appended wording must retain the exact authored caption prefix.');
+  if (
+    child.layoutPolicy === 'append-details-preserve-layout-v1' &&
+    canonicalBlockStringifyV2(original.layout) !== canonicalBlockStringifyV2(pair.layout)
+  )
+    invalidAncillary('appended wording cannot change any authored layout field.');
   owner.data.params[child.bindings.owner.promptField]!.value = pair.prompt;
   owner.data.params[child.bindings.owner.layoutField]!.value = structuredClone(pair.layout);
   owner.data.operationAuthoring!.ancillaryParent = {

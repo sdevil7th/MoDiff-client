@@ -1744,3 +1744,24 @@ validation/status fields as the same authoring state. This keeps normal run
 status updates from invalidating an unchanged Preview. Explicit authored UI
 settings, including `false` and zero values, remain part of the source identity;
 input, wire, worker and proposal receipt changes still invalidate Apply.
+
+Reviewed graph transactions clear selection by default, including full model/task
+replacement. An in-place action can explicitly preserve selection for same-ID
+nodes when its plan declares no selection intent. PUP uses that option to keep
+its inspector mounted through request refresh, verification and Apply. A plan
+that explicitly selects or deselects nodes still controls selection. Selection
+remains transient: it is absent from durable snapshots and does not relax
+workflow epochs, graph signatures or Apply guards.
+
+The additive `append-details-preserve-layout-v1` declaration selects the generic
+`enhance_prompt_append_details` operation and one plain PUP generation. Its
+version-three `caption-append-preserve-layout-v1` proposal appends the exact native
+wording to the exact authored caption with two newlines; the entire authored
+layout, including descriptions, remains unchanged. The client independently
+checks that composition against the current declared policy, operation, request
+hashes and producer before enabling Apply. Native wording cannot contain region
+tags, Markdown fences or a table. The UI labels this as appended wording, never
+native layout generation or semantic-fidelity proof. Apply stays one ordinary
+history transaction; Regenerate recaptures the original request after an
+untouched Apply, so appended text does not accumulate. Existing plain and native
+structured proposal schemas remain strict and retain their own declarations.

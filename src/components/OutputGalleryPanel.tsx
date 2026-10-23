@@ -33,7 +33,6 @@ import { outputTaskDisplay } from '../studio/outputTaskDisplay';
 import { encodedVideoMetadata, videoOutputSummary } from '../studio/outputUtils';
 import { outputText, outputTextType, textOutputViewerOpener } from '../studio/outputText';
 import { exportMedia } from '../studio/mediaCapabilities';
-import { validateCurrentRun } from '../studio/runReadiness';
 import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
@@ -272,7 +271,6 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
       setRightPanelTab('studio');
       setGalleryLibraryOpen(false);
       enqueueSnackbar('Workflow package imported', { variant: 'success', autoHideDuration: 2200 });
-      window.setTimeout(() => validateCurrentRun({ sid, isConnected, includeStudio: true, showDialog: true }), 0);
     } catch (error) {
       enqueueSnackbar(String(error), { variant: 'error', autoHideDuration: 6000 });
     }

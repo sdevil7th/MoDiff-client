@@ -211,7 +211,9 @@ export async function enablePromptEnhancement(ownerId: string, childId?: string,
     selected.definition,
   );
   selected.assertCurrent();
-  commitOperationGraph(graph, selected.context, selected.signature, 'Enable prompt enhancement');
+  commitOperationGraph(graph, selected.context, selected.signature, 'Enable prompt enhancement', {
+    preserveSelection: true,
+  });
   return structuredClone(child);
 }
 
@@ -228,7 +230,9 @@ export async function disablePromptEnhancement(ownerId: string, childId: string,
   const child = chooseChild(selected.recipe, childId);
   const graph = await planDisablePromptEnhancement(selected.graph, ownerId, selected.recipe, child.id);
   selected.assertCurrent();
-  commitOperationGraph(graph, selected.context, selected.signature, 'Disable prompt enhancement');
+  commitOperationGraph(graph, selected.context, selected.signature, 'Disable prompt enhancement', {
+    preserveSelection: true,
+  });
 }
 
 /** Local task handle only; server dispatch/owner policy still decides admission. */
@@ -267,7 +271,9 @@ export async function startPromptEnhancementPreview(ownerId: string, childId: st
   selected.assertCurrent();
   assertIdleSession();
   if (operationGraphSignature(graph) !== selected.signature)
-    commitOperationGraph(graph, selected.context, selected.signature, 'Prepare prompt enhancement request');
+    commitOperationGraph(graph, selected.context, selected.signature, 'Prepare prompt enhancement request', {
+      preserveSelection: true,
+    });
   const { owner } = promptEnhancementOwner(ownerId);
   const bindings = owner.data.operationAuthoring?.ancillaryBindings;
   const binding = bindings?.length === 1 ? bindings[0] : undefined;
@@ -330,6 +336,7 @@ function equal(actual: unknown, expected: unknown, label: string) {
 
 async function currentRuntime() {
   return requestJson(`${config.serverAddress}/runtime/status`, {
+    cache: 'no-store',
     parse: (value) => {
       const item = record(value),
         source = record(item.backend_source);
@@ -577,7 +584,9 @@ export async function finishPromptEnhancementPreview(run: PromptEnhancementPrevi
     ...verification.modelReceipt,
     runtime: { ...verification.modelReceipt.runtime, dtype, device, quantization },
   };
-  equal(literal(state, request.role, request.operationField), 'enhance_prompt', 'selected text operation');
+  const operation =
+    child.layoutPolicy === 'append-details-preserve-layout-v1' ? 'enhance_prompt_append_details' : 'enhance_prompt';
+  equal(literal(state, request.role, request.operationField), operation, 'selected text operation');
   const expectedControls = {
     max_new_tokens: literal(state, request.role, request.maxNewTokensField),
     min_new_tokens: literal(state, request.role, request.minNewTokensField),
@@ -600,7 +609,7 @@ export async function finishPromptEnhancementPreview(run: PromptEnhancementPrevi
   if (!child.bindings.owner.referenceSource && references.length)
     invalidAncillary('text-only enhancement has unexpected references.');
   const mode =
-    `${references.length ? 'i2i' : 't2i'}${authoredLayout?.regions.length ? '_bbox' : ''}` as PromptEnhancementMode;
+    `${references.length ? 'i2i' : 't2i'}${authoredLayout?.regions.length && child.layoutPolicy !== 'append-details-preserve-layout-v1' ? '_bbox' : ''}` as PromptEnhancementMode;
   const verified = await verifyPromptEnhancementSummaryBindings(envelope.value, {
     producer,
     adapter: verification.adapter,
@@ -610,6 +619,8 @@ export async function finishPromptEnhancementPreview(run: PromptEnhancementPrevi
     controls: expectedControls,
     systemPromptSha256: verification.systemPromptSha256ByMode[mode],
     references,
+    operation,
+    ...(child.layoutPolicy ? { layoutPolicy: child.layoutPolicy } : {}),
   });
   selected.assertCurrent();
   assertRunCurrent(run);
@@ -654,8 +665,12 @@ export async function applyPromptEnhancementPreview(ticket: VerifiedPromptEnhanc
     pair,
     state.originalPairHash,
   );
+  // A verified ticket remains owned by the worker/source that produced it, even after model release.
+  equal(await currentRuntime(), previewRuns.get(state.run)!.runtime, 'worker or backend source');
   selected.assertCurrent();
   assertRunCurrent(state.run);
-  commitOperationGraph(graph, selected.context, selected.signature, 'Apply prompt enhancement');
+  commitOperationGraph(graph, selected.context, selected.signature, 'Apply prompt enhancement', {
+    preserveSelection: true,
+  });
   verifiedPreviews.delete(ticket);
 }

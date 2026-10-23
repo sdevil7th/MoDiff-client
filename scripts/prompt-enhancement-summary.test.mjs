@@ -196,6 +196,210 @@ const parse = (value) => contract.parsePromptEnhancementSummary(JSON.stringify(v
 const verify = ({ value, expected }) =>
   contract.verifyPromptEnhancementSummaryBindings(JSON.stringify(value), expected);
 
+// Explicitly synthetic composition protocol: not a captured model response.
+function appendFixture({
+  images = 0,
+  authored = layout(),
+  prompt = '  Keep <region_1> exactly.\n',
+  nativeText = '  Additional visual wording 😀.\n',
+} = {}) {
+  const input = fixture({ images, layout: authored, prompt });
+  const mode = images ? 'i2i' : 't2i';
+  input.value.consumedInput.fingerprints.operation = 'enhance_prompt_append_details';
+  input.value.consumedInput.fingerprints.system_prompt_mode = mode;
+  input.value.request.consumedInputSha256 = sha(canonical(input.value.consumedInput));
+  Object.assign(input.value.proposal, {
+    mode,
+    text: null,
+    layoutOutputValidated: true,
+    structuredProposal: {
+      schemaVersion: 3,
+      kind: 'caption-append-preserve-layout-v1',
+      caption: prompt + '\n\n' + nativeText,
+      layoutConditioning: copy(authored),
+      nativeText,
+    },
+  });
+  Object.assign(input.expected, {
+    operation: 'enhance_prompt_append_details',
+    layoutPolicy: 'append-details-preserve-layout-v1',
+  });
+  return input;
+}
+
+test('append-details verifies exact Unicode caption composition and the entire unchanged authored layout', async (t) => {
+  for (const images of [0, 1, 10])
+    await t.test(`plain native mode with ${images} references`, async () => {
+      const input = appendFixture({ images });
+      const result = await verify(input);
+      assert.deepEqual(result, input.value);
+      assert.equal(result.proposal.mode, images ? 'i2i' : 't2i');
+      assert.equal(
+        result.proposal.structuredProposal.caption,
+        input.expected.authoredPrompt + '\n\n' + result.proposal.structuredProposal.nativeText,
+      );
+      assert.deepEqual(result.proposal.structuredProposal.layoutConditioning, input.expected.authoredLayout);
+      assert.equal(Object.hasOwn(result.proposal.structuredProposal, 'rawTable'), false);
+      assert.equal(result.proposal.semanticFidelityVerified, false);
+    });
+  const source = layout();
+  Object.assign(source.regions[0], {
+    action: 'relocate',
+    targetBox: [0.10001, 0.2, 0.4, 0.7],
+    source: { referenceIndex: 0, box: [0, 0, 1, 1], expectedReferenceId: sha('authored binding') },
+  });
+  const input = appendFixture({ images: 1, authored: source, prompt: 'Keep <region_1> from <ref_image_0>.' });
+  assert.deepEqual(
+    (await verify(input)).proposal.structuredProposal.layoutConditioning,
+    source,
+    'No native geometry conversion or rounding is involved in composition.',
+  );
+  const legacy = appendFixture({ authored: layout(1) });
+  assert.equal((await verify(legacy)).proposal.structuredProposal.layoutConditioning.schemaVersion, 1);
+});
+
+test('append-details requires the independent current policy and operation, never an untrusted kind alone', async () => {
+  for (const mutate of [
+    (x) => {
+      delete x.expected.layoutPolicy;
+    },
+    (x) => {
+      delete x.expected.operation;
+    },
+    (x) => {
+      x.expected.layoutPolicy = 'preserve-authored-v1';
+    },
+    (x) => {
+      x.value.consumedInput.fingerprints.operation = 'enhance_prompt';
+    },
+    (x) => {
+      x.value.proposal.mode = x.value.consumedInput.fingerprints.system_prompt_mode = 't2i_bbox';
+    },
+    (x) => {
+      x.value.proposal.structuredProposal.rawTable = [];
+    },
+    (x) => {
+      x.value.proposal.text = 'not a public text output';
+    },
+  ]) {
+    const input = appendFixture();
+    mutate(input);
+    await assert.rejects(verify(input));
+  }
+  const rejected = appendFixture();
+  Object.assign(rejected.value.proposal, {
+    structuredProposal: null,
+    applicationAllowed: false,
+    layoutOutputValidated: false,
+    applicationBlockedReason: 'Plain wording was refused.',
+  });
+  assert.equal((await verify(rejected)).proposal.applicationAllowed, false);
+});
+
+test('append-details rejects every authored caption/layout alteration including descriptions and source identity', async () => {
+  for (const mutate of [
+    (s) => {
+      s.caption = s.caption.trimStart();
+    },
+    (s) => {
+      s.caption = s.caption.replace('\n\n', '\n');
+    },
+    (s) => {
+      s.caption = 'Replacement caption <region_1>.\n\n' + s.nativeText;
+    },
+    (s) => {
+      s.layoutConditioning.regions[0].description = 'Edited description';
+    },
+    (s) => {
+      s.layoutConditioning.regions[0].targetBox[0] += 0.01;
+    },
+    (s) => {
+      s.layoutConditioning.regions[0].id = 'foreign';
+    },
+    (s) => {
+      s.layoutConditioning.schemaVersion = 1;
+      delete s.layoutConditioning.regions[0].action;
+    },
+  ]) {
+    const input = appendFixture();
+    mutate(input.value.proposal.structuredProposal);
+    await assert.rejects(verify(input));
+  }
+  const source = layout();
+  Object.assign(source.regions[0], {
+    action: 'remove',
+    targetBox: null,
+    source: { referenceIndex: 0, box: [0, 0, 1, 1], expectedReferenceId: sha('current ref') },
+  });
+  const input = appendFixture({ images: 1, authored: source });
+  input.value.proposal.structuredProposal.layoutConditioning.regions[0].source.expectedReferenceId = sha('stale ref');
+  await assert.rejects(verify(input), /complete authored layout/);
+});
+
+test('append-details refuses unsafe suffix grammar, malformed tags and existing byte limits without rewriting text', async () => {
+  for (const nativeText of [
+    '',
+    '  ',
+    '<foreign>',
+    'unclosed <',
+    '```text```',
+    '~~~text~~~',
+    'A paragraph [{"id":"extra"}]',
+    'A paragraph []',
+    'A mixed trailing table [{"id":"extra"},3]',
+    '\ud800',
+    'bad\u0000text',
+  ]) {
+    await assert.rejects(verify(appendFixture({ nativeText })));
+  }
+  for (const nativeText of [
+    'A malformed table [{',
+    'A mid-sentence [{"id":"example"}] remains prose.',
+    'Quoted [wording], {variables}, 2 * 3, and a list: [1,2].',
+    '**Visual wording** stays exact.',
+  ]) {
+    const input = appendFixture({ nativeText });
+    assert.equal((await verify(input)).proposal.structuredProposal.nativeText, nativeText);
+  }
+  for (const prompt of [
+    'No authored tag.',
+    '<region_1> <region_1>',
+    '<region_1> <unknown>',
+    '<region_1> <ref_image_0>',
+    '<region_1> incomplete <',
+    '<outer<region_1>>',
+  ])
+    await assert.rejects(verify(appendFixture({ prompt })));
+  await assert.rejects(
+    verify(appendFixture({ nativeText: 'x'.repeat(131073) })),
+    /existing ASCII projection guard exceeded/,
+  );
+  await assert.rejects(
+    verify(appendFixture({ nativeText: '😀'.repeat(65537) })),
+    /existing ASCII projection guard exceeded/,
+  );
+});
+
+test('append-details finds trailing tables after ordinary, multiple or unmatched prose brackets', async () => {
+  for (const nativeText of [
+    'A [red] accent. [{"id":"fox","bbox":[0,0,1000,1000]}]',
+    'A [red] accent. []',
+    'First [1,2] and [3,4]. [{"description":"a table"}]',
+    'An unmatched [ prose prefix. [{"description":"a table"}]',
+    'An unmatched [ prose prefix. []',
+    'A duplicate region table [{"id":"one","id":"two","bbox":[0,0,1000,1000]}]',
+    '[red] '.repeat(33),
+  ])
+    await assert.rejects(verify(appendFixture({ nativeText })));
+  for (const nativeText of [
+    'A [red] accent with no table.',
+    'An incomplete table [{"id":"one"}',
+    'A duplicate ordinary object table [{"note":"one","note":"two"}]',
+    '[0]'.repeat(9),
+  ])
+    assert.equal((await verify(appendFixture({ nativeText }))).proposal.structuredProposal.nativeText, nativeText);
+});
+
 test('structured source proposals preserve authored binding and remap only a unique exact native table', async () => {
   const authored = layout();
   authored.regions[0].action = 'relocate';

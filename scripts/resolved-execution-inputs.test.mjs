@@ -1168,6 +1168,18 @@ test('paired backend prompt-enhancement and ordinary receipts survive exact hist
   assert.equal(enhanced.summary.modelType, undefined, 'capture does not grant an image model identity');
 });
 
+test('captured append-details operation survives the ordinary output receipt parser', () => {
+  const capture = enhancementReceipt();
+  capture.summary.textOperation = 'enhance_prompt_append_details';
+  for (const node of capture.nodes) {
+    if (node.fields.operation) node.fields.operation.value = 'enhance_prompt_append_details';
+  }
+  assert.equal(
+    inputs.coerceResolvedExecutionInputs(capture, enhancementIdentity(capture)).summary.textOperation,
+    'enhance_prompt_append_details',
+  );
+});
+
 const enhancementNames = {
   operation: 'textOperation',
   enhancement_max_new_tokens: 'enhancementMaxNewTokens',

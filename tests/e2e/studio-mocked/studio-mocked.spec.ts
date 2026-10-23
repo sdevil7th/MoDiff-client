@@ -13,6 +13,7 @@ import {
   AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
 } from '../../../src/studio/templateOperationSelections';
 import { STUDIO_TEMPLATES } from '../../../src/studio/templates';
+import { hashString, stableStringify } from '../../../src/studio/stableHash';
 import { REGISTERED_BLOCK_V2_ROUTES } from '../../../src/studio/registeredBlockV2Routes';
 import { acknowledgementRequiredForTemplate } from '../../../src/studio/modelUsagePolicies';
 import type { NodeData } from '../../../src/stores/useNodeStore';
@@ -799,6 +800,312 @@ test('mounted ancillary readiness resolves current declarations before classifyi
   await expect(probe).not.toContainText('ancillary_declaration_invalid');
   expect(renderErrors).toEqual([]);
 });
+
+for (const appendDetails of [false, true])
+  test(
+    appendDetails
+      ? 'fixed Studio inspector labels declared append-details and retains the authored layout through refused Preview'
+      : 'fixed Studio inspector retains a refreshed prompt Preview through terminal refusal',
+    async ({ page }) => {
+      await page.setViewportSize({ width: 1920, height: 1200 });
+      await ensureFrontend();
+      await installMockRoutes(page);
+      const starter = JSON.parse(
+        await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/prompt-enhancement-starter.v1.json'), 'utf8'),
+      );
+      const current = JSON.parse(
+        await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/ancillary-fp32-t2i-authoring.v1.json'), 'utf8'),
+      ).parents[0];
+      const response = { ...starter.response, authoring: JSON.parse(current.rawParentJson) };
+      const registry = { ...starter.registry, ...current.registry };
+      if (appendDetails) {
+        // Synthetic additive declaration for a no-model interaction fixture only.
+        const parent = response.authoring,
+          child = parent.ancillaryOperations[0];
+        parent.id = parent.id.replace(/:v1$/u, ':v3');
+        current.selection.authoringRecipeId = parent.id;
+        child.id = `${parent.id}:preview`;
+        child.parent.authoringRecipeId = parent.id;
+        child.layoutPolicy = 'append-details-preserve-layout-v1';
+        const request = child.verification.requestInputs;
+        child.initialValues.find(
+          ([role, field]: [string, string]) => role === request.role && field === request.operationField,
+        )[2] = 'enhance_prompt_append_details';
+        child.verification.layoutRequestSuffixSha256 = `sha256:${createHash('sha256').update('synthetic append request').digest('hex')}`;
+        const field = registry['modules.HuggingFaceTransformers.GenerateImageVideoText'].params.operation;
+        field.options.push({
+          ...field.options.find(({ value }: { value: string }) => value === 'enhance_prompt'),
+          value: 'enhance_prompt_append_details',
+          label: 'enhance_prompt_append_details',
+        });
+        const childBody = { ...child };
+        delete childBody.contentHash;
+        child.contentHash = `studio-ancillary-v1-${hashString(stableStringify(childBody))}`;
+        const parentBody = { ...parent };
+        delete parentBody.contentHash;
+        parent.contentHash = `studio-authoring-v1-${hashString(stableStringify(parentBody))}`;
+      }
+      const taskId = 'inspector-preview-refusal';
+      const refusal = 'Synthetic Preview refused; the authored prompt is unchanged.';
+      let submitted: ApiGraphExport | undefined;
+      let graphPosts = 0;
+      const automaticExecutionPosts: string[] = [];
+      page.on('request', (request) => {
+        const pathname = new URL(request.url()).pathname;
+        if (request.method() === 'POST' && /\/(?:graph|execute|install)(?:\/|$)/u.test(pathname))
+          automaticExecutionPosts.push(pathname);
+      });
+      let publishFailure: (() => void) | undefined;
+      await page.route('**/nodes', (route) => route.fulfill({ json: { instance: 'mock', nodes: registry } }));
+      await page.route('**/operations/starter', (route) => route.fulfill({ json: response }));
+      await page.route('**/fields/action', (route) => route.fulfill({ json: { error: false } }));
+      await page.route('**/runtime/status**', (route) =>
+        route.fulfill({
+          json: {
+            ready: true,
+            instance: 'mock',
+            backend_source: { fingerprint: `sha256:backend-source-v1:${'a'.repeat(64)}` },
+            packages: { torch: { available: true, cuda_available: true, cuda_device_count: 1 } },
+          },
+        }),
+      );
+      await page.route('**/graph', async (route) => {
+        expect(route.request().method()).toBe('POST');
+        graphPosts++;
+        submitted = route.request().postDataJSON();
+        await route.fulfill({ json: { error: false, sid: submitted!.sid, task_id: taskId } });
+      });
+      await page.routeWebSocket('**/ws**', (socket) => {
+        socket.send(
+          JSON.stringify({ type: 'welcome', sid: new URL(socket.url()).searchParams.get('sid'), instance: 'mock' }),
+        );
+        publishFailure = () => {
+          if (!submitted) throw new Error('No owned Preview request was submitted.');
+          socket.send(
+            JSON.stringify({
+              type: 'task_failed',
+              sid: submitted.sid,
+              task_id: taskId,
+              client_run_id: submitted.runtimeHints?.clientRunId,
+              run_input_hash: submitted.runtimeHints?.runInputHash,
+              message: refusal,
+              current: null,
+              queued: {},
+            }),
+          );
+        };
+      });
+      await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+      await dismissTaskLauncher(page);
+      await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+      // The established constructor-trapped fixtures provide the initial document;
+      // selection, editing and Preview below use the mounted application's controls.
+      const { ownerId, requestId } = await page.evaluate(
+        async ({ starter, current, response, registry, appendDetails }) => {
+          const [{ useFlowStore }, { useStudioStore }, { useNodesStore }, workflow, preview] = await Promise.all([
+            import('/src/stores/useFlowStore.ts'),
+            import('/src/stores/useStudioStore.ts'),
+            import('/src/stores/useNodeStore.ts'),
+            import('/src/studio/templateOperationWorkflow.ts'),
+            import('/src/studio/promptEnhancementPreview.ts'),
+          ]);
+          const { unpackVisualOperationGroups } = await import('/src/workflow/visualOperationGroupProjection.ts');
+          const form = {
+            ...useStudioStore.getState().form,
+            modelType: starter.baseSpec.modelType,
+            mode: starter.baseSpec.mode,
+            resourceMode: 'expert' as const,
+            device: 'cpu',
+            offloadMode: 'none' as const,
+            autoOffload: false,
+            prompt: 'Authored inspector prompt.',
+            width: 1024,
+            height: 1024,
+            steps: starter.capability.recommendedSteps,
+            seed: 4201,
+            randomSeed: false,
+            maxSequenceLength: 8192,
+          };
+          const graph = workflow.createTemplateOperationGraph(
+            {
+              id: 'inspector-preview-fixture',
+              label: 'Mocked inspector Preview fixture',
+              modelType: form.modelType,
+              mode: form.mode,
+              executionSelection: { ...current.selection, bindingSpec: { modelType: form.modelType, mode: form.mode } },
+            },
+            form,
+            response,
+            registry,
+            starter.baseSpec,
+            starter.capability,
+          );
+          useStudioStore.setState({
+            form: {
+              ...useStudioStore.getState().form,
+              resourceMode: 'expert',
+              device: 'cpu',
+              offloadMode: 'none',
+              autoOffload: false,
+            },
+            graphBinding: null,
+          });
+          useNodesStore.setState({ nodesRegistry: registry, operationContracts: starter.operationContracts });
+          const ordinary = unpackVisualOperationGroups(graph).graph;
+          if (appendDetails) {
+            const owner = ordinary.nodes.find(
+              (node) => node.data.studioRole === response.authoring.ancillaryOperations[0].bindings.owner.role,
+            )!;
+            owner.data.params.prompt!.value = 'Authored inspector prompt <subject>.';
+            owner.data.params.layout_conditioning!.value = {
+              schemaVersion: 2,
+              coordinateSpace: 'normalized_xyxy',
+              regions: [
+                {
+                  id: 'subject',
+                  description: 'Original authored description.',
+                  action: 'place',
+                  targetBox: [0.2, 0.2, 0.8, 0.8],
+                },
+              ],
+            };
+          }
+          useFlowStore.getState().replaceGraph(ordinary);
+          const owner = ordinary.nodes.find(
+            (node) =>
+              node.data.studioRole === response.authoring.ancillaryOperations[0].bindings.owner.role &&
+              node.data.operationAuthoring?.ancillaryParent,
+          );
+          if (!owner) throw new Error('The declared prompt owner is absent from the fixture.');
+          await preview.enablePromptEnhancement(owner.id);
+          useFlowStore.getState().resetHistory();
+          const binding = preview.promptEnhancementOwner(owner.id).owner.data.operationAuthoring!
+            .ancillaryBindings![0]!;
+          return { ownerId: owner.id, requestId: binding.roleNodes.proposal! };
+        },
+        { starter, current, response, registry, appendDetails },
+      );
+      // Import and Save persist an editable document; neither requests executable export authority.
+      const packageData = await page.evaluate(async () => {
+        const [{ useFlowStore }, { useStudioStore }, { buildWorkflowPackage }] = await Promise.all([
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/stores/useStudioStore.ts'),
+          import('/src/studio/workflowPackage.ts'),
+        ]);
+        return buildWorkflowPackage({
+          graph: useFlowStore.getState().toObject(),
+          form: useStudioStore.getState().form,
+        });
+      });
+      await page.getByTestId('left-tab-assets').click();
+      await page.getByTestId('left-open-gallery-library').click();
+      await expect(page.getByRole('heading', { name: 'Output Gallery', exact: true })).toBeVisible();
+      await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+        name: 'ancillary-enabled-workflow.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(packageData), 'utf8'),
+      });
+      await page.waitForFunction(() => {
+        const state = window.__MODIFF_E2E__!.getState().studio;
+        return (
+          state.workflowTabs.find((tab: { id: string; source: string }) => tab.id === state.activeWorkflowTabId)
+            ?.source === 'import'
+        );
+      });
+      const imported = await page.evaluate(async () => {
+        const [{ useFlowStore }, { useStudioStore }] = await Promise.all([
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/stores/useStudioStore.ts'),
+        ]);
+        return { id: useStudioStore.getState().activeWorkflowTabId!, graph: useFlowStore.getState().toObject() };
+      });
+      const savedResponse = page.waitForResponse(
+        (result) =>
+          result.request().method() === 'PUT' &&
+          new URL(result.url()).pathname === `/workflows/${encodeURIComponent(imported.id)}` &&
+          result.request().postDataJSON().intent === 'saved',
+      );
+      await page.getByTestId('topbar-save-workflow').click();
+      const saved = await savedResponse;
+      expect(saved.status()).toBe(200);
+      const savedDocument = await saved.json();
+      expect(savedDocument.snapshot.nodes).toEqual(imported.graph.nodes);
+      expect(savedDocument.snapshot.edges).toEqual(imported.graph.edges);
+      await expect(page.getByTestId('run-issues-dialog')).toHaveCount(0);
+      expect(graphPosts).toBe(0);
+      expect(automaticExecutionPosts).toEqual([]);
+      await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+      await page.locator(`.react-flow__node[data-id="${ownerId}"]`).locator('header').click();
+      const inspector = page.getByTestId('studio-custom-graph-inspector');
+      const controls = inspector.getByTestId(`prompt-enhancement-${ownerId}`);
+      await expect(controls.getByRole('button', { name: 'Preview', exact: true })).toBeEnabled();
+      const prompt = inspector.getByLabel(/^Prompt(?: \*)?$/);
+      if (appendDetails)
+        await expect(controls).toContainText('Appends proposed wording; authored layout stays unchanged.');
+      const freshPrompt = appendDetails
+        ? 'Edited <subject> in the fixed inspector before Preview.'
+        : 'Edited in the fixed inspector before Preview.';
+      await prompt.fill(freshPrompt);
+      await prompt.blur();
+      const read = () =>
+        page.evaluate(
+          async ({ ownerId, requestId }) => {
+            const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+            const { nodes } = useFlowStore.getState();
+            return {
+              selected: nodes.filter((node) => node.selected).map((node) => node.id),
+              authored: nodes.find((node) => node.id === ownerId)?.data.params.prompt?.value,
+              request: nodes.find((node) => node.id === requestId)?.data.params.prompt?.value,
+            };
+          },
+          { ownerId, requestId },
+        );
+      await expect.poll(read).toEqual({
+        selected: [ownerId],
+        authored: freshPrompt,
+        request: appendDetails ? 'Authored inspector prompt <subject>.' : 'Authored inspector prompt.',
+      });
+      const mountedControls = await controls.elementHandle();
+      if (!mountedControls) throw new Error('The fixed inspector controls did not mount.');
+      await controls.getByRole('button', { name: 'Preview', exact: true }).click();
+      await expect.poll(() => graphPosts).toBe(1);
+      await expect(controls.getByRole('status')).toHaveText('Preview submitted. Follow progress in Session activity.');
+      expect(await mountedControls.evaluate((element) => element.isConnected)).toBe(true);
+      await expect.poll(read).toEqual({ selected: [ownerId], authored: freshPrompt, request: freshPrompt });
+      const purpose = submitted!.runtimeHints!.executionPurpose!;
+      expect(purpose).toMatchObject({
+        kind: 'explicit_preview',
+        target: { nodeId: requestId, outputField: 'proposal_summary' },
+      });
+      expect(purpose.bindings).toHaveLength(1);
+      expect(Object.keys(submitted!.nodes).sort()).toEqual(Object.values(purpose.bindings[0]!.roleNodes).sort());
+      expect(submitted!.nodes[requestId]!.params.prompt!.value).toBe(freshPrompt);
+      if (appendDetails) {
+        expect(submitted!.nodes[requestId]!.params.operation!.value).toBe('enhance_prompt_append_details');
+        expect(submitted!.nodes[requestId]!.params.layout_conditioning!.value).toEqual({
+          schemaVersion: 2,
+          coordinateSpace: 'normalized_xyxy',
+          regions: [
+            {
+              id: 'subject',
+              description: 'Original authored description.',
+              action: 'place',
+              targetBox: [0.2, 0.2, 0.8, 0.8],
+            },
+          ],
+        });
+      }
+      publishFailure!();
+      await expect(controls.getByRole('alert')).toHaveText(refusal);
+      await expect(controls.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled();
+      await expect(controls.getByRole('button', { name: 'Preview', exact: true })).toBeEnabled();
+      expect(await mountedControls.evaluate((element) => element.isConnected)).toBe(true);
+      await expect(prompt).toHaveValue(freshPrompt);
+      await expect.poll(read).toEqual({ selected: [ownerId], authored: freshPrompt, request: freshPrompt });
+      expect(graphPosts).toBe(1);
+    },
+  );
 
 test('Advanced numeric values and step buttons fit a narrow scrolling node', async ({ page }) => {
   page.setDefaultTimeout(15_000);

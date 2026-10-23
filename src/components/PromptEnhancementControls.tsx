@@ -127,7 +127,10 @@ export default function PromptEnhancementControls({
     setRun(next);
     setMessage('Preview submitted. Follow progress in Session activity.');
   };
-  const text = details.summary?.proposal.structuredProposal?.caption ?? details.summary?.proposal.text;
+  const structured = details.summary?.proposal.structuredProposal;
+  const append = structured?.schemaVersion === 3 || declaration?.layoutPolicy === 'append-details-preserve-layout-v1';
+  const text =
+    structured?.schemaVersion === 3 ? structured.nativeText : (structured?.caption ?? details.summary?.proposal.text);
   return (
     <section
       aria-label="Model prompt enhancement"
@@ -139,6 +142,11 @@ export default function PromptEnhancementControls({
         The raw prompt runs directly. Preview proposes wording; Apply changes the prompt only after verification and
         your review.
       </p>
+      {append ? (
+        <p className="text-modiff-metadata text-modiff-subtle-text">
+          Appends proposed wording; authored layout stays unchanged.
+        </p>
+      ) : null}
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {!binding ? (
           <GraphControlButton
