@@ -1,3 +1,10 @@
+// Normal evaluation discovery/Custom selection, declared PUP/LoRA authoring,
+// default-seed consumption and current runtime-option presentation measure
+// largest-startup/startup/deferred gzip bytes 479207/657512/319433 in the
+// canonical Linux complete check. Allow 288/288/864 bytes over the prior caps,
+// leaving 23/28/39 bytes of headroom. This is aggregate measured feature and
+// correctness cost, not per-module attribution. Keep dependencies, minifier,
+// loading boundaries, all validators and the 65536-byte deferred chunk cap fixed.
 // Aggregate release feature/correctness cost versus the accepted COMPLETE baseline:
 // deferred gzip 316833 -> 318426 (+1593). Raise 317015 to 318608, retaining
 // 182 bytes of headroom. This is not per-module attribution or an immediate
@@ -199,6 +206,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
   128 +
   512 +
   192 +
+  288 +
   288;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
@@ -307,6 +315,7 @@ const MAX_STARTUP_GZIP_BYTES =
   128 +
   512 +
   192 +
+  288 +
   288;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
@@ -493,7 +502,8 @@ const MAX_DEFERRED_GZIP_BYTES =
   896 +
   1536 +
   353 +
-  1593;
+  1593 +
+  864;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -52,14 +52,18 @@ export default function OperationGraphControls({
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
   const canvasEpoch = useStudioStore((s) => s.workflowCanvasEpoch);
   const operations = useNodesStore((s) => s.operationContracts);
-  const evaluationOnly = useNodesStore((s) =>
-    s.workflowModelDescriptors.some(
-      (descriptor) =>
-        descriptor.evaluationOnly &&
-        descriptor.pipeline === pipeline &&
-        (!executionProfileId || descriptor.profileId === executionProfileId),
-    ),
+  const descriptors = useNodesStore((s) => s.workflowModelDescriptors);
+  const matchingDescriptors = descriptors.filter(
+    (descriptor) =>
+      descriptor.evaluationOnly &&
+      descriptor.pipeline === pipeline &&
+      (!executionProfileId || descriptor.profileId === executionProfileId),
   );
+  const evaluationOnly = matchingDescriptors.length > 0;
+  const selectedExecutionProfileId =
+    executionProfileId ?? (matchingDescriptors.length === 1 ? matchingDescriptors[0]!.profileId : undefined);
+  const authoringRecipeId =
+    matchingDescriptors.length === 1 ? matchingDescriptors[0]!.authoringRecipes?.[task] : undefined;
   const [chosenLoader, setLoader] = useState('');
   const loader = ownerId ?? chosenLoader;
   const [busy, setBusy] = useState(false);
@@ -84,7 +88,7 @@ export default function OperationGraphControls({
     return () => {
       pending.current?.abort();
     };
-  }, [pipeline, task, workflow, canvasEpoch, loader, blockId, executionProfileId]);
+  }, [pipeline, task, workflow, canvasEpoch, loader, blockId, selectedExecutionProfileId, authoringRecipeId]);
 
   async function prepare(change: boolean) {
     if (pending.current) return;
@@ -98,7 +102,14 @@ export default function OperationGraphControls({
     try {
       if (evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
         throw new Error('Select Custom memory before choosing an evaluation model.');
-      const starter = await requestOperationStarter(pipeline, task, operations, controller.signal, executionProfileId);
+      const starter = await requestOperationStarter(
+        pipeline,
+        task,
+        operations,
+        controller.signal,
+        selectedExecutionProfileId,
+        authoringRecipeId,
+      );
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
       if (operationGraphPreviewSignature(useFlowStore.getState().toObject()) !== signature)

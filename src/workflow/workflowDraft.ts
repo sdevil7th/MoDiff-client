@@ -5,6 +5,7 @@ import { createOperationStarter, type OperationStarter } from './operationAuthor
 import { createNodeFromRegistry } from './nodeFactory';
 import { groupNewOperationGraph } from './visualOperationGroups';
 import { workflowTaskCategory } from './workflowTaskBrowser';
+import { refreshPromptEnhancementParents } from '../studio/promptEnhancementAuthoring';
 
 const OUTPUTS = [
   { type: 'image', key: 'modules.Image.Preview', input: 'image' },
@@ -116,5 +117,14 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
   }
   if (!outputCount)
     notices.push('No compatible output node is registered. Connect a Preview, Save or Export node before running.');
-  return { graph: groupNewOperationGraph(graph), notices };
+  return {
+    graph: groupNewOperationGraph(
+      refreshPromptEnhancementParents(
+        graph,
+        starter.authoring,
+        sources.map((node) => node.id),
+      ),
+    ),
+    notices,
+  };
 }

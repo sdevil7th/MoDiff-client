@@ -1,7 +1,8 @@
 import { nanoid } from 'nanoid';
 import type { CustomNodeType } from '../stores/useFlowStore';
-import type { DiscoveryRequestState, NodeData } from '../stores/useNodeStore';
+import type { DiscoveryRequestState, NodeData, RuntimeStatus } from '../stores/useNodeStore';
 import type { StudioImageAdapterAuthoringPolicy, StudioModelProfile } from '../studio/types';
+import type { WorkflowModelDescriptor } from './workflowChoices';
 import type { OperationContract } from './operationContracts';
 import type { PipelineSupport } from './operationCatalog';
 import type { OperationGraph } from './operationAuthoring';
@@ -142,9 +143,13 @@ export type ModelSetupAdapterAuthority = {
   studioExecutionSpecInvalid: boolean;
   operationContracts: readonly OperationContract[];
   pipelineSupport: readonly PipelineSupport[];
+  workflowModelDescriptors?: readonly WorkflowModelDescriptor[];
+  resourceMode?: 'auto' | 'expert';
+  runtimeStatus?: RuntimeStatus | null;
   discoveryRequests: {
     nodes: Pick<DiscoveryRequestState, 'status'>;
     capabilities: Pick<DiscoveryRequestState, 'status'>;
+    runtime?: Pick<DiscoveryRequestState, 'status'>;
   };
 };
 
@@ -368,7 +373,7 @@ function modelSetupAdapterAuthoringLimit(
     !/^[a-f0-9]{40}$/u.test(revision)
   )
     return 'Select a reviewed image model and exact revision before adding LoRA.';
-  const matches = authority.studioModelCapabilities.flatMap((capability) =>
+  const publicMatches = authority.studioModelCapabilities.flatMap((capability) =>
     (capability.executionProfiles ?? [])
       .filter(
         (profile) =>
@@ -382,11 +387,50 @@ function modelSetupAdapterAuthoringLimit(
             repository.value as string,
           ),
       )
-      .map((profile) => ({ capability, profile })),
+      .map((profile) => ({ capability, profile, evaluationOnly: false })),
   );
+  const evaluationMatches = (authority.workflowModelDescriptors ?? []).flatMap((descriptor) => {
+    const profile = descriptor.adapterAuthoringProfile;
+    return descriptor.evaluationOnly &&
+      profile &&
+      descriptor.profileId === profile.id &&
+      descriptor.modelType === profile.model_type &&
+      descriptor.pipeline === profile.pipeline_class &&
+      descriptor.repo === profile.default_repo &&
+      profile.pipeline_class === pipeline &&
+      profile.loader_module === owner.data.module &&
+      profile.loader_action === owner.data.action &&
+      task.executionProfileIds.includes(profile.id) &&
+      (native || value('execution_profile_id') === profile.id) &&
+      profile.default_repo === repository.value
+      ? [{ capability: undefined, profile, evaluationOnly: true }]
+      : [];
+  });
+  const matches = [...publicMatches, ...evaluationMatches];
   if (matches.length !== 1)
     return 'The selected image model profile is unavailable or ambiguous. Refresh capabilities.';
-  const { capability, profile } = matches[0]!;
+  const { capability, profile, evaluationOnly } = matches[0]!;
+  if (evaluationOnly) {
+    if (authority.resourceMode !== 'expert') return 'Select Custom memory before editing evaluation model LoRA.';
+    const runtime = authority.runtimeStatus;
+    const requirement = profile.optionalRuntimeRequirement;
+    const readyState = (state: string) => state === 'base_satisfied' || state === 'active';
+    const requirements = task.runtimeRequirements.filter((row) => row.executionProfileIds.includes(profile.id));
+    if (
+      authority.discoveryRequests.runtime?.status !== 'success' ||
+      runtime?.ready !== true ||
+      !runtime.runtimeEnvironment?.profileVerified ||
+      !runtime.runtimeEnvironment?.executionReady ||
+      task.dependencies !== 'ready' ||
+      !requirement ||
+      requirement.executionProfileIds.length !== 1 ||
+      requirement.executionProfileIds[0] !== profile.id ||
+      !readyState(requirement.state) ||
+      !requirements.length ||
+      requirements.some((row) => !readyState(row.state))
+    )
+      return 'Refresh the verified evaluation runtime and model capabilities before editing LoRA.';
+  }
   const adapter = authority.nodesRegistry[adapterKey];
   const loader = authority.nodesRegistry[key(owner)];
   if (
@@ -451,7 +495,7 @@ function modelSetupAdapterAuthoringLimit(
     const canonical = native
       ? authority.studioModelCapabilities.find((item) => item.modelType === pipeline)
       : undefined;
-    if (capability.supportsLora !== true || (canonical && canonical.supportsLora !== true))
+    if (capability?.supportsLora !== true || (canonical && canonical.supportsLora !== true))
       return 'The selected image model does not support LoRA.';
   }
   if (!profile.repository_revisions?.some((pair) => pair.repo === repository.value && pair.revision === revision))

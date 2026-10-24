@@ -31,7 +31,8 @@ export default function ModelSetupAdapterControls({
   updateStore: (param: string, value: unknown, key?: keyof NodeParams) => void;
 }) {
   const graph = useFlowStore(useShallow((state) => ({ nodes: state.nodes, edges: state.edges })));
-  const authority = useNodesStore(
+  const resourceMode = useStudioStore((state) => state.form.resourceMode);
+  const discovered = useNodesStore(
     useShallow((state) => ({
       nodesRegistry: state.nodesRegistry,
       studioModelCapabilities: state.studioModelCapabilities,
@@ -39,9 +40,12 @@ export default function ModelSetupAdapterControls({
       studioExecutionSpecInvalid: state.studioExecutionSpecInvalid,
       operationContracts: state.operationContracts,
       pipelineSupport: state.pipelineSupport,
+      workflowModelDescriptors: state.workflowModelDescriptors,
+      runtimeStatus: state.runtimeStatus,
       discoveryRequests: state.discoveryRequests,
     })),
   );
+  const authority = { ...discovered, resourceMode };
   const [draft, setDraft] = useState<CustomNodeType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -70,7 +74,7 @@ export default function ModelSetupAdapterControls({
         graph,
         node.id,
         edit.kind === 'add' || edit.kind === 'replace' ? { ...edit, registry: current.nodesRegistry } : edit,
-        current,
+        { ...current, resourceMode: useStudioStore.getState().form.resourceMode },
       );
       commitOperationGraph(next, context, operationGraphSignature(graph), `${edit.kind} model adapter`);
       useStudioStore.getState().saveActiveWorkflowTab(true);
@@ -87,8 +91,14 @@ export default function ModelSetupAdapterControls({
     try {
       currentChain = modelSetupAdapterChain(graph, node.id);
       const unavailable = replaceId
-        ? modelSetupAdapterEditUnavailable(currentChain, useNodesStore.getState())
-        : modelSetupAdapterAddUnavailable(currentChain, useNodesStore.getState());
+        ? modelSetupAdapterEditUnavailable(currentChain, {
+            ...useNodesStore.getState(),
+            resourceMode: useStudioStore.getState().form.resourceMode,
+          })
+        : modelSetupAdapterAddUnavailable(currentChain, {
+            ...useNodesStore.getState(),
+            resourceMode: useStudioStore.getState().form.resourceMode,
+          });
       if (unavailable) throw new Error(unavailable);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Adapter controls are unavailable.');
@@ -175,7 +185,10 @@ export default function ModelSetupAdapterControls({
                   }
                   try {
                     const chain = modelSetupAdapterChain(useFlowStore.getState().toObject(), node.id);
-                    const unavailable = modelSetupAdapterEditUnavailable(chain, useNodesStore.getState());
+                    const unavailable = modelSetupAdapterEditUnavailable(chain, {
+                      ...useNodesStore.getState(),
+                      resourceMode: useStudioStore.getState().form.resourceMode,
+                    });
                     if (unavailable) throw new Error(unavailable);
                     updateStore(param, value, key);
                   } catch (failure) {

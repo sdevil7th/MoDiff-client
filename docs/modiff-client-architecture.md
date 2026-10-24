@@ -157,6 +157,24 @@ The parser rejects any collision with an existing public pipeline profile, and
 selection and Apply both require Custom memory. Ordinary runtime discovery omits
 the namespace and retains the existing choices.
 
+Compatible evaluation models remain visible while Automatic memory is selected,
+with a Custom-memory requirement. Searching by model or repository ignores
+spacing and punctuation. An explicit button changes the current workflow to
+Custom; browsing, cancelling, or changing memory never selects or runs a model.
+Optional evaluation `adapterAuthoring` uses the existing immutable policy parser
+and requires current verified runtime metadata, the exact selected task/profile,
+and all declared loader controls before normal Add/Edit LoRA is available. It
+does not expand the public model union or grant Auto support. Optional per-task
+`authoringRecipes` select a current declared starter; its enhancement offer is
+attached after ordinary media/output completion without enabling a provider.
+
+Static registered fields render versioned option availability from the current
+node registry, including after a cross-platform import or registry refresh. This
+projection preserves saved values, labels, membership and graph/recipe hashes;
+an imported-only or ambiguous option remains unavailable. Dynamic actions and
+`optionsSource` retain their existing authority and consent. No registry refresh
+changes an authored selection or performs an install.
+
 The backend supplies ordinary node schemas and reviewed connections; the client
 assigns canvas IDs through the normal node factory. The result is a normal graph,
 with no template receipt or additional execution representation. Users can build
@@ -171,6 +189,8 @@ Backend-declared `sharedInputs` bind seed controls of stages that continue one
 generator. `operationSharedInputs` validates their loader scope and membership;
 ordinary parameter edits update the group under one history transaction. Export
 uses one random draw per group and rejects inconsistent literals or input sources.
+Untouched random-field controls use the declared default before unwrapping the
+stored value, so Run and inspection retain a locked zero seed consistently.
 New stages inherit the existing shared value; a connected custom source is wired
 to every member. Distinct loader branches remain independent. No additional
 execution representation or model-family dispatch is introduced. The lazy

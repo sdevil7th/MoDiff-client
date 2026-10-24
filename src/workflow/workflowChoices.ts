@@ -1,5 +1,6 @@
 import type { ModelCacheDiagnostics } from '../stores/useNodeStore';
 import type { StudioModelProfile } from '../studio/types';
+import type { StudioExecutionProfile, StudioImageAdapterAuthoringPolicy } from '../studio/types';
 import { getRepoCacheStatus, getStudioModelCacheStatus, type StudioModelCacheStatus } from '../studio/modelCache';
 import type { PipelineSupport, PipelineTaskSupport } from './operationCatalog';
 import { parseWorkflowModelInventory, type WorkflowModelInventory } from './workflowModelInventory';
@@ -14,6 +15,24 @@ export type WorkflowChoice = {
   support: PipelineTaskSupport;
   cache: StudioModelCacheStatus | null;
   evaluationOnly?: true;
+  authoringRecipeId?: string;
+};
+
+/** Generic selected-profile authority; it does not widen the legacy Studio model union. */
+export type WorkflowImageAdapterProfile = Pick<
+  StudioExecutionProfile,
+  | 'id'
+  | 'pipeline_class'
+  | 'loader_module'
+  | 'loader_action'
+  | 'execution_path'
+  | 'default_repo'
+  | 'optionalRuntimeRequirement'
+> & {
+  model_type: string;
+  modes: string[];
+  repository_revisions: StudioImageAdapterAuthoringPolicy['repositoryRevisions'];
+  adapterAuthoring: StudioImageAdapterAuthoringPolicy;
 };
 
 export type WorkflowModelDescriptor = {
@@ -23,6 +42,9 @@ export type WorkflowModelDescriptor = {
   repo: string;
   inventory?: WorkflowModelInventory;
   evaluationOnly?: true;
+  modelType?: string;
+  adapterAuthoringProfile?: WorkflowImageAdapterProfile;
+  authoringRecipes?: Readonly<Record<string, string>>;
 };
 
 /** Presentation-only identities for generic workflows, independent of legacy Studio forms. */
@@ -99,6 +121,7 @@ export function workflowChoices(
           label: string;
           repo: string;
           evaluationOnly?: true;
+          authoringRecipes?: Readonly<Record<string, string>>;
         }>((id) => {
           const entry = profiles.get(id);
           if (entry)
@@ -118,7 +141,7 @@ export function workflowChoices(
               cache: null,
             },
           ];
-        return matches.map(({ model, profileId, label, repo, evaluationOnly }) => ({
+        return matches.map(({ model, profileId, label, repo, evaluationOnly, authoringRecipes }) => ({
           id: `${pipeline.pipelineClass}:${task.task}:${profileId}`,
           pipeline: pipeline.pipelineClass,
           task: task.task,
@@ -126,6 +149,7 @@ export function workflowChoices(
           repo,
           profileId,
           ...(evaluationOnly ? { evaluationOnly } : {}),
+          ...(authoringRecipes?.[task.task] ? { authoringRecipeId: authoringRecipes[task.task] } : {}),
           support: task,
           cache:
             model && model.defaultRepo === repo
@@ -155,6 +179,16 @@ const TASK_LABELS: Record<string, string> = {
 };
 export function workflowTaskLabel(task: string): string {
   return TASK_LABELS[task] ?? task.replace(/_/gu, ' ').replace(/^./u, (c) => c.toUpperCase());
+}
+
+/** Search presentation text independently of punctuation in a model or repository name. */
+export function workflowModelMatchesQuery(choice: Pick<WorkflowChoice, 'label' | 'repo'>, query: string): boolean {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const text = normalize(`${choice.label} ${choice.repo ?? ''}`);
+  return query
+    .trim()
+    .split(/\s+/u)
+    .every((part) => text.includes(normalize(part)));
 }
 
 /** One model row per repository/task, with exact backend routes still selectable. */

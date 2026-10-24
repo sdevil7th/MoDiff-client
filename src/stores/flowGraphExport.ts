@@ -38,8 +38,9 @@ function resolveRandomFieldValue(
   sharedRandomValues: Map<string, number>,
   operationSharedKey?: string,
 ) {
-  const randomValue = isRecord(paramData.value) ? paramData.value : null;
-  const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : paramData.value;
+  const effectiveValue = paramData.value ?? paramData.default;
+  const randomValue = isRecord(effectiveValue) ? effectiveValue : null;
+  const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : effectiveValue;
   const isRandom = randomValue && 'isRandom' in randomValue ? Boolean(randomValue.isRandom) : false;
 
   if (!isRandom) {

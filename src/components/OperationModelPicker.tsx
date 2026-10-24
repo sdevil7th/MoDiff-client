@@ -18,6 +18,7 @@ import { commitOperationGraph, operationGraphSignature } from '../workflow/opera
 import {
   groupWorkflowModels,
   workflowChoices,
+  workflowModelMatchesQuery,
   workflowTaskLabel,
   type WorkflowChoice,
 } from '../workflow/workflowChoices';
@@ -75,12 +76,7 @@ export default function OperationModelPicker({
     [support, models, cache, local, diagnostics, descriptors, hint.operation.task],
   );
   const current = choices.find((c) => c.repo === value && c.pipeline === hint.operation.pipelineClass);
-  const visible = choices.filter(
-    (c) =>
-      (!c.evaluationOnly || resourceMode === 'expert') &&
-      (!installed || c.cache?.runnable) &&
-      `${c.label} ${c.repo}`.toLowerCase().includes(query.trim().toLowerCase()),
-  );
+  const visible = choices.filter((c) => (!installed || c.cache?.runnable) && workflowModelMatchesQuery(c, query));
 
   useEffect(() => {
     setOpen(false);
@@ -130,6 +126,7 @@ export default function OperationModelPicker({
         operations,
         controller.signal,
         choice.profileId,
+        choice.authoringRecipeId,
       );
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
@@ -291,7 +288,21 @@ export default function OperationModelPicker({
               downloaded or executed.
             </p>
             {resourceMode !== 'expert' && choices.some((choice) => choice.evaluationOnly) ? (
-              <p className="text-sm text-modiff-subtle-text">Evaluation models are available with Custom memory.</p>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-modiff-subtle-text">
+                <p>Some models require Custom memory. Switching does not select a model or run the workflow.</p>
+                <ModiffButton
+                  disabled={busy}
+                  onClick={() => {
+                    const studio = useStudioStore.getState();
+                    if (studio.activeWorkflowTabId !== workflow) return;
+                    studio.updateForm({ resourceMode: 'expert' });
+                    setReview(null);
+                    setError(null);
+                  }}
+                >
+                  Use Custom memory
+                </ModiffButton>
+              </div>
             ) : null}
             <ModiffSearchInput
               aria-label="Search compatible models"
@@ -323,7 +334,7 @@ export default function OperationModelPicker({
                     aria-pressed={review?.choice.id === choice.id || (!review && current?.id === choice.id)}
                     className="h-auto w-full rounded-none p-3"
                     align="left"
-                    disabled={busy}
+                    disabled={busy || (choice.evaluationOnly && resourceMode !== 'expert')}
                     onClick={() => void choose(choice)}
                     tone={review?.choice.id === choice.id ? 'primary' : 'ghost'}
                   >
@@ -338,7 +349,11 @@ export default function OperationModelPicker({
                         </span>
                       ) : null}
                       <span>{choice.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'}</span>
-                      {choice.evaluationOnly ? <span>Evaluation · Custom memory</span> : null}
+                      {choice.evaluationOnly ? (
+                        <span>
+                          {resourceMode === 'expert' ? 'Evaluation · Custom memory' : 'Custom memory required'}
+                        </span>
+                      ) : null}
                       {choice.support.dependencies === 'blocked' ? <span>Runtime setup required</span> : null}
                     </span>
                   </ModiffButton>
@@ -360,7 +375,7 @@ export default function OperationModelPicker({
                           aria-pressed={review?.choice.id === route.id}
                           align="left"
                           className="h-auto w-full justify-between px-2 py-2"
-                          disabled={busy}
+                          disabled={busy || (route.evaluationOnly && resourceMode !== 'expert')}
                           onClick={() => void choose(route)}
                           tone={review?.choice.id === route.id ? 'primary' : 'ghost'}
                         >

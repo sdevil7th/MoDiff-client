@@ -10750,10 +10750,17 @@ test('operation authoring fixtures isolate mutations between cached reads', asyn
   expect(await operationStarterFixtures()).toEqual(expected);
 });
 
-async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
+async function installOperationAuthoringRoutes(page: Page, exactModel = false, evaluationImage = false) {
   await installMockRoutes(page);
   const starters = await operationStarterFixtures();
-  const operations = starters.flatMap((s) => s.nodes.map((n) => n.operation));
+  const evaluation = evaluationImage
+    ? JSON.parse(await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/evaluation-image-authoring.v1.json'), 'utf8'))
+    : null;
+  const imageSchemas = evaluation ? await imageTemplateSchemas() : null;
+  const operations = [
+    ...starters.flatMap((s) => s.nodes.map((n) => n.operation)),
+    ...(evaluation?.operationContracts ?? []),
+  ];
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', (route) =>
     route.fulfill({
@@ -10761,50 +10768,62 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
       contentType: 'application/json',
       body: JSON.stringify({
         schemaVersion: 2,
-        capabilities: mockStudioExecutionCapabilities(),
+        capabilities: [...mockStudioExecutionCapabilities(), ...(evaluation?.capabilities ?? [])],
+        ...(evaluation ? { evaluationAuthoring: evaluation.evaluationAuthoring } : {}),
         operationContractSchemaVersion: 3,
         operationContracts: operations,
         pipelineSupportSchemaVersion: 1,
-        pipelineSupport: [...new Set(starters.map((s) => s.pipelineClass))].map((pipelineClass) => ({
-          pipelineClass,
-          coverage: 'local-adapter',
-          reason: 'Native authoring fixture; execution unqualified',
-          equivalentTo: [],
-          upstreamTasks: [],
-          tasks: starters
-            .filter((s) => s.pipelineClass === pipelineClass)
-            .map((s) => ({
-              task: s.task,
-              execution: 'declared',
-              decomposition: s.nodes.some((n) => ['pipeline', 'integrated'].includes(n.operation.decomposition))
-                ? 'pipeline'
-                : 'stages',
-              operationIds: s.nodes.map((n) => n.operation.operationId),
-              executionProfileIds:
-                exactModel && s.pipelineClass === 'QwenImageModularPipeline' ? ['qwen-image:modular'] : [],
-              dependencies: exactModel && s.pipelineClass === 'QwenImageModularPipeline' ? 'ready' : 'unknown',
-              runtimeRequirements:
-                exactModel && s.pipelineClass === 'QwenImageModularPipeline'
-                  ? [
-                      {
-                        schemaVersion: 1,
-                        delivery: 'base',
-                        requiredNow: false,
-                        profileIds: [],
-                        executionProfileIds: ['qwen-image:modular'],
-                        state: 'base_satisfied',
-                        reason: 'base_runtime',
-                      },
-                    ]
-                  : [],
-            })),
-        })),
+        pipelineSupport: [
+          ...[...new Set(starters.map((s) => s.pipelineClass))].map((pipelineClass) => ({
+            pipelineClass,
+            coverage: 'local-adapter',
+            reason: 'Native authoring fixture; execution unqualified',
+            equivalentTo: [],
+            upstreamTasks: [],
+            tasks: starters
+              .filter((s) => s.pipelineClass === pipelineClass)
+              .map((s) => ({
+                task: s.task,
+                execution: 'declared',
+                decomposition: s.nodes.some((n) => ['pipeline', 'integrated'].includes(n.operation.decomposition))
+                  ? 'pipeline'
+                  : 'stages',
+                operationIds: s.nodes.map((n) => n.operation.operationId),
+                executionProfileIds:
+                  exactModel && s.pipelineClass === 'QwenImageModularPipeline' ? ['qwen-image:modular'] : [],
+                dependencies: exactModel && s.pipelineClass === 'QwenImageModularPipeline' ? 'ready' : 'unknown',
+                runtimeRequirements:
+                  exactModel && s.pipelineClass === 'QwenImageModularPipeline'
+                    ? [
+                        {
+                          schemaVersion: 1,
+                          delivery: 'base',
+                          requiredNow: false,
+                          profileIds: [],
+                          executionProfileIds: ['qwen-image:modular'],
+                          state: 'base_satisfied',
+                          reason: 'base_runtime',
+                        },
+                      ]
+                    : [],
+              })),
+          })),
+          ...(evaluation?.pipelineSupport ?? []),
+        ],
       }),
     }),
   );
   await page.unroute('**/nodes');
   const registry = {
     ...Object.fromEntries(starters.flatMap((s) => s.nodes.map((n) => [n.operation.nodeKey, n.node]))),
+    ...Object.fromEntries(
+      (evaluation?.starter.nodes ?? []).map((n: OperationStarter['nodes'][number]) => [n.operation.nodeKey, n.node]),
+    ),
+    ...(imageSchemas
+      ? {
+          'modules.ModularDiffusers.Lora': imageSchemas.registry['modules.ModularDiffusers.Lora']!,
+        }
+      : {}),
     'modules.Image.Load': mockRegistry['modules.Image.Load'],
     'modules.Image.Preview': mockGraphQualifiedQwenRegistry['modules.Image.Preview'],
     'modules.Audio.Preview': nodeDef('modules.Audio', 'Preview', 'audio', {
@@ -10814,6 +10833,21 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
   await page.route('**/nodes', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: registry }) }),
   );
+  if (evaluation)
+    await page.route('**/runtime/status**', (route) =>
+      route.fulfill({
+        json: {
+          ready: true,
+          runtime_profile: {
+            requested: 'mock-declared-runtime',
+            installed: 'mock-declared-runtime',
+            execution_ready: true,
+            status: 'ready',
+          },
+          packages: { torch: { available: true, cuda_available: true, cuda_device_count: 1 } },
+        },
+      }),
+    );
   await page.route('**/operations/task-starter', (route) => {
     const selection = route.request().postDataJSON();
     const value = structuredClone(starters.find((s) => s.task === selection.task));
@@ -10832,7 +10866,11 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false) {
   await page.route('**/operations/starter', (route) => {
     const selection = route.request().postDataJSON();
     const value = structuredClone(
-      starters.find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task),
+      evaluation &&
+        selection.executionProfileId === 'flux3-klein-base:modular' &&
+        selection.authoringRecipeId === evaluation.starter.authoring.id
+        ? evaluation.starter
+        : starters.find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task),
     );
     if (exactModel && value && selection.executionProfileId === 'qwen-image:modular') {
       const loader = value.nodes.find((n) => n.operation.decomposition === 'loader')!;
@@ -11451,6 +11489,110 @@ test('ordinary operation graphs preserve native edits through model/task preview
   ).toEqual({ negativePrompt: 'watermark', guidanceTargets: ['Denoise', 'EncodePrompt'] });
   await page.screenshot({ path: test.info().outputPath('operation-authoring.png'), animations: 'disabled' });
   expect(errors).toEqual([]);
+});
+
+test('normal New T2I discovers declared evaluation models in Auto without changing the draft until an explicit Custom choice', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1680, height: 1050 });
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page, true, true);
+  await page.addInitScript(() =>
+    localStorage.setItem('modiff.settings', JSON.stringify({ state: { workspaceMode: 'developer' }, version: 0 })),
+  );
+  const executionRequests: string[] = [];
+  const starterSelections: Record<string, unknown>[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === 'POST' && /\/(?:graph|execute|install)(?:\/|$)/u.test(pathname))
+      executionRequests.push(pathname);
+    if (request.method() === 'POST' && pathname === '/operations/starter')
+      starterSelections.push(request.postDataJSON());
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  const launcher = page.getByRole('dialog', { name: 'Workflows', exact: true });
+  await launcher.getByTestId('workflow-task-text_to_image').click();
+  await expect(launcher).toHaveCount(0);
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  const setupId = await page.evaluate(
+    () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.label === 'Model Setup')!.id,
+  );
+  const setup = page.locator(`.react-flow__node[data-id="${setupId}"]`);
+  const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+  const read = () =>
+    page.evaluate(() => {
+      const state = window.__MODIFF_E2E__!.getState();
+      const tab = state.studio.workflowTabs.find((tab) => tab.id === state.studio.activeWorkflowTabId)!;
+      return {
+        graph: window.__MODIFF_E2E__!.exportWorkflowGraph(),
+        form: state.studio.form,
+        backendRevision: tab.backendRevision,
+        dirty: tab.dirty,
+      };
+    });
+  await expect
+    .poll(async () => {
+      const state = await read();
+      return { dirty: state.dirty, saved: state.backendRevision > 0 };
+    })
+    .toEqual({ dirty: false, saved: true });
+  const original = await read();
+  expect(original.form.resourceMode).toBe('auto');
+  await setup.getByRole('button', { name: 'Choose model', exact: true }).click();
+  for (const query of ['FLUX3', 'FLUX 3', 'FLUX.3']) {
+    await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill(query);
+    const rows = picker.getByRole('button').filter({ hasText: 'black-forest-labs/flux-3-image-klein' });
+    await expect(rows).toHaveCount(2);
+    for (const row of await rows.all()) {
+      await expect(row).toContainText('Custom memory required');
+      await expect(row).toBeDisabled();
+    }
+  }
+  await page.keyboard.press('Escape');
+  await expect(picker).toHaveCount(0);
+  expect(await read()).toEqual(original);
+  expect(starterSelections).toEqual([]);
+  await setup.getByRole('button', { name: 'Choose model', exact: true }).click();
+  await picker.getByRole('button', { name: 'Use Custom memory', exact: true }).click();
+  expect((await read()).form.resourceMode).toBe('expert');
+  expect((await read()).graph).toEqual(original.graph);
+  expect(starterSelections).toEqual([]);
+  await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill('FLUX.3 base');
+  await picker.getByRole('button').filter({ hasText: 'black-forest-labs/flux-3-image-klein-base' }).click();
+  await expect(picker.getByRole('button', { name: 'Apply model change', exact: true })).toBeVisible();
+  expect(starterSelections[0]).toMatchObject({
+    executionProfileId: 'flux3-klein-base:modular',
+    authoringRecipeId: 'flux3-klein-base:text-to-image:prompt-preview-fp32-authoring:v3',
+  });
+  await picker.getByRole('button', { name: 'Apply model change', exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  const current = await read();
+  expect(current.form.prompt).toBe(original.form.prompt);
+  await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+  const selectedSetupId = current.graph.nodes.find((node) => node.data.label === 'Model Setup')!.id;
+  const selectedSetup = page.locator(`.react-flow__node[data-id="${selectedSetupId}"]`);
+  await expect(selectedSetup.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+  // The user's explicit memory choice does not rewrite required loader controls.
+  const autoOffload = selectedSetup.getByRole('switch', { name: 'Enable Auto Offload', exact: true });
+  await expect(autoOffload).toBeChecked();
+  await autoOffload.click();
+  await expect(autoOffload).not.toBeChecked();
+  await selectedSetup.getByLabel('Offload Mode', { exact: true }).click();
+  await page.getByRole('option', { name: 'Off', exact: true }).click();
+  await expect(selectedSetup.getByRole('button', { name: 'Add LoRA', exact: true })).toBeEnabled();
+  await selectedSetup.getByRole('button', { name: 'Add LoRA', exact: true }).click();
+  const adapter = page.getByRole('dialog', { name: 'Add LoRA', exact: true });
+  await adapter.getByLabel('Model', { exact: true }).fill('review/metadata-only-adapter');
+  await adapter.getByLabel('Revision', { exact: true }).fill('a'.repeat(40));
+  await adapter.getByLabel('Expected SHA-256', { exact: true }).fill('b'.repeat(64));
+  await adapter.getByLabel('Weight Name', { exact: true }).fill('adapter.safetensors');
+  await adapter.getByRole('button', { name: 'Add adapter', exact: true }).click();
+  await expect(adapter).toHaveCount(0);
+  const row = selectedSetup.getByRole('region', { name: 'Adapter 1', exact: true });
+  await expect(row).toBeVisible();
+  await row.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(row).toHaveCount(0);
+  expect(executionRequests).toEqual([]);
 });
 
 for (const workspace of ['expert'] as const) {

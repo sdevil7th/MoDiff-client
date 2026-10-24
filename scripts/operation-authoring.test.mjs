@@ -6,6 +6,9 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 let server, authoring, requests, drafts, choices;
+const evaluationImageFixture = JSON.parse(
+  fs.readFileSync(new URL('../tests/fixtures/evaluation-image-authoring.v1.json', import.meta.url), 'utf8'),
+);
 const originalFetch = globalThis.fetch;
 before(async () => {
   globalThis.fetch = async (url, options) => {
@@ -1942,6 +1945,452 @@ test('evaluation authoring is an explicit private Expert namespace and cannot pr
     alter(malformed);
     assert.throws(() => evaluation.parseEvaluationAuthoring(malformed, publicSupport, operations));
   }
+});
+
+function evaluationImagePayload() {
+  return structuredClone({
+    schemaVersion: 2,
+    capabilities: evaluationImageFixture.capabilities,
+    evaluationAuthoring: evaluationImageFixture.evaluationAuthoring,
+  });
+}
+
+async function evaluationImageAuthority(payload = evaluationImagePayload()) {
+  const { parseEvaluationAuthoring } = await server.ssrLoadModule('/src/workflow/evaluationAuthoring.ts');
+  const parsed = parseEvaluationAuthoring(payload, [], evaluationImageFixture.operationContracts);
+  return {
+    nodesRegistry: {},
+    studioModelCapabilities: [],
+    studioModelCapabilitiesAuthoritative: true,
+    studioExecutionSpecInvalid: false,
+    operationContracts: evaluationImageFixture.operationContracts,
+    pipelineSupport: parsed.support,
+    workflowModelDescriptors: parsed.descriptors,
+    resourceMode: 'expert',
+    runtimeStatus: { ready: true, runtimeEnvironment: { profileVerified: true, executionReady: true } },
+    discoveryRequests: {
+      nodes: { status: 'success' },
+      capabilities: { status: 'success' },
+      runtime: { status: 'success' },
+    },
+  };
+}
+
+test('evaluation model discovery keeps declared choices searchable across spaces and dots without public promotion', async () => {
+  const payload = evaluationImagePayload();
+  const before = structuredClone(payload);
+  const authority = await evaluationImageAuthority(payload);
+  assert.deepEqual(payload, before, 'Parsing must not mutate the backend DTO.');
+  const rows = choices.workflowChoices(authority.pipelineSupport, [], [], [], null, authority.workflowModelDescriptors);
+  assert.equal(rows.length, 4);
+  for (const query of ['FLUX3', 'flux 3', 'FLUX.3', 'black forest labs'])
+    assert.equal(rows.filter((row) => choices.workflowModelMatchesQuery(row, query)).length, 4, query);
+  assert.equal(rows.filter((row) => choices.workflowModelMatchesQuery(row, 'base')).length, 2);
+  assert.equal(rows.filter((row) => choices.workflowModelMatchesQuery(row, 'unrelated')).length, 0);
+  for (const row of rows) {
+    assert.equal(row.evaluationOnly, true);
+    assert.equal(
+      row.authoringRecipeId,
+      evaluationImageFixture.evaluationAuthoring.authoringRecipes.find(
+        (recipe) => recipe.executionProfileId === row.profileId && recipe.task === row.task,
+      ).authoringRecipeId,
+    );
+  }
+  const { parseStudioModelCapabilities } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  assert.deepEqual(
+    parseStudioModelCapabilities(payload).capabilities,
+    [],
+    'Private identities stay outside the legacy union.',
+  );
+  assert.equal(
+    choices.workflowModelMatchesQuery({ label: 'Future Vision.7', repo: 'another/future-vision-7' }, 'future vision7'),
+    true,
+  );
+});
+
+test('evaluation authoring validates selected policy and recipe bindings and rejects malformed extensions', async () => {
+  const authority = await evaluationImageAuthority();
+  assert.deepEqual(
+    authority.workflowModelDescriptors.map((row) => row.adapterAuthoringProfile.adapterAuthoring),
+    evaluationImageFixture.evaluationAuthoring.executionProfiles.map((row) => row.adapterAuthoring),
+  );
+  for (const alter of [
+    (p) => {
+      p.evaluationAuthoring.authoringRecipes.push(p.evaluationAuthoring.authoringRecipes[0]);
+    },
+    (p) => {
+      p.evaluationAuthoring.authoringRecipes[0].executionProfileId = 'unpublished';
+    },
+    (p) => {
+      p.evaluationAuthoring.authoringRecipes[0].pipelineClass = 'AnotherPipeline';
+    },
+    (p) => {
+      p.evaluationAuthoring.authoringRecipes[0].task = 'unconditional_image';
+    },
+    (p) => {
+      p.evaluationAuthoring.authoringRecipes[0].extraAuthority = true;
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].adapterAuthoring =
+        p.evaluationAuthoring.executionProfiles[1].adapterAuthoring;
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].adapterAuthoring.maxOwnedAdapters = 33;
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].adapterAuthoring.requiredControls.quant_config = {};
+    },
+    (p) => {
+      p.evaluationAuthoring.executionProfiles[0].optionalRuntimeRequirement.executionProfileIds = ['other'];
+    },
+  ]) {
+    const payload = evaluationImagePayload();
+    alter(payload);
+    await assert.rejects(() => evaluationImageAuthority(payload));
+  }
+  const old = evaluationImagePayload();
+  delete old.evaluationAuthoring.authoringRecipes;
+  for (const profile of old.evaluationAuthoring.executionProfiles) delete profile.adapterAuthoring;
+  const parsed = await evaluationImageAuthority(old);
+  assert.ok(parsed.workflowModelDescriptors.every((row) => !row.adapterAuthoringProfile && !row.authoringRecipes));
+});
+
+test('evaluation selected native policy permits ordinary Add and Remove without rewriting the model or unrelated nodes', async () => {
+  const adapters = await server.ssrLoadModule('/src/workflow/modelSetupAdapters.ts');
+  const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const authority = await evaluationImageAuthority();
+  const raw = structuredClone(evaluationImageFixture.starter);
+  delete raw.authoring;
+  const selected = evaluationImageFixture.evaluationAuthoring.executionProfiles.find(
+    (profile) => profile.pipeline_class === raw.pipelineClass,
+  );
+  const parsed = requests.parseOperationStarter(raw, raw.pipelineClass, raw.task, authority.operationContracts, {
+    executionProfileId: selected.id,
+    repository: selected.default_repo,
+  });
+  const owner = parsed.nodes.find((node) => node.operation.decomposition === 'loader').node;
+  authority.nodesRegistry = Object.fromEntries(
+    parsed.nodes.map((node) => [node.operation.nodeKey, structuredClone(node.node)]),
+  );
+  for (const [name, value] of Object.entries(selected.adapterAuthoring.requiredControls))
+    owner.params[name].value = structuredClone(value);
+  authority.nodesRegistry['modules.ModularDiffusers.Lora'] = {
+    type: 'custom',
+    module: 'modules.ModularDiffusers',
+    action: 'Lora',
+    category: 'loader',
+    label: 'LoRA',
+    params: {
+      model: { type: 'string', value: { source: 'local', value: '' } },
+      revision: { type: 'string', value: '' },
+      expected_sha256: { type: 'string', value: '' },
+      weight_name: { type: 'string', value: '' },
+      adapter_name: { type: 'string', value: '' },
+      scale: { type: 'float', value: 1 },
+      previous_loras: { type: 'custom_lora', display: 'input' },
+      lora: { type: 'custom_lora', display: 'output' },
+    },
+  };
+  const graph = groups.groupNewOperationGraph(authoring.createOperationStarter(parsed, { x: 0, y: 0 }));
+  const root = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+  const chain = adapters.modelSetupAdapterChain(graph, root.id);
+  const before = structuredClone(graph);
+  assert.equal(adapters.modelSetupAdapterAddUnavailable(chain, authority), null);
+  const next = adapters.planModelSetupAdapterEdit(
+    graph,
+    root.id,
+    {
+      kind: 'add',
+      registry: authority.nodesRegistry,
+      values: { model: { source: 'local', value: 'metadata-only.safetensors' }, scale: '0.4' },
+    },
+    authority,
+  );
+  const added = adapters.modelSetupAdapterChain(next, root.id);
+  assert.equal(added.adapters.length, 1);
+  assert.deepEqual(added.owner.data.params, chain.owner.data.params);
+  assert.equal(added.adapters[0].data.params.scale.value, '0.4');
+  const restored = adapters.planModelSetupAdapterEdit(next, root.id, { kind: 'remove', nodeId: added.adapters[0].id });
+  assert.deepEqual(adapters.modelSetupAdapterChain(restored, root.id).owner.data.params, chain.owner.data.params);
+  assert.equal(adapters.modelSetupAdapterChain(restored, root.id).adapters.length, 0);
+  assert.deepEqual(graph, before);
+  for (const alter of [
+    (a) => {
+      a.resourceMode = 'auto';
+    },
+    (a) => {
+      a.discoveryRequests.runtime.status = 'error';
+    },
+    (a) => {
+      a.runtimeStatus.runtimeEnvironment.profileVerified = false;
+    },
+    (a) => {
+      a.runtimeStatus.runtimeEnvironment.executionReady = false;
+    },
+    (a) => {
+      a.discoveryRequests.capabilities.status = 'loading';
+    },
+    (a) => {
+      a.workflowModelDescriptors = [];
+    },
+    (a) => {
+      a.workflowModelDescriptors.push(structuredClone(a.workflowModelDescriptors[1]));
+    },
+    (a) => {
+      a.workflowModelDescriptors[1].adapterAuthoringProfile.repository_revisions[0].revision = 'f'.repeat(40);
+    },
+    (a) => {
+      a.workflowModelDescriptors[1].modelType = 'AnotherModel';
+    },
+    (a) => {
+      delete a.workflowModelDescriptors[1].adapterAuthoringProfile;
+    },
+    (a) => {
+      a.pipelineSupport
+        .find((p) => p.pipelineClass === raw.pipelineClass)
+        .tasks.find((t) => t.task === raw.task).dependencies = 'missing';
+    },
+  ]) {
+    const invalid = structuredClone(authority);
+    alter(invalid);
+    assert.ok(adapters.modelSetupAdapterAddUnavailable(chain, invalid));
+    assert.throws(() =>
+      adapters.planModelSetupAdapterEdit(
+        graph,
+        root.id,
+        {
+          kind: 'add',
+          registry: invalid.nodesRegistry,
+          values: { model: { source: 'local', value: 'metadata-only.safetensors' } },
+        },
+        invalid,
+      ),
+    );
+    assert.deepEqual(graph, before);
+  }
+});
+
+test('fresh declared evaluation drafts attach the current optional enhancement offer after ordinary output completion', async () => {
+  const authority = await evaluationImageAuthority();
+  const raw = structuredClone(evaluationImageFixture.starter);
+  const profile = evaluationImageFixture.evaluationAuthoring.executionProfiles.find(
+    (p) => p.pipeline_class === raw.pipelineClass,
+  );
+  const selected = requests.parseOperationStarter(raw, raw.pipelineClass, raw.task, authority.operationContracts, {
+    executionProfileId: profile.id,
+    repository: profile.default_repo,
+    authoringRecipeId: raw.authoring.id,
+  });
+  const registry = Object.fromEntries(selected.nodes.map((node) => [node.operation.nodeKey, node.node]));
+  registry['modules.Image.Preview'] = {
+    type: 'custom',
+    module: 'modules.Image',
+    action: 'Preview',
+    category: 'image',
+    label: 'Preview',
+    params: { image: { type: 'image', display: 'input' } },
+  };
+  const before = structuredClone(selected);
+  const draft = drafts.createWorkflowDraft(selected, registry);
+  const { unpackVisualOperationGroups } = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const { promptEnhancementParentFromHint } = await server.ssrLoadModule('/src/studio/promptEnhancementAuthoring.ts');
+  const unpacked = unpackVisualOperationGroups(draft.graph).graph;
+  const offered = unpacked.nodes.filter((node) => promptEnhancementParentFromHint(node.data.operationAuthoring));
+  assert.equal(offered.length, 1);
+  const offer = promptEnhancementParentFromHint(offered[0].data.operationAuthoring);
+  assert.equal(offer.parent.authoringRecipeId, raw.authoring.id);
+  assert.equal(offer.parent.authoringContentHash, raw.authoring.contentHash);
+  assert.equal(offer.parent.executionProfileId, profile.id);
+  assert.ok(unpacked.nodes.some((node) => node.data.module === 'modules.Image' && node.data.action === 'Preview'));
+  assert.equal(
+    unpacked.nodes.some((node) => node.data.action === 'GenerateImageVideoText'),
+    false,
+    'An offer does not Enable a provider branch.',
+  );
+  assert.deepEqual(selected, before);
+});
+
+test('a previously unknown evaluation image model uses the same declared policy parser without a model-name branch', async () => {
+  const source = evaluationImagePayload();
+  const names = new Map([
+    ['Flux3ModularPipeline', 'FutureImageModularPipeline'],
+    ['Flux3DistilledModularPipeline', 'FutureCompactImageModularPipeline'],
+  ]);
+  const remap = (value) =>
+    typeof value === 'string'
+      ? (names.get(value) ?? value)
+      : Array.isArray(value)
+        ? value.map(remap)
+        : value && typeof value === 'object'
+          ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, remap(item)]))
+          : value;
+  const evaluation = await server.ssrLoadModule('/src/workflow/evaluationAuthoring.ts');
+  const parsed = evaluation.parseEvaluationAuthoring(
+    remap(source),
+    [],
+    remap(evaluationImageFixture.operationContracts),
+  );
+  assert.equal(parsed.descriptors.length, 2);
+  assert.ok(parsed.descriptors.every((row) => row.pipeline.startsWith('Future') && row.adapterAuthoringProfile));
+  assert.deepEqual(
+    parsed.descriptors.map((row) => row.adapterAuthoringProfile.adapterAuthoring),
+    evaluationImageFixture.evaluationAuthoring.executionProfiles.map((row) => row.adapterAuthoring),
+  );
+});
+
+test('evaluation authoring mock payload declares every operation task before the private namespace is decoded', async () => {
+  const contracts = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+  const catalog = await server.ssrLoadModule('/src/workflow/operationCatalog.ts');
+  const evaluation = await server.ssrLoadModule('/src/workflow/evaluationAuthoring.ts');
+  const publicStarter = starter();
+  const payload = {
+    ...structuredClone(evaluationImageFixture),
+    operationContractSchemaVersion: 3,
+    operationContracts: [
+      ...publicStarter.nodes.map((row) => row.operation),
+      ...evaluationImageFixture.operationContracts,
+    ],
+    pipelineSupportSchemaVersion: 1,
+    pipelineSupport: [
+      {
+        pipelineClass: publicStarter.pipelineClass,
+        coverage: 'local-adapter',
+        reason: 'Native authoring fixture; execution unqualified',
+        equivalentTo: [],
+        upstreamTasks: [],
+        tasks: [
+          {
+            task: publicStarter.task,
+            execution: 'declared',
+            decomposition: 'stages',
+            operationIds: publicStarter.nodes.map((row) => row.operation.operationId),
+            executionProfileIds: [],
+            dependencies: 'unknown',
+            runtimeRequirements: [],
+          },
+        ],
+      },
+      ...(evaluationImageFixture.pipelineSupport ?? []),
+    ],
+  };
+  const operations = contracts.parseOperationContracts(
+    payload.operationContracts,
+    payload.operationContractSchemaVersion,
+  );
+  const support = catalog.parsePipelineSupport(
+    payload.pipelineSupport,
+    payload.pipelineSupportSchemaVersion,
+    operations,
+  );
+  const privateRows = support.filter((row) => row.coverage === 'research-blocked');
+  assert.equal(privateRows.length, 2);
+  assert.equal(privateRows.flatMap((row) => row.tasks).length, 4);
+  assert.ok(
+    privateRows
+      .flatMap((row) => row.tasks)
+      .every((task) => task.dependencies === 'unknown' && task.executionProfileIds.length === 0),
+  );
+  assert.throws(
+    () =>
+      catalog.parsePipelineSupport(
+        payload.pipelineSupport.filter((row) => row.coverage !== 'research-blocked'),
+        1,
+        operations,
+      ),
+    /Invalid backend operation contract/u,
+  );
+  const decoded = evaluation.parseEvaluationAuthoring(payload, support, operations);
+  assert.equal(decoded.descriptors.length, 2);
+  assert.equal(
+    decoded.support
+      .filter((row) => privateRows.some((privateRow) => privateRow.pipelineClass === row.pipelineClass))
+      .flatMap((row) => row.tasks).length,
+    4,
+  );
+});
+
+test('imported runtime option presentation follows current registry availability in both directions without changing the document', async () => {
+  const options = await server.ssrLoadModule('/src/studio/runtimeOptions.ts');
+  const descriptor = (value, available) => ({
+    schemaVersion: 1,
+    value,
+    label: value,
+    compatibility: available ? 'compatible' : 'incompatible',
+    availability: available ? 'installed' : 'unavailable',
+    installationState: available ? 'installed' : 'unavailable',
+    ...(available ? {} : { disabledReason: 'Other platform' }),
+  });
+  for (const [savedReady, currentReady] of [
+    [false, true],
+    [true, false],
+  ]) {
+    const saved = [descriptor('none', true), descriptor('reviewed-format', savedReady)];
+    const current = [
+      descriptor('none', true),
+      descriptor('reviewed-format', currentReady),
+      descriptor('new-format', true),
+    ];
+    const document = { value: 'none', options: saved, min: 0, hidden: false, source: 'saved', onChange: undefined };
+    const original = structuredClone(document);
+    const presented = options.runtimeOptionEntries(document.options, current);
+    assert.equal(presented.find((row) => row.value === 'reviewed-format').disabled, !currentReady);
+    assert.deepEqual(
+      presented.map((row) => row.value),
+      ['none', 'reviewed-format'],
+      'Current metadata cannot expand authored membership.',
+    );
+    assert.deepEqual(document, original);
+    const importedOnly = options.runtimeOptionEntries([descriptor('snapshot-only', true)], current);
+    assert.equal(importedOnly[0].disabled, true, 'An import cannot enable an option absent from the current registry.');
+  }
+});
+
+test('runtime option presentation preserves dynamic authority, dictionary membership and ambiguous-option refusal', async () => {
+  const options = await server.ssrLoadModule('/src/studio/runtimeOptions.ts');
+  const ready = (value) => ({
+    schemaVersion: 1,
+    value,
+    label: value,
+    compatibility: 'compatible',
+    availability: 'installed',
+    installationState: 'installed',
+  });
+  const saved = {
+    __formats: 'Formats',
+    reviewed: {
+      ...ready('reviewed'),
+      label: 'Saved label',
+      group: 'Saved group',
+      compatibility: 'incompatible',
+      availability: 'unavailable',
+    },
+    imported: ready('imported'),
+  };
+  const before = structuredClone(saved);
+  const live = { quantization: { options: [ready('reviewed')] } };
+  const presented = options.registeredRuntimeOptionPresentation(saved, 'quantization', live);
+  assert.deepEqual(Object.keys(presented), Object.keys(saved));
+  assert.equal(presented.__formats, 'Formats');
+  assert.equal(presented.reviewed.label, 'Saved label');
+  assert.equal(presented.reviewed.group, 'Saved group');
+  assert.equal(options.runtimeOptionEntries(presented).find((row) => row.value === 'reviewed').disabled, false);
+  assert.equal(options.runtimeOptionEntries(presented).find((row) => row.value === 'imported').disabled, true);
+  assert.equal(
+    options.runtimeOptionEntries([ready('reviewed')], [ready('reviewed'), ready('reviewed')])[0].disabled,
+    true,
+  );
+  assert.deepEqual(saved, before);
+  for (const changes of [
+    { quantization: { options: live.quantization.options, optionsSource: {} } },
+    { other: { onChange: 'refresh_options' } },
+    { other: { onSignal: [{ action: 'exec', data: 'refresh_options' }] } },
+    { other: { onChange: { action: 'create', data: {} } } },
+    { other: { onChange: { action: 'value', target: 'quantization', prop: 'options', data: {} } } },
+  ]) {
+    assert.equal(options.registeredRuntimeOptionPresentation(saved, 'quantization', { ...live, ...changes }), saved);
+  }
+  assert.equal(options.registeredRuntimeOptionPresentation(saved, 'quantization', undefined), saved);
+  assert.deepEqual(options.runtimeOptionEntries(['legacy'], ['new']), options.runtimeOptionEntries(['legacy']));
 });
 
 test('generic public model inventory preserves native defaults and exact additional format Install/Repair selections', async () => {
