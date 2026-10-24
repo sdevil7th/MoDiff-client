@@ -102,6 +102,7 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
   let requestSequence = 0;
   let phaseSequence = 0;
   let heldGet: { arrived: () => void; released: Promise<void>; phase: number } | undefined;
+  let heldPut: { arrived: () => void; released: Promise<void>; phase: number } | undefined;
   let rejectNextPut = false;
 
   // StrictMode can cancel and re-enter startup. Retain each actual request's
@@ -197,13 +198,25 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
       const payload = route.request().postDataJSON() as { snapshot: WorkflowTabSnapshot };
       const rejected = rejectNextPut;
       rejectNextPut = false;
-      events.push({ method: 'PUT', snapshot: structuredClone(payload.snapshot), rejected });
+      const pending = heldPut;
+      events.push({
+        method: 'PUT',
+        snapshot: structuredClone(payload.snapshot),
+        rejected,
+        phase: pending?.phase,
+        stage: 'requested',
+      });
       if (rejected) {
         await route.abort('failed');
         return;
       }
+      if (pending) {
+        pending.arrived();
+        await pending.released;
+      }
       backend = { ...backend, ...payload, revision: backend.revision + 1, updatedAt: Date.now() };
       await route.fulfill({ json: backend });
+      if (pending) events.push({ method: 'PUT-response', phase: pending.phase, stage: 'fulfilled' });
       return;
     }
     await route.fallback();
@@ -314,6 +327,29 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
     },
     rejectNextSave: () => {
       rejectNextPut = true;
+    },
+    holdNextSave: () => {
+      expect(heldPut).toBeUndefined();
+      let arrived!: () => void;
+      let unlock!: () => void;
+      const intercepted = new Promise<void>((resolve) => {
+        arrived = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        unlock = resolve;
+      });
+      const phase = ++phaseSequence;
+      const barrier = { arrived, released, phase };
+      heldPut = barrier;
+      return {
+        intercepted,
+        release: () => {
+          expect(heldPut).toBe(barrier);
+          events.push({ method: 'PUT-response', phase, stage: 'barrier-released' });
+          heldPut = undefined;
+          unlock();
+        },
+      };
     },
     holdNextHydration: () => {
       expect(heldGet).toBeUndefined();
@@ -498,6 +534,124 @@ test('startup hydration does not reopen a tab closed while its backend read is p
   expect(fixture.graphPosts()).toBe(0);
   await test.info().attach('restoration-closed-pending-order.json', {
     body: JSON.stringify({ events: fixture.events, openIds: await openIds(), backend: fixture.getBackend() }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
+test('unchanged canvas checkpoints and native tab switches keep a saved document clean without another PUT', async ({
+  page,
+}) => {
+  const workflowId = 'unchanged-checkpoint-save-regression';
+  const fixture = await prepareRestorationStartup(page, workflowId);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await fixture.waitForCanvas();
+  await page.clock.runFor(1200);
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(500);
+      return (await fixture.read()).tab?.dirty;
+    })
+    .toBe(false);
+  await fixture.assertCurrentPreview();
+  const before = (await fixture.read()).tab!;
+  const backendBefore = fixture.getBackend();
+  const start = fixture.events.length;
+  const tab = page.getByTestId(`workflow-tab-${workflowId}`);
+  const textNode = page.locator('.react-flow__node[data-id="restoration-text"]');
+  await textNode.getByText('Restoration text', { exact: true }).click();
+  await expect(textNode).toHaveClass(/\bselected\b/);
+  await page.clock.runFor(400); // Selection schedules the real 350 ms checkpoint without changing the document.
+  expect((await fixture.read()).tab).toEqual(before);
+  await expect(tab).not.toHaveAccessibleName(/unsaved changes/);
+  await page.getByTestId('workflow-tab-new').click();
+  await expect.poll(async () => (await fixture.read()).tab?.id).not.toBe(workflowId);
+  await tab.click();
+  await fixture.waitForCanvas();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await page.clock.runFor(1200);
+  const after = (await fixture.read()).tab!;
+  expect(after).toEqual(before); // Includes the complete snapshot, clean marker, timestamp and backend revision.
+  await expect(tab).not.toHaveAccessibleName(/unsaved changes/);
+  expect(fixture.events.slice(start).filter((event) => event.method === 'PUT')).toEqual([]);
+  expect(fixture.getBackend()).toEqual(backendBefore);
+  await fixture.assertCurrentPreview();
+  expect(fixture.graphPosts()).toBe(0);
+  await test.info().attach('unchanged-checkpoint-save-order.json', {
+    body: JSON.stringify(
+      { before, after, events: fixture.events.slice(start), backend: fixture.getBackend() },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  });
+});
+
+test('an explicit Save acknowledgement consumes the same document queued by mounted autosave with exactly one PUT', async ({
+  page,
+}) => {
+  const workflowId = 'explicit-save-autosave-order-regression';
+  const fixture = await prepareRestorationStartup(page, workflowId);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await fixture.waitForCanvas();
+  await page.clock.runFor(1200);
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(500);
+      return (await fixture.read()).tab?.dirty;
+    })
+    .toBe(false);
+  await fixture.assertCurrentPreview();
+  const backendBefore = fixture.getBackend();
+  const start = fixture.events.length;
+  const pending = fixture.holdNextSave();
+  const text = page
+    .locator('.react-flow__node[data-id="restoration-text"]')
+    .getByRole('textbox', { name: 'Text', exact: true });
+  await text.fill('Native edit saved once across the autosave queue');
+  await text.blur();
+  const edited = (await fixture.read()).tab!;
+  expect(edited.dirty).toBe(true);
+  const acknowledged = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname.endsWith(`/workflows/${workflowId}`) && response.request().method() === 'PUT',
+  );
+  await page.getByTestId('topbar-save-workflow').click();
+  await pending.intercepted;
+  await page.clock.runFor(1200); // The mounted 500 ms autosave queues behind the still-pending explicit Save.
+  const beforeAcknowledgement = await fixture.read();
+  expect(beforeAcknowledgement.tab?.dirty).toBe(true);
+  expect(fixture.getBackend()).toEqual(backendBefore);
+  const putsBeforeAcknowledgement = fixture.events.slice(start).filter((event) => event.method === 'PUT');
+  expect(putsBeforeAcknowledgement).toHaveLength(1);
+  expect(putsBeforeAcknowledgement[0].snapshot).toEqual(edited.snapshot);
+  expect(fixture.events.slice(start).filter((event) => event.method === 'PUT-response')).toEqual([]);
+  pending.release();
+  expect((await acknowledged).status()).toBe(200);
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(500);
+      return (await fixture.read()).tab?.dirty;
+    })
+    .toBe(false);
+  await page.clock.runFor(1200);
+  const after = (await fixture.read()).tab!;
+  const puts = fixture.events.slice(start).filter((event) => event.method === 'PUT');
+  expect(puts).toHaveLength(1);
+  expect(puts[0].snapshot).toEqual(edited.snapshot);
+  expect(after.snapshot).toEqual(edited.snapshot);
+  expect(fixture.getBackend().snapshot).toEqual(edited.snapshot);
+  expect(fixture.getBackend().revision).toBe(backendBefore.revision + 1);
+  expect(after.backendRevision).toBe(fixture.getBackend().revision);
+  await expect(text).toHaveValue('Native edit saved once across the autosave queue');
+  await expect(page.getByTestId(`workflow-tab-${workflowId}`)).not.toHaveAccessibleName(/unsaved changes/);
+  await fixture.assertCurrentPreview();
+  expect(fixture.graphPosts()).toBe(0);
+  await test.info().attach('explicit-save-autosave-order.json', {
+    body: JSON.stringify(
+      { edited, beforeAcknowledgement, after, events: fixture.events.slice(start), backend: fixture.getBackend() },
+      null,
+      2,
+    ),
     contentType: 'application/json',
   });
 });
