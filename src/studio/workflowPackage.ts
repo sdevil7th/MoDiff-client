@@ -169,9 +169,9 @@ function getNestedRecord(root: Record<string, unknown>, key: string) {
 }
 
 function titleForImportedPackage(output: StudioOutput | undefined, form: StudioFormState) {
-  if (output?.templateLabel) return output.templateLabel;
   const prompt = output?.prompt || form.prompt;
-  return prompt ? prompt.slice(0, 28) : 'Imported workflow';
+  const title = output?.templateLabel || (prompt ? prompt.slice(0, 28) : '');
+  return title.trim() || 'Imported workflow';
 }
 
 export function parseWorkflowPackage(value: unknown): ParsedWorkflowPackage | null {
