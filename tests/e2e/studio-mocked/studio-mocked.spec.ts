@@ -104,6 +104,7 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
   let heldGet: { arrived: () => void; released: Promise<void>; phase: number } | undefined;
   let heldPut: { arrived: () => void; released: Promise<void>; phase: number } | undefined;
   let rejectNextPut = false;
+  let commitRejectedPut = false;
 
   // StrictMode can cancel and re-enter startup. Retain each actual request's
   // lifecycle rather than mistaking the first intercepted GET for the live one.
@@ -197,7 +198,9 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
     if (route.request().method() === 'PUT') {
       const payload = route.request().postDataJSON() as { snapshot: WorkflowTabSnapshot };
       const rejected = rejectNextPut;
+      const committedWithoutAcknowledgement = commitRejectedPut;
       rejectNextPut = false;
+      commitRejectedPut = false;
       const pending = heldPut;
       events.push({
         method: 'PUT',
@@ -207,6 +210,10 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
         stage: 'requested',
       });
       if (rejected) {
+        if (committedWithoutAcknowledgement) {
+          backend = { ...backend, ...payload, revision: backend.revision + 1, updatedAt: Date.now() };
+          events.push({ method: 'PUT-commit', revision: backend.revision, stage: 'committed-without-acknowledgement' });
+        }
         await route.abort('failed');
         return;
       }
@@ -327,6 +334,10 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
     },
     rejectNextSave: () => {
       rejectNextPut = true;
+    },
+    commitNextSaveWithoutAcknowledgement: () => {
+      rejectNextPut = true;
+      commitRejectedPut = true;
     },
     holdNextSave: () => {
       expect(heldPut).toBeUndefined();
@@ -475,6 +486,59 @@ test('startup hydration retains a real unsaved text edit after a failed save', a
   await pending.assertReleasedOrdering();
   await expect(text).toHaveValue('Genuine unsaved operator edit');
   expect(restorationText(fixture.getBackend().snapshot)).toBe('Genuine unsaved operator edit');
+  expect(fixture.graphPosts()).toBe(0);
+});
+
+test('startup hydration acknowledges an exact dirty document committed before its save response was lost without another PUT', async ({
+  page,
+}) => {
+  const workflowId = 'committed-dirty-hydration-regression';
+  const fixture = await prepareRestorationStartup(page, workflowId);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await fixture.waitForCanvas();
+  await page.clock.runFor(1200);
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(500);
+      return (await fixture.read()).tab?.dirty;
+    })
+    .toBe(false);
+  fixture.commitNextSaveWithoutAcknowledgement();
+  const text = page
+    .locator('.react-flow__node[data-id="restoration-text"]')
+    .getByRole('textbox', { name: 'Text', exact: true });
+  await text.fill('Committed wording with a lost acknowledgement');
+  await text.blur();
+  await page.clock.runFor(1200);
+  await expect
+    .poll(() => fixture.events.some((event) => event.stage === 'committed-without-acknowledgement'))
+    .toBe(true);
+  const beforeReload = await fixture.read();
+  expect(beforeReload.tab?.dirty).toBe(true); // Real UI editing plus a failed response produced this marker.
+  const committed = fixture.getBackend();
+  expect(beforeReload.tab!.snapshot).toEqual(committed.snapshot);
+  const start = fixture.events.length;
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await fixture.waitForCanvas();
+  await expect
+    .poll(() => fixture.events.slice(start).some((event) => event.method === 'GET' && event.stage === 'finished'))
+    .toBe(true);
+  await page.clock.runFor(1200);
+  await expect
+    .poll(async () => (await fixture.read()).tab?.backendRevision ?? 0)
+    .toBeGreaterThanOrEqual(committed.revision);
+  const afterReload = await fixture.read();
+  await test.info().attach('committed-dirty-hydration-order.json', {
+    body: JSON.stringify({ beforeReload, afterReload, committed, events: fixture.events.slice(start) }, null, 2),
+    contentType: 'application/json',
+  });
+  expect(fixture.events.slice(start).filter((event) => event.method === 'PUT')).toEqual([]);
+  await expect(page.getByTestId(`workflow-tab-${workflowId}`)).not.toHaveAccessibleName(/unsaved changes/);
+  expect(fixture.getBackend()).toEqual(committed); // Includes revision and timestamp, not only authored content.
+  expect(afterReload.tab?.snapshot).toEqual(committed.snapshot);
+  expect(afterReload.tab?.backendRevision).toBe(committed.revision);
+  await expect(text).toHaveValue('Committed wording with a lost acknowledgement');
+  await fixture.assertCurrentPreview();
   expect(fixture.graphPosts()).toBe(0);
 });
 
@@ -24128,6 +24192,30 @@ test('workflow tabs remain a single horizontally scrollable row with pinned new-
 
   const inactiveTab = tabList.locator('[role="tab"][aria-selected="false"]').first();
   expect((await readTabVisual(inactiveTab)).contrast).toBeGreaterThanOrEqual(4.5);
+
+  // Dirty styling needs a real unsaved document, not passive tab-switch side effects.
+  const selectedTestId = await selectedTab.getAttribute('data-testid');
+  expect(selectedTestId).toMatch(/^workflow-tab-/);
+  const dirtyWorkflowId = selectedTestId!.slice('workflow-tab-'.length);
+  const dirtyTitle = 'Unsaved tab styling';
+  const rejectedTitles: unknown[] = [];
+  await page.route(`**/workflows/${dirtyWorkflowId}`, async (route) => {
+    if (route.request().method() !== 'PUT') {
+      await route.fallback();
+      return;
+    }
+    const payload = route.request().postDataJSON() as { title?: unknown };
+    rejectedTitles.push(payload.title);
+    await route.abort('failed'); // Keep only this edited document unacknowledged throughout the styling checks.
+  });
+  await page.getByTestId('topbar-save-workflow').click();
+  const saveDialog = page.getByTestId('save-workflow-dialog');
+  await expect(saveDialog).toBeVisible();
+  await page.getByTestId('save-workflow-name').fill(dirtyTitle);
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect.poll(() => rejectedTitles.filter((title) => title === dirtyTitle).length).toBeGreaterThan(0);
+  await saveDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(saveDialog).toHaveCount(0);
 
   await expect.poll(() => tabList.locator('[data-dirty="true"]').count()).toBeGreaterThan(0);
   const dirtyTab = tabList.locator('[data-dirty="true"]').first().getByRole('tab');

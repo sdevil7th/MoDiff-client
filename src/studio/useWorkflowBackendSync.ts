@@ -304,8 +304,11 @@ export function useWorkflowBackendSync() {
           const backendTab = await readWorkflowForHydration(tab, controller.signal);
           if (cancelled) return;
           const current = useStudioStore.getState();
-          if (isWorkflowTabClosed(tab.id) || !current.workflowTabs.some((item) => item.id === tab.id)) continue;
-          if (backendTab && !tab.dirty) {
+          const latestTab = current.workflowTabs.find((item) => item.id === tab.id);
+          if (isWorkflowTabClosed(tab.id) || !latestTab) continue;
+          // Dirty protects an unacknowledged document, including a committed PUT whose response was lost.
+          // Reuse only an exact match with the latest open tab; the normal merge still protects live edits.
+          if (backendTab && (!tab.dirty || contentSignature(latestTab) === contentSignature(backendTab))) {
             markBackendWorkflow(backendTab);
             current.mergeBackendWorkflow(backendTab, {
               hydrationBaseline: cleanBaseline && {
