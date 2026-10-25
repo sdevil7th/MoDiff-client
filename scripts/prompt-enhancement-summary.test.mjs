@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -195,6 +195,134 @@ const layout = (version = 2) => ({
 const parse = (value) => contract.parsePromptEnhancementSummary(JSON.stringify(value));
 const verify = ({ value, expected }) =>
   contract.verifyPromptEnhancementSummaryBindings(JSON.stringify(value), expected);
+
+// Source-only declaration with synthetic output/producer, never a model receipt.
+const constraintDeclaration = JSON.parse(
+  readFileSync('tests/fixtures/authored-layout-constraint.v1.json', 'utf8'),
+).contract;
+const asciiCanonical = (value) =>
+  canonical(value).replace(
+    /[\u007f-\uffff]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+function constrainedFixture(images = 0) {
+  const input = fixture({ images, layout: layout(), prompt: 'Keep <region_1> at its authored coordinates.' });
+  const consumed = input.value.consumedInput;
+  const source = copy(constraintDeclaration);
+  const selectedAdapter = { ...input.value.adapter, id: source.adapterId };
+  input.value.adapter = copy(selectedAdapter);
+  input.expected.adapter = copy(selectedAdapter);
+  consumed.fingerprints.prompt_adapter_id = source.adapterId;
+  consumed.fingerprints.operation = source.operation;
+  input.expected.operation = source.operation;
+  input.expected.layoutPolicy = source.layoutPolicy;
+  input.expected.authoredLayoutConstraint = copy(source);
+  const receipt = input.expected.modelReceipt;
+  receipt.source = { kind: 'hub', repository: source.repository, revision: source.revision };
+  receipt.runtime.device = 'cuda:0';
+  receipt.runtime.transformersVersion = source.transformersVersion;
+  input.value.modelReceipt = { ...copy(receipt), receiptDigest: sha(asciiCanonical(receipt)) };
+  const rows = [
+    {
+      id: 'region_1',
+      ...(images ? { from: 'target', src_bbox: null, tgt_bbox: [200, 100, 700, 400] } : { bbox: [200, 100, 700, 400] }),
+      desc: input.expected.authoredLayout.regions[0].description,
+    },
+  ];
+  const constraint = {
+    contract: source,
+    authoritativeRowsSha256: sha(asciiCanonical(rows)),
+    vocabularySha256: source.ordinaryVocabularySha256,
+    tokenizerSemanticSha256: source.tokenizerSemanticSha256,
+    renderedInputIdsSha256: consumed.fingerprints.rendered_input_ids_sha256,
+    promptTokenCount: input.value.proposal.inputTokens,
+    limits: { ...source.limits, max_new_tokens: input.value.request.controls.max_new_tokens },
+  };
+  consumed.fingerprints.authored_layout_constraint = constraint;
+  input.value.proposal.constraintCompletion = {
+    version: source.version,
+    terminalTokenId: source.effectiveEosTokenIds[0],
+    grammarComplete: true,
+    rawOutputSha256: sha('synthetic full raw output'),
+    generatedTokens: input.value.proposal.generatedTokens,
+    constraintFingerprintSha256: sha(asciiCanonical(constraint)),
+  };
+  input.value.request.consumedInputSha256 = sha(canonical(consumed));
+  return input;
+}
+
+test('constrained authored-table summaries bind the source contract and exact original rows with genuine EOS at the token bound', async () => {
+  for (const images of [0, 2]) {
+    const input = constrainedFixture(images);
+    const result = await verify(input);
+    assert.equal(result.proposal.applicationAllowed, true);
+    assert.equal(result.proposal.semanticFidelityVerified, false);
+    input.value.proposal.generatedTokens = input.value.request.controls.max_new_tokens;
+    input.value.proposal.constraintCompletion.generatedTokens = input.value.proposal.generatedTokens;
+    assert.equal((await verify(input)).proposal.finishReason, 'stop');
+  }
+});
+
+test('constrained proposals cannot borrow old keysets, drift contract/input/geometry or self-declare completion', async () => {
+  for (const mutate of [
+    (x) => {
+      delete x.value.consumedInput.fingerprints.authored_layout_constraint;
+    },
+    (x) => {
+      delete x.expected.authoredLayoutConstraint;
+    },
+    (x) => {
+      x.value.consumedInput.fingerprints.authored_layout_constraint.contract.status = 'qualified';
+    },
+    (x) => {
+      const constraint = x.value.consumedInput.fingerprints.authored_layout_constraint;
+      constraint.contract = { ...constraint.contract, effectivePreTokenizerSha256: sha('foreign tokenizer') };
+    },
+    (x) => {
+      x.value.consumedInput.fingerprints.authored_layout_constraint.authoritativeRowsSha256 = sha('foreign rows');
+    },
+    (x) => {
+      x.value.consumedInput.fingerprints.authored_layout_constraint.renderedInputIdsSha256 = sha('foreign tokens');
+    },
+    (x) => {
+      x.value.consumedInput.fingerprints.authored_layout_constraint.limits.max_new_tokens++;
+    },
+    (x) => {
+      x.value.consumedInput.fingerprints.authored_layout_constraint.promptTokenCount++;
+    },
+    (x) => {
+      x.value.proposal.constraintCompletion.terminalTokenId = constraintDeclaration.padTokenId;
+    },
+    (x) => {
+      x.value.proposal.constraintCompletion.constraintFingerprintSha256 = sha('foreign constraint');
+    },
+    (x) => {
+      x.value.proposal.constraintCompletion.grammarComplete = false;
+    },
+    (x) => {
+      x.value.proposal.constraintCompletion.generatedTokens++;
+    },
+    (x) => {
+      x.value.proposal.finishReason = 'length';
+    },
+    (x) => {
+      x.value.modelReceipt.runtime.dtype = x.expected.modelReceipt.runtime.dtype = 'bfloat16';
+    },
+    (x) => {
+      x.value.proposal.structuredProposal.layoutConditioning.regions[0].targetBox[0] = 0.3;
+    },
+    (x) => {
+      x.value.consumedInput.fingerprints.operation = x.expected.operation = 'enhance_prompt';
+    },
+  ]) {
+    const changed = constrainedFixture();
+    mutate(changed);
+    await assert.rejects(verify(changed));
+  }
+  const old = fixture();
+  old.value.proposal.constraintCompletion = constrainedFixture().value.proposal.constraintCompletion;
+  assert.throws(() => parse(old.value), /unexpected|properties|keys/i);
+});
 
 // Explicitly synthetic composition protocol: not a captured model response.
 function appendFixture({

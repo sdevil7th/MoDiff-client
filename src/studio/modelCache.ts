@@ -105,11 +105,25 @@ export function localModelsContain(localModels: unknown[], repo: string) {
 }
 
 export function getStudioModelCacheStatus(
-  profile: StudioModelProfile,
+  profile: StudioModelProfile | null,
   hfCache: unknown[],
   localModels: unknown[],
   diagnostics: ModelCacheDiagnostics | null,
 ): StudioModelCacheStatus {
+  if (!profile) {
+    return {
+      hfCached: false,
+      localCached: false,
+      appDataDiscovered: false,
+      matchingExternalPackages: [],
+      matchingExternalRepos: [],
+      installed: false,
+      runnable: false,
+      repairRequired: false,
+      scannedPaths: [],
+      reason: 'Refresh the exact backend model declaration for this weight format; no native installation is selected.',
+    };
+  }
   if (profile.artifactInstallRequired === false) {
     return {
       hfCached: false,

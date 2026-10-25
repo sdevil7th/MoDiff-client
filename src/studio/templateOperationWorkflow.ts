@@ -23,6 +23,7 @@ import { CONTROLLED_WORKFLOW_NODE_KEYS } from './controlledWorkflowContracts';
 import { loraWorkflowFieldValues, upscaleWorkflowFieldValues } from './controlledWorkflowValues';
 import { orderedAdapterChainLinks } from './adapterChainLinks';
 import { resolveStudioExecutionSpecValues } from './executionSpecValues';
+import { selectedNodeWeightFormatArtifact } from './weightFormat';
 import { resolveTemplateModelSelection } from './templateModelSelection';
 import type {
   StudioExecutionSpec,
@@ -310,6 +311,33 @@ export function createTemplateOperationGraph(
         throw new Error('The template binding cannot change a declared dependency identity.');
     }
     const value = values[source];
+    if (source === 'weightFormat' && value !== 'native') {
+      if (node !== owner || field !== 'weight_format')
+        throw new Error('The weight-format binding must belong to the exact model owner.');
+      // The static registry starts native-only. Populate this draft field from
+      // current backend declarations for its exact owner and immutable artifact.
+      const probe = {
+        ...node,
+        data: {
+          ...node.data,
+          params: {
+            ...node.data.params,
+            weight_format: { ...node.data.params.weight_format!, value },
+          },
+        },
+      };
+      const selected = selectedNodeWeightFormatArtifact(
+        probe,
+        authority?.workflowModelDescriptors ?? [],
+        selection.executionProfileId,
+      );
+      if (!selected) throw new Error('The template weight-format selection is missing.');
+      node.data.params.weight_format = {
+        ...node.data.params.weight_format!,
+        options: [...selected.options],
+        hidden: false,
+      };
+    }
     if (value === undefined) throw new Error(`The template setting ${source} has no declared value.`);
     if (backendDefaultInputs.has(source as 'prompt' | 'negativePrompt') && value === '') {
       const hint = operationAuthoring(node);

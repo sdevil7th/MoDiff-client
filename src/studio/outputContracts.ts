@@ -10,6 +10,7 @@ import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from './templates';
 import { CONTROLLED_GRAPH_CONTRACT_IDS, type ControlledGraphContractId } from './controlledWorkflowContracts';
 import { blockOutputRunFormV2 } from './blockRunFormV2';
 import { applyResolvedExecutionInputs } from './resolvedExecutionInputs';
+import { persistedStudioWeightFormat } from './weightFormat';
 import type {
   StudioFormState,
   LegacyStudioOutputField,
@@ -162,6 +163,7 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     classLabel: numberValue(form.classLabel, DEFAULT_STUDIO_FORM.classLabel),
     resourceMode: normalizeStudioResourceMode(form.resourceMode),
     dtype: stringUnionValue(form.dtype, STUDIO_DTYPES, DEFAULT_STUDIO_FORM.dtype),
+    ...(form.weightFormat === undefined ? {} : { weightFormat: persistedStudioWeightFormat(form.weightFormat) }),
     quantizationMode: stringUnionValue(
       form.quantizationMode,
       STUDIO_QUANTIZATION_MODES,
@@ -493,9 +495,13 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
       mediaCollectionHash: optionalString(value.mediaCollectionHash),
       mediaItems: coerceStudioOutputMediaItems(value.mediaItems),
       templateLockHash: optionalString(value.templateLockHash),
-      promptSettingsHash: optionalString(value.promptSettingsHash),
+      promptSettingsHash: formSnapshot.weightFormat === null ? undefined : optionalString(value.promptSettingsHash),
       exactTemplateCompatible:
-        typeof value.exactTemplateCompatible === 'boolean' ? value.exactTemplateCompatible : undefined,
+        formSnapshot.weightFormat === null
+          ? false
+          : typeof value.exactTemplateCompatible === 'boolean'
+            ? value.exactTemplateCompatible
+            : undefined,
       variationGroupId: optionalString(value.variationGroupId),
       variationLabel: optionalString(value.variationLabel),
       provenance: safeCloneJson(value.provenance) as StudioOutput['provenance'],

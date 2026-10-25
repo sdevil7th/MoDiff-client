@@ -4,6 +4,7 @@ import { deepEqual } from '../utils/deepEqual';
 import { formatRequestError, requestJson } from '../utils/requestJson';
 import { normalizeStudioDeviceOffloadPlan, studioOffloadPlanConflict } from './deviceOffload';
 import { AUTO_RESOURCE_LOADER_TARGETS, AUTO_RESOURCE_TARGET_KEYS } from './resourcePlanner';
+import { hasNonNativeStudioWeightFormat, WEIGHT_FORMAT_AUTO_UNAVAILABLE } from './weightFormat';
 import type { OptionalRuntimeRequirement } from './optionalRuntimes';
 import type { StudioFormState, StudioOffloadMode, StudioResourcePreference } from './types';
 
@@ -184,7 +185,7 @@ export type StudioCompatibilityAssessment = {
     candidateId?: string | null;
     command?: string | null;
   } | null;
-  source: 'backend_auto_planner';
+  source: 'backend_auto_planner' | 'client_contract_guard';
 };
 
 export type StudioAutoResourcePlan = {
@@ -423,6 +424,7 @@ async function postAutoResourcePlan(body: Record<string, unknown>, signal?: Abor
 }
 
 export function fetchAutoResourcePlan(form: StudioFormState, signal?: AbortSignal) {
+  if (hasNonNativeStudioWeightFormat(form)) return Promise.reject(new Error(WEIGHT_FORMAT_AUTO_UNAVAILABLE));
   return postAutoResourcePlan({ form }, signal);
 }
 
@@ -451,6 +453,7 @@ export function autoPlanKeyForForm(
     | 'device'
     | 'dtype'
     | 'quantizationMode'
+    | 'weightFormat'
     | 'offloadMode'
     | 'autoOffload'
     | 'width'
@@ -470,10 +473,15 @@ export function autoPlanKeyForForm(
     form.autoOffload ? 'offload' : 'no-offload',
     form.width,
     form.height,
+    ...(hasNonNativeStudioWeightFormat(form)
+      ? ['weight-format=' + (form.weightFormat === null ? 'blocked' : form.weightFormat)]
+      : []),
   ].join(':');
 }
 
 export function fetchAutoResourcePlans(forms: StudioFormState[], keys: string[] = [], signal?: AbortSignal) {
+  if (forms.some((form) => hasNonNativeStudioWeightFormat(form)))
+    return Promise.reject(new Error(WEIGHT_FORMAT_AUTO_UNAVAILABLE));
   return requestJson(`${config.serverAddress}/auto_resource/plans`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -486,7 +494,7 @@ export function fetchAutoResourcePlans(forms: StudioFormState[], keys: string[] 
 
 export function autoCandidateSupportsExecutionDevice(
   candidate: StudioAutoResourceCandidate | null | undefined,
-  form: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ) {
   if (!candidate) return false;
   const offloadMode = formPatchForAutoCandidate(candidate).offloadMode ?? form.offloadMode;
@@ -499,8 +507,9 @@ export function autoCandidateSupportsExecutionDevice(
 
 export function selectedAutoCandidate(
   plan: StudioAutoResourcePlan | null | undefined,
-  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ) {
+  if (form && hasNonNativeStudioWeightFormat(form)) return null;
   const selected = plan?.selectedCandidate;
   if (isSchemaV2(plan)) {
     if (!selected?.id || !Array.isArray(plan.candidates)) return null;
@@ -578,7 +587,7 @@ export function autoResourcePlanTargetMatches(
 
 export function autoPlanIsReady(
   plan: StudioAutoResourcePlan | null | undefined,
-  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ) {
   if (isSchemaV2(plan) && plan.compatibility?.state !== 'ready') return false;
   const selected = selectedAutoCandidate(plan, form);
@@ -606,7 +615,7 @@ export function autoPlanIsReady(
 export function modelInstallIsReady(
   installedRunnable: boolean,
   plan: StudioAutoResourcePlan | null | undefined,
-  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ) {
   return installedRunnable || autoPlanIsReady(plan, form);
 }
@@ -615,7 +624,7 @@ export function modelInstallReadyReason(
   installedRunnable: boolean,
   installedReason: string,
   plan: StudioAutoResourcePlan | null | undefined,
-  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ) {
   if (installedRunnable) return installedReason;
   return autoPlanIsReady(plan, form) ? 'Required model artifacts are complete and available for this workflow.' : null;
@@ -681,8 +690,9 @@ function candidateHasResourceBlock(candidate: StudioAutoResourceCandidate) {
 
 export function autoResourceInstallTarget(
   plan: StudioAutoResourcePlan | null | undefined,
-  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ): StudioAutoResourceInstallTarget | null {
+  if (form && hasNonNativeStudioWeightFormat(form)) return null;
   if (!plan || autoPlanIsReady(plan, form)) return null;
   if (plan.selectedInstallTarget?.repo) return plan.selectedInstallTarget;
   const candidates = [...(plan.candidates ?? [])].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
@@ -719,8 +729,9 @@ export function autoResourceInstallTarget(
 
 export function autoResourceHealthBadge(
   plan: StudioAutoResourcePlan | null | undefined,
-  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ): StudioAutoResourceHealthBadge {
+  if (form && hasNonNativeStudioWeightFormat(form)) return 'Expert only';
   if (!plan) return 'Needs setup';
   if (plan.healthBadge) return plan.healthBadge;
   const selected = selectedAutoCandidate(plan, form);
@@ -733,8 +744,20 @@ export function autoResourceHealthBadge(
 
 export function autoResourceCompatibility(
   plan: StudioAutoResourcePlan | null | undefined,
-  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode'>,
+  form?: Pick<StudioFormState, 'device' | 'autoOffload' | 'offloadMode' | 'weightFormat'>,
 ): StudioCompatibilityAssessment {
+  if (form && hasNonNativeStudioWeightFormat(form)) {
+    return {
+      state: 'expert_only',
+      severity: 'info',
+      code: 'weight_format_auto_contract_unavailable',
+      summary: 'Expert required',
+      detail: WEIGHT_FORMAT_AUTO_UNAVAILABLE,
+      action: null,
+      // A local refusal is never a backend hardware or execution receipt.
+      source: 'client_contract_guard',
+    };
+  }
   if (!plan) {
     return {
       state: 'checking',
@@ -814,6 +837,7 @@ export function formPatchForAutoCandidate(
   pinnedFormKeys?: ReadonlySet<keyof StudioFormState>,
 ): Partial<StudioFormState> {
   if (!candidate) return {};
+  if (currentForm && hasNonNativeStudioWeightFormat(currentForm)) throw new Error(WEIGHT_FORMAT_AUTO_UNAVAILABLE);
   const patch: Partial<StudioFormState> = {
     resourceMode: 'auto',
   };

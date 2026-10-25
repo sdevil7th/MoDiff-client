@@ -82,6 +82,7 @@ beforeEach(() => {
   registry.setState({
     nodesRegistry: structuredClone(fixture.registry),
     operationContracts: structuredClone(fixture.operationContracts),
+    workflowModelDescriptors: [],
   });
   socket.setState({ isConnected: true, sid: 'unit-preview-sid' });
   tasks.setState({ currentTask: undefined, queuedTasks: {}, sessionRuns: [] });
@@ -94,8 +95,8 @@ beforeEach(() => {
     const json = (value) =>
       new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } });
     if (endpoint === '/operations/starter') {
-      onMetadata?.();
-      return json(fixture.response);
+      const response = onMetadata?.(JSON.parse(init.body));
+      return json(response ?? fixture.response);
     }
     if (endpoint === '/runtime/status') {
       assert.equal(init.cache, 'no-store', 'Runtime identity reads must bypass HTTP caches.');
@@ -648,6 +649,316 @@ test('current plain-only declaration refuses every authored layout object before
     assert.deepEqual(flow.getState().toObject(), before);
     assert.equal(calls.includes('/graph'), false);
   }
+});
+
+test('normal Enable selects only the declared raw alternative for null layout and returns to append for authored regions', async () => {
+  const saved = structuredClone(parent),
+    originalSelectionId = fixture.selection.authoringRecipeId;
+  const operationField = fixture.registry['modules.HuggingFaceTransformers.GenerateImageVideoText'].params.operation;
+  const options = structuredClone(operationField.options);
+  const rawResponse = structuredClone(fixture.response);
+  const { hashString, stableStringify } = await server.ssrLoadModule('/src/studio/stableHash.ts');
+  try {
+    // Synthetic paired DTOs exercise generic selection; this is not model evidence.
+    parent.id = parent.id.replace(/:v1$/u, ':v3');
+    child.id = `${parent.id}:preview`;
+    child.parent.authoringRecipeId = parent.id;
+    child.layoutPolicy = 'append-details-preserve-layout-v1';
+    child.initialValues.find(
+      ([role, field]) =>
+        role === child.verification.requestInputs.role && field === child.verification.requestInputs.operationField,
+    )[2] = 'enhance_prompt_append_details';
+    child.verification.layoutRequestSuffixSha256 = sha('synthetic declared append request');
+    child.contentHash = `studio-ancillary-v1-${hashString(stableStringify(Object.fromEntries(Object.entries(child).filter(([key]) => key !== 'contentHash'))))}`;
+    parent.contentHash = `studio-authoring-v1-${hashString(stableStringify(Object.fromEntries(Object.entries(parent).filter(([key]) => key !== 'contentHash'))))}`;
+    fixture.selection.authoringRecipeId = parent.id;
+    operationField.options.push({
+      ...options.find((option) => option.value === 'enhance_prompt'),
+      value: 'enhance_prompt_append_details',
+      label: 'enhance_prompt_append_details',
+    });
+    const { ownerId } = await setup();
+    const descriptor = {
+      profileId: fixture.selection.executionProfileId,
+      pipeline: fixture.response.pipelineClass,
+      label: 'Synthetic paired model',
+      repo: child.verification.modelReceipt.source.repository,
+      evaluationOnly: true,
+      authoringRecipes: { [fixture.response.task]: parent.id },
+      rawPromptAuthoringRecipes: { [fixture.response.task]: rawResponse.authoring.id },
+    };
+    registry.setState({
+      nodesRegistry: structuredClone(fixture.registry),
+      workflowModelDescriptors: [structuredClone(descriptor)],
+    });
+    const selections = [];
+    onMetadata = (selection) => {
+      selections.push(selection.authoringRecipeId);
+      return selection.authoringRecipeId === rawResponse.authoring.id ? rawResponse : fixture.response;
+    };
+    for (const layout of [{}, { schemaVersion: 2, coordinateSpace: 'normalized_xyxy', regions: [] }]) {
+      editOwnerField(ownerId, 'layout_conditioning', layout);
+      const before = structuredClone(flow.getState().toObject());
+      await assert.rejects(preview.enablePromptEnhancement(ownerId), /layout|regions|invalid/i);
+      assert.deepEqual(flow.getState().toObject(), before);
+      assert.equal(calls.includes('/graph'), false);
+    }
+    editOwnerField(ownerId, 'layout_conditioning', null);
+    flow.getState().resetHistory();
+    const beforeEnable = structuredClone(flow.getState().toObject());
+    onMetadata = (selection) => {
+      if (selection.authoringRecipeId === rawResponse.authoring.id)
+        registry.setState({ workflowModelDescriptors: [{ ...descriptor, rawPromptAuthoringRecipes: {} }] });
+      return selection.authoringRecipeId === rawResponse.authoring.id ? rawResponse : fixture.response;
+    };
+    await assert.rejects(preview.enablePromptEnhancement(ownerId), /metadata changed/);
+    assert.deepEqual(flow.getState().toObject(), beforeEnable);
+    assert.equal(flow.getState().historyPast.length, 0);
+    registry.setState({ workflowModelDescriptors: [structuredClone(descriptor)] });
+    onMetadata = (selection) => {
+      selections.push(selection.authoringRecipeId);
+      return selection.authoringRecipeId === rawResponse.authoring.id ? rawResponse : fixture.response;
+    };
+    const enabled = await preview.enablePromptEnhancement(ownerId);
+    assert.equal(enabled.id, rawResponse.authoring.ancillaryOperations[0].id);
+    assert.equal(activeOwner(ownerId).data.params.layout_conditioning.value, null);
+    assert.equal(activeOwner(ownerId).data.params.prompt.value, '  Authored unit prompt.\n');
+    assert.equal(flow.getState().historyPast.length, 1, 'Parent selection and Enable are one Undo transaction.');
+    assert.equal(calls.includes('/graph'), false, 'Enable does not submit a model task.');
+    flow.getState().undo();
+    assert.deepEqual(flow.getState().toObject(), beforeEnable);
+    flow.getState().redo();
+    await preview.disablePromptEnhancement(ownerId, enabled.id);
+    const layout = {
+      schemaVersion: 2,
+      coordinateSpace: 'normalized_xyxy',
+      regions: [{ id: 'subject', description: 'Authored subject', action: 'place', targetBox: [0.1, 0.2, 0.8, 0.9] }],
+    };
+    editOwnerField(ownerId, 'layout_conditioning', layout);
+    const appended = await preview.enablePromptEnhancement(ownerId);
+    assert.equal(appended.id, child.id);
+    assert.deepEqual(activeOwner(ownerId).data.params.layout_conditioning.value, layout);
+    assert.ok(selections.includes(rawResponse.authoring.id));
+    assert.equal(calls.includes('/graph'), false);
+  } finally {
+    registry.setState({ workflowModelDescriptors: [] });
+    operationField.options = options;
+    fixture.selection.authoringRecipeId = originalSelectionId;
+    for (const key of Object.keys(child)) delete child[key];
+    Object.assign(child, saved.ancillaryOperations[0]);
+    for (const key of Object.keys(parent)) if (key !== 'ancillaryOperations') delete parent[key];
+    Object.assign(parent, { ...saved, ancillaryOperations: [child] });
+  }
+});
+
+test('an explicit declared raw provider choice preserves NF4 identity across Disable and reload and refuses structured or withdrawn choices', async () => {
+  const actual = JSON.parse(readFileSync('tests/fixtures/evaluation-prompt-enhancement-alternatives.v1.json', 'utf8'));
+  const display = JSON.parse(readFileSync('tests/fixtures/evaluation-image-authoring.v1.json', 'utf8'));
+  const operations = [
+    ...new Map(
+      actual.starters.flatMap((starter) =>
+        starter.nodes.map(({ operation }) => [
+          `${operation.pipelineClass}:${operation.task}:${operation.operationId}`,
+          operation,
+        ]),
+      ),
+    ).values(),
+  ];
+  const { parseEvaluationAuthoring } = await server.ssrLoadModule('/src/workflow/evaluationAuthoring.ts');
+  const descriptors = parseEvaluationAuthoring(
+    { capabilities: display.capabilities, evaluationAuthoring: actual.evaluationAuthoring },
+    [],
+    operations,
+  ).descriptors;
+  const offer = actual.evaluationAuthoring.authoringRecipes.find(
+    (row) => row.task === 'text_to_image' && row.rawAuthoringRecipeChoices,
+  );
+  const nf4 = offer.rawAuthoringRecipeChoices.find((choice) => choice.authoringRecipeId !== offer.rawAuthoringRecipeId);
+  const source = actual.starters.find((starter) => starter.authoring.id === offer.authoringRecipeId);
+  const sourceRegistry = {
+    ...structuredClone(fixture.registry),
+    ...Object.fromEntries(
+      actual.starters.flatMap((starter) => starter.nodes.map(({ operation, node }) => [operation.nodeKey, node])),
+    ),
+    ...actual.registry,
+  };
+  const { parseOperationStarter } = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+  const { createWorkflowDraft } = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
+  const { expandFlowExecutionGraph } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const parsed = parseOperationStarter(source, offer.pipelineClass, offer.task, operations, {
+    executionProfileId: offer.executionProfileId,
+    authoringRecipeId: offer.authoringRecipeId,
+  });
+  registry.setState({
+    nodesRegistry: sourceRegistry,
+    operationContracts: operations,
+    workflowModelDescriptors: descriptors,
+  });
+  flow.getState().replaceGraph(createWorkflowDraft(parsed, sourceRegistry).graph);
+  const owner = expandFlowExecutionGraph(flow.getState().nodes, flow.getState().edges).nodes.find(
+    (node) => node.data.operationAuthoring?.ancillaryParent,
+  );
+  const ownerId = owner.id;
+  onMetadata = (selection) => {
+    const selected = actual.starters.find((starter) => starter.authoring.id === selection.authoringRecipeId);
+    assert.ok(selected, 'Only the captured current declaration may answer metadata.');
+    return selected;
+  };
+  try {
+    const declared = await preview.enablePromptEnhancement(ownerId, undefined, undefined, nf4.authoringRecipeId);
+    assert.equal(declared.parent.authoringRecipeId, nf4.authoringRecipeId);
+    const binding = activeOwner(ownerId).data.operationAuthoring.ancillaryBindings[0];
+    const native = expandFlowExecutionGraph(flow.getState().nodes, flow.getState().edges);
+    const provider = native.nodes.find(
+      (node) => node.id === binding.roleNodes[declared.verification.runtimeInputs.role],
+    );
+    for (const [name, expected] of [
+      [declared.verification.runtimeInputs.dtypeField, 'bfloat16'],
+      [declared.verification.runtimeInputs.quantizationField, 'bnb_4bit'],
+    ])
+      assert.equal(provider.data.params[name].value ?? provider.data.params[name].default, expected);
+    await preview.disablePromptEnhancement(ownerId, declared.id);
+    flow.getState().replaceGraph(JSON.parse(JSON.stringify(flow.getState().toObject())));
+    const restored = await preview.enablePromptEnhancement(ownerId);
+    assert.equal(restored.id, declared.id, 'The exact existing raw parent preserves the explicit choice after reload.');
+    await preview.disablePromptEnhancement(ownerId, restored.id);
+    const layout = {
+      schemaVersion: 2,
+      coordinateSpace: 'normalized_xyxy',
+      regions: [{ id: 'subject', description: 'Original subject', action: 'place', targetBox: [0, 0, 1, 1] }],
+    };
+    editOwnerField(ownerId, 'layout_conditioning', layout);
+    const before = structuredClone(flow.getState().toObject());
+    await assert.rejects(
+      preview.enablePromptEnhancement(ownerId, undefined, undefined, nf4.authoringRecipeId),
+      /requires Raw prompt mode/,
+    );
+    assert.deepEqual(flow.getState().toObject(), before);
+    const changed = structuredClone(descriptors);
+    changed.find((row) => row.profileId === offer.executionProfileId).rawPromptAuthoringChoices[offer.task] = [
+      { authoringRecipeId: offer.rawAuthoringRecipeId, label: 'Raw wording: FP32' },
+    ];
+    registry.setState({ workflowModelDescriptors: changed });
+    await assert.rejects(
+      preview.enablePromptEnhancement(ownerId, undefined, undefined, nf4.authoringRecipeId),
+      /no longer declared/,
+    );
+    assert.deepEqual(flow.getState().toObject(), before);
+    assert.equal(calls.includes('/graph'), false);
+  } finally {
+    registry.setState({ workflowModelDescriptors: [] });
+  }
+});
+
+test('explicit authored-layout selection preserves its identity and refuses null, stale or conflicting choices atomically', async () => {
+  const actual = JSON.parse(readFileSync('tests/fixtures/evaluation-prompt-enhancement-alternatives.v1.json', 'utf8'));
+  const display = JSON.parse(readFileSync('tests/fixtures/evaluation-image-authoring.v1.json', 'utf8'));
+  const operations = [
+    ...new Map(
+      actual.starters.flatMap((starter) =>
+        starter.nodes.map(({ operation }) => [
+          `${operation.pipelineClass}:${operation.task}:${operation.operationId}`,
+          operation,
+        ]),
+      ),
+    ).values(),
+  ];
+  const { parseEvaluationAuthoring } = await server.ssrLoadModule('/src/workflow/evaluationAuthoring.ts');
+  const descriptors = parseEvaluationAuthoring(
+    { capabilities: display.capabilities, evaluationAuthoring: actual.evaluationAuthoring },
+    [],
+    operations,
+  ).descriptors;
+  const offer = actual.evaluationAuthoring.authoringRecipes.find((row) => row.task === 'text_to_image');
+  const source = actual.starters.find((starter) => starter.authoring.id === offer.authoringRecipeId);
+  // Two synthetic identities share captured append semantics: this exercises
+  // selection/transactions, not the new constrained decoder or model output.
+  const alternative = structuredClone(source);
+  alternative.authoring.id = 'synthetic:explicit-layout:v1';
+  const alternateChild = alternative.authoring.ancillaryOperations[0];
+  alternateChild.id = `${alternative.authoring.id}:preview`;
+  alternateChild.parent.authoringRecipeId = alternative.authoring.id;
+  const { hashString, stableStringify } = await server.ssrLoadModule('/src/studio/stableHash.ts');
+  const rehash = (item, prefix) =>
+    `${prefix}${hashString(stableStringify(Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'contentHash'))))}`;
+  alternateChild.contentHash = rehash(alternateChild, 'studio-ancillary-v1-');
+  alternative.authoring.contentHash = rehash(alternative.authoring, 'studio-authoring-v1-');
+  const descriptor = descriptors.find((row) => row.profileId === offer.executionProfileId);
+  descriptor.layoutPromptAuthoringChoices = {
+    [offer.task]: [
+      { authoringRecipeId: offer.authoringRecipeId, label: 'Append wording' },
+      { authoringRecipeId: alternative.authoring.id, label: 'Explicit layout mode' },
+    ],
+  };
+  const sourceRegistry = {
+    ...structuredClone(fixture.registry),
+    ...Object.fromEntries(
+      actual.starters.flatMap((starter) => starter.nodes.map(({ operation, node }) => [operation.nodeKey, node])),
+    ),
+    ...actual.registry,
+  };
+  const { parseOperationStarter } = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+  const { createWorkflowDraft } = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
+  const { expandFlowExecutionGraph } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const parsed = parseOperationStarter(source, offer.pipelineClass, offer.task, operations, {
+    executionProfileId: offer.executionProfileId,
+    authoringRecipeId: offer.authoringRecipeId,
+  });
+  registry.setState({
+    nodesRegistry: sourceRegistry,
+    operationContracts: operations,
+    workflowModelDescriptors: descriptors,
+  });
+  flow.getState().replaceGraph(createWorkflowDraft(parsed, sourceRegistry).graph);
+  const ownerId = expandFlowExecutionGraph(flow.getState().nodes, flow.getState().edges).nodes.find(
+    (node) => node.data.operationAuthoring?.ancillaryParent,
+  ).id;
+  onMetadata = (selection) =>
+    selection.authoringRecipeId === alternative.authoring.id
+      ? alternative
+      : actual.starters.find((starter) => starter.authoring.id === selection.authoringRecipeId);
+  const layout = {
+    schemaVersion: 2,
+    coordinateSpace: 'normalized_xyxy',
+    regions: [{ id: 'subject', description: 'Authored subject', action: 'place', targetBox: [0.1, 0.2, 0.8, 0.9] }],
+  };
+  editOwnerField(ownerId, 'layout_conditioning', layout);
+  flow.getState().resetHistory();
+  const before = structuredClone(flow.getState().toObject());
+  const declared = await preview.enablePromptEnhancement(
+    ownerId,
+    undefined,
+    undefined,
+    undefined,
+    alternative.authoring.id,
+  );
+  assert.equal(declared.parent.authoringRecipeId, alternative.authoring.id);
+  assert.deepEqual(activeOwner(ownerId).data.params.layout_conditioning.value, layout);
+  assert.equal(flow.getState().historyPast.length, 1);
+  flow.getState().undo();
+  assert.deepEqual(flow.getState().toObject(), before);
+  flow.getState().redo();
+  await preview.disablePromptEnhancement(ownerId, declared.id);
+  flow.getState().replaceGraph(JSON.parse(JSON.stringify(flow.getState().toObject())));
+  const restored = await preview.enablePromptEnhancement(ownerId);
+  assert.equal(restored.id, declared.id, 'A saved explicit layout mode must not silently become append.');
+  await preview.disablePromptEnhancement(ownerId, restored.id);
+  for (const [rawId, layoutId, expected] of [
+    [undefined, 'withdrawn:v1', /no longer declared/],
+    [offer.rawAuthoringRecipeId, alternative.authoring.id, /one.*mode|both/i],
+  ]) {
+    const unchanged = structuredClone(flow.getState().toObject());
+    await assert.rejects(preview.enablePromptEnhancement(ownerId, undefined, undefined, rawId, layoutId), expected);
+    assert.deepEqual(flow.getState().toObject(), unchanged);
+  }
+  editOwnerField(ownerId, 'layout_conditioning', null);
+  const noLayout = structuredClone(flow.getState().toObject());
+  await assert.rejects(
+    preview.enablePromptEnhancement(ownerId, undefined, undefined, undefined, alternative.authoring.id),
+    /authored regions/,
+  );
+  assert.deepEqual(flow.getState().toObject(), noLayout);
+  assert.equal(calls.includes('/graph'), false);
 });
 
 test('optional controls render the raw path and disabled actions with existing wrapping tokens', async () => {

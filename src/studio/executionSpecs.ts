@@ -26,6 +26,14 @@ const SPEC_KEYS =
 // execution sinks were declared.
 const LEGACY_SPEC_KEYS =
   'actions,autoFields,bindings,canonicalizationVersion,contentHash,defaultRepo,edges,executionPath,executionProfileId,id,loaderAction,loaderModule,mode,modelType,pipelineClass,roles,schemaVersion';
+// An optional sealed-provider dependency is hash-covered. Neither extension
+// changes the accepted key set or hash of specifications that predate it.
+const SPEC_KEY_SETS = new Set([
+  SPEC_KEYS,
+  LEGACY_SPEC_KEYS,
+  ...[SPEC_KEYS, LEGACY_SPEC_KEYS].map((keys) => [...keys.split(','), 'requiredDiffusersProvider'].sort().join()),
+]);
+const RUNTIME_PROVIDER_ID = /^[a-z\d][a-z\d._-]{0,127}$/;
 function listed<T extends string>(value: string) {
   return new Set(value.split('|') as T[]);
 }
@@ -100,8 +108,9 @@ export function parseStudioExecutionSpecs(
   const specs = value.map((raw) => {
     if (!record(raw)) invalid();
     const keys = Object.keys(raw).sort().join();
-    if (keys !== SPEC_KEYS && keys !== LEGACY_SPEC_KEYS) invalid();
+    if (!SPEC_KEY_SETS.has(keys)) invalid();
     const profile = profiles?.find((item) => item.id === raw.executionProfileId);
+    const hasProvider = Object.prototype.hasOwnProperty.call(raw, 'requiredDiffusersProvider');
     if (
       raw.schemaVersion !== 1 ||
       raw.canonicalizationVersion !== 1 ||
@@ -110,6 +119,13 @@ export function parseStudioExecutionSpecs(
       raw.modelType !== modelType ||
       !modes.includes(raw.mode as StudioMode) ||
       !profile ||
+      hasProvider !== (profile.required_diffusers_provider !== undefined) ||
+      (hasProvider &&
+        (typeof raw.requiredDiffusersProvider !== 'string' ||
+          !RUNTIME_PROVIDER_ID.test(raw.requiredDiffusersProvider) ||
+          raw.requiredDiffusersProvider !== profile.required_diffusers_provider ||
+          profile.optional_runtime_delivery !== 'optional_overlay' ||
+          !profile.optional_runtime_profiles?.includes(raw.requiredDiffusersProvider))) ||
       !profile.modes.includes(raw.mode as StudioMode) ||
       raw.loaderModule !== profile.loader_module ||
       raw.loaderAction !== profile.loader_action ||

@@ -860,10 +860,28 @@ export function parseStudioModelCapabilities(value: unknown) {
   const modelTypes = new Set();
   const capabilities = payload.capabilities.flatMap((item) => {
     if (!isRecord(item) || typeof item.modelType !== 'string') invalidModelCapabilities();
-    // A newer backend can advertise models this client does not have a Studio
-    // presentation for yet. Ignore those records instead of casting them into
-    // the closed client model union. Experimental capabilities are likewise a
-    // separate response field and are never promoted into runnable Studio data.
+    // Presentation typing never promotes contract-only identities into runnable
+    // Studio capabilities. Their exact private routes are parsed separately by
+    // evaluationAuthoring, including older display-only records without modes.
+    if (
+      item.executionStatus === 'contract_only' ||
+      (item.modes === undefined && Array.isArray(item.executionProfiles) && item.executionProfiles.length === 0)
+    ) {
+      if (
+        payload.schemaVersion !== 2 ||
+        [item.autoEligible, item.templateEligible, item.galleryEligible, item.liveProof].some(
+          (flag) => flag !== false,
+        ) ||
+        !Array.isArray(item.executionProfiles) ||
+        item.executionProfiles.length !== 0 ||
+        (item.runnableModes !== undefined && (!Array.isArray(item.runnableModes) || item.runnableModes.length !== 0)) ||
+        (item.qualifiedModes !== undefined && (!Array.isArray(item.qualifiedModes) || item.qualifiedModes.length !== 0))
+      )
+        invalidModelCapabilities();
+      return [];
+    }
+    // A newer backend can advertise public models without a legacy Studio
+    // presentation. Their generic workflow descriptors remain independently parsed.
     if (!isStudioModelType(item.modelType)) return [];
     if (
       payload.schemaVersion !== 2 &&

@@ -751,6 +751,115 @@ class TemplateGalleryAssetTests(unittest.TestCase):
             Path("/verified/snapshot"), manifest, reject_unexpected=True
         )
 
+    def test_full_remote_verification_preserves_complete_and_exact_approved_subset_contracts(self) -> None:
+        repo = "modiff-project/template-gallery"
+        revision = "0123456789abcdef0123456789abcdef01234567"
+        cases = ("complete", "subset", "source-revision", "complete-identity", "missing-path",
+                 "published-hold", "rights-mismatch", "asset-bytes", "unexpected-file")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source_path, rights_path = root / "source.json", root / "rights.json"
+                manifest_path, snapshot = root / "manifest.json", root / "snapshot"
+                payloads = {"template-gallery/approved.bin": b"original public demo",
+                            "template-gallery/held.bin": b"permission still pending"}
+                complete = ready_manifest([asset_record(path, body) for path, body in payloads.items()])
+                with patch.object(assets, "ASSET_RIGHTS_PATH", rights_path):
+                    ledger = assets.build_rights_template(complete)
+                for index, record in enumerate(ledger["records"]):
+                    if index == 0 or case == "complete":
+                        record.update({
+                            "publishDecision": "approved", "holdReason": None,
+                            "creatorOrRightsholder": "Unit fixture author",
+                            "creationMethod": "Original geometric unit fixture",
+                            "sourceLicense": "not-applicable", "modelTerms": [], "aiGenerated": False,
+                            "humanLikenessConsent": "not-applicable", "marks": [], "requiredAttribution": [],
+                            "assetLicense": "Unit fixture terms", "reviewedBy": "Unit fixture reviewer",
+                            "reviewedAt": "2026-10-25",
+                        })
+                if case == "complete":
+                    remote, remote_rights, unavailable = complete, ledger, []
+                else:
+                    remote, remote_rights, unavailable = assets.build_provisional_publication(complete, ledger)
+                source = {"mode": "huggingface", "repoId": repo, "revision": revision,
+                          "assetSetId": remote["assetSetId"]}
+                if case != "complete":
+                    source.update(completeAssetSetId=complete["assetSetId"], unavailableAssets=unavailable)
+                if case == "source-revision":
+                    source["revision"] = "f" * 40
+                elif case == "complete-identity":
+                    source["completeAssetSetId"] = "sha256:canonical-json:" + "0" * 64
+                elif case == "missing-path":
+                    source["unavailableAssets"] = []
+                elif case == "published-hold":
+                    # Independent local/remote copies prove matching held rights
+                    # reach the approval guard, rather than the ledger-mismatch guard.
+                    remote_rights = json.loads(json.dumps(remote_rights))
+                    for record in (ledger["records"][0], remote_rights["records"][0]):
+                        record.update(publishDecision="hold", holdReason="Unit hold remains.")
+                    self.assertIsNot(ledger["records"][0], remote_rights["records"][0])
+                    self.assertEqual(ledger["records"][0], remote_rights["records"][0])
+                elif case == "rights-mismatch":
+                    remote_rights = json.loads(json.dumps(remote_rights))
+                    remote_rights["records"][0]["sha256"] = "sha256:bytes:" + "0" * 64
+                for record in remote["assets"]:
+                    target = snapshot / record["path"]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(payloads[record["path"]])
+                metadata = snapshot / "_modiff"
+                metadata.mkdir()
+                assets.write_json(metadata / "template-assets.v1.json", remote)
+                assets.write_json(metadata / "template-asset-rights.v1.json", remote_rights)
+                if case == "asset-bytes":
+                    (snapshot / "template-gallery/approved.bin").write_bytes(b"changed")
+                elif case == "unexpected-file":
+                    (metadata / "unreviewed.json").write_text("{}", encoding="utf-8")
+                assets.write_json(source_path, source)
+                assets.write_json(rights_path, ledger)
+                assets.write_json(manifest_path, complete)
+                source_before, rights_before = source_path.read_bytes(), rights_path.read_bytes()
+                api = Mock()
+                api.repo_info.return_value = SimpleNamespace(private=False)
+                api_factory = Mock(return_value=api)
+                snapshot_download = Mock(return_value=str(snapshot))
+                output = io.StringIO()
+                with (
+                    patch.object(assets, "SOURCE_CONFIG_PATH", source_path),
+                    patch.object(assets, "ASSET_RIGHTS_PATH", rights_path),
+                    patch.object(assets, "ASSET_MANIFEST_PATH", manifest_path),
+                    patch.object(assets, "required_asset_paths", return_value={"approved.bin", "held.bin"}),
+                    patch.object(assets, "remote_manifest", return_value=remote),
+                    patch.object(assets, "remote_rights_ledger", return_value=remote_rights),
+                    patch.object(assets, "require_hub", return_value=(api_factory, None, snapshot_download)),
+                    redirect_stdout(output),
+                ):
+                    args = SimpleNamespace(repo_id=repo, revision=revision, full=True)
+                    if case in {"complete", "subset"}:
+                        self.assertEqual(assets.command_verify_remote(args), 0)
+                        self.assertIn(f"for {remote['assetCount']} assets", output.getvalue())
+                    elif case == "published-hold":
+                        with self.assertRaisesRegex(assets.AssetPipelineError, "includes a held rights record"):
+                            assets.assert_remote_manifest_matches(repo, revision)
+                        api_factory.assert_not_called()
+                        snapshot_download.assert_not_called()
+                        with self.assertRaisesRegex(assets.AssetPipelineError, "includes a held rights record"):
+                            assets.command_verify_remote(args)
+                    else:
+                        with self.assertRaises(assets.AssetPipelineError):
+                            assets.command_verify_remote(args)
+                self.assertEqual(source_path.read_bytes(), source_before)
+                self.assertEqual(rights_path.read_bytes(), rights_before)
+                if case in {"complete", "subset", "asset-bytes", "unexpected-file"}:
+                    api_factory.assert_called_once_with(token=False)
+                    api.repo_info.assert_called_once_with(repo_id=repo, repo_type="dataset",
+                                                         revision=revision, token=False)
+                    snapshot_download.assert_called_once_with(
+                        repo_id=repo, repo_type="dataset", revision=revision, token=False,
+                        allow_patterns=["template-gallery/**", "_modiff/**"])
+                else:
+                    api_factory.assert_not_called()
+                    snapshot_download.assert_not_called()
+
     def test_activation_writes_source_only_after_full_public_byte_verification(
         self,
     ) -> None:

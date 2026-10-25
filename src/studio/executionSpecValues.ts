@@ -1,5 +1,6 @@
 import { formPatchForAutoCandidate, type StudioAutoResourceCandidate } from './autoResource';
 import { getModelRequirementsForMode, WAN_VACE_REVISION } from './modelProfiles';
+import { executionStudioWeightFormat } from './weightFormat';
 import type { StudioExecutionSpec, StudioFormState, StudioModelProfile, StudioMode } from './types';
 
 /** Shared semantic values for backend-declared bindings; no graph mutation or authority. */
@@ -15,6 +16,9 @@ export function resolveStudioExecutionSpecValues(
   } = {},
 ) {
   const candidate = options.candidate ?? null;
+  const weightFormat = executionStudioWeightFormat(form);
+  if (weightFormat !== 'native' && !spec.bindings.some(([, , source]) => source === 'weightFormat'))
+    throw new Error('The selected execution specification does not declare a weight-format control.');
   const attentionBackend =
     typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto';
   const audioTemplateBaseModel = options.audioTemplateBaseModel ?? null;
@@ -65,7 +69,7 @@ export function resolveStudioExecutionSpecValues(
     quantizationMode,
     quantizedComponents: ['transformer'],
     deviceMapNone: 'none',
-    weightFormat: 'native',
+    weightFormat,
     attentionBackend,
     nativeMath: '_native_math',
     empty: '',

@@ -31,9 +31,33 @@ import { coordinateGraphRun } from './runCoordinator';
 import { prepareHuggingFaceClustersForRun } from './huggingFaceClusterPreparation';
 import { materializeTemplateDefaultInputs } from './templateInputs';
 import { STUDIO_TEMPLATES } from './templates';
-import { exactStudioExecutionProfileForForm } from './executionSpecs';
+import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
+import { assertFormWeightFormatSelection, hasNonNativeStudioWeightFormat } from './weightFormat';
 import { DEFAULT_STUDIO_FORM, STUDIO_MODEL_PROFILES } from './modelProfiles';
 import type { StudioFormState, StudioMode, StudioModelType } from './types';
+
+// Run the same admission before the model-change owner commits its form.
+// A model selection may replace its artifact; it must not silently erase an
+// explicit storage choice or leave the new form paired with the old graph.
+export function studioModelChangeWeightFormatPatch(
+  current: StudioFormState,
+  modelType: StudioModelType,
+  metadata: Pick<
+    ReturnType<typeof useNodesStore.getState>,
+    'studioModelCapabilities' | 'studioExecutionSpecInvalid' | 'workflowModelDescriptors'
+  >,
+): Partial<StudioFormState> {
+  if (!hasNonNativeStudioWeightFormat(current)) return {};
+  const capability = metadata.studioModelCapabilities.find((item) => item.modelType === modelType);
+  const candidate = { ...current, modelType, modelRepo: capability?.defaultRepo };
+  const spec = exactStudioExecutionSpecForForm(
+    metadata.studioModelCapabilities,
+    metadata.studioExecutionSpecInvalid,
+    candidate,
+  );
+  assertFormWeightFormatSelection(candidate, spec, capability, metadata.workflowModelDescriptors);
+  return { modelRepo: capability!.defaultRepo };
+}
 
 export async function ensureStudioAutoPlanReadyForRun(
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
@@ -222,6 +246,15 @@ export function useStudioRunActions({
     (modelType: StudioModelType) => {
       const current = useStudioStore.getState().form;
       const nodeStore = useNodesStore.getState();
+      let weightFormatPatch: Partial<StudioFormState>;
+      try {
+        weightFormatPatch = studioModelChangeWeightFormatPatch(current, modelType, nodeStore);
+      } catch (error) {
+        const message = String(error);
+        useStudioStore.getState().setLastError(message);
+        enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
+        return;
+      }
       const executionProfile = exactStudioExecutionProfileForForm(
         nodeStore.studioModelCapabilities,
         nodeStore.studioExecutionSpecInvalid,
@@ -234,6 +267,7 @@ export function useStudioRunActions({
         : 'none';
       const profile = STUDIO_MODEL_PROFILES[modelType];
       useStudioStore.getState().updateForm({
+        ...weightFormatPatch,
         modelType,
         quantizationMode,
         pagScale: profile.recommendedPagScale ?? DEFAULT_STUDIO_FORM.pagScale,

@@ -61,7 +61,7 @@ export default function NumberField(props: FieldProps) {
     (value: number | string) => {
       const nextValue = formatValue(value);
       setDraftValue(nextValue);
-      updateStore(fieldKey, nextValue);
+      updateStore(fieldKey, Number(nextValue));
     },
     [fieldKey, formatValue, updateStore],
   );

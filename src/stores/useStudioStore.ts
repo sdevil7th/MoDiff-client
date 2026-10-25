@@ -1717,6 +1717,8 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             ...defaults,
             ...presetValues,
             ...lockedValues,
+            // Missing legacy template storage means native, not the prior tab selection.
+            weightFormat: lockedValues.weightFormat,
             ...inputDefaults,
             mode: template.mode,
             modelType: template.modelType,

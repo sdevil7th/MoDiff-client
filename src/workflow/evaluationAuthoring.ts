@@ -1,6 +1,7 @@
 import { parsePipelineSupport, type PipelineSupport } from './operationCatalog';
 import { boundedText, identifier, record, type OperationContract } from './operationContracts';
 import type { WorkflowModelDescriptor } from './workflowChoices';
+import { parseAuthoringRecipeOffers } from './authoringRecipeOffers';
 import { parseImageAdapterAuthoringPolicy, parseOptionalRuntimeExecutionProfiles } from '../studio/optionalRuntimes';
 
 /** Explicit installed evaluation metadata only; never changes public model capabilities. */
@@ -87,30 +88,12 @@ export function parseEvaluationAuthoring(
       }
     }
   if (selected.size !== profiles.length) invalid();
-  const recipes = new Map<string, Record<string, string>>();
-  if (hasRecipes) {
-    if (!Array.isArray(item.authoringRecipes) || item.authoringRecipes.length > 4) invalid();
-    for (const raw of item.authoringRecipes as unknown[]) {
-      const row = record(raw, ['executionProfileId', 'pipelineClass', 'task', 'authoringRecipeId']);
-      const profileId = boundedText(row.executionProfileId, 256);
-      const task = identifier(row.task);
-      const profile = profiles.find((p) => p.id === profileId && p.pipeline === row.pipelineClass);
-      if (
-        !profile ||
-        !profile.modes.includes(task) ||
-        !declared.some(
-          (pipeline) =>
-            pipeline.pipelineClass === profile.pipeline &&
-            pipeline.tasks.some((row) => row.task === task && row.executionProfileIds.includes(profileId)),
-        )
-      )
-        invalid();
-      const byTask = recipes.get(profileId) ?? {};
-      if (Object.prototype.hasOwnProperty.call(byTask, task)) invalid();
-      byTask[task] = boundedText(row.authoringRecipeId, 256);
-      recipes.set(profileId, byTask);
-    }
-  }
+  const { recipes, rawRecipes, rawChoices, layoutChoices } = parseAuthoringRecipeOffers(
+    hasRecipes ? item.authoringRecipes : [],
+    profiles,
+    declared,
+    invalid,
+  );
   const descriptors = profiles.map((profile): WorkflowModelDescriptor => {
     const matches = (payload.capabilities as unknown[]).filter(
       (raw) =>
@@ -169,6 +152,9 @@ export function parseEvaluationAuthoring(
       modelType: profile.model,
       ...(adapterAuthoringProfile ? { adapterAuthoringProfile } : {}),
       ...(recipes.has(profile.id) ? { authoringRecipes: recipes.get(profile.id) } : {}),
+      ...(rawRecipes.has(profile.id) ? { rawPromptAuthoringRecipes: rawRecipes.get(profile.id) } : {}),
+      ...(rawChoices.has(profile.id) ? { rawPromptAuthoringChoices: rawChoices.get(profile.id) } : {}),
+      ...(layoutChoices.has(profile.id) ? { layoutPromptAuthoringChoices: layoutChoices.get(profile.id) } : {}),
     };
   });
   return { support: [...support.filter((p) => !pipelines.has(p.pipelineClass)), ...declared], descriptors };

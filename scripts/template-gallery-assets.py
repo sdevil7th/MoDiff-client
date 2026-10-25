@@ -1194,6 +1194,11 @@ def assert_remote_manifest_matches(repo_id: str, revision: str) -> dict[str, Any
     local_rights_by_path = {
         record["path"]: record for record in local_rights["records"]
     }
+    if any(local_rights_by_path[path].get("publishDecision") != "approved"
+           for path in expected_paths):
+        raise AssetPipelineError(
+            "The approved-subset Dataset includes a held rights record."
+        )
     expected_remote_rights = {
         "schemaVersion": 1,
         "assetSetId": remote["assetSetId"],
@@ -1679,7 +1684,8 @@ def command_verify_remote(args: argparse.Namespace) -> int:
             "No activated Dataset source exists; pass --repo-id and --revision."
         )
     if args.full:
-        manifest = validate_checked_manifest_contract()
+        # The reviewed source may select the exact rights-approved subset.
+        manifest = assert_remote_manifest_matches(repo_id, revision)
         verify_public_remote_snapshot(repo_id, revision, manifest)
     else:
         manifest = assert_remote_manifest_matches(repo_id, revision)

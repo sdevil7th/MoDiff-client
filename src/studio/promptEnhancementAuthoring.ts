@@ -16,6 +16,7 @@ export type { PromptEnhancementParent } from './promptEnhancementParent';
 import type { OperationAuthoringRecipe } from './operationAuthoringRecipe';
 import type { OperationGraph } from '../workflow/operationAuthoring';
 import type { NodeData } from '../stores/useNodeStore';
+import { AUTHORED_CONSTRAINT_POLICY } from './promptEnhancementConstraints';
 
 /** Attach only a backend-declared offer to its actual prompt owner before grouping.
  * This does not add a branch, change values, make a request, or grant readiness. */
@@ -93,6 +94,51 @@ export function refreshPromptEnhancementParents(
 
 export type AuthoredEnhancementPair = { prompt: string; layout: unknown };
 
+/** Explicit Enable may choose a backend-declared raw/layout alternative. Only
+ * advisory identities differ: existing image operations, values and wires stay exact. */
+export async function planSelectPromptEnhancementParent(
+  graph: OperationGraph,
+  ownerId: string,
+  current: OperationAuthoringRecipe,
+  next: OperationAuthoringRecipe,
+): Promise<OperationGraph> {
+  const { owner, selection, unpacked, groups } = await editableContext(graph, ownerId);
+  sameParent(selection, current);
+  if (owner.data.operationAuthoring?.ancillaryBindings?.length)
+    invalidAncillary('disable the current enhancement before selecting another one.');
+  const { canonicalBlockStringifyV2 } = await import('./blockSchemaV2');
+  const parentBody = (value: OperationAuthoringRecipe) => ({
+    schemaVersion: value.schemaVersion,
+    canonicalizationVersion: value.canonicalizationVersion,
+    baseSpecId: value.baseSpecId,
+    baseSpecContentHash: value.baseSpecContentHash,
+    executionProfileIds: value.executionProfileIds,
+    roles: value.roles,
+    edges: value.edges,
+    bindings: value.bindings,
+    initialValues: value.initialValues,
+  });
+  if (canonicalBlockStringifyV2(parentBody(current)) !== canonicalBlockStringifyV2(parentBody(next)))
+    invalidAncillary('the alternative enhancement changes its parent graph declaration.');
+  const currentChild = current.ancillaryOperations?.[0],
+    child = next.ancillaryOperations?.[0];
+  if (
+    current.ancillaryOperations?.length !== 1 ||
+    next.ancillaryOperations?.length !== 1 ||
+    !currentChild ||
+    !child ||
+    canonicalBlockStringifyV2(currentChild.bindings.owner) !== canonicalBlockStringifyV2(child.bindings.owner) ||
+    owner.id !== selection.parentRoleNodes[child.bindings.owner.role]
+  )
+    invalidAncillary('the alternative enhancement changes its authored input owner.');
+  owner.data.operationAuthoring!.ancillaryParent = parsePromptEnhancementParent({
+    schemaVersion: 1,
+    parent: { ...child.parent, authoringContentHash: next.contentHash },
+    parentRoleNodes: selection.parentRoleNodes,
+  });
+  return groups.restoreVisualOperationGroups(unpacked.graph, unpacked);
+}
+
 function sameParent(selection: PromptEnhancementParent, recipe: OperationAuthoringRecipe) {
   const parent = selection.parent;
   if (
@@ -154,13 +200,17 @@ function authoredPair(graph: OperationGraph, ownerId: string, child: AncillaryOp
 
 function assertDeclaredLayout(child: AncillaryOperation, layout: unknown) {
   if (
-    child.layoutPolicy === 'append-details-preserve-layout-v1' &&
+    (child.layoutPolicy === 'append-details-preserve-layout-v1' || child.layoutPolicy === AUTHORED_CONSTRAINT_POLICY) &&
     (!layout ||
       typeof layout !== 'object' ||
       !Array.isArray((layout as { regions?: unknown }).regions) ||
       !(layout as { regions: unknown[] }).regions.length)
   )
-    invalidAncillary('appended wording requires the current authored regions.');
+    invalidAncillary(
+      child.layoutPolicy === 'append-details-preserve-layout-v1'
+        ? 'appended wording requires the current authored regions.'
+        : 'this enhancement mode requires the current authored regions.',
+    );
   if (
     layout !== null &&
     child.verification &&
@@ -180,7 +230,8 @@ function assertDeclaredLayout(child: AncillaryOperation, layout: unknown) {
   if (
     layout !== null &&
     child.layoutPolicy !== 'preserve-authored-v1' &&
-    child.layoutPolicy !== 'append-details-preserve-layout-v1'
+    child.layoutPolicy !== 'append-details-preserve-layout-v1' &&
+    child.layoutPolicy !== AUTHORED_CONSTRAINT_POLICY
   )
     invalidAncillary('this enhancement does not declare lossless authored-layout preservation.');
 }

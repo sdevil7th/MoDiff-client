@@ -151,6 +151,18 @@ parity. Use the backend's [image template validation guide](https://github.com/s
 for matched old/new runs, runtime and input identity checks, decoded-image
 comparison and the Windows validation procedure.
 
+## Qualification-only blocked-template probes
+
+A complete recipe may remain a blocked planning template while its exact output
+and visual quality are unqualified. The Gallery runner's explicit
+`--allow-blocked-probe --record-qualification` combination may retain a successful
+locked run as an execution receipt. Direct `release:template:qualify` accepts
+`--allow-blocked-probe` for the same lookup scope. A current canonical workflow,
+unchanged recipe locks, immutable model, valid output and resource measurements
+remain required. This does not clear the template's blocked status or authorize
+Gallery publication, model/Auto eligibility, or reuse of failed evidence. Normal
+media provenance, quality review and per-file rights gates still apply.
+
 ## Contributor checks
 
 The current builder is shared by interactive template creation and the developer

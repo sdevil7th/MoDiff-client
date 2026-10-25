@@ -213,7 +213,9 @@ export type StudioModelType =
   | 'BuiltinImageOperation'
   | 'BuiltinVideoOperation'
   | 'SpandrelVideoUpscale'
-  | 'SpandrelImageUpscale';
+  | 'SpandrelImageUpscale'
+  | 'Flux3ModularPipeline'
+  | 'Flux3DistilledModularPipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -248,6 +250,16 @@ export type StudioPresetId =
   | 'flux_control';
 
 export type StudioTemplateId =
+  | 'flux3_klein_fp8r512_text_to_image'
+  | 'flux3_klein_fp8r512_single_reference_edit'
+  | 'flux3_klein_fp8r512_multi_reference_edit'
+  | 'flux3_klein_fp8r512_raw_coordinate_prompt'
+  | 'flux3_klein_fp8r512_lora_style'
+  | 'flux3_klein_base_fp8r512_text_to_image'
+  | 'flux3_klein_base_fp8r512_single_reference_edit'
+  | 'flux3_klein_base_fp8r512_multi_reference_edit'
+  | 'flux3_klein_base_fp8r512_raw_coordinate_prompt'
+  | 'flux3_klein_base_fp8r512_lora_style'
   | 'z_image_quick_concept'
   | 'z_image_product_mockup'
   | 'z_image_poster'
@@ -824,6 +836,8 @@ export type StudioFormState = {
   confirmedCommunityArtifact?: string;
   dtype: 'float32' | 'float16' | 'bfloat16';
   quantizationMode: StudioQuantizationMode;
+  /** Immutable storage format; omission is historical native, null is a blocked saved value. */
+  weightFormat?: import('./weightFormat').StudioWeightFormat | null;
   device: string;
   autoOffload: boolean;
   offloadMode: StudioOffloadMode;
@@ -940,6 +954,18 @@ export type StudioExecutionProfile = {
     delivery: 'base' | 'optional_overlay';
   }>;
   optional_runtime_profiles?: string[];
+  /** Source-declared sealed Diffusers overlay; visibility does not grant execution. */
+  required_diffusers_provider?: string;
+  /** Explicit per-task editing offers; workflow metadata parsing validates these. */
+  authoringRecipes?: readonly {
+    executionProfileId: string;
+    pipelineClass: string;
+    task: string;
+    authoringRecipeId: string;
+    rawAuthoringRecipeId?: string;
+    rawAuthoringRecipeChoices?: readonly { authoringRecipeId: string; label: string }[];
+    layoutAuthoringRecipeChoices?: readonly { authoringRecipeId: string; label: string }[];
+  }[];
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   expert_cuda_policy?: StudioExpertCudaPolicy;
   expert_quantization_policy?: StudioExpertQuantizationPolicy;
@@ -965,6 +991,8 @@ export type StudioExecutionSpec = {
   actions: [];
   /** Declared non-media sink roles retained for execution/audit side effects. */
   auxiliaryTerminalRoles?: StudioGraphRole[];
+  /** Hash-covered dependency, identical to the selected execution profile. */
+  requiredDiffusersProvider?: string;
   contentHash: string;
 };
 
@@ -1489,6 +1517,7 @@ export type StudioTemplateLockedSettings = Pick<
   | 'guidanceScale'
   | 'resourceMode'
   | 'dtype'
+  | 'weightFormat'
   | 'quantizationMode'
   | 'autoOffload'
   | 'offloadMode'

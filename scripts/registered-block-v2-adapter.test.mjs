@@ -588,6 +588,68 @@ test('definition and hashes ignore workflow ids, mutable values, layout, preview
   assert.equal('instanceOnlyMutation' in right.instance.definitionSnapshot.graph.nodes[0].data, false);
 });
 
+function sealedSignalFixture(instanceId, choices, declareSealedSignal = true) {
+  const definition = fixtureDefinition();
+  const admission = definition.executionAdmissions[0];
+  if (declareSealedSignal)
+    admission.dynamicFieldActions.push({
+      role: 'generate',
+      field: 'images',
+      event: 'onSignal',
+      valueSource: 'artifact',
+    });
+  const skeleton = fixtureSkeleton(definition, instanceId);
+  const node = skeleton.nodes.find((item) => item.data.huggingFaceClusterExecutionRole === 'generate');
+  node.data.params.signal_choice = { type: 'string', options: ['base'], value: 'base' };
+  node.data.params.images.signal = { direction: 'output', value: admission.artifact.repo };
+  node.data.params.images.onSignal = [
+    { action: 'value', target: 'signal_choice', prop: 'options', data: choices },
+    { action: 'signal', target: 'components' },
+  ];
+  return { definition, skeleton, node };
+}
+
+test('sealed registered signal choices ignore unrelated availability and preserve the selected branch', () => {
+  const selected = 'fixture/image-model';
+  const left = sealedSignalFixture('sealed-signal-base', { [selected]: ['base'], OtherPipeline: ['other'] });
+  const right = sealedSignalFixture('sealed-signal-extra', {
+    [selected]: ['base'],
+    OtherPipeline: ['other'],
+    NewAvailablePipeline: ['new'],
+  });
+  const before = structuredClone(right.skeleton);
+  const compile = ({ definition, skeleton }) =>
+    adapter.compileRegisteredBlockV2(definition, skeleton, { instanceId: 'sealed-signal-result' });
+  const baseline = compile(left);
+  const extended = compile(right);
+  assert.deepEqual(extended.definition, baseline.definition);
+  assert.deepEqual(right.skeleton, before, 'compilation must not mutate the ordinary source descriptor');
+  const descriptor = extended.definition.graph.nodes.find(({ nodeId }) => nodeId === 'generate').data.params.images
+    .onSignal;
+  assert.deepEqual(descriptor[0].data, { [selected]: ['base'] });
+  assert.deepEqual(descriptor[1], { action: 'signal', target: 'components' });
+  const changed = sealedSignalFixture('sealed-signal-changed', { [selected]: ['different'], OtherPipeline: ['other'] });
+  assert.notEqual(compile(changed).definition.contentHash, baseline.definition.contentHash);
+});
+
+test('unsealed registered signal maps remain semantic and sealed mismatches fail closed', () => {
+  const selected = 'fixture/image-model';
+  const compile = ({ definition, skeleton }) =>
+    adapter.compileRegisteredBlockV2(definition, skeleton, { instanceId: 'signal-boundary-result' });
+  const ordinary = sealedSignalFixture('signal-ordinary', { [selected]: ['base'] }, false);
+  const extended = sealedSignalFixture(
+    'signal-ordinary-extra',
+    { [selected]: ['base'], OtherPipeline: ['other'] },
+    false,
+  );
+  assert.notEqual(compile(ordinary).definition.contentHash, compile(extended).definition.contentHash);
+  const missing = sealedSignalFixture('signal-missing-branch', { OtherPipeline: ['other'] });
+  assert.throws(() => compile(missing), /no exact options branch/);
+  const mismatch = sealedSignalFixture('signal-wrong-identity', { [selected]: ['base'] });
+  mismatch.node.data.params.images.signal.value = 'OtherPipeline';
+  assert.throws(() => compile(mismatch), /does not witness its declared sealed signal identity/);
+});
+
 test('explicit false field-action busy flags are non-semantic while disabled true remains reviewed schema', () => {
   const source = fixtureDefinition();
   const absentSkeleton = fixtureSkeleton(source, 'legacy-disabled-absent');

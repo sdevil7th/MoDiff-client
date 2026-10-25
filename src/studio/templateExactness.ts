@@ -11,6 +11,7 @@ import type {
   TemplateMediaType,
 } from './types';
 import { hashString, stableStringify } from './stableHash';
+import { explicitStudioWeightFormat, persistedStudioWeightFormat } from './weightFormat';
 export { hashString, stableStringify } from './stableHash';
 
 export const TEMPLATE_GALLERY_MANIFEST_PATH = resolveTemplateAssetUrl('/template-gallery/manifest.json') as string;
@@ -226,6 +227,7 @@ const LOCKED_FIELDS = [
   'guidanceScale',
   'resourceMode',
   'dtype',
+  'weightFormat',
   'quantizationMode',
   'autoOffload',
   'offloadMode',
@@ -297,10 +299,15 @@ export function getTemplateLockedSettings(template: StudioTemplate): StudioTempl
   };
 
   return LOCKED_FIELDS.reduce(
-    (settings, field) => ({
-      ...settings,
-      [field]: merged[field],
-    }),
+    (settings, field) =>
+      field === 'weightFormat'
+        ? {
+            ...settings,
+            ...(explicitStudioWeightFormat(merged) !== undefined
+              ? { weightFormat: explicitStudioWeightFormat(merged) }
+              : {}),
+          }
+        : { ...settings, [field]: merged[field] },
     {} as StudioTemplateLockedSettings,
   );
 }
@@ -329,10 +336,15 @@ export function getTemplateLockHash(
 
 export function getPromptSettingsHash(settings: StudioTemplateLockedSettings | StudioFormState) {
   const promptSettings = LOCKED_FIELDS.reduce(
-    (locked, field) => ({
-      ...locked,
-      [field]: settings[field],
-    }),
+    (locked, field) =>
+      field === 'weightFormat'
+        ? {
+            ...locked,
+            ...(explicitStudioWeightFormat(settings) !== undefined
+              ? { weightFormat: explicitStudioWeightFormat(settings) }
+              : {}),
+          }
+        : { ...locked, [field]: settings[field] },
     {} as StudioTemplateLockedSettings,
   );
 
@@ -342,8 +354,9 @@ export function getPromptSettingsHash(settings: StudioTemplateLockedSettings | S
 export function getTemplateModifiedFields(template: StudioTemplate, form: StudioFormState) {
   const locked = getTemplateLockedSettings(template);
   return LOCKED_FIELDS.filter((field) => {
-    const lockedValue = locked[field];
-    const formValue = form[field];
+    const lockedValue = field === 'weightFormat' ? persistedStudioWeightFormat(locked[field]) : locked[field];
+    const formValue = field === 'weightFormat' ? persistedStudioWeightFormat(form[field]) : form[field];
+    if (field === 'weightFormat' && (lockedValue === null || formValue === null)) return true;
     return String(lockedValue) !== String(formValue);
   });
 }

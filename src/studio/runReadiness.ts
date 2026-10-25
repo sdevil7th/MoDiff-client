@@ -1,6 +1,11 @@
 import { hasAncillaryExecutionClaim, type PreparedExecutionScope } from '../workflow/prepareExecutionScope';
 import { inspectRequiredGraphInputs } from './requiredGraphInputs';
 import {
+  selectedNodeWeightFormatArtifact,
+  studioWeightFormatProfile,
+  hasNonNativeStudioWeightFormat,
+} from './weightFormat';
+import {
   useFlowStore,
   withoutBlockCompilationTransientsV2,
   resolveFlowExecutionTargetNodeIds,
@@ -795,7 +800,8 @@ function getModelRepoFromNode(node: ReturnType<typeof useFlowStore.getState>['no
 
 function collectGraphModelIssues(graph = executableFlowGraph()): RunReadinessIssue[] {
   const { nodes } = graph;
-  const { hfCache, localModels, modelCacheDiagnostics, discoveryRequests } = useNodesStore.getState();
+  const { hfCache, localModels, modelCacheDiagnostics, discoveryRequests, workflowModelDescriptors } =
+    useNodesStore.getState();
   const modelDiscoveryStarted =
     discoveryRequests.hfCache.status !== 'idle' || discoveryRequests.localModels.status !== 'idle';
   const modelIndexesReady =
@@ -804,12 +810,31 @@ function collectGraphModelIssues(graph = executableFlowGraph()): RunReadinessIss
   // that an installed graph model is missing.
   if (modelDiscoveryStarted && !modelIndexesReady) return [];
   const graphReferences: WorkflowGraphArtifactReference[] = [];
+  const formatIssues: RunReadinessIssue[] = [];
 
   nodes.forEach((node) => {
     if (node.data.uiState?.disabled) return;
 
     const isModelLoader =
       node.data.module === 'modules.ModularDiffusers' && ['ModelsLoader', 'AutoModelLoader'].includes(node.data.action);
+    let selectedFormat: ReturnType<typeof selectedNodeWeightFormatArtifact> = null;
+    try {
+      if (node.data.module === 'modules.ModularDiffusers' && node.data.action === 'ModelsLoader')
+        selectedFormat = selectedNodeWeightFormatArtifact(node, workflowModelDescriptors);
+    } catch (error) {
+      formatIssues.push(
+        issue({
+          category: 'model',
+          severity: 'error',
+          blocking: true,
+          action: 'inspect_node',
+          nodeId: node.id,
+          message: 'The selected weight-format artifact is not declared for this loader.',
+          details: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return;
+    }
     const nodeReferences = collectNodeModelReferences(node);
     const loaderRepo = isModelLoader ? getModelRepoFromNode(node) : '';
     if (
@@ -823,6 +848,9 @@ function collectGraphModelIssues(graph = executableFlowGraph()): RunReadinessIss
         nodeLabel: node.data.label || node.data.action,
         value: loaderRepo,
         paramKey: node.data.params?.reviewed_variant ? 'reviewed_variant' : 'repo_id',
+        ...(selectedFormat
+          ? { revision: selectedFormat.selection.revision, downloadFiles: [...selectedFormat.selection.downloadFiles] }
+          : {}),
       });
     }
 
@@ -831,42 +859,48 @@ function collectGraphModelIssues(graph = executableFlowGraph()): RunReadinessIss
         ...reference,
         nodeId: node.id,
         nodeLabel: node.data.label || node.data.action,
+        ...(selectedFormat && reference.kind === 'repo' && reference.value === selectedFormat.selection.repo
+          ? { revision: selectedFormat.selection.revision, downloadFiles: [...selectedFormat.selection.downloadFiles] }
+          : {}),
       });
     });
   });
 
-  return getGraphWorkflowArtifactRequirements({
-    references: graphReferences,
-    hfCache,
-    localModels,
-    modelCacheDiagnostics,
-  })
-    .filter((requirement) => !requirement.status.runnable)
-    .map((requirement) =>
-      issue({
-        category: requirement.primaryAction === 'Repair' ? 'model_integrity' : 'model',
-        severity: 'error',
-        nodeId: requirement.nodeId,
-        repoId: requirement.modelPath ? undefined : requirement.repo,
-        installOptions: requirement.installTarget
-          ? {
-              ...(requirement.installTarget.revision ? { revision: requirement.installTarget.revision } : {}),
-              ...(requirement.installTarget.files?.length ? { files: [...requirement.installTarget.files] } : {}),
-              ...(requirement.installTarget.repair ? { repair: true } : {}),
-            }
-          : undefined,
-        modelPath: requirement.modelPath,
-        blocking: true,
-        action:
-          requirement.primaryAction === 'Install' || requirement.primaryAction === 'Repair'
-            ? 'install_model'
-            : 'open_model_manager',
-        message: requirement.modelPath
-          ? `Model file is missing for imported workflow node ${requirement.nodeLabel || requirement.nodeId || 'unknown'}.`
-          : `${requirement.repo} is required by imported workflow node ${requirement.nodeLabel || requirement.nodeId || 'unknown'}.`,
-        details: requirement.details,
-      }),
-    );
+  return [
+    ...formatIssues,
+    ...getGraphWorkflowArtifactRequirements({
+      references: graphReferences,
+      hfCache,
+      localModels,
+      modelCacheDiagnostics,
+    })
+      .filter((requirement) => !requirement.status.runnable)
+      .map((requirement) =>
+        issue({
+          category: requirement.primaryAction === 'Repair' ? 'model_integrity' : 'model',
+          severity: 'error',
+          nodeId: requirement.nodeId,
+          repoId: requirement.modelPath ? undefined : requirement.repo,
+          installOptions: requirement.installTarget
+            ? {
+                ...(requirement.installTarget.revision ? { revision: requirement.installTarget.revision } : {}),
+                ...(requirement.installTarget.files?.length ? { files: [...requirement.installTarget.files] } : {}),
+                ...(requirement.installTarget.repair ? { repair: true } : {}),
+              }
+            : undefined,
+          modelPath: requirement.modelPath,
+          blocking: true,
+          action:
+            requirement.primaryAction === 'Install' || requirement.primaryAction === 'Repair'
+              ? 'install_model'
+              : 'open_model_manager',
+          message: requirement.modelPath
+            ? `Model file is missing for imported workflow node ${requirement.nodeLabel || requirement.nodeId || 'unknown'}.`
+            : `${requirement.repo} is required by imported workflow node ${requirement.nodeLabel || requirement.nodeId || 'unknown'}.`,
+          details: requirement.details,
+        }),
+      ),
+  ];
 }
 
 function nodeParamValue(node: ReturnType<typeof enabledExecutableNodes>[number], key: string) {
@@ -1346,13 +1380,22 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     discoveryRequests,
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid,
   } = useNodesStore.getState();
   const { graphBinding, autoResourcePlan, autoResourceCheck } = useStudioStore.getState();
   const templateBaseModel = getStudioTemplateLoraBaseModel(useStudioStore.getState().activeTemplateId);
   const expectedAutoRepo = templateBaseModel?.source === 'hub' ? templateBaseModel.value : true;
   const auto = form.resourceMode === 'auto';
   const profile = getProfileForForm(form);
-  const modelStatus = getStudioModelCacheStatus(profile, hfCache, localModels, modelCacheDiagnostics);
+  const selectedProfile = studioWeightFormatProfile(
+    form,
+    profile,
+    studioModelCapabilities,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+  );
+  const modelStatus = getStudioModelCacheStatus(selectedProfile, hfCache, localModels, modelCacheDiagnostics);
   const autoCandidate = auto ? selectedAutoCandidate(autoResourcePlan, form) : null;
   const autoInstallTarget = auto ? autoResourceInstallTarget(autoResourcePlan, form) : null;
   const autoCompatibility = autoResourceCompatibility(autoResourcePlan, form);
@@ -1466,8 +1509,17 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         nodeId: graphBinding?.nodes.models,
         repoId: profile.defaultRepo,
         blocking: true,
-        action: 'install_model',
-        message: `${profile.label} is missing, so ${STUDIO_MODE_LABELS[form.mode]} cannot run.`,
+        action: selectedProfile ? 'install_model' : 'open_setup',
+        ...(selectedProfile && hasNonNativeStudioWeightFormat(form)
+          ? {
+              installOptions: {
+                revision: selectedProfile.revisionCandidates![0],
+                files: [...selectedProfile.downloadFiles!],
+                repair: modelStatus.repairRequired,
+              },
+            }
+          : {}),
+        message: `${selectedProfile?.label ?? profile.label} is missing, so ${STUDIO_MODE_LABELS[form.mode]} cannot run.`,
         details: modelStatus.reason,
       }),
     );
@@ -1538,6 +1590,9 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
     localModels,
     modelCacheDiagnostics,
     includePipeline: false,
+    backendCapabilities: studioModelCapabilities,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid: studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
   }).forEach((requirement) => {
     const status = requirement.status;
     if (status.runnable) return;

@@ -5,7 +5,9 @@ import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import type { AncillaryOperation } from '../studio/ancillaryOperations';
+import { AUTHORED_CONSTRAINT_POLICY } from '../studio/promptEnhancementConstraints';
 import { GraphControlButton } from '../ui/GraphControls';
+import { ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import {
   promptEnhancementOwner,
   enablePromptEnhancement,
@@ -36,12 +38,14 @@ export default function PromptEnhancementControls({
   const connected = useWebsocketStore((state) => state.isConnected);
   const currentTask = useTaskStore((state) => state.currentTask);
   const operationCount = useNodesStore((state) => state.operationContracts.length);
+  const descriptors = useNodesStore((state) => state.workflowModelDescriptors);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [run, setRun] = useState<PromptEnhancementPreviewRun | null>(null);
   const [verified, setVerified] = useState<VerifiedPromptEnhancementPreview | null>(null);
   const [declaration, setDeclaration] = useState<AncillaryOperation | null>(null);
+  const [rawChoice, setRawChoice] = useState<string | null>(null);
   const terminal = useTaskStore((state) =>
     run ? state.sessionRuns.find((task) => task.task_id === run.taskId || task.id === run.taskId) : undefined,
   );
@@ -56,6 +60,35 @@ export default function PromptEnhancementControls({
   const binding = selected.owner?.data.operationAuthoring?.ancillaryBindings?.[0];
   const bindingId = binding?.contractId,
     bindingHash = binding?.contentHash;
+  const parent = selected.selection?.parent;
+  const matching = descriptors.filter(
+    (descriptor) =>
+      descriptor.profileId === parent?.executionProfileId && descriptor.pipeline === parent?.pipelineClass,
+  );
+  const rawChoices =
+    parent && matching.length === 1 ? (matching[0]!.rawPromptAuthoringChoices?.[parent.task] ?? []) : [];
+  const layoutChoices =
+    parent && matching.length === 1 ? (matching[0]!.layoutPromptAuthoringChoices?.[parent.task] ?? []) : [];
+  const currentRawChoice = rawChoices.find(
+    (choice) => choice.authoringRecipeId === parent?.authoringRecipeId,
+  )?.authoringRecipeId;
+  const selectedRawChoice = rawChoice ?? currentRawChoice ?? '';
+  const currentLayoutChoice = layoutChoices.find(
+    (choice) =>
+      choice.authoringRecipeId === parent?.authoringRecipeId &&
+      choice.authoringRecipeId !== matching[0]?.authoringRecipes?.[parent?.task ?? ''],
+  )?.authoringRecipeId;
+  const hasLayoutChoices = layoutChoices.length > 1;
+  const selectedModeChoice = rawChoice ?? currentLayoutChoice ?? currentRawChoice ?? '';
+  const enable = async () => {
+    const chosen = hasLayoutChoices ? selectedModeChoice : selectedRawChoice;
+    const raw = rawChoices.some((choice) => choice.authoringRecipeId === chosen) ? chosen : undefined;
+    const layout =
+      hasLayoutChoices && layoutChoices.some((choice) => choice.authoringRecipeId === chosen) ? chosen : undefined;
+    if (chosen && !raw && !layout)
+      throw new Error('The selected enhancement mode is no longer available. Choose a current mode.');
+    return enablePromptEnhancement(ownerId, undefined, undefined, raw, layout);
+  };
   const details = (() => {
     if (!verified) return { summary: null, stale: false };
     try {
@@ -81,7 +114,8 @@ export default function PromptEnhancementControls({
     setVerified(null);
     setError(null);
     setMessage(null);
-  }, [ownerId, tab]);
+    setRawChoice(null);
+  }, [ownerId, tab, parent?.executionProfileId, parent?.task]);
   useEffect(() => {
     setDeclaration(null);
     if (!bindingId || !connected || !operationCount) return;
@@ -147,6 +181,52 @@ export default function PromptEnhancementControls({
           Appends proposed wording; authored layout stays unchanged.
         </p>
       ) : null}
+      {declaration?.layoutPolicy === AUTHORED_CONSTRAINT_POLICY ? (
+        <p className="text-modiff-metadata text-modiff-subtle-text">
+          Proposes wording for your authored regions. Coordinates and region identities stay fixed; review the wording
+          before Apply.
+        </p>
+      ) : null}
+      {!binding && hasLayoutChoices ? (
+        <>
+          <ModiffFieldShell label="Prompt enhancement mode">
+            <ModiffSelect
+              aria-label="Prompt enhancement mode"
+              disabled={unavailable || taskActive}
+              value={selectedModeChoice}
+              onValueChange={setRawChoice}
+              options={[
+                { value: '', label: 'Match current layout' },
+                ...rawChoices.map((choice) => ({ value: choice.authoringRecipeId, label: choice.label })),
+                ...layoutChoices.map((choice) => ({ value: choice.authoringRecipeId, label: choice.label })),
+              ]}
+            />
+          </ModiffFieldShell>
+          <p className="text-modiff-metadata text-modiff-subtle-text">
+            Layout modes require authored regions. Review the mode before enabling enhancement.
+          </p>
+        </>
+      ) : !binding && rawChoices.length > 1 ? (
+        <>
+          <ModiffFieldShell label="Raw prompt enhancement">
+            <ModiffSelect
+              aria-label="Raw prompt enhancement"
+              disabled={unavailable || taskActive}
+              value={selectedRawChoice}
+              onValueChange={setRawChoice}
+              options={[
+                { value: '', label: 'Match current layout' },
+                ...rawChoices.map((choice) => ({ value: choice.authoringRecipeId, label: choice.label })),
+              ]}
+            />
+          </ModiffFieldShell>
+          {selectedRawChoice ? (
+            <ModiffDisclosure label="Selection details">
+              <p className="break-all text-modiff-metadata text-modiff-subtle-text">Recipe: {selectedRawChoice}</p>
+            </ModiffDisclosure>
+          ) : null}
+        </>
+      ) : null}
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {!binding ? (
           <GraphControlButton
@@ -154,7 +234,7 @@ export default function PromptEnhancementControls({
             disabled={unavailable || taskActive}
             onClick={() =>
               void act('Enabling enhancement', async () => {
-                setDeclaration(await enablePromptEnhancement(ownerId));
+                setDeclaration(await enable());
                 setMessage('Enabled. Review the declared model and resource controls before Preview.');
               })
             }

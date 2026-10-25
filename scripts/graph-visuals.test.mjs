@@ -757,7 +757,7 @@ test('graph fields and overlays use graph-safe controls without losing specializ
   assert.match(numberField, /onKeyDown=\{handleKeyDown\}/);
   assert.match(numberField, /document\.addEventListener\('mousemove', handleMouseMove\)/);
   assert.match(numberField, /document\.removeEventListener\('mouseup', handleMouseUp\)/);
-  assert.match(numberField, /updateStore\(fieldKey, nextValue\)/);
+  assert.match(numberField, /updateStore\(fieldKey, Number\(nextValue\)\)/);
 
   const fileField = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'FileBrowserField.tsx'), 'utf8');
   assert.match(fileField, /<GraphControlInput[\s\S]*type="file"/);
@@ -8367,7 +8367,7 @@ test('Studio exposes a distinct visible install action for its exact missing mod
   assert.match(runActionsSource, /const \[isInstallingMissingModel, setIsInstallingMissingModel\] = useState\(false\)/);
   assert.match(runActionsSource, /await installHfModel\(missingInstallTarget\.repo, sid/);
   assert.match(studioReadinessSource, /revision: exactCapabilityRevision/);
-  assert.match(studioReadinessSource, /files: capability\.downloadFiles/);
+  assert.match(studioReadinessSource, /files: selectedCapability\.downloadFiles/);
   assert.match(runActionsSource, /handleInstallMissingModel,[\s\S]*isInstallingMissingModel,/);
   assert.match(studioPanelSource, /data-testid="studio-install-missing-model"/);
   assert.match(studioPanelSource, /disabled=\{isWorking \|\| isInstallingMissingModel\}/);

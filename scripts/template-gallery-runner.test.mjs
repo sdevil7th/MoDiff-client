@@ -36,6 +36,7 @@ import {
   runWithGalleryBrowserRecovery,
   shouldPrepareRuntimeForTemplate,
   taskProgressFingerprint,
+  templateQualificationArgs,
   waitForQueueIdle,
   waitForTaskTerminal,
 } from './template-gallery-runner.mjs';
@@ -815,6 +816,19 @@ test('gallery runner can retain successful locked runs without publishing galler
   assert.match(source, /MODIFF_TEMPLATE_PROVENANCE: provenancePath/);
   assert.match(source, /template-qualification\.mjs/);
   assert.match(source, /!result\.sourceOnly && !result\.skipped/);
+});
+
+test('blocked-template registrar lookup is forwarded only by explicit qualification opt-in', () => {
+  const ordinary = parseArgs(['node', 'runner', '--record-qualification']);
+  const explicit = parseArgs(['node', 'runner', '--record-qualification', '--allow-blocked-probe']);
+  const script = resolve(ROOT, 'scripts/template-qualification.mjs');
+  assert.deepEqual(templateQualificationArgs(ordinary), [script]);
+  assert.deepEqual(templateQualificationArgs(explicit), [script, '--allow-blocked-probe']);
+  assert.equal(explicit.publish, false);
+  assert.throws(
+    () => parseArgs(['node', 'runner', '--record-qualification', '--allow-blocked-probe', '--publish']),
+    /qualification-only and cannot be combined with --publish/,
+  );
 });
 
 test('resource qualification capture is a single non-publishing locked-workload run', () => {

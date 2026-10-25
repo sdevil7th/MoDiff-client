@@ -907,6 +907,184 @@ test('workflow choices join exact execution profiles and retain task and pipelin
   assert.equal(choices.workflowTaskLabel('future_task'), 'Future task');
 });
 
+test('public authoring offers retain exact per-task raw choices for known and generic workflow models', () => {
+  const pipelineClass = 'FuturePipeline';
+  const profileId = 'future:official:v1';
+  const tasks = ['text_to_image', 'edit_image'];
+  const offers = tasks.map((task) => ({
+    executionProfileId: profileId,
+    pipelineClass,
+    task,
+    authoringRecipeId: `future:${task}:append:v1`,
+    rawAuthoringRecipeId: `future:${task}:raw:v1`,
+    rawAuthoringRecipeChoices: [
+      { authoringRecipeId: `future:${task}:raw:v1`, label: 'Raw FP32' },
+      { authoringRecipeId: `future:${task}:raw-nf4:v1`, label: 'Raw NF4' },
+    ],
+    layoutAuthoringRecipeChoices: [
+      { authoringRecipeId: `future:${task}:append:v1`, label: 'Append wording' },
+      { authoringRecipeId: `future:${task}:constrained:v1`, label: 'Wording for authored regions' },
+    ],
+  }));
+  const profile = {
+    id: profileId,
+    pipeline_class: pipelineClass,
+    model_type: 'FutureModel',
+    default_repo: 'review/future-model',
+    modes: tasks,
+    public: true,
+    authoringRecipes: offers,
+  };
+  const model = {
+    modelType: profile.model_type,
+    label: 'Future model',
+    defaultRepo: profile.default_repo,
+    executionProfiles: [profile],
+  };
+  const support = [
+    {
+      pipelineClass,
+      tasks: tasks.map((task) => ({
+        task,
+        operationIds: ['load', 'run'],
+        executionProfileIds: [profileId],
+      })),
+    },
+  ];
+  const payload = { schemaVersion: 2, capabilities: [model] };
+  const original = structuredClone(payload);
+  for (const known of [[], [model]]) {
+    const descriptors = choices.parseWorkflowModelDescriptors(payload, support, known);
+    assert.equal(descriptors.length, 1);
+    const [descriptor] = descriptors;
+    assert.equal(descriptor.evaluationOnly, undefined);
+    for (const offer of offers) {
+      assert.equal(descriptor.authoringRecipes[offer.task], offer.authoringRecipeId);
+      assert.equal(descriptor.rawPromptAuthoringRecipes[offer.task], offer.rawAuthoringRecipeId);
+      assert.deepEqual(descriptor.rawPromptAuthoringChoices[offer.task], offer.rawAuthoringRecipeChoices);
+      assert.deepEqual(descriptor.layoutPromptAuthoringChoices[offer.task], offer.layoutAuthoringRecipeChoices);
+    }
+    const rows = choices.workflowChoices(support, known, [], [], null, descriptors);
+    assert.equal(rows.length, 2);
+    assert.ok(rows.every((row) => !row.evaluationOnly));
+    for (const row of rows)
+      assert.equal(row.authoringRecipeId, offers.find((offer) => offer.task === row.task).authoringRecipeId);
+  }
+  assert.deepEqual(payload, original, 'Parsing cannot rewrite source metadata or promote private identities');
+  for (const alter of [
+    (rows) => {
+      rows.push(structuredClone(rows[0]));
+    },
+    (rows) => {
+      rows[0].executionProfileId = 'another:profile';
+    },
+    (rows) => {
+      rows[0].pipelineClass = 'AnotherPipeline';
+    },
+    (rows) => {
+      rows[0].task = 'unsupported_task';
+    },
+    (rows) => {
+      rows[0].rawAuthoringRecipeChoices[0].label = ' padded ';
+    },
+    (rows) => {
+      rows[0].rawAuthoringRecipeChoices[0].authoringRecipeId = 'undeclared:v1';
+    },
+    (rows) => {
+      rows[0].rawAuthoringRecipeChoices[1].authoringRecipeId = rows[0].authoringRecipeId;
+    },
+  ]) {
+    const bad = structuredClone(payload);
+    alter(bad.capabilities[0].executionProfiles[0].authoringRecipes);
+    assert.throws(() => choices.parseWorkflowModelDescriptors(bad, support, [model]));
+  }
+  const old = structuredClone(payload);
+  delete old.capabilities[0].executionProfiles[0].authoringRecipes;
+  assert.deepEqual(
+    choices.parseWorkflowModelDescriptors(old, support, [model]),
+    [],
+    'Old known-model payloads keep their legacy presentation boundary',
+  );
+  const undeclaredPublic = structuredClone(payload);
+  delete undeclaredPublic.capabilities[0].executionProfiles[0].public;
+  assert.throws(() => choices.parseWorkflowModelDescriptors(undeclaredPublic, support, [model]));
+  const privateOffer = structuredClone(payload);
+  privateOffer.capabilities[0].executionProfiles[0].public = false;
+  assert.deepEqual(
+    choices.parseWorkflowModelDescriptors(privateOffer, support, [model]),
+    [],
+    'Private offers are never promoted through public descriptors',
+  );
+});
+
+test('authored layout choices are explicit bounded offers and cannot overlap raw alternatives', async () => {
+  const { parseAuthoringRecipeOffers } = await server.ssrLoadModule('/src/workflow/authoringRecipeOffers.ts');
+  const profile = { id: 'future:official:v1', pipeline: 'FuturePipeline', modes: ['text_to_image'] };
+  const row = {
+    executionProfileId: profile.id,
+    pipelineClass: profile.pipeline,
+    task: profile.modes[0],
+    authoringRecipeId: 'future:append:v1',
+    rawAuthoringRecipeId: 'future:raw:v1',
+    rawAuthoringRecipeChoices: [{ authoringRecipeId: 'future:raw:v1', label: 'Raw wording' }],
+    layoutAuthoringRecipeChoices: [
+      { authoringRecipeId: 'future:append:v1', label: 'Append wording; keep layout' },
+      { authoringRecipeId: 'future:constrained:v1', label: 'Generate wording for authored regions' },
+    ],
+  };
+  const support = [{ pipelineClass: profile.pipeline, tasks: [{ task: row.task, executionProfileIds: [profile.id] }] }];
+  const invalid = () => {
+    throw new Error('invalid offers');
+  };
+  const parsed = parseAuthoringRecipeOffers([row], [profile], support, invalid);
+  assert.deepEqual(parsed.layoutChoices.get(profile.id)[row.task], row.layoutAuthoringRecipeChoices);
+  assert.equal(
+    parsed.recipes.get(profile.id)[row.task],
+    row.authoringRecipeId,
+    'Adding an explicit mode cannot change the default.',
+  );
+  const original = structuredClone(row);
+  for (const alter of [
+    (item) => {
+      item.layoutAuthoringRecipeChoices = [];
+    },
+    (item) => {
+      item.layoutAuthoringRecipeChoices[0].authoringRecipeId = 'another:v1';
+    },
+    (item) => {
+      item.layoutAuthoringRecipeChoices[1].authoringRecipeId = item.authoringRecipeId;
+    },
+    (item) => {
+      item.layoutAuthoringRecipeChoices[1].authoringRecipeId = item.rawAuthoringRecipeId;
+    },
+    (item) => {
+      item.layoutAuthoringRecipeChoices[1].label = ' padded ';
+    },
+    (item) => {
+      item.layoutAuthoringRecipeChoices.push(
+        ...Array.from({ length: 3 }, (_, index) => ({ authoringRecipeId: `other:${index}`, label: 'Other' })),
+      );
+    },
+    (item) => {
+      Object.defineProperty(item.layoutAuthoringRecipeChoices, '0', {
+        enumerable: true,
+        get: () => original.layoutAuthoringRecipeChoices[0],
+      });
+    },
+    (item) => {
+      item.layoutAuthoringRecipeChoices.extra = true;
+    },
+  ]) {
+    const bad = structuredClone(row);
+    alter(bad);
+    assert.throws(() => parseAuthoringRecipeOffers([bad], [profile], support, invalid));
+  }
+  assert.deepEqual(row, original, 'Metadata parsing cannot alter source offers.');
+  const old = structuredClone(row);
+  delete old.layoutAuthoringRecipeChoices;
+  assert.equal(parseAuthoringRecipeOffers([old], [profile], support, invalid).layoutChoices.size, 0);
+});
+
 async function operationBlock(instanceId = 'operation-block', selectedStarter = seededStarter(true)) {
   const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
   const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
@@ -2000,11 +2178,134 @@ test('evaluation model discovery keeps declared choices searchable across spaces
   assert.deepEqual(
     parseStudioModelCapabilities(payload).capabilities,
     [],
-    'Private identities stay outside the legacy union.',
+    'Private execution profiles stay outside runnable Studio capabilities.',
   );
   assert.equal(
     choices.workflowModelMatchesQuery({ label: 'Future Vision.7', repo: 'another/future-vision-7' }, 'future vision7'),
     true,
+  );
+});
+
+test('typed template identities preserve contract-only workflow discovery and reject inconsistent admissions', async () => {
+  const { parseStudioModelCapabilities } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const profiles = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
+  const { STUDIO_TEMPLATES, PLANNING_STUDIO_TEMPLATES } = await server.ssrLoadModule('/src/studio/templates.ts');
+  const payload = evaluationImagePayload();
+  const before = structuredClone(payload);
+  const original = await evaluationImageAuthority(payload);
+  const baseline = choices.workflowChoices(
+    original.pipelineSupport,
+    [],
+    [],
+    [],
+    null,
+    original.workflowModelDescriptors,
+  );
+  const full = structuredClone(payload);
+  for (const capability of full.capabilities)
+    Object.assign(capability, {
+      executionStatus: 'contract_only',
+      modes: ['text_to_image', 'edit_image'],
+      runnableModes: [],
+      qualifiedModes: [],
+    });
+  for (const value of [payload, full]) {
+    const parsed = parseStudioModelCapabilities(value);
+    assert.deepEqual(parsed.capabilities, []);
+    const authority = await evaluationImageAuthority(value);
+    assert.deepEqual(
+      choices.workflowChoices(
+        authority.pipelineSupport,
+        parsed.capabilities,
+        [],
+        [],
+        null,
+        authority.workflowModelDescriptors,
+      ),
+      baseline,
+      'Task, profile, private recipe, cache and Custom-memory identity stay on the ordinary starter path.',
+    );
+  }
+  assert.deepEqual(payload, before, 'The actual retained metadata is not rewritten.');
+  assert.equal(baseline.length, 4);
+  assert.ok(
+    baseline.every(
+      (row) => row.evaluationOnly && row.authoringRecipeId && ['text_to_image', 'edit_image'].includes(row.task),
+    ),
+  );
+  for (const capability of payload.capabilities) {
+    const profile = profiles.STUDIO_MODEL_PROFILES[capability.modelType];
+    assert.equal(profile.catalogVisibility, 'internal');
+    assert.equal(profile.defaultRepo, capability.defaultRepo);
+    assert.deepEqual(profile.modes, ['text_to_image', 'edit_image']);
+    assert.ok(
+      [profile.autoEligible, profile.templateEligible, profile.galleryEligible, profile.liveProof].every(
+        (flag) => flag === false,
+      ),
+    );
+    assert.equal(
+      profiles.isStudioModelVisibleInCatalog(capability.modelType, {
+        includeWorkflowOnly: true,
+        currentModelType: capability.modelType,
+      }),
+      false,
+    );
+    assert.equal(
+      STUDIO_TEMPLATES.some((template) => template.modelType === capability.modelType),
+      false,
+      'Private fixture model types gain no visible Studio cards.',
+    );
+  }
+  const privateProfileIds = new Set(payload.evaluationAuthoring.executionProfiles.map((profile) => profile.id));
+  const privateRecipeIds = new Set(
+    payload.evaluationAuthoring.authoringRecipes.map((recipe) => recipe.authoringRecipeId),
+  );
+  assert.equal(
+    PLANNING_STUDIO_TEMPLATES.some(
+      (template) =>
+        privateProfileIds.has(template.executionSelection?.executionProfileId) ||
+        privateRecipeIds.has(template.executionSelection?.authoringRecipeId),
+    ),
+    false,
+    'Planning cards cannot promote this fixture private execution-profile or recipe authority.',
+  );
+  for (const alter of [
+    (p) => {
+      p.capabilities[0].autoEligible = true;
+    },
+    (p) => {
+      p.capabilities[0].templateEligible = true;
+    },
+    (p) => {
+      p.capabilities[0].galleryEligible = true;
+    },
+    (p) => {
+      p.capabilities[0].liveProof = true;
+    },
+    (p) => {
+      delete p.capabilities[0].liveProof;
+    },
+    (p) => {
+      p.capabilities[0].executionProfiles = [{ id: 'unreviewed' }];
+    },
+    (p) => {
+      p.capabilities[0].runnableModes = ['text_to_image'];
+    },
+    (p) => {
+      p.capabilities[0].qualifiedModes = ['text_to_image'];
+    },
+    (p) => {
+      p.schemaVersion = 1;
+    },
+  ]) {
+    const invalid = structuredClone(full);
+    alter(invalid);
+    assert.throws(() => parseStudioModelCapabilities(invalid), /model.capabilities/i);
+  }
+  const publicProfile = structuredClone(profiles.STUDIO_MODEL_PROFILES.StableDiffusionPipeline);
+  assert.equal(
+    parseStudioModelCapabilities({ schemaVersion: 2, capabilities: [publicProfile] }).capabilities[0].modelType,
+    'StableDiffusionPipeline',
   );
 });
 
@@ -2053,6 +2354,118 @@ test('evaluation authoring validates selected policy and recipe bindings and rej
   for (const profile of old.evaluationAuthoring.executionProfiles) delete profile.adapterAuthoring;
   const parsed = await evaluationImageAuthority(old);
   assert.ok(parsed.workflowModelDescriptors.every((row) => !row.adapterAuthoringProfile && !row.authoringRecipes));
+});
+
+test('evaluation authoring retains an optional exact raw recipe per selected task without public promotion', async () => {
+  const payload = evaluationImagePayload();
+  for (const row of payload.evaluationAuthoring.authoringRecipes)
+    row.rawAuthoringRecipeId = `${row.authoringRecipeId}:raw`;
+  const before = structuredClone(payload);
+  const parsed = await evaluationImageAuthority(payload);
+  for (const row of payload.evaluationAuthoring.authoringRecipes) {
+    const descriptor = parsed.workflowModelDescriptors.find(
+      (descriptor) => descriptor.profileId === row.executionProfileId,
+    );
+    assert.equal(descriptor.rawPromptAuthoringRecipes[row.task], row.rawAuthoringRecipeId);
+    assert.equal(descriptor.authoringRecipes[row.task], row.authoringRecipeId);
+    assert.equal(descriptor.evaluationOnly, true);
+  }
+  assert.deepEqual(payload, before);
+  for (const value of [
+    null,
+    '',
+    17,
+    'x'.repeat(257),
+    payload.evaluationAuthoring.authoringRecipes[0].authoringRecipeId,
+  ]) {
+    const malformed = structuredClone(payload);
+    malformed.evaluationAuthoring.authoringRecipes[0].rawAuthoringRecipeId = value;
+    await assert.rejects(() => evaluationImageAuthority(malformed));
+  }
+  const malformed = structuredClone(payload);
+  Object.defineProperty(malformed.evaluationAuthoring.authoringRecipes[0], 'rawAuthoringRecipeId', {
+    enumerable: true,
+    get: () => {
+      throw new Error('getter executed');
+    },
+  });
+  await assert.rejects(() => evaluationImageAuthority(malformed), /Invalid/);
+});
+
+test('declared raw enhancement choices retain labels and exact defaults while rejecting malformed alternatives', async () => {
+  const payload = evaluationImagePayload();
+  const row = payload.evaluationAuthoring.authoringRecipes[0];
+  row.rawAuthoringRecipeId = `${row.authoringRecipeId}:raw`;
+  row.rawAuthoringRecipeChoices = [
+    { authoringRecipeId: row.rawAuthoringRecipeId, label: 'Raw wording: FP32' },
+    { authoringRecipeId: `${row.authoringRecipeId}:nf4`, label: 'Raw wording: BF16 + NF4' },
+  ];
+  const before = structuredClone(payload);
+  const parsed = await evaluationImageAuthority(payload);
+  assert.deepEqual(
+    parsed.workflowModelDescriptors.find((descriptor) => descriptor.profileId === row.executionProfileId)
+      .rawPromptAuthoringChoices[row.task],
+    row.rawAuthoringRecipeChoices,
+  );
+  assert.deepEqual(payload, before);
+  for (const alter of [
+    (r) => {
+      delete r.rawAuthoringRecipeId;
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices = [];
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices = null;
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices.push(...r.rawAuthoringRecipeChoices, r.rawAuthoringRecipeChoices[0]);
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices[1] = r.rawAuthoringRecipeChoices[0];
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices.shift();
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices[1].authoringRecipeId = r.authoringRecipeId;
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices[1].extra = true;
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices[1].label = '';
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices[1].label = ' Raw wording';
+    },
+    (r) => {
+      r.rawAuthoringRecipeChoices[1].label = 'x'.repeat(129);
+    },
+    (r) => {
+      delete r.rawAuthoringRecipeChoices[1];
+    },
+    (r) => {
+      Object.defineProperty(r.rawAuthoringRecipeChoices[1], 'label', {
+        enumerable: true,
+        get: () => {
+          throw new Error('getter executed');
+        },
+      });
+    },
+    (r) => {
+      Object.defineProperty(r, 'rawAuthoringRecipeChoices', {
+        enumerable: true,
+        get: () => {
+          throw new Error('getter executed');
+        },
+      });
+    },
+  ]) {
+    const malformed = structuredClone(payload);
+    alter(malformed.evaluationAuthoring.authoringRecipes[0]);
+    await assert.rejects(() => evaluationImageAuthority(malformed), /Invalid/);
+  }
 });
 
 test('evaluation selected native policy permits ordinary Add and Remove without rewriting the model or unrelated nodes', async () => {

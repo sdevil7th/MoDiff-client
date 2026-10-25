@@ -79,6 +79,10 @@ export const FLUX2_KLEIN_BASE_REPO = 'black-forest-labs/FLUX.2-klein-base-4B';
 export const FLUX2_DEV_REPO = 'black-forest-labs/FLUX.2-dev';
 export const FLUX2_DEV_REVISION = '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c';
 export const FLUX2_KLEIN_BASE_REVISION = 'a3b4f4849157f664bdbc776fd7453c2783562f4d';
+export const FLUX3_BASE_REPO = 'black-forest-labs/flux-3-image-klein-base';
+export const FLUX3_BASE_REVISION = '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4';
+export const FLUX3_DISTILLED_REPO = 'black-forest-labs/flux-3-image-klein';
+export const FLUX3_DISTILLED_REVISION = '8454017f9ebaada30c998fccd9f67a80c7580f68';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
@@ -449,6 +453,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Built-in Video Operations',
   'Real-ESRGAN x2 Video Upscale',
   'Real-ESRGAN x2 Image Upscale',
+  'FLUX 3 Image Klein Base',
+  'FLUX 3 Image Klein',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -1037,6 +1043,47 @@ const EXPERT_WORKFLOW_PENDING = {
   galleryEligible: false,
   liveProof: false,
 } satisfies Partial<StudioModelProfileSource>;
+
+/** Static presentation for reviewed identities, never a runnable or public admission.
+ * Current backend profiles and recipes remain authoritative for ordinary graphs. */
+function contractOnlyImageProfile(
+  defaultRepo: string,
+  revision: string,
+  steps: number,
+  guidance: number,
+  supportsGuidance: boolean,
+): StudioModelProfileSource {
+  return {
+    family: 'FLUX Image',
+    catalogVisibility: 'internal',
+    defaultRepo,
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps: steps,
+    recommendedGuidance: guidance,
+    recommendedMaxSequenceLength: 8192,
+    supportsNegativePrompt: supportsGuidance,
+    supportFlags: 5,
+    outputKind: 'image',
+    offloadSupport: {
+      modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
+      default: 'none',
+      lowVram: 'none',
+      emergency: 'none',
+    },
+    lowVram: { dtype: 'bfloat16', autoOffload: false, offloadMode: 'none', steps, width: 1024, height: 1024 },
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: { edit_image: { requiredImages: ['referenceImages'] } },
+    revisionCandidates: [revision],
+    executionStatus: 'expert_only',
+    qualificationStatus: 'contract-only-presentation',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: false,
+    galleryEligible: false,
+    liveProof: false,
+  };
+}
 
 function expertVideoProfile(
   source: StudioModelProfileSource,
@@ -3727,6 +3774,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     galleryEligible: false,
     liveProof: true,
   },
+  Flux3ModularPipeline: contractOnlyImageProfile(FLUX3_BASE_REPO, FLUX3_BASE_REVISION, 50, 3.5, true),
+  Flux3DistilledModularPipeline: contractOnlyImageProfile(FLUX3_DISTILLED_REPO, FLUX3_DISTILLED_REVISION, 16, 1, false),
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 if (STUDIO_MODEL_LABEL_VALUES.length !== Object.keys(STUDIO_MODEL_PROFILE_SOURCES).length) {
@@ -4496,6 +4545,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Uses the generic Spandrel image upscaler and preserves the model-reported native scale.',
     manualOnlyReason: 'One exact ROCm run is qualified; broader platform coverage remains pending.',
   },
+  Flux3ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3ModularPipeline'),
+  Flux3DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3DistilledModularPipeline'),
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {

@@ -41,6 +41,11 @@ import {
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
 import { resolveStudioExecutionSpecValues } from './executionSpecValues';
+import {
+  assertStudioWeightFormatOptions,
+  assertFormWeightFormatSelection,
+  explicitStudioWeightFormat,
+} from './weightFormat';
 import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { hashString, stableStringify } from './templateExactness';
@@ -621,7 +626,8 @@ function hasPartialCombinedControlGroup(binding: StudioGraphBinding) {
 function bindingFingerprint(form: StudioFormState) {
   const spec = executionSpecForForm(form);
   const receipt = spec ? `:${spec.id}:${spec.contentHash}` : spec === null ? ':invalid-spec' : '';
-  return `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}${receipt}`;
+  const format = explicitStudioWeightFormat(form);
+  return `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}${receipt}${format !== undefined ? `:weight-format=${format === null ? 'blocked' : format}` : ''}`;
 }
 
 function bindingMatchesForm(binding: StudioGraphBinding, form: StudioFormState) {
@@ -3410,6 +3416,33 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     audioTemplateBaseModel,
     seed: seedValue(form),
   });
+  const declaredFormat = assertFormWeightFormatSelection(
+    form,
+    spec,
+    capability,
+    useNodesStore.getState().workflowModelDescriptors,
+  );
+  for (const [role, param, source] of spec.bindings) {
+    if (source !== 'weightFormat') continue;
+    const nodeId = binding.nodes[role];
+    const node = nodeId ? getNode(nodeId) : undefined;
+    const field = node?.data.params[param];
+    if (declaredFormat) {
+      if (
+        !nodeId ||
+        !field ||
+        node?.data.module !== 'modules.ModularDiffusers' ||
+        node.data.action !== 'ModelsLoader' ||
+        param !== 'weight_format'
+      )
+        throw new Error('The declared weight format needs its exact model-loader control.');
+      // Instance metadata comes from the current exact backend declaration;
+      // the normal backend field update remains authoritative for this model.
+      useFlowStore.getState().setParam(nodeId, param, [...declaredFormat.options], 'options');
+      useFlowStore.getState().setParam(nodeId, param, false, 'hidden');
+    }
+    assertStudioWeightFormatOptions(values[source], nodeId ? getNode(nodeId)?.data.params[param] : undefined);
+  }
   const bindsAuxiliaryModel = spec.bindings.some(([, , source]) => ['kind', 'repo', 'revision'].includes(source));
   if (binding.nodes.diffusersImagePipeline && !bindsAuxiliaryModel) {
     setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_kind'], 'none');
@@ -3826,10 +3859,21 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 }
 
+function assertGraphWeightFormatSelection(form: StudioFormState) {
+  const metadata = useNodesStore.getState();
+  return assertFormWeightFormatSelection(
+    form,
+    executionSpecForForm(form),
+    metadata.studioModelCapabilities.find((item) => item.modelType === form.modelType),
+    metadata.workflowModelDescriptors,
+  );
+}
+
 export function syncStudioGraphValues(form: StudioFormState = useStudioStore.getState().form) {
   const plannedForm = resolveGraphResourceForm(form);
   const binding = useStudioStore.getState().graphBinding;
   if (!binding) return false;
+  assertGraphWeightFormatSelection(plannedForm);
   syncManagedFormControlAliases(plannedForm, binding);
   applyFormValues(binding, plannedForm);
   return true;
@@ -3885,6 +3929,7 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
   const studio = useStudioStore.getState();
   let binding = studio.graphBinding;
   if (!binding) return false;
+  assertGraphWeightFormatSelection(plannedForm);
   if (!bindingMatchesForm(binding, plannedForm)) {
     const canMigrateControlledFingerprint = Boolean(
       binding.controlled &&
@@ -4587,6 +4632,7 @@ async function createOrUpdateStudioGraphInner(
   const form = resolveGraphResourceForm(formInput);
   const existingStudio = useStudioStore.getState();
   const existingBinding = existingStudio.graphBinding;
+  assertGraphWeightFormatSelection(form);
   if (existingBinding?.controlled) {
     if (
       bindingFinalizationProofMatches(existingBinding, form) &&

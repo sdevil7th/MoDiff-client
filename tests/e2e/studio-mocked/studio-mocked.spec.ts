@@ -10750,12 +10750,27 @@ test('operation authoring fixtures isolate mutations between cached reads', asyn
   expect(await operationStarterFixtures()).toEqual(expected);
 });
 
-async function installOperationAuthoringRoutes(page: Page, exactModel = false, evaluationImage = false) {
+async function installOperationAuthoringRoutes(
+  page: Page,
+  exactModel = false,
+  evaluationImage = false,
+  evaluationEnhancement = false,
+) {
   await installMockRoutes(page);
   const starters = await operationStarterFixtures();
   const evaluation = evaluationImage
     ? JSON.parse(await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/evaluation-image-authoring.v1.json'), 'utf8'))
     : null;
+  const enhancement = evaluationEnhancement
+    ? JSON.parse(
+        await fs.readFile(
+          path.join(CLIENT_ROOT, 'tests/fixtures/evaluation-prompt-enhancement-alternatives.v1.json'),
+          'utf8',
+        ),
+      )
+    : null;
+  if (enhancement && evaluation) evaluation.evaluationAuthoring = enhancement.evaluationAuthoring;
+  const enhancementStarters: OperationStarter[] = enhancement?.starters ?? [];
   const imageSchemas = evaluation ? await imageTemplateSchemas() : null;
   const operations = [
     ...starters.flatMap((s) => s.nodes.map((n) => n.operation)),
@@ -10819,6 +10834,10 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false, e
     ...Object.fromEntries(
       (evaluation?.starter.nodes ?? []).map((n: OperationStarter['nodes'][number]) => [n.operation.nodeKey, n.node]),
     ),
+    ...Object.fromEntries(
+      enhancementStarters.flatMap((starter) => starter.nodes.map((n) => [n.operation.nodeKey, n.node])),
+    ),
+    ...(enhancement?.registry ?? {}),
     ...(imageSchemas
       ? {
           'modules.ModularDiffusers.Lora': imageSchemas.registry['modules.ModularDiffusers.Lora']!,
@@ -10866,11 +10885,18 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false, e
   await page.route('**/operations/starter', (route) => {
     const selection = route.request().postDataJSON();
     const value = structuredClone(
-      evaluation &&
+      enhancementStarters.find(
+        (starter) =>
+          starter.pipelineClass === selection.pipelineClass &&
+          starter.task === selection.task &&
+          starter.authoring?.id === selection.authoringRecipeId &&
+          starter.authoring.executionProfileIds.includes(selection.executionProfileId),
+      ) ??
+        (evaluation &&
         selection.executionProfileId === 'flux3-klein-base:modular' &&
         selection.authoringRecipeId === evaluation.starter.authoring.id
-        ? evaluation.starter
-        : starters.find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task),
+          ? evaluation.starter
+          : starters.find((s) => s.pipelineClass === selection.pipelineClass && s.task === selection.task)),
     );
     if (exactModel && value && selection.executionProfileId === 'qwen-image:modular') {
       const loader = value.nodes.find((n) => n.operation.decomposition === 'loader')!;
@@ -10901,6 +10927,120 @@ async function installOperationAuthoringRoutes(page: Page, exactModel = false, e
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: false }) }),
   );
   return starters;
+}
+
+/** Actual source DTOs with no sealed provider; HTTP mocks do not qualify execution. */
+async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false) {
+  const standard = await installOperationAuthoringRoutes(page, exactModel);
+  const fixture = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/public-flux3-missing-provider.v1.json'), 'utf8'),
+  );
+  expect(fixture.activeProvider).toBeNull();
+  expect(fixture.starters).toHaveLength(8);
+  const starters: OperationStarter[] = fixture.starters;
+  const publicModels = new Set(
+    fixture.capabilitiesPayload.capabilities.map((value: { modelType: string }) => value.modelType),
+  );
+  await page.unroute('**/model_capabilities**');
+  await page.route('**/model_capabilities**', (route) =>
+    route.fulfill({
+      json: {
+        ...fixture.capabilitiesPayload,
+        capabilities: [
+          ...mockStudioExecutionCapabilities().filter((value) => !publicModels.has(value.modelType)),
+          ...fixture.capabilitiesPayload.capabilities,
+        ],
+        operationContracts: [
+          ...standard.flatMap((starter) => starter.nodes.map((node) => node.operation)),
+          ...fixture.capabilitiesPayload.operationContracts,
+        ],
+        pipelineSupport: [
+          ...[...new Set(standard.map((starter) => starter.pipelineClass))].map((pipelineClass) => ({
+            pipelineClass,
+            coverage: 'local-adapter',
+            reason: 'Native authoring fixture; execution unqualified',
+            equivalentTo: [],
+            upstreamTasks: [],
+            tasks: standard
+              .filter((starter) => starter.pipelineClass === pipelineClass)
+              .map((starter) => ({
+                task: starter.task,
+                execution: 'declared',
+                decomposition: starter.nodes.some((node) =>
+                  ['pipeline', 'integrated'].includes(node.operation.decomposition),
+                )
+                  ? 'pipeline'
+                  : 'stages',
+                operationIds: starter.nodes.map((node) => node.operation.operationId),
+                executionProfileIds:
+                  exactModel && pipelineClass === 'QwenImageModularPipeline' ? ['qwen-image:modular'] : [],
+                dependencies: exactModel && pipelineClass === 'QwenImageModularPipeline' ? 'ready' : 'unknown',
+                runtimeRequirements:
+                  exactModel && pipelineClass === 'QwenImageModularPipeline'
+                    ? [
+                        {
+                          schemaVersion: 1,
+                          delivery: 'base',
+                          requiredNow: false,
+                          profileIds: [],
+                          executionProfileIds: ['qwen-image:modular'],
+                          state: 'base_satisfied',
+                          reason: 'base_runtime',
+                        },
+                      ]
+                    : [],
+              })),
+          })),
+          ...fixture.capabilitiesPayload.pipelineSupport,
+        ],
+      },
+    }),
+  );
+  await page.unroute('**/nodes');
+  await page.route('**/nodes', (route) =>
+    route.fulfill({
+      json: {
+        nodes: {
+          ...Object.fromEntries(
+            standard.flatMap((starter) => starter.nodes.map((node) => [node.operation.nodeKey, node.node])),
+          ),
+          ...fixture.registry,
+          'modules.Image.Load': mockRegistry['modules.Image.Load'],
+          'modules.Image.Preview': mockGraphQualifiedQwenRegistry['modules.Image.Preview'],
+        },
+      },
+    }),
+  );
+  await page.route('**/operations/starter', (route) => {
+    const selection = route.request().postDataJSON();
+    // Preserve the standard profiled routes when adding the exact public
+    // FLUX3 starters. Cross-family review needs both selectable identities.
+    if (!publicModels.has(selection.pipelineClass)) return route.fallback();
+    const exact = starters.find(
+      (starter) =>
+        starter.pipelineClass === selection.pipelineClass &&
+        starter.task === selection.task &&
+        starter.authoring?.id === selection.authoringRecipeId &&
+        starter.authoring.executionProfileIds.includes(selection.executionProfileId),
+    );
+    const baseline =
+      !selection.executionProfileId && !selection.authoringRecipeId
+        ? standard.find(
+            (starter) => starter.pipelineClass === selection.pipelineClass && starter.task === selection.task,
+          )
+        : undefined;
+    return route.fulfill({
+      status: exact || baseline ? 200 : 400,
+      json: exact ?? baseline ?? { error: 'Unknown exact public selection' },
+    });
+  });
+  await page.unroute('**/runtime/optional-runtimes**');
+  await page.route('**/runtime/optional-runtimes**', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ json: fixture.optionalRuntimeCatalog })
+      : route.fulfill({ status: 409, json: { error: 'Source-only fixture cannot install or activate a runtime.' } }),
+  );
+  return fixture;
 }
 
 async function selectOperationPipeline(page: Page, pipeline: string, task?: string) {
@@ -11594,6 +11734,594 @@ test('normal New T2I discovers declared evaluation models in Auto without changi
   await expect(row).toHaveCount(0);
   expect(executionRequests).toEqual([]);
 });
+
+for (const variant of ['flux3-klein', 'flux3-klein-base'] as const)
+  test(`normal New T2I selects public ${variant} before provider setup and keeps explicit PUP choices`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1200 });
+    await ensureFrontend();
+    const fixture = await installPublicFlux3AuthoringRoutes(page);
+    await page.routeWebSocket('**/ws**', (socket) =>
+      socket.send(
+        JSON.stringify({
+          type: 'welcome',
+          sid: new URL(socket.url()).searchParams.get('sid'),
+          instance: 'mock',
+          current: null,
+          queued: {},
+        }),
+      ),
+    );
+    const forbiddenPosts: string[] = [];
+    const selections: Record<string, unknown>[] = [];
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (
+        request.method() === 'POST' &&
+        (/\/(?:graph|execute|install)(?:\/|$)/u.test(pathname) || pathname.startsWith('/runtime/optional-runtimes'))
+      )
+        forbiddenPosts.push(pathname);
+      if (request.method() === 'POST' && pathname === '/operations/starter') selections.push(request.postDataJSON());
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    const launcher = page.getByRole('dialog', { name: 'Workflows', exact: true });
+    await launcher.getByTestId('workflow-task-text_to_image').click();
+    await expect(launcher).toHaveCount(0);
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect(page.getByRole('button', { name: 'Connected', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.resourceMode)).toBe('auto');
+    const setupId = await page.evaluate(
+      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.label === 'Model Setup')!.id,
+    );
+    await page
+      .locator(`.react-flow__node[data-id="${setupId}"]`)
+      .getByRole('button', { name: 'Choose model', exact: true })
+      .click();
+    const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+    await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill('FLUX3');
+    const choices = picker.getByRole('button').filter({ hasText: 'black-forest-labs/flux-3-image-klein' });
+    await expect(choices).toHaveCount(2);
+    for (const choice of await choices.all()) {
+      await expect(choice).toBeEnabled();
+      await expect(choice).toContainText('Runtime setup required');
+      await expect(choice).not.toContainText('Custom memory required');
+    }
+    const profileId = `${variant}:official-provider:v1`;
+    const capability = fixture.capabilitiesPayload.capabilities.find(
+      (model: { executionProfiles: Array<{ id: string }> }) =>
+        model.executionProfiles.some((profile) => profile.id === profileId),
+    );
+    const profile = capability.executionProfiles.find((value: { id: string }) => value.id === profileId);
+    expect(profile.public).toBe(true);
+    expect(profile.optionalRuntimeRequirement.requiredNow).toBe(true);
+    expect(profile.optionalRuntimeRequirement.state).not.toBe('active');
+    const prefix = `${variant}:official:text-to-image:prompt-preview-`;
+    const repo = `black-forest-labs/flux-3-image-${variant.replace('flux3-', '')}`;
+    await picker
+      .getByRole('button')
+      .filter({ has: page.getByText(repo, { exact: true }) })
+      .click();
+    await picker.getByRole('button', { name: 'Apply model change', exact: true }).click();
+    await expect(picker).toHaveCount(0);
+    expect(selections[0]).toMatchObject({
+      task: 'text_to_image',
+      executionProfileId: profileId,
+      authoringRecipeId: `${prefix}append-fp32:v1`,
+    });
+    const read = () =>
+      page.evaluate(async () => {
+        const raw = window.__MODIFF_E2E__!.exportWorkflowGraph();
+        const { expandFlowExecutionGraph } = await import('/src/stores/useFlowStore.ts');
+        const graph = expandFlowExecutionGraph(raw.nodes, raw.edges);
+        const owner = graph.nodes.find((node) => node.data.operationAuthoring?.ancillaryParent)!;
+        const identity = owner.data.operationAuthoring!.ancillaryParent!.parent;
+        const binding = owner.data.operationAuthoring!.ancillaryBindings?.[0];
+        const provider = binding && graph.nodes.find((node) => node.id === binding.roleNodes.provider);
+        return {
+          identity,
+          binding: binding?.contractId ?? null,
+          prompt: owner.data.params.prompt!.value ?? owner.data.params.prompt!.default,
+          layout:
+            owner.data.params.layout_conditioning!.value ?? owner.data.params.layout_conditioning!.default ?? null,
+          provider: provider
+            ? {
+                dtype: provider.data.params.dtype!.value ?? provider.data.params.dtype!.default,
+                quantization:
+                  provider.data.params.quantization_mode!.value ?? provider.data.params.quantization_mode!.default,
+              }
+            : null,
+        };
+      });
+    const selected = await read();
+    expect(selected.identity).toMatchObject({
+      task: 'text_to_image',
+      executionProfileId: profileId,
+      authoringRecipeId: `${prefix}append-fp32:v1`,
+    });
+    expect(selected.layout).toBeNull();
+    expect(selected.binding).toBeNull();
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.resourceMode)).toBe('auto');
+    const mode = page.getByRole('button', { name: 'Prompt enhancement mode', exact: true });
+    await mode.click();
+    for (const label of [
+      'Raw wording: FP32',
+      'Raw wording: BF16 + NF4',
+      'Append wording: preserve authored layout',
+      'Generate constrained table: FP32 (Expert)',
+    ])
+      await expect(page.getByRole('option', { name: label, exact: true })).toBeVisible();
+    await page.getByRole('option', { name: 'Raw wording: BF16 + NF4', exact: true }).click();
+    expect(await read()).toEqual(selected);
+    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+    const enabled = await read();
+    const nf4Recipe = (fixture.starters as OperationStarter[]).find(
+      (starter) => starter.authoring?.id === `${prefix}nf4:v1`,
+    )!.authoring!;
+    expect(enabled.identity).toEqual({
+      ...nf4Recipe.ancillaryOperations![0]!.parent,
+      authoringContentHash: nf4Recipe.contentHash,
+    });
+    expect(enabled.binding).toBe(`${prefix}nf4:v1:preview`);
+    expect(enabled.provider).toEqual({ dtype: 'bfloat16', quantization: 'bnb_4bit' });
+    expect(enabled.prompt).toBe(selected.prompt);
+    expect(enabled.layout).toBeNull();
+    await page.getByRole('button', { name: 'Disable', exact: true }).click();
+    await expect.poll(read).toEqual({ ...enabled, binding: null, provider: null });
+    const disabled = await read();
+    await mode.click();
+    await page.getByRole('option', { name: 'Generate constrained table: FP32 (Expert)', exact: true }).click();
+    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(
+      page
+        .getByRole('alert')
+        .filter({ hasText: 'the selected layout enhancement requires authored regions. Your prompt is unchanged.' }),
+    ).toBeVisible();
+    expect(await read()).toEqual(disabled);
+    expect(forbiddenPosts).toEqual([]);
+  });
+
+/** Read-only projection of the ordinary graph; no form/store setters. */
+async function publicFlux3FormatSnapshot(page: Page) {
+  return page.evaluate(async () => {
+    const exported = window.__MODIFF_E2E__!.exportWorkflowGraph();
+    const { expandFlowExecutionGraph } = await import('/src/stores/useFlowStore.ts');
+    const { runtimeOptionValues } = await import('/src/studio/runtimeOptions.ts');
+    const graph = expandFlowExecutionGraph(exported.nodes, exported.edges);
+    const owners = graph.nodes.filter(
+      (node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === 'ModelsLoader',
+    );
+    if (owners.length !== 1) throw new Error('Expected one ordinary model owner.');
+    const owner = owners[0]!;
+    const value = (field: string) => owner.data.params[field]?.value ?? owner.data.params[field]?.default;
+    const parentOwners = graph.nodes.filter((node) => node.data.operationAuthoring?.ancillaryParent);
+    if (parentOwners.length !== 1) throw new Error('Expected one declared public prompt owner.');
+    return {
+      selection: {
+        ownerId: owner.id,
+        pipelineClass: value('model_type'),
+        repository: value('repo_id'),
+        revision: value('revision'),
+        dtype: value('dtype'),
+        weightFormat: value('weight_format'),
+        options: runtimeOptionValues(owner.data.params.weight_format?.options),
+        quantConfigConnected: graph.edges.some(
+          (edge) => edge.target === owner.id && edge.targetHandle === 'quant_config',
+        ),
+      },
+      parent: parentOwners[0]!.data.operationAuthoring!.ancillaryParent!.parent,
+      resourceMode: window.__MODIFF_E2E__!.getState().studio.form.resourceMode,
+      semanticGraph: {
+        nodes: graph.nodes
+          .map((node) => ({
+            id: node.id,
+            type: node.type,
+            module: node.data.module,
+            action: node.data.action,
+            label: node.data.label,
+            params: node.data.params,
+            operationAuthoring: node.data.operationAuthoring ?? null,
+            studioRole: node.data.studioRole ?? null,
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        edges: graph.edges
+          .map((edge) => [
+            edge.source,
+            edge.sourceHandle ?? null,
+            edge.target,
+            edge.targetHandle ?? null,
+            edge.type ?? null,
+          ])
+          .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+      },
+    };
+  });
+}
+
+async function publicFlux3FormatSetup(page: Page) {
+  const id = await page.evaluate(() => {
+    const nodes = window.__MODIFF_E2E__!.getState().flow.nodes.filter((node) => node.label === 'Model Setup');
+    if (nodes.length !== 1) throw new Error('Expected the ordinary Model Setup stage.');
+    return nodes[0]!.id;
+  });
+  return page.locator(`.react-flow__node[data-id="${id}"]`);
+}
+
+async function publicFlux3FormatControl(page: Page) {
+  const setup = await publicFlux3FormatSetup(page);
+  const format = setup.getByLabel('Weight Format', { exact: true });
+  if (!(await format.isVisible())) await setup.getByRole('button', { name: 'Advanced', exact: true }).click();
+  await expect(format).toBeVisible();
+  return format;
+}
+
+/** Existing mocked HTTP/Save routes, real captured schema, normal UI edits. */
+async function openPublicFlux3Fp8rWorkflow(page: Page) {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  const fixture = await installPublicFlux3AuthoringRoutes(page, true);
+  const comparisons = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/public-flux3-migration-comparisons.v1.json'), 'utf8'),
+  );
+  expect(comparisons.schemaVersion).toBe(1);
+  expect(comparisons.activeProvider).toBeNull();
+  expect(comparisons.comparisons).toHaveLength(3);
+  expect(
+    comparisons.comparisons.map((row: { selection: { pipelineClass: string; task: string } }) => row.selection),
+  ).toEqual([
+    { pipelineClass: 'Flux3DistilledModularPipeline', task: 'text_to_image' },
+    { pipelineClass: 'Flux3ModularPipeline', task: 'text_to_image' },
+    { pipelineClass: 'QwenImageModularPipeline', task: 'text_to_image' },
+  ]);
+  // Only these actual unprofiled comparison requests supplement the existing
+  // strict public routes. No private starter or profile is relabelled.
+  await page.route('**/operations/starter', (route) => {
+    const selection = route.request().postDataJSON();
+    if (Object.keys(selection).sort().join(',') !== 'pipelineClass,task') return route.fallback();
+    const row = comparisons.comparisons.find(
+      (item: { selection: { pipelineClass: string; task: string } }) =>
+        item.selection.pipelineClass === selection.pipelineClass && item.selection.task === selection.task,
+    );
+    return row ? route.fulfill({ json: row.starter }) : route.fallback();
+  });
+  await page.routeWebSocket('**/ws**', (socket) =>
+    socket.send(
+      JSON.stringify({
+        type: 'welcome',
+        sid: new URL(socket.url()).searchParams.get('sid'),
+        instance: 'mock',
+        current: null,
+        queued: {},
+      }),
+    ),
+  );
+  const forbiddenPosts: string[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (
+      request.method() === 'POST' &&
+      (/\/(?:graph|execute|install)(?:\/|$)/u.test(pathname) || pathname.startsWith('/runtime/optional-runtimes'))
+    )
+      forbiddenPosts.push(pathname);
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  const launcher = page.getByRole('dialog', { name: 'Workflows', exact: true });
+  await launcher.getByTestId('workflow-task-text_to_image').click();
+  await expect(launcher).toHaveCount(0);
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(page.getByRole('button', { name: 'Connected', exact: true })).toBeVisible();
+  const policy = page.getByTestId('topbar-resource-policy');
+  await expect(policy).toHaveAttribute('aria-label', 'Memory policy: Automatic. Click to switch.');
+  await policy.click();
+  await expect(policy).toHaveAttribute('aria-label', 'Memory policy: Custom. Click to switch.');
+  await (await publicFlux3FormatSetup(page)).getByRole('button', { name: 'Choose model', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+  await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill('FLUX3');
+  await picker
+    .getByRole('button')
+    .filter({ has: page.getByText('black-forest-labs/flux-3-image-klein', { exact: true }) })
+    .click();
+  await picker.getByRole('button', { name: 'Apply model change', exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  const format = await publicFlux3FormatControl(page);
+  await format.click();
+  for (const label of ['native', 'fp8r', 'nvfp4'])
+    await expect(page.getByRole('option', { name: label, exact: true })).toBeVisible();
+  await page.getByRole('option', { name: 'fp8r', exact: true }).click();
+  await expect(format).toHaveText('fp8r');
+  await expect.poll(async () => (await publicFlux3FormatSnapshot(page)).selection.weightFormat).toBe('fp8r');
+  await waitForOperationGraphToSettle(page);
+  return { fixture, forbiddenPosts };
+}
+
+test('ordinary public FLUX3 FP8r control survives Save and cold reload with its exact model identity', async ({
+  page,
+}) => {
+  const { fixture, forbiddenPosts } = await openPublicFlux3Fp8rWorkflow(page);
+  const expected = await publicFlux3FormatSnapshot(page);
+  expect(expected.selection).toMatchObject({
+    pipelineClass: 'Flux3DistilledModularPipeline',
+    repository: { source: 'hub', value: 'black-forest-labs/flux-3-image-klein' },
+    revision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
+    dtype: 'bfloat16',
+    weightFormat: 'fp8r',
+    options: ['native', 'fp8r', 'nvfp4'],
+    quantConfigConnected: false,
+  });
+  expect(expected.parent.executionProfileId).toBe('flux3-klein:official-provider:v1');
+  expect(expected.resourceMode).toBe('expert');
+  expect(fixture.activeProvider).toBeNull();
+  await page.getByTestId('topbar-save-workflow').click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = window.__MODIFF_E2E__!.getState().studio;
+        const tab = state.workflowTabs.find((value) => value.id === state.activeWorkflowTabId)!;
+        return { dirty: tab.dirty, saved: tab.backendRevision > 0 };
+      }),
+    )
+    .toEqual({ dirty: false, saved: true });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Connected', exact: true })).toBeVisible();
+  await waitForOperationGraphToSettle(page);
+  const restored = await publicFlux3FormatSnapshot(page);
+  expect(restored.selection).toEqual(expected.selection);
+  expect(restored.parent).toEqual(expected.parent);
+  expect(restored.resourceMode).toBe('expert');
+  await expect(await publicFlux3FormatControl(page)).toHaveText('fp8r');
+  expect(forbiddenPosts).toEqual([]);
+});
+
+test('ordinary FP8r model changes preserve a compatible Base format and cancelled cross-family review is atomic', async ({
+  page,
+}) => {
+  const { forbiddenPosts } = await openPublicFlux3Fp8rWorkflow(page);
+  await (await publicFlux3FormatSetup(page)).getByRole('button', { name: 'Choose model', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
+  await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill('FLUX3 base');
+  await picker
+    .getByRole('button')
+    .filter({ has: page.getByText('black-forest-labs/flux-3-image-klein-base', { exact: true }) })
+    .click();
+  await picker.getByRole('button', { name: 'Apply model change', exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await waitForOperationGraphToSettle(page);
+  const base = await publicFlux3FormatSnapshot(page);
+  expect(base.selection).toMatchObject({
+    pipelineClass: 'Flux3ModularPipeline',
+    repository: { source: 'hub', value: 'black-forest-labs/flux-3-image-klein-base' },
+    revision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
+    dtype: 'bfloat16',
+    weightFormat: 'fp8r',
+    options: ['native', 'fp8r', 'nvfp4'],
+    quantConfigConnected: false,
+  });
+  expect(base.parent.executionProfileId).toBe('flux3-klein-base:official-provider:v1');
+  await expect(await publicFlux3FormatControl(page)).toHaveText('fp8r');
+  const beforeReview = await publicFlux3FormatSnapshot(page);
+  await (await publicFlux3FormatSetup(page)).getByRole('button', { name: 'Choose model', exact: true }).click();
+  await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill('Qwen/Qwen-Image-2512');
+  const qwenRequest = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/operations/starter') &&
+      request.method() === 'POST' &&
+      request.postDataJSON().executionProfileId === 'qwen-image:modular',
+  );
+  await picker
+    .getByRole('button')
+    .filter({ has: page.getByText('Qwen/Qwen-Image-2512', { exact: true }) })
+    .click();
+  expect((await qwenRequest).postDataJSON()).toEqual({
+    pipelineClass: 'QwenImageModularPipeline',
+    task: 'text_to_image',
+    executionProfileId: 'qwen-image:modular',
+  });
+  const review = picker.getByTestId('model-selection-review');
+  await expect(review).toBeVisible();
+  await review.getByRole('button', { name: /^Needs attention \(/u }).click();
+  await expect(review).toContainText(/Weight Format cannot be applied.*fp8r.*remains available in Implementation/u);
+  expect((await publicFlux3FormatSnapshot(page)).semanticGraph).toEqual(beforeReview.semanticGraph);
+  await review.getByRole('button', { name: 'Keep current model', exact: true }).click();
+  await expect(review).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(picker).toHaveCount(0);
+  await waitForOperationGraphToSettle(page);
+  expect(await publicFlux3FormatSnapshot(page)).toEqual(beforeReview);
+  expect(forbiddenPosts).toEqual([]);
+});
+
+for (const task of ['text_to_image', 'edit_image'] as const)
+  test(`normal New ${task} enables declared raw PUP and preserves authored layout through Disable, Undo and cold reload`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1200 });
+    await ensureFrontend();
+    await installOperationAuthoringRoutes(page, true, true, true);
+    // Enable uses the ordinary live-worker connection guard. Keep this mocked
+    // worker connected across cold reloads; HTTP metadata alone is insufficient.
+    await page.routeWebSocket('**/ws**', (socket) => {
+      socket.send(
+        JSON.stringify({
+          type: 'welcome',
+          sid: new URL(socket.url()).searchParams.get('sid'),
+          instance: 'mock',
+          current: null,
+          queued: {},
+        }),
+      );
+    });
+    const forbiddenPosts: string[] = [];
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (request.method() === 'POST' && /\/(?:graph|execute|install)(?:\/|$)/u.test(pathname))
+        forbiddenPosts.push(pathname);
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    const launcher = page.getByRole('dialog', { name: 'Workflows', exact: true });
+    await launcher.getByTestId(`workflow-task-${task}`).click();
+    await expect(launcher).toHaveCount(0);
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect(page.getByRole('button', { name: 'Connected', exact: true })).toBeVisible();
+    const setupId = await page.evaluate(
+      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.label === 'Model Setup')!.id,
+    );
+    await page
+      .locator(`.react-flow__node[data-id="${setupId}"]`)
+      .getByRole('button', { name: 'Choose model', exact: true })
+      .click();
+    // Both task starters use the same ordinary picker and explicit Custom action.
+    const actualPicker = page
+      .getByRole('dialog')
+      .filter({ has: page.getByRole('searchbox', { name: 'Search compatible models' }) });
+    await expect(actualPicker).toHaveCount(1);
+    await actualPicker.getByRole('button', { name: 'Use Custom memory', exact: true }).click();
+    await actualPicker.getByRole('searchbox', { name: 'Search compatible models' }).fill('FLUX3 base');
+    await actualPicker.getByRole('button').filter({ hasText: 'black-forest-labs/flux-3-image-klein-base' }).click();
+    await actualPicker.getByRole('button', { name: 'Apply model change', exact: true }).click();
+    await expect(actualPicker).toHaveCount(0);
+    const read = () =>
+      page.evaluate(async () => {
+        const raw = window.__MODIFF_E2E__!.exportWorkflowGraph();
+        const { expandFlowExecutionGraph } = await import('/src/stores/useFlowStore.ts');
+        const graph = expandFlowExecutionGraph(raw.nodes, raw.edges);
+        const owner = graph.nodes.find((node) => node.data.operationAuthoring?.ancillaryParent)!;
+        const { parseLayoutConditioning } = await import('/src/studio/layoutConditioning.ts');
+        const parentIds = new Set(Object.values(owner.data.operationAuthoring!.ancillaryParent!.parentRoleNodes));
+        const binding = owner.data.operationAuthoring!.ancillaryBindings?.[0];
+        const request = binding && graph.nodes.find((node) => node.id === binding.roleNodes.proposal);
+        const provider = binding && graph.nodes.find((node) => node.id === binding.roleNodes.provider);
+        const parentEdges = graph.edges
+          .filter((edge) => parentIds.has(edge.source) && parentIds.has(edge.target))
+          .map((edge) => [edge.source, edge.sourceHandle, edge.target, edge.targetHandle]);
+        if (
+          new Set(parentEdges.map(([, , target, targetHandle]) => JSON.stringify([target, targetHandle]))).size !==
+          parentEdges.length
+        )
+          throw new Error('The parent graph has multiple wires driving the same input.');
+        // Regrouping may reorder independent wires. Retain every full tuple
+        // and its multiplicity while comparing semantic connections exactly.
+        parentEdges.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+        return {
+          parentId: owner.data.operationAuthoring!.ancillaryParent!.parent.authoringRecipeId,
+          contractId: binding?.contractId ?? null,
+          prompt: owner.data.params.prompt!.value ?? owner.data.params.prompt!.default,
+          layout: parseLayoutConditioning(
+            owner.data.params.layout_conditioning!.value ?? owner.data.params.layout_conditioning!.default ?? null,
+          ),
+          requestPrompt: request?.data.params.prompt?.value ?? null,
+          requestLayout: request?.data.params.layout_conditioning?.value ?? null,
+          provider: provider
+            ? {
+                dtype: provider.data.params.dtype!.value ?? provider.data.params.dtype!.default,
+                quantization:
+                  provider.data.params.quantization_mode!.value ?? provider.data.params.quantization_mode!.default,
+              }
+            : null,
+          parentEdges,
+        };
+      });
+    const raw = await read();
+    const saveAndColdReload = async (expected: Awaited<ReturnType<typeof read>>) => {
+      await page.keyboard.press('Control+s');
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const state = window.__MODIFF_E2E__!.getState().studio;
+            const tab = state.workflowTabs.find((tab) => tab.id === state.activeWorkflowTabId)!;
+            return { dirty: tab.dirty, saved: tab.backendRevision > 0 };
+          }),
+        )
+        .toEqual({ dirty: false, saved: true });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+      await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Connected', exact: true })).toBeVisible();
+      await expect.poll(read).toEqual(expected);
+      await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeEnabled();
+    };
+    expect(raw.layout).toBeNull();
+    expect(raw.contractId).toBeNull();
+    await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+    const enabled = await read();
+    expect(enabled.parentId).toBe(
+      `flux3-klein-base:${task === 'text_to_image' ? 'text-to-image:prompt-preview-fp32' : 'edit-image:prompt-preview'}-authoring:v1`,
+    );
+    expect(enabled.contractId).toBe(`${enabled.parentId}:preview`);
+    expect(enabled.prompt).toBe(raw.prompt);
+    expect(enabled.requestPrompt).toBe(raw.prompt);
+    expect(enabled.layout).toBeNull();
+    expect(enabled.requestLayout).toBeNull();
+    expect(enabled.parentEdges).toEqual(raw.parentEdges);
+    await saveAndColdReload(enabled);
+    await page.getByRole('button', { name: 'Disable', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+    if (task === 'text_to_image') {
+      const choice = page.getByRole('button', { name: 'Raw prompt enhancement', exact: true });
+      await choice.click();
+      await page.getByRole('option', { name: 'Raw wording: BF16 + NF4', exact: true }).click();
+      await page.getByRole('button', { name: 'Selection details', exact: true }).click();
+      await expect(
+        page.getByText('Recipe: flux3-klein-base:text-to-image:prompt-preview-authoring:v1', { exact: true }),
+      ).toBeVisible();
+      const beforeChoice = await read();
+      expect(beforeChoice.contractId).toBeNull();
+      expect(beforeChoice.prompt).toBe(raw.prompt);
+      expect(beforeChoice.parentEdges).toEqual(raw.parentEdges);
+      await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+      const nf4 = await read();
+      expect(nf4.parentId).toBe('flux3-klein-base:text-to-image:prompt-preview-authoring:v1');
+      expect(nf4.provider).toEqual({ dtype: 'bfloat16', quantization: 'bnb_4bit' });
+      expect(nf4.prompt).toBe(raw.prompt);
+      expect(nf4.layout).toBeNull();
+      expect(nf4.parentEdges).toEqual(raw.parentEdges);
+      await saveAndColdReload(nf4);
+      await page.getByRole('button', { name: 'Disable', exact: true }).click();
+      await expect(choice).toContainText('Raw wording: BF16 + NF4');
+    }
+    await page.getByRole('radio', { name: 'Structured layout', exact: true }).click();
+    const empty = await read();
+    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'add authored regions or select Raw layout' }),
+    ).toBeVisible();
+    expect(await read()).toEqual(empty);
+    await page.getByRole('button', { name: 'Add region', exact: true }).click();
+    await page.getByLabel('Region description', { exact: true }).fill('  Authored copper lantern.\n');
+    await page.getByRole('button', { name: 'Apply region', exact: true }).click();
+    const authored = await read();
+    expect(authored.layout!.regions).toHaveLength(1);
+    if (task === 'text_to_image') {
+      await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+      await expect(page.getByRole('alert').filter({ hasText: 'requires Raw prompt mode' })).toBeVisible();
+      expect(await read()).toEqual(authored);
+      await page.getByRole('button', { name: 'Raw prompt enhancement', exact: true }).click();
+      await page.getByRole('option', { name: 'Match current layout', exact: true }).click();
+    }
+    await page.getByRole('button', { name: 'Enable enhancement', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+    const appended = await read();
+    expect(appended.parentId).toBe(raw.parentId);
+    expect(appended.contractId).toBe(`${raw.parentId}:preview`);
+    expect(appended.prompt).toBe(authored.prompt);
+    expect(appended.layout).toEqual(authored.layout);
+    expect(appended.requestLayout).toEqual(authored.layout);
+    expect(appended.parentEdges).toEqual(raw.parentEdges);
+    await page.locator('.react-flow__pane').click({ position: { x: 30, y: 120 } });
+    await page.keyboard.press('Control+z');
+    await expect.poll(read).toEqual(authored);
+    await page.keyboard.press('Control+Shift+z');
+    await expect.poll(read).toEqual(appended);
+    await saveAndColdReload(appended);
+    expect(forbiddenPosts).toEqual([]);
+    await page.screenshot({ path: test.info().outputPath(`normal-raw-pup-${task}.png`), animations: 'disabled' });
+  });
 
 for (const workspace of ['expert'] as const) {
   test(`${workspace} loader inspector changes its own model and task without library selection`, async ({ page }) => {
@@ -21562,7 +22290,7 @@ test('graph field controls commit without moving or scrolling nodes and preserve
         { nodeId: ids.generate },
       ),
     )
-    .toBe('7');
+    .toBe(7);
 
   const graphAfterCommit = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   expect(graphAfterCommit.nodes.find((node) => node.id === ids.generate)!.position).toEqual(initialGeneratePosition);
@@ -21603,7 +22331,7 @@ test('graph field controls commit without moving or scrolling nodes and preserve
           ?.value,
       { nodeId: ids.generate },
     ),
-  ).toBe('7');
+  ).toBe(7);
 
   await page.keyboard.press('Control+z');
   await expect
@@ -21619,7 +22347,7 @@ test('graph field controls commit without moving or scrolling nodes and preserve
           ?.value,
       { nodeId: ids.generate },
     ),
-  ).toBe('7');
+  ).toBe(7);
 
   await page.keyboard.press('Control+Shift+z');
   await expect
@@ -21635,7 +22363,7 @@ test('graph field controls commit without moving or scrolling nodes and preserve
           ?.value,
       { nodeId: ids.generate },
     ),
-  ).toBe('7');
+  ).toBe(7);
 });
 
 test('mocked dynamic node definitions update node and field metadata without value changes', async ({ page }) => {
@@ -32018,20 +32746,20 @@ test('Model Setup adapter dialog inserts only populated immutable rows and add, 
   await dialog.getByRole('button', { name: 'Add adapter', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect.poll(orderedModels).toEqual(['review/first-adapter', 'review/second-adapter']);
-  await expect.poll(orderedScales).toEqual(['0.8', '0.35']);
+  await expect.poll(orderedScales).toEqual([0.8, 0.35]);
   const secondScale = node.getByRole('region', { name: 'Adapter 2', exact: true }).getByLabel('Scale', { exact: true });
   await secondScale.fill('0.355');
   await secondScale.press('Tab');
-  await expect.poll(orderedScales).toEqual(['0.8', '0.355']);
+  await expect.poll(orderedScales).toEqual([0.8, 0.355]);
   await secondScale.fill('0.35');
   await secondScale.press('Tab');
-  await expect.poll(orderedScales).toEqual(['0.8', '0.35']);
+  await expect.poll(orderedScales).toEqual([0.8, 0.35]);
   await node
     .getByRole('region', { name: 'Adapter 2', exact: true })
     .getByRole('button', { name: 'Move up', exact: true })
     .click();
   await expect.poll(orderedModels).toEqual(['review/second-adapter', 'review/first-adapter']);
-  await expect.poll(orderedScales).toEqual(['0.35', '0.8']);
+  await expect.poll(orderedScales).toEqual([0.35, 0.8]);
   await node
     .getByRole('region', { name: 'Adapter 1', exact: true })
     .getByRole('button', { name: 'Remove', exact: true })
@@ -32044,7 +32772,7 @@ test('Model Setup adapter dialog inserts only populated immutable rows and add, 
   await expect(node).toBeVisible();
   await expect.poll(orderedModels).toEqual(['review/second-adapter', 'review/first-adapter']);
   expect((await graph()).nodes).toHaveLength(4);
-  await expect.poll(orderedScales).toEqual(['0.35', '0.8']);
+  await expect.poll(orderedScales).toEqual([0.35, 0.8]);
   await expect(
     node.getByRole('region', { name: 'Adapter 1', exact: true }).getByLabel('Scale', { exact: true }),
   ).toHaveValue('0.35');
@@ -32420,6 +33148,22 @@ test('ordinary numeric fields preserve imported and typed float precision throug
               tiny: { label: 'Tiny float', type: 'float', display: 'number', value: -1.25e-7, step: 1e-8 },
               ultra: { label: 'Ultra small float', type: 'float', display: 'number', value: 1e-120, step: 0.1 },
               integer: { label: 'Integer', type: 'int', display: 'number', value: 4, default: 3, min: 1, max: 6 },
+              max_input_tokens: { label: 'Input Token Limit', type: 'int', default: 32768, min: 1, max: 32768 },
+              max_image_pixels: {
+                label: 'Reference Pixel Limit',
+                type: 'int',
+                default: 16777216,
+                min: 1,
+                max: 16777216,
+              },
+              enhancement_max_new_tokens: {
+                label: 'Enhancement Token Limit',
+                type: 'int',
+                default: 3584,
+                min: 1,
+                max: 3584,
+              },
+              min_new_tokens: { label: 'Minimum Token Limit', type: 'int', default: 1, min: 0, max: 3584 },
             },
           },
         },
@@ -32453,26 +33197,46 @@ test('ordinary numeric fields preserve imported and typed float precision throug
     await input.press('Tab');
   }
   expect(await values()).toMatchObject({
-    stepped: '0.35',
-    padded: '16.0',
-    whole_step: '1.5',
-    unstepped: '0.125',
-    tiny: '-1.25e-7',
-    ultra: '1e-120',
+    stepped: 0.35,
+    padded: 16,
+    whole_step: 1.5,
+    unstepped: 0.125,
+    tiny: -1.25e-7,
+    ultra: 1e-120,
+  });
+  for (const [label, value] of [
+    ['Input Token Limit', '4096'],
+    ['Reference Pixel Limit', '262144'],
+    ['Enhancement Token Limit', '256'],
+    ['Minimum Token Limit', '0'],
+  ] as const) {
+    const input = node.getByLabel(label, { exact: true });
+    await input.fill(value);
+    await input.press('Tab');
+  }
+  expect(await values()).toMatchObject({
+    max_input_tokens: 4096,
+    max_image_pixels: 262144,
+    enhancement_max_new_tokens: 256,
+    min_new_tokens: 0,
   });
   expect(Number((await values()).padded)).toBe(16);
   await node.getByRole('button', { name: 'Increase Stepped float', exact: true }).click();
   await expect(stepped).toHaveValue('0.45');
+  expect((await values()).stepped).toBe(0.45);
   await node.getByRole('button', { name: 'Decrease Stepped float', exact: true }).click();
   await expect(stepped).toHaveValue('0.35');
+  expect((await values()).stepped).toBe(0.35);
   await stepped.focus();
   await stepped.press('ArrowDown');
   await stepped.press('Enter');
   await expect(stepped).toHaveValue('0.25');
+  expect((await values()).stepped).toBe(0.25);
   await stepped.focus();
   await stepped.press('ArrowUp');
   await stepped.press('Tab');
   await expect(stepped).toHaveValue('0.35');
+  expect((await values()).stepped).toBe(0.35);
   await node.getByRole('button', { name: 'Increase Tiny float', exact: true }).click();
   await expect(tiny).toHaveValue('-1.15e-7');
   await node.getByRole('button', { name: 'Decrease Tiny float', exact: true }).click();
@@ -32510,7 +33274,7 @@ test('ordinary numeric fields preserve imported and typed float precision throug
   await page.evaluate(async () => (await import('/src/stores/useFlowStore.ts')).useFlowStore.getState().resetHistory());
   await stepped.fill('0.65');
   await stepped.press('Tab');
-  await expect.poll(values).toMatchObject({ stepped: '0.65' });
+  await expect.poll(values).toMatchObject({ stepped: 0.65 });
   await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
   await page.keyboard.press('Control+z');
   await expect(stepped).toHaveValue('0.35');
@@ -32777,7 +33541,7 @@ test('optional Prepare Mask keeps the exact outpaint source, canvas, mask and ge
   await feather.press('Enter');
   await expect(feather).toHaveValue('0');
   const edited = await optionalStageApi(page);
-  expect(edited['modules.DiffusersImage.OutpaintCanvas'].params.feather.value).toBe('0');
+  expect(edited['modules.DiffusersImage.OutpaintCanvas'].params.feather.value).toBe(0);
   expect(edited[consumerKey].params.mask_image.sourceKey).toBe('mask_image');
   expect(edited[consumerKey].params.width.sourceKey).toBe('width_out');
   expect(edited[consumerKey].params.height.sourceKey).toBe('height_out');

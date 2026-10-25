@@ -151,8 +151,13 @@ canvas startup.
 Expert's Stages panel also resolves connected starters from `POST /operations/starter`.
 An explicitly validated evaluation runtime can publish a separate, bounded
 `evaluationAuthoring` namespace for Custom memory authoring. Its private profiles
-join the same generic model picker and starter path; they never enter the legacy
-Studio model union or grant Automatic, template, Gallery or live qualification.
+join the same generic model picker and starter path. A reviewed identity can have
+internal presentation typing for future templates without becoming a runnable
+Studio capability. Explicit contract-only and display-only records must retain
+false Automatic/template/Gallery/live flags and no published execution profiles,
+runnable modes or qualified modes. The separate private authoring namespace
+remains authoritative; presentation typing does not change its starter or grant
+qualification.
 The parser rejects any collision with an existing public pipeline profile, and
 selection and Apply both require Custom memory. Ordinary runtime discovery omits
 the namespace and retains the existing choices.
@@ -167,6 +172,19 @@ and all declared loader controls before normal Add/Edit LoRA is available. It
 does not expand the public model union or grant Auto support. Optional per-task
 `authoringRecipes` select a current declared starter; its enhancement offer is
 attached after ordinary media/output completion without enabling a provider.
+
+An optional per-task `rawAuthoringRecipeId` declares a distinct raw-prompt
+alternative. Explicit Enable selects that exact alternative for a null layout,
+or the original declaration for authored regions. Both fresh responses must
+declare identical parent operations, bindings, values and edges. Selection and
+Enable commit together; existing bindings and explicit structured recipes are
+not migrated. Missing, malformed or changed metadata refuses without mutation.
+Optional `rawAuthoringRecipeChoices` adds at most four unique, labelled raw
+alternatives, including the declared default. The pre-Enable selector changes
+only a local choice. Enable revalidates the exact selected recipe; an explicit
+raw choice refuses a structured layout instead of selecting a different provider.
+The existing parent identity retains that choice through Disable and reload.
+These choices grant no runtime installation, resource fit or model qualification.
 
 Static registered fields render versioned option availability from the current
 node registry, including after a cross-platform import or registry refresh. This
@@ -932,6 +950,12 @@ entries in a disposable temporary directory and is required by the main
 validation gates. The hidden dynamic-field compiler is retained only for
 explicit, receipt-bound legacy V1 migration.
 
+Sealed admission-declared signal identities retain only their exact options-map
+branch in compiled definitions; unrelated installed pipeline choices cannot change
+the immutable selected contract. Ordinary node descriptors and mutable selectors
+retain their full maps, and a missing selected branch or mismatched signal refuses
+compilation.
+
 Values stored in a reviewed compiled catalog entry establish the initial
 `BlockInstanceV2` baseline and MUST start with customization state
 `unchanged`; they are not user edits merely because the compiler emits them
@@ -1439,6 +1463,12 @@ being filled from the current filesystem or a later backend response.
 
 Fields must preserve `data-key`, `modiff-field`, `nodrag`, `nowheel`, hidden, disabled, and backend-action contracts. Backend-provided styles are sanitized to safe layout properties by `src/theme/modiffStyle.ts`; visual styling from dynamic payloads is not trusted.
 
+Ordinary numeric controls keep incomplete typing in a local text draft. Blur,
+Enter, step buttons and completed drags commit the bounded finite value as a JSON
+number, including zero and precise floats. Arrow keys adjust the draft until
+commit; Escape restores the prior value. Historical imported numeric strings
+remain readable; merely opening a field does not rewrite the saved document.
+
 The backend isolates reviewed nonqueued generic Modular loader/schema callbacks
 from live model owners. Their existing `/fields/action` and WebSocket messages
 are unchanged; no client model-family dispatch or extra execution path is needed.
@@ -1791,3 +1821,66 @@ native layout generation or semantic-fidelity proof. Apply stays one ordinary
 history transaction; Regenerate recaptures the original request after an
 untouched Apply, so appended text does not accumulate. Existing plain and native
 structured proposal schemas remain strict and retain their own declarations.
+
+A source-declared `required_diffusers_provider` binds an execution profile to
+one of its declared optional overlays and to an explicit required-now runtime
+requirement. Its specification repeats the exact identity as the hash-covered
+`requiredDiffusersProvider`. Both legacy specification key sets remain valid
+without that extension; omission, a different provider, base delivery or a stale
+hash refuses a new provider-bound specification. This declarative dependency
+does not hide model choices or grant installation, activation, fit or Auto
+qualification. Observed runtime readiness remains a separate backend decision.
+
+An explicit public execution profile may declare bounded per-task
+`authoringRecipes`, including a distinct raw default and labelled raw choices.
+Public descriptors and the private evaluation namespace share the same strict
+offer parser: every row must belong to its exact profile, pipeline and supported
+task, with unique choices and the declared default included. Known Studio model
+identities retain those offers through the ordinary workflow picker rather than
+discarding them at the legacy presentation boundary. The existing prompt editing
+controls consume the same descriptor maps for both sources; public offers do not
+receive `evaluationOnly` or inherit private authority. Payloads without explicit
+offers preserve their earlier behavior, and public/private collisions still
+refuse. This editing metadata grants neither model fit nor execution readiness.
+
+The optional `layoutAuthoringRecipeChoices` offer adds explicit modes for authored
+regions. It includes the normal append default and is disjoint from raw choices.
+The descriptor carries these as `layoutPromptAuthoringChoices`; Enable selects
+only an exact currently declared identity. A saved explicit mode survives Disable
+and reload, while null layout, conflicting raw/layout selections and withdrawn
+metadata refuse without editing the graph. Selecting a mode and enabling its
+nodes remain one Undo transaction. No model name selects this policy.
+
+The `constrained-authored-table-v1` mode uses a separate hash-covered
+`authoredLayoutConstraint` and the generic `enhance_prompt_constrained_authored_v1`
+operation. The client validates the closed source/tokenizer/limit contract and
+matches it to the consumed request, exact original row projection, token input
+fingerprint and sealed completion. A complete EOS may end at the token limit only
+for this explicit mode. Existing plain/append completion rules and key sets stay
+unchanged. The raw output hash is part of the existing sealed producer record;
+it is not reconstructed from parsed JSON, whose escapes may differ. Apply still
+requires the current producer, atomic authored-pair checks and human wording
+review. Fixed coordinates, a valid table and `contract_only` metadata establish
+neither generated geometry nor semantic quality, Auto or hardware qualification.
+
+### Template weight storage format
+
+Optional form and locked-template `weightFormat` selects immutable storage,
+independently of compute dtype and diffusion quantization. Missing or native
+values preserve historical native recipe hashes. A present unsupported or null
+saved/imported value becomes a blocked `null` sentinel: the workflow and its
+authored graph remain recoverable, hashes distinguish it from Native, and an
+explicit supported selection is required before planning, installation or Run.
+Execution and field-edit parsing stays strict. Explicit non-native values
+participate in recipe locks, Modified detection, persistence and resource-plan
+identity. Managed controls synchronize only inside their existing binding;
+ordinary graphs remain authoritative over their own node values.
+
+A non-native selection needs the current backend's exact profile, pipeline, Hub
+repository, immutable revision and format-specific file manifest. Model Manager
+uses that manifest, so a native-only installation cannot satisfy the selected
+format. This metadata grants no runtime, Auto, model or Gallery qualification
+and does not install packages or files during discovery. Non-native selections
+require Expert because the backend Auto resource contract has no format field;
+native-only plans cannot be reused as format-specific readiness or hardware-fit
+evidence.

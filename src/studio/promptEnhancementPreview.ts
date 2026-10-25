@@ -18,6 +18,7 @@ import {
   planEnablePromptEnhancement,
   planDisablePromptEnhancement,
   planRefreshPromptEnhancementRequest,
+  planSelectPromptEnhancementParent,
 } from './promptEnhancementAuthoring';
 import { coordinateGraphRun, type CoordinatedGraphRunResult } from './runCoordinator';
 import { validateCurrentRun } from './runReadiness';
@@ -38,6 +39,7 @@ import {
 } from './promptEnhancementSummary';
 import { parseLayoutConditioning } from './layoutConditioning';
 import { planApplyPromptEnhancement, promptEnhancementPairHash } from './promptEnhancementAuthoring';
+import { AUTHORED_CONSTRAINT_OPERATION, AUTHORED_CONSTRAINT_POLICY } from './promptEnhancementConstraints';
 
 function currentSourceKey() {
   const { nodes, edges } = useFlowStore.getState();
@@ -57,14 +59,28 @@ export function promptEnhancementOwner(
 
 /** A normal metadata request can refuse private/unavailable profiles. Nothing
  * mutates or prepares until both exact selected responses have validated. */
-async function resolveSelection(ownerId: string, signal?: AbortSignal) {
+async function resolveSelection(
+  ownerId: string,
+  signal?: AbortSignal,
+  chooseForAuthoredLayout = false,
+  rawAuthoringRecipeId?: string,
+  layoutAuthoringRecipeId?: string,
+) {
   const context = { ...captureWorkflowOperationContext() };
   const sourceKey = currentSourceKey();
-  const graph = useFlowStore.getState().toObject();
+  let graph = useFlowStore.getState().toObject();
   const signature = operationGraphSignature(graph);
-  const { selection, native } = promptEnhancementOwner(ownerId);
+  let { selection, native } = promptEnhancementOwner(ownerId);
   const identity = selection.parent;
   const operations = useNodesStore.getState().operationContracts;
+  const descriptors = () =>
+    useNodesStore
+      .getState()
+      .workflowModelDescriptors.filter(
+        (descriptor) =>
+          descriptor.profileId === identity.executionProfileId && descriptor.pipeline === identity.pipelineClass,
+      );
+  const descriptorsKey = canonicalBlockStringifyV2(descriptors());
   const operationsKey = canonicalBlockStringifyV2(
     operations.filter(
       (operation) => operation.pipelineClass === identity.pipelineClass && operation.task === identity.task,
@@ -75,6 +91,7 @@ async function resolveSelection(ownerId: string, signal?: AbortSignal) {
     assertWorkflowOperationContext(context);
     if (
       currentSourceKey() !== sourceKey ||
+      canonicalBlockStringifyV2(descriptors()) !== descriptorsKey ||
       operationsKey !==
         canonicalBlockStringifyV2(
           useNodesStore
@@ -95,7 +112,7 @@ async function resolveSelection(ownerId: string, signal?: AbortSignal) {
     identity.authoringRecipeId,
   );
   check();
-  const recipe = first.authoring;
+  let recipe = first.authoring;
   if (
     !recipe ||
     recipe.contentHash !== identity.authoringContentHash ||
@@ -131,7 +148,7 @@ async function resolveSelection(ownerId: string, signal?: AbortSignal) {
     typeof artifact.value !== 'string'
   )
     invalidAncillary('the selected parent requires its immutable Hub artifact.');
-  const selected = await requestOperationStarter(
+  let selected = await requestOperationStarter(
     identity.pipelineClass,
     identity.task,
     operations,
@@ -143,6 +160,75 @@ async function resolveSelection(ownerId: string, signal?: AbortSignal) {
   check();
   if (!selected.authoring || canonicalBlockStringifyV2(selected.authoring) !== canonicalBlockStringifyV2(recipe))
     invalidAncillary('the selected repository resolved a different enhancement declaration.');
+  if (chooseForAuthoredLayout) {
+    const choices = descriptors();
+    const normalId = choices.length === 1 ? choices[0]!.authoringRecipes?.[identity.task] : undefined;
+    const rawId = choices.length === 1 ? choices[0]!.rawPromptAuthoringRecipes?.[identity.task] : undefined;
+    const declared = choices.length === 1 ? (choices[0]!.rawPromptAuthoringChoices?.[identity.task] ?? []) : [];
+    const layoutDeclared =
+      choices.length === 1 ? (choices[0]!.layoutPromptAuthoringChoices?.[identity.task] ?? []) : [];
+    const rawIds = new Set([...(rawId ? [rawId] : []), ...declared.map((choice) => choice.authoringRecipeId)]);
+    const layoutIds = new Set([
+      ...(normalId ? [normalId] : []),
+      ...layoutDeclared.map((choice) => choice.authoringRecipeId),
+    ]);
+    if (rawAuthoringRecipeId !== undefined && (!normalId || !rawId || !rawIds.has(rawAuthoringRecipeId)))
+      invalidAncillary('the selected raw enhancement recipe is no longer declared. Refresh the current choices.');
+    if (layoutAuthoringRecipeId !== undefined && (!normalId || !layoutIds.has(layoutAuthoringRecipeId)))
+      invalidAncillary('the selected layout enhancement recipe is no longer declared. Refresh the current choices.');
+    // Only exact backend-declared alternatives opt into selection. Unrelated
+    // saved recipes retain their identity; an explicit layout choice is never
+    // inferred from a model name or substituted for the normal append default.
+    if (normalId && (rawId || layoutDeclared.length) && (layoutIds.has(recipe.id) || rawIds.has(recipe.id))) {
+      const owner = native.nodes.find((node) => node.id === ownerId);
+      const child = recipe.ancillaryOperations?.length === 1 ? recipe.ancillaryOperations[0] : undefined;
+      if (!owner || !child || owner.data.operationAuthoring?.ancillaryBindings?.length)
+        invalidAncillary('disable the current enhancement before selecting another one.');
+      const field = child.bindings.owner.layoutField;
+      if (native.edges.some((edge) => edge.target === ownerId && edge.targetHandle === field))
+        invalidAncillary('enhancement needs authored inline prompt and layout controls.');
+      const parameter = owner.data.params[field];
+      if (!parameter) invalidAncillary('the authored layout control is unavailable.');
+      const layout = parseLayoutConditioning(parameter.value ?? parameter.default ?? null);
+      if (layout && !layout.regions.length)
+        invalidAncillary('add authored regions or select Raw layout before enabling enhancement.');
+      if (rawAuthoringRecipeId !== undefined && layout !== null)
+        invalidAncillary(
+          'the selected raw enhancement recipe requires Raw prompt mode. Your authored layout is unchanged.',
+        );
+      if (
+        layout === null &&
+        (layoutAuthoringRecipeId !== undefined ||
+          (layoutIds.has(recipe.id) && recipe.id !== normalId && rawAuthoringRecipeId === undefined))
+      )
+        invalidAncillary('the selected layout enhancement requires authored regions. Your prompt is unchanged.');
+      const desired =
+        layout === null
+          ? (rawAuthoringRecipeId ?? (rawIds.has(recipe.id) ? recipe.id : rawId) ?? normalId)
+          : (layoutAuthoringRecipeId ?? (layoutIds.has(recipe.id) ? recipe.id : normalId));
+      if (desired !== recipe.id) {
+        const alternative = await requestOperationStarter(
+          identity.pipelineClass,
+          identity.task,
+          operations,
+          signal,
+          identity.executionProfileId,
+          desired,
+          artifact.value,
+        );
+        check();
+        if (!alternative.authoring) invalidAncillary('the declared alternative is unavailable.');
+        graph = {
+          ...graph,
+          ...(await planSelectPromptEnhancementParent(graph, ownerId, recipe, alternative.authoring)),
+        };
+        ({ selection, native } = promptEnhancementOwner(ownerId, graph));
+        recipe = alternative.authoring;
+        selected = alternative;
+      }
+    } else if (rawAuthoringRecipeId !== undefined || layoutAuthoringRecipeId !== undefined)
+      invalidAncillary('the current parent does not declare the selected enhancement alternative.');
+  }
   for (const [role, field, source] of recipe.bindings) {
     if (source !== 'pipelineClass' && source !== 'defaultRevision' && source !== 'executionProfileId') continue;
     const expected =
@@ -199,8 +285,25 @@ function chooseChild(recipe: OperationAuthoringRecipe, childId?: string): Ancill
   return child;
 }
 
-export async function enablePromptEnhancement(ownerId: string, childId?: string, signal?: AbortSignal) {
-  const selected = await resolveSelection(ownerId, signal);
+export async function enablePromptEnhancement(
+  ownerId: string,
+  childId?: string,
+  signal?: AbortSignal,
+  rawAuthoringRecipeId?: string,
+  layoutAuthoringRecipeId?: string,
+) {
+  if (
+    (childId !== undefined && (rawAuthoringRecipeId !== undefined || layoutAuthoringRecipeId !== undefined)) ||
+    (rawAuthoringRecipeId !== undefined && layoutAuthoringRecipeId !== undefined)
+  )
+    invalidAncillary('choose one enhancement mode or a current child, not both.');
+  const selected = await resolveSelection(
+    ownerId,
+    signal,
+    childId === undefined,
+    rawAuthoringRecipeId,
+    layoutAuthoringRecipeId,
+  );
   const child = chooseChild(selected.recipe, childId);
   const graph = await planEnablePromptEnhancement(
     selected.graph,
@@ -585,7 +688,11 @@ export async function finishPromptEnhancementPreview(run: PromptEnhancementPrevi
     runtime: { ...verification.modelReceipt.runtime, dtype, device, quantization },
   };
   const operation =
-    child.layoutPolicy === 'append-details-preserve-layout-v1' ? 'enhance_prompt_append_details' : 'enhance_prompt';
+    child.layoutPolicy === AUTHORED_CONSTRAINT_POLICY
+      ? AUTHORED_CONSTRAINT_OPERATION
+      : child.layoutPolicy === 'append-details-preserve-layout-v1'
+        ? 'enhance_prompt_append_details'
+        : 'enhance_prompt';
   equal(literal(state, request.role, request.operationField), operation, 'selected text operation');
   const expectedControls = {
     max_new_tokens: literal(state, request.role, request.maxNewTokensField),
@@ -621,6 +728,7 @@ export async function finishPromptEnhancementPreview(run: PromptEnhancementPrevi
     references,
     operation,
     ...(child.layoutPolicy ? { layoutPolicy: child.layoutPolicy } : {}),
+    ...(child.authoredLayoutConstraint ? { authoredLayoutConstraint: child.authoredLayoutConstraint } : {}),
   });
   selected.assertCurrent();
   assertRunCurrent(run);

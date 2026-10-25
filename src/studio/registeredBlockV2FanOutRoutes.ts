@@ -1007,8 +1007,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-8471dd70',
-    compiledDefinitionCanonicalSha256: 'sha256:22309165446e3fe286e050780d7dcbd510b282fb2f05ff65622becb6f245c9f6',
+    compiledDefinitionContentHash: 'block-definition-v2-b2f0f280',
+    compiledDefinitionCanonicalSha256: 'sha256:51e7028a8650346c8dc9922cc55d0d2b84777c45e9a8cef035c1d5b095f777b3',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1126,8 +1126,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-4e0a0ec5',
-    compiledDefinitionCanonicalSha256: 'sha256:ffe18a17e0fb2304bf51c949424108c1c0074537f7ca813d90462ab9afef999b',
+    compiledDefinitionContentHash: 'block-definition-v2-e2629765',
+    compiledDefinitionCanonicalSha256: 'sha256:2e14a68f6ff34f3873cd9508a39e579f1eee40647285f5fd7e0ac8c82699fabe',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1234,8 +1234,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-6ed9910a',
-    compiledDefinitionCanonicalSha256: 'sha256:e6cb37718813ef6010016f1a2cacf728a6678bd167630fff28f3613e576956d5',
+    compiledDefinitionContentHash: 'block-definition-v2-379265fa',
+    compiledDefinitionCanonicalSha256: 'sha256:9a575a4a3ed7b5738eee56191f117a5d0172f6c03600a8c540706bdba45e3465',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1354,8 +1354,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-e32aeac4',
-    compiledDefinitionCanonicalSha256: 'sha256:1f4c0e95880104f73cf1ccb3b20cb0dd064fd6c8633e954748d094fb60dde0e5',
+    compiledDefinitionContentHash: 'block-definition-v2-8525ceac',
+    compiledDefinitionCanonicalSha256: 'sha256:80cde6d0ffdac99665faebc92385962d0e41e70e2c5d6426e002ea8c87403d80',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -1461,8 +1461,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-874adb59',
-    compiledDefinitionCanonicalSha256: 'sha256:936d77487a54c3266e09c83a166d53495f626681d8dae6bc104c093680e82abe',
+    compiledDefinitionContentHash: 'block-definition-v2-d00ee951',
+    compiledDefinitionCanonicalSha256: 'sha256:c097c8e03f20e8c607ae066ae697cfe7b4848426f81f9fd549cb562b58613033',
     controlFanOuts: [
       {
         source: 'alphaMode',
@@ -1537,8 +1537,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-8c1723bc',
-    compiledDefinitionCanonicalSha256: 'sha256:0bcbd9927ebb8abb5ca32c08863fce741196b0007d87e562ff4bb1215fdcfeef',
+    compiledDefinitionContentHash: 'block-definition-v2-cf881b74',
+    compiledDefinitionCanonicalSha256: 'sha256:c2d6020546a8cd953946b2a71dc1e14641c335fc923e0536be39b6969a4e1716',
     controlFanOuts: [
       {
         source: 'guidanceScale',
@@ -4117,8 +4117,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-695cc609',
-    compiledDefinitionCanonicalSha256: 'sha256:f46fff0c0fdfe617566e24e4ac29274ed0a29c3957b8057b56989fd13e970c77',
+    compiledDefinitionContentHash: 'block-definition-v2-25787e3b',
+    compiledDefinitionCanonicalSha256: 'sha256:57d753349ca1b51e6c80e7379fca3b35d5f62ba6f150aedbc28bcff2c4d5d11a',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -4243,8 +4243,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-83320b01',
-    compiledDefinitionCanonicalSha256: 'sha256:d6c667706e66592a37b1bbdea245e8280b6a32327ed931385de0d7170ea7886d',
+    compiledDefinitionContentHash: 'block-definition-v2-7daa0d19',
+    compiledDefinitionCanonicalSha256: 'sha256:519b12ae04afc4fae0d611249304a93a7962465429fa942125d0103ac7a6d48a',
     controlFanOuts: [
       {
         source: 'dtype',
@@ -4368,8 +4368,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       { event: 'onSignal', field: 'unet', role: 'ipAdapter', valueSource: 'pipelineClass' },
       { event: 'onSignal', field: 'guider_out', role: 'guider', valueSource: 'pipelineClass' },
     ],
-    compiledDefinitionContentHash: 'block-definition-v2-8acd62de',
-    compiledDefinitionCanonicalSha256: 'sha256:e24ce4d42d61c3e23ced8e7f44ea29df95196b601adbc3a74f16c23e6002dc2b',
+    compiledDefinitionContentHash: 'block-definition-v2-5afc0ffe',
+    compiledDefinitionCanonicalSha256: 'sha256:643f41459ff0f876c68005873bb15038ef36f52503a08e48015fa6e4382937cf',
     controlFanOuts: [
       {
         source: 'alphaMode',

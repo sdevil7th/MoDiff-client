@@ -450,6 +450,19 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
             profile.optional_runtime_delivery !== requirement.delivery)))
     )
       invalid();
+    if (Object.prototype.hasOwnProperty.call(profile, 'required_diffusers_provider')) {
+      const provider = profile.required_diffusers_provider;
+      if (typeof provider !== 'string' || !runtimeId.test(provider)) invalid();
+      const declared = ids(profile.optional_runtime_profiles, runtimeId, false);
+      if (
+        profile.optional_runtime_delivery !== 'optional_overlay' ||
+        !declared.includes(provider) ||
+        requirement?.delivery !== 'optional_overlay' ||
+        requirement.requiredNow !== true ||
+        !requirement.profileIds.includes(provider)
+      )
+        invalid();
+    }
     delete profile.optional_runtime_requirement;
     profile.modes = modes;
     profile.optionalRuntimeRequirement = requirement;

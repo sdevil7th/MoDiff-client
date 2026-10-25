@@ -4,6 +4,8 @@ import type { StudioExecutionProfile, StudioImageAdapterAuthoringPolicy } from '
 import { getRepoCacheStatus, getStudioModelCacheStatus, type StudioModelCacheStatus } from '../studio/modelCache';
 import type { PipelineSupport, PipelineTaskSupport } from './operationCatalog';
 import { parseWorkflowModelInventory, type WorkflowModelInventory } from './workflowModelInventory';
+import { parseAuthoringRecipeOffers } from './authoringRecipeOffers';
+import { identifier } from './operationContracts';
 
 export type WorkflowChoice = {
   id: string;
@@ -45,6 +47,10 @@ export type WorkflowModelDescriptor = {
   modelType?: string;
   adapterAuthoringProfile?: WorkflowImageAdapterProfile;
   authoringRecipes?: Readonly<Record<string, string>>;
+  /** Explicit backend alternative for a null authored layout; never inferred from model names. */
+  rawPromptAuthoringRecipes?: Readonly<Record<string, string>>;
+  rawPromptAuthoringChoices?: Readonly<Record<string, readonly { authoringRecipeId: string; label: string }[]>>;
+  layoutPromptAuthoringChoices?: Readonly<Record<string, readonly { authoringRecipeId: string; label: string }[]>>;
 };
 
 /** Presentation-only identities for generic workflows, independent of legacy Studio forms. */
@@ -76,22 +82,69 @@ export function parseWorkflowModelDescriptors(
   const result: WorkflowModelDescriptor[] = [];
   for (const raw of payload.capabilities as unknown[]) {
     const model = object(raw);
-    if (typeof model.modelType === 'string' && known.has(model.modelType)) continue;
+    const knownModel = typeof model.modelType === 'string' && known.has(model.modelType);
     const profiles = model.executionProfiles;
+    // Older known-model records retain their legacy presentation boundary.
+    // Explicit offers opt into this same generic profile/task contract.
+    if (
+      knownModel &&
+      (!Array.isArray(profiles) ||
+        !profiles.some(
+          (profile) =>
+            profile !== null &&
+            typeof profile === 'object' &&
+            Object.prototype.hasOwnProperty.call(profile, 'authoringRecipes'),
+        ))
+    )
+      continue;
     if (profiles === undefined) continue;
     if (!Array.isArray(profiles) || profiles.length > 512) invalid();
     for (const rawProfile of profiles as unknown[]) {
       const profile = object(rawProfile);
+      const hasOffers = Object.prototype.hasOwnProperty.call(profile, 'authoringRecipes');
+      if (knownModel && !hasOffers) continue;
       const profileId = text(profile.id);
       if (!selectedIds.has(profileId)) continue;
       const pipeline = text(profile.pipeline_class);
       if (profile.public === false || !selected.has(`${pipeline}:${profileId}`)) continue;
+      if (hasOffers && profile.public !== true) invalid();
       if (text(profile.model_type) !== text(model.modelType) || seen.has(profileId)) invalid();
       if (profile.public !== undefined && typeof profile.public !== 'boolean') invalid();
       seen.add(profileId);
       const repo = text(profile.default_repo);
       const inventory = parseWorkflowModelInventory(model, repo);
-      result.push({ profileId, pipeline, label: text(model.label), repo, ...(inventory ? { inventory } : {}) });
+      let offers: Pick<
+        WorkflowModelDescriptor,
+        'authoringRecipes' | 'rawPromptAuthoringRecipes' | 'rawPromptAuthoringChoices' | 'layoutPromptAuthoringChoices'
+      > = {};
+      if (hasOffers) {
+        const declaredModes = Array.isArray(profile.modes) ? profile.modes : invalid();
+        if (!declaredModes.length || declaredModes.length > 64) invalid();
+        const modes = declaredModes.map(identifier);
+        if (new Set(modes).size !== modes.length) invalid();
+        const parsed = parseAuthoringRecipeOffers(
+          profile.authoringRecipes,
+          [{ id: profileId, pipeline, modes }],
+          support,
+          invalid,
+        );
+        offers = {
+          ...(parsed.recipes.has(profileId) ? { authoringRecipes: parsed.recipes.get(profileId) } : {}),
+          ...(parsed.rawRecipes.has(profileId) ? { rawPromptAuthoringRecipes: parsed.rawRecipes.get(profileId) } : {}),
+          ...(parsed.rawChoices.has(profileId) ? { rawPromptAuthoringChoices: parsed.rawChoices.get(profileId) } : {}),
+          ...(parsed.layoutChoices.has(profileId)
+            ? { layoutPromptAuthoringChoices: parsed.layoutChoices.get(profileId) }
+            : {}),
+        };
+      }
+      result.push({
+        profileId,
+        pipeline,
+        label: text(model.label),
+        repo,
+        ...(inventory ? { inventory } : {}),
+        ...offers,
+      });
     }
   }
   return result;
@@ -124,9 +177,22 @@ export function workflowChoices(
           authoringRecipes?: Readonly<Record<string, string>>;
         }>((id) => {
           const entry = profiles.get(id);
-          if (entry)
-            return [{ model: entry.model, profileId: id, label: entry.model.label, repo: entry.profile.default_repo }];
           const descriptor = descriptors.find((d) => d.profileId === id && d.pipeline === pipeline.pipelineClass);
+          if (entry)
+            return [
+              {
+                model: entry.model,
+                profileId: id,
+                label: entry.model.label,
+                repo: entry.profile.default_repo,
+                ...(descriptor &&
+                !descriptor.evaluationOnly &&
+                descriptor.repo === entry.profile.default_repo &&
+                descriptor.authoringRecipes
+                  ? { authoringRecipes: descriptor.authoringRecipes }
+                  : {}),
+              },
+            ];
           return descriptor ? [{ model: undefined, ...descriptor }] : [];
         });
         if (!matches.length)

@@ -9,6 +9,11 @@ import { canonicalWorkflowContract, findCanonicalWorkflowRecord } from './releas
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(CLIENT_ROOT, '..', 'MoDiff'));
+const qualificationArgs = process.argv.slice(2);
+if (qualificationArgs.length > 1 || qualificationArgs.some((value) => value !== '--allow-blocked-probe')) {
+  throw new Error('Template qualification accepts only one optional --allow-blocked-probe argument.');
+}
+const allowBlockedProbe = qualificationArgs.length === 1;
 const ARTIFACT_ROOT = process.env.MODIFF_LIVE_PROOF_ARTIFACT ? resolve(process.env.MODIFF_LIVE_PROOF_ARTIFACT) : null;
 const DIRECT_PROVENANCE_PATH = process.env.MODIFF_TEMPLATE_PROVENANCE
   ? resolve(process.env.MODIFF_TEMPLATE_PROVENANCE)
@@ -80,7 +85,7 @@ if ((provenance.blockers ?? []).length > 0) {
   throw new Error(`Template proof contains blocker(s): ${provenance.blockers.join(' ')}`);
 }
 
-const runtime = await loadTemplateRuntime(CLIENT_ROOT);
+const runtime = await loadTemplateRuntime(CLIENT_ROOT, { includePlanning: allowBlockedProbe });
 const templateId = provenance.template?.id ?? status.templateId;
 const template = runtime.templates.find((item) => item.id === templateId);
 if (!template) throw new Error(`Template ${String(templateId)} is not in the runtime catalog.`);

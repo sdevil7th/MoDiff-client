@@ -1,3 +1,24 @@
+// Explicit artifact-format preservation and ten blocked FP8r planning recipes
+// measure largest/startup/deferred gzip 487800/666105/324323, versus the accepted
+// 480984/659291/323388 baseline. Add only the measured 6816/6814/935 aggregate
+// growth, retaining 15/17/39 bytes of headroom. Dependencies, minifier, loading
+// boundaries, validators and the independent 65536-byte chunk limit stay fixed.
+// Mandatory source/effective pre-tokenizer identities add the final strict
+// consumer checks. The final build measures deferred gzip 323388 versus
+// 323285 (+103); retain 39 bytes of aggregate headroom at 323427. Startup
+// measures 659291/480984 below its existing caps. No dependency, minifier,
+// loading-boundary, validator or individual deferred chunk cap changes.
+// Generic public recipe/provider discovery and the strict authored-layout PUP
+// consumer measure largest/startup/deferred gzip 480976/659280/323285 bytes,
+// versus 479207/657512/321188 at the accepted prior feature checkpoint.
+// Add the measured aggregate growth 1769/1768/2097, retaining 23/28/39 bytes
+// of headroom. Dependencies, minifier, loading boundaries, validation and the
+// independent 65536-byte deferred chunk limit are unchanged.
+// Declared raw/layout PUP selection adds bounded alternative parsing, exact-parent
+// rebinding and deferred controls. Measured deferred gzip grows 319433 -> 320994
+// (+1561 bytes across the deferred graph). Add only this measured growth
+// to the aggregate cap, preserving 39 bytes of headroom at 321033. Startup/chunk
+// caps, dependencies, minifier, lazy boundaries and validators remain unchanged.
 // Normal evaluation discovery/Custom selection, declared PUP/LoRA authoring,
 // default-seed consumption and current runtime-option presentation measure
 // largest-startup/startup/deferred gzip bytes 479207/657512/319433 in the
@@ -177,6 +198,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Retain the strict current-owner/parser checks and allow 128 startup/chunk
 // bytes only; dependencies, lazy boundaries, minifier and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  6816 +
+  1769 +
   450 * 1024 +
   896 +
   768 +
@@ -286,6 +309,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  6814 +
+  1768 +
   624 * 1024 +
   896 +
   768 +
@@ -474,7 +499,14 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Keep both aggregate and individual deferred limits unchanged.
 // The selected-image authoring feature above uses 320 additional aggregate bytes;
 // the independently bounded 64 KiB deferred chunks and loading checks stay fixed.
+// Sealed selector normalization and reviewed catalog pins measure deferred gzip
+// 320994 -> 321188 bytes (+194). Add only that measured aggregate cost to the
+// 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
+// 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  935 +
+  103 +
+  2097 +
   248 * 1024 +
   32 +
   2368 +
@@ -503,7 +535,9 @@ const MAX_DEFERRED_GZIP_BYTES =
   1536 +
   353 +
   1593 +
-  864;
+  864 +
+  1561 +
+  194;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

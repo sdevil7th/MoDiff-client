@@ -29,6 +29,9 @@ after(async () => {
   rmSync(cache, { recursive: true, force: true });
 });
 const raw = (index = 0) => JSON.parse(fixture.parents[index].rawParentJson);
+const authoredConstraint = JSON.parse(
+  readFileSync('tests/fixtures/authored-layout-constraint.v1.json', 'utf8'),
+).contract;
 function rehash(parent) {
   for (const child of parent.ancillaryOperations ?? []) {
     delete child.contentHash;
@@ -49,6 +52,100 @@ function binding() {
     roleNodes: Object.fromEntries(child.roles.map(([role]) => [role, `aux:${role}`])),
   };
 }
+test('a constrained ancillary requires its hash-covered source contract and exact native operation', () => {
+  const captured = JSON.parse(
+    readFileSync('tests/fixtures/evaluation-prompt-enhancement-alternatives.v1.json', 'utf8'),
+  );
+  const starter = captured.starters.find(
+    (row) => row.task === 'text_to_image' && row.authoring.ancillaryOperations[0].layoutPolicy,
+  );
+  const parent = structuredClone(starter.authoring);
+  const child = parent.ancillaryOperations[0];
+  child.layoutPolicy = authoredConstraint.layoutPolicy;
+  child.authoredLayoutConstraint = structuredClone(authoredConstraint);
+  child.initialValues.find(
+    ([role, field]) =>
+      role === child.verification.requestInputs.role && field === child.verification.requestInputs.operationField,
+  )[2] = authoredConstraint.operation;
+  rehash(parent);
+  const context = { ...child.parent, parentRoles: parent.roles.map(([role]) => role) };
+  assert.deepEqual(api.parseAncillaryOperations(parent.ancillaryOperations, context), parent.ancillaryOperations);
+  for (const mutate of [
+    (item) => {
+      delete item.authoredLayoutConstraint;
+    },
+    (item) => {
+      item.layoutPolicy = 'append-details-preserve-layout-v1';
+    },
+    (item) => {
+      item.authoredLayoutConstraint.revision = 'a'.repeat(40);
+    },
+    (item) => {
+      item.authoredLayoutConstraint.transformersVersion = '0.0.0';
+    },
+    (item) => {
+      item.initialValues.find(
+        ([role, field]) =>
+          role === item.verification.requestInputs.role && field === item.verification.requestInputs.operationField,
+      )[2] = 'enhance_prompt';
+    },
+    (item) => {
+      item.authoredLayoutConstraint.extra = true;
+    },
+  ]) {
+    const changed = structuredClone(parent);
+    mutate(changed.ancillaryOperations[0]);
+    rehash(changed);
+    assert.throws(() => api.parseAncillaryOperations(changed.ancillaryOperations, context));
+  }
+});
+
+test('constraint metadata stays bounded and cannot execute accessors or widen token/deadline scope', async () => {
+  const { parseAuthoredLayoutConstraint } = await server.ssrLoadModule('/src/studio/promptEnhancementConstraints.ts');
+  assert.deepEqual(parseAuthoredLayoutConstraint(authoredConstraint), authoredConstraint);
+  for (const mutate of [
+    (item) => {
+      item.limits.lookup_seconds = 3;
+    },
+    (item) => {
+      item.limits.max_new_tokens = 3585;
+    },
+    (item) => {
+      item.deadlineSeconds = 1801;
+    },
+    (item) => {
+      item.preparationRamBytes = 268435457;
+    },
+    (item) => {
+      delete item.sourcePreTokenizerSha256;
+    },
+    (item) => {
+      item.effectivePreTokenizerSha256 = false;
+    },
+    (item) => {
+      item.reservedAddedTokenIds[0] = 0;
+    },
+    (item) => {
+      item.effectiveEosTokenIds[0] = 1;
+    },
+    (item) => {
+      item.artifacts[0].path = '../tokenizer.json';
+    },
+    (item) => {
+      item.artifacts[0].byteSize = true;
+    },
+    (item) => {
+      Object.defineProperty(item, 'limits', { enumerable: true, get: () => assert.fail('No getter may execute') });
+    },
+    (item) => {
+      Object.defineProperty(item.artifacts, '0', { enumerable: true, get: () => assert.fail('No getter may execute') });
+    },
+  ]) {
+    const bad = structuredClone(authoredConstraint);
+    mutate(bad);
+    assert.throws(() => parseAuthoredLayoutConstraint(bad), /constraint contract/);
+  }
+});
 for (const [index, row] of fixture.parents.entries()) {
   test(`actual captured parent ${index + 1} retains exact optional child/hash`, () =>
     assert.deepEqual(parse(raw(index), row.selection), raw(index)));

@@ -4,6 +4,12 @@ export { ancillaryBindingsFromHint, parseAncillaryBindings, invalidAncillary } f
 export type { AncillaryParentIdentity, AncillaryInstanceBinding, AncillaryExecutionPurpose } from './ancillaryBindings';
 import type { NativeEnhancementModelReceipt, PromptEnhancementMode } from './promptEnhancementSummary';
 import { hashString, stableStringify } from './stableHash';
+import {
+  AUTHORED_CONSTRAINT_OPERATION,
+  AUTHORED_CONSTRAINT_POLICY,
+  parseAuthoredLayoutConstraint,
+  type AuthoredLayoutConstraint,
+} from './promptEnhancementConstraints';
 
 export type AncillaryVerification = {
   schemaVersion: 1;
@@ -41,7 +47,8 @@ export type AncillaryOperation = {
   parent: AncillaryParentIdentity;
   executionPurpose: 'explicit_preview';
   sourceRegions: false;
-  layoutPolicy?: 'preserve-authored-v1' | 'append-details-preserve-layout-v1';
+  layoutPolicy?: 'preserve-authored-v1' | 'append-details-preserve-layout-v1' | typeof AUTHORED_CONSTRAINT_POLICY;
+  authoredLayoutConstraint?: AuthoredLayoutConstraint;
   verification?: AncillaryVerification;
   roles: [string, string, number, number][];
   edges: [string, string, string, string][];
@@ -98,6 +105,9 @@ export function parseAncillaryOperations(value: unknown, context: AncillaryParen
       ...(raw && typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'fieldOverrides')
         ? ['fieldOverrides']
         : []),
+      ...(raw && typeof raw === 'object' && Object.prototype.hasOwnProperty.call(raw, 'authoredLayoutConstraint')
+        ? ['authoredLayoutConstraint']
+        : []),
     ]);
     const id = text(item.id, 128, ID);
     if (
@@ -111,7 +121,8 @@ export function parseAncillaryOperations(value: unknown, context: AncillaryParen
     if (
       item.layoutPolicy !== undefined &&
       item.layoutPolicy !== 'preserve-authored-v1' &&
-      item.layoutPolicy !== 'append-details-preserve-layout-v1'
+      item.layoutPolicy !== 'append-details-preserve-layout-v1' &&
+      item.layoutPolicy !== AUTHORED_CONSTRAINT_POLICY
     )
       invalidAncillary('unsupported authored-layout preservation policy.');
     const selected = parent(item.parent, false);
@@ -235,6 +246,28 @@ export function parseAncillaryOperations(value: unknown, context: AncillaryParen
         ))
     )
       invalidAncillary('append-details needs its declared operation and verification metadata.');
+    const constrained = item.layoutPolicy === AUTHORED_CONSTRAINT_POLICY;
+    if (constrained !== Object.prototype.hasOwnProperty.call(item, 'authoredLayoutConstraint'))
+      invalidAncillary('the constrained operation needs its exact source contract.');
+    if (constrained) {
+      const contract = parseAuthoredLayoutConstraint(item.authoredLayoutConstraint);
+      const source = verification?.modelReceipt.source;
+      if (
+        !verification ||
+        !source ||
+        contract.adapterId !== verification.adapter.id ||
+        contract.repository !== source.repository ||
+        contract.revision !== source.revision ||
+        contract.transformersVersion !== verification.modelReceipt.runtime.transformersVersion ||
+        !(item.initialValues as unknown[][]).some(
+          ([role, field, value]) =>
+            role === verification.requestInputs.role &&
+            field === verification.requestInputs.operationField &&
+            value === AUTHORED_CONSTRAINT_OPERATION,
+        )
+      )
+        invalidAncillary('the constrained source contract differs from the selected native operation.');
+    }
     if (Object.prototype.hasOwnProperty.call(item, 'fieldOverrides')) {
       const selected = new Set<string>();
       for (const raw of collection(item.fieldOverrides, 32)) {

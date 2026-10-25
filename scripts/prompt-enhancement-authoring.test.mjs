@@ -94,6 +94,86 @@ test('absent metadata preserves legacy graph bytes and adds no feature', () => {
   assert.deepEqual(graph, { nodes: [], edges: [] });
 });
 
+test('alternative enhancement parent selection preserves authored graph state and refuses structural drift', async (t) => {
+  const { graph, parent, owner } = setup();
+  const target = structuredClone(parent);
+  target.id = `${parent.id}:alternative`;
+  const child = target.ancillaryOperations[0];
+  child.id = `${target.id}:preview`;
+  child.parent.authoringRecipeId = target.id;
+  const rehash = () => {
+    const { contentHash: _childHash, ...childBody } = child;
+    child.contentHash = `studio-ancillary-v1-${stable.hashString(stable.stableStringify(childBody))}`;
+    const { contentHash: _parentHash, ...body } = target;
+    target.contentHash = `studio-authoring-v1-${stable.hashString(stable.stableStringify(body))}`;
+  };
+  rehash();
+  const before = structuredClone(graph);
+  const chosen = await authoring.planSelectPromptEnhancementParent(graph, owner.id, parent, target);
+  assert.deepEqual(graph, before);
+  assert.deepEqual(chosen.edges, graph.edges);
+  assert.equal(chosen.nodes.length, graph.nodes.length);
+  const expected = structuredClone(graph);
+  expected.nodes.find((node) => node.id === owner.id).data.operationAuthoring.ancillaryParent.parent = {
+    ...child.parent,
+    authoringContentHash: target.contentHash,
+  };
+  assert.deepEqual(chosen, expected, 'Only the selected owner advisory identity changes.');
+  for (const [name, alter] of [
+    [
+      'base spec',
+      (p) => {
+        p.baseSpecId = 'another';
+      },
+    ],
+    [
+      'roles',
+      (p) => {
+        p.roles[0][2] += 1;
+      },
+    ],
+    [
+      'bindings',
+      (p) => {
+        p.bindings[0][1] = 'another';
+      },
+    ],
+    [
+      'initial values',
+      (p) => {
+        p.initialValues.push(['prompt', 'unrelated', 1]);
+      },
+    ],
+    [
+      'edges',
+      (p) => {
+        p.edges[0][1] = 'another';
+      },
+    ],
+    [
+      'owner',
+      (p) => {
+        p.ancillaryOperations[0].bindings.owner.layoutField = 'another';
+      },
+    ],
+    [
+      'multiple children',
+      (p) => {
+        p.ancillaryOperations.push(p.ancillaryOperations[0]);
+      },
+    ],
+  ])
+    await t.test(name, async () => {
+      const malformed = structuredClone(target);
+      alter(malformed);
+      await assert.rejects(
+        authoring.planSelectPromptEnhancementParent(graph, owner.id, parent, malformed),
+        /alternative/,
+      );
+      assert.deepEqual(graph, before);
+    });
+});
+
 test('saved enhancement selection is a strict advisory context with exact role remapping', () => {
   const { owner, parent } = setup();
   const before = structuredClone(owner.data.operationAuthoring);

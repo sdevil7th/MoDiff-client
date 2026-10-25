@@ -451,6 +451,35 @@ Never mutate a released source configuration to `main`, a tag, or a pull-request
 ref. Rollback means restoring the previous checked-in commit SHA and asset-set
 identity.
 
+## Reviewed approved-subset source updates
+
+`upload-provisional` remains non-activating. When a release deliberately retains
+held previews, maintainers may review an immutable source-descriptor update,
+as the existing approved-subset runtime contract supports. This is separate
+from the complete-set `activate` command.
+
+After human rights approval of every newly included byte and the uploader's
+anonymous verification, review the exact returned Dataset revision and subset
+manifest against the complete local manifest and rights ledger. Update only
+`repoId`, the immutable `revision`, and the corresponding source identities in
+`src/studio/templateAssetSource.json`: `assetSetId` is the verified subset;
+`completeAssetSetId` is the complete checked authoring manifest; and the sorted
+`unavailableAssets` list must exactly match the verified remote `missingAssets`.
+Preserve the existing path roots and Dataset type. Never infer these values
+from directory contents or clear a hold to make the sets match.
+
+Run `verify-remote --full` against that reviewed descriptor before its commit.
+It validates the exact complete manifest or approved-subset projection and
+rights ledger, then anonymously verifies every included byte and rejects
+unexpected managed files. Run the ordinary asset storage/release checks and
+Setup's Gallery materialization check for the same pinned source. Rollback is
+the previous descriptor and identities. Keep held assets excluded; do not use
+complete-set `activate` or `prune-local` for a subset.
+
+This source update does not approve media rights, template quality, model
+execution, Auto, or Gallery eligibility. New inputs and previews still require
+the normal per-file human rights and template evidence reviews.
+
 ## Live generation batching
 
 The maintainer-only Gallery runner may reuse a loaded pipeline only for consecutive templates with the same normalized Studio `modelType`. The first template, every model boundary, and every failed template resets the reuse chain and invokes accelerator cleanup. Template inputs come from an explicit checked-in input map; the runner never acquires or repairs a model during execution. Use `npm run gallery:run -- --help` for the current options rather than retaining dated host-specific command batches in documentation.

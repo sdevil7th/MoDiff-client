@@ -136,6 +136,144 @@ export function qwenInpaintNativeCandidateSelection(id: StudioTemplateId): Studi
 /** Curated fresh recipes, not global model defaults or execution authority. */
 export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateId, StudioTemplateExecutionSelection>> =
   {
+    // Public-intent planning descriptors; no runtime or Gallery qualification.
+    flux3_klein_fp8r512_text_to_image: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3DistilledModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'flux3-klein:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3DistilledModularPipeline',
+        mode: 'text_to_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein:official:text-to-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_fp8r512_single_reference_edit: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3DistilledModularPipeline',
+      task: 'edit_image',
+      executionProfileId: 'flux3-klein:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3DistilledModularPipeline',
+        mode: 'edit_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein:official:edit-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_fp8r512_multi_reference_edit: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3DistilledModularPipeline',
+      task: 'edit_image',
+      executionProfileId: 'flux3-klein:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3DistilledModularPipeline',
+        mode: 'edit_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein:official:edit-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_fp8r512_raw_coordinate_prompt: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3DistilledModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'flux3-klein:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3DistilledModularPipeline',
+        mode: 'text_to_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein:official:text-to-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_fp8r512_lora_style: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3DistilledModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'flux3-klein:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3DistilledModularPipeline',
+        mode: 'text_to_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein:official:text-to-image:prompt-preview-append-fp32:v1',
+      loraPolicy: {
+        defaultAdapterName: 'style',
+      },
+    },
+    flux3_klein_base_fp8r512_text_to_image: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3ModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'flux3-klein-base:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3ModularPipeline',
+        mode: 'text_to_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein-base:official:text-to-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_base_fp8r512_single_reference_edit: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3ModularPipeline',
+      task: 'edit_image',
+      executionProfileId: 'flux3-klein-base:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3ModularPipeline',
+        mode: 'edit_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein-base:official:edit-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_base_fp8r512_multi_reference_edit: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3ModularPipeline',
+      task: 'edit_image',
+      executionProfileId: 'flux3-klein-base:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3ModularPipeline',
+        mode: 'edit_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein-base:official:edit-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_base_fp8r512_raw_coordinate_prompt: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3ModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'flux3-klein-base:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3ModularPipeline',
+        mode: 'text_to_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein-base:official:text-to-image:prompt-preview-append-fp32:v1',
+    },
+    flux3_klein_base_fp8r512_lora_style: {
+      schemaVersion: 1,
+      pipelineClass: 'Flux3ModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'flux3-klein-base:official-provider:v1',
+      bindingSpec: {
+        modelType: 'Flux3ModularPipeline',
+        mode: 'text_to_image',
+      },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+      authoringRecipeId: 'flux3-klein-base:official:text-to-image:prompt-preview-append-fp32:v1',
+      loraPolicy: {
+        defaultAdapterName: 'tarot',
+      },
+    },
+
     ...recipes(
       STANDARD_Z_TEMPLATE_IDS,
       native(

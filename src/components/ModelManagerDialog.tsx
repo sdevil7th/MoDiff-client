@@ -20,6 +20,7 @@ import {
 import config from '../../app.config';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { studioWeightFormatProfile, hasNonNativeStudioWeightFormat } from '../studio/weightFormat';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
@@ -479,6 +480,7 @@ function ModelManagerDialog({
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
   const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const studioExecutionSpecInvalid = useNodesStore((state) => state.studioExecutionSpecInvalid);
   const studioModelCapabilitiesAuthoritative = useNodesStore((state) => state.studioModelCapabilitiesAuthoritative);
   const refreshModelIndexes = useNodesStore((state) => state.refreshModelIndexes);
   const fetchRegistry = useNodesStore((state) => state.fetchRegistry);
@@ -551,6 +553,16 @@ function ModelManagerDialog({
       currentModelType: focus?.modelType ?? studioForm.modelType,
       includeWorkflowOnly: expertMode,
     }).flatMap((profile) => {
+      if (profile.modelType === studioForm.modelType && hasNonNativeStudioWeightFormat(studioForm)) {
+        const selected = studioWeightFormatProfile(
+          studioForm,
+          profile,
+          studioModelCapabilities,
+          workflowModelDescriptors,
+          studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+        );
+        return selected ? [selected] : [];
+      }
       if (!studioModelCapabilitiesAuthoritative) return [profile];
       const capability = studioModelCapabilities.find((item) => item.modelType === profile.modelType);
       if (!capability) return [profile];
@@ -579,7 +591,9 @@ function ModelManagerDialog({
     expertMode,
     focus?.modelType,
     focus?.repo,
-    studioForm.modelType,
+    studioForm,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid,
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
   ]);
@@ -634,6 +648,9 @@ function ModelManagerDialog({
             form: studioForm,
             hfCache: compactHfCache,
             includePipeline: false,
+            backendCapabilities: studioModelCapabilities,
+            workflowModelDescriptors,
+            studioExecutionSpecInvalid: studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
             localModels,
             modelCacheDiagnostics,
           })
@@ -644,6 +661,10 @@ function ModelManagerDialog({
       hasWorkflowModelContext,
       localModels,
       modelCacheDiagnostics,
+      studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative,
+      workflowModelDescriptors,
+      studioExecutionSpecInvalid,
       studioForm,
       workflowPlanKey,
     ],
@@ -1074,6 +1095,18 @@ function ModelManagerDialog({
           </>
         }
       >
+        {hasNonNativeStudioWeightFormat(studioForm) &&
+        !studioWeightFormatProfile(
+          studioForm,
+          STUDIO_MODEL_PROFILES[studioForm.modelType],
+          studioModelCapabilities,
+          workflowModelDescriptors,
+          studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+        ) ? (
+          <p role="status" className="m-3 text-xs text-hf-orange">
+            {getStudioModelCacheStatus(null, compactHfCache, localModels, modelCacheDiagnostics).reason}
+          </p>
+        ) : null}
         {hfTokenEditorOpen ? (
           <div
             id="model-manager-token-editor"
@@ -1293,10 +1326,16 @@ function ModelManagerDialog({
                     <div key={group} className="grid gap-1">
                       <div className="px-1 text-xs font-semibold text-modiff-subtle-text">{group}</div>
                       {profiles.map((profile) => {
-                        const rowForm = getFormDefaultsForMode(getPrimaryModeForProfile(profile), profile.modelType);
+                        const rowForm =
+                          profile.modelType === studioForm.modelType && hasNonNativeStudioWeightFormat(studioForm)
+                            ? studioForm
+                            : getFormDefaultsForMode(getPrimaryModeForProfile(profile), profile.modelType);
                         const planKey = autoPlanKeyForForm(rowForm);
                         const rowPlan = autoResourcePlans[planKey];
-                        const rowInstallTarget = autoResourceInstallTarget(rowPlan);
+                        const rowInstallTarget = autoResourceInstallTarget(
+                          rowPlan,
+                          hasNonNativeStudioWeightFormat(rowForm) ? rowForm : undefined,
+                        );
                         return (
                           <SupportedProfileRow
                             key={`${profile.modelType}:${profile.defaultRepo}`}

@@ -1,5 +1,15 @@
 import { canonicalBlockStringifyV2 } from './blockSchemaV2';
 import { parseLayoutConditioning, type LayoutConditioning } from './layoutConditioning';
+import {
+  AUTHORED_CONSTRAINT_OPERATION,
+  AUTHORED_CONSTRAINT_POLICY,
+  parseAuthoredConstraintCompletion,
+  parseAuthoredLayoutConstraint,
+  parseConsumedAuthoredLayoutConstraint,
+  type AuthoredLayoutConstraint,
+  type ConsumedAuthoredLayoutConstraint,
+  type AuthoredConstraintCompletion,
+} from './promptEnhancementConstraints';
 
 /** Transport observations only. Parsing or matching hashes never authorizes Apply. */
 export type PromptEnhancementMode = 't2i' | 'i2i' | 't2i_bbox' | 'i2i_bbox';
@@ -64,7 +74,8 @@ export type EnhancementConsumedInput = {
   references: EnhancementReference[];
   processedImageGrid: [number, number, number][];
   fingerprints: {
-    operation: 'enhance_prompt' | 'enhance_prompt_append_details';
+    operation: 'enhance_prompt' | 'enhance_prompt_append_details' | typeof AUTHORED_CONSTRAINT_OPERATION;
+    authored_layout_constraint?: ConsumedAuthoredLayoutConstraint;
     enhancement_max_new_tokens: number;
     prompt_adapter_id: string;
     system_prompt_mode: PromptEnhancementMode;
@@ -103,6 +114,7 @@ type EnhancementCompletion = {
   generatedTokens: number;
   applyRequired: true;
   semanticFidelityVerified: false;
+  constraintCompletion?: AuthoredConstraintCompletion;
 };
 export type EnhancementProposal = EnhancementCompletion &
   (
@@ -491,6 +503,10 @@ function parseConsumed(
     'processed_pixel_shape',
     'processed_grid_shape',
   ];
+  const constrained =
+    item.fingerprints !== null &&
+    typeof item.fingerprints === 'object' &&
+    (item.fingerprints as Record<string, unknown>).operation === AUTHORED_CONSTRAINT_OPERATION;
   const fingerprint = object(item.fingerprints, [
     'operation',
     'enhancement_max_new_tokens',
@@ -502,9 +518,12 @@ function parseConsumed(
     'rendered_input_ids_sha256',
     'reference_source_sha256',
     ...(references.length ? processed : []),
+    ...(constrained ? ['authored_layout_constraint'] : []),
   ]);
   if (
-    (fingerprint.operation !== 'enhance_prompt' && fingerprint.operation !== 'enhance_prompt_append_details') ||
+    (fingerprint.operation !== 'enhance_prompt' &&
+      fingerprint.operation !== 'enhance_prompt_append_details' &&
+      fingerprint.operation !== AUTHORED_CONSTRAINT_OPERATION) ||
     fingerprint.enhancement_max_new_tokens !== controls.max_new_tokens ||
     fingerprint.prompt_adapter_id !== adapterId ||
     !MODES.some((mode) => mode === fingerprint.system_prompt_mode)
@@ -549,6 +568,21 @@ function parseConsumed(
   }
   const imageMode = fingerprint.system_prompt_mode === 'i2i' || fingerprint.system_prompt_mode === 'i2i_bbox';
   if (imageMode !== references.length > 0) invalid('mode differs from the actual image count.');
+  if (constrained) {
+    const constraint = parseConsumedAuthoredLayoutConstraint(fingerprint.authored_layout_constraint);
+    if (!String(fingerprint.system_prompt_mode).endsWith('_bbox') || controls.min_new_tokens !== 0)
+      invalid('constrained generation requires its authored-layout mode and greedy controls.');
+    equal(constraint.vocabularySha256, constraint.contract.ordinaryVocabularySha256, 'constraint vocabulary');
+    equal(constraint.tokenizerSemanticSha256, constraint.contract.tokenizerSemanticSha256, 'constraint tokenizer');
+    equal(constraint.renderedInputIdsSha256, fingerprint.rendered_input_ids_sha256, 'constraint input tokens');
+    if (controls.max_new_tokens > constraint.contract.limits.max_new_tokens)
+      invalid('constraint generation limit exceeded.');
+    equal(
+      constraint.limits,
+      { ...constraint.contract.limits, max_new_tokens: controls.max_new_tokens },
+      'constraint limits',
+    );
+  }
   jsonBudget(item, 262144);
   return item as EnhancementConsumedInput;
 }
@@ -826,6 +860,7 @@ function parseStructured(
 }
 
 function parseProposal(value: unknown, consumed: EnhancementConsumedInput, controls: PromptEnhancementControls) {
+  const constraint = consumed.fingerprints.authored_layout_constraint;
   const item = object(value, [
     'mode',
     'text',
@@ -838,6 +873,7 @@ function parseProposal(value: unknown, consumed: EnhancementConsumedInput, contr
     'layoutOutputValidated',
     'semanticFidelityVerified',
     'applicationBlockedReason',
+    ...(constraint ? ['constraintCompletion'] : []),
   ]);
   if (item.mode !== consumed.fingerprints.system_prompt_mode) invalid('proposal mode differs from consumed input.');
   const mode = item.mode as PromptEnhancementMode;
@@ -845,10 +881,21 @@ function parseProposal(value: unknown, consumed: EnhancementConsumedInput, contr
   if (append && mode !== 't2i' && mode !== 'i2i') invalid('append-details requires a plain native prompt mode.');
   const generated = integer(item.generatedTokens, 1, controls.max_new_tokens);
   integer(item.inputTokens, 1, 32768);
-  if (item.finishReason !== (generated === controls.max_new_tokens ? 'length' : 'stop'))
+  if (item.finishReason !== (constraint ? 'stop' : generated === controls.max_new_tokens ? 'length' : 'stop'))
     invalid('finish reason differs from token count.');
   if (item.applyRequired !== true || item.semanticFidelityVerified !== false)
     invalid('proposal cannot assert implicit application or semantic fidelity.');
+  if (constraint) {
+    const completion = parseAuthoredConstraintCompletion(item.constraintCompletion);
+    if (
+      completion.generatedTokens !== generated ||
+      item.inputTokens !== constraint.promptTokenCount ||
+      !constraint.contract.effectiveEosTokenIds.includes(completion.terminalTokenId) ||
+      item.layoutOutputValidated !== true ||
+      item.applicationAllowed !== true
+    )
+      invalid('constrained completion differs from its consumed request or terminal evidence.');
+  }
   if (append) {
     if (item.text !== null) invalid('composed public text must remain null.');
     if (item.layoutOutputValidated === true) {
@@ -945,7 +992,8 @@ export type ExpectedPromptEnhancementSummary = {
   systemPromptSha256: string;
   references: EnhancementReference[];
   operation?: EnhancementConsumedInput['fingerprints']['operation'];
-  layoutPolicy?: 'preserve-authored-v1' | 'append-details-preserve-layout-v1';
+  layoutPolicy?: 'preserve-authored-v1' | 'append-details-preserve-layout-v1' | typeof AUTHORED_CONSTRAINT_POLICY;
+  authoredLayoutConstraint?: AuthoredLayoutConstraint;
 };
 
 async function sha256(value: string): Promise<SummarySha256> {
@@ -1044,15 +1092,22 @@ export async function verifyPromptEnhancementSummaryBindings(
       'systemPromptSha256',
       'references',
     ],
-    ['operation', 'layoutPolicy'],
+    ['operation', 'layoutPolicy', 'authoredLayoutConstraint'],
   );
   const operation = expected.operation ?? 'enhance_prompt';
   if (
-    (operation !== 'enhance_prompt' && operation !== 'enhance_prompt_append_details') ||
+    (operation !== 'enhance_prompt' &&
+      operation !== 'enhance_prompt_append_details' &&
+      operation !== AUTHORED_CONSTRAINT_OPERATION) ||
     (expected.layoutPolicy !== undefined &&
       expected.layoutPolicy !== 'preserve-authored-v1' &&
-      expected.layoutPolicy !== 'append-details-preserve-layout-v1') ||
-    (operation === 'enhance_prompt_append_details') !== (expected.layoutPolicy === 'append-details-preserve-layout-v1')
+      expected.layoutPolicy !== 'append-details-preserve-layout-v1' &&
+      expected.layoutPolicy !== AUTHORED_CONSTRAINT_POLICY) ||
+    (operation === 'enhance_prompt_append_details') !==
+      (expected.layoutPolicy === 'append-details-preserve-layout-v1') ||
+    (operation === AUTHORED_CONSTRAINT_OPERATION) !== (expected.layoutPolicy === AUTHORED_CONSTRAINT_POLICY) ||
+    (operation === AUTHORED_CONSTRAINT_OPERATION) !==
+      Object.prototype.hasOwnProperty.call(expected, 'authoredLayoutConstraint')
   )
     invalid('operation differs from the independently declared layout policy.');
   equal(summary.consumedInput.fingerprints.operation, operation, 'consumed operation');
@@ -1080,6 +1135,43 @@ export async function verifyPromptEnhancementSummaryBindings(
       : await sha256(canonicalBlockStringifyV2({ kind: 'object', value: expected.authoredLayout }));
   if (layoutDigest !== summary.request.authoredLayoutSha256) invalid('authored layout digest differs.');
   const append = operation === 'enhance_prompt_append_details';
+  if (operation === AUTHORED_CONSTRAINT_OPERATION) {
+    const contract = parseAuthoredLayoutConstraint(expected.authoredLayoutConstraint);
+    const constraint = summary.consumedInput.fingerprints.authored_layout_constraint!;
+    equal(constraint.contract, contract, 'source constraint contract');
+    equal(contract.adapterId, summary.adapter.id, 'constraint adapter');
+    equal(contract.repository, summary.modelReceipt.source.repository, 'constraint model');
+    equal(contract.revision, summary.modelReceipt.source.revision, 'constraint revision');
+    equal(contract.transformersVersion, summary.modelReceipt.runtime.transformersVersion, 'constraint runtime');
+    if (
+      summary.modelReceipt.runtime.dtype !== 'float32' ||
+      summary.modelReceipt.runtime.device !== 'cuda:0' ||
+      summary.modelReceipt.runtime.quantization.mode !== 'none'
+    )
+      invalid('constrained generation requires the explicitly declared FP32 provider.');
+    const rows = targetLayout(layout).regions.map((region) => {
+      const target = region.targetBox ? upstreamBox(region.targetBox) : null;
+      if (!summary.consumedInput.references.length) {
+        if (region.source) invalid('text-only constraints cannot acquire reference authority.');
+        return { id: region.id, bbox: target, desc: region.description };
+      }
+      if (region.source && region.source.referenceIndex >= summary.consumedInput.references.length)
+        invalid('constraint source reference is outside the current ordered input.');
+      return {
+        id: region.id,
+        from: region.source ? `ref_image_${region.source.referenceIndex}` : 'target',
+        src_bbox: region.source ? upstreamBox(region.source.box) : null,
+        tgt_bbox: target,
+        desc: region.description,
+      };
+    });
+    equal(constraint.authoritativeRowsSha256, await sha256(receiptCanonical(rows)), 'authored constraint rows');
+    equal(
+      summary.proposal.constraintCompletion!.constraintFingerprintSha256,
+      await sha256(receiptCanonical(constraint)),
+      'constraint completion binding',
+    );
+  }
   const bbox = summary.proposal.mode.endsWith('_bbox');
   if (append ? bbox || !layout?.regions.length : bbox !== Boolean(layout?.regions.length))
     invalid('mode differs from the independently declared authored layout policy.');

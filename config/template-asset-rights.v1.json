@@ -1203,7 +1203,13 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux2_klein_edit",
-      "consumingTemplateIds": ["flux2_klein_edit"]
+      "consumingTemplateIds": [
+        "flux2_klein_edit",
+        "flux3_klein_base_fp8r512_multi_reference_edit",
+        "flux3_klein_base_fp8r512_single_reference_edit",
+        "flux3_klein_fp8r512_multi_reference_edit",
+        "flux3_klein_fp8r512_single_reference_edit"
+      ]
     },
     {
       "path": "template-gallery/inputs/flux2_klein_multi_reference.before.webp",
@@ -1613,7 +1619,11 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_control_image_layout",
-      "consumingTemplateIds": ["qwen_control_image_layout"]
+      "consumingTemplateIds": [
+        "flux3_klein_base_fp8r512_multi_reference_edit",
+        "flux3_klein_fp8r512_multi_reference_edit",
+        "qwen_control_image_layout"
+      ]
     },
     {
       "path": "template-gallery/inputs/qwen_edit_plus_single_image.before.webp",
