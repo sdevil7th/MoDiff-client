@@ -15,6 +15,8 @@ export type WorkflowModelInventory = {
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   nativeSelection?: Omit<WeightFormatSelection, 'weightFormat'>;
   weightFormatSelections?: WeightFormatSelection[];
+  /** Fresh authoring only; installed files and Auto admission remain independent. */
+  defaultWeightFormat?: 'native' | 'fp8r' | 'nvfp4';
 };
 
 function invalid(): never {
@@ -111,6 +113,7 @@ export function parseWorkflowModelInventory(
     'revisionCandidates',
     'downloadFiles',
     'weightFormatSelections',
+    'defaultWeightFormat',
   ];
   if (!keys.some((key) => value[key] !== undefined)) return undefined;
   const result: WorkflowModelInventory = {};
@@ -149,6 +152,22 @@ export function parseWorkflowModelInventory(
     result.nativeSelection = { repo: repository(repo), revision: revisions[0]!, downloadFiles: nativeFiles };
   const selections = parseWeightFormatSelections(value.weightFormatSelections);
   if (selections && value.defaultRepo === repo) result.weightFormatSelections = selections;
+  if (value.defaultWeightFormat !== undefined) {
+    const format = value.defaultWeightFormat;
+    if (format !== 'native' && format !== 'fp8r' && format !== 'nvfp4') invalid();
+    if (
+      format !== 'native' &&
+      (revisions.length !== 1 ||
+        selections?.filter(
+          (selection) =>
+            selection.weightFormat === format &&
+            selection.repo === value.defaultRepo &&
+            selection.revision === revisions[0],
+        ).length !== 1)
+    )
+      invalid();
+    if (value.defaultRepo === repo) result.defaultWeightFormat = format;
+  }
   return result;
 }
 

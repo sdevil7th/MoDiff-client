@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.environ.get("MODIFF_BACKEND_DIR", str(Path(__file__).resolve().parents[2] / "MoDiff")))
 selections = json.load(sys.stdin)
+mock_cuda = "--mock-cuda" in sys.argv[1:]
 
 with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
     isolated = Path(temporary)
@@ -30,8 +31,23 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
     CONFIG.hf["cache_dir"] = str(isolated / "hub")
 
     from modiff.custom_extensions import ExtensionStore
+    from modiff import hardware
 
-    with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "load_enabled", return_value=None):
+    # Transport tests may describe a CUDA-equipped host without probing or
+    # constructing a GPU runtime. The ordinary schema and option describers
+    # still derive all fields; this supplies only their hardware boundary.
+    fixture_devices = [{
+        "type": "cuda", "device": "cuda:0", "index": 0,
+        "name": "Mock CUDA transport device", "backend": "cuda",
+        "vendor": "nvidia", "memory_kind": "dedicated", "vram_total": 16 * 1024**3,
+    }, {"type": "cpu", "device": "cpu:0", "index": 0}] if mock_cuda else None
+
+    with contextlib.ExitStack() as patches, contextlib.redirect_stdout(io.StringIO()):
+        patches.enter_context(patch.object(ExtensionStore, "load_enabled", return_value=None))
+        if fixture_devices is not None:
+            patches.enter_context(patch.object(hardware, "get_normalized_devices", return_value=fixture_devices))
+            import torch
+            patches.enter_context(patch.object(torch.cuda, "is_bf16_supported", return_value=True))
         from modules import MODULE_MAP
         from modiff.operation_catalog import build_operation_catalog
         from modiff.operation_starters import resolve_operation_starter
@@ -42,9 +58,11 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
         contracts, _ = build_operation_catalog(MODULE_MAP, [], catalog_resolver=lambda: {})
         describer = object.__new__(WebServer)
         describer.modules = MODULE_MAP
+        if fixture_devices is not None:
+            describer._available_runtime_devices = lambda: ["cuda:0", "cpu", "cpu:0"]
         describer._optimization_runtime_context = lambda: (
-            "schema-fixture", {"devices": [], "platform": sys.platform},
-            {"detected": "cpu", "status": "ready", "execution_ready": True},
+            "schema-fixture", {"devices": fixture_devices or [], "platform": sys.platform},
+            {"detected": "cuda" if mock_cuda else "cpu", "status": "ready", "execution_ready": True},
         )
         rows, registry, historical_cosmos_image = [], {}, None
 
@@ -83,7 +101,7 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
             for key in ("modules.ImageOperations.ProcessImage", "modules.ModularDiffusers.Lora",
                         "modules.DiffusersImage.LoadAdapter",
                         "modules.Spandrel.Upscaler", "modules.Image.Preview",
-                        "modules.DiffusersImage.OutpaintCanvas", "modules.Audio.Export", "modules.Audio.Load",
+                        "modules.DiffusersImage.OutpaintCanvas", "modules.Audio.Export", "modules.Audio.Load", "modules.Image.Load",
                         "modules.DiffusersAudio.LoadAdapter"):
                 describe(key)
             if any(item["selection"]["pipelineClass"] == "Cosmos3OmniModularPipeline" for item in selections):

@@ -21,6 +21,13 @@ route qualifies, the connected draft has an empty required model field. Select a
 model there before running. Run independently rechecks inputs and resources.
 Remembered selections are bounded local authoring preferences, not execution approval.
 
+Fresh public model selections use the backend's declared size, compute dtype and
+optional weight storage format defaults. A bounded profile can therefore start
+at 512 square with FP8r storage while retaining BF16 compute. These are visible
+creation settings; selecting a model never installs its files or qualifies it
+for Automatic memory. Saved workflows and authored values keep their settings,
+and Run checks the exact current graph against the backend's resource plan.
+
 Composable routes expose meaningful independent nodes such as Load Models,
 Encode Prompt, Denoise and Decode Latents. Tasks can need additional image, mask,
 conditioning or audio operations. Whole-pipeline routes expose Generate/Edit

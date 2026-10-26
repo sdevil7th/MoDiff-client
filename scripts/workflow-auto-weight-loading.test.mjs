@@ -11,6 +11,16 @@ const selection = {
   authoringRecipeId: 'retained-z-image-text-to-image:v1',
   bindingSpec: { modelType: 'ZImageModularPipeline', mode: 'modular_text_to_image' },
 };
+const publicSelections = ['Flux3DistilledModularPipeline', 'Flux3ModularPipeline'].flatMap((pipelineClass) =>
+  ['text_to_image', 'edit_image'].map((task) => ({
+    id: `${pipelineClass}:${task}`,
+    selection: {
+      pipelineClass,
+      task,
+      executionProfileId: `${pipelineClass === 'Flux3DistilledModularPipeline' ? 'flux3-klein' : 'flux3-klein-base'}:official-provider:v1`,
+    },
+  })),
+);
 let server, fixture, row, starter, template, form, modules, originalFetch;
 
 before(async () => {
@@ -37,6 +47,9 @@ before(async () => {
     requests: '/src/workflow/operationStarterRequest.ts',
     factory: '/src/workflow/nodeFactory.ts',
     authoring: '/src/studio/templateOperationWorkflow.ts',
+    drafts: '/src/workflow/workflowDraft.ts',
+    choices: '/src/workflow/workflowChoices.ts',
+    catalog: '/src/workflow/operationCatalog.ts',
     groups: '/src/workflow/visualOperationGroups.ts',
     templates: '/src/studio/templates.ts',
     profiles: '/src/studio/modelProfiles.ts',
@@ -59,7 +72,7 @@ before(async () => {
       cwd: backend,
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
-      input: JSON.stringify([{ id: 'z_image_quick_concept', selection }]),
+      input: JSON.stringify([{ id: 'z_image_quick_concept', selection }, ...publicSelections]),
     }),
   );
   row = fixture.recipes[0];
@@ -145,6 +158,187 @@ const plan = (patches) => ({
   available: {},
   sharedMemory: false,
 });
+
+function freshPublicGraph(id) {
+  const selected = publicSelections.find((item) => item.id === id).selection;
+  const source = fixture.recipes.find((item) => item.id === id).starter;
+  const contracts = modules.operations.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  const resolved = modules.requests.parseOperationStarter(
+    structuredClone(source),
+    selected.pipelineClass,
+    selected.task,
+    contracts,
+    selected,
+  );
+  const draft = modules.drafts.createWorkflowDraft(resolved, fixture.registry);
+  assert.deepEqual(draft.notices, []);
+  return draft.graph;
+}
+
+test('current public profiles seed bounded defaults through ordinary backend starters without changing authored graphs', () => {
+  const contracts = modules.operations.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  const support = modules.catalog.parsePipelineSupport(
+    fixture.publicPayload.pipelineSupport,
+    fixture.publicPayload.pipelineSupportSchemaVersion,
+    contracts,
+  );
+  const descriptors = modules.choices.parseWorkflowModelDescriptors(fixture.publicPayload, support);
+  for (const { id, selection: selected } of publicSelections) {
+    const before = flow().toObject();
+    const graph = freshPublicGraph(id);
+    assert.deepEqual(flow().toObject(), before, 'creating a new draft cannot rewrite the current document');
+    const descriptor = descriptors.find((item) => item.profileId === selected.executionProfileId);
+    assert.equal(descriptor.inventory.defaultWeightFormat, 'fp8r');
+    const effective = modules.flow.expandFlowExecutionGraph(graph.nodes, graph.edges);
+    const owner = effective.nodes.find((node) => node.data.action === 'ModelsLoader');
+    const denoise = effective.nodes.find((node) => node.data.action === 'Denoise');
+    const value = (node, field) => node.data.params[field].value ?? node.data.params[field].default;
+    assert.equal(value(owner, 'model_type'), selected.pipelineClass);
+    assert.equal(value(owner, 'weight_format'), 'fp8r');
+    assert.equal(value(owner, 'dtype'), 'bfloat16');
+    assert.deepEqual([value(denoise, 'width'), value(denoise, 'height')], [512, 512]);
+    assert.equal(value(denoise, 'num_inference_steps'), id.includes('Distilled') ? 16 : 50);
+    if (selected.pipelineClass === 'Flux3ModularPipeline') {
+      const guider = effective.nodes.find((node) => node.data.action === 'Guider');
+      assert.equal(value(guider, 'guidance_scale'), 3.5);
+      assert.equal(value(guider, 'guidance_rescale'), 0);
+    }
+    assert.equal(
+      effective.nodes.some((node) => node.data.action === 'ImageEncode'),
+      selected.task === 'edit_image',
+    );
+  }
+});
+
+test('real public ordinary graphs retain authored values through one accepted Auto submission and Expert bypass', async () => {
+  for (const { id } of publicSelections) {
+    const graph = modules.groups.unpackVisualOperationGroups(freshPublicGraph(id)).graph;
+    const owner = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+    const encoder = graph.nodes.find((node) => node.data.action === 'EncodePrompt');
+    const denoise = graph.nodes.find((node) => node.data.action === 'Denoise');
+    // This is mocked transport, not a CUDA/runtime claim. The pure fixture
+    // intentionally reports CPU only, which cannot export CPU-offload hooks.
+    owner.data.params.device.value = 'cuda';
+    encoder.data.params.prompt.value = `Authored ${id} prompt`;
+    denoise.data.params.seed.value = { value: 4109, random: false };
+    const image = graph.nodes.find((node) => node.data.module === 'modules.Image' && node.data.action === 'Load');
+    if (image) image.data.params.file.value = ['unit-managed-inputs/cobalt.png', 'unit-managed-inputs/layout.png'];
+    flow().replaceGraph(graph);
+    const before = exported();
+    const submissions = [],
+      requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push(String(url));
+      const body = JSON.parse(init.body);
+      if (String(url).endsWith('/auto_resource/workflow')) {
+        assert.deepEqual(body.graph.nodes, JSON.parse(JSON.stringify(before.nodes)));
+        return response({
+          ...plan([]),
+          loaders: [
+            {
+              nodeId: owner.id,
+              modelType: owner.data.params.model_type.value,
+              repository: owner.data.params.repo_id.value.value,
+              consumers: [denoise.id],
+              candidateId: 'mock-public-fp8r-transport',
+            },
+          ],
+          requirements: { ramGb: 24, vramGb: 8, diskGb: 0 },
+          available: { ramGb: 28, vramGb: 12, diskGb: 64 },
+        });
+      }
+      assert.ok(String(url).endsWith('/graph'));
+      submissions.push(body);
+      return response({ task_id: `mock-transport-${id}`, sid: 'session-1', message: 'queued' });
+    };
+    modules.studio.useStudioStore.setState({ form: { ...form, resourceMode: 'auto' } });
+    const result = await modules.coordinator.coordinateGraphRun({ sid: 'session-1' });
+    assert.equal(requests.length, 2);
+    assert.equal(submissions.length, 1);
+    assert.deepEqual(result.submittedGraph.nodes, before.nodes);
+    assert.deepEqual(result.submittedGraph.paths, before.paths);
+    assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
+    assert.equal(result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash, plan([]).plannedGraphHash);
+    assert.deepEqual(exported(), before);
+    modules.studio.useStudioStore.setState({ form: { ...form, resourceMode: 'expert' } });
+    await modules.coordinator.coordinateGraphRun({ sid: 'session-1' });
+    assert.equal(requests.length, 3, 'Expert adds one submission and never requests an Auto plan');
+    assert.equal(submissions.length, 2);
+    assert.deepEqual(submissions[1].nodes, JSON.parse(JSON.stringify(before.nodes)));
+  }
+});
+
+test('public Auto refusal retains exact authored graph and creates no task or submission', async () => {
+  for (const { id } of publicSelections) {
+    const graph = modules.groups.unpackVisualOperationGroups(freshPublicGraph(id)).graph;
+    const owner = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+    owner.data.params.device.value = 'cuda';
+    flow().replaceGraph(graph);
+    const before = exported();
+    const requests = [];
+    globalThis.fetch = async (url) => {
+      requests.push(String(url));
+      assert.ok(String(url).endsWith('/auto_resource/workflow'));
+      return response({
+        ...plan([]),
+        canAutoRun: false,
+        issues: ['No exact qualified FP8r recipe fits this preserved reference workload'],
+        available: { ramGb: 28, vramGb: 0, diskGb: 64 },
+      });
+    };
+    await assert.rejects(
+      modules.coordinator.coordinateGraphRun({ sid: 'session-1' }),
+      /No exact qualified FP8r recipe/,
+    );
+    assert.equal(requests.length, 1);
+    assert.deepEqual(exported(), before);
+    assert.equal(modules.studio.useStudioStore.getState().currentRunContext, null);
+    assert.deepEqual(modules.tasks.useTaskStore.getState().queuedTasks, {});
+  }
+});
+
+for (const change of ['graph', 'tab', 'policy', 'cancelled-request'])
+  test(`a pending public Auto plan cannot submit after ${change}`, async () => {
+    const graph = modules.groups.unpackVisualOperationGroups(freshPublicGraph(publicSelections[0].id)).graph;
+    const owner = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+    const encoder = graph.nodes.find((node) => node.data.action === 'EncodePrompt');
+    owner.data.params.device.value = 'cuda';
+    flow().replaceGraph(graph);
+    let release, reject, started;
+    const pending = new Promise((resolve, fail) => {
+      release = resolve;
+      reject = fail;
+    });
+    const ready = new Promise((resolve) => {
+      started = resolve;
+    });
+    let requests = 0;
+    globalThis.fetch = async (url) => {
+      requests++;
+      assert.ok(String(url).endsWith('/auto_resource/workflow'));
+      started();
+      return pending;
+    };
+    const run = modules.coordinator.coordinateGraphRun({ sid: 'session-1' });
+    await ready;
+    if (change === 'graph') flow().setParamWithHistory(encoder.id, 'prompt', 'A newer authored prompt');
+    if (change === 'tab') modules.studio.useStudioStore.setState({ activeWorkflowTabId: 'newer-workflow' });
+    if (change === 'policy') modules.studio.useStudioStore.setState({ form: { ...form, resourceMode: 'expert' } });
+    const current = flow().toObject();
+    if (change === 'cancelled-request') reject(new DOMException('Planning cancelled', 'AbortError'));
+    else release(response(plan([])));
+    await assert.rejects(run, change === 'cancelled-request' ? /abort|cancel/iu : /workflow or mode changed/);
+    assert.equal(requests, 1);
+    assert.deepEqual(flow().toObject(), current);
+    assert.equal(modules.studio.useStudioStore.getState().currentRunContext, null);
+    assert.deepEqual(modules.tasks.useTaskStore.getState().queuedTasks, {});
+  });
 
 test('actual backend weight-loading descriptor survives factory, fresh Model Setup and API serialization', () => {
   const key = 'modules.ModularDiffusers.ModelsLoader';

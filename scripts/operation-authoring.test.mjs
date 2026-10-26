@@ -2806,6 +2806,99 @@ test('runtime option presentation preserves dynamic authority, dictionary member
   assert.deepEqual(options.runtimeOptionEntries(['legacy'], ['new']), options.runtimeOptionEntries(['legacy']));
 });
 
+test('generic model default weight format requires its exact declared immutable selection', async () => {
+  const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
+  const model = {
+    defaultRepo: 'reviewed/future-image',
+    defaultWeightFormat: 'fp8r',
+    revisionCandidates: ['a'.repeat(40)],
+    weightFormatSelections: [
+      {
+        weightFormat: 'fp8r',
+        repo: 'reviewed/future-image',
+        revision: 'a'.repeat(40),
+        downloadFiles: ['model_index.json', 'variants/fp8r/model.safetensors'],
+      },
+    ],
+  };
+  const before = structuredClone(model);
+  assert.equal(inventory.parseWorkflowModelInventory(model, model.defaultRepo).defaultWeightFormat, 'fp8r');
+  assert.deepEqual(model, before);
+  for (const invalid of [
+    { ...model, defaultWeightFormat: null },
+    { ...model, defaultWeightFormat: 'unsupported' },
+    { ...model, defaultWeightFormat: 'nvfp4' },
+    { ...model, defaultWeightFormat: 0 },
+    { ...model, defaultWeightFormat: {} },
+    { ...model, weightFormatSelections: undefined },
+    { ...model, weightFormatSelections: [...model.weightFormatSelections, ...model.weightFormatSelections] },
+    { ...model, revisionCandidates: undefined },
+    { ...model, revisionCandidates: [] },
+    { ...model, revisionCandidates: ['b'.repeat(40)] },
+    { ...model, revisionCandidates: ['a'.repeat(40), 'b'.repeat(40)] },
+    { ...model, weightFormatSelections: [{ ...model.weightFormatSelections[0], repo: 'other/model' }] },
+    { ...model, weightFormatSelections: [{ ...model.weightFormatSelections[0], downloadFiles: [] }] },
+  ])
+    assert.throws(() => inventory.parseWorkflowModelInventory(invalid, model.defaultRepo), /Invalid workflow model/);
+  const foreign = inventory.parseWorkflowModelInventory(model, 'another/model');
+  assert.equal(foreign.defaultWeightFormat, undefined, 'a sibling repository cannot inherit a default selection');
+  const historical = { ...model, defaultWeightFormat: undefined };
+  assert.equal(inventory.parseWorkflowModelInventory(historical, model.defaultRepo).defaultWeightFormat, undefined);
+  assert.equal(
+    inventory.parseWorkflowModelInventory({ ...historical, defaultWeightFormat: 'native' }, model.defaultRepo)
+      .defaultWeightFormat,
+    'native',
+  );
+});
+
+test('workflow inventory character guards preserve exact control and filename boundaries', async () => {
+  const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
+  const repo = 'reviewed/future-image';
+  const selection = {
+    weightFormat: 'fp8r',
+    repo,
+    revision: 'a'.repeat(40),
+    downloadFiles: ['weights/model.safetensors'],
+  };
+  const model = {
+    defaultRepo: repo,
+    defaultWeightFormat: 'fp8r',
+    revisionCandidates: [selection.revision],
+    weightFormatSelections: [selection],
+  };
+  for (const character of ['\u0000', '\u001f', '\u007f', '\u009f']) {
+    assert.throws(
+      () => inventory.parseWorkflowModelInventory({ ...model, qualificationStatus: `declared${character}` }, repo),
+      /Invalid workflow model/,
+    );
+  }
+  for (const character of ['\u0000', '\u001f', '\u007f', '\u009f', ...'\\:*?[]{}']) {
+    assert.throws(
+      () =>
+        inventory.parseWorkflowModelInventory(
+          {
+            ...model,
+            weightFormatSelections: [{ ...selection, downloadFiles: [`weights/model${character}.safetensors`] }],
+          },
+          repo,
+        ),
+      /Invalid workflow model/,
+    );
+  }
+  const allowed = ' !~\u00a0𝄞';
+  const parsed = inventory.parseWorkflowModelInventory(
+    {
+      ...model,
+      qualificationStatus: allowed,
+      weightFormatSelections: [{ ...selection, downloadFiles: [`weights/model${allowed}.safetensors`] }],
+    },
+    repo,
+  );
+  assert.equal(parsed.qualificationStatus, allowed);
+  assert.equal(parsed.defaultWeightFormat, 'fp8r');
+  assert.equal(parsed.weightFormatSelections[0].downloadFiles[0], `weights/model${allowed}.safetensors`);
+});
+
 test('generic public model inventory preserves native defaults and exact additional format Install/Repair selections', async () => {
   const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
   const actual = JSON.parse(

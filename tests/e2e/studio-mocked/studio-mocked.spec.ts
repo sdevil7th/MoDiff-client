@@ -5638,15 +5638,22 @@ type ImageTemplateSchemaFixture = {
 let imageTemplateSchemaPromise: Promise<ImageTemplateSchemaFixture>;
 
 async function imageTemplateSchemas() {
+  imageTemplateSchemaPromise ??= generateTemplateSchemas(
+    Object.entries(IMAGE_TEMPLATE_EXECUTION_SELECTIONS).map(([id, selection]) => ({ id, selection })),
+  );
+  return structuredClone(await imageTemplateSchemaPromise);
+}
+
+async function generateTemplateSchemas(selections: unknown[], mockCuda = false): Promise<ImageTemplateSchemaFixture> {
   const python =
     process.env.MODIFF_BACKEND_PYTHON ||
     path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
   const script = path.join(CLIENT_ROOT, 'scripts', 'template-operation-fixtures.py');
   const command = process.platform === 'win32' ? python : path.join(BACKEND_ROOT, 'scripts', 'with-runtime-env.sh');
-  const args = process.platform === 'win32' ? [script] : [python, script];
+  const args = [...(process.platform === 'win32' ? [script] : [python, script]), ...(mockCuda ? ['--mock-cuda'] : [])];
   // These are the real, source-derived authoring contracts, with no model
   // construction or generation. Each scenario receives an isolated copy.
-  imageTemplateSchemaPromise ??= new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const child = execFile(
       command,
       args,
@@ -5665,11 +5672,8 @@ async function imageTemplateSchemas() {
         }
       },
     );
-    child.stdin!.end(
-      JSON.stringify(Object.entries(IMAGE_TEMPLATE_EXECUTION_SELECTIONS).map(([id, selection]) => ({ id, selection }))),
-    );
+    child.stdin!.end(JSON.stringify(selections));
   });
-  return structuredClone(await imageTemplateSchemaPromise);
 }
 
 async function installImageFixtureRuntime(page: Page, templateId = 'z_image_quick_concept') {
@@ -10929,71 +10933,160 @@ async function installOperationAuthoringRoutes(
   return starters;
 }
 
+let publicFlux3AutoSchemaPromise: Promise<ImageTemplateSchemaFixture>;
+
 /** Actual source DTOs with no sealed provider; HTTP mocks do not qualify execution. */
-async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false) {
+async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false, currentAutoSchemas = false) {
   const standard = await installOperationAuthoringRoutes(page, exactModel);
   const fixture = JSON.parse(
     await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/public-flux3-missing-provider.v1.json'), 'utf8'),
   );
   expect(fixture.activeProvider).toBeNull();
   expect(fixture.starters).toHaveLength(8);
+  let defaultStarters: OperationStarter[] = [];
+  const defaultSelectionProfiles = new Map<string, string>();
+  if (currentAutoSchemas) {
+    const defaultSelections = ['Flux3DistilledModularPipeline', 'Flux3ModularPipeline'].map((pipelineClass) => ({
+      id: pipelineClass,
+      selection: {
+        pipelineClass,
+        task: 'text_to_image',
+        executionProfileId: `${pipelineClass === 'Flux3DistilledModularPipeline' ? 'flux3-klein' : 'flux3-klein-base'}:official-provider:v1`,
+      },
+    }));
+    const selections = [
+      ...defaultSelections,
+      ...(fixture.starters as OperationStarter[]).map((starter) => ({
+        id: starter.authoring!.id,
+        selection: {
+          pipelineClass: starter.pipelineClass,
+          task: starter.task,
+          executionProfileId: starter.authoring!.executionProfileIds[0]!,
+          authoringRecipeId: starter.authoring!.id,
+        },
+      })),
+    ];
+    publicFlux3AutoSchemaPromise ??= generateTemplateSchemas(selections, true);
+    for (const row of selections)
+      defaultSelectionProfiles.set(row.selection.pipelineClass, row.selection.executionProfileId);
+    const current = structuredClone(await publicFlux3AutoSchemaPromise);
+    defaultStarters = current.recipes
+      .filter((row) => defaultSelections.some((selection) => selection.id === row.id))
+      .map((row) => row.starter);
+    fixture.starters = current.recipes.map((row) => row.starter);
+    fixture.registry = current.registry;
+    // The source payload's task-template contracts bind its exact specs and
+    // profiles. Keep that entire coherent DTO instead of mixing current
+    // task-template rows with unrelated older mocked capability records.
+    fixture.capabilitiesPayload = current.publicPayload;
+    // Cache presence is a mocked transport boundary. Use the exact current
+    // declared FP8r revision/files; it grants no planner or model authority.
+    await page.route('**/hf_cache**', (route) =>
+      route.fulfill({
+        json: fixture.capabilitiesPayload.capabilities
+          .filter((capability: { modelType: string }) =>
+            defaultSelections.some((row) => row.selection.pipelineClass === capability.modelType),
+          )
+          .map(
+            (capability: {
+              weightFormatSelections: {
+                weightFormat: string;
+                repo: string;
+                revision: string;
+                downloadFiles: string[];
+              }[];
+            }) => {
+              const selected = capability.weightFormatSelections.find((row) => row.weightFormat === 'fp8r');
+              if (!selected) throw new Error('Current public source must declare an exact FP8r selection.');
+              return {
+                id: selected.repo,
+                type: 'model',
+                complete: true,
+                installed: true,
+                planned_revision: selected.revision,
+                planned_files: selected.downloadFiles,
+                observed_selections: [{ revision: selected.revision, files: selected.downloadFiles, complete: true }],
+                revisions: [{ hash: selected.revision, size: 0, last_modified: 0 }],
+              };
+            },
+          ),
+      }),
+    );
+    await page.route('**/runtime/status**', (route) =>
+      route.fulfill({
+        json: {
+          ready: true,
+          instance: 'mock',
+          config: { hf_token_configured: mockHfTokenConfigured },
+          packages: {
+            torch: {
+              available: true,
+              cuda_available: true,
+              cuda_device_count: 1,
+              cuda_devices: [{ index: 0, name: 'Mock CUDA transport device', total_memory: 16 * 1024 ** 3 }],
+            },
+          },
+        },
+      }),
+    );
+  }
   const starters: OperationStarter[] = fixture.starters;
-  const publicModels = new Set(
-    fixture.capabilitiesPayload.capabilities.map((value: { modelType: string }) => value.modelType),
-  );
+  const publicModels = new Set(starters.map((starter) => starter.pipelineClass));
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', (route) =>
     route.fulfill({
-      json: {
-        ...fixture.capabilitiesPayload,
-        capabilities: [
-          ...mockStudioExecutionCapabilities().filter((value) => !publicModels.has(value.modelType)),
-          ...fixture.capabilitiesPayload.capabilities,
-        ],
-        operationContracts: [
-          ...standard.flatMap((starter) => starter.nodes.map((node) => node.operation)),
-          ...fixture.capabilitiesPayload.operationContracts,
-        ],
-        pipelineSupport: [
-          ...[...new Set(standard.map((starter) => starter.pipelineClass))].map((pipelineClass) => ({
-            pipelineClass,
-            coverage: 'local-adapter',
-            reason: 'Native authoring fixture; execution unqualified',
-            equivalentTo: [],
-            upstreamTasks: [],
-            tasks: standard
-              .filter((starter) => starter.pipelineClass === pipelineClass)
-              .map((starter) => ({
-                task: starter.task,
-                execution: 'declared',
-                decomposition: starter.nodes.some((node) =>
-                  ['pipeline', 'integrated'].includes(node.operation.decomposition),
-                )
-                  ? 'pipeline'
-                  : 'stages',
-                operationIds: starter.nodes.map((node) => node.operation.operationId),
-                executionProfileIds:
-                  exactModel && pipelineClass === 'QwenImageModularPipeline' ? ['qwen-image:modular'] : [],
-                dependencies: exactModel && pipelineClass === 'QwenImageModularPipeline' ? 'ready' : 'unknown',
-                runtimeRequirements:
-                  exactModel && pipelineClass === 'QwenImageModularPipeline'
-                    ? [
-                        {
-                          schemaVersion: 1,
-                          delivery: 'base',
-                          requiredNow: false,
-                          profileIds: [],
-                          executionProfileIds: ['qwen-image:modular'],
-                          state: 'base_satisfied',
-                          reason: 'base_runtime',
-                        },
-                      ]
-                    : [],
+      json: currentAutoSchemas
+        ? fixture.capabilitiesPayload
+        : {
+            ...fixture.capabilitiesPayload,
+            capabilities: [
+              ...mockStudioExecutionCapabilities().filter((value) => !publicModels.has(value.modelType)),
+              ...fixture.capabilitiesPayload.capabilities,
+            ],
+            operationContracts: [
+              ...standard.flatMap((starter) => starter.nodes.map((node) => node.operation)),
+              ...fixture.capabilitiesPayload.operationContracts,
+            ],
+            pipelineSupport: [
+              ...[...new Set(standard.map((starter) => starter.pipelineClass))].map((pipelineClass) => ({
+                pipelineClass,
+                coverage: 'local-adapter',
+                reason: 'Native authoring fixture; execution unqualified',
+                equivalentTo: [],
+                upstreamTasks: [],
+                tasks: standard
+                  .filter((starter) => starter.pipelineClass === pipelineClass)
+                  .map((starter) => ({
+                    task: starter.task,
+                    execution: 'declared',
+                    decomposition: starter.nodes.some((node) =>
+                      ['pipeline', 'integrated'].includes(node.operation.decomposition),
+                    )
+                      ? 'pipeline'
+                      : 'stages',
+                    operationIds: starter.nodes.map((node) => node.operation.operationId),
+                    executionProfileIds:
+                      exactModel && pipelineClass === 'QwenImageModularPipeline' ? ['qwen-image:modular'] : [],
+                    dependencies: exactModel && pipelineClass === 'QwenImageModularPipeline' ? 'ready' : 'unknown',
+                    runtimeRequirements:
+                      exactModel && pipelineClass === 'QwenImageModularPipeline'
+                        ? [
+                            {
+                              schemaVersion: 1,
+                              delivery: 'base',
+                              requiredNow: false,
+                              profileIds: [],
+                              executionProfileIds: ['qwen-image:modular'],
+                              state: 'base_satisfied',
+                              reason: 'base_runtime',
+                            },
+                          ]
+                        : [],
+                  })),
               })),
-          })),
-          ...fixture.capabilitiesPayload.pipelineSupport,
-        ],
-      },
+              ...fixture.capabilitiesPayload.pipelineSupport,
+            ],
+          },
     }),
   );
   await page.unroute('**/nodes');
@@ -11020,12 +11113,16 @@ async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false)
       (starter) =>
         starter.pipelineClass === selection.pipelineClass &&
         starter.task === selection.task &&
-        starter.authoring?.id === selection.authoringRecipeId &&
-        starter.authoring.executionProfileIds.includes(selection.executionProfileId),
+        (selection.authoringRecipeId
+          ? starter.authoring?.id === selection.authoringRecipeId
+          : defaultStarters.includes(starter)) &&
+        (starter.authoring?.executionProfileIds ?? [defaultSelectionProfiles.get(starter.pipelineClass)]).includes(
+          selection.executionProfileId,
+        ),
     );
     const baseline =
       !selection.executionProfileId && !selection.authoringRecipeId
-        ? standard.find(
+        ? [...defaultStarters, ...standard].find(
             (starter) => starter.pipelineClass === selection.pipelineClass && starter.task === selection.task,
           )
         : undefined;
@@ -11957,10 +12054,10 @@ async function publicFlux3FormatControl(page: Page) {
 }
 
 /** Existing mocked HTTP/Save routes, real captured schema, normal UI edits. */
-async function openPublicFlux3Fp8rWorkflow(page: Page) {
+async function openPublicFlux3Fp8rWorkflow(page: Page, keepAutomatic = false) {
   await page.setViewportSize({ width: 1920, height: 1200 });
   await ensureFrontend();
-  const fixture = await installPublicFlux3AuthoringRoutes(page, true);
+  const fixture = await installPublicFlux3AuthoringRoutes(page, true, keepAutomatic);
   const comparisons = JSON.parse(
     await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/public-flux3-migration-comparisons.v1.json'), 'utf8'),
   );
@@ -11977,6 +12074,7 @@ async function openPublicFlux3Fp8rWorkflow(page: Page) {
   // Only these actual unprofiled comparison requests supplement the existing
   // strict public routes. No private starter or profile is relabelled.
   await page.route('**/operations/starter', (route) => {
+    if (keepAutomatic) return route.fallback();
     const selection = route.request().postDataJSON();
     if (Object.keys(selection).sort().join(',') !== 'pipelineClass,task') return route.fallback();
     const row = comparisons.comparisons.find(
@@ -12013,8 +12111,10 @@ async function openPublicFlux3Fp8rWorkflow(page: Page) {
   await expect(page.getByRole('button', { name: 'Connected', exact: true })).toBeVisible();
   const policy = page.getByTestId('topbar-resource-policy');
   await expect(policy).toHaveAttribute('aria-label', 'Memory policy: Automatic. Click to switch.');
-  await policy.click();
-  await expect(policy).toHaveAttribute('aria-label', 'Memory policy: Custom. Click to switch.');
+  if (!keepAutomatic) {
+    await policy.click();
+    await expect(policy).toHaveAttribute('aria-label', 'Memory policy: Custom. Click to switch.');
+  }
   await (await publicFlux3FormatSetup(page)).getByRole('button', { name: 'Choose model', exact: true }).click();
   const picker = page.getByRole('dialog', { name: 'Choose model for Load Models', exact: true });
   await picker.getByRole('searchbox', { name: 'Search compatible models' }).fill('FLUX3');
@@ -12031,9 +12131,147 @@ async function openPublicFlux3Fp8rWorkflow(page: Page) {
   await page.getByRole('option', { name: 'fp8r', exact: true }).click();
   await expect(format).toHaveText('fp8r');
   await expect.poll(async () => (await publicFlux3FormatSnapshot(page)).selection.weightFormat).toBe('fp8r');
+  if (keepAutomatic) {
+    // Model changes preserve compatible authored values, including the CPU
+    // device from the initial standard fixture. Author the declared CUDA
+    // placement through its real control before exercising a bounded plan.
+    const device = (await publicFlux3FormatSetup(page)).getByLabel('Device', { exact: true });
+    await device.click();
+    await page.getByRole('option', { name: 'cuda:0', exact: true }).click();
+    await expect(device).toHaveText('cuda:0');
+  }
   await waitForOperationGraphToSettle(page);
   return { fixture, forbiddenPosts };
 }
+
+for (const accepted of [true, false])
+  test(`ordinary public FLUX3 FP8r Automatic Run ${accepted ? 'submits its accepted graph exactly once' : 'refuses without submission or authored changes'}`, async ({
+    page,
+  }) => {
+    // Current source schemas describe a mocked CUDA/BF16 host and exact cached
+    // artifact selection. The plan response exercises transport only; neither
+    // its acceptance nor catalog source eligibility qualifies a model run.
+    const { forbiddenPosts } = await openPublicFlux3Fp8rWorkflow(page, true);
+    const prompt = page.locator('.react-flow__node').getByLabel('Prompt *', { exact: true });
+    await prompt.fill('A ceramic teapot on a wooden table, soft morning light.');
+    await prompt.blur();
+    const denoiseId = await page.evaluate(
+      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'Denoise')!.id,
+    );
+    const denoise = page.locator(`.react-flow__node[data-id="${denoiseId}"]`);
+    for (const dimension of ['width', 'height']) {
+      const input = denoise.locator(`[data-key="${dimension}"] input`);
+      await input.fill('512');
+      await input.blur();
+    }
+    const seed = page.locator('.react-flow__node [data-key="seed"] input');
+    const randomSeed = page.getByRole('button', { name: 'Toggle random Seed', exact: true });
+    if ((await randomSeed.getAttribute('aria-pressed')) === 'true') await randomSeed.click();
+    await seed.fill('4109');
+    await seed.blur();
+    await waitForOperationGraphToSettle(page);
+    const before = await publicFlux3FormatSnapshot(page);
+    expect(before.resourceMode).toBe('auto');
+    expect(before.parent.executionProfileId).toBe('flux3-klein:official-provider:v1');
+    expect(before.selection).toMatchObject({
+      pipelineClass: 'Flux3DistilledModularPipeline',
+      repository: { source: 'hub', value: 'black-forest-labs/flux-3-image-klein' },
+      revision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
+      dtype: 'bfloat16',
+      weightFormat: 'fp8r',
+      quantConfigConnected: false,
+    });
+    const readExecution = () =>
+      page.evaluate(async () => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        const graph = useFlowStore.getState().exportGraph('mock-read-only', undefined, { randomizeSeeds: false });
+        return JSON.parse(JSON.stringify({ nodes: graph.nodes, paths: graph.paths })) as Pick<
+          ApiGraphExport,
+          'nodes' | 'paths'
+        >;
+      });
+    const expectedGraph = await readExecution();
+    expect(expectedGraph.nodes[denoiseId]!.params).toMatchObject({ width: { value: 512 }, height: { value: 512 } });
+    expect(expectedGraph.nodes[before.selection.ownerId]!.params).toMatchObject({
+      device: { value: 'cuda:0' },
+      weight_loading_mode: { value: 'cpu' },
+      offload_mode: { value: 'model_cpu' },
+      auto_offload: { value: true },
+    });
+    const plans: Array<{ schemaVersion: number; graph: Pick<ApiGraphExport, 'nodes' | 'paths'> }> = [];
+    const submissions: ApiGraphExport[] = [];
+    const refusal = 'The exact selected FP8r workflow does not fit the available memory.';
+    const plannedGraphHash = `sha256:workflow-auto-v1:${'b'.repeat(64)}`;
+    const consumers = Object.entries(expectedGraph.nodes)
+      .filter(([, node]) => node.action === 'Denoise')
+      .map(([id]) => id);
+    await page.route('**/auto_resource/workflow', (route) => {
+      plans.push(route.request().postDataJSON());
+      return route.fulfill({
+        json: {
+          schemaVersion: 1,
+          graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+          plannedGraphHash,
+          canAutoRun: accepted,
+          issues: accepted ? [] : [refusal],
+          message: 'Mocked workflow plan transport; no hardware admission claim',
+          patches: [],
+          loaders: [
+            {
+              nodeId: before.selection.ownerId,
+              modelType: before.selection.pipelineClass,
+              repository: 'black-forest-labs/flux-3-image-klein',
+              consumers,
+              candidateId: 'mock-preserved-public-fp8r',
+            },
+          ],
+          requirements: { ramGb: 24, vramGb: 8, diskGb: 0 },
+          available: { ramGb: 28, vramGb: accepted ? 12 : 0, diskGb: 64 },
+          sharedMemory: false,
+        },
+      });
+    });
+    await page.route('**/graph', (route) => {
+      const graph: ApiGraphExport = route.request().postDataJSON();
+      submissions.push(graph);
+      return route.fulfill({
+        json: { error: false, message: 'queued', sid: graph.sid, task_id: 'public-flux3-auto-transport' },
+      });
+    });
+    const run = page.getByTestId('studio-run');
+    await expect(run).toBeEnabled();
+    await run.click();
+    await expect.poll(() => plans.length).toBe(1);
+    expect(plans[0]).toMatchObject({ schemaVersion: 1, graph: expectedGraph });
+    expect(plans[0]!.graph.nodes[before.selection.ownerId]!.params).toMatchObject({
+      model_type: { value: before.selection.pipelineClass },
+      repo_id: { value: before.selection.repository },
+      revision: { value: before.selection.revision },
+      dtype: { value: before.selection.dtype },
+      weight_format: { value: 'fp8r' },
+    });
+    if (accepted) {
+      await expect.poll(() => submissions.length).toBe(1);
+      expect({ nodes: submissions[0]!.nodes, paths: submissions[0]!.paths }).toEqual(expectedGraph);
+      expect(submissions[0]!.runtimeHints).toMatchObject({
+        resourceMode: 'auto',
+        workflowAutoPlan: { schemaVersion: 1, graphHash: plannedGraphHash },
+      });
+      expect(forbiddenPosts).toEqual(['/graph']);
+    } else {
+      const blocked = page.getByRole('dialog', { name: 'Run blocked', exact: true });
+      await expect(blocked).toContainText(`Auto cannot run this workflow: ${refusal}`);
+      await expect(blocked).toContainText('No run was submitted');
+      expect(submissions).toEqual([]);
+      expect(forbiddenPosts).toEqual([]);
+    }
+    await expect(page.getByTestId('topbar-resource-policy')).toHaveAttribute(
+      'aria-label',
+      'Memory policy: Automatic. Click to switch.',
+    );
+    expect(await readExecution()).toEqual(expectedGraph);
+    expect(await publicFlux3FormatSnapshot(page)).toEqual(before);
+  });
 
 test('ordinary public FLUX3 FP8r control survives Save and cold reload with its exact model identity', async ({
   page,

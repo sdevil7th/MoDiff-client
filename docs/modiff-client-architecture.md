@@ -282,6 +282,15 @@ download metadata. Installed files are labeled **Installed**, separately from
 execution support, qualification and required-runtime status. This discovery
 path does not extend the legacy Studio model union or infer Auto/template grants.
 
+The same generic inventory may declare `defaultWeightFormat` as `native`,
+`fp8r` or `nvfp4` for new drafts. A non-native default must match exactly one
+declared format selection for the capability's own repository and sole immutable
+revision. The ordinary backend starter supplies the resolved field value together
+with its selected profile's size and compute dtype. The client validates the
+declaration and copies that starter through the existing node factory. Discovery,
+opening saved graphs and Run never apply these creation defaults over authored
+values. Defaults do not establish installed files, resource fit or qualification.
+
 Backend-resolved operation schemas suppress mount-time selector initialization
 and automatic signal actions that would replace exact-profile metadata with
 generic family defaults. Signal transport, connection-driven control visibility
@@ -1902,7 +1911,9 @@ A non-native selection needs the current backend's exact profile, pipeline, Hub
 repository, immutable revision and format-specific file manifest. Model Manager
 uses that manifest, so a native-only installation cannot satisfy the selected
 format. This metadata grants no runtime, Auto, model or Gallery qualification
-and does not install packages or files during discovery. Non-native selections
-require Expert because the backend Auto resource contract has no format field;
-native-only plans cannot be reused as format-specific readiness or hardware-fit
+and does not install packages or files during discovery. The legacy managed
+Studio form planner still requires Expert for non-native formats. Ordinary
+workflow graphs carry the exact `weight_format` field into the complete backend
+workflow Auto plan; only that plan can admit a declared format and workload.
+Native-only plans cannot be reused as format-specific readiness or hardware-fit
 evidence.
