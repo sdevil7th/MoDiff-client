@@ -17,6 +17,7 @@ import {
   promptEnhancementParentFromHint,
   planEnablePromptEnhancement,
   planDisablePromptEnhancement,
+  planDetachUnavailablePromptEnhancement,
   planRefreshPromptEnhancementRequest,
   planSelectPromptEnhancementParent,
 } from './promptEnhancementAuthoring';
@@ -329,13 +330,34 @@ export async function currentPromptEnhancementDeclaration(ownerId: string, child
 }
 
 export async function disablePromptEnhancement(ownerId: string, childId: string, signal?: AbortSignal) {
-  const selected = await resolveSelection(ownerId, signal);
+  const context = captureWorkflowOperationContext();
+  const snapshot = useFlowStore.getState().toObject();
+  const signature = operationGraphSignature(snapshot);
+  const check = () => {
+    signal?.throwIfAborted();
+    assertWorkflowOperationContext(context);
+    if (operationGraphSignature(useFlowStore.getState().toObject()) !== signature)
+      invalidAncillary('the workflow changed before disabling enhancement.');
+  };
+  let selected: Awaited<ReturnType<typeof resolveSelection>>;
+  try {
+    selected = await resolveSelection(ownerId, signal);
+  } catch {
+    check();
+    const graph = await planDetachUnavailablePromptEnhancement(snapshot, ownerId, childId);
+    check();
+    commitOperationGraph(graph, context, signature, 'Disable unavailable prompt enhancement', {
+      preserveSelection: true,
+    });
+    return { preservedUnavailablePair: true };
+  }
   const child = chooseChild(selected.recipe, childId);
   const graph = await planDisablePromptEnhancement(selected.graph, ownerId, selected.recipe, child.id);
   selected.assertCurrent();
   commitOperationGraph(graph, selected.context, selected.signature, 'Disable prompt enhancement', {
     preserveSelection: true,
   });
+  return { preservedUnavailablePair: false };
 }
 
 /** Local task handle only; server dispatch/owner policy still decides admission. */

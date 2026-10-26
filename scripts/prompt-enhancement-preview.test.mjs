@@ -141,6 +141,246 @@ after(async () => {
 
 const parent = fixture.response.authoring,
   child = parent.ancillaryOperations[0];
+
+test('retired enhancement metadata cannot trap normal Disable or alter the authored pair', async () => {
+  const { ownerId } = await setup();
+  await preview.enablePromptEnhancement(ownerId);
+  editOwnerField(ownerId, 'prompt', 'Keep this later authored caption exactly.');
+  editOwnerField(ownerId, 'layout_conditioning', {
+    schemaVersion: 2,
+    coordinateSpace: 'normalized_xyxy',
+    regions: [{ id: 'subject', description: 'Keep this region.', action: 'place', targetBox: [0.2, 0.2, 0.8, 0.8] }],
+  });
+  const before = structuredClone(flow.getState().toObject());
+  const originalOwner = structuredClone(activeOwner(ownerId));
+  onMetadata = () => {
+    throw new Error('The execution profile has a current public authoring replacement. Rebind explicitly.');
+  };
+  await assert.rejects(preview.startPromptEnhancementPreview(ownerId, child.id), /Rebind explicitly/);
+  assert.equal(submitted, null);
+  flow.getState().resetHistory();
+  await preview.disablePromptEnhancement(ownerId, child.id);
+  const disabled = activeOwner(ownerId);
+  assert.deepEqual(disabled.data.params, originalOwner.data.params);
+  assert.equal(disabled.data.operationAuthoring.ancillaryBindings, undefined);
+  assert.equal(flow.getState().historyPast.length, 1);
+  assert.equal(submitted, null);
+  flow.getState().undo();
+  assert.deepEqual(flow.getState().toObject(), before);
+  flow.getState().redo();
+  assert.deepEqual(activeOwner(ownerId).data.params, originalOwner.data.params);
+  await assert.rejects(preview.enablePromptEnhancement(ownerId), /Rebind explicitly/);
+
+  // A synthetic current declaration exercises the ordinary same-model planner;
+  // this does not claim current public metadata or native runtime proof.
+  const fresh = structuredClone(fixture.response);
+  const profileId = 'synthetic:current-profile';
+  fresh.authoring.id = 'synthetic:current-authoring';
+  fresh.authoring.executionProfileIds = [profileId];
+  const freshChild = fresh.authoring.ancillaryOperations[0];
+  freshChild.id = `${fresh.authoring.id}:preview`;
+  freshChild.parent.authoringRecipeId = fresh.authoring.id;
+  freshChild.parent.executionProfileId = profileId;
+  freshChild.layoutPolicy = 'append-details-preserve-layout-v1';
+  freshChild.initialValues.find(([role, name]) => role === 'proposal' && name === 'operation')[2] =
+    'enhance_prompt_append_details';
+  const { hashString, stableStringify } = await server.ssrLoadModule('/src/studio/stableHash.ts');
+  const rehash = (item, prefix) =>
+    `${prefix}${hashString(stableStringify(Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'contentHash'))))}`;
+  freshChild.contentHash = rehash(freshChild, 'studio-ancillary-v1-');
+  fresh.authoring.contentHash = rehash(fresh.authoring, 'studio-authoring-v1-');
+  onMetadata = (selection) => {
+    assert.equal(selection.authoringRecipeId, fresh.authoring.id);
+    assert.equal(selection.executionProfileId, profileId);
+    return fresh;
+  };
+  const { requestOperationStarter } = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+  const { planOperationChange } = await server.ssrLoadModule('/src/workflow/operationAuthoring.ts');
+  const { visualOperationOwnerId } = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const { expandFlowExecutionGraph } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { layoutReferenceContext } = await server.ssrLoadModule('/src/studio/layoutReferenceContext.ts');
+  const starter = await requestOperationStarter(
+    fixture.selection.pipelineClass,
+    fixture.selection.task,
+    fixture.operationContracts,
+    undefined,
+    profileId,
+    fresh.authoring.id,
+  );
+  const graph = flow.getState().toObject();
+  const root = graph.nodes.find((node) =>
+    node.data.blockInstanceV2?.effectiveGraph.nodes.some((leaf) => leaf.data.studioRole === 'models'),
+  );
+  const leaf = root.data.blockInstanceV2.effectiveGraph.nodes.find((leaf) => leaf.data.studioRole === 'models');
+  const plan = planOperationChange(graph, visualOperationOwnerId(graph, leaf.nodeId, root.id), starter, {
+    replaceModel: true,
+  });
+  const rebound = expandFlowExecutionGraph(plan.graph.nodes, plan.graph.edges).nodes.find(
+    (node) => node.data.operationAuthoring?.ancillaryParent,
+  );
+  for (const name of ['prompt', 'layout_conditioning', 'max_sequence_length'])
+    assert.deepEqual(
+      rebound.data.params[name].value,
+      originalOwner.data.params[name].value,
+      `Same-model rebind must keep ${name}.`,
+    );
+  assert.equal(rebound.data.operationAuthoring.ancillaryParent.parent.authoringRecipeId, fresh.authoring.id);
+  assert.equal(rebound.data.operationAuthoring.ancillaryBindings, undefined);
+  const { unpackVisualOperationGroups } = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  for (const fault of [
+    'none',
+    'missing-context',
+    'missing-resolver',
+    'changed-ancestor',
+    'different-model',
+    'different-task',
+    'wired-layout',
+  ]) {
+    const boundGraph = unpackVisualOperationGroups(structuredClone(graph)).graph;
+    const boundOwner = boundGraph.nodes.find((node) => node.data.operationAuthoring?.ancillaryParent);
+    const model = boundGraph.nodes.find((node) => node.data.studioRole === 'models');
+    // Keep all other model fields byte-equivalent to the planned current
+    // schema, so the positive case changes exactly one profile selector.
+    model.data.params = structuredClone(
+      unpackVisualOperationGroups(plan.graph).graph.nodes.find((node) => node.id === model.id).data.params,
+    );
+    for (const field of Object.values(model.data.params))
+      if (field.default !== undefined && canonical(field.value ?? field.default) === canonical(field.default))
+        delete field.value;
+    const boundStarter = structuredClone(starter);
+    const promptRow = boundStarter.nodes.find(
+      (row) => row.operation.nodeKey === boundOwner.data.operationAuthoring.operation.nodeKey,
+    );
+    const modelRow = boundStarter.nodes.find(
+      (row) => row.operation.nodeKey === model.data.operationAuthoring.operation.nodeKey,
+    );
+    const bindingField = { type: 'reference_conditioning', display: 'input' };
+    boundOwner.data.params.reference_binding = structuredClone(bindingField);
+    promptRow.node.params.reference_binding = structuredClone(bindingField);
+    model.data.params.execution_profile_id = { type: 'string', hidden: true, default: 'synthetic:retired-profile' };
+    modelRow.node.params.execution_profile_id = { type: 'string', hidden: true, default: profileId };
+    if (fault === 'different-model') modelRow.node.params.revision.value = 'f'.repeat(40);
+    if (fault === 'different-task') boundStarter.task = 'edit_image';
+    // Synthetic ancestor field: the context key must retain every non-profile
+    // change, including reference order and preprocessing controls.
+    model.data.params.reference_order = { type: 'list', hidden: true, default: ['A', 'B'] };
+    modelRow.node.params.reference_order = {
+      type: 'list',
+      hidden: true,
+      default: fault === 'changed-ancestor' ? ['B', 'A'] : ['A', 'B'],
+    };
+    const boundLayout = structuredClone(originalOwner.data.params.layout_conditioning.value);
+    Object.assign(boundLayout.regions[0], {
+      action: 'relocate',
+      source: { referenceIndex: 0, box: [0.1, 0.1, 0.5, 0.5], expectedReferenceId: `sha256:${'a'.repeat(64)}` },
+    });
+    boundOwner.data.params.layout_conditioning.value = boundLayout;
+    const supplier = {
+      id: 'synthetic-reference-supplier',
+      type: 'custom',
+      position: { x: 0, y: 0 },
+      data: {
+        module: 'Synthetic',
+        action: 'Reference',
+        label: 'Synthetic reference',
+        params: {
+          pipeline: { type: 'diffusers_modular_pipeline_components', display: 'input' },
+          reference_binding: { type: 'reference_conditioning', display: 'output' },
+          layout_reference_summary: { type: 'string', display: 'output' },
+        },
+      },
+    };
+    boundGraph.nodes.push(supplier);
+    if (fault === 'wired-layout') {
+      boundOwner.data.params.layout_conditioning.isInput = true;
+      supplier.data.params.layout = { type: 'layout_conditioning', display: 'output' };
+      boundGraph.edges.push({
+        id: 'synthetic-layout-wire',
+        source: supplier.id,
+        sourceHandle: 'layout',
+        target: boundOwner.id,
+        targetHandle: 'layout_conditioning',
+      });
+    }
+    boundGraph.edges.push({
+      id: 'synthetic-reference-owner',
+      source: model.id,
+      sourceHandle: 'pipeline_components',
+      target: supplier.id,
+      targetHandle: 'pipeline',
+    });
+    if (fault !== 'missing-context')
+      boundGraph.edges.push({
+        id: 'synthetic-reference-binding',
+        source: supplier.id,
+        sourceHandle: 'reference_binding',
+        target: boundOwner.id,
+        targetHandle: 'reference_binding',
+      });
+    const boundBefore = structuredClone(boundGraph);
+    const boundPlan = planOperationChange(boundGraph, model.id, boundStarter, {
+      replaceModel: true,
+      ...(fault === 'missing-resolver' ? {} : { layoutReferenceContext }),
+    });
+    const planned = boundPlan.graph.nodes.find((node) => node.id === boundOwner.id);
+    assert.deepEqual(boundGraph, boundBefore);
+    if (fault === 'none') {
+      assert.deepEqual(
+        planned.data.params.layout_conditioning.value,
+        boundLayout,
+        'Changing only the current profile preserves an otherwise exact bound context.',
+      );
+      assert.deepEqual(
+        boundPlan.graph.nodes.find((node) => node.id === supplier.id),
+        supplier,
+      );
+    } else {
+      assert.equal(
+        planned.data.params.layout_conditioning.value ?? planned.data.params.layout_conditioning.default,
+        null,
+        fault,
+      );
+      assert.ok(
+        planned.data.operationAuthoring.retained.some(
+          (row) => row.field === 'layout_conditioning' && canonical(row.value) === canonical(boundLayout),
+        ),
+        fault,
+      );
+      assert.equal(boundPlan.review.required, true, fault);
+    }
+  }
+  flow.getState().replaceGraph(plan.graph);
+  const enabled = await preview.enablePromptEnhancement(rebound.id);
+  assert.equal(enabled.id, freshChild.id);
+  assert.equal(submitted, null);
+});
+
+test('unavailable Disable refuses cancellation, a replaced document and concurrent graph edits', async () => {
+  for (const fault of ['abort', 'document', 'graph']) {
+    onMetadata = null;
+    const { ownerId } = await setup();
+    await preview.enablePromptEnhancement(ownerId);
+    flow.getState().resetHistory();
+    const controller = new AbortController();
+    let afterInterruption;
+    onMetadata = () => {
+      if (fault === 'abort') controller.abort(new Error('Cancelled Disable.'));
+      if (fault === 'document') studio.setState({ workflowCanvasEpoch: studio.getState().workflowCanvasEpoch + 1 });
+      if (fault === 'graph') editOwnerField(ownerId, 'prompt', 'Concurrent user edit.');
+      afterInterruption = structuredClone(flow.getState().toObject());
+      throw new Error('Retired enhancement declaration.');
+    };
+    await assert.rejects(
+      preview.disablePromptEnhancement(ownerId, child.id, controller.signal),
+      /cancel|changed|document|context/i,
+    );
+    assert.deepEqual(flow.getState().toObject(), afterInterruption);
+    assert.equal(flow.getState().historyPast.length, 0);
+    assert.ok(activeOwner(ownerId).data.operationAuthoring.ancillaryBindings);
+    assert.equal(submitted, null);
+  }
+});
+
 async function setup() {
   const { createTemplateOperationGraph } = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
   const { DEFAULT_STUDIO_FORM } = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
@@ -871,13 +1111,19 @@ test('explicit authored-layout selection preserves its identity and refuses null
   ).descriptors;
   const offer = actual.evaluationAuthoring.authoringRecipes.find((row) => row.task === 'text_to_image');
   const source = actual.starters.find((starter) => starter.authoring.id === offer.authoringRecipeId);
-  // Two synthetic identities share captured append semantics: this exercises
-  // selection/transactions, not the new constrained decoder or model output.
+  // A synthetic NF4 alternative retains captured append semantics: this covers
+  // selection/persistence, not native precision, fit or generated model output.
   const alternative = structuredClone(source);
-  alternative.authoring.id = 'synthetic:explicit-layout:v1';
+  alternative.authoring.id = 'synthetic:append-nf4:v1';
   const alternateChild = alternative.authoring.ancillaryOperations[0];
   alternateChild.id = `${alternative.authoring.id}:preview`;
   alternateChild.parent.authoringRecipeId = alternative.authoring.id;
+  for (const [field, value] of [
+    ['dtype', 'bfloat16'],
+    ['quantization_mode', 'bnb_4bit'],
+  ]) {
+    alternateChild.initialValues.find(([role, name]) => role === 'provider' && name === field)[2] = value;
+  }
   const { hashString, stableStringify } = await server.ssrLoadModule('/src/studio/stableHash.ts');
   const rehash = (item, prefix) =>
     `${prefix}${hashString(stableStringify(Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'contentHash'))))}`;
@@ -887,7 +1133,7 @@ test('explicit authored-layout selection preserves its identity and refuses null
   descriptor.layoutPromptAuthoringChoices = {
     [offer.task]: [
       { authoringRecipeId: offer.authoringRecipeId, label: 'Append wording' },
-      { authoringRecipeId: alternative.authoring.id, label: 'Explicit layout mode' },
+      { authoringRecipeId: alternative.authoring.id, label: 'Append wording: BF16 + NF4, preserve authored layout' },
     ],
   };
   const sourceRegistry = {
@@ -933,6 +1179,13 @@ test('explicit authored-layout selection preserves its identity and refuses null
     alternative.authoring.id,
   );
   assert.equal(declared.parent.authoringRecipeId, alternative.authoring.id);
+  assert.equal(declared.layoutPolicy, 'append-details-preserve-layout-v1');
+  const providerId = activeOwner(ownerId).data.operationAuthoring.ancillaryBindings[0].roleNodes.provider;
+  const provider = expandFlowExecutionGraph(flow.getState().nodes, flow.getState().edges).nodes.find(
+    (node) => node.id === providerId,
+  );
+  assert.equal(provider.data.params.dtype.value, 'bfloat16');
+  assert.equal(provider.data.params.quantization_mode.value, 'bnb_4bit');
   assert.deepEqual(activeOwner(ownerId).data.params.layout_conditioning.value, layout);
   assert.equal(flow.getState().historyPast.length, 1);
   flow.getState().undo();

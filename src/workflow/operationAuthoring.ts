@@ -1,5 +1,7 @@
 import type { PromptEnhancementParent } from '../studio/promptEnhancementAuthoring';
 import { refreshPromptEnhancementParents } from '../studio/promptEnhancementAuthoring';
+import { promptEnhancementParentFromHint } from '../studio/promptEnhancementParent';
+import { parseLayoutConditioning } from '../studio/layoutConditioning';
 import { ancillaryBindingsFromHint, type AncillaryInstanceBinding } from '../studio/ancillaryOperations';
 import { operationOwnsModel } from './operationContracts';
 import type { Edge } from '@xyflow/react';
@@ -52,6 +54,21 @@ export type OperationStarter = {
   sharedInputs: { name: string; members: { operationId: string; field: string }[] }[];
 };
 export type OperationGraph = { nodes: CustomNodeType[]; edges: Edge[] };
+/** The browser supplies its existing Run-equivalent reference projection.
+ * A headless planner cannot infer missing reference authority from ambient state. */
+export type OperationLayoutReferenceContext = (
+  nodes: CustomNodeType[],
+  edges: Edge[],
+  nodeId: string,
+  fieldKey: string,
+) => { nodeId: string; summaryNodeId: string; key: string } | null;
+export type OperationChangeOptions = {
+  replaceModel?: boolean;
+  restoreDefaults?: boolean;
+  baseline?: OperationStarter | null;
+  preserveValues?: boolean;
+  layoutReferenceContext?: OperationLayoutReferenceContext;
+};
 export type OperationChangePlan = {
   graph: OperationGraph;
   changes: string[];
@@ -444,12 +461,7 @@ export function planOperationChange(
   graph: OperationGraph,
   loaderId: string,
   starter: OperationStarter,
-  options: {
-    replaceModel?: boolean;
-    restoreDefaults?: boolean;
-    baseline?: OperationStarter | null;
-    preserveValues?: boolean;
-  } = {},
+  options: OperationChangeOptions = {},
 ): OperationChangePlan {
   if (graph.nodes.some(visualOperationGroup)) {
     const unpacked = unpackVisualOperationGroups(graph);
@@ -511,6 +523,55 @@ export function planOperationChange(
       deepEqual(operationFieldValue(left.data.params[name]), operationFieldValue(right.data.params[name])),
     );
   const sameModel = sameOwner(root, nextOwner);
+  // Older resolved prompt schemas exposed layout without an operation port.
+  // A current same-artifact declaration may retain that exact authored field;
+  // bound reference context is checked after the final media edges are known.
+  function legacyLayoutTransfer(source: CustomNodeType, target: CustomNodeType, name: string) {
+    const previous = operationAuthoring(source)!.operation,
+      next = operationAuthoring(target)!.operation;
+    const field = source.data.params[name],
+      destination = target.data.params[name];
+    const saved = promptEnhancementParentFromHint(source.data.operationAuthoring);
+    return Boolean(
+      name === 'layout_conditioning' &&
+      (!port(source, name, 'input') || !port(target, name, 'input')) &&
+      !connected.get(source.id)?.has(name) &&
+      !connected.get(target.id)?.has(name) &&
+      !options.restoreDefaults &&
+      saved?.parentRoleNodes.prompt === source.id &&
+      saved.parent.pipelineClass === starter.pipelineClass &&
+      saved.parent.task === starter.task &&
+      previous.pipelineClass === next.pipelineClass &&
+      previous.task === next.task &&
+      previous.nodeKey === next.nodeKey &&
+      previous.operationId === next.operationId &&
+      deepEqual(previous.binding, next.binding) &&
+      operationAuthoring(root)!.operation.binding?.pipelineClass ===
+        operationAuthoring(nextOwner)!.operation.binding?.pipelineClass &&
+      ['repo_id', 'model_id'].some((key) => Boolean(operationFieldValue(root.data.params[key]))) &&
+      ownerFields
+        .filter((key) => key !== 'execution_profile_id')
+        .every((key) =>
+          deepEqual(operationFieldValue(root.data.params[key]), operationFieldValue(nextOwner.data.params[key])),
+        ) &&
+      field?.type === 'layout_conditioning' &&
+      destination?.type === field.type &&
+      field.display === 'layout' &&
+      destination.display === field.display &&
+      publicSetting(destination) &&
+      field.fieldOptions?.layoutConditioning &&
+      deepEqual(field.fieldOptions.layoutConditioning, destination.fieldOptions?.layoutConditioning) &&
+      !Object.prototype.hasOwnProperty.call(next.binding?.values ?? {}, name) &&
+      starter.authoring?.ancillaryOperations?.some(
+        (child) =>
+          child.parent.pipelineClass === saved.parent.pipelineClass &&
+          child.parent.task === saved.parent.task &&
+          child.bindings.owner.role === 'prompt' &&
+          child.bindings.owner.layoutField === name &&
+          starter.authoring!.roles.some(([role, key]) => role === 'prompt' && key === next.nodeKey),
+      ),
+    );
+  }
   // Keeping an unchanged executor and model preserves its unresolved runtime
   // policy. It does not infer a distilled scale's meaning for a different model.
   function unchangedControl(source: CustomNodeType, sourceName: string, target: CustomNodeType, targetName: string) {
@@ -652,6 +713,7 @@ export function planOperationChange(
     field: NodeParams;
     previous: OperationAuthoring;
   }[] = [];
+  const pendingLayouts: typeof deferredSettings = [];
   let added = 0;
   const insertionX = Math.max(...graph.nodes.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 360))) + 100;
   const migrated = draft.nodes.map((fresh) => {
@@ -788,7 +850,13 @@ export function planOperationChange(
         params[name] = { ...target, value: field.value, ...(field.artifacts ? { artifacts: field.artifacts } : {}) };
         addPreserved(`${old.data.label} · ${fieldLabel(old, name)}: ${reviewValue(field.value)}`);
       } else if (!operationOwnsModel(previous.operation)) {
-        deferredSettings.push({ old, fresh, name, field, previous });
+        (legacyLayoutTransfer(old, fresh, name) ? pendingLayouts : deferredSettings).push({
+          old,
+          fresh,
+          name,
+          field,
+          previous,
+        });
       } else {
         const reason = `${old.data.label} · ${fieldLabel(old, name)} cannot be applied to ${fresh.data.label}; its previous value (${reviewValue(field.value)}) remains available in Implementation.`;
         retained.push({ field: name, value: field.value, pipeline: previous.operation.pipelineClass, reason });
@@ -1197,6 +1265,48 @@ export function planOperationChange(
     changes.push(
       `Share ${group.name} across ${members.map((m) => m.node.data.label).join(' and ')}; preserve its authored value${group.name === 'seed' ? ' and use one random draw per run' : ''}.`,
     );
+  }
+  for (const entry of pendingLayouts) {
+    const target = migrated.find(
+      (node) => operationAuthoring(node)!.operation.operationId === entry.previous.operation.operationId,
+    )!;
+    let compatible = false;
+    try {
+      const layout = parseLayoutConditioning(entry.field.value);
+      const plannedOwner = nodes.find((node) => node.id === root.id)!;
+      // The explicit same-artifact rebind changes this one selector. Nothing
+      // else in the ordered media/preprocessing ancestry may be normalized.
+      const beforeNodes = graph.nodes.map((node) => {
+        if (node.id !== root.id) return node;
+        const params = { ...node.data.params };
+        if (plannedOwner.data.params.execution_profile_id)
+          params.execution_profile_id = plannedOwner.data.params.execution_profile_id;
+        else delete params.execution_profile_id;
+        return { ...node, data: { ...node.data, params } };
+      });
+      const beforeContext = options.layoutReferenceContext?.(beforeNodes, graph.edges, entry.old.id, entry.name);
+      const afterContext = options.layoutReferenceContext?.(nodes, edges, target.id, entry.name);
+      compatible =
+        !layout?.regions.some((region) => region.source) ||
+        Boolean(beforeContext && afterContext && beforeContext.key === afterContext.key);
+    } catch {
+      /* Invalid authored data remains in the ordinary explicit review. */
+    }
+    if (compatible) {
+      target.data.params[entry.name] = { ...target.data.params[entry.name], value: structuredClone(entry.field.value) };
+      addPreserved(`${entry.old.data.label} · ${fieldLabel(entry.old, entry.name)}: ${reviewValue(entry.field.value)}`);
+    } else {
+      const reason = `${entry.old.data.label} · ${fieldLabel(entry.old, entry.name)} needs review because its layout or ordered reference context is incompatible; its previous value remains available in Implementation.`;
+      target.data.operationAuthoring!.retained.push({
+        field: entry.name,
+        value: entry.field.value,
+        pipeline: entry.previous.operation.pipelineClass,
+        reason,
+      });
+      if (target.data.operationAuthoring!.retained.length > 512)
+        throw new Error('Too many retained settings. Review and remove old retained entries before another change.');
+      diagnostics.push(reason);
+    }
   }
   if (!reviewChanges.length && operationAuthoring(root)!.operation.pipelineClass !== starter.pipelineClass)
     reviewChanges.push(

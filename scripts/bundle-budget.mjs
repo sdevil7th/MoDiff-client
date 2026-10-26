@@ -1,3 +1,9 @@
+// Exact cache observations, exclusive-owner enhancement removal, same-artifact
+// layout preservation and semantic crossing checks measure largest/startup/
+// deferred gzip 488073/666379/326387 versus 487800/666105/324323.
+// Add only measured 273/274/2064 bytes, retaining 15/17/39 bytes of headroom.
+// Dependencies, minifier, startup graph and validators remain unchanged;
+// the independent 65536-byte deferred chunk cap also remains fixed.
 // Explicit artifact-format preservation and ten blocked FP8r planning recipes
 // measure largest/startup/deferred gzip 487800/666105/324323, versus the accepted
 // 480984/659291/323388 baseline. Add only the measured 6816/6814/935 aggregate
@@ -198,6 +204,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Retain the strict current-owner/parser checks and allow 128 startup/chunk
 // bytes only; dependencies, lazy boundaries, minifier and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  273 +
   6816 +
   1769 +
   450 * 1024 +
@@ -309,6 +316,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  274 +
   6814 +
   1768 +
   624 * 1024 +
@@ -504,6 +512,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  2064 +
   935 +
   103 +
   2097 +

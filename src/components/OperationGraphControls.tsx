@@ -2,6 +2,7 @@ import { operationOwnsModel } from '../workflow/operationContracts';
 import { useEffect, useRef, useState } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { layoutReferenceContext } from '../studio/layoutReferenceContext';
 import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
@@ -124,9 +125,12 @@ export default function OperationGraphControls({
               blockId,
               loader,
               starter,
-              { replaceModel: Boolean(executionProfileId) },
+              { replaceModel: Boolean(executionProfileId), layoutReferenceContext },
             )
-          : planOperationChange(snapshot, effectiveOwnerId, starter, { replaceModel: Boolean(executionProfileId) });
+          : planOperationChange(snapshot, effectiveOwnerId, starter, {
+              replaceModel: Boolean(executionProfileId),
+              layoutReferenceContext,
+            });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
       if (operationGraphPreviewSignature(useFlowStore.getState().toObject()) !== signature)

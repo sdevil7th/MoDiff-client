@@ -399,6 +399,57 @@ test('native-only cache cannot satisfy a distinct variant and deduplication pres
   );
 });
 
+test('observed exact cached selections supersede native receipts without confusing variants or repository prefixes', async () => {
+  const { getRepoCacheStatus, getStudioModelCacheStatus } = await load('studio/modelCache');
+  const { getGraphWorkflowArtifactRequirements } = await load('studio/artifactRequirements');
+  const repo = 'example/image';
+  const revision = 'a'.repeat(40);
+  const native = ['model_index.json', 'native.safetensors'];
+  const files = ['model_index.json', 'variants/fp8r/model.safetensors'];
+  const entry = {
+    id: repo,
+    installed: true,
+    complete: true,
+    planned_revision: revision,
+    planned_files: native,
+    observed_selections: [{ revision, files, complete: true }],
+  };
+  const status = (cache, expectation = { revision, files }) => getRepoCacheStatus(repo, cache, [], null, expectation);
+  assert.equal(status([entry]).runnable, true, 'a stale receipt is not an inventory of all cached files');
+  assert.equal(status([{ ...entry, installed: false, complete: false, repair_required: true }]).runnable, true);
+  const incompleteNative = { ...entry, installed: false, complete: false, repair_required: true };
+  assert.equal(status([incompleteNative], { revision }).runnable, false, 'a revision alone does not select FP8r');
+  assert.equal(status([incompleteNative], { files }).runnable, false, 'files alone do not select a revision');
+  assert.equal(status([entry], { revision, files: native }).runnable, false);
+  assert.equal(status([entry], { revision: 'b'.repeat(40), files }).runnable, false);
+  assert.equal(status([entry], { revision, files: ['variants/nvfp4/model.safetensors'] }).runnable, false);
+  assert.equal(status([{ ...entry, id: `${repo}-base` }]).runnable, false);
+  assert.equal(status([{ ...entry, id: `${repo}-base` }, entry]).runnable, true);
+  for (const observed_selections of [
+    [{ revision, files, complete: false }],
+    [{ revision, files, complete: 'true' }],
+    [{ revision, files: [...files, '../escape'], complete: true }],
+    [],
+    null,
+  ]) {
+    assert.equal(status([{ ...entry, planned_files: files, observed_selections }]).runnable, false);
+  }
+  const { observed_selections: _observations, ...legacy } = entry;
+  assert.equal(status([{ ...legacy, planned_files: files }]).runnable, true, 'older backend compatibility');
+  assert.equal(status([legacy]).runnable, false);
+  assert.equal(getRepoCacheStatus(repo, [{ ...legacy, id: `${repo}-base` }], [], null).runnable, false);
+  const profile = { defaultRepo: repo, revisionCandidates: [revision], downloadFiles: files };
+  assert.equal(getStudioModelCacheStatus(profile, [entry], [], null).runnable, true);
+  const requirements = getGraphWorkflowArtifactRequirements({
+    references: [{ nodeId: 'owner', kind: 'repo', value: repo, revision, paramKey: 'repo_id', downloadFiles: files }],
+    hfCache: [entry],
+    localModels: [],
+    modelCacheDiagnostics: null,
+  });
+  assert.equal(requirements[0].status.runnable, true);
+  assert.equal(requirements[0].installTarget, undefined);
+});
+
 test('incompatible model or execution changes require an explicit Native choice without mutating the draft', async () => {
   const formats = await load('studio/weightFormat');
   const values = await load('studio/executionSpecValues');

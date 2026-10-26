@@ -986,6 +986,16 @@ executable. It is never an automatic definition update or silent graph reset.
 - `/model_capabilities` Studio profile compatibility
 - `/hf_download` install/repair tasks
 
+The shared model cache-status helper matches exact repository IDs. For an exact
+revision/file selection, additive backend `observed_selections` metadata takes
+precedence over historical `planned_revision`/`planned_files` download receipts.
+A complete selected snapshot can be ready even when an unrelated native receipt
+is stale or incomplete; a negative or malformed observation cannot fall back to
+that receipt. Older backends and artifact layouts without observations keep the
+receipt compatibility path. Observations describe bounded file presence, sizes
+and managed-cache containment, not content verification or execution permission.
+Studio and ordinary graph requirements consume this same result.
+
 The additive `operationContracts` catalog on `/model_capabilities` describes the
 existing generic Modular stages and task-scoped standard image/video/audio/3D
 adapters. `src/workflow/operationContracts.ts` validates versions 1, 2 and 3,
@@ -1821,6 +1831,18 @@ native layout generation or semantic-fidelity proof. Apply stays one ordinary
 history transaction; Regenerate recaptures the original request after an
 untouched Apply, so appended text does not accumulate. Existing plain and native
 structured proposal schemas remain strict and retain their own declarations.
+
+Public append has separate FP32 and BF16/NF4 identities. The FP32 default and all
+older parent DTOs retain their hashes; selecting the NF4 layout choice binds its
+fixed provider controls without changing append composition or layout validation.
+When a saved enhancement's current metadata is unavailable, Disable has a local
+removal-only path: bounded matching parent/child role maps, the two exact built-in
+provider/proposal types, their complete expected edges, and exclusive ownership
+must all agree. It preserves the current authored pair instead of restoring an
+unverifiable original request. Workflow context/signature guards and one normal
+Undo transaction still apply. It neither refreshes execution authority nor
+rebinds a profile; the ordinary reviewed model-change planner must select the
+current public model before a current enhancement can be enabled.
 
 A source-declared `required_diffusers_provider` binds an execution profile to
 one of its declared optional overlays and to an explicit required-now runtime

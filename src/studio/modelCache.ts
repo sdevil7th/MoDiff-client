@@ -33,7 +33,7 @@ const IMMUTABLE_HUGGING_FACE_REVISION = /^[0-9a-f]{40}$/i;
 const HUGGING_FACE_REPO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/;
 
 function isReviewedDownloadFile(value: string) {
-  if (!value || value.length > 512 || value.includes('\\') || value.startsWith('/') || value.endsWith('/')) {
+  if (!value || value.length > 512 || /[\\:\0]/.test(value) || value.startsWith('/') || value.endsWith('/')) {
     return false;
   }
   return value.split('/').every((segment) => segment && segment !== '.' && segment !== '..');
@@ -87,7 +87,7 @@ function normalizeModelText(value: string) {
 export function cacheContains(cache: unknown[], repo: string) {
   const repoLower = normalizeModelText(repo);
   return cache.some((item) => {
-    if (!normalizeModelText(modelItemText(item)).includes(repoLower)) return false;
+    if (normalizeModelText(modelItemText(item)) !== repoLower) return false;
     if (!item || typeof item !== 'object') return true;
     const status = item as { complete?: unknown; installed?: unknown; repair_required?: unknown };
     return status.complete !== false && status.installed !== false && status.repair_required !== true;
@@ -158,14 +158,14 @@ export function getRepoCacheStatus(
   expectation?: StudioModelCacheExpectation,
 ): StudioModelCacheStatus {
   const repoLower = normalizeModelText(repo);
-  const cacheEntry = hfCache.find((item) => normalizeModelText(modelItemText(item)).includes(repoLower));
+  const cacheEntry = hfCache.find((item) => normalizeModelText(modelItemText(item)) === repoLower);
   const baseHfCached = cacheContains(hfCache, repo);
   const expectedRevision = expectation?.revision?.trim().toLowerCase() || '';
   const expectedFiles = Array.from(new Set((expectation?.files ?? []).map((file) => file.replace(/\\/g, '/')))).sort();
   const hasExactExpectation = Boolean(expectedRevision || expectedFiles.length);
   const cacheRecord =
     cacheEntry && typeof cacheEntry === 'object'
-      ? (cacheEntry as { planned_revision?: unknown; planned_files?: unknown })
+      ? (cacheEntry as { planned_revision?: unknown; planned_files?: unknown; observed_selections?: unknown })
       : null;
   const plannedRevision = String(cacheRecord?.planned_revision ?? '')
     .trim()
@@ -180,8 +180,44 @@ export function getRepoCacheStatus(
     (Boolean(cacheRecord) &&
       (!expectedRevision || plannedRevision === expectedRevision) &&
       expectedFiles.every((file) => plannedFiles.has(file)));
-  const hfCached = baseHfCached && selectionMatches;
-  const selectionNeedsRepair = baseHfCached && !selectionMatches;
+  // Receipts describe a previous download, not every file now in the cache.
+  // A current observation is authoritative for its exact selection, including
+  // an incomplete result. Older backends retain the receipt compatibility path.
+  const hasObservedSelections = Boolean(
+    cacheRecord && Object.prototype.hasOwnProperty.call(cacheRecord, 'observed_selections'),
+  );
+  const useObservedSelection = hasObservedSelections && Boolean(expectedRevision && expectedFiles.length);
+  const observations = cacheRecord?.observed_selections;
+  const validObservations =
+    Array.isArray(observations) &&
+    observations.length <= 32 &&
+    observations.every(
+      (item: unknown) =>
+        item !== null &&
+        typeof item === 'object' &&
+        'revision' in item &&
+        typeof item.revision === 'string' &&
+        IMMUTABLE_HUGGING_FACE_REVISION.test(item.revision) &&
+        'complete' in item &&
+        typeof item.complete === 'boolean' &&
+        'files' in item &&
+        Array.isArray(item.files) &&
+        item.files.length > 0 &&
+        item.files.length <= 256 &&
+        item.files.every((file: unknown) => typeof file === 'string' && isReviewedDownloadFile(file)) &&
+        new Set(item.files).size === item.files.length,
+    );
+  const observedMatch =
+    validObservations &&
+    observations.some(
+      (item: { revision: string; files: string[]; complete: boolean }) =>
+        item.complete &&
+        item.revision.toLowerCase() === expectedRevision &&
+        item.files.length === expectedFiles.length &&
+        expectedFiles.every((file) => item.files.includes(file)),
+    );
+  const hfCached = useObservedSelection ? observedMatch : baseHfCached && selectionMatches;
+  const selectionNeedsRepair = useObservedSelection ? !hfCached : baseHfCached && !selectionMatches;
   const localCached = !hasExactExpectation && localModelsContain(localModels, repo);
   const scannedPaths =
     diagnostics?.locations.map((location) => `${location.label}: ${location.path || 'default'}`) ?? [];

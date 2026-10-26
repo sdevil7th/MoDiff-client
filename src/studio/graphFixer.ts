@@ -5,7 +5,8 @@ import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import { connectionTypes, connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { nodeConnectionSemanticsAreCompatible } from '../workflow/nodeConnectionMatching';
-import { expandBlockGraphV2ForExecution } from './blockRuntimeV2';
+import { blockProjectionNodeIdV2, expandBlockGraphV2ForExecution } from './blockRuntimeV2';
+import { blockConnectionTargetsV2, blockCrossingParamV2 } from './blockCrossingConnectionsV2';
 import { inspectBlockSeedBindingsV2 } from './blockSeedRepairV2';
 import { inspectBlockDerivedControlsV2 } from './blockDerivedControlRepairV2';
 import { inspectReviewedStateV2 } from './reviewedStateDiagnosticsV2';
@@ -225,7 +226,7 @@ export function graphNodeIsOutputLike(node: Pick<CustomNodeType, 'data'>) {
   return /\b(preview|export|save|display|output|gallery)\b|viewer\b/.test(text);
 }
 
-function blockHasConnectedOutput(node: CustomNodeType) {
+function blockHasConnectedOutput(node: CustomNodeType, incoming: ReadonlySet<string>) {
   if (!isBlockRootV2Node(node) || !node.data.blockInstanceV2) return false;
   // Inspect the saved semantic graph, not visible projections: collapse must not
   // hide an existing output from Fix. Do not compile a potentially invalid draft.
@@ -237,7 +238,10 @@ function blockHasConnectedOutput(node: CustomNodeType) {
     (child) =>
       enabled.has(child.nodeId) &&
       graphNodeIsOutputLike({ data: child.data as unknown as NodeData }) &&
-      graph.edges.some((edge) => edge.targetNodeId === child.nodeId && enabled.has(edge.sourceNodeId)),
+      (graph.edges.some((edge) => edge.targetNodeId === child.nodeId && enabled.has(edge.sourceNodeId)) ||
+        inputFields({ data: child.data as unknown as NodeData }).some(([field]) =>
+          incoming.has(`${blockProjectionNodeIdV2(node.id, child.nodeId)}:${field}`),
+        )),
   );
 }
 
@@ -808,9 +812,35 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
     const target = nodesById.get(edge.target);
     const sourceHandle = edge.sourceHandle ?? '';
     const targetHandle = edge.targetHandle ?? '';
-    const sourceParam = nodeConnectorParam(source, sourceHandle);
-    const targetParam = nodeConnectorParam(target, targetHandle);
-    if (!source || !target || !sourceHandle || !targetHandle || !sourceParam || !targetParam) {
+    let sourceParam: NodeParams | undefined;
+    let targetParam: NodeParams | undefined;
+    let blockTargets: ReturnType<typeof blockConnectionTargetsV2> = [];
+    try {
+      sourceParam = nodeConnectorParam(source, sourceHandle);
+      targetParam = nodeConnectorParam(target, targetHandle);
+      if (source?.data.blockInstanceV2) {
+        for (const binding of blockConnectionTargetsV2(source, sourceHandle, 'output'))
+          blockCrossingParamV2(source.data.blockInstanceV2, { ...binding, direction: 'output' });
+      }
+      if (target?.data.blockInstanceV2) {
+        blockTargets = blockConnectionTargetsV2(target, targetHandle, 'input');
+        for (const binding of blockTargets)
+          blockCrossingParamV2(target.data.blockInstanceV2, { ...binding, direction: 'input' });
+      }
+    } catch {
+      // A stale/malformed crossing is a broken link, never output connectivity.
+      sourceParam = targetParam = undefined;
+    }
+    if (
+      !source ||
+      !target ||
+      !sourceHandle ||
+      !targetHandle ||
+      !sourceParam ||
+      !targetParam ||
+      sourceParam.display !== 'output' ||
+      targetParam.display === 'output'
+    ) {
       const issueId = candidateId('broken-link', edge.id);
       issues.push({
         id: issueId,
@@ -874,14 +904,24 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
       return;
     }
     validIncoming.add(`${target.id}:${targetHandle}`);
+    if (!source.data.uiState?.disabled && !target.data.uiState?.disabled) {
+      // Durable crossing and public/mirrored inputs reach semantic leaves even
+      // when their canvas projections are collapsed or absent after reload.
+      for (const binding of blockTargets)
+        validIncoming.add(`${blockProjectionNodeIdV2(target.id, binding.nodeId)}:${binding.fieldOrPortId}`);
+    }
   });
 
   const enabled = executableNodes(context.nodes);
   const outputNodes = enabled.filter(graphNodeIsOutputLike);
   const connectedOutputs = outputNodes.filter((node) =>
-    context.edges.some((edge) => edge.target === node.id && nodesById.has(edge.source)),
+    inputFields(node).some(([handle]) => validIncoming.has(`${node.id}:${handle}`)),
   );
-  if (enabled.length > 0 && connectedOutputs.length === 0 && !enabled.some(blockHasConnectedOutput)) {
+  if (
+    enabled.length > 0 &&
+    connectedOutputs.length === 0 &&
+    !enabled.some((node) => blockHasConnectedOutput(node, validIncoming))
+  ) {
     const issueId = 'missing-output';
     const candidates = outputCandidates(issueId, context, outputNodes);
     if (candidates.length) {

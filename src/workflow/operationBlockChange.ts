@@ -24,6 +24,7 @@ import {
   operationScope,
   planOperationChange,
   type OperationChangePlan,
+  type OperationChangeOptions,
   type OperationGraph,
   type OperationStarter,
 } from './operationAuthoring';
@@ -166,7 +167,10 @@ export function planBlockOperationChange(
   blockId: string,
   loaderId: string,
   starter: OperationStarter,
-  options: { replaceModel?: boolean; restoreDefaults?: boolean; preserveValues?: boolean } = {},
+  options: Pick<
+    OperationChangeOptions,
+    'replaceModel' | 'restoreDefaults' | 'preserveValues' | 'layoutReferenceContext'
+  > = {},
 ): OperationChangePlan {
   const root = graph.nodes.find((node) => node.id === blockId);
   const original = root?.data.blockInstanceV2;

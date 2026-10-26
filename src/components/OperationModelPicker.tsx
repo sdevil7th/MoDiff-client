@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { layoutReferenceContext } from '../studio/layoutReferenceContext';
 import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
@@ -153,7 +154,7 @@ export default function OperationModelPicker({
               node.data.blockProjectionOwnerId,
               node.data.blockProjectionNodeId ?? node.id,
               starter,
-              { replaceModel: !restoreDefaults, restoreDefaults },
+              { replaceModel: !restoreDefaults, restoreDefaults, layoutReferenceContext },
             )
           : (!visualOwner &&
               !restoreDefaults &&
@@ -163,6 +164,7 @@ export default function OperationModelPicker({
               replaceModel: !restoreDefaults,
               restoreDefaults,
               baseline,
+              layoutReferenceContext,
             });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });

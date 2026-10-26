@@ -278,10 +278,14 @@ export default function PromptEnhancementControls({
               disabled={unavailable || taskActive}
               onClick={() =>
                 void act('Disabling enhancement', async () => {
-                  await disablePromptEnhancement(ownerId, binding.contractId);
+                  const result = await disablePromptEnhancement(ownerId, binding.contractId);
                   setRun(null);
                   setVerified(null);
-                  setMessage('Disabled. Later user edits are preserved.');
+                  setMessage(
+                    result.preservedUnavailablePair
+                      ? 'Disabled. Your current prompt, layout and references are preserved. Choose the current model, then enable a current enhancement mode.'
+                      : 'Disabled. Later user edits are preserved.',
+                  );
                 })
               }
             >

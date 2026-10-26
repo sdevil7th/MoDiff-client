@@ -16,7 +16,7 @@ export type { PromptEnhancementParent } from './promptEnhancementParent';
 import type { OperationAuthoringRecipe } from './operationAuthoringRecipe';
 import type { OperationGraph } from '../workflow/operationAuthoring';
 import type { NodeData } from '../stores/useNodeStore';
-import { AUTHORED_CONSTRAINT_POLICY } from './promptEnhancementConstraints';
+import { AUTHORED_CONSTRAINT_OPERATION, AUTHORED_CONSTRAINT_POLICY } from './promptEnhancementConstraints';
 
 /** Attach only a backend-declared offer to its actual prompt owner before grouping.
  * This does not add a branch, change values, make a request, or grant readiness. */
@@ -486,6 +486,92 @@ export async function planDisablePromptEnhancement(
     edges: unpacked.graph.edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)),
   };
   return groups.restoreVisualOperationGroups(next, unpacked);
+}
+
+/** Local removal when current metadata is unavailable. Persisted ownership can
+ * authorize deleting these two exclusive leaves, never running or rebinding them.
+ * Unlike a verified Disable, this keeps the current authored pair verbatim. */
+export async function planDetachUnavailablePromptEnhancement(
+  graph: OperationGraph,
+  ownerId: string,
+  childId: string,
+): Promise<OperationGraph> {
+  const { owner, selection, unpacked, groups } = await editableContext(graph, ownerId);
+  const { ancillaryBindingsFromHint } = await import('./ancillaryBindings');
+  const { canonicalBlockStringifyV2: canonical } = await import('./blockSchemaV2');
+  const bindings = ancillaryBindingsFromHint(owner.data.operationAuthoring);
+  const binding = bindings?.[0];
+  if (
+    bindings?.length !== 1 ||
+    !binding ||
+    binding.contractId !== childId ||
+    childId !== `${selection.parent.authoringRecipeId}:preview` ||
+    canonical(binding.parent) !== canonical(selection.parent) ||
+    canonical(binding.parentRoleNodes) !== canonical(selection.parentRoleNodes) ||
+    binding.parentRoleNodes.prompt !== owner.id ||
+    Object.keys(binding.roleNodes).sort().join(',') !== 'proposal,provider' ||
+    !owner.data.params.prompt ||
+    !owner.data.params.layout_conditioning
+  )
+    invalidAncillary('the saved enhancement ownership is not an exact removable pair.');
+  const ids = new Set(Object.values(binding.roleNodes));
+  const uniqueNode = (id: string) => {
+    const matches = unpacked.graph.nodes.filter((node) => node.id === id);
+    if (matches.length !== 1) invalidAncillary('the saved enhancement node is missing or ambiguous.');
+    return matches[0]!;
+  };
+  uniqueNode(owner.id);
+  const provider = uniqueNode(binding.roleNodes.provider!),
+    proposal = uniqueNode(binding.roleNodes.proposal!);
+  if (
+    `${provider.data.module}.${provider.data.action}` !== 'modules.HuggingFaceTransformers.LoadImageTextToTextModel' ||
+    `${proposal.data.module}.${proposal.data.action}` !== 'modules.HuggingFaceTransformers.GenerateImageVideoText' ||
+    !['enhance_prompt', 'enhance_prompt_append_details', AUTHORED_CONSTRAINT_OPERATION].includes(
+      String(proposal.data.params.operation?.value ?? proposal.data.params.operation?.default),
+    )
+  )
+    invalidAncillary('the saved enhancement leaves are not the removable built-in provider and proposal.');
+  for (const node of unpacked.graph.nodes) {
+    if (node.id === owner.id) continue;
+    if (
+      ancillaryBindingsFromHint(node.data.operationAuthoring)?.some((other) =>
+        [...Object.values(other.roleNodes), ...Object.values(other.parentRoleNodes)].some((id) => ids.has(id)),
+      ) ||
+      Object.values(promptEnhancementParentFromHint(node.data.operationAuthoring)?.parentRoleNodes ?? {}).some((id) =>
+        ids.has(id),
+      )
+    )
+      invalidAncillary('another enhancement claims these leaves; separate ownership before disabling.');
+  }
+  const edgeKey = (source: string, output: string, target: string, input: string) =>
+    `${source}\0${output}\0${target}\0${input}`;
+  const expected = [edgeKey(provider.id, 'model', proposal.id, 'model')];
+  if (selection.parent.task === 'edit_image') {
+    const referenceId = binding.parentRoleNodes.loadImage;
+    if (!referenceId) invalidAncillary('the saved enhancement reference owner is unavailable.');
+    const reference = uniqueNode(referenceId);
+    if (`${reference.data.module}.${reference.data.action}` !== 'modules.Image.Load')
+      invalidAncillary('the saved enhancement reference is not its original image source.');
+    expected.push(edgeKey(reference.id, 'image', proposal.id, 'images'));
+  } else if (selection.parent.task !== 'text_to_image')
+    invalidAncillary('the saved enhancement task has no local removal contract.');
+  const connected = unpacked.graph.edges
+    .filter((edge) => ids.has(edge.source) || ids.has(edge.target))
+    .map((edge) => edgeKey(edge.source, edge.sourceHandle ?? '', edge.target, edge.targetHandle ?? ''));
+  if (canonical(connected.sort()) !== canonical(expected.sort()))
+    invalidAncillary(
+      'the enhancement branch has additional or missing connections; separate those explicitly before disabling.',
+    );
+  delete owner.data.operationAuthoring!.ancillaryBindings;
+  delete selection.appliedPairSha256;
+  owner.data.operationAuthoring!.ancillaryParent = selection;
+  return groups.restoreVisualOperationGroups(
+    {
+      nodes: unpacked.graph.nodes.filter((node) => !ids.has(node.id)),
+      edges: unpacked.graph.edges.filter((edge) => !ids.has(edge.source) && !ids.has(edge.target)),
+    },
+    unpacked,
+  );
 }
 
 /** An explicit new Preview reuses the original request after an untouched Apply,

@@ -94,6 +94,96 @@ test('absent metadata preserves legacy graph bytes and adds no feature', () => {
   assert.deepEqual(graph, { nodes: [], edges: [] });
 });
 
+test('unavailable enhancement removal preserves applied and later authored pairs, references and unrelated topology', async () => {
+  for (const index of [0, 1]) {
+    const { graph, parent, child, owner, registry } = setup(index);
+    const enabled = await authoring.planEnablePromptEnhancement(graph, owner.id, parent, child.id, registry);
+    const current = enabled.nodes.find((node) => node.id === owner.id);
+    const layout = {
+      schemaVersion: 2,
+      coordinateSpace: 'normalized_xyxy',
+      regions: [{ id: 'subject', description: 'Retain exactly.', action: 'place', targetBox: [0.2, 0.2, 0.8, 0.8] }],
+    };
+    current.data.params.prompt.value = 'Keep this applied <subject> caption.\n';
+    current.data.params.layout_conditioning.value = layout;
+    current.data.operationAuthoring.ancillaryParent.appliedPairSha256 = await authoring.promptEnhancementPairHash({
+      prompt: current.data.params.prompt.value,
+      layout,
+    });
+    const before = structuredClone(enabled);
+    const binding = current.data.operationAuthoring.ancillaryBindings[0];
+    const removed = new Set(Object.values(binding.roleNodes));
+    const expected = structuredClone(enabled);
+    expected.nodes = expected.nodes.filter((node) => !removed.has(node.id));
+    expected.edges = expected.edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target));
+    const kept = expected.nodes.find((node) => node.id === owner.id);
+    delete kept.data.operationAuthoring.ancillaryBindings;
+    delete kept.data.operationAuthoring.ancillaryParent.appliedPairSha256;
+    assert.deepEqual(await authoring.planDetachUnavailablePromptEnhancement(enabled, owner.id, child.id), expected);
+    assert.deepEqual(enabled, before);
+  }
+});
+
+test('unavailable enhancement removal refuses ambiguous or shared persisted ownership atomically', async (t) => {
+  for (const fault of [
+    'wrong-parent',
+    'wrong-owner',
+    'wrong-leaf',
+    'extra-role',
+    'shared-claim',
+    'shared-parent-claim',
+    'extra-edge',
+    'missing-edge',
+    'duplicate-edge',
+    'duplicate-node',
+    'duplicate-owner',
+  ]) {
+    await t.test(fault, async () => {
+      const { graph, parent, child, owner, registry } = setup();
+      const enabled = await authoring.planEnablePromptEnhancement(graph, owner.id, parent, child.id, registry);
+      const current = enabled.nodes.find((node) => node.id === owner.id);
+      const binding = current.data.operationAuthoring.ancillaryBindings[0];
+      const provider = enabled.nodes.find((node) => node.id === binding.roleNodes.provider);
+      const proposal = enabled.nodes.find((node) => node.id === binding.roleNodes.proposal);
+      const edge = enabled.edges.find((edge) => edge.source === provider.id);
+      if (fault === 'wrong-parent') binding.parent.authoringRecipeId += ':foreign';
+      if (fault === 'wrong-owner') binding.parentRoleNodes.prompt = 'foreign';
+      if (fault === 'wrong-leaf') provider.data.action = 'ModelsLoader';
+      if (fault === 'extra-role') binding.roleNodes.foreign = 'foreign';
+      if (fault === 'shared-claim') {
+        const other = structuredClone(current);
+        other.id = 'other-owner';
+        enabled.nodes.push(other);
+      }
+      if (fault === 'shared-parent-claim') {
+        const other = structuredClone(current);
+        other.id = 'other-owner';
+        delete other.data.operationAuthoring.ancillaryBindings;
+        other.data.operationAuthoring.ancillaryParent.parentRoleNodes.prompt = provider.id;
+        enabled.nodes.push(other);
+      }
+      if (fault === 'extra-edge')
+        enabled.edges.push({
+          id: 'foreign-edge',
+          source: proposal.id,
+          sourceHandle: 'text',
+          target: owner.id,
+          targetHandle: 'prompt',
+        });
+      if (fault === 'missing-edge') enabled.edges = enabled.edges.filter((item) => item.id !== edge.id);
+      if (fault === 'duplicate-edge') enabled.edges.push({ ...edge, id: 'duplicate-edge' });
+      if (fault === 'duplicate-node') enabled.nodes.push(structuredClone(provider));
+      if (fault === 'duplicate-owner') enabled.nodes.push(structuredClone(current));
+      const before = structuredClone(enabled);
+      await assert.rejects(
+        authoring.planDetachUnavailablePromptEnhancement(enabled, owner.id, child.id),
+        /ancillary|enhancement|duplicate|collision/i,
+      );
+      assert.deepEqual(enabled, before);
+    });
+  }
+});
+
 test('alternative enhancement parent selection preserves authored graph state and refuses structural drift', async (t) => {
   const { graph, parent, owner } = setup();
   const target = structuredClone(parent);

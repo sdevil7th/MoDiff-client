@@ -87,6 +87,33 @@ proposal. Apply uses the ordinary Undo transaction. **Regenerate** reuses the
 original request after an untouched Apply; **Disable** preserves subsequent user
 edits. Reload requires a fresh verified Preview before applying a proposal.
 
+For an authored layout, **Append wording: BF16 + NF4, preserve authored layout**
+is an explicit alternative to the unchanged FP32 append default. Choose it before
+Enable. It pins the reviewed PUP model and BF16/NF4 provider controls; it never
+falls back to another precision. Both append modes keep the exact original caption
+prefix and every authored layout field, adding only reviewed wording. They do not
+ask the model to generate a region table. Runtime readiness and memory fit remain
+separate checks.
+
+An older enabled enhancement may refer to a retired execution profile. If its
+current declaration cannot be resolved, **Disable** can still remove the two
+exclusively owned built-in enhancement nodes after checking their saved ownership
+and complete connections. This recovery keeps the current prompt, layout, media
+and unrelated graph values, including previously applied wording. It is one
+undoable edit and grants no execution permission. Then use **Choose model** to
+select the current public version of the same model, review the normal model
+change, select the desired current enhancement mode, and **Enable**. Refresh alone
+does not migrate an old profile; shared or ambiguous enhancement branches require
+explicit connection repair before Disable.
+
+The same-model change preserves an inline legacy layout when its exact task,
+artifact, owner and resolved layout schema remain compatible. Bound source regions
+also require the existing ordered reference and preprocessing context to remain
+exact; only the explicitly replaced execution-profile selector is excluded from
+that comparison. Other changes, including changed context declarations, keep the
+old layout in the normal retained-setting review rather than reusing stale source
+bindings. Connected layout inputs use the ordinary connection review.
+
 An enhancement declaration may additionally select `preserve-authored-v1` for
 structured layouts. Preview may enhance the caption and region descriptions only.
 This capability uses a distinct private version-two authoring recipe. Existing
@@ -116,6 +143,11 @@ Connection validation follows executable nodes inside containers. A loader and
 denoiser grouped around an external encoder can exchange values without creating
 an execution cycle. Required input checks also inspect these internal nodes; a
 missing model connection blocks Run and identifies the affected node or Block.
+
+**Fix graph** recognizes output connections through public, mirrored and direct
+Block crossing sockets, including collapsed internal nodes. Moving a Resize out
+of a Block keeps its existing route to an internal Preview; Fix does not suggest
+bypassing it. Missing or invalid crossing connections still receive diagnostics.
 
 When changing a model inside a Block, the change preview may retire untouched,
 automatically derived outputs that the new route cannot provide and nobody uses.
