@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired image stages, scoped enhancement and FLUX3 evaluation contracts.
-          ref: 1ebc871f069dcd38735e983aac67d617476fac23
+          ref: 1ccd0c3605c4abc177b3959e5da129d2347472c6
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -86,7 +86,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 1ebc871f069dcd38735e983aac67d617476fac23
+          ref: 1ccd0c3605c4abc177b3959e5da129d2347472c6
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
