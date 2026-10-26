@@ -113,6 +113,11 @@ change, select the desired current enhancement mode, and **Enable**. Refresh alo
 does not migrate an old profile; shared or ambiguous enhancement branches require
 explicit connection repair before Disable.
 
+Older schema-one operation hints may omit the retained-settings list. Reading
+those controls treats the missing list as empty without rewriting the document.
+A present malformed list remains invalid; the current backend declaration and
+normal reviewed model change are still required.
+
 The same-model change preserves an inline legacy layout when its exact task,
 artifact, owner and resolved layout schema remain compatible. Bound source regions
 also require the existing ordered reference and preprocessing context to remain

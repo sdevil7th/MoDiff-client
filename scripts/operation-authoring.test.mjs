@@ -114,6 +114,69 @@ function graph() {
   return authoring.createOperationStarter(starter(), { x: 40, y: 60 });
 }
 
+test('legacy schema-one hints without retained expose model ownership without rewriting saved data', async () => {
+  const declaration = starter();
+  declaration.nodes[0].node.params.repo_id = { type: 'string', value: 'test/base' };
+  const legacy = authoring.createOperationStarter(declaration, { x: 40, y: 60 });
+  const loader = legacy.nodes[0];
+  const current = loader.data.operationAuthoring;
+  // Historical schema-one saved nodes had defaults/authored but no retained list.
+  loader.data.operationAuthoring = {
+    schemaVersion: 1,
+    operation: current.operation,
+    defaults: current.defaults,
+    authored: ['repo_id'],
+  };
+  const before = structuredClone(legacy);
+  const parsed = authoring.operationAuthoring(loader);
+  assert.ok(parsed, 'The historical advisory shape must remain editable.');
+  assert.deepEqual(parsed.retained, []);
+  assert.notEqual(parsed, loader.data.operationAuthoring, 'Compatibility is a derived view.');
+  const { operationModelSource } = await server.ssrLoadModule('/src/workflow/operationModelSource.ts');
+  assert.equal(operationModelSource(loader, 'repo_id'), loader, 'The normal model picker can resolve its owner.');
+  assert.deepEqual(legacy, before, 'Reading or locating a model must not migrate the saved graph.');
+  assert.equal(Object.hasOwn(loader.data.operationAuthoring, 'retained'), false);
+  loader.data.operationAuthoring = current;
+  assert.equal(authoring.operationAuthoring(loader), current, 'Current valid hints retain their existing identity.');
+});
+
+test('legacy schema-one compatibility refuses present malformed retained and other invalid claims', () => {
+  const node = graph().nodes[0];
+  const valid = structuredClone(node.data.operationAuthoring);
+  for (const retained of [undefined, null, 'bad', {}, Array(513).fill({}), [null], [{}], [{ field: 'prompt' }]]) {
+    node.data.operationAuthoring = { ...valid, retained };
+    assert.equal(authoring.operationAuthoring(node), null, 'A present invalid list is not a historical omission.');
+  }
+  const { retained: _retained, ...legacy } = valid;
+  node.data.operationAuthoring = Object.assign(Object.create({ retained: [] }), legacy);
+  assert.equal(authoring.operationAuthoring(node), null, 'An inherited list cannot become a historical omission.');
+  let reads = 0;
+  node.data.operationAuthoring = Object.defineProperty({ ...legacy }, 'retained', {
+    enumerable: true,
+    get() {
+      reads++;
+      return [];
+    },
+  });
+  assert.equal(authoring.operationAuthoring(node), null, 'Accessor claims are not saved JSON data.');
+  assert.equal(reads, 0);
+  for (const change of [
+    { schemaVersion: 2 },
+    { defaults: undefined },
+    { defaults: null },
+    { defaults: [] },
+    { defaults: Object.fromEntries(Array.from({ length: 513 }, (_, index) => [String(index), 0])) },
+    { operation: undefined },
+    { operation: { ...valid.operation, nodeKey: 'unrelated.Action' } },
+    { authored: 'prompt' },
+    { inactiveDrafts: {} },
+    { ancillaryParent: {} },
+  ]) {
+    node.data.operationAuthoring = { ...legacy, ...change };
+    assert.equal(authoring.operationAuthoring(node), null, 'Other required fields and saved claims stay guarded.');
+  }
+});
+
 test('replaced native stages cannot overwrite exact whole-pipeline binding values', () => {
   const source = graph();
   source.nodes[1].data.params.prompt.value = 'Authored native prompt';

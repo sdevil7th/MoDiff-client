@@ -1,3 +1,7 @@
+// Legacy schema-one advisory-hint compatibility measures largest/startup/
+// deferred gzip 488210/666514/326348 versus 488155/666461/326431.
+// Add only measured startup growth 55/53 bytes, retaining 15/17 bytes of
+// headroom. Deferred caps, dependencies, minifier and loading boundaries stay fixed.
 // Exact immutable default-weight-format validation measures largest/startup/
 // deferred gzip 488155/666461/326431 versus accepted 488073/666379/326387.
 // Add only measured feature growth 82/82/44 bytes, retaining 15/17/39 bytes
@@ -209,6 +213,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Retain the strict current-owner/parser checks and allow 128 startup/chunk
 // bytes only; dependencies, lazy boundaries, minifier and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  55 +
   82 +
   273 +
   6816 +
@@ -322,6 +327,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  53 +
   82 +
   274 +
   6814 +

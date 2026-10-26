@@ -227,6 +227,32 @@ test('retired enhancement metadata cannot trap normal Disable or alter the autho
   assert.equal(rebound.data.operationAuthoring.ancillaryParent.parent.authoringRecipeId, fresh.authoring.id);
   assert.equal(rebound.data.operationAuthoring.ancillaryBindings, undefined);
   const { unpackVisualOperationGroups } = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const legacyGraph = unpackVisualOperationGroups(structuredClone(graph)).graph;
+  for (const node of legacyGraph.nodes) {
+    const hint = node.data.operationAuthoring;
+    if (hint) {
+      const { retained: _retained, ...legacyHint } = hint;
+      node.data.operationAuthoring = legacyHint;
+    }
+  }
+  const legacyModel = legacyGraph.nodes.find((node) => node.data.studioRole === 'models');
+  const legacyBefore = structuredClone(legacyGraph);
+  const { operationModelSource } = await server.ssrLoadModule('/src/workflow/operationModelSource.ts');
+  assert.equal(operationModelSource(legacyModel, 'repo_id'), legacyModel);
+  const legacyPlan = planOperationChange(legacyGraph, legacyModel.id, starter, { replaceModel: true });
+  assert.deepEqual(legacyGraph, legacyBefore, 'Preview never rewrites the historical flat saved hints.');
+  const legacyRebound = legacyPlan.graph.nodes.find((node) => node.data.operationAuthoring?.ancillaryParent);
+  for (const name of ['prompt', 'layout_conditioning', 'max_sequence_length'])
+    assert.deepEqual(legacyRebound.data.params[name].value, originalOwner.data.params[name].value);
+  assert.equal(legacyRebound.data.operationAuthoring.ancillaryParent.parent.executionProfileId, profileId);
+  assert.equal(legacyRebound.data.operationAuthoring.ancillaryBindings, undefined);
+  const legacyReference = legacyBefore.nodes.find((node) => node.data.studioRole === 'loadImage');
+  if (legacyReference)
+    assert.deepEqual(
+      legacyPlan.graph.nodes.find((node) => node.id === legacyReference.id),
+      legacyReference,
+    );
+  assert.equal(legacyPlan.graph.edges.length, legacyBefore.edges.length);
   for (const fault of [
     'none',
     'missing-context',
