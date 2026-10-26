@@ -15,6 +15,11 @@ import {
   resolvedModelReposFromOutput,
   selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
+import {
+  assertRetainedExecutionIdentity,
+  retainedGalleryMediaFiles,
+  retainedTemplateBinding,
+} from './template-gallery-repair-contract.mjs';
 
 const ROOT = process.cwd();
 
@@ -63,6 +68,13 @@ async function main() {
       );
     }
   }
+  const provenancePath = join(evidenceDir, `${base}.provenance.json`);
+  if (!existsSync(provenancePath)) {
+    throw new Error(
+      'Retained proof repair requires original run provenance; current template hashes cannot replace missing original template authority.',
+    );
+  }
+  const originalProvenance = JSON.parse(readFileSync(provenancePath, 'utf8'));
   const outputEvidence = JSON.parse(readFileSync(outputPath, 'utf8'));
   const eventEvidence = JSON.parse(readFileSync(eventsPath, 'utf8'));
   const nodesPayload = JSON.parse(readFileSync(nodesPath, 'utf8'));
@@ -71,21 +83,7 @@ async function main() {
   const backendSourceAfter = JSON.parse(readFileSync(backendSourceAfterPath, 'utf8'));
   const backendSource = backendSourceBefore?.identity;
   const { output, run, terminalTask } = outputEvidence;
-  const retainedMedia = readdirSync(mediaDir)
-    .filter(
-      (name) =>
-        name.startsWith(`${base}.`) &&
-        !name.includes('.before.') &&
-        !name.includes('.recomposed.') &&
-        !name.endsWith('.json'),
-    )
-    .sort((left, right) => {
-      const itemIndex = (name) => {
-        const match = name.match(/\.item(\d+)\./);
-        return match ? Number(match[1]) : 1;
-      };
-      return itemIndex(left) - itemIndex(right) || left.localeCompare(right);
-    });
+  const retainedMedia = retainedGalleryMediaFiles(mediaDir, base);
   if (retainedMedia.length === 0) throw new Error(`Retained media for ${base} is missing.`);
 
   const runtime = await loadTemplateRuntime(ROOT);
@@ -101,6 +99,19 @@ async function main() {
     return identity;
   });
   const modelSet = modelSetIdentity(identities);
+  const inputArtifacts = inputArtifactsForOverrides(output.formSnapshot);
+  const originalBinding = retainedTemplateBinding({
+    runtime,
+    template,
+    original: originalProvenance,
+    output,
+    run,
+    events,
+    inputArtifacts,
+  });
+  if (modelSet.revisionLock !== originalProvenance.modelRevision) {
+    throw new Error('Retained model evidence does not match the original model revision lock.');
+  }
   const mediaPaths = retainedMedia.map((mediaFile) => join(mediaDir, mediaFile));
   const analyses = await Promise.all(
     mediaPaths.map(async (mediaPath, index) => {
@@ -148,18 +159,17 @@ async function main() {
     outputCount: analyses.length,
     analyses,
   };
-  const catalogLock = runtime.templateLockHash(template);
   const provenance = createRunProvenance({
     templateId,
-    lockedSettings: runtime.lockedSettingsForTemplate(template),
-    promptSettingsHash: runtime.promptSettingsHash(template),
-    catalogTemplateLockHash: catalogLock,
-    resolvedTemplateLockHash: runtime.templateLockHash(template, modelSet.revisionLock),
+    lockedSettings: originalBinding.lockedSettings,
+    promptSettingsHash: originalBinding.promptSettingsHash,
+    catalogTemplateLockHash: originalBinding.catalogTemplateLockHash,
+    resolvedTemplateLockHash: originalBinding.resolvedTemplateLockHash,
     apiGraph: output.apiGraphSnapshot,
     nodesPayload,
     modelIdentity: identities[0],
     modelIdentities: identities,
-    inputArtifacts: inputArtifactsForOverrides(output.formSnapshot),
+    inputArtifacts,
     runtimeFingerprint: selectedRuntimeFingerprint,
     deterministicMode: deterministicEvent?.deterministicMode ?? output.apiGraphSnapshot?.deterministicMode,
     backendSource: sourceEvidence.identity,
@@ -168,12 +178,27 @@ async function main() {
     executionReceipt: executionReceiptForProvenance(completionEvent, terminalTask),
     taskId: run.taskId,
     expectedOutput: template.example?.expectedOutput,
+    capturedAt: originalBinding.capturedAt,
   });
   if (provenance.blockers.length)
     throw new Error(`Retained provenance is incomplete: ${provenance.blockers.join(' ')}`);
+  assertRetainedExecutionIdentity(originalProvenance, provenance);
 
-  writeFileSync(eventsPath, `${JSON.stringify({ taskId: run.taskId, executionReceipts, events }, null, 2)}\n`);
-  writeFileSync(join(evidenceDir, `${base}.provenance.json`), `${JSON.stringify(provenance, null, 2)}\n`);
+  for (const sidecar of [eventsPath, provenancePath]) {
+    const before = readFileSync(sidecar);
+    const digest = createHash('sha256').update(before).digest('hex');
+    const backup = `${sidecar}.before-repair-${digest}`;
+    if (!existsSync(backup)) writeFileSync(backup, before, { flag: 'wx' });
+    if (!readFileSync(backup).equals(before)) throw new Error('An immutable repair backup has different bytes.');
+  }
+  const originalSidecars = [eventsPath, provenancePath].map((path) => ({ path, bytes: readFileSync(path) }));
+  try {
+    writeFileSync(eventsPath, `${JSON.stringify({ taskId: run.taskId, executionReceipts, events }, null, 2)}\n`);
+    writeFileSync(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+  } catch (error) {
+    for (const sidecar of originalSidecars) writeFileSync(sidecar.path, sidecar.bytes);
+    throw error;
+  }
   console.log(
     JSON.stringify(
       {

@@ -22,6 +22,25 @@ uploaded and verified. Do not replace it with a guessed namespace or a moving
 
 ## One-time public Dataset setup
 
+Before publishing or refreshing examples, preserve each run's original consumed
+recipe, graph, task receipts, model/input identities and source/runtime provenance.
+Historical examples keep their original recipe authority when templates change.
+Updating a template hash alone does not establish equivalent execution.
+
+The maintainer-only `gallery:repair-evidence` command repairs one retained example
+from its original evidence. It requires the original per-run provenance and
+matching creator settings, admission locks, consumed form, canonical graph,
+completed task/node receipts and pinned inputs. Indexed reference roles preserve
+input order. It refuses missing authority or changed recipes before modifying
+sidecars, preserves source/runtime/model identities, capture time and the original
+ordered output byte identities, and retains content-addressed before-copies with
+rollback if paired writes fail. Persistent storage failure or process termination
+can require recovery from those originals; this is not a crash-atomic transaction. Its media
+discovery excludes sidecars and preserves output collection order. Use it on
+private retained evidence; public asset updates still follow the publication
+procedure below. Missing current execution or quality proof requires recovery
+and review of matching receipts or a genuinely accepted new run.
+
 Choose a user or organization namespace where you have write permission. The
 recommended repository name is `<namespace>/modiff-template-gallery`. The
 repository must remain public for unauthenticated open-source use.
