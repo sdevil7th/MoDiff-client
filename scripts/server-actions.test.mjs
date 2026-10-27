@@ -546,6 +546,56 @@ test('node cache deletion deduplicates ids and validates the echoed node list', 
   assert.deepEqual(result.nodes, ['node-a', 'node-b']);
 });
 
+test('full cache release survives the old deadline but retains a finite operation-specific timeout', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal, complete;
+  globalThis.fetch = (_url, init) =>
+    new Promise((resolve, reject) => {
+      signal = init.signal;
+      complete = () => resolve(jsonResponse({ error: false, nodes: ['setup', 'loader'] }));
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+  const pending = actionsModule.deleteNodeCache(['setup']).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  try {
+    t.mock.timers.tick(15_001);
+    assert.equal(signal.aborted, false, 'Actual component teardown can finish after the old generic deadline.');
+    complete();
+    assert.deepEqual((await pending).value, { error: false, nodes: ['setup', 'loader'] });
+    const stalled = actionsModule.deleteNodeCache(['setup']).catch((error) => error);
+    t.mock.timers.tick(119_999);
+    assert.equal(signal.aborted, false);
+    t.mock.timers.tick(1);
+    const error = await stalled;
+    assert.equal(error.kind, 'timeout');
+    assert.match(error.message, /120000ms/);
+  } finally {
+    complete();
+    await pending;
+  }
+});
+
+test('cache release timeout does not alter recompute or generic requests and invalid acknowledgements reject', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  globalThis.fetch = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+    });
+  for (const action of [() => actionsModule.recomputeNodeOutputs(['setup']), () => actionsModule.cleanupGpuMemory()]) {
+    const pending = action().catch((error) => error);
+    t.mock.timers.tick(15_000);
+    const error = await pending;
+    assert.equal(error.kind, 'timeout');
+    assert.match(error.message, /15000ms/);
+  }
+  for (const payload of [{ error: false }, { error: false, nodes: null }, { error: false, nodes: [1] }]) {
+    globalThis.fetch = async () => jsonResponse(payload);
+    await assert.rejects(actionsModule.deleteNodeCache(['setup']), /invalid node list/);
+  }
+});
+
 test('empty cache deletion is a no-op and does not contact the backend', async () => {
   let calls = 0;
   globalThis.fetch = async () => {

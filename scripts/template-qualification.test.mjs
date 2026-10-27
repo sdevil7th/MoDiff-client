@@ -1,12 +1,32 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import { canonicalJsonHash } from './canonical-json.mjs';
-import { canonicalWorkflowContract } from './release-contract-core.mjs';
+import {
+  canonicalWorkflowContract,
+  canonicalEvidenceWritePath,
+  exportCanonicalWorkflowGraphs,
+  readCanonicalEvidenceFile,
+  readCanonicalWorkflowEvidence,
+  validateCanonicalWorkflowEvidence,
+} from './release-contract-core.mjs';
+import { canonicalGraphIdentity, sha256Value } from './live-proof-provenance.mjs';
+import { mockedDdimAccountingFixture } from './canonical-provenance-fixtures.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -261,6 +281,7 @@ test('experimental canonical LoRA variants require blocked-probe opt-in and reta
     await t.test(templateId, async () => {
       const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-experimental-'));
       const provenance = await fixture(templateId);
+      assert.equal(provenance.adapterApplications, undefined, 'Historical submitted-graph proofs remain optional.');
       try {
         const ordinary = qualificationFixtureProcess(directory, provenance, [], { experimental: true });
         assert.notEqual(ordinary.result.status, 0);
@@ -292,6 +313,22 @@ test('experimental canonical LoRA variants require blocked-probe opt-in and reta
         disposeFixture(directory);
       }
     });
+  }
+});
+
+test('optional applied adapter observations cannot bypass validation at recording time', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-applied-adapters-'));
+  try {
+    const provenance = await fixture();
+    provenance.adapterApplications = { schemaVersion: 1, source: 'invented' };
+    provenance.adapterApplicationsHash = `sha256:adapter-applications-v1:${'a'.repeat(64)}`;
+    const { result, registryPath } = qualificationFixtureProcess(directory, provenance);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Applied adapter proof is invalid/);
+    assert.equal(existsSync(registryPath), false);
+    assert.equal(existsSync(join(directory, 'retained')), false);
+  } finally {
+    disposeFixture(directory);
   }
 });
 
@@ -445,5 +482,470 @@ test('template qualification rejects unknown or repeated lookup options', () => 
     const result = spawnSync(process.execPath, [SCRIPT, ...argv], { cwd: ROOT, encoding: 'utf8', timeout: 30_000 });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /only one optional --allow-blocked-probe argument/);
+  }
+});
+
+test('standalone canonical recording has an explicit evidence boundary without a public template lookup', () => {
+  const result = spawnSync(process.execPath, [SCRIPT, '--workflow', 'AllegroPipeline:text_to_video'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: { ...process.env, MODIFF_CANONICAL_WORKFLOW_EVIDENCE: '' },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /MODIFF_CANONICAL_WORKFLOW_EVIDENCE/);
+  assert.doesNotMatch(result.stderr, /not in the runtime catalog/);
+});
+
+async function writeStandaloneEvidence(directory, { input = false, accounting = false } = {}) {
+  const nativeFixture = accounting ? mockedDdimAccountingFixture() : null;
+  const backendRoot = join(directory, 'backend');
+  const evidenceRoot = join(directory, 'originals');
+  mkdirSync(evidenceRoot, { recursive: true });
+  const write = (path, value) => {
+    mkdirSync(dirname(path), { recursive: true });
+    const bytes = Buffer.isBuffer(value) ? value : Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+    writeFileSync(path, bytes);
+    return {
+      path: path.slice(evidenceRoot.length + 1).replaceAll('\\', '/'),
+      bytes: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    };
+  };
+  const revision = nativeFixture?.apiGraph.nodes['node-01'].params.revision.value ?? 'a'.repeat(40);
+  const modelRepo = nativeFixture?.apiGraph.nodes['node-01'].params.model_id.value.value ?? 'synthetic/model';
+  const value = (x, type = 'string') => ({ value: x, type });
+  let graph = {
+    nodes: [
+      {
+        id: 'loader',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          module: 'modules.DiffusersImage',
+          action: 'LoadPipeline',
+          params: {
+            model_id: { ...value({ source: 'hub', value: 'synthetic/model' }), display: 'modelselect' },
+            revision: value(revision),
+            dtype: value('float32'),
+            auto_offload: value(false, 'bool'),
+            offload_mode: value('none'),
+            pipeline: { display: 'output', type: 'pipeline' },
+          },
+        },
+      },
+      {
+        id: 'generate',
+        type: 'custom',
+        position: { x: 200, y: 0 },
+        data: {
+          module: 'modules.DiffusersImage',
+          action: 'Generate',
+          params: {
+            pipeline: { display: 'input', type: 'pipeline' },
+            prompt: value('Synthetic metadata-only protocol test'),
+            seed: { ...value({ value: 7, isRandom: false }, 'int'), display: 'random' },
+            width: value(1, 'int'),
+            height: value(1, 'int'),
+            image: { display: 'output', type: 'image' },
+          },
+        },
+      },
+      {
+        id: 'preview',
+        type: 'custom',
+        position: { x: 400, y: 0 },
+        data: { module: 'modules.Image', action: 'Preview', params: { image: { display: 'input', type: 'image' } } },
+      },
+    ],
+    edges: [
+      { id: 'e1', source: 'loader', target: 'generate', sourceHandle: 'pipeline', targetHandle: 'pipeline' },
+      { id: 'e2', source: 'generate', target: 'preview', sourceHandle: 'image', targetHandle: 'image' },
+    ],
+  };
+  if (nativeFixture) graph = nativeFixture.graph;
+  if (input)
+    graph.nodes[1].data.params.input_image = {
+      ...value(input === true ? '@data/images/synthetic.png' : input),
+      display: 'filebrowser',
+    };
+  const manifest = {
+    id: accounting ? 'DDIMPipeline:unconditional_image' : 'SyntheticPipeline:text_to_image',
+    modelType: accounting ? 'DDIMPipeline' : 'SyntheticPipeline',
+    mode: accounting ? 'unconditional_image' : 'text_to_image',
+    sourceTemplateId: 'task-template:synthetic:text-to-image:v1',
+    graphPath: 'studio/synthetic.json',
+    graphHash: canonicalJsonHash(graph),
+    requiredArtifacts: [modelRepo],
+  };
+  write(join(backendRoot, 'data/graphs', manifest.graphPath), graph);
+  write(join(backendRoot, 'data/workflow-library-manifest.json'), { workflows: [manifest] });
+  write(join(backendRoot, 'data/model-artifact-catalog.json'), {
+    models: [{ modelType: manifest.modelType, baseRepo: modelRepo, baseRevision: revision }],
+  });
+  write(join(backendRoot, 'data/template-authoring-specs.v1.json'), {
+    specifications: [
+      {
+        id: 'template-authoring:synthetic',
+        canonicalWorkflowId: manifest.id,
+        modelType: manifest.modelType,
+        mode: manifest.mode,
+        canonicalGraph: { path: manifest.graphPath, sha256: manifest.graphHash },
+        defaultsPlan: { sourceGraphSha256: manifest.graphHash },
+        artifactPlan: { requiredArtifacts: manifest.requiredArtifacts },
+        outputPlan: { minimumAssetCount: 1, mediaKinds: ['image'] },
+      },
+    ],
+  });
+  const [api] = await exportCanonicalWorkflowGraphs(ROOT, [graph]);
+  if (nativeFixture)
+    assert.equal(canonicalGraphIdentity(api).hash, canonicalGraphIdentity(nativeFixture.apiGraph).hash);
+  else
+    api.runtimeHints = {
+      modelType: manifest.modelType,
+      dtype: 'float32',
+      offloadMode: 'none',
+      autoOffload: false,
+      quantizationMode: 'none',
+    };
+  const source = { gitCommit: 'b'.repeat(40), files: [{ path: 'main.py', sha256: 'c'.repeat(64) }] };
+  source.fingerprint = sha256Value('backend-source-v1', source);
+  const runtime = {
+    fingerprint: 'sha256:synthetic-runtime',
+    packages: { torch: 'synthetic-test-only' },
+    torch: { version: 'synthetic-test-only' },
+    work_dir: '/synthetic/work',
+    data_dir: '/synthetic/data',
+    backendSource: {
+      schemaVersion: 1,
+      claim: 'process_start_backend_source_identity',
+      gitCommit: source.gitCommit,
+      fingerprint: source.fingerprint,
+      fileCount: 1,
+      capturedAt: '2026-10-27T00:00:00.000Z',
+    },
+  };
+  const form = {
+    modelType: manifest.modelType,
+    mode: manifest.mode,
+    prompt: 'Synthetic metadata-only protocol test',
+    seed: 7,
+  };
+  const task = {
+    task_id: nativeFixture?.receipt.taskId ?? 'synthetic-task',
+    status: 'completed',
+    attempt_index: 0,
+    started_at: 100,
+    completed_at: 101,
+    runtimeFingerprint: runtime,
+    runtimeMeasurement: { elapsedSeconds: 1, processRssBytes: 4096 },
+  };
+  // A one-pixel PNG fixture, not generated model output.
+  const media = write(
+    join(evidenceRoot, 'output.png'),
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhvcAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  );
+  const output = {
+    id: 'synthetic-output',
+    taskId: task.task_id,
+    clientRunId: 'synthetic-run',
+    runInputHash: 'run_synthetic',
+    workflowTabId: 'synthetic-owned',
+    attemptIndex: 0,
+    nodeId: nativeFixture?.receipt.nodeId ?? 'preview',
+    fieldKey: 'image',
+    formSnapshot: form,
+    graphSnapshot: graph,
+    apiGraphSnapshot: api,
+    mediaHash: `sha256:bytes:${media.sha256}`,
+    mediaItems: [
+      {
+        backendPath: '@data/studio/outputs/synthetic.png',
+        mediaHash: `sha256:bytes:${media.sha256}`,
+        byteSize: media.bytes,
+      },
+    ],
+    resolvedExecutionInputs: nativeFixture?.receipt ?? {
+      source: 'backend-execution',
+      taskId: task.task_id,
+      attemptIndex: 0,
+      truncated: false,
+      uncapturedNodeIds: [],
+      nodes: Object.entries(api.nodes).map(([nodeId, node]) => ({
+        nodeId,
+        module: node.module,
+        action: node.action,
+        fields: Object.fromEntries(
+          Object.entries(node.params)
+            .filter(([, p]) => Object.hasOwn(p, 'value') && !p.sourceId)
+            .map(([key, p]) => [
+              key,
+              { source: 'literal', value: p.value?.source === 'hub' ? p.value.value : p.value },
+            ]),
+        ),
+      })),
+    },
+  };
+  const creator = {
+    manifest: { packageType: 'modiff-workflow-share' },
+    metadata: { studio: form },
+    graph,
+    apiGraph: api,
+  };
+  const outputPackage = { manifest: { packageType: 'modiff-output-package' }, apiGraph: api, latestOutput: output };
+  const descriptor = {
+    schemaVersion: 1,
+    format: 'modiff.canonical-workflow-evidence.v1',
+    workflowId: manifest.id,
+    creatorPackage: write(join(evidenceRoot, 'creator.json'), creator),
+    outputPackage: write(join(evidenceRoot, 'output.json'), outputPackage),
+    runDetail: write(join(evidenceRoot, 'run.json'), { workflow_id: output.workflowTabId, task, outputs: [output] }),
+    nodes: write(join(evidenceRoot, 'nodes.json'), {
+      nodes: Object.fromEntries(
+        Object.values(api.nodes).map((node) => [
+          `${node.module}.${node.action}`,
+          { module: node.module, action: node.action, params: {} },
+        ]),
+      ),
+    }),
+    backendSourceBefore: write(join(evidenceRoot, 'source-before.json'), { identity: source }),
+    backendSourceAfter: write(join(evidenceRoot, 'source-after.json'), { identity: source }),
+    modelObservations: [
+      write(join(evidenceRoot, 'models.json'), {
+        error: false,
+        models: [
+          {
+            installed: true,
+            repoId: modelRepo,
+            selectedRevision: revision,
+            modelRevision: `${modelRepo}@${revision}`,
+            fingerprint: 'sha256:synthetic-model',
+            revisions: [],
+          },
+        ],
+      }),
+    ],
+    inputs: input ? [{ role: 'input_image', sourceValue: '@data/images/synthetic.png', file: media }] : [],
+    outputs: [{ backendPath: output.mediaItems[0].backendPath, mediaType: 'image', file: media }],
+  };
+  const evidencePath = join(evidenceRoot, 'input.json');
+  write(evidencePath, descriptor);
+  return { backendRoot, evidenceRoot, evidencePath, descriptor, manifest, write };
+}
+
+test('canonical recorder retains original packages and revalidates exact physical evidence through the same projection reader', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-canonical-'));
+  try {
+    const fixture = await writeStandaloneEvidence(directory);
+    const original = readFileSync(join(fixture.evidenceRoot, 'output.json'));
+    const result = spawnSync(process.execPath, [SCRIPT, '--workflow', fixture.manifest.id], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        MODIFF_BACKEND_DIR: fixture.backendRoot,
+        MODIFF_CANONICAL_WORKFLOW_EVIDENCE: fixture.evidencePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const registryPath = join(
+      fixture.backendRoot,
+      'data/qualification/release/canonical-workflow-run-receipts.v1.json',
+    );
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+    assert.equal(registry.receipts.length, 1);
+    const receipt = registry.receipts[0];
+    assert.equal(receipt.workflowId, fixture.manifest.id);
+    assert.deepEqual(receipt.qualificationClaims, {
+      publicTemplate: false,
+      qualityApproved: false,
+      rightsApproved: false,
+      hardwareQualified: false,
+    });
+    const retained = join(fixture.backendRoot, receipt.evidencePath);
+    assert.deepEqual(readFileSync(join(dirname(retained), 'output.json')), original);
+    const repeated = await readCanonicalWorkflowEvidence({
+      clientRoot: ROOT,
+      backendRoot: fixture.backendRoot,
+      workflowId: fixture.manifest.id,
+      evidencePath: retained,
+    });
+    assert.equal(repeated.receipt.outputHash, receipt.outputHash);
+    assert.equal(repeated.receipt.authoringHash, receipt.authoringHash);
+    assert.deepEqual(repeated.descriptorBytes, readFileSync(fixture.evidencePath));
+    assert.equal(
+      existsSync(join(fixture.backendRoot, 'data/qualification/release/template-run-receipts.v2.json')),
+      false,
+    );
+    const bytes = readFileSync(join(dirname(retained), 'output.png'));
+    bytes[bytes.length - 1] ^= 1;
+    writeFileSync(join(dirname(retained), 'output.png'), bytes);
+    await assert.rejects(
+      readCanonicalWorkflowEvidence({
+        clientRoot: ROOT,
+        backendRoot: fixture.backendRoot,
+        workflowId: fixture.manifest.id,
+        evidencePath: retained,
+      }),
+      /hash differs/,
+    );
+  } finally {
+    disposeFixture(directory);
+  }
+});
+
+test('actual mocked DDIM accounting records through the shared factory and revalidates from retained originals', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-canonical-ddim-'));
+  try {
+    const fixture = await writeStandaloneEvidence(directory, { accounting: true });
+    const original = readFileSync(join(fixture.evidenceRoot, 'output.json'));
+    const result = spawnSync(process.execPath, [SCRIPT, '--workflow', fixture.manifest.id], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        MODIFF_BACKEND_DIR: fixture.backendRoot,
+        MODIFF_CANONICAL_WORKFLOW_EVIDENCE: fixture.evidencePath,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const registry = JSON.parse(
+      readFileSync(
+        join(fixture.backendRoot, 'data/qualification/release/canonical-workflow-run-receipts.v1.json'),
+        'utf8',
+      ),
+    );
+    assert.equal(registry.receipts.length, 1);
+    const retained = join(fixture.backendRoot, registry.receipts[0].evidencePath);
+    assert.deepEqual(readFileSync(join(dirname(retained), 'output.json')), original);
+    const resultAgain = await readCanonicalWorkflowEvidence({
+      clientRoot: ROOT,
+      backendRoot: fixture.backendRoot,
+      workflowId: fixture.manifest.id,
+      evidencePath: retained,
+    });
+    assert.equal(resultAgain.provenance.graph.executionPlan.source, 'executed-canonical-accounting-v1');
+    assert.equal(resultAgain.provenance.graph.executionPlan.device, 'cuda:0');
+    assert.equal(resultAgain.provenance.graph.executionPlan.deviceMap, 'cuda');
+    assert.equal(
+      resultAgain.provenance.execution.resourceCandidateId,
+      'manual-resource-v1:DDIMPipeline|float32|none|none',
+    );
+    // Registry adds retained-file references to the same receipt identity.
+    for (const [key, value] of Object.entries(resultAgain.receipt))
+      assert.deepEqual(registry.receipts[0][key], value, key);
+    assert.ok(Object.values(resultAgain.receipt.qualificationClaims).every((value) => value === false));
+    assert.equal(JSON.parse(original).apiGraph.runtimeHints, undefined);
+    const validation = {
+      target: resultAgain.receipt,
+      expectedApiGraph: mockedDdimAccountingFixture().apiGraph,
+      creator: JSON.parse(readFileSync(join(fixture.evidenceRoot, 'creator.json'), 'utf8')),
+      outputPackage: JSON.parse(original),
+      run: JSON.parse(readFileSync(join(fixture.evidenceRoot, 'run.json'), 'utf8')),
+      provenance: resultAgain.provenance,
+    };
+    assert.deepEqual(validateCanonicalWorkflowEvidence(validation), resultAgain.receipt);
+    const wrongOwner = structuredClone(validation);
+    wrongOwner.outputPackage.latestOutput.nodeId = wrongOwner.run.outputs[0].nodeId = 'node-04';
+    assert.throws(() => validateCanonicalWorkflowEvidence(wrongOwner), /output owner differs/);
+    const inventedHints = structuredClone(validation);
+    inventedHints.run.task.runtimeHints = { autoResourceCandidateId: 'invented' };
+    assert.throws(() => validateCanonicalWorkflowEvidence(inventedHints), /unreviewed runtime hints/);
+    const omitted = structuredClone(validation);
+    for (const output of [omitted.outputPackage.latestOutput, omitted.run.outputs[0]]) {
+      delete output.resolvedExecutionInputs.fieldAccountingStatus;
+      for (const row of output.resolvedExecutionInputs.nodes) delete row.fieldAccounting;
+    }
+    assert.throws(() => validateCanonicalWorkflowEvidence(omitted), /Consumed literal is missing/);
+  } finally {
+    disposeFixture(directory);
+  }
+});
+
+test('canonical input bytes cannot be authenticated by a path and post-run copy alone', async () => {
+  for (const input of [true, 'https://example.invalid/image.png', 'C:/runtime/image.png', 'relative/image.png']) {
+    const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-input-hold-'));
+    try {
+      const fixture = await writeStandaloneEvidence(directory, { input });
+      await assert.rejects(
+        readCanonicalWorkflowEvidence({
+          clientRoot: ROOT,
+          backendRoot: fixture.backendRoot,
+          workflowId: fixture.manifest.id,
+          evidencePath: fixture.evidencePath,
+        }),
+        /Input-backed canonical qualification is unsupported/,
+      );
+      assert.equal(existsSync(join(fixture.backendRoot, 'data/qualification/release')), false);
+    } finally {
+      disposeFixture(directory);
+    }
+  }
+});
+
+test('canonical evidence paths reject traversal, aliases, absolute paths and missing measured bodies before reading', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-paths-'));
+  try {
+    const file = join(directory, 'safe.json');
+    writeFileSync(file, '{}');
+    const ref = { path: 'safe.json', bytes: 2, sha256: createHash('sha256').update('{}').digest('hex') };
+    assert.equal(readCanonicalEvidenceFile(directory, ref).bytes.toString(), '{}');
+    for (const path of ['../outside.json', './safe.json', 'nested/../safe.json', file, 'nested\\safe.json']) {
+      assert.throws(() => readCanonicalEvidenceFile(directory, { ...ref, path }), /canonical|relative/);
+    }
+    assert.throws(() => readCanonicalEvidenceFile(directory, { ...ref, bytes: 3 }), /size\/type/);
+    assert.throws(() => readCanonicalEvidenceFile(directory, { ...ref, sha256: '0'.repeat(64) }), /hash differs/);
+    mkdirSync(join(directory, 'outside'));
+    symlinkSync(join(directory, 'outside'), join(directory, 'linked'), 'junction');
+    assert.throws(() => canonicalEvidenceWritePath(directory, 'linked/receipt.json'), /symlinks/);
+    assert.equal(
+      canonicalEvidenceWritePath(directory, 'new/receipt.json'),
+      join(realpathSync(directory), 'new/receipt.json'),
+    );
+  } finally {
+    disposeFixture(directory);
+  }
+});
+
+test('canonical retention rejects dangling registry links and directory links before writing', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-dangling-'));
+  try {
+    const root = join(directory, 'backend');
+    const outside = join(directory, 'outside');
+    mkdirSync(root);
+    mkdirSync(outside);
+    const cases = [
+      {
+        name: 'registry leaf',
+        link: 'registry.json',
+        target: join(outside, 'missing-registry.json'),
+        type: 'file',
+        suffix: '',
+      },
+      {
+        name: 'directory ancestor',
+        link: 'retained',
+        target: join(outside, 'missing-directory'),
+        type: 'junction',
+        suffix: '/evidence.json',
+      },
+    ];
+    for (const row of cases) {
+      await t.test(row.name, () => {
+        const link = join(root, row.link);
+        symlinkSync(row.target, link, row.type);
+        assert.equal(existsSync(link), false, 'This reproduction needs a dangling link.');
+        assert.equal(lstatSync(link).isSymbolicLink(), true);
+        assert.throws(() => canonicalEvidenceWritePath(root, `${row.link}${row.suffix}`), /Retention symlinks/);
+        assert.equal(existsSync(row.target), false, 'No target outside the retained root may be created.');
+      });
+    }
+  } finally {
+    disposeFixture(directory);
   }
 });

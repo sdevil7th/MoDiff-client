@@ -1,3 +1,8 @@
+// Bounded native field-accounting/applied-adapter parsing and explicit cache-release
+// feedback measure largest/startup/deferred gzip 490492/668797/326749 versus
+// accepted 488472/666779/326783. Add only measured startup growth 2020/2018,
+// preserving 8/11 bytes of headroom. Dependencies, startup membership, minifier,
+// loading boundaries and both deferred ceilings remain unchanged.
 // Explicit declared Experimental discovery measures largest/startup/deferred gzip
 // 488406/666710/326605 versus accepted 488399/666704/326318. Add only the
 // measured 287-byte deferred growth, retaining 152 bytes of aggregate headroom.
@@ -225,6 +230,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Add only those measured costs, preserving 8/11/152 bytes of existing headroom.
 // Dependencies, startup membership, lazy boundaries and the 64 KiB chunk cap stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  2020 +
   66 +
   189 +
   55 +
@@ -341,6 +347,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  2018 +
   69 +
   190 +
   53 +

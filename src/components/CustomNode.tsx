@@ -234,7 +234,8 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
       for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
-      console.error('Failed to delete cache', error);
+      const message = error instanceof Error ? error.message : String(error);
+      enqueueSnackbar(message, { variant: 'error', autoHideDuration: 2600 });
     }
   }, [node.id, setNodeCached]);
 

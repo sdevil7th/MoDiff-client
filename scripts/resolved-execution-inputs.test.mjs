@@ -3,8 +3,171 @@ import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { canonicalAccountingExecutionPlan } from './release-contract-core.mjs';
+import { canonicalJsonHash } from './canonical-json.mjs';
+import { actualAppliedAdapterFixtures, protocolFactoryArguments } from './canonical-provenance-fixtures.mjs';
+import { createRunProvenance, validateAppliedAdapterProof } from './live-proof-provenance.mjs';
 
 let server, contracts, inputs, outputUtils, profiles, tasks;
+let ddimAccountingFixture;
+function actualDdimAccountingFixture() {
+  if (ddimAccountingFixture) return structuredClone(ddimAccountingFixture);
+  const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    `${backend}.venv/${process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'}`;
+  const generated = spawnSync(
+    python,
+    [
+      '-B',
+      '-c',
+      String.raw`
+import importlib.util, json
+from pathlib import Path
+from pytest import MonkeyPatch
+spec = importlib.util.spec_from_file_location('ddim_protocol', Path('tests/test_canonical_field_accounting.py'))
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+with MonkeyPatch.context() as patch:
+    graph = module.ddim_graph()
+    receipt, _, _, _ = module.run_ddim(patch, graph)
+print(json.dumps({'apiGraph': graph, 'receipt': receipt}))
+`,
+    ],
+    { cwd: backend, encoding: 'utf8', maxBuffer: 2_000_000 },
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  ddimAccountingFixture = JSON.parse(generated.stdout);
+  return structuredClone(ddimAccountingFixture);
+}
+
+function canonicalAccountingCase() {
+  const { apiGraph, receipt } = actualDdimAccountingFixture();
+  const loader = Object.values(apiGraph.nodes).find((node) => node.action === 'LoadPipeline');
+  return {
+    apiGraph,
+    expectedApiGraph: structuredClone(apiGraph),
+    consumed: receipt,
+    target: {
+      modelType: 'DDIMPipeline',
+      task: 'unconditional_image',
+      modelSet: [{ repoId: loader.params.model_id.value.value, revision: loader.params.revision.value }],
+    },
+  };
+}
+
+test('mocked native DDIM accounting derives the unique executed owner without borrowing Preview CPU or hints', () => {
+  const value = canonicalAccountingCase();
+  const graphBefore = JSON.stringify(value.apiGraph);
+  const receiptBefore = JSON.stringify(value.consumed);
+  const result = canonicalAccountingExecutionPlan(value);
+  assert.equal(result.ownerId, 'node-01');
+  assert.equal(result.plan.modelType, 'DDIMPipeline');
+  assert.equal(result.plan.dtype, 'float32');
+  assert.equal(result.plan.device, 'cuda:0');
+  assert.equal(result.plan.deviceMap, 'cuda', 'effective loader placement, not requested none');
+  assert.equal(result.plan.quantizationMode, 'none');
+  assert.equal(result.plan.offloadMode, 'none');
+  assert.equal(result.plan.autoOffload, false);
+  assert.equal(result.plan.resourceMode, 'expert');
+  assert.equal(result.plan.modelRepo, value.target.modelSet[0].repoId);
+  assert.match(result.hash, /^sha256:execution-plan-v1:[a-f0-9]{64}$/u);
+  assert.equal(value.apiGraph.runtimeHints, undefined);
+  assert.equal(JSON.stringify(value.apiGraph), graphBefore, 'never synthesize hints or rewrite original graph');
+  assert.equal(JSON.stringify(value.consumed), receiptBefore, 'never rewrite native evidence');
+  assert.equal(result.qualified, undefined, 'a recipe join is not release or native qualification');
+});
+
+test('canonical accounting joins reject effective-control, metadata and producer forgeries', () => {
+  const section = (value, action) => value.consumed.nodes.find((row) => row.action === action).fieldAccounting;
+  const mutations = {
+    'changed effective loader device': (value) => {
+      section(value, 'LoadPipeline').fields.device.value = 'cpu:0';
+    },
+    'changed actual generator steps': (value) => {
+      section(value, 'UnconditionalGenerate').fields.num_inference_steps.value = 1;
+    },
+    'invented inactive control': (value) => {
+      section(value, 'UnconditionalGenerate').fields.num_inference_steps.disposition = 'inactive';
+      section(value, 'UnconditionalGenerate').fields.num_inference_steps.reason = 'adapter-inactive';
+    },
+    'forged consumed class label': (value) => {
+      section(value, 'UnconditionalGenerate').fields.class_label.disposition = 'consumed';
+      delete section(value, 'UnconditionalGenerate').fields.class_label.reason;
+    },
+    'requested control differs': (value) => {
+      section(value, 'LoadPipeline').fields.enable_vae_slicing.inputValue = false;
+    },
+    'wrong scalar origin': (value) => {
+      section(value, 'UnconditionalGenerate').fields.seed.source = 'override';
+    },
+    'missing literal': (value) => {
+      delete section(value, 'UnconditionalGenerate').fields.batch_size;
+    },
+    'unknown field': (value) => {
+      section(value, 'UnconditionalGenerate').fields.unknown = {
+        disposition: 'consumed',
+        source: 'literal',
+        inputValue: 1,
+        value: 1,
+      };
+    },
+    'forged metadata': (value) => {
+      section(value, 'UnconditionalGenerate').fields.image_contract.sha256 = 'a'.repeat(64);
+    },
+    'wrong recipe producer': (value) => {
+      section(value, 'LoadPipeline').inputProjections.execution_recipe.sourceNodeId = 'node-02';
+    },
+    'wrong recipe producer port': (value) => {
+      section(value, 'LoadPipeline').inputProjections.execution_recipe.sourcePortId = 'summary';
+    },
+    'forged producer projection hash': (value) => {
+      section(value, 'DiffusersExecutionRecipe').outputProjections.execution_recipe.sha256 = 'a'.repeat(64);
+    },
+    'forged matching projection values': (value) => {
+      section(value, 'LoadPipeline').inputProjections.execution_recipe.values.device = 'cpu:0';
+      section(value, 'DiffusersExecutionRecipe').outputProjections.execution_recipe.values.device = 'cpu:0';
+    },
+    'missing quantizer projection': (value) => {
+      section(value, 'PipelineQuantizationConfigV2').outputProjections = {};
+    },
+    'enabled quantizer': (value) => {
+      section(value, 'PipelineQuantizationConfigV2').outputProjections.quantization_config.values.disabled = false;
+    },
+    'unaccounted fields': (value) => {
+      section(value, 'LoadPipeline').unaccountedFields = ['unknown'];
+    },
+    'truncated accounting': (value) => {
+      value.consumed.fieldAccountingStatus.truncated = true;
+    },
+    'missing accounting': (value) => {
+      delete value.consumed.nodes[0].fieldAccounting;
+    },
+    'wrong immutable model': (value) => {
+      value.target.modelSet[0].revision = 'a'.repeat(40);
+    },
+    'unsupported model': (value) => {
+      value.target.modelType = 'UnknownPipeline';
+    },
+    'conflicting invented runtime hints': (value) => {
+      value.apiGraph.runtimeHints = { resourceMode: 'auto' };
+    },
+    'ambiguous owner': (value) => {
+      value.consumed.nodes[1].nodeId = value.consumed.nodes[0].nodeId;
+    },
+    'changed original graph': (value) => {
+      value.apiGraph.nodes['node-04'].params.num_inference_steps.value = 1;
+    },
+    'legacy scalar contradicts new accounting': (value) => {
+      value.consumed.nodes.find((row) => row.action === 'UnconditionalGenerate').fields.num_inference_steps.value = 1;
+    },
+  };
+  for (const [label, mutate] of Object.entries(mutations)) {
+    const value = canonicalAccountingCase();
+    mutate(value);
+    assert.throws(() => canonicalAccountingExecutionPlan(value), undefined, label);
+  }
+});
 before(async () => {
   globalThis.window = { location: { origin: 'http://localhost' } };
   // These SSR imports never use HMR. Middleware mode alone still watches the
@@ -25,6 +188,123 @@ before(async () => {
 after(async () => {
   await server?.close();
   delete globalThis.window;
+});
+
+test('actual mocked DDIM native accounting survives history without changing legacy v1 bytes', () => {
+  // Real five-node canonical export and native accounting, mocked allocation and
+  // inference only. This fixture is not a native/model/hardware qualification.
+  const { receipt: capture } = actualDdimAccountingFixture();
+  const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+  const legacy = structuredClone(capture);
+  delete legacy.fieldAccountingStatus;
+  for (const row of legacy.nodes) delete row.fieldAccounting;
+  const before = JSON.stringify(inputs.coerceResolvedExecutionInputs(legacy, identity));
+  const normalized = inputs.coerceResolvedExecutionInputs(capture, identity);
+  assert.ok(
+    normalized.nodes.every((row) => row.fieldAccounting?.complete),
+    'new accounting must survive parsing',
+  );
+  assert.deepEqual(normalized.fieldAccountingStatus, { schemaVersion: 1, truncated: false });
+  const stripped = structuredClone(normalized);
+  delete stripped.fieldAccountingStatus;
+  for (const row of stripped.nodes) delete row.fieldAccounting;
+  assert.equal(JSON.stringify(stripped), before, 'the optional extension must not alter any normalized legacy byte');
+  const restored = contracts.coerceStudioOutput({
+    id: 'protocol-only',
+    url: '/fixture.png',
+    ...identity,
+    resolvedExecutionInputs: capture,
+  });
+  assert.deepEqual(restored.resolvedExecutionInputs, normalized);
+  assert.equal(JSON.stringify(inputs.coerceResolvedExecutionInputs(legacy, identity)), before);
+});
+
+test('optional accounting rejects unknown scopes, objects, origins, projections and incomplete claims', () => {
+  const { receipt: original } = actualDdimAccountingFixture();
+  const identity = { taskId: original.taskId, attemptIndex: original.attemptIndex, nodeId: original.nodeId };
+  const quant = (value) => value.nodes.find((row) => row.action === 'PipelineQuantizationConfigV2');
+  const recipeNode = (value) => value.nodes.find((row) => row.action === 'DiffusersExecutionRecipe');
+  const changes = {
+    'unknown scope': (value) => {
+      quant(value).action = 'Unknown';
+    },
+    'unknown accounting field': (value) => {
+      quant(value).fieldAccounting.fields.token = {
+        disposition: 'consumed',
+        inputValue: 'private',
+        value: 'private',
+        source: 'literal',
+      };
+    },
+    'opaque value': (value) => {
+      quant(value).fieldAccounting.fields.backend.value = { private: true };
+    },
+    'extra field key': (value) => {
+      quant(value).fieldAccounting.fields.backend.token = 'private';
+    },
+    'unknown disposition': (value) => {
+      quant(value).fieldAccounting.fields.backend.disposition = 'approved';
+    },
+    'invented reason': (value) => {
+      quant(value).fieldAccounting.fields.dtype.reason = 'approved';
+    },
+    'connected origin missing port': (value) => {
+      delete recipeNode(value).fieldAccounting.inputProjections.quantization_config.sourcePortId;
+    },
+    'stale literal origin': (value) => {
+      quant(value).fieldAccounting.fields.backend.sourceNodeId = 'old';
+    },
+    'unknown projection field': (value) => {
+      quant(value).fieldAccounting.outputProjections.quantization_config.values.secret = 'private';
+    },
+    'enabled quantization': (value) => {
+      quant(value).fieldAccounting.outputProjections.quantization_config.values.disabled = false;
+    },
+    'wrong projection kind': (value) => {
+      quant(value).fieldAccounting.outputProjections.quantization_config.kind = 'runtime-object';
+    },
+    'missing projection': (value) => {
+      quant(value).fieldAccounting.outputProjections = {};
+    },
+    'false complete': (value) => {
+      quant(value).fieldAccounting.omittedFields.backend = 'missing';
+    },
+    'missing status': (value) => {
+      delete value.fieldAccountingStatus;
+    },
+    'unknown status version': (value) => {
+      value.fieldAccountingStatus.schemaVersion = 2;
+    },
+    'oversize section': (value) => {
+      quant(value).fieldAccounting.unaccountedFields = Array(20).fill('x'.repeat(16000));
+      quant(value).fieldAccounting.complete = false;
+    },
+  };
+  for (const [label, change] of Object.entries(changes)) {
+    const value = structuredClone(original);
+    change(value);
+    assert.equal(inputs.coerceResolvedExecutionInputs(value, identity), undefined, label);
+  }
+  const partial = structuredClone(original);
+  partial.fieldAccountingStatus.truncated = true;
+  delete quant(partial).fieldAccounting;
+  recipeNode(partial).fieldAccounting = {
+    schemaVersion: 1,
+    fields: {},
+    inputProjections: {},
+    outputProjections: {},
+    unaccountedFields: [],
+    omittedFields: { accounting: 'record-size-limit' },
+    complete: false,
+  };
+  const parsed = inputs.coerceResolvedExecutionInputs(partial, identity);
+  assert.equal(parsed.fieldAccountingStatus.truncated, true);
+  assert.equal(recipeNode(parsed).fieldAccounting.complete, false);
+  assert.equal(parsed.truncated, false, 'optional extension limits never change v1 truncation');
+  assert.deepEqual(parsed.summary, original.summary);
+  const old = receipt();
+  const legacyIdentity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  assert.equal(JSON.stringify(inputs.coerceResolvedExecutionInputs(old, legacyIdentity)), JSON.stringify(old));
 });
 
 test('SSR receipt imports and explicit watch requests allocate no filesystem watchers', () => {
@@ -218,6 +498,275 @@ function receipt() {
     truncated: false,
   };
 }
+
+function appliedAdapterReceipt(observation = 'activated') {
+  const capture = receipt();
+  const adapters = [0, 1, 0.75].map((scale, index) => ({
+    adapterName: `protocol_${index}`,
+    scale,
+    descriptorSha256: String(index + 1).repeat(64),
+    artifact: {
+      source: 'hub',
+      repository: `protocol/adapter-${index}`,
+      revision: 'a'.repeat(40),
+      weightName: 'adapter.safetensors',
+      sha256: String(index + 4).repeat(64),
+    },
+    scheduler: null,
+  }));
+  capture.nodes.push({
+    nodeId: 'loader',
+    module: 'modules.ModularDiffusers',
+    action: 'ModelsLoader',
+    fields: {},
+    omittedFields: {},
+    appliedAdapters: {
+      schemaVersion: 1,
+      status: 'complete',
+      source: 'backend-adapter-application',
+      applicationId: 'a'.repeat(32),
+      observation,
+      adapters,
+      stateSha256: `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters })}`,
+    },
+  });
+  capture.appliedAdaptersStatus = { schemaVersion: 1, truncated: false };
+  return capture;
+}
+
+test('applied adapter observations survive history without changing any legacy receipt byte', () => {
+  for (const observation of ['activated', 'reused']) {
+    const capture = appliedAdapterReceipt(observation);
+    const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+    const legacy = structuredClone(capture);
+    delete legacy.appliedAdaptersStatus;
+    delete legacy.nodes[1].appliedAdapters;
+    const before = JSON.stringify(inputs.coerceResolvedExecutionInputs(legacy, identity));
+    const result = inputs.coerceResolvedExecutionInputs(capture, identity);
+    assert.deepEqual(result.nodes[1].appliedAdapters, capture.nodes[1].appliedAdapters);
+    assert.deepEqual(result.appliedAdaptersStatus, capture.appliedAdaptersStatus);
+    const stripped = structuredClone(result);
+    delete stripped.appliedAdaptersStatus;
+    delete stripped.nodes[1].appliedAdapters;
+    assert.equal(JSON.stringify(stripped), before);
+    const restored = contracts.coerceStudioOutput({
+      id: 'protocol-only',
+      url: '/fixture.png',
+      ...identity,
+      resolvedExecutionInputs: capture,
+    });
+    assert.deepEqual(restored.resolvedExecutionInputs, result);
+  }
+  const unicodeAlias = appliedAdapterReceipt();
+  unicodeAlias.nodes[1].appliedAdapters.adapters[0].artifact.weightName = '😀'.repeat(140) + '.safetensors';
+  assert.ok(
+    inputs.coerceResolvedExecutionInputs(unicodeAlias, unicodeAlias),
+    'Backend alias bounds count Unicode code points.',
+  );
+});
+
+test('actual backend applied adapter producer survives history and locks Python numeric and lifecycle identities', () => {
+  for (const [kind, { receipt: capture, originalReceipt, apiGraph }] of Object.entries(
+    actualAppliedAdapterFixtures(),
+  )) {
+    const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+    const parsed = inputs.coerceResolvedExecutionInputs(capture, identity);
+    assert.ok(parsed, kind);
+    const original = capture.nodes.find((node) => node.appliedAdapters)?.appliedAdapters;
+    assert.deepEqual(parsed.nodes.find((node) => node.appliedAdapters)?.appliedAdapters, original, kind);
+    const restored = contracts.coerceStudioOutput({
+      id: 'protocol-only',
+      url: '/fixture.png',
+      ...identity,
+      resolvedExecutionInputs: capture,
+    });
+    assert.deepEqual(restored.resolvedExecutionInputs, parsed);
+    const args = protocolFactoryArguments(apiGraph);
+    args.taskId = capture.taskId;
+    args.executedOutput = {
+      ...args.executedOutput,
+      ...identity,
+      apiGraphSnapshot: apiGraph,
+      resolvedExecutionInputs: capture,
+    };
+    args.executionReceipt = {
+      ...args.executionReceipt,
+      task_id: capture.taskId,
+      attempt_index: capture.attemptIndex,
+      status: 'completed',
+    };
+    const proof = createRunProvenance(args);
+    // This tiny adapter-dispatch fixture has no declared resource plan. Keep
+    // that existing hold; adapter evidence must not manufacture qualification.
+    const baselineArgs = structuredClone(args);
+    delete baselineArgs.executedOutput.resolvedExecutionInputs;
+    assert.deepEqual(proof.blockers, createRunProvenance(baselineArgs).blockers, kind);
+    assert.deepEqual(proof.blockers, ['execution.resourceCandidateId is missing.'], kind);
+    if (kind === 'unavailable') {
+      assert.throws(() => validateAppliedAdapterProof(proof, { required: true }), /unavailable/);
+      continue;
+    }
+    const locked = validateAppliedAdapterProof(proof, { required: true }).owners[0].application;
+    assert.deepEqual(locked, original);
+    assert.equal(locked.stateSha256, `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: locked.adapters })}`);
+    assert.deepEqual(
+      locked.adapters.map((item) => item.scale),
+      kind === 'empty' ? [] : [0, 1, 0.75],
+    );
+    if (kind !== 'empty')
+      assert.ok(locked.adapters.every((item) => item.artifact.weightName === 'weights/adapter.safetensors'));
+    assert.equal(locked.observation, kind === 'reused' ? 'reused' : 'activated');
+    if (kind === 'reused')
+      assert.equal(
+        locked.applicationId,
+        originalReceipt.nodes.find((node) => node.appliedAdapters).appliedAdapters.applicationId,
+      );
+    const legacy = structuredClone(capture);
+    delete legacy.appliedAdaptersStatus;
+    for (const node of legacy.nodes) delete node.appliedAdapters;
+    const stripped = structuredClone(parsed);
+    delete stripped.appliedAdaptersStatus;
+    for (const node of stripped.nodes) delete node.appliedAdapters;
+    assert.equal(
+      JSON.stringify(stripped),
+      JSON.stringify(inputs.coerceResolvedExecutionInputs(legacy, identity)),
+      kind,
+    );
+  }
+});
+
+test('applied adapter history rejects unknown scopes, opaque values and malformed lifecycle evidence', () => {
+  const changes = {
+    'foreign owner': (v) => {
+      v.nodes[1].action = 'AutoModelLoader';
+    },
+    'foreign module': (v) => {
+      v.nodes[1].module = 'modules.Foreign';
+    },
+    'missing status': (v) => {
+      delete v.appliedAdaptersStatus;
+    },
+    'unknown status key': (v) => {
+      v.appliedAdaptersStatus.secret = 'opaque';
+    },
+    'false complete envelope': (v) => {
+      delete v.nodes[1].appliedAdapters;
+    },
+    'unknown section key': (v, a) => {
+      a.localPath = '/private';
+    },
+    'unknown version': (v, a) => {
+      a.schemaVersion = 2;
+    },
+    'wrong source': (v, a) => {
+      a.source = 'submitted-graph';
+    },
+    'invalid application ID': (v, a) => {
+      a.applicationId = 'A'.repeat(32);
+    },
+    'invented observation': (v, a) => {
+      a.observation = 'assumed';
+    },
+    'invalid state hash': (v, a) => {
+      a.stateSha256 = 'a'.repeat(64);
+    },
+    'too many adapters': (v, a) => {
+      a.adapters = Array(33).fill(a.adapters[0]);
+    },
+    'oversize UTF8 payload': (v, a) => {
+      a.adapters = Array.from({ length: 32 }, (_, index) => ({
+        ...a.adapters[0],
+        adapterName: `style_${index}`,
+        artifact: { ...a.adapters[0].artifact, weightName: '界'.repeat(240) + '.safetensors' },
+      }));
+    },
+    'duplicate names': (v, a) => {
+      a.adapters[1].adapterName = a.adapters[0].adapterName;
+    },
+    'oversize name': (v, a) => {
+      a.adapters[0].adapterName = 'a'.repeat(129);
+    },
+    'path name': (v, a) => {
+      a.adapters[0].adapterName = 'C:/private/adapter';
+    },
+    'url name': (v, a) => {
+      a.adapters[0].adapterName = 'https://private/adapter';
+    },
+    'repository url': (v, a) => {
+      a.adapters[0].artifact.repository = 'https://private/adapter';
+    },
+    'repository alias': (v, a) => {
+      a.adapters[0].artifact.repository = 'protocol/adapter.git';
+    },
+    'unsupported weight': (v, a) => {
+      a.adapters[0].artifact.weightName = 'adapter.bin';
+    },
+    'boolean scale': (v, a) => {
+      a.adapters[0].scale = false;
+    },
+    'string scale': (v, a) => {
+      a.adapters[0].scale = '1';
+    },
+    'out of bounds scale': (v, a) => {
+      a.adapters[0].scale = 21;
+    },
+    'opaque scale': (v, a) => {
+      a.adapters[0].scale = {};
+    },
+    'nonfinite scale': (v, a) => {
+      a.adapters[0].scale = Infinity;
+    },
+    'unknown descriptor digest': (v, a) => {
+      a.adapters[0].descriptorSha256 = 'bad';
+    },
+    'opaque artifact': (v, a) => {
+      a.adapters[0].artifact.private = '/private';
+    },
+    'coerced source': (v, a) => {
+      a.adapters[0].artifact.source = ['local'];
+      delete a.adapters[0].artifact.repository;
+      delete a.adapters[0].artifact.revision;
+    },
+    'mutable revision': (v, a) => {
+      a.adapters[0].artifact.revision = 'main';
+    },
+    'path traversal': (v, a) => {
+      a.adapters[0].artifact.weightName = '../weights.safetensors';
+    },
+    'bad artifact digest': (v, a) => {
+      a.adapters[0].artifact.sha256 = 'A'.repeat(64);
+    },
+    'opaque scheduler': (v, a) => {
+      a.adapters[0].scheduler = { className: 'Scheduler', config: {} };
+    },
+    'coerced scheduler': (v, a) => {
+      a.adapters[0].scheduler = [];
+    },
+  };
+  for (const [label, mutate] of Object.entries(changes)) {
+    const capture = appliedAdapterReceipt();
+    mutate(capture, capture.nodes[1].appliedAdapters);
+    assert.equal(inputs.coerceResolvedExecutionInputs(capture, capture), undefined, label);
+  }
+  for (const section of [
+    { schemaVersion: 1, status: 'unavailable', reason: 'unobserved-application' },
+    { schemaVersion: 1, status: 'unavailable', reason: 'owner-invalidated' },
+    { schemaVersion: 1, status: 'truncated', reason: 'record-size-limit' },
+  ]) {
+    const capture = appliedAdapterReceipt();
+    capture.nodes[1].appliedAdapters = section;
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, capture).nodes[1].appliedAdapters, section);
+    capture.nodes[1].appliedAdapters.reason = [section.reason];
+    assert.equal(inputs.coerceResolvedExecutionInputs(capture, capture), undefined);
+  }
+  const dropped = appliedAdapterReceipt();
+  delete dropped.nodes[1].appliedAdapters;
+  dropped.appliedAdaptersStatus.truncated = true;
+  assert.deepEqual(
+    inputs.coerceResolvedExecutionInputs(dropped, dropped).appliedAdaptersStatus,
+    dropped.appliedAdaptersStatus,
+  );
+});
 
 test('only the actual native loader capture accepts the exact consumed weight format', () => {
   const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };

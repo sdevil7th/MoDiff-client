@@ -297,6 +297,77 @@ npm run gallery:coverage
 
 Do not publish a local artifact, private input, personal path, access token, or source revision through a Gallery bundle.
 
+The standalone, model-backed canonical execution recorder is separate from public
+templates. Its native integration remains incomplete; the command below does not
+establish that an unchanged canonical workflow can yet produce an accepted receipt:
+
+```bash
+MODIFF_CANONICAL_WORKFLOW_EVIDENCE=/absolute/path/evidence.json node scripts/template-qualification.mjs --workflow ModelPipeline:text_to_image
+```
+
+The descriptor uses `schemaVersion: 1`, format
+`modiff.canonical-workflow-evidence.v1`, and the exact `workflowId`. Its
+`creatorPackage`, `outputPackage`, `runDetail`, `nodes`, `backendSourceBefore`,
+`backendSourceAfter`, and `modelObservations` entries reference original observed
+files using `{path, bytes, sha256}`. Paths must be relative, canonical, contained,
+and free of symlinks. Source observations contain their actual `identity`; model
+observations retain the ordinary model-list response. `outputs` contains ordered
+`{backendPath, mediaType, file}` entries for the unchanged durable media. Retain
+the original browser downloads and raw task body; do not reconstruct their
+fields from a catalog or replace defaults, paths, prompts, or model pins.
+
+This initial path supports input-free execution only (`inputs: []`). Every
+submitted literal must have matching native consumed-input evidence; omissions,
+overrides, unsupported scalar connections, unresolved model components, retries,
+and fallback attempts remain held. Input-backed workflows need a durable,
+execution-bound input-byte receipt: a post-run file copy or a current cache hash
+alone is insufficient. The existing normal exporter must be able to export the
+unchanged canonical graph without an inferred execution scope. Deterministic
+builtin workflows remain explicitly unsupported because model identity is not
+applicable; do not invent a model for them.
+
+The optional native `fieldAccounting` extension preserves requested literals,
+actual call controls, explicit inactive/superseded controls, and bounded recipe
+projections separately from legacy v1 fields and summaries. The client parser
+retains its completeness/truncation status without changing v1 normalization.
+Parsing a projection hash is not cryptographic verification. The independent
+canonical accounting join verifies metadata hashes, connected producer ports,
+disabled quantization and the unique executed loader for the unchanged five-node
+DDIM workflow. Preview's CPU setting does not describe model placement. The shared
+provenance factory accepts an optional canonical proof from the existing reader:
+the trusted current canonical export, actual original task/output and complete
+native accounting. It derives the plan itself and binds task, attempt, output,
+model and completion identities without adding runtime hints or rewriting proofs.
+The default factory path remains unchanged. Input files, builtins, quantized
+configurations and other accounting policies remain unsupported by this initial
+join. A genuine unchanged native DDIM run is still required before a usability
+claim. Mocked protocol checks are not native, quality, hardware or release evidence.
+
+The recorder copies original evidence under the backend's ignored
+`data/qualification/release/canonical-workflow-evidence/` directory and records
+`canonical-workflow-run-receipts.v1.json`. Release-contract generation repeats the
+same validation against current canonical source and retained bytes. A verified
+receipt is **execution evidence only**: quality, rights, hardware qualification,
+and release approval remain false. It does not make standalone workflows release
+eligible, promote local review receipts, or change ordinary template recording
+and Gallery publication policy.
+
+The optional native `appliedAdapters` receipt records the owning ModelsLoader's
+observed ordered adapter names, numeric scales, immutable artifact identities,
+opaque descriptor hashes and explicit scheduler override digest. It carries a
+fresh application identity after activation/removal; valid owner reuse retains
+that identity with a `reused` observation. Missing or unavailable evidence is not
+an empty adapter set. The history parser only checks the bounded schema. The
+shared provenance factory verifies and locks present observations against the
+original task/attempt, output snapshot and executed ancestor owner.
+`validateAppliedAdapterProof(provenance, {required: true})` additionally requires
+complete evidence matched to the ordered native Lora chain and model pins for
+explicit adapter-order acceptance. Its initial strict scope
+is pinned Hub adapters with explicit names and no scheduler override. Ordinary
+template recording does not acquire this new requirement: historical absent-field
+proofs retain their original submitted-graph proof level. This extension grants
+no style, quality, hardware, rights or publication approval.
+
 ## Custom extension changes
 
 Keep Add custom node, the strict response parser and backend hash-bound imports in sync. Intentional Add/Load/Reload is consent; discovery and graph import are not. Test import failure, changed source, missing dependencies, typed search and registry refresh. Use the normal graph executor. See the backend `docs/custom-nodes.md`.

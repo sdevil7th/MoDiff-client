@@ -153,6 +153,8 @@ export function deleteNodeCache(nodeIds: string[]) {
     'Could not clear the node cache.',
     {
       method: 'DELETE',
+      // Full model/component teardown can exceed the ordinary request deadline.
+      timeoutMs: 120_000,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nodes: uniqueNodeIds }),
     },

@@ -11703,6 +11703,87 @@ test('node cache controls separate recomputation from model release without edit
   expect(await readNodes()).toEqual(before);
 });
 
+test('grouped Setup cache release retains flags on errors and clears only confirmed descendants', async ({ page }) => {
+  page.setDefaultTimeout(15_000);
+  await page.setViewportSize({ width: 1680, height: 1050 });
+  await ensureFrontend();
+  await installOperationAuthoringRoutes(page);
+  await page.routeWebSocket('**/ws**', (socket) =>
+    socket.send(
+      JSON.stringify({
+        type: 'welcome',
+        sid: new URL(socket.url()).searchParams.get('sid'),
+        instance: 'mock',
+        current: null,
+        queued: {},
+      }),
+    ),
+  );
+  const requests: { nodes: string[]; scope?: string }[] = [];
+  let response: { status: number; body: unknown } = {
+    status: 503,
+    body: { error: true, message: 'Release is still busy.' },
+  };
+  await page.unroute('**/cache');
+  await page.route('**/cache', (route) => {
+    requests.push(route.request().postDataJSON() as { nodes: string[]; scope?: string });
+    return route.fulfill({ status: response.status, json: response.body });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await assertUnifiedWorkspace(page, 'expert');
+  await openNodesLibrary(page);
+  const panel = await selectOperationPipeline(page, 'QwenImageModularPipeline');
+  await panel.getByRole('button', { name: 'Preview connected starter', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Connected starter', exact: true })
+    .getByRole('button', { name: 'Add starter to canvas', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const owner = await page.evaluate(async () => {
+    const graph = window.__MODIFF_E2E__!.exportWorkflowGraph();
+    const setup = graph.nodes.find((node) => node.data.label === 'Model Setup')!;
+    const instance = setup.data.blockInstanceV2!;
+    const modulePath = '/src/studio/blockRuntimeV2.ts';
+    const { blockProjectionNodeIdV2 } = await import(/* @vite-ignore */ modulePath);
+    return {
+      id: setup.id,
+      leaves: instance.effectiveGraph.nodes.map((node) => blockProjectionNodeIdV2(instance.instanceId, node.nodeId)),
+    };
+  });
+  expect(owner.leaves.length).toBeGreaterThan(0);
+  await page.evaluate((cachedNodes) => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'welcome',
+      sid: 'mock-sid',
+      instance: 'mock',
+      cachedNodes,
+      current: null,
+      queued: {},
+      recent: [],
+    });
+  }, owner.leaves);
+  const setup = page.locator(`.react-flow__node[data-id="${owner.id}"]`);
+  const release = setup.getByRole('button', { name: 'Release node cache', exact: true });
+  await expect(release).toBeEnabled();
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await release.click();
+  await expect(page.getByText('Release is still busy.', { exact: true })).toBeVisible();
+  await expect(release).toBeEnabled();
+  response = { status: 200, body: { error: false } };
+  await release.click();
+  await expect(page.getByText('The cache deletion response has an invalid node list.', { exact: true })).toBeVisible();
+  await expect(release).toBeEnabled();
+  response = { status: 200, body: { error: false, nodes: [owner.id, ...owner.leaves] } };
+  await release.click();
+  await expect(setup.getByRole('button', { name: 'Node is not cached', exact: true })).toBeDisabled();
+  expect(requests).toEqual(Array.from({ length: 3 }, () => ({ nodes: [owner.id] })));
+  const after = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  expect(after.nodes).toEqual(before.nodes);
+  expect(after.edges).toEqual(before.edges);
+});
+
 async function waitForOperationGraphToSettle(page: Page) {
   // Native edits also trigger asynchronous schema/validation publications.
   // Establish a settled source document before reviewing a replacement; a late
