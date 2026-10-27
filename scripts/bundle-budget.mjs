@@ -1,3 +1,6 @@
+// Pinned NASA/Monet planning definitions measure largest/startup/deferred gzip
+// 488399/666704/326318 versus 488210/666514/326348. Add only measured
+// 189/190-byte startup growth, preserving 15/17-byte headroom and all deferred caps.
 // Legacy schema-one advisory-hint compatibility measures largest/startup/
 // deferred gzip 488210/666514/326348 versus 488155/666461/326431.
 // Add only measured startup growth 55/53 bytes, retaining 15/17 bytes of
@@ -213,6 +216,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Retain the strict current-owner/parser checks and allow 128 startup/chunk
 // bytes only; dependencies, lazy boundaries, minifier and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  189 +
   55 +
   82 +
   273 +
@@ -327,6 +331,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  190 +
   53 +
   82 +
   274 +

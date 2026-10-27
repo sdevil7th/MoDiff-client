@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { canonicalJsonHash } from './canonical-json.mjs';
+import { canonicalWorkflowContract } from './release-contract-core.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const SCRIPT = join(ROOT, 'scripts', 'template-qualification.mjs');
+
+function disposeFixture(directory) {
+  const actual = realpathSync(directory);
+  assert.equal(dirname(actual), realpathSync(tmpdir()));
+  assert.ok(basename(actual).startsWith('modiff-template-qualification-'));
+  rmSync(actual, { recursive: true, force: true });
+}
 
 function writeBackendFixture(directory, templateId = 'qwen_low_vram_product_concept') {
   const backendDirectory = join(directory, 'backend');
@@ -121,7 +129,7 @@ test('locked v2 template proofs become immutable execution receipts', async () =
     JSON.parse(readFileSync(join(retainedDirectory, registry.receipts[0].proofPath.split('/').at(-1)), 'utf8')).taskId,
     'qualification-task',
   );
-  rmSync(directory, { recursive: true, force: true });
+  disposeFixture(directory);
 });
 
 test('stale template locks are rejected before a receipt is written', async () => {
@@ -146,7 +154,7 @@ test('stale template locks are rejected before a receipt is written', async () =
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /catalog lock is stale/i);
-  rmSync(directory, { recursive: true, force: true });
+  disposeFixture(directory);
 });
 
 test('template proofs with output dimensions that violate the locked contract are rejected', async () => {
@@ -171,13 +179,18 @@ test('template proofs with output dimensions that violate the locked contract ar
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /output contract mismatch for width/i);
-  rmSync(directory, { recursive: true, force: true });
+  disposeFixture(directory);
 });
 
 // Synthetic registrar fixtures test evidence retention, never model output quality.
 const BLOCKED_TEMPLATE_ID = 'wan_vace_direct_text_to_video';
 
-function qualificationFixtureProcess(directory, provenance, argv = [], { canonical = true } = {}) {
+function qualificationFixtureProcess(
+  directory,
+  provenance,
+  argv = [],
+  { canonical = true, experimental = false, staleGraph = false } = {},
+) {
   const provenancePath = join(directory, 'proof.json');
   const registryPath = join(directory, 'registry.json');
   const backendDirectory = canonical
@@ -186,6 +199,46 @@ function qualificationFixtureProcess(directory, provenance, argv = [], { canonic
   if (!canonical) {
     mkdirSync(join(backendDirectory, 'data'), { recursive: true });
     writeFileSync(join(backendDirectory, 'data', 'workflow-library-manifest.json'), '{"workflows":[]}\n');
+  }
+  if (canonical && experimental) {
+    const manifestPath = join(backendDirectory, 'data', 'workflow-library-manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const ordinary = manifest.workflows[0];
+    const graphFile = join(backendDirectory, 'data', 'graphs', ordinary.graphPath);
+    const graph = JSON.parse(readFileSync(graphFile, 'utf8'));
+    const modelType = provenance.template.id.startsWith('flux3_klein_base_')
+      ? 'Flux3ModularPipeline'
+      : provenance.template.id.startsWith('flux3_klein_')
+        ? 'Flux3DistilledModularPipeline'
+        : 'QwenImageModularPipeline';
+    const generic = {
+      ...ordinary,
+      id: `${modelType}:text_to_image`,
+      modelType,
+      sourceTemplateId: provenance.template.id.replace('lora_style', 'text_to_image'),
+      supportTier: 'experimental',
+      runtimeQualificationStatus: 'unqualified',
+      optimizationQualificationStatus: 'unqualified',
+      qualifiedRuntimeProfiles: [],
+    };
+    const variantGraph = {
+      ...graph,
+      nodes: [...graph.nodes, { id: 'synthetic-lora', data: { module: 'modules.ModularDiffusers', action: 'Lora' } }],
+    };
+    const variant = {
+      ...generic,
+      id: `${modelType}:text_to_image:${provenance.template.id}`,
+      sourceTemplateId: provenance.template.id,
+      variant: 'lora-theme',
+      graphPath: 'experimental/selected-lora.json',
+      graphHash: staleGraph ? '0'.repeat(64) : canonicalJsonHash(variantGraph),
+    };
+    const variantFile = join(backendDirectory, 'data', 'graphs', variant.graphPath);
+    mkdirSync(resolve(variantFile, '..'), { recursive: true });
+    writeFileSync(variantFile, `${JSON.stringify(variantGraph, null, 2)}\n`);
+    manifest.workflows = [];
+    manifest.experimentalWorkflows = [generic, variant];
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   }
   writeFileSync(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
   const result = spawnSync(process.execPath, [SCRIPT, ...argv], {
@@ -200,8 +253,79 @@ function qualificationFixtureProcess(directory, provenance, argv = [], { canonic
       MODIFF_TEMPLATE_PROVENANCE_DIR: join(directory, 'retained'),
     },
   });
-  return { result, registryPath };
+  return { result, registryPath, backendDirectory };
 }
+
+test('experimental canonical LoRA variants require blocked-probe opt-in and retain their exact graph hash', async (t) => {
+  for (const templateId of ['flux3_klein_fp8r512_lora_style', 'flux3_klein_base_fp8r512_lora_style']) {
+    await t.test(templateId, async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-experimental-'));
+      const provenance = await fixture(templateId);
+      try {
+        const ordinary = qualificationFixtureProcess(directory, provenance, [], { experimental: true });
+        assert.notEqual(ordinary.result.status, 0);
+        assert.match(ordinary.result.stderr, /not in the runtime catalog/);
+        assert.equal(existsSync(ordinary.registryPath), false);
+        const explicit = qualificationFixtureProcess(directory, provenance, ['--allow-blocked-probe'], {
+          experimental: true,
+        });
+        assert.equal(explicit.result.status, 0, explicit.result.stderr);
+        const manifest = JSON.parse(
+          readFileSync(join(explicit.backendDirectory, 'data', 'workflow-library-manifest.json'), 'utf8'),
+        );
+        const variant = manifest.experimentalWorkflows.find((record) => record.sourceTemplateId === templateId);
+        const graph = JSON.parse(
+          readFileSync(join(explicit.backendDirectory, 'data', 'graphs', variant.graphPath), 'utf8'),
+        );
+        const registry = JSON.parse(readFileSync(explicit.registryPath, 'utf8'));
+        assert.equal(registry.receipts.length, 1);
+        assert.equal(registry.receipts[0].templateId, templateId);
+        assert.equal(registry.receipts[0].canonicalWorkflowHash, canonicalWorkflowContract(variant, graph).graphHash);
+        assert.deepEqual(manifest.workflows, []);
+        assert.ok(
+          manifest.experimentalWorkflows.every((record) => record.runtimeQualificationStatus === 'unqualified'),
+        );
+        assert.ok(manifest.experimentalWorkflows.every((record) => record.qualifiedRuntimeProfiles.length === 0));
+        const runtime = await loadTemplateRuntime(ROOT, { includePlanning: true });
+        assert.equal(runtime.templates.find((item) => item.id === templateId).example.status, 'blocked');
+      } finally {
+        disposeFixture(directory);
+      }
+    });
+  }
+});
+
+test('blocked-probe lookup rejects a stale experimental canonical graph before retaining evidence', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-experimental-stale-'));
+  try {
+    const provenance = await fixture('flux3_klein_fp8r512_lora_style');
+    const { result, registryPath } = qualificationFixtureProcess(directory, provenance, ['--allow-blocked-probe'], {
+      experimental: true,
+      staleGraph: true,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /graph hash does not match its manifest/);
+    assert.equal(existsSync(registryPath), false);
+    assert.equal(existsSync(join(directory, 'retained')), false);
+  } finally {
+    disposeFixture(directory);
+  }
+});
+
+test('ordinary public recording never falls back to an experimental canonical record', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-public-scope-'));
+  try {
+    const { result, registryPath } = qualificationFixtureProcess(directory, await fixture(), [], {
+      experimental: true,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /no current canonical workflow/);
+    assert.equal(existsSync(registryPath), false);
+    assert.equal(existsSync(join(directory, 'retained')), false);
+  } finally {
+    disposeFixture(directory);
+  }
+});
 
 test('blocked template lookup requires explicit opt-in and retaining a receipt cannot promote its source', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-blocked-'));
@@ -229,7 +353,7 @@ test('blocked template lookup requires explicit opt-in and retaining a receipt c
     assert.equal(runtime.templates.find((item) => item.id === BLOCKED_TEMPLATE_ID).example.status, 'blocked');
     sourcePaths.forEach((file, index) => assert.deepEqual(readFileSync(file), sourceBefore[index], file));
   } finally {
-    rmSync(directory, { recursive: true, force: true });
+    disposeFixture(directory);
   }
 });
 
@@ -310,7 +434,7 @@ test('blocked lookup opt-in retains every receipt prerequisite', async (t) => {
         assert.match(result.stderr, expected);
         assert.equal(existsSync(registryPath), false);
       } finally {
-        rmSync(directory, { recursive: true, force: true });
+        disposeFixture(directory);
       }
     });
   }

@@ -1011,8 +1011,10 @@ def provisional_dataset_card(held_paths: list[str]) -> str:
         DATASET_CARD_PATH.read_text(encoding="utf-8").rstrip()
         + "\n\n## Provisional publication\n\n"
         + "This revision contains only the rights-approved subset and is intentionally "
-        + "incomplete. It must not be activated as MoDiff's runtime Dataset. The complete "
-        + "local asset set remains authoritative until the pending permissions are resolved.\n\n"
+        + "incomplete. Do not use the complete-set `activate` command for this revision. "
+        + "Runtime use requires a separately reviewed source-descriptor update and full "
+        + "anonymous verification of the exact approved subset. The complete authoring "
+        + "manifest and all held-file decisions remain authoritative.\n\n"
         + "Files withheld from this revision:\n\n"
         + held_list
         + "\n"
@@ -1666,7 +1668,10 @@ def command_upload_provisional(args: argparse.Namespace) -> int:
     print(f"Withheld assets: {len(held_paths)}")
     for path in held_paths:
         print(f"  WITHHELD {path}")
-    print("MoDiff remains in local asset mode; this provisional revision cannot be activated.")
+    print(
+        "The application source is unchanged. Runtime use of this approved subset "
+        "requires a separately reviewed source-descriptor update and full anonymous verification."
+    )
     return 0
 
 

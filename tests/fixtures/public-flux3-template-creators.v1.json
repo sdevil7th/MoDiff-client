@@ -11998,6 +11998,89 @@
   },
   "proofScope": "Source metadata and required sealed-provider absence only; no model/native/Auto qualification",
   "registry": {
+    "modules.ModularDiffusers.Lora": {
+      "module": "modules.ModularDiffusers",
+      "action": "Lora",
+      "type": "custom",
+      "label": "Lora",
+      "category": "adapters",
+      "description": "",
+      "resizable": true,
+      "skipParamsCheck": false,
+      "style": {},
+      "params": {
+        "model": {
+          "label": "Model",
+          "display": "modelselect",
+          "type": "string",
+          "value": {
+            "source": "hub",
+            "value": ""
+          },
+          "fieldOptions": {
+            "noValidation": true,
+            "sources": ["hub", "local"]
+          }
+        },
+        "weight_name": {
+          "label": "Weight Name",
+          "type": "string"
+        },
+        "revision": {
+          "label": "Revision",
+          "type": "string",
+          "default": "",
+          "description": "Required exact commit for a Hub LoRA; unused for a local Safetensors file."
+        },
+        "expected_sha256": {
+          "label": "Expected SHA-256",
+          "type": "string",
+          "default": "",
+          "description": "Required for Hub weights; local weights are hashed when this descriptor is created."
+        },
+        "scale": {
+          "label": "Scale",
+          "type": "float",
+          "display": "slider",
+          "default": 1.0,
+          "min": -20,
+          "max": 20,
+          "step": 0.1
+        },
+        "adapter_name": {
+          "label": "Adapter Name",
+          "type": "string",
+          "default": "",
+          "description": "Optional exact name; an empty value retains the stable generated adapter identity."
+        },
+        "previous_loras": {
+          "label": "Previous LoRAs",
+          "display": "input",
+          "type": "custom_lora",
+          "required": false,
+          "description": "Optional ordered predecessor. Leave unconnected for one adapter; otherwise append this adapter to the connected descriptor or descriptor list."
+        },
+        "scheduler_class": {
+          "label": "Scheduler Class",
+          "type": "string",
+          "value": ""
+        },
+        "scheduler_config": {
+          "label": "Scheduler Config (JSON)",
+          "type": "text",
+          "display": "textarea",
+          "value": "{}"
+        },
+        "lora": {
+          "label": "Lora",
+          "type": "custom_lora",
+          "display": "output"
+        }
+      },
+      "time": [0, 0, 0],
+      "memory": [0, 0, 0],
+      "cache": false
+    },
     "modules.HuggingFaceTransformers.GenerateImageVideoText": {
       "action": "GenerateImageVideoText",
       "cache": false,
@@ -37959,5 +38042,16 @@
       "upstreamBlocks": ["text_encoder", "vae_encoder", "denoise", "decode"],
       "workflowId": "image_conditioned"
     }
-  ]
+  ],
+  "registrySourceOverrides": {
+    "modules.ModularDiffusers.Lora": {
+      "producer": "scripts/template-operation-fixtures.py with empty selections; only the complete LoRA registry leaf is added",
+      "proofScope": "Isolated source schema only; no model construction or native qualification. Existing captured capabilities and sourceHashes remain unchanged.",
+      "sourceHashes": {
+        "scripts\\template-operation-fixtures.py": "0e72dc442b1176fa4bff6e1f57859b420fea417a51e7e51023ac167ceb072aa3",
+        "modules\\ModularDiffusers\\adapters.py": "a571de6d38dbf02bc22544386cedd24be2da93e6599e489b50e41919d868ad58",
+        "modiff\\server.py": "770b1bc036125350ad4a9ac52e05440536c013fda53186ad9f3bfd227f7a84e0"
+      }
+    }
+  }
 }

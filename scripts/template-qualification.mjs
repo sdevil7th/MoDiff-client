@@ -92,7 +92,13 @@ if (!template) throw new Error(`Template ${String(templateId)} is not in the run
 const workflowManifest = readJson(
   required(join(BACKEND_ROOT, 'data', 'workflow-library-manifest.json'), 'Canonical workflow manifest'),
 );
-const workflowRecords = (workflowManifest.workflows ?? []).map((manifest) => {
+// Explicit blocked probes may retain execution evidence against an experimental
+// canonical graph. This lookup never promotes its catalog or qualification state.
+const scopedWorkflows = [
+  ...(workflowManifest.workflows ?? []),
+  ...(allowBlockedProbe ? (workflowManifest.experimentalWorkflows ?? []) : []),
+];
+const workflowRecords = scopedWorkflows.map((manifest) => {
   const graph = readJson(required(join(BACKEND_ROOT, 'data', 'graphs', manifest.graphPath), manifest.id));
   return { manifest, graph };
 });

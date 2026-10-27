@@ -560,10 +560,10 @@ class TemplateGalleryAssetTests(unittest.TestCase):
                 provisional_ledger["assetSetId"],
                 provisional_manifest["assetSetId"],
             )
-            self.assertIn(
-                "must not be activated",
-                (staging / "README.md").read_text(encoding="utf-8"),
-            )
+            card = (staging / "README.md").read_text(encoding="utf-8")
+            self.assertIn("Do not use the complete-set `activate` command", card)
+            self.assertIn("separately reviewed source-descriptor update", card)
+            self.assertIn("full anonymous verification", card)
 
     def test_provisional_upload_cli_has_no_activate_option(self) -> None:
         parsed = assets.parser().parse_args(

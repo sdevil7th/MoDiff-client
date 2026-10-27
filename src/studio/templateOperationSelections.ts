@@ -202,7 +202,7 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
       memoryPolicy: 'custom_experimental',
       authoringRecipeId: 'flux3-klein:official:text-to-image:prompt-preview-append-fp32:v1',
       loraPolicy: {
-        defaultAdapterName: 'style',
+        defaultAdapterName: 'nsc7',
       },
     },
     flux3_klein_base_fp8r512_text_to_image: {
@@ -270,7 +270,7 @@ export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
       memoryPolicy: 'custom_experimental',
       authoringRecipeId: 'flux3-klein-base:official:text-to-image:prompt-preview-append-fp32:v1',
       loraPolicy: {
-        defaultAdapterName: 'tarot',
+        defaultAdapterName: 'mnt_oil',
       },
     },
 

@@ -430,6 +430,195 @@ export function executedExpertPlanFromGraph(apiGraph) {
   });
 }
 
+/**
+ * Ordinary modular Run has no managed Studio plan. Recover only the reviewed
+ * BF16/FP8r, CPU-loading Expert contract from its executed owner and durable
+ * authoring context. This records a recipe, never runtime or fit qualification.
+ */
+function executedModularExpertPlanFromGraph(apiGraph) {
+  const snapshot = apiGraph?.runtimeHints?.workflowSnapshot;
+  const form = snapshot?.studioForm;
+  if (
+    form?.resourceMode !== 'expert' ||
+    form.dtype !== 'bfloat16' ||
+    form.weightFormat !== 'fp8r' ||
+    form.quantizationMode !== 'none' ||
+    form.trustRemoteCode !== false ||
+    typeof form.autoOffload !== 'boolean' ||
+    typeof form.offloadMode !== 'string' ||
+    typeof form.device !== 'string' ||
+    typeof form.modelType !== 'string' ||
+    typeof form.modelRepo !== 'string' ||
+    !Array.isArray(snapshot.nodes)
+  )
+    return null;
+
+  const entries = nodeEntries(apiGraph);
+  const byId = new Map(entries);
+  const executedIds = new Set((apiGraph?.paths ?? []).flat().map(String));
+  const owners = entries.filter(
+    ([id, node]) =>
+      executedIds.has(id) && node?.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+  );
+  if (owners.length !== 1) return null;
+  const [ownerId, owner] = owners[0];
+  for (const field of [
+    'repo_id',
+    'revision',
+    'model_type',
+    'dtype',
+    'weight_format',
+    'device',
+    'offload_mode',
+    'auto_offload',
+    'weight_loading_mode',
+    'trust_remote_code',
+  ]) {
+    if (owner.params?.[field]?.sourceId != null || owner.params?.[field]?.sourceKey != null) return null;
+  }
+  const repo = apiParamValue(owner, 'repo_id');
+  const revision = apiParamValue(owner, 'revision');
+  if (
+    !repo ||
+    typeof repo !== 'object' ||
+    Array.isArray(repo) ||
+    repo.source !== 'hub' ||
+    typeof repo.value !== 'string' ||
+    !repo.value ||
+    repo.value !== form.modelRepo ||
+    typeof revision !== 'string' ||
+    !/^[0-9a-f]{40}$/u.test(revision) ||
+    apiParamValue(owner, 'model_type') !== form.modelType ||
+    apiParamValue(owner, 'dtype') !== form.dtype ||
+    apiParamValue(owner, 'weight_format') !== form.weightFormat ||
+    apiParamValue(owner, 'device') !== form.device ||
+    apiParamValue(owner, 'offload_mode') !== form.offloadMode ||
+    apiParamValue(owner, 'auto_offload') !== form.autoOffload ||
+    apiParamValue(owner, 'weight_loading_mode') !== 'cpu' ||
+    apiParamValue(owner, 'trust_remote_code') !== false
+  )
+    return null;
+  // A borrowed component or a quantization node changes the loading contract.
+  for (const field of [
+    'quant_config',
+    'unet',
+    'vae',
+    'controlnet',
+    'text_encoders',
+    'pipeline_components',
+    'image_encoder',
+  ]) {
+    const param = owner.params?.[field];
+    if (param?.sourceId != null || param?.sourceKey != null || apiParamValue(owner, field) != null) return null;
+  }
+
+  // Read active durable leaves only, not definition snapshots or projected UI
+  // duplicates. Local Block roles use semantic IDs; external roles already use
+  // exported IDs. This is the blockProjectionNodeIdV2 identity format, not a
+  // reconstruction of graph execution or socket expansion.
+  const leaves = [];
+  const visit = (nodes, localIds = null) => {
+    for (const node of nodes) {
+      const data = node?.data;
+      if (!data || data.blockProjectionOwnerId) continue;
+      if (data.blockInstanceV2) {
+        const instance = data.blockInstanceV2;
+        const children = instance.effectiveGraph?.nodes;
+        if (localIds || typeof instance.instanceId !== 'string' || !Array.isArray(children)) return false;
+        const ids = new Map(
+          children.map((child) => [
+            child.nodeId,
+            `block-v2-node:${instance.instanceId.length}:${instance.instanceId}:${child.nodeId?.length}:${child.nodeId}`,
+          ]),
+        );
+        if (ids.size !== children.length || children.some((child) => typeof child.nodeId !== 'string')) return false;
+        if (!visit(children, ids)) return false;
+      } else {
+        const context = data.operationAuthoring?.ancillaryParent;
+        const roles = context?.parentRoleNodes;
+        leaves.push({
+          data,
+          id: localIds?.get(node.nodeId) ?? node.id,
+          roles:
+            roles && Object.fromEntries(Object.entries(roles).map(([role, id]) => [role, localIds?.get(id) ?? id])),
+        });
+      }
+    }
+    return true;
+  };
+  if (!visit(snapshot.nodes)) return null;
+  const contexts = leaves.filter(
+    ({ data, id, roles }) =>
+      data.module === 'modules.ModularDiffusers' &&
+      data.action === 'EncodePrompt' &&
+      roles?.models === ownerId &&
+      roles.prompt === id,
+  );
+  if (contexts.length !== 1) return null;
+  const hint = contexts[0].data.operationAuthoring;
+  const context = hint.ancillaryParent;
+  const parent = context.parent;
+  const roles = contexts[0].roles;
+  if (
+    context.schemaVersion !== 1 ||
+    parent?.pipelineClass !== form.modelType ||
+    parent.task !== form.mode ||
+    hint.operation?.pipelineClass !== form.modelType ||
+    hint.operation.task !== form.mode ||
+    typeof parent.executionProfileId !== 'string' ||
+    !parent.executionProfileId ||
+    typeof parent.authoringRecipeId !== 'string' ||
+    !parent.authoringRecipeId ||
+    typeof parent.baseSpecId !== 'string' ||
+    !parent.baseSpecId.startsWith(`${parent.executionProfileId}:`) ||
+    !/^studio-spec-v1-[0-9a-f]{8}$/u.test(parent.baseSpecContentHash ?? '') ||
+    !/^studio-authoring-v1-[0-9a-f]{8}$/u.test(parent.authoringContentHash ?? '') ||
+    new Set(Object.values(roles)).size !== Object.values(roles).length
+  )
+    return null;
+  for (const [role, action] of [
+    ['prompt', 'EncodePrompt'],
+    ['denoise', 'Denoise'],
+    ['decode', 'DecodeLatents'],
+  ]) {
+    const node = byId.get(roles[role]);
+    if (!executedIds.has(roles[role]) || node?.module !== 'modules.ModularDiffusers' || node.action !== action)
+      return null;
+  }
+  for (const [role, field, sourceRole, sourceField] of [
+    ['prompt', 'text_encoders', 'models', 'text_encoders'],
+    ['denoise', 'unet', 'models', 'unet_out'],
+    ['denoise', 'scheduler', 'models', 'scheduler'],
+    ['denoise', 'embeddings', 'prompt', 'embeddings'],
+    ['decode', 'vae', 'models', 'vae_out'],
+    ['decode', 'latents', 'denoise', 'latents'],
+  ]) {
+    const source = connectedParamSource(byId.get(roles[role]), field);
+    if (source?.nodeId !== roles[sourceRole] || source.field !== sourceField) return null;
+  }
+  return orderedValue({
+    source: 'executed-expert-modular-graph-v1',
+    device: form.device,
+    modelType: form.modelType,
+    modelRepo: repo.value,
+    resolvedModelRepo: repo.value,
+    resolvedArtifact: repo.value,
+    modelRevision: revision,
+    pipelineClass: form.modelType,
+    executionProfileId: parent.executionProfileId,
+    authoringRecipeId: parent.authoringRecipeId,
+    dtype: form.dtype,
+    weightFormat: form.weightFormat,
+    weightLoadingMode: 'cpu',
+    resourceMode: 'expert',
+    resolvedResourceMode: 'expert',
+    quantizationMode: 'none',
+    quantizedComponents: [],
+    autoOffload: form.autoOffload,
+    offloadMode: form.offloadMode,
+  });
+}
+
 export function executionPlanIdentity(apiGraph) {
   const runtimeHints = apiGraph?.runtimeHints ?? {};
   const declaredPlan = Object.fromEntries(
@@ -438,7 +627,12 @@ export function executionPlanIdentity(apiGraph) {
       runtimeHints[field],
     ]),
   );
-  const plan = Object.keys(declaredPlan).length > 0 ? declaredPlan : (executedExpertPlanFromGraph(apiGraph) ?? {});
+  const fields = Object.keys(declaredPlan);
+  const expertOnly = fields.every(
+    (field) => ['resourceMode', 'resolvedResourceMode'].includes(field) && declaredPlan[field] === 'expert',
+  );
+  const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph) : null;
+  const plan = modularPlan ?? (fields.length > 0 ? declaredPlan : (executedExpertPlanFromGraph(apiGraph) ?? {}));
   return {
     hash: sha256Value('execution-plan-v1', plan),
     plan: orderedValue(plan),

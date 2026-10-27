@@ -4,6 +4,7 @@ import { after, before, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { executionPlanIdentity, executionReceiptIdentity } from './live-proof-provenance.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const originalGlobals = Object.fromEntries(
@@ -210,39 +211,67 @@ test('raw coordinate examples are complete prompt text without seeded layout or 
   }
 });
 
-test('an optional user adapter remains incomplete while concrete Base Tarot remains license blocked', () => {
-  const user = card('flux3_klein_fp8r512_lora_style');
-  assert.equal(user.evidencePolicy, 'user_supplied');
-  assert.equal(user.inputRequirements.loraAdapter, true);
-  assert.ok(user.requiredBackendCapabilities.includes('modules.ModularDiffusers.Lora'));
-  assert.deepEqual(user.workflowBlockSettings.lora.model, { source: 'hub', value: '' });
-  assert.match(user.example.blockReason, /compatible immutable user LoRA/);
-  const base = card('flux3_klein_base_fp8r512_lora_style');
-  assert.deepEqual(base.workflowBlocks, ['lora']);
-  assert.ok(base.requiredBackendCapabilities.includes('modules.ModularDiffusers.Lora'));
-  assert.deepEqual(base.executionSelection.loraPolicy, { defaultAdapterName: 'tarot' });
-  assert.deepEqual(base.workflowBlockSettings.lora, {
-    model: {
-      source: 'hub',
-      value: 'diffusers-modular/flux3-tarot-lora',
-      revision: '96fe1071462ed2e95c96035625e9f217d7f61f48',
-      sha256: 'b5adac5ac7232708c2b3b55b1bb7a69c06c0c3e929f96073b7c5c7f3722c946a',
-      byteSize: 80385992,
+test('selected NASA and Monet candidates bind exact adapters and prompts without promoting trial evidence', () => {
+  const candidates = [
+    {
+      id: 'flux3_klein_fp8r512_lora_style',
+      repository: 'kocabiyik/nsc7-style-lora',
+      revision: '9b998d3bdc3b4aeb2113ab4e8cbd9fe2ebfa1cae',
+      sha256: 'ae6c417cb3bb8ee6f5272a8115d7720587319c6099fffa80f8d39bbbf307daf7',
+      byteSize: 160696320,
+      weightName: 'nsc7-style-lora.safetensors',
+      adapterName: 'nsc7',
+      scale: 0.75,
+      prompt:
+        'An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style',
     },
-    weightName: 'pytorch_lora_weights.safetensors',
-    adapterName: 'tarot',
-    scale: 1,
-  });
-  assert.equal(Object.hasOwn(base.workflowBlockSettings.lora.model, 'license'), false);
-  assert.match(base.example.blockReason, /license: other without an explicit grant/);
-  assert.match(base.prompt, /trtcrd/);
+    {
+      id: 'flux3_klein_base_fp8r512_lora_style',
+      repository: 'pjecuacion/flux3-klein-mnt-oil-monet-lora',
+      revision: '0d94b6a4601892499defd8c5d89c24f78e78043b',
+      sha256: 'a25e926d8e5fd0069ed5ee3db67be8ac191df4d713bc807e2abfe61a8f885047',
+      byteSize: 80381072,
+      weightName: 'mnt_oil_klein3.safetensors',
+      adapterName: 'mnt_oil',
+      scale: 1,
+      prompt:
+        'mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.',
+    },
+  ];
+  for (const expected of candidates) {
+    const value = card(expected.id);
+    assert.equal(value.evidencePolicy, 'generated');
+    assert.equal(value.inputRequirements?.loraAdapter, undefined);
+    assert.deepEqual(value.workflowBlocks, ['lora']);
+    assert.ok(value.requiredBackendCapabilities.includes('modules.ModularDiffusers.Lora'));
+    assert.deepEqual(value.executionSelection.loraPolicy, { defaultAdapterName: expected.adapterName });
+    const lora = value.workflowBlockSettings.lora;
+    assert.deepEqual(lora.model, {
+      source: 'hub',
+      value: expected.repository,
+      revision: expected.revision,
+      sha256: expected.sha256,
+      byteSize: expected.byteSize,
+      license: 'FLUX Kommunity License v1.0',
+    });
+    assert.deepEqual(
+      [lora.weightName, lora.adapterName, lora.scale, lora.additionalAdapters],
+      [expected.weightName, expected.adapterName, expected.scale, undefined],
+    );
+    assert.equal(value.prompt, expected.prompt);
+    assert.equal(value.description, expected.prompt);
+    assert.equal(value.negativePrompt, '');
+    assert.match(value.label, /Test Candidate/);
+    assert.match(value.example.blockReason, /output publication approval/);
+    assert.match(value.example.notes, /model_cpu.*autoOffload=true/);
+    assert.match(value.example.notes, /none.*autoOffload=false/);
+    assert.match(value.promptGuide.modelHints.join(' '), /FLUX Kommunity License/);
+  }
 });
 
 // Complete source inputs are not native output, fit or publication proof.
-test('eight fixed-input recipes are source-complete while all ten still require native proof', () => {
-  const fixed = ids.filter((id) => !id.endsWith('_lora_style'));
-  assert.equal(fixed.length, 8);
-  for (const id of fixed) {
+test('all ten fixed-input recipes are source-complete while exact public proof remains pending', () => {
+  for (const id of ids) {
     const value = card(id);
     assert.deepEqual(inputs.resolveTemplateInputs(value).missingLabels, []);
     assert.ok(value.prompt.trim());
@@ -265,9 +294,9 @@ test('eight fixed-input recipes are source-complete while all ten still require 
 
 // This uses captured source metadata and mocked managed input paths only. It
 // constructs ordinary graphs; it does not read media, execute or qualify models.
-test('all eight fixed-input planning cards create exact ordinary FP8r task graphs', async () => {
+test('all ten fixed-input planning cards create exact ordinary FP8r task graphs', async () => {
   const load = (name) => server.ssrLoadModule(`/src/${name}.ts`);
-  const [operations, catalog, choices, requests, creator, flow, defaults, exactness] = await Promise.all([
+  const [operations, catalog, choices, requests, creator, flow, defaults, exactness, visualGroups] = await Promise.all([
     load('workflow/operationContracts'),
     load('workflow/operationCatalog'),
     load('workflow/workflowChoices'),
@@ -276,6 +305,7 @@ test('all eight fixed-input planning cards create exact ordinary FP8r task graph
     load('stores/useFlowStore'),
     load('studio/modelProfiles'),
     load('studio/templateExactness'),
+    load('workflow/visualOperationGroupProjection'),
   ]);
   const captured = JSON.parse(
     await readFile(path.join(ROOT, 'tests/fixtures/public-flux3-template-creators.v1.json'), 'utf8'),
@@ -283,7 +313,12 @@ test('all eight fixed-input planning cards create exact ordinary FP8r task graph
   const capturedBefore = structuredClone(captured);
   assert.equal(captured.activeProvider, null);
   assert.equal(captured.starters.length, 10);
-  for (const key of ['modules.Image.Load', 'modules.Image.Preview', 'modules.ModularDiffusers.ImageEncode']) {
+  for (const key of [
+    'modules.Image.Load',
+    'modules.Image.Preview',
+    'modules.ModularDiffusers.ImageEncode',
+    'modules.ModularDiffusers.Lora',
+  ]) {
     const leaf = captured.registry[key];
     assert.ok(leaf, key);
     assert.equal(`${leaf.module}.${leaf.action}`, key);
@@ -301,9 +336,7 @@ test('all eight fixed-input planning cards create exact ordinary FP8r task graph
   const descriptors = choices.parseWorkflowModelDescriptors(payload, support);
   const registry = structuredClone(captured.registry);
   const registryBefore = structuredClone(registry);
-  const fixed = ids.filter((id) => !id.endsWith('_lora_style'));
-  assert.equal(fixed.length, 8);
-  for (const id of fixed) {
+  for (const id of ids) {
     const value = card(id);
     const cardBefore = structuredClone(value);
     const selected = modelSelection.resolveTemplateModelSelection(value, payload.capabilities);
@@ -417,6 +450,28 @@ test('all eight fixed-input planning cards create exact ordinary FP8r task graph
       );
     };
     edge(nodeFor('modules.ModularDiffusers', 'DecodeLatents'), 'images', preview, 'image');
+    if (value.workflowBlocks?.includes('lora')) {
+      const lora = nodeFor('modules.ModularDiffusers', 'Lora');
+      const expected = value.workflowBlockSettings.lora;
+      assert.deepEqual(lora.data.params.model.value, { source: 'hub', value: expected.model.value });
+      assert.deepEqual(
+        ['revision', 'expected_sha256', 'weight_name', 'adapter_name', 'scale'].map(
+          (field) => lora.data.params[field].value,
+        ),
+        [expected.model.revision, expected.model.sha256, expected.weightName, expected.adapterName, expected.scale],
+      );
+      assert.notEqual(lora.data.params.revision.value, owner.data.params.revision.value);
+      edge(lora, 'lora', owner, 'lora_list');
+      assert.equal(
+        graph.edges.some((item) => item.target === lora.id && item.targetHandle === 'previous_loras'),
+        false,
+      );
+    } else {
+      assert.equal(
+        graph.nodes.some((node) => node.data.action === 'Lora'),
+        false,
+      );
+    }
     if (value.mode === 'edit_image') {
       const image = nodeFor('modules.Image', 'Load');
       const encoder = nodeFor('modules.ModularDiffusers', 'ImageEncode');
@@ -451,6 +506,140 @@ test('all eight fixed-input planning cards create exact ordinary FP8r task graph
       false,
       'PUP starts disabled; graph authoring is not a provider execution',
     );
+    // Ordinary production Run adds correlation plus this durable snapshot,
+    // without a managed Studio resource plan. Use the real creator/exporter;
+    // these are CPU metadata fixtures, never native execution measurements.
+    const apiGraph = flow.useFlowStore.getState().exportGraph('native-expert-proof', undefined, {
+      sourceGraph: grouped,
+      randomizeSeeds: false,
+    });
+    const proofGraph = {
+      ...apiGraph,
+      runtimeHints: { workflowSnapshot: { ...structuredClone(grouped), studioForm: form, studioGraphBinding: null } },
+    };
+    for (const hints of [{}, { resourceMode: 'expert' }]) {
+      const current = { ...proofGraph, runtimeHints: { ...proofGraph.runtimeHints, ...hints } };
+      const plan = executionPlanIdentity(current).plan;
+      assert.equal(plan.source, 'executed-expert-modular-graph-v1', id);
+      assert.equal(plan.modelType, selection.pipelineClass);
+      assert.equal(plan.modelRepo, repository);
+      assert.equal(plan.modelRevision, revision);
+      assert.equal(plan.executionProfileId, selection.executionProfileId);
+      assert.equal(plan.authoringRecipeId, selection.authoringRecipeId);
+      assert.deepEqual(
+        [plan.dtype, plan.weightFormat, plan.quantizationMode, plan.device],
+        ['bfloat16', 'fp8r', 'none', device],
+      );
+      assert.deepEqual([plan.autoOffload, plan.offloadMode, plan.weightLoadingMode], [false, 'none', 'cpu']);
+      assert.equal(
+        executionReceiptIdentity({}, plan).resourceCandidateId,
+        `manual-resource-v1:${selection.pipelineClass}|bfloat16|none|none`,
+      );
+      assert.equal(executionReceiptIdentity({}, plan).peakMemoryBytes, null, 'No fabricated measurement.');
+    }
+    const ordinary = visualGroups.unpackVisualOperationGroups(grouped).graph;
+    const ordinaryApi = flow.useFlowStore.getState().exportGraph('native-expert-proof-ordinary', undefined, {
+      sourceGraph: ordinary,
+      randomizeSeeds: false,
+    });
+    ordinaryApi.runtimeHints = { workflowSnapshot: { ...ordinary, studioForm: form, studioGraphBinding: null } };
+    assert.deepEqual(
+      executionPlanIdentity(ordinaryApi).plan,
+      executionPlanIdentity(proofGraph).plan,
+      'Ordinary and grouped creator graphs prove the same loading recipe.',
+    );
+    if (id === ids[0]) {
+      const loaderId = Object.keys(apiGraph.nodes).find((key) => apiGraph.nodes[key].action === 'ModelsLoader');
+      const parentContext = (g) =>
+        g.runtimeHints.workflowSnapshot.nodes
+          .flatMap((node) => node.data.blockInstanceV2?.effectiveGraph.nodes ?? [node])
+          .find((node) => node.data.operationAuthoring?.ancillaryParent)?.data.operationAuthoring.ancillaryParent;
+      const mutations = [
+        (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.dtype = 'float16';
+        },
+        (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.weightFormat = 'native';
+        },
+        (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.device = 'cuda:9';
+        },
+        (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.autoOffload = true;
+        },
+        (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.modelType = 'OtherPipeline';
+        },
+        (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.modelRepo = 'Other/Model';
+        },
+        (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.trustRemoteCode = true;
+        },
+        (g) => {
+          g.nodes[loaderId].params.repo_id.value = repository;
+        },
+        (g) => {
+          g.nodes[loaderId].params.revision.value = 'main';
+        },
+        (g) => {
+          g.nodes[loaderId].params.trust_remote_code.value = true;
+        },
+        (g) => {
+          g.nodes[loaderId].params.dtype.sourceId = 'foreign';
+        },
+        (g) => {
+          g.nodes[loaderId].params.quant_config.sourceId = 'foreign';
+        },
+        (g) => {
+          g.nodes[loaderId].params.unet.sourceId = 'foreign';
+        },
+        (g) => {
+          g.paths = g.paths.map((row) => row.filter((key) => key !== loaderId));
+        },
+        (g) => {
+          g.nodes.extra = structuredClone(g.nodes[loaderId]);
+          g.paths[0].push('extra');
+        },
+        (g) => {
+          g.runtimeHints.workflowSnapshot.nodes = [];
+        },
+        (g) => {
+          g.runtimeHints.resourceMode = 'auto';
+        },
+        (g) => {
+          parentContext(g).parent.executionProfileId = 'foreign-profile';
+        },
+        (g) => {
+          delete parentContext(g).parent.authoringRecipeId;
+        },
+        (g) => {
+          parentContext(g).parent.task = 'edit_image';
+        },
+        (g) => {
+          parentContext(g).parentRoleNodes.models = 'foreign';
+        },
+        (g) => {
+          parentContext(g).parentRoleNodes.prompt = 'foreign';
+        },
+        (g) => {
+          parentContext(g).parentRoleNodes.decode = parentContext(g).parentRoleNodes.denoise;
+        },
+        (g) => {
+          g.nodes[Object.keys(g.nodes).find((key) => g.nodes[key].action === 'DecodeLatents')].params.vae.sourceId =
+            'foreign';
+        },
+      ];
+      for (const [index, mutate] of mutations.entries()) {
+        const changed = structuredClone(proofGraph);
+        mutate(changed);
+        assert.equal(
+          executionReceiptIdentity({}, executionPlanIdentity(changed).plan).resourceCandidateId,
+          null,
+          `native Expert mismatch ${index} must not recover a receipt identity`,
+        );
+      }
+    }
     assert.deepEqual(value, cardBefore);
     assert.equal(value.example.status, 'blocked');
   }

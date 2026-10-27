@@ -153,6 +153,27 @@ comparison and the Windows validation procedure.
 
 ## Qualification-only blocked-template probes
 
+The two FLUX 3 style planning candidates now name the selected immutable
+adapters: [NASA concept art](https://huggingface.co/kocabiyik/nsc7-style-lora/blob/9b998d3bdc3b4aeb2113ab4e8cbd9fe2ebfa1cae/README.md)
+for Distilled at scale `0.75`, and [Monet oil painting](https://huggingface.co/pjecuacion/flux3-klein-mnt-oil-monet-lora/blob/0d94b6a4601892499defd8c5d89c24f78e78043b/README.md)
+for Base at scale `1`. Both cards declare the
+[FLUX Kommunity License v1.0](https://huggingface.co/black-forest-labs/flux-3-image-klein-base/blob/1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4/LICENSE.md).
+Their training-data provenance is the authors' statement, not independent rights
+verification. The Base planning candidate explicitly replaces Tarot; saved Tarot
+workflows and historical evidence keep their original identities.
+
+These candidates retain the exact radio and fox prompts, seeds `481005` and
+`481105`, 512-square FP8r/BF16 recipes, 16/50 steps and guidance 1/3.5. PUP remains
+disabled. The locked public settings are Expert with no offload and
+`autoOffload=false`. Successful local `model_cpu` / `autoOffload=true` trials
+are a separate recipe and cannot qualify these locks. NASA's advertised style
+effect remains unproved; Monet's painterly scale-zero baseline must be considered
+when reviewing the adapter effect. Inspect actual outputs for invented marks and
+signatures. Both candidates remain blocked planning entries without public media,
+template qualification, Gallery eligibility, hardware-fit proof or output
+publication approval. Adapter terms and local test consent do not approve an
+output's publication.
+
 A complete recipe may remain a blocked planning template while its exact output
 and visual quality are unqualified. The Gallery runner's explicit
 `--allow-blocked-probe --record-qualification` combination may retain a successful

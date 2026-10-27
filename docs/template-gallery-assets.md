@@ -15,10 +15,10 @@ guarantee: monitor the current Hub policy and keep the byte manifest portable
 enough to migrate to another public Dataset namespace if needed.
 
 The checked-in source configuration is
-`src/studio/templateAssetSource.json`. `mode: "local"` is the safe migration
-default; it keeps the current application working until a real Dataset is
-uploaded and verified. Do not replace it with a guessed namespace or a moving
-`main` revision.
+`src/studio/templateAssetSource.json`. The current release selects a public
+Hugging Face Dataset by immutable revision and explicitly lists withheld assets.
+`mode: "local"` remains available for a complete verified local copy. Never replace
+the reviewed source with a guessed namespace or a moving `main` revision.
 
 ## One-time public Dataset setup
 
@@ -45,18 +45,18 @@ Choose a user or organization namespace where you have write permission. The
 recommended repository name is `<namespace>/modiff-template-gallery`. The
 repository must remain public for unauthenticated open-source use.
 
-Before running an upload, settle the Gallery media license. The application is
-Apache-2.0, but that does not automatically license generated outputs, input
-fixtures, model-derived examples, or third-party marks. The current Dataset
-card intentionally uses `license: other` because the 140 checked provenance and
-review records do not declare a reusable asset license. Its metadata is also
-intentionally incomplete, so it cannot be published accidentally. [Hugging
-Face's repository-license contract](https://huggingface.co/docs/hub/en/repositories-licenses)
-requires `license: other` to include both a descriptive `license_name` in
-`docs/template-gallery-dataset-card.md` and the actual terms in
-`docs/template-gallery-dataset-license.txt`; the uploader refuses all Hub
-mutations until both exist. Do not choose Apache-2.0, CC0, CC-BY, or another
-license unless every included asset can legally be distributed on those terms.
+Before running an upload, review the rights for every included file. The
+application is Apache-2.0, but that does not automatically license generated
+outputs, input fixtures, model-derived examples, or third-party marks. The
+Dataset card declares `license: other`,
+`license_name: modiff-template-gallery-mixed-asset-terms`, and `license_link: LICENSE`.
+The complete terms already exist in `docs/template-gallery-dataset-license.txt`;
+they defer to each exact file's rights record and grant no blanket asset license.
+[Hugging Face's repository-license contract](https://huggingface.co/docs/hub/en/repositories-licenses)
+requires a descriptive name and actual terms for `license: other`, and the
+uploader checks both before any Hub mutation. These existing Dataset terms do
+not approve new media. Choose each file's license only after reviewing its source,
+model and adapter terms, attribution, consent, and redistribution rights.
 
 Publication also requires `config/template-asset-rights.v1.json`. It is a
 SHA-bound, one-record-per-file ledger and is uploaded alongside the byte
@@ -71,8 +71,10 @@ record the creator/rightsholder, creation method, source URL and revision,
 source license, model terms, AI-generation flag, likeness/consent status,
 marks, attribution, asset license, reviewer, and review date. Change the
 decision to `approved` only after a human review. The uploader requires exact
-path and SHA coverage and refuses stale, missing, duplicate, or held records
-before authenticating or changing a Hub repository.
+path and SHA coverage and refuses stale, missing, or duplicate records before
+authenticating or changing a Hub repository. Complete publication also refuses
+held records; provisional publication includes only the approved subset and
+retains every hold.
 
 The commands below use the backend environment because it already contains
 `huggingface_hub` and `hf_xet`. Authenticate with a write-scoped token. Never
@@ -151,7 +153,10 @@ has no activation option:
 
 Open the printed manifest URL in a private browser window where you are not
 signed into Hugging Face. It must return JSON. The upload already performed a
-full anonymous byte verification; repeat it independently before activation:
+full anonymous byte verification. For a complete publication, repeat it before
+activation. For a provisional publication, first follow the
+[reviewed approved-subset source update](#reviewed-approved-subset-source-updates)
+procedure, which validates against the candidate descriptor:
 
 ```bash
 ../MoDiff/.venv/bin/python scripts/template-gallery-assets.py verify-remote \
@@ -163,7 +168,7 @@ full anonymous byte verification; repeat it independently before activation:
 Full verification also rejects any stale or unexpected file under the two
 MoDiff-managed prefixes.
 
-Then activate that exact commit:
+For a complete publication only, activate that exact commit:
 
 ```bash
 ../MoDiff/.venv/bin/python scripts/template-gallery-assets.py activate \
@@ -181,17 +186,20 @@ public visibility and every managed asset byte, and only then updates
 
 ## Current publication state
 
-The complete local set contains 360 verified files. The rights ledger approves
-356 and holds four ACE Chinese New Year / Ghibli media files while written
-permission is pending. Publish the approved subset with `upload-provisional`;
-do not activate it. After both permissions are recorded, approve those exact
-four records, run the complete `upload` command, and activate only its fully
-verified immutable revision.
+The checked complete manifest declares 360 files with no missing paths. Its
+rights ledger approves 356 and holds four ACE Chinese New Year / Ghibli media
+files while written permission is pending. The current source descriptor pins
+the public approved subset and names those four unavailable paths. These are
+contract counts, not a claim that every file is materialized in each checkout.
+Recompute them after an asset change.
 
-The current strict inventory has 360 required paths: 358 are used at runtime
-(14 are also used by maintainer tooling) and 2 are tooling-only. Of these, 359
-files are present and total 465.91 MiB; the poster above is the one missing
-path. The scanner covers runtime TypeScript/JavaScript/JSON, generated source,
+Use `upload-provisional` while holds remain and review any new source pin using
+the approved-subset procedure below. Keep each held path and digest unchanged
+until its own permission evidence is recorded. Complete-set `upload` and
+`activate` require a fully approved set.
+
+The strict inventory classifies runtime and maintainer references separately.
+The scanner covers runtime TypeScript/JavaScript/JSON, generated source,
 the public Gallery manifest, maintainer scripts, and JSON/YAML/TOML configs. It
 recognizes `/template-gallery/...`, `public/template-gallery/...`, and bare
 `template-gallery/...` references. Adding a concrete reference in a durable but
@@ -461,9 +469,13 @@ with `download`. After the integrated application test succeeds, review
 2. Add or replace reviewed files and update Gallery qualification metadata.
 3. Run `inventory --write`, `verify`, and the normal Gallery qualification
    gates.
-4. Upload without `--create` to the same public Dataset.
-5. Test the printed revision unauthenticated.
-6. Activate the new commit and run the full frontend acceptance suite.
+4. Refresh the per-file rights skeleton. New or changed bytes remain held until
+   their specific human review; do not use a blanket attestation.
+5. Upload without `--create` to the same public Dataset, using
+   `upload-provisional` while any holds remain, and verify the returned revision
+   anonymously.
+6. Use complete-set activation or the reviewed approved-subset source update,
+   as applicable, then run the required frontend acceptance checks.
 7. Commit the new storage manifest and pinned source configuration together.
 
 Never mutate a released source configuration to `main`, a tag, or a pull-request
@@ -487,6 +499,11 @@ manifest against the complete local manifest and rights ledger. Update only
 Preserve the existing path roots and Dataset type. Never infer these values
 from directory contents or clear a hold to make the sets match.
 
+Preserve the previous descriptor bytes before preparing this change. The edited
+descriptor is a release candidate; do not build or deploy it until verification
+succeeds. If verification fails, restore those exact descriptor bytes and
+retain the failure evidence.
+
 Run `verify-remote --full` against that reviewed descriptor before its commit.
 It validates the exact complete manifest or approved-subset projection and
 rights ledger, then anonymously verifies every included byte and rejects
@@ -498,6 +515,18 @@ complete-set `activate` or `prune-local` for a subset.
 This source update does not approve media rights, template quality, model
 execution, Auto, or Gallery eligibility. New inputs and previews still require
 the normal per-file human rights and template evidence reviews.
+
+`npm run gallery:verify` verifies locally materialized bytes against the active
+source descriptor. For an immutable Hugging Face subset, it requires the exact
+complete storage manifest and rights ledger, verifies every included file's
+byte identity, and reports `withheldAssets` and `withheldExamples` separately
+from `verifiedExamples`. An exclusion must be an explicit rights hold with an
+exact path and hash; held bytes found locally remain withheld. All available
+media, provenance, quality review, and current template checks remain required,
+including the metadata checks for withheld examples. Local-source mode still
+requires the complete Gallery. This check does not approve held content,
+replace anonymous `verify-remote --full`, or establish new execution or quality
+evidence.
 
 ## Live generation batching
 

@@ -4342,7 +4342,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_lora_style',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - Optional User LoRA (Artifact Required)',
+      label: 'FLUX 3 Distilled Quick 512 FP8r - NASA Concept-Art LoRA (Test Candidate)',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'text_to_image',
       modelType: 'Flux3DistilledModularPipeline',
@@ -4367,9 +4367,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
       description:
-        'Create an original studio still life of an unbranded ceramic field radio, a folded linen cloth and a single dried grass stem. Compose a balanced three-quarter tabletop view with warm side lighting, realistic contact shadows and clear separation between the radio and background. Apply only the visual style supplied by the operator-selected compatible LoRA. Preserve a coherent object silhouette and avoid logos, readable text, unrelated objects or imitation of a named artist.',
+        'An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style',
       userGoal:
-        'Inspect the ordinary editable graph and select only the declared runtime and prompt enhancement choices.',
+        'Inspect the pinned NASA concept-art adapter and exact public recipe; style quality and publication remain pending.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
@@ -4396,28 +4396,30 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         },
         runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
         blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. A compatible immutable user LoRA and its reviewed terms must be selected; no shipped adapter or Distilled Tarot compatibility is claimed.',
+          'Native output and template qualification, style-quality review and output publication approval remain pending for this exact public recipe; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. The selected adapter declares FLUX Kommunity License v1.0; its terms do not approve generated output publication.',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. This optional user-artifact card is intentionally incomplete until its adapter is selected and locked; it is not one of the ready-to-probe no-adapter recipes.',
+          'No public output media, template receipt or fit measurement is attached. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; their subtle visual changes do not establish the promised NASA concept-art style. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
-      evidencePolicy: 'user_supplied',
-      inputRequirements: {
-        loraAdapter: true,
-      },
+      evidencePolicy: 'generated',
       workflowBlocks: ['lora'],
       workflowBlockSettings: {
         lora: {
           model: {
             source: 'hub',
-            value: '',
+            value: 'kocabiyik/nsc7-style-lora',
+            revision: '9b998d3bdc3b4aeb2113ab4e8cbd9fe2ebfa1cae',
+            sha256: 'ae6c417cb3bb8ee6f5272a8115d7720587319c6099fffa80f8d39bbbf307daf7',
+            byteSize: 160696320,
+            license: 'FLUX Kommunity License v1.0',
           },
           baseModel: {
             source: 'hub',
             value: 'black-forest-labs/flux-3-image-klein',
             revision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
           },
-          adapterName: 'style',
-          scale: 0.7,
+          weightName: 'nsc7-style-lora.safetensors',
+          adapterName: 'nsc7',
+          scale: 0.75,
         },
       },
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux3_klein_fp8r512_lora_style,
@@ -4427,12 +4429,12 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           'The exact public source profile is required; package qualification alone is not a template image proof.',
           'PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.',
           'With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout.',
-          'The empty Hub adapter input is deliberate. Select an exact compatible reviewed adapter and revision before running; this card supplies no weights or compatibility proof.',
+          "The pinned nsc7 adapter declares FLUX Kommunity License v1.0 and recommends Distilled scale 0.75-1.0. This candidate fixes scale 0.75 and the final nsc7 style trigger. Training-data provenance is the author's statement; no NASA endorsement or public output approval is implied.",
         ],
       },
     },
     [
-      'Create an original studio still life of an unbranded ceramic field radio, a folded linen cloth and a single dried grass stem. Compose a balanced three-quarter tabletop view with warm side lighting, realistic contact shadows and clear separation between the radio and background. Apply only the visual style supplied by the operator-selected compatible LoRA. Preserve a coherent object silhouette and avoid logos, readable text, unrelated objects or imitation of a named artist.',
+      'An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style',
       '',
     ],
     -1,
@@ -4814,7 +4816,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_lora_style',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Tarot LoRA (License Hold)',
+      label: 'FLUX 3 Base 512 FP8r (50 steps) - Monet Oil-Painting LoRA (Test Candidate)',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'text_to_image',
       modelType: 'Flux3ModularPipeline',
@@ -4840,9 +4842,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
       description:
-        'A trtcrd of a single red fox standing on a moss-covered rock in an ancient forest, tarot style, an ornate gold frame, engraved linework, rich restrained colors, no lettering, no logos.',
+        'mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.',
       userGoal:
-        'Inspect the exact Base Tarot adapter and distinct 512 FP8r recipe; license and output evidence remain on hold.',
+        'Inspect the pinned Base Monet replacement and exact public recipe; output qualification and publication remain pending.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
@@ -4869,9 +4871,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         },
         runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
         blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. The exact adapter card declares license: other without an explicit grant; adapter terms and public use remain on hold.',
+          'Native output and template qualification, visual review and output publication approval remain pending for this exact public recipe; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. The selected Monet replacement declares FLUX Kommunity License v1.0; its terms do not approve generated output publication.',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. The named rank16 adapter is Base-trained; historical 1024 receipts do not qualify this 512 recipe or the new trtcrd prompt.',
+          'No public output media, template receipt or fit measurement is attached. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; a painterly baseline alone does not prove adapter benefit. This Base-trained rank16 Monet candidate replaces the public Tarot plan without changing saved Tarot workflows. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
       evidencePolicy: 'generated',
       workflowBlocks: ['lora'],
@@ -4879,13 +4881,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         lora: {
           model: {
             source: 'hub',
-            value: 'diffusers-modular/flux3-tarot-lora',
-            revision: '96fe1071462ed2e95c96035625e9f217d7f61f48',
-            sha256: 'b5adac5ac7232708c2b3b55b1bb7a69c06c0c3e929f96073b7c5c7f3722c946a',
-            byteSize: 80385992,
+            value: 'pjecuacion/flux3-klein-mnt-oil-monet-lora',
+            revision: '0d94b6a4601892499defd8c5d89c24f78e78043b',
+            sha256: 'a25e926d8e5fd0069ed5ee3db67be8ac191df4d713bc807e2abfe61a8f885047',
+            byteSize: 80381072,
+            license: 'FLUX Kommunity License v1.0',
           },
-          weightName: 'pytorch_lora_weights.safetensors',
-          adapterName: 'tarot',
+          weightName: 'mnt_oil_klein3.safetensors',
+          adapterName: 'mnt_oil',
           scale: 1,
         },
       },
@@ -4896,12 +4899,12 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           'The exact public source profile is required; package qualification alone is not a template image proof.',
           'PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.',
           'With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout.',
-          'This exact Base-trained Tarot artifact is named and hash-locked, but its pinned license: other metadata is unresolved. Keep the card blocked until adapter terms, current native quality and new output rights are reviewed.',
+          "The pinned Monet adapter declares FLUX Kommunity License v1.0. Keep mnt_oil at the start of the prompt and scale 1 for this Base candidate. The author warns about invented corner signatures; inspect the actual output. Its training-data provenance is the author's statement, and output publication remains unapproved.",
         ],
       },
     },
     [
-      'A trtcrd of a single red fox standing on a moss-covered rock in an ancient forest, tarot style, an ornate gold frame, engraved linework, rich restrained colors, no lettering, no logos.',
+      'mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.',
       '',
     ],
     -1,
