@@ -1600,6 +1600,17 @@ for (const requested of [
       assert.equal(resized.width, requested.width);
       assert.equal(resized.height, requested.height);
     };
+    const assertAncestorsContain = () => {
+      const nodes = flowStore.useFlowStore.getState().nodes;
+      let child = nodes.find((node) => node.id === target.id);
+      for (let depth = 0; depth < 2; depth++) {
+        const parent = nodes.find((node) => node.id === child.parentId);
+        assert.ok(parent, 'both the immediate container and root are present');
+        assert.ok(child.position.x + child.width <= parent.width, 'ancestor contains child width');
+        assert.ok(child.position.y + child.height <= parent.height, 'ancestor contains child height');
+        child = parent;
+      }
+    };
 
     // Automatic DOM measurement must not relabel the recorded legacy footprint.
     flow.setNodeSize(target.id, 340, 277, { history: false });
@@ -1610,6 +1621,7 @@ for (const requested of [
     flow.setNodeSize(target.id, requested.width, requested.height, { sizeMode: 'compact' });
     flow.commitHistoryTransaction();
     assertSize();
+    assertAncestorsContain();
     const resizedInstance = structuredClone(readInstance());
     assert.deepEqual(resizedInstance.presentation.internalLayout[targetId], {
       ...original.presentation.internalLayout[targetId],
@@ -1638,9 +1650,38 @@ for (const requested of [
     // Moving an expanded frame must not replace the manually sized compact
     // card with its derived child envelope before the next collapse.
     flow.toggleBlockContainerExpandedV2(original.instanceId, targetId);
+    const beforeDrag = structuredClone(readInstance());
+    // Synthetic DOM measurement using the exact expanded envelope retained
+    // from the native follow-up. The workflow's drag-stop callback runs after
+    // React Flow's final position event; exercising only the latter missed it.
+    flowStore.useFlowStore.setState((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === target.id ? { ...node, measured: { width: 2276, height: 873 } } : node,
+      ),
+    }));
+    flow.beginHistoryTransaction('Move nested Block');
     await flow.onNodesChange([{ id: target.id, type: 'position', position: { x: 110, y: 180 }, dragging: false }]);
+    flow.persistBlockCanvasPresentationV2(target.id);
+    flow.commitHistoryTransaction();
+    const afterDrag = structuredClone(readInstance());
+    assert.deepEqual(afterDrag.presentation.internalLayout[targetId], {
+      ...beforeDrag.presentation.internalLayout[targetId],
+      x: 110,
+      y: 180,
+    });
+    assertAncestorsContain();
+    flow.undo();
+    assert.deepEqual(readInstance(), beforeDrag);
+    flow.redo();
+    assert.deepEqual(readInstance(), afterDrag);
     flow.toggleBlockContainerExpandedV2(original.instanceId, targetId);
     assertSize();
+    assertAncestorsContain();
+    const afterCollapse = schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(readInstance())));
+    const reprojected = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(afterCollapse));
+    flowStore.useFlowStore.setState({ nodes: reprojected.nodes, edges: reprojected.edges });
+    assertSize();
+    assertAncestorsContain();
     // A later measurement must not discard the explicit compact-size identity.
     flow.setNodeSize(target.id, requested.width, requested.height + 1, { history: false });
     assert.equal(readInstance().presentation.internalLayout[targetId].sizeMode, 'compact');
@@ -1650,6 +1691,32 @@ for (const requested of [
     );
   });
 }
+
+test('drag-stop keeps measured sizing for unmarked legacy containers and collapsed compact cards', () => {
+  for (const marked of [false, true]) {
+    const root = nestedModularRoot();
+    const instance = root.data.blockInstanceV2;
+    const prepared = runtime.setBlockPresentationV2(instance, {
+      collapsedContainerNodeIds: marked ? ['denoise'] : [],
+      internalLayout: {
+        denoise: { ...instance.presentation.internalLayout.denoise, ...(marked ? { sizeMode: 'compact' } : {}) },
+      },
+    });
+    const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(prepared));
+    const child = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'denoise');
+    flowStore.useFlowStore.setState({
+      nodes: projection.nodes.map((node) =>
+        node.id === child.id ? { ...node, measured: { width: 510, height: 330 } } : node,
+      ),
+      edges: projection.edges,
+    });
+    flowStore.useFlowStore.getState().persistBlockCanvasPresentationV2(child.id);
+    const saved = flowStore.useFlowStore.getState().nodes.find((node) => node.id === root.id).data.blockInstanceV2;
+    assert.equal(saved.presentation.internalLayout.denoise.width, 510);
+    assert.equal(saved.presentation.internalLayout.denoise.height, 330);
+    assert.equal(saved.presentation.internalLayout.denoise.sizeMode, marked ? 'compact' : undefined);
+  }
+});
 
 test('manual projected resize marks an unchanged compact size without marking automatic measurements', () => {
   const root = nestedModularRoot();

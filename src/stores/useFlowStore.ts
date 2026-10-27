@@ -2178,14 +2178,25 @@ export const useFlowStore = create<FlowStore>()(
           const ownerId = node.data.blockProjectionOwnerId;
           const semanticNodeId = node.data.blockProjectionNodeId;
           if (!ownerId || !semanticNodeId) return state;
-          const graph = updateBlockInstanceV2(state, ownerId, (instance) =>
-            repositionBlockChildV2(instance, semanticNodeId, {
+          const graph = updateBlockInstanceV2(state, ownerId, (instance) => {
+            // Workflow's drag-stop callback follows the final position event.
+            // Keep the same compact-size protection here: an expanded frame's
+            // measured envelope must not overwrite its durable manual size.
+            const retainCompactSize =
+              instance.presentation.internalLayout[semanticNodeId]?.sizeMode === 'compact' &&
+              node.data.blockProjectionContainer === true &&
+              node.data.blockProjectionContainerExpanded !== false;
+            return repositionBlockChildV2(instance, semanticNodeId, {
               x: node.position.x,
               y: node.position.y,
-              ...((node.measured?.width ?? node.width) ? { width: node.measured?.width ?? node.width } : {}),
-              ...((node.measured?.height ?? node.height) ? { height: node.measured?.height ?? node.height } : {}),
-            }),
-          );
+              ...(!retainCompactSize && (node.measured?.width ?? node.width)
+                ? { width: node.measured?.width ?? node.width }
+                : {}),
+              ...(!retainCompactSize && (node.measured?.height ?? node.height)
+                ? { height: node.measured?.height ?? node.height }
+                : {}),
+            });
+          });
           return graph ? { nodes: graph.nodes, edges: graph.edges } : state;
         });
       },
