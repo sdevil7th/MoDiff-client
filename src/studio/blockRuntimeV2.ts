@@ -1444,6 +1444,11 @@ function projectedNodeData(
     label,
     category: typeof raw.category === 'string' ? raw.category : 'Block internals',
     params,
+    // Disabled is authored execution state. Other UI state can contain stale
+    // validation or runtime diagnostics and must not enter the projection.
+    ...(isRecord(raw.uiState) && typeof raw.uiState.disabled === 'boolean'
+      ? { uiState: { disabled: raw.uiState.disabled } }
+      : {}),
     // Expanded Block internals are ordinary canvas nodes. Keep the same
     // resize affordance as standalone/User Node internals; the durable size
     // is absorbed into presentation.internalLayout by setFlowNodeSize.
