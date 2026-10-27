@@ -181,8 +181,16 @@ test('current setup guides select the published candidate and identify its revie
     assert.match(text, /codex\/windows-delivery-20261026/, `${guide.pathname} must identify the current candidate`);
   }
   const readme = readFileSync(guides[0], 'utf8');
-  assert.match(readme, /ae09c2014f01198d359a1310d63a1d8d619796be/, 'Reviewed backend commit is missing');
-  assert.match(readme, /fd3d3dacbcda0b4f44ff23497276658f0233eea8/, 'Reviewed client commit is missing');
+  const backendSourceCommit = '9fc204dcf8abb0329ce5365b0d6c0f478982969f';
+  const clientSourceCommit = '5e8be27cc937d3f99a36cf7a5c7672f5cb21abe8';
+  assert.ok(readme.includes(backendSourceCommit), 'Reviewed backend application source commit is missing');
+  assert.ok(readme.includes(clientSourceCommit), 'Reviewed client application source commit is missing');
+  const workflow = readFileSync(new URL('.github/workflows/ci.yml', clientRoot), 'utf8');
+  const backendRefs = Array.from(
+    workflow.matchAll(/repository: sdevil7th\/MoDiff\s+(?:#[^\n]*\n\s*)?ref: ([a-f0-9]{40})/gu),
+    (match) => match[1],
+  );
+  assert.deepEqual(backendRefs, [backendSourceCommit, backendSourceCommit], 'Both CI jobs must pin the source pair');
   assert.match(readme, /interim Windows candidate/i);
   assert.match(readme, /not.*(?:release|released).*`main`/);
 });

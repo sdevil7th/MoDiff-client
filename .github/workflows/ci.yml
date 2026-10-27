@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Paired image stages, scoped enhancement and FLUX3 evaluation contracts.
-          ref: ae09c2014f01198d359a1310d63a1d8d619796be
+          # Reviewed Windows application source before final delivery packaging.
+          ref: 9fc204dcf8abb0329ce5365b0d6c0f478982969f
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -86,7 +86,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: ae09c2014f01198d359a1310d63a1d8d619796be
+          ref: 9fc204dcf8abb0329ce5365b0d6c0f478982969f
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
