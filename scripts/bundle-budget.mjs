@@ -1,3 +1,9 @@
+// Windows Block sizing/disabled-stage/label/default/readiness fixes and the
+// reviewed Vite 8.1.4 -> 8.1.6 security update measure largest/startup/deferred
+// gzip 490814/669295/326710 versus accepted 490492/668797/326749. Add only
+// measured aggregate startup growth 322/498, preserving 8/11-byte headroom.
+// The same four startup and 89 deferred assets retain their loading membership;
+// chunk rules, minifier settings, validators and both deferred caps stay fixed.
 // Bounded native field-accounting/applied-adapter parsing and explicit cache-release
 // feedback measure largest/startup/deferred gzip 490492/668797/326749 versus
 // accepted 488472/666779/326783. Add only measured startup growth 2020/2018,
@@ -230,6 +236,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Add only those measured costs, preserving 8/11/152 bytes of existing headroom.
 // Dependencies, startup membership, lazy boundaries and the 64 KiB chunk cap stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  322 +
   2020 +
   66 +
   189 +
@@ -347,6 +354,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  498 +
   2018 +
   69 +
   190 +

@@ -134,12 +134,24 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+The 28 October Windows candidate measures 669295 gzip bytes of startup
+JavaScript, with a 490814-byte largest startup chunk and 326710 deferred bytes.
+The Block/checkbox/default/readiness correctness fixes and reviewed Vite
+8.1.4 → 8.1.6 security update add 498 aggregate startup bytes and 322 bytes to
+the largest startup chunk versus the last accepted build. Allow only those
+measured increases: current ceilings are 669306 and 490822 bytes, retaining
+11 and 8 bytes of headroom. The same four startup and 89 deferred assets keep
+their loading membership; chunk rules, minifier settings and validators stay
+fixed. Deferred limits remain 326935 bytes aggregate and 65536 bytes per chunk.
+The earlier measurements below describe their historical checkpoints. The
+original failed measurement remains evidence for its original source and limits.
+
 That gate also checks emitted module identity: static imports, dynamic imports
 (including minified backtick strings), and preloads must use one versioned URL
 per module. Duplicate URLs create independent workflow stores and can break
 portable export. Shared Lucide dependencies initialize in `graph-vendor` so
 lazy panels cannot capture undefined icons through an entry-chunk cycle. The
-startup graph ceiling is 642816 gzip bytes, with a 464512-byte largest startup
+earlier startup graph ceiling was 642816 gzip bytes, with a 464512-byte largest startup
 chunk. The reviewed media-migration build measures 642098 startup bytes and
 463792 bytes for its largest startup chunk. Model-change planning and
 right-panel forms remain lazy. Preserving one declared media source across
