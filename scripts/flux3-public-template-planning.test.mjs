@@ -384,6 +384,11 @@ test('all eight fixed-input planning cards create exact ordinary FP8r task graph
     assert.equal(owner.data.params.auto_offload.value, false);
     assert.equal(owner.data.params.offload_mode.value, 'none');
     assert.equal(
+      graph.nodes.some((node) => node.data.action === 'QuantizationConfigNode'),
+      false,
+      `${id}: parent text-encoder quantization requires an explicitly authored derivative`,
+    );
+    assert.equal(
       graph.edges.some((edge) => edge.target === owner.id && edge.targetHandle === 'quant_config'),
       false,
     );

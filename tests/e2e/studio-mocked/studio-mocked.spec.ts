@@ -10980,7 +10980,7 @@ async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false,
     // task-template rows with unrelated older mocked capability records.
     fixture.capabilitiesPayload = current.publicPayload;
     // Cache presence is a mocked transport boundary. Use the exact current
-    // declared FP8r revision/files; it grants no planner or model authority.
+    // declared packed-format revisions/files; it grants no planner or model authority.
     await page.route('**/hf_cache**', (route) =>
       route.fulfill({
         json: fixture.capabilitiesPayload.capabilities
@@ -10998,6 +10998,9 @@ async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false,
             }) => {
               const selected = capability.weightFormatSelections.find((row) => row.weightFormat === 'fp8r');
               if (!selected) throw new Error('Current public source must declare an exact FP8r selection.');
+              const observedSelections = capability.weightFormatSelections
+                .filter((row) => ['fp8r', 'nvfp4'].includes(row.weightFormat))
+                .map((row) => ({ revision: row.revision, files: row.downloadFiles, complete: true }));
               return {
                 id: selected.repo,
                 type: 'model',
@@ -11005,7 +11008,7 @@ async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false,
                 installed: true,
                 planned_revision: selected.revision,
                 planned_files: selected.downloadFiles,
-                observed_selections: [{ revision: selected.revision, files: selected.downloadFiles, complete: true }],
+                observed_selections: observedSelections,
                 revisions: [{ hash: selected.revision, size: 0, last_modified: 0 }],
               };
             },
@@ -12144,134 +12147,211 @@ async function openPublicFlux3Fp8rWorkflow(page: Page, keepAutomatic = false) {
   return { fixture, forbiddenPosts };
 }
 
-for (const accepted of [true, false])
-  test(`ordinary public FLUX3 FP8r Automatic Run ${accepted ? 'submits its accepted graph exactly once' : 'refuses without submission or authored changes'}`, async ({
-    page,
-  }) => {
-    // Current source schemas describe a mocked CUDA/BF16 host and exact cached
-    // artifact selection. The plan response exercises transport only; neither
-    // its acceptance nor catalog source eligibility qualifies a model run.
-    const { forbiddenPosts } = await openPublicFlux3Fp8rWorkflow(page, true);
-    const prompt = page.locator('.react-flow__node').getByLabel('Prompt *', { exact: true });
-    await prompt.fill('A ceramic teapot on a wooden table, soft morning light.');
-    await prompt.blur();
-    const denoiseId = await page.evaluate(
-      () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'Denoise')!.id,
-    );
-    const denoise = page.locator(`.react-flow__node[data-id="${denoiseId}"]`);
-    for (const dimension of ['width', 'height']) {
-      const input = denoise.locator(`[data-key="${dimension}"] input`);
-      await input.fill('512');
-      await input.blur();
-    }
-    const seed = page.locator('.react-flow__node [data-key="seed"] input');
-    const randomSeed = page.getByRole('button', { name: 'Toggle random Seed', exact: true });
-    if ((await randomSeed.getAttribute('aria-pressed')) === 'true') await randomSeed.click();
-    await seed.fill('4109');
-    await seed.blur();
-    await waitForOperationGraphToSettle(page);
-    const before = await publicFlux3FormatSnapshot(page);
-    expect(before.resourceMode).toBe('auto');
-    expect(before.parent.executionProfileId).toBe('flux3-klein:official-provider:v1');
-    expect(before.selection).toMatchObject({
-      pipelineClass: 'Flux3DistilledModularPipeline',
-      repository: { source: 'hub', value: 'black-forest-labs/flux-3-image-klein' },
-      revision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
-      dtype: 'bfloat16',
-      weightFormat: 'fp8r',
-      quantConfigConnected: false,
-    });
-    const readExecution = () =>
-      page.evaluate(async () => {
-        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
-        const graph = useFlowStore.getState().exportGraph('mock-read-only', undefined, { randomizeSeeds: false });
-        return JSON.parse(JSON.stringify({ nodes: graph.nodes, paths: graph.paths })) as Pick<
-          ApiGraphExport,
-          'nodes' | 'paths'
-        >;
-      });
-    const expectedGraph = await readExecution();
-    expect(expectedGraph.nodes[denoiseId]!.params).toMatchObject({ width: { value: 512 }, height: { value: 512 } });
-    expect(expectedGraph.nodes[before.selection.ownerId]!.params).toMatchObject({
-      device: { value: 'cuda:0' },
-      weight_loading_mode: { value: 'cpu' },
-      offload_mode: { value: 'model_cpu' },
-      auto_offload: { value: true },
-    });
-    const plans: Array<{ schemaVersion: number; graph: Pick<ApiGraphExport, 'nodes' | 'paths'> }> = [];
-    const submissions: ApiGraphExport[] = [];
-    const refusal = 'The exact selected FP8r workflow does not fit the available memory.';
-    const plannedGraphHash = `sha256:workflow-auto-v1:${'b'.repeat(64)}`;
-    const consumers = Object.entries(expectedGraph.nodes)
-      .filter(([, node]) => node.action === 'Denoise')
-      .map(([id]) => id);
-    await page.route('**/auto_resource/workflow', (route) => {
-      plans.push(route.request().postDataJSON());
-      return route.fulfill({
-        json: {
-          schemaVersion: 1,
-          graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
-          plannedGraphHash,
-          canAutoRun: accepted,
-          issues: accepted ? [] : [refusal],
-          message: 'Mocked workflow plan transport; no hardware admission claim',
-          patches: [],
-          loaders: [
-            {
-              nodeId: before.selection.ownerId,
-              modelType: before.selection.pipelineClass,
-              repository: 'black-forest-labs/flux-3-image-klein',
-              consumers,
-              candidateId: 'mock-preserved-public-fp8r',
-            },
-          ],
-          requirements: { ramGb: 24, vramGb: 8, diskGb: 0 },
-          available: { ramGb: 28, vramGb: accepted ? 12 : 0, diskGb: 64 },
-          sharedMemory: false,
-        },
-      });
-    });
-    await page.route('**/graph', (route) => {
-      const graph: ApiGraphExport = route.request().postDataJSON();
-      submissions.push(graph);
-      return route.fulfill({
-        json: { error: false, message: 'queued', sid: graph.sid, task_id: 'public-flux3-auto-transport' },
-      });
-    });
-    const run = page.getByTestId('studio-run');
-    await expect(run).toBeEnabled();
-    await run.click();
-    await expect.poll(() => plans.length).toBe(1);
-    expect(plans[0]).toMatchObject({ schemaVersion: 1, graph: expectedGraph });
-    expect(plans[0]!.graph.nodes[before.selection.ownerId]!.params).toMatchObject({
-      model_type: { value: before.selection.pipelineClass },
-      repo_id: { value: before.selection.repository },
-      revision: { value: before.selection.revision },
-      dtype: { value: before.selection.dtype },
-      weight_format: { value: 'fp8r' },
-    });
-    if (accepted) {
-      await expect.poll(() => submissions.length).toBe(1);
-      expect({ nodes: submissions[0]!.nodes, paths: submissions[0]!.paths }).toEqual(expectedGraph);
-      expect(submissions[0]!.runtimeHints).toMatchObject({
-        resourceMode: 'auto',
-        workflowAutoPlan: { schemaVersion: 1, graphHash: plannedGraphHash },
-      });
-      expect(forbiddenPosts).toEqual(['/graph']);
-    } else {
-      const blocked = page.getByRole('dialog', { name: 'Run blocked', exact: true });
-      await expect(blocked).toContainText(`Auto cannot run this workflow: ${refusal}`);
-      await expect(blocked).toContainText('No run was submitted');
-      expect(submissions).toEqual([]);
-      expect(forbiddenPosts).toEqual([]);
-    }
-    await expect(page.getByTestId('topbar-resource-policy')).toHaveAttribute(
-      'aria-label',
-      'Memory policy: Automatic. Click to switch.',
-    );
-    expect(await readExecution()).toEqual(expectedGraph);
-    expect(await publicFlux3FormatSnapshot(page)).toEqual(before);
+/** Explicit derivative authored only through normal generic fields and handles. */
+async function authorPublicFlux3TextEncoderNf4(page: Page) {
+  const format = await publicFlux3FormatControl(page);
+  await format.click();
+  await page.getByRole('option', { name: 'nvfp4', exact: true }).click();
+  await openNodesLibrary(page);
+  await page.getByLabel('Search nodes', { exact: true }).fill('Quantization Config');
+  await page.getByTestId('node-row-modules-ModularDiffusers-QuantizationConfigNode').click();
+  const id = await page.evaluate(() => {
+    const nodes = window
+      .__MODIFF_E2E__!.getState()
+      .flow.nodes.filter((node) => node.action === 'QuantizationConfigNode');
+    if (nodes.length !== 1) throw new Error('Expected one explicitly added generic quantization producer.');
+    return nodes[0]!.id;
   });
+  const node = page.locator(`.react-flow__node[data-id="${id}"]`);
+  const model = node.getByRole('combobox', { name: 'Model ID', exact: true });
+  await model.fill('black-forest-labs/flux-3-image-klein');
+  await page.getByRole('option', { name: 'black-forest-labs/flux-3-image-klein', exact: true }).click();
+  const subfolder = node.locator('[data-key="subfolder"] input');
+  await subfolder.fill('text_encoder');
+  await subfolder.blur();
+  for (const [field, value] of [
+    ['component', 'text_encoder'],
+    ['bnb_4bit_compute_dtype', 'bfloat16'],
+  ]) {
+    await node.locator(`[data-key="${field}"]`).getByRole('button').click();
+    await page.getByRole('option', { name: value, exact: true }).click();
+  }
+  const doubleQuant = node.getByRole('switch', { name: 'Double Quant', exact: true });
+  if ((await doubleQuant.getAttribute('aria-checked')) !== 'true') await doubleQuant.click();
+  const skips = node.locator('[data-key="skip_module_names"] input');
+  await skips.fill('model.visual,lm_head');
+  await skips.blur();
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  await waitForOperationGraphToSettle(page);
+  const source = node.locator('[data-handleid="quantization_config"]');
+  const target = (await publicFlux3FormatSetup(page)).locator('[data-handleid$=":quant_config"]');
+  await expect(source).toBeVisible();
+  await expect(target).toBeVisible();
+  await source.click({ trial: true });
+  await target.click({ trial: true });
+  const from = (await source.boundingBox())!;
+  const to = (await target.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 16 });
+  await page.mouse.up();
+  await waitForOperationGraphToSettle(page);
+  await expect.poll(async () => (await publicFlux3FormatSnapshot(page)).selection.quantConfigConnected).toBe(true);
+  return id;
+}
+
+for (const textEncoderNf4 of [false, true])
+  for (const accepted of [true, false])
+    test(`ordinary public FLUX3 ${textEncoderNf4 ? 'NVFP4 with explicit text-encoder NF4' : 'FP8r'} Automatic Run ${accepted ? 'submits its accepted graph exactly once' : 'refuses without submission or authored changes'}`, async ({
+      page,
+    }) => {
+      // Current source schemas describe a mocked CUDA/BF16 host and exact cached
+      // artifact selection. The plan response exercises transport only; neither
+      // its acceptance nor catalog source eligibility qualifies a model run.
+      const { forbiddenPosts } = await openPublicFlux3Fp8rWorkflow(page, true);
+      const quantizationId = textEncoderNf4 ? await authorPublicFlux3TextEncoderNf4(page) : null;
+      const prompt = page.locator('.react-flow__node').getByLabel('Prompt *', { exact: true });
+      await prompt.fill('A ceramic teapot on a wooden table, soft morning light.');
+      await prompt.blur();
+      const denoiseId = await page.evaluate(
+        () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'Denoise')!.id,
+      );
+      const denoise = page.locator(`.react-flow__node[data-id="${denoiseId}"]`);
+      for (const dimension of ['width', 'height']) {
+        const input = denoise.locator(`[data-key="${dimension}"] input`);
+        await input.fill('512');
+        await input.blur();
+      }
+      const seed = page.locator('.react-flow__node [data-key="seed"] input');
+      const randomSeed = page.getByRole('button', { name: 'Toggle random Seed', exact: true });
+      if ((await randomSeed.getAttribute('aria-pressed')) === 'true') await randomSeed.click();
+      await seed.fill('4109');
+      await seed.blur();
+      await waitForOperationGraphToSettle(page);
+      const before = await publicFlux3FormatSnapshot(page);
+      expect(before.resourceMode).toBe('auto');
+      expect(before.parent.executionProfileId).toBe('flux3-klein:official-provider:v1');
+      expect(before.selection).toMatchObject({
+        pipelineClass: 'Flux3DistilledModularPipeline',
+        repository: { source: 'hub', value: 'black-forest-labs/flux-3-image-klein' },
+        revision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
+        dtype: 'bfloat16',
+        weightFormat: textEncoderNf4 ? 'nvfp4' : 'fp8r',
+        quantConfigConnected: textEncoderNf4,
+      });
+      const readExecution = () =>
+        page.evaluate(async () => {
+          const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+          const graph = useFlowStore.getState().exportGraph('mock-read-only', undefined, { randomizeSeeds: false });
+          return JSON.parse(JSON.stringify({ nodes: graph.nodes, paths: graph.paths })) as Pick<
+            ApiGraphExport,
+            'nodes' | 'paths'
+          >;
+        });
+      const expectedGraph = await readExecution();
+      expect(expectedGraph.nodes[denoiseId]!.params).toMatchObject({ width: { value: 512 }, height: { value: 512 } });
+      expect(expectedGraph.nodes[before.selection.ownerId]!.params).toMatchObject({
+        device: { value: 'cuda:0' },
+        weight_loading_mode: { value: 'cpu' },
+        offload_mode: { value: 'model_cpu' },
+        auto_offload: { value: true },
+      });
+      if (quantizationId) {
+        expect(expectedGraph.nodes[before.selection.ownerId]!.params.quant_config).toEqual({
+          display: 'input',
+          sourceId: quantizationId,
+          sourceKey: 'quantization_config',
+        });
+        expect(expectedGraph.nodes[quantizationId]).toMatchObject({
+          module: 'modules.ModularDiffusers',
+          action: 'QuantizationConfigNode',
+          params: {
+            model_id: { value: { source: 'hub', value: 'black-forest-labs/flux-3-image-klein' } },
+            subfolder: { value: 'text_encoder' },
+            component: { value: 'text_encoder' },
+            quant_type: { value: 'bnb_4bit' },
+            bnb_4bit_quant_type: { value: 'nf4' },
+            bnb_4bit_compute_dtype: { value: 'bfloat16' },
+            bnb_4bit_use_double_quant: { value: true },
+            skip_module_names: { value: 'model.visual,lm_head' },
+            llm_int8_skip_modules: { value: [] },
+          },
+        });
+      }
+      const plans: Array<{ schemaVersion: number; graph: Pick<ApiGraphExport, 'nodes' | 'paths'> }> = [];
+      const submissions: ApiGraphExport[] = [];
+      const refusal = `The exact selected ${textEncoderNf4 ? 'NVFP4/text-encoder NF4' : 'FP8r'} workflow does not fit the available memory.`;
+      const plannedGraphHash = `sha256:workflow-auto-v1:${'b'.repeat(64)}`;
+      const consumers = Object.entries(expectedGraph.nodes)
+        .filter(([, node]) => node.action === 'Denoise')
+        .map(([id]) => id);
+      await page.route('**/auto_resource/workflow', (route) => {
+        plans.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: {
+            schemaVersion: 1,
+            graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+            plannedGraphHash,
+            canAutoRun: accepted,
+            issues: accepted ? [] : [refusal],
+            message: 'Mocked workflow plan transport; no hardware admission claim',
+            patches: [],
+            loaders: [
+              {
+                nodeId: before.selection.ownerId,
+                modelType: before.selection.pipelineClass,
+                repository: 'black-forest-labs/flux-3-image-klein',
+                consumers,
+                candidateId: textEncoderNf4 ? 'mock-explicit-public-nvfp4-text-nf4' : 'mock-preserved-public-fp8r',
+              },
+            ],
+            requirements: { ramGb: 24, vramGb: 8, diskGb: 0 },
+            available: { ramGb: 28, vramGb: accepted ? 12 : 0, diskGb: 64 },
+            sharedMemory: false,
+          },
+        });
+      });
+      await page.route('**/graph', (route) => {
+        const graph: ApiGraphExport = route.request().postDataJSON();
+        submissions.push(graph);
+        return route.fulfill({
+          json: { error: false, message: 'queued', sid: graph.sid, task_id: 'public-flux3-auto-transport' },
+        });
+      });
+      const run = page.getByTestId('studio-run');
+      await expect(run).toBeEnabled();
+      await run.click();
+      await expect.poll(() => plans.length).toBe(1);
+      expect(plans[0]).toMatchObject({ schemaVersion: 1, graph: expectedGraph });
+      expect(plans[0]!.graph.nodes[before.selection.ownerId]!.params).toMatchObject({
+        model_type: { value: before.selection.pipelineClass },
+        repo_id: { value: before.selection.repository },
+        revision: { value: before.selection.revision },
+        dtype: { value: before.selection.dtype },
+        weight_format: { value: textEncoderNf4 ? 'nvfp4' : 'fp8r' },
+      });
+      if (accepted) {
+        await expect.poll(() => submissions.length).toBe(1);
+        expect({ nodes: submissions[0]!.nodes, paths: submissions[0]!.paths }).toEqual(expectedGraph);
+        expect(submissions[0]!.runtimeHints).toMatchObject({
+          resourceMode: 'auto',
+          workflowAutoPlan: { schemaVersion: 1, graphHash: plannedGraphHash },
+        });
+        expect(forbiddenPosts).toEqual(['/graph']);
+      } else {
+        const blocked = page.getByRole('dialog', { name: 'Run blocked', exact: true });
+        await expect(blocked).toContainText(`Auto cannot run this workflow: ${refusal}`);
+        await expect(blocked).toContainText('No run was submitted');
+        expect(submissions).toEqual([]);
+        expect(forbiddenPosts).toEqual([]);
+      }
+      await expect(page.getByTestId('topbar-resource-policy')).toHaveAttribute(
+        'aria-label',
+        'Memory policy: Automatic. Click to switch.',
+      );
+      expect(await readExecution()).toEqual(expectedGraph);
+      expect(await publicFlux3FormatSnapshot(page)).toEqual(before);
+    });
 
 test('ordinary public FLUX3 FP8r control survives Save and cold reload with its exact model identity', async ({
   page,

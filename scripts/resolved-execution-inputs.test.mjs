@@ -263,6 +263,83 @@ test('only the actual native loader capture accepts the exact consumed weight fo
   assert.equal(inputs.coerceResolvedExecutionInputs(receipt(), identity).summary.weightFormat, undefined);
 });
 
+test('connected native NF4 consumed configuration survives strict output history as a bounded flat list', () => {
+  // Match the validated backend adapter's successful snapshot, not Python
+  // config objects or a client-derived claim about loaded tensor precision.
+  const consumed = [
+    'transformer:weight_format=nvfp4;compute_dtype=bfloat16;load_device=cpu',
+    'text_encoder:quantization=bnb_4bit;quant_type=nf4;compute_dtype=bfloat16',
+    'text_encoder:double_quant=true;quant_storage=uint8;load_device=cuda:0',
+    'text_encoder:skip_modules=model.visual,lm_head',
+    'text_encoder:converted_linear_count=252',
+    'text_encoder:placement=model_cpu;current_device=cpu',
+    'text_encoder:recipe_id=flux3-qwen3vl-language-nf4:v1',
+    `text_encoder:signature=${'d'.repeat(64)}`,
+  ];
+  const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    `${backend}.venv/${process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'}`;
+  const generated = spawnSync(
+    python,
+    [
+      '-B',
+      '-c',
+      String.raw`
+import json, sys
+from modiff.execution_input_provenance import capture_generation_inputs, bind_generation_input_origins, build_resolved_execution_inputs
+consumed = json.load(sys.stdin)
+nodes = {
+    "quantization": {"module": "modules.ModularDiffusers", "action": "QuantizationConfigNode", "params": {}},
+    "loader": {"module": "modules.ModularDiffusers", "action": "ModelsLoader", "params": {
+        "quant_config": {"sourceId": "quantization", "sourceKey": "quantization_config"}}},
+    "preview": {"module": "modules.Image", "action": "Preview", "params": {
+        "image": {"sourceId": "loader", "sourceKey": "vae_out"}}},
+}
+args = {"model_type": "Flux3DistilledModularPipeline", "weight_format": "nvfp4",
+        "quant_config": consumed, "weight_loading_mode": "cpu"}
+records = {key: capture_generation_inputs(key, node, args if key == "loader" else {})
+           for key, node in nodes.items()}
+records["loader"] = bind_generation_input_origins("loader", nodes["loader"], records["loader"])
+print(json.dumps(build_resolved_execution_inputs({"nodes": nodes}, records,
+    task_id="actual-task", attempt_index=2, node_id="preview")))
+`,
+    ],
+    { cwd: backend, encoding: 'utf8', input: JSON.stringify(consumed) },
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  const capture = JSON.parse(generated.stdout);
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  const field = capture.nodes.find((node) => node.nodeId === 'loader').fields.quant_config;
+  assert.deepEqual(field, {
+    value: consumed,
+    source: 'connected',
+    sourceNodeId: 'quantization',
+    sourcePortId: 'quantization_config',
+  });
+  assert.deepEqual(capture.summary.quantConfig, consumed);
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture);
+  let output = contracts.coerceStudioOutput({
+    id: 'parent-nf4',
+    url: '/image.webp',
+    ...identity,
+    resolvedExecutionInputs: capture,
+  });
+  for (let reload = 0; reload < 2; reload++) {
+    assert.deepEqual(output.resolvedExecutionInputs, capture);
+    output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+  }
+  for (const invalid of [[{ recipeId: 'not-a-flat-snapshot' }], [consumed], Array(17).fill('entry')]) {
+    const malformed = structuredClone(capture);
+    malformed.nodes.find((node) => node.nodeId === 'loader').fields.quant_config.value = invalid;
+    malformed.summary.quantConfig = invalid;
+    assert.equal(inputs.coerceResolvedExecutionInputs(malformed, identity), undefined);
+  }
+  const changed = structuredClone(capture);
+  changed.summary.quantConfig[2] = 'text_encoder:load_device=cpu';
+  assert.equal(inputs.coerceResolvedExecutionInputs(changed, identity), undefined);
+});
+
 test('merged video metadata keeps requested, consumed and encoded dimensions distinct', () => {
   const value = contracts.coerceStudioOutput({
     id: 'video',

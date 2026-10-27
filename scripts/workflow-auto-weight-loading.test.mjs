@@ -178,6 +178,59 @@ function freshPublicGraph(id) {
   return draft.graph;
 }
 
+function explicitPublicTextEncoderNf4Graph(id, referenceCount = 1) {
+  const graph = modules.groups.unpackVisualOperationGroups(freshPublicGraph(id)).graph;
+  const owner = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+  const encoder = graph.nodes.find((node) => node.data.action === 'EncodePrompt');
+  const denoise = graph.nodes.find((node) => node.data.action === 'Denoise');
+  const quantization = modules.factory.createNodeFromRegistry(
+    'modules.ModularDiffusers.QuantizationConfigNode',
+    fixture.registry,
+    { x: -600, y: -300 },
+  );
+  assert.ok(quantization, 'Use the real generic backend node schema.');
+  const values = {
+    model_id: structuredClone(owner.data.params.repo_id.value),
+    subfolder: 'text_encoder',
+    component: 'text_encoder',
+    quant_type: 'bnb_4bit',
+    bnb_4bit_quant_type: 'nf4',
+    bnb_4bit_compute_dtype: 'bfloat16',
+    bnb_4bit_use_double_quant: true,
+    llm_int8_skip_modules: [],
+    llm_int8_has_fp16_weight: false,
+    llm_int8_threshold: 6,
+    skip_module_names: 'model.visual,lm_head',
+  };
+  for (const [field, value] of Object.entries(values)) {
+    assert.ok(quantization.data.params[field], `The backend must publish ${field}.`);
+    quantization.data.params[field].value = value;
+  }
+  owner.data.params.weight_format.value = 'nvfp4';
+  owner.data.params.device.value = 'cuda:0';
+  owner.data.params.weight_loading_mode.value = 'cpu';
+  owner.data.params.offload_mode.value = 'model_cpu';
+  owner.data.params.auto_offload.value = true;
+  encoder.data.params.prompt.value = `Authored explicit text-encoder NF4 ${id}`;
+  denoise.data.params.seed.value = { value: 4109, random: false };
+  const image = graph.nodes.find((node) => node.data.module === 'modules.Image' && node.data.action === 'Load');
+  if (image)
+    image.data.params.file.value = ['unit-managed-inputs/cobalt.png', 'unit-managed-inputs/layout.png'].slice(
+      0,
+      referenceCount,
+    );
+  graph.nodes.push(quantization);
+  graph.edges.push({
+    id: `edge-${quantization.id}-quantization_config-${owner.id}-quant_config`,
+    source: quantization.id,
+    sourceHandle: 'quantization_config',
+    target: owner.id,
+    targetHandle: 'quant_config',
+    type: 'default',
+  });
+  return { graph, owner, quantization, values };
+}
+
 test('current public profiles seed bounded defaults through ordinary backend starters without changing authored graphs', () => {
   const contracts = modules.operations.parseOperationContracts(
     fixture.publicPayload.operationContracts,
@@ -202,6 +255,10 @@ test('current public profiles seed bounded defaults through ordinary backend sta
     assert.equal(value(owner, 'model_type'), selected.pipelineClass);
     assert.equal(value(owner, 'weight_format'), 'fp8r');
     assert.equal(value(owner, 'dtype'), 'bfloat16');
+    assert.equal(
+      effective.nodes.some((node) => node.data.action === 'QuantizationConfigNode'),
+      false,
+    );
     assert.deepEqual([value(denoise, 'width'), value(denoise, 'height')], [512, 512]);
     assert.equal(value(denoise, 'num_inference_steps'), id.includes('Distilled') ? 16 : 50);
     if (selected.pipelineClass === 'Flux3ModularPipeline') {
@@ -214,6 +271,90 @@ test('current public profiles seed bounded defaults through ordinary backend sta
       selected.task === 'edit_image',
     );
   }
+});
+
+test('explicit public text-encoder NF4 remains an authored derivative through accepted and refused Auto transport', async () => {
+  const registryBefore = structuredClone(fixture.registry);
+  for (const { id } of publicSelections) {
+    for (const accepted of [true, false]) {
+      const { graph, owner, quantization, values } = explicitPublicTextEncoderNf4Graph(id, 2);
+      flow().replaceGraph(graph);
+      const before = exported();
+      const snapshot = structuredClone(flow().toObject());
+      const submissions = [],
+        requests = [];
+      globalThis.fetch = async (url, init) => {
+        const body = JSON.parse(init.body);
+        requests.push(String(url));
+        if (String(url).endsWith('/auto_resource/workflow')) {
+          assert.deepEqual(body.graph.nodes, JSON.parse(JSON.stringify(before.nodes)));
+          return response({
+            ...plan([]),
+            canAutoRun: accepted,
+            issues: accepted ? [] : ['The exact NVFP4/text-encoder NF4 cold recipe exceeds available memory'],
+          });
+        }
+        assert.ok(accepted, 'A refused plan cannot reach Graph.');
+        assert.ok(String(url).endsWith('/graph'));
+        submissions.push(body);
+        return response({ task_id: `mock-nf4-${id}`, sid: 'session-1', message: 'queued' });
+      };
+      modules.studio.useStudioStore.setState({ form: { ...form, resourceMode: 'auto' } });
+      if (accepted) {
+        const result = await modules.coordinator.coordinateGraphRun({ sid: 'session-1' });
+        assert.equal(submissions.length, 1);
+        assert.deepEqual(result.submittedGraph.nodes, before.nodes);
+        assert.deepEqual(result.submittedGraph.paths, before.paths);
+        assert.equal(result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash, plan([]).plannedGraphHash);
+      } else {
+        await assert.rejects(modules.coordinator.coordinateGraphRun({ sid: 'session-1' }), /NVFP4\/text-encoder NF4/);
+        assert.equal(submissions.length, 0);
+      }
+      assert.equal(requests.length, accepted ? 2 : 1);
+      assert.deepEqual(exported(), before);
+      assert.deepEqual(flow().toObject(), snapshot);
+      assert.deepEqual(before.nodes[owner.id].params.quant_config, {
+        value: undefined,
+        display: 'input',
+        sourceId: quantization.id,
+        sourceKey: 'quantization_config',
+      });
+      for (const [field, value] of Object.entries(values))
+        assert.deepEqual(before.nodes[quantization.id].params[field].value, value, `${id}:${field}`);
+      assert.equal(before.nodes[owner.id].params.weight_format.value, 'nvfp4');
+      flow().replaceGraph(JSON.parse(JSON.stringify(snapshot)));
+      assert.deepEqual(exported(), before, 'Save-shaped round trips retain the exact producer and connection.');
+    }
+  }
+  assert.deepEqual(fixture.registry, registryBefore, 'Explicit instance edits cannot change registry defaults.');
+});
+
+test('a pending explicit text-encoder NF4 Auto plan cannot submit after a producer control changes', async () => {
+  const { graph, quantization } = explicitPublicTextEncoderNf4Graph(publicSelections[0].id);
+  flow().replaceGraph(graph);
+  let started, release;
+  const ready = new Promise((resolve) => {
+    started = resolve;
+  });
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    assert.ok(String(url).endsWith('/auto_resource/workflow'));
+    started();
+    return pending;
+  };
+  const run = modules.coordinator.coordinateGraphRun({ sid: 'session-1' });
+  await ready;
+  flow().setParamWithHistory(quantization.id, 'skip_module_names', 'model.visual');
+  const changed = structuredClone(flow().toObject());
+  release(response(plan([])));
+  await assert.rejects(run, /workflow or mode changed/);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(flow().toObject(), changed);
+  assert.equal(modules.studio.useStudioStore.getState().currentRunContext, null);
 });
 
 test('real public ordinary graphs retain authored values through one accepted Auto submission and Expert bypass', async () => {
