@@ -149,6 +149,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
           node.id,
           Math.max(260, Math.min(modiffLayout.maxNodeWidth, initialWidth + (moveEvent.clientX - startX) / zoom)),
           Math.max(minimumHeight, initialHeight + (moveEvent.clientY - startY) / zoom),
+          { sizeMode: 'compact' },
         );
         scheduleNodeLayoutSync();
       };

@@ -454,6 +454,27 @@ test('presentation is hash-independent and inserted instances do not share value
   assert.equal(parsed.effectiveGraph.graphHash, fixture.graph.graphHash);
 });
 
+test('compact internal sizes round-trip as presentation only and reject unknown size modes', () => {
+  const original = schema.createBlockInstanceV2(definition(), {
+    instanceId: 'compact-layout',
+    position: { x: 0, y: 0 },
+    size: { width: 340, height: 360 },
+    internalLayout: { generate: { x: 28, y: 76, width: 371, height: 312 } },
+  });
+  assert.deepEqual(schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(original))), original);
+  const compact = structuredClone(original);
+  compact.presentation.internalLayout.generate.sizeMode = 'compact';
+  assert.deepEqual(schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(compact))), compact);
+  assert.deepEqual(compact.effectiveGraph, original.effectiveGraph);
+  assert.deepEqual(compact.definitionSnapshot, original.definitionSnapshot);
+  assert.deepEqual(compact.authorities, original.authorities);
+  for (const invalid of [null, false, 1, '', 'expanded', {}, ['compact']]) {
+    const broken = structuredClone(compact);
+    broken.presentation.internalLayout.generate.sizeMode = invalid;
+    assert.throws(() => schema.normalizeBlockInstanceV2(broken), /sizeMode.*compact/u);
+  }
+});
+
 test('explicit empty values survive round-trip and do not fall back to defaults', () => {
   for (const [suffix, value] of [
     ['empty', ''],

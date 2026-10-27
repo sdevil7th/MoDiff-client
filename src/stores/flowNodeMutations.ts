@@ -182,7 +182,7 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
   });
 }
 
-export function setFlowNodeSize(id: string, width: number, height: number, set: FlowStoreSet) {
+export function setFlowNodeSize(id: string, width: number, height: number, set: FlowStoreSet, sizeMode?: 'compact') {
   set((state) => {
     const node = state.nodes.find((item) => item.id === id);
     if (!node) {
@@ -198,7 +198,10 @@ export function setFlowNodeSize(id: string, width: number, height: number, set: 
     if (
       node.width === width &&
       node.height === height &&
-      (!owner || (previousLayout?.width === width && previousLayout?.height === height))
+      (!owner ||
+        (previousLayout?.width === width &&
+          previousLayout?.height === height &&
+          (sizeMode === undefined || previousLayout?.sizeMode === sizeMode)))
     ) {
       return state;
     }
@@ -212,6 +215,9 @@ export function setFlowNodeSize(id: string, width: number, height: number, set: 
                 y: node.position.y,
                 width,
                 height,
+                // Measurements preserve an existing manual size, but never
+                // relabel unmarked legacy expanded geometry as compact.
+                ...((sizeMode ?? previousLayout?.sizeMode) ? { sizeMode: sizeMode ?? previousLayout?.sizeMode } : {}),
               },
             },
           })

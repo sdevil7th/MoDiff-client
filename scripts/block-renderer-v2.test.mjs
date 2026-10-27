@@ -1542,6 +1542,130 @@ test('automatic projected-node measurements preserve Redo while explicit resizin
   assert.match(source, /setNodeSize\(node\.id, current\.width \?\? 280, minimumHeight, \{ history: false \}\)/u);
 });
 
+for (const requested of [
+  { width: 371, height: 312 },
+  { width: 900, height: 900 },
+]) {
+  test(`nested compact resize survives legacy footprint detection, history and reload (${requested.width}x${requested.height})`, async () => {
+    // Mocked hierarchy with the exact compact and child geometry recorded by
+    // the native Qwen Core Denoise Step failure. No private workflow is needed.
+    const parentId = 'container:denoise';
+    const targetId = 'container:denoise/text2image';
+    const candidate = definition();
+    candidate.graph.nodes[0].modularDiffusers = modularMetadata(
+      'generate',
+      ['denoise', 'text2image', 'input'],
+      ['denoise', 'text2image'],
+    );
+    candidate.graph.nodes.unshift(
+      {
+        nodeId: parentId,
+        nodeType: 'group',
+        data: { type: 'group', label: 'Auto Denoise', params: {} },
+        modularDiffusers: modularMetadata(parentId, ['denoise'], undefined, 'conditional'),
+      },
+      {
+        nodeId: targetId,
+        nodeType: 'group',
+        data: { type: 'group', label: 'Core Denoise', params: {} },
+        modularDiffusers: modularMetadata(targetId, ['denoise', 'text2image'], ['denoise'], 'sequential'),
+      },
+    );
+    candidate.graph.executionOrder = [parentId, targetId, 'generate'];
+    candidate.graph.graphHash = schema.blockGraphHashV2(candidate.graph);
+    candidate.contentHash = schema.blockDefinitionContentHashV2(candidate);
+    const original = runtime.setBlockPresentationV2(
+      schema.createBlockInstanceV2(candidate, {
+        instanceId: 'recorded-compact-resize',
+        position: { x: 180, y: 120 },
+        size: { width: 360, height: 325 },
+        internalLayoutMode: 'hierarchical',
+        collapsedContainerNodeIds: [targetId],
+        internalLayout: {
+          [parentId]: { x: 1218, y: 104, width: 340, height: 277 },
+          [targetId]: { x: 63.01389391066368, y: 131.2850956484163, width: 340, height: 277 },
+          generate: { x: 28, y: 76, width: 340, height: 132 },
+        },
+      }),
+      { expanded: true },
+    );
+    const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(original));
+    flowStore.useFlowStore.setState({ nodes: projection.nodes, edges: projection.edges });
+    const flow = flowStore.useFlowStore.getState();
+    const target = projection.nodes.find((node) => node.data.blockProjectionNodeId === targetId);
+    const readInstance = () =>
+      flowStore.useFlowStore.getState().nodes.find((node) => node.id === original.instanceId).data.blockInstanceV2;
+    const assertSize = () => {
+      const resized = flowStore.useFlowStore.getState().nodes.find((node) => node.id === target.id);
+      assert.equal(resized.width, requested.width);
+      assert.equal(resized.height, requested.height);
+    };
+
+    // Automatic DOM measurement must not relabel the recorded legacy footprint.
+    flow.setNodeSize(target.id, 340, 277, { history: false });
+    assert.deepEqual(readInstance().presentation.internalLayout, original.presentation.internalLayout);
+    assert.equal(flowStore.useFlowStore.getState().nodes.find((node) => node.id === target.id).height, 176);
+
+    flow.beginHistoryTransaction('Resize Modular Diffusers block');
+    flow.setNodeSize(target.id, requested.width, requested.height, { sizeMode: 'compact' });
+    flow.commitHistoryTransaction();
+    assertSize();
+    const resizedInstance = structuredClone(readInstance());
+    assert.deepEqual(resizedInstance.presentation.internalLayout[targetId], {
+      ...original.presentation.internalLayout[targetId],
+      ...requested,
+      sizeMode: 'compact',
+    });
+    assert.deepEqual(resizedInstance.effectiveGraph, original.effectiveGraph);
+    assert.deepEqual(resizedInstance.definitionSnapshot, original.definitionSnapshot);
+    assert.deepEqual(resizedInstance.values, original.values);
+    assert.deepEqual(resizedInstance.authorities, original.authorities);
+
+    flow.undo();
+    assert.deepEqual(readInstance().presentation.internalLayout, original.presentation.internalLayout);
+    flow.redo();
+    flow.ensureBlockProjectionV2(original.instanceId);
+    assertSize();
+
+    const reloaded = schema.normalizeBlockInstanceV2(JSON.parse(JSON.stringify(readInstance())));
+    const restored = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(reloaded));
+    flowStore.useFlowStore.setState({ nodes: restored.nodes, edges: restored.edges });
+    assertSize();
+    await flow.onNodesChange([{ id: target.id, type: 'position', position: { x: 90, y: 160 }, dragging: false }]);
+    assert.equal(readInstance().presentation.internalLayout[targetId].sizeMode, 'compact');
+    flow.ensureBlockProjectionV2(original.instanceId);
+    assertSize();
+    // Moving an expanded frame must not replace the manually sized compact
+    // card with its derived child envelope before the next collapse.
+    flow.toggleBlockContainerExpandedV2(original.instanceId, targetId);
+    await flow.onNodesChange([{ id: target.id, type: 'position', position: { x: 110, y: 180 }, dragging: false }]);
+    flow.toggleBlockContainerExpandedV2(original.instanceId, targetId);
+    assertSize();
+    // A later measurement must not discard the explicit compact-size identity.
+    flow.setNodeSize(target.id, requested.width, requested.height + 1, { history: false });
+    assert.equal(readInstance().presentation.internalLayout[targetId].sizeMode, 'compact');
+    assert.equal(
+      flowStore.useFlowStore.getState().nodes.find((node) => node.id === target.id).height,
+      requested.height + 1,
+    );
+  });
+}
+
+test('manual projected resize marks an unchanged compact size without marking automatic measurements', () => {
+  const root = nestedModularRoot();
+  const projection = runtime.materializeBlockProjectionV2(root);
+  flowStore.useFlowStore.setState({ nodes: projection.nodes, edges: projection.edges });
+  const child = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+  const flow = flowStore.useFlowStore.getState();
+  flow.setNodeSize(child.id, child.width, child.height, { history: false });
+  const currentLayout = () =>
+    flowStore.useFlowStore.getState().nodes.find((node) => node.id === root.id).data.blockInstanceV2.presentation
+      .internalLayout[child.data.blockProjectionNodeId];
+  assert.equal(currentLayout().sizeMode, undefined);
+  flow.setNodeSize(child.id, child.width, child.height, { sizeMode: 'compact' });
+  assert.equal(currentLayout().sizeMode, 'compact');
+});
+
 test('both composite generations use one shared frame and V2 stays on the block renderer', () => {
   const blockSource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'BlockNode.tsx'), 'utf8');
   const legacySource = fs.readFileSync(path.join(ROOT, 'src', 'components', 'LegacyUserBlockNode.tsx'), 'utf8');

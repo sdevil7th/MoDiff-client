@@ -228,8 +228,18 @@ function persistFinalBlockV2ProjectionPositions(
       );
 
     const previous = root.data.blockInstanceV2.presentation.internalLayout[semanticNodeId];
-    const width = projection.measured?.width ?? projection.width ?? previous?.width;
-    const height = projection.measured?.height ?? projection.height ?? previous?.height;
+    // An expanded frame's derived bounds are not the manually sized compact
+    // card. A header move may update position without replacing that own size.
+    const retainCompactSize =
+      previous?.sizeMode === 'compact' &&
+      projection.data.blockProjectionContainer === true &&
+      projection.data.blockProjectionContainerExpanded !== false;
+    const width = retainCompactSize
+      ? previous.width
+      : (projection.measured?.width ?? projection.width ?? previous?.width);
+    const height = retainCompactSize
+      ? previous.height
+      : (projection.measured?.height ?? projection.height ?? previous?.height);
     const blockInstanceV2 = setBlockPresentationV2(root.data.blockInstanceV2, {
       internalLayout: {
         [semanticNodeId]: {
@@ -237,6 +247,7 @@ function persistFinalBlockV2ProjectionPositions(
           y: projection.position.y,
           ...(typeof width === 'number' && Number.isFinite(width) && width > 0 ? { width } : {}),
           ...(typeof height === 'number' && Number.isFinite(height) && height > 0 ? { height } : {}),
+          ...(previous?.sizeMode ? { sizeMode: previous.sizeMode } : {}),
         },
       },
     });

@@ -211,7 +211,12 @@ export type FlowStore = {
     value: NodeParams[K],
     key?: K,
   ) => void;
-  setNodeSize: (id: string, width: number, height: number, options?: { history?: boolean }) => void;
+  setNodeSize: (
+    id: string,
+    width: number,
+    height: number,
+    options?: { history?: boolean; sizeMode?: 'compact' },
+  ) => void;
   getNodeParamsValues: (id: string) => Record<string, unknown>;
   replaceNodeParams: (id: string, params: Record<string, NodeParams>) => void;
   setNodeUiState: (id: string, uiState: Partial<NonNullable<NodeData['uiState']>>) => void;
@@ -1836,7 +1841,7 @@ export const useFlowStore = create<FlowStore>()(
         }
       },
       setNodeSize: (id: string, width: number, height: number, options) => {
-        const resize = () => setFlowNodeSize(id, width, height, set);
+        const resize = () => setFlowNodeSize(id, width, height, set, options?.sizeMode);
         if (options?.history === false) resize();
         else get().withHistory('Resize node', resize);
       },

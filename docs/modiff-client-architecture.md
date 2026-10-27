@@ -843,7 +843,14 @@ readers reject new declarations rather than silently dropping them.
 `BlockInstanceV2.presentation.internalLayout` stores each node's compact own
 box relative to its immediate semantic parent. It must not store a recursively
 expanded subtree size. At render time the projector measures visible children
-bottom-up, derives expanded ancestor bounds with header/right/bottom padding,
+bottom-up. An explicit nested-card resize sets that layout entry's optional
+`sizeMode: 'compact'`; subsequent moves and DOM minimum-size measurements retain
+it, but measurements never create it. Both client and backend reject any other
+present value. Moving an expanded frame retains its marked compact dimensions
+rather than persisting the derived child envelope. Unmarked entries keep the legacy expanded-footprint migration,
+so manual sizes are not confused with historical recursive bounds. This marker
+is presentation-only and cannot change graph hashes or execution authority.
+The projector derives expanded ancestor bounds with header/right/bottom padding,
 and shifts colliding siblings without rewriting the saved preferred positions.
 The same collision solver applies to root-relative (non-hierarchical) Blocks,
 including standard-pipeline catalog routes. Root-relative coordinates are

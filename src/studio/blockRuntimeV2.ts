@@ -1543,7 +1543,8 @@ function projectedOwnSizeV2(
   // Catalogs produced before progressive disclosure stored a container's
   // complete recursive footprint in its one width/height pair. Detect that
   // legacy geometry from its immediate child bounds and restore the compact
-  // card size. Expanded dimensions are derived separately below.
+  // card size unless an explicit compact resize has supplied an unambiguous
+  // size mode. Expanded dimensions are derived separately below.
   const containsStoredChild = directChildren.some((child) => {
     const childLayout = layoutByNodeId.get(child.nodeId);
     if (!childLayout) return false;
@@ -1551,7 +1552,7 @@ function projectedOwnSizeV2(
     const childHeight = childLayout.height ?? INTERNAL_CONTAINER_MIN_HEIGHT;
     return width >= childLayout.x + childWidth + 20 || height >= childLayout.y + childHeight + 20;
   });
-  if (containsStoredChild) {
+  if (containsStoredChild && layout.sizeMode !== 'compact') {
     width = INTERNAL_CONTAINER_WIDTH;
     height = defaultHeight;
   }
