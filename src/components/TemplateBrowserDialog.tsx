@@ -552,11 +552,10 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   );
   const filteredTemplates = useMemo(() => {
     const source = filter.category === 'experimental' ? BROWSER_CATALOG_TEMPLATES : STUDIO_TEMPLATES;
-    const category = filter.category === 'experimental' ? 'all' : filter.category;
     const filtered = filterStudioTemplates(
       source,
       form,
-      { ...effectiveFilter, category },
+      effectiveFilter,
       (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
     );
     if (filter.category !== 'experimental') return filtered;
@@ -565,7 +564,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   const catalogTemplates = useMemo(
     () =>
       filterStudioTemplates(
-        BROWSER_CATALOG_TEMPLATES,
+        STUDIO_TEMPLATES,
         form,
         {
           ...effectiveFilter,
@@ -580,8 +579,16 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     [effectiveFilter, form, runtimeEstimateForTemplate],
   );
   const experimentalTemplateCount = useMemo(
-    () => catalogTemplates.filter(isExperimentalTemplate).length,
-    [catalogTemplates, isExperimentalTemplate],
+    () =>
+      filterStudioTemplates(BROWSER_CATALOG_TEMPLATES, form, {
+        ...effectiveFilter,
+        category: 'experimental',
+        query: '',
+        modelType: 'all',
+        mode: 'all',
+        difficulty: 'all',
+      }).filter(isExperimentalTemplate).length,
+    [effectiveFilter, form, isExperimentalTemplate],
   );
   const publishedTemplateCount = useMemo(
     () => catalogTemplates.filter((template) => templateHasPublishedMedia(template, manifest)).length,

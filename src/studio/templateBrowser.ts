@@ -6,6 +6,10 @@ import {
   VIDEO_STUDIO_MODES,
 } from './modelProfiles';
 import { resolveTemplateAssetUrl } from './templateAssets';
+import {
+  AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
+  IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
+} from './templateOperationSelections';
 import type {
   StudioFormState,
   StudioMode,
@@ -184,6 +188,33 @@ function recommendedRank(template: StudioTemplate, form: StudioFormState) {
   return rank;
 }
 
+/** Explicit planning discovery only; this grants no model or execution eligibility. */
+function hasDeclaredExperimentalCreator(template: StudioTemplate) {
+  const selection = template.executionSelection;
+  const declared = IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id] ?? AUDIO_TEMPLATE_EXECUTION_SELECTIONS[template.id];
+  const artifact = template.modelArtifact;
+  if (
+    !selection ||
+    !declared ||
+    selection.schemaVersion !== 1 ||
+    selection.memoryPolicy !== 'custom_experimental' ||
+    declared.memoryPolicy !== 'custom_experimental' ||
+    selection.bindingSpec?.modelType !== template.modelType ||
+    selection.bindingSpec?.mode !== template.mode ||
+    declared.bindingSpec.modelType !== template.modelType ||
+    declared.bindingSpec.mode !== template.mode
+  )
+    return false;
+  for (const key of ['pipelineClass', 'task', 'executionProfileId', 'authoringRecipeId', 'implementation'] as const) {
+    const value = selection[key];
+    if (typeof value !== 'string' || !value.trim() || value !== declared[key]) return false;
+  }
+  if (!artifact || typeof artifact.value !== 'string' || !artifact.value.trim()) return false;
+  return artifact.source === 'hub'
+    ? /^[0-9a-f]{40}$/i.test(artifact.revision ?? '')
+    : artifact.source === 'local' && /^[0-9a-f]{64}$/i.test(artifact.sha256 ?? '');
+}
+
 export function filterStudioTemplates(
   templates: StudioTemplate[],
   form: StudioFormState,
@@ -200,12 +231,12 @@ export function filterStudioTemplates(
       !isStudioModelVisibleInCatalog(template.modelType, {
         currentModelType: form.modelType,
         includeWorkflowOnly: true,
-      })
+      }) &&
+      !(selectedCategory === 'experimental' && hasDeclaredExperimentalCreator(template))
     )
       return false;
     if (selectedCategory === 'recommended' && blocked) return false;
-    if (selectedCategory === 'experimental') return false;
-    if (selectedCategory !== 'recommended' && selectedCategory !== 'all') {
+    if (selectedCategory !== 'recommended' && selectedCategory !== 'all' && selectedCategory !== 'experimental') {
       if (!templateCategoryIds(template).includes(selectedCategory)) return false;
     }
     if (filter.modelType !== 'all' && template.modelType !== filter.modelType) return false;

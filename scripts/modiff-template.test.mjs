@@ -4261,6 +4261,97 @@ test('template browser exposes the complete workflow catalog across task and ada
   assert.ok(completeInventory.length >= defaultInventory.length);
 });
 
+test('Experimental discovers all ten declared FLUX3 planning creators without promoting ordinary discovery', () => {
+  const { STUDIO_TEMPLATES, PLANNING_STUDIO_TEMPLATES } = templatesModule;
+  const planning = PLANNING_STUDIO_TEMPLATES.filter((template) => /^flux3_klein(?:_base)?_fp8r512_/.test(template.id));
+  assert.equal(planning.length, 10);
+  const before = JSON.stringify(planning);
+  const form = profilesModule.DEFAULT_STUDIO_FORM;
+  const filter = {
+    category: 'experimental',
+    includeBlocked: true,
+    query: '',
+    modelType: 'all',
+    mode: 'all',
+    difficulty: 'all',
+    sort: 'recommended',
+  };
+  const shown = (entries, changes = {}) =>
+    browserModule.filterStudioTemplates(entries, form, { ...filter, ...changes });
+  assert.deepEqual(
+    shown(planning)
+      .map(({ id }) => id)
+      .sort(),
+    planning.map(({ id }) => id).sort(),
+  );
+  assert.equal(shown(planning, { query: 'FLUX 3' }).length, 10);
+  assert.equal(shown(planning, { query: 'Ceramic Radio' }).length, 2);
+  assert.equal(shown(planning, { mode: 'text_to_image' }).length, 6);
+  assert.equal(shown(planning, { modelType: 'Flux3ModularPipeline' }).length, 5);
+  assert.equal(shown(planning, { includeBlocked: false }).length, 0);
+  assert.equal(shown(planning, { difficulty: 'starter' }).length, 0);
+  for (const category of ['all', 'recommended', 'image', 'edit', 'adapters'])
+    assert.equal(
+      shown([...STUDIO_TEMPLATES, ...planning], { category }).some((item) => planning.includes(item)),
+      false,
+    );
+  for (const template of planning) {
+    assert.equal(
+      profilesModule.isStudioModelVisibleInCatalog(template.modelType, { includeWorkflowOnly: true }),
+      false,
+    );
+    assert.equal(template.difficulty, 'blocked');
+    assert.equal(template.example.status, 'blocked');
+    assert.equal(template.readinessPolicy, 'planning');
+  }
+  assert.equal(JSON.stringify(planning), before);
+});
+
+test('Experimental refuses undeclared or incomplete internal creator selections', () => {
+  const template = templatesModule.PLANNING_STUDIO_TEMPLATES.find(
+    (item) => item.id === 'flux3_klein_fp8r512_text_to_image',
+  );
+  const variants = [
+    { ...template, id: 'undeclared-internal-creator' },
+    { ...template, executionSelection: undefined },
+    ...['pipelineClass', 'task', 'executionProfileId', 'authoringRecipeId', 'implementation', 'memoryPolicy'].map(
+      (key) => ({
+        ...template,
+        executionSelection: { ...template.executionSelection, [key]: undefined },
+      }),
+    ),
+    { ...template, executionSelection: { ...template.executionSelection, schemaVersion: 2 } },
+    { ...template, executionSelection: { ...template.executionSelection, executionProfileId: 'arbitrary-profile' } },
+    { ...template, executionSelection: { ...template.executionSelection, bindingSpec: undefined } },
+    {
+      ...template,
+      executionSelection: {
+        ...template.executionSelection,
+        bindingSpec: { modelType: template.modelType, mode: 'edit_image' },
+      },
+    },
+    { ...template, modelType: 'Flux3ModularPipeline' },
+    { ...template, modelArtifact: undefined },
+    { ...template, modelArtifact: { ...template.modelArtifact, revision: 'main' } },
+    { ...template, modelArtifact: { ...template.modelArtifact, value: '' } },
+    { ...template, modelArtifact: { source: 'local', value: 'unverified-model.safetensors' } },
+  ];
+  for (const variant of variants) {
+    assert.deepEqual(
+      browserModule.filterStudioTemplates([variant], profilesModule.DEFAULT_STUDIO_FORM, {
+        category: 'experimental',
+        includeBlocked: true,
+        query: '',
+        modelType: 'all',
+        difficulty: 'all',
+        sort: 'recommended',
+      }),
+      [],
+      JSON.stringify(variant.executionSelection),
+    );
+  }
+});
+
 test('every template name identifies its exact model and operation', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
   for (const template of STUDIO_TEMPLATES) {

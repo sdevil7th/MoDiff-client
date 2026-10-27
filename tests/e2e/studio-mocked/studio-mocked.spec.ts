@@ -12,7 +12,7 @@ import {
   IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
   AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
 } from '../../../src/studio/templateOperationSelections';
-import { STUDIO_TEMPLATES } from '../../../src/studio/templates';
+import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../../../src/studio/templates';
 import { hashString, stableStringify } from '../../../src/studio/stableHash';
 import { REGISTERED_BLOCK_V2_ROUTES } from '../../../src/studio/registeredBlockV2Routes';
 import { acknowledgementRequiredForTemplate } from '../../../src/studio/modelUsagePolicies';
@@ -10936,13 +10936,25 @@ async function installOperationAuthoringRoutes(
 let publicFlux3AutoSchemaPromise: Promise<ImageTemplateSchemaFixture>;
 
 /** Actual source DTOs with no sealed provider; HTTP mocks do not qualify execution. */
-async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false, currentAutoSchemas = false) {
+async function installPublicFlux3AuthoringRoutes(
+  page: Page,
+  exactModel = false,
+  currentAutoSchemas = false,
+  templateCreators = false,
+) {
   const standard = await installOperationAuthoringRoutes(page, exactModel);
   const fixture = JSON.parse(
-    await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/public-flux3-missing-provider.v1.json'), 'utf8'),
+    await fs.readFile(
+      path.join(
+        CLIENT_ROOT,
+        'tests/fixtures',
+        templateCreators ? 'public-flux3-template-creators.v1.json' : 'public-flux3-missing-provider.v1.json',
+      ),
+      'utf8',
+    ),
   );
   expect(fixture.activeProvider).toBeNull();
-  expect(fixture.starters).toHaveLength(8);
+  expect(fixture.starters).toHaveLength(templateCreators ? 10 : 8);
   let defaultStarters: OperationStarter[] = [];
   const defaultSelectionProfiles = new Map<string, string>();
   if (currentAutoSchemas) {
@@ -11101,8 +11113,12 @@ async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false,
             standard.flatMap((starter) => starter.nodes.map((node) => [node.operation.nodeKey, node.node])),
           ),
           ...fixture.registry,
-          'modules.Image.Load': mockRegistry['modules.Image.Load'],
-          'modules.Image.Preview': mockGraphQualifiedQwenRegistry['modules.Image.Preview'],
+          ...(templateCreators
+            ? {}
+            : {
+                'modules.Image.Load': mockRegistry['modules.Image.Load'],
+                'modules.Image.Preview': mockGraphQualifiedQwenRegistry['modules.Image.Preview'],
+              }),
         },
       },
     }),
@@ -11142,6 +11158,122 @@ async function installPublicFlux3AuthoringRoutes(page: Page, exactModel = false,
   );
   return fixture;
 }
+
+test('Experimental planning cards create the exact FLUX3 Ceramic Radio graph through ordinary UI', async ({ page }) => {
+  await ensureFrontend();
+  const fixture = await installPublicFlux3AuthoringRoutes(page, false, false, true);
+  // Match the genuine creator fixture's CPU-only device options. This is UI
+  // authoring transport, not a hardware fit or execution qualification.
+  await page.route('**/runtime/status**', (route) =>
+    route.fulfill({
+      json: {
+        ready: true,
+        instance: 'mock',
+        config: { hf_token_configured: false },
+        packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+      },
+    }),
+  );
+  await page.routeWebSocket('**/ws**', (socket) =>
+    socket.send(
+      JSON.stringify({
+        type: 'welcome',
+        sid: new URL(socket.url()).searchParams.get('sid'),
+        instance: 'mock',
+        current: null,
+        queued: {},
+      }),
+    ),
+  );
+  const forbiddenPosts: string[] = [];
+  const selections: Record<string, unknown>[] = [];
+  page.on('request', (request) => {
+    if (request.method() !== 'POST') return;
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/operations/starter') selections.push(request.postDataJSON());
+    if (/\/(?:graph|execute|install)(?:\/|$)/u.test(pathname) || pathname.startsWith('/runtime/optional-runtimes'))
+      forbiddenPosts.push(pathname);
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await openTemplateBrowser(page);
+  const search = page.getByTestId('template-browser-search');
+  await page.getByTestId('template-browser-category-all').click();
+  await search.fill('FLUX 3');
+  await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(0);
+  await page.getByTestId('template-browser-category-experimental').click();
+  await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(10);
+  await search.fill('Ceramic Radio');
+  await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(2);
+  const template = PLANNING_STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_text_to_image')!;
+  const previousWorkflow = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  await expect(page.getByTestId(`template-browser-card-${template.id}`)).toContainText('No preview yet');
+  await page.getByTestId(`template-browser-create-card-${template.id}`).click();
+  await expect(search).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeTemplateId))
+    .toBe(template.id);
+  const createdWorkflow = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  expect(createdWorkflow).toBeTruthy();
+  expect(createdWorkflow).not.toBe(previousWorkflow);
+  await expect(page.getByTestId('topbar-resource-policy')).toHaveAttribute(
+    'aria-label',
+    'Memory policy: Custom. Click to switch.',
+  );
+  await waitForOperationGraphToSettle(page);
+  const actual = await publicFlux3FormatSnapshot(page);
+  expect(actual.resourceMode).toBe('expert');
+  expect(actual.selection).toMatchObject({
+    pipelineClass: template.executionSelection!.pipelineClass,
+    repository: { source: 'hub', value: template.modelArtifact!.value },
+    revision: template.modelArtifact!.revision,
+    dtype: 'bfloat16',
+    weightFormat: 'fp8r',
+    quantConfigConnected: false,
+  });
+  expect(actual.parent.executionProfileId).toBe(template.executionSelection!.executionProfileId);
+  expect(actual.parent.authoringRecipeId).toBe(template.executionSelection!.authoringRecipeId);
+  const nodes = actual.semanticGraph.nodes;
+  expect(nodes.map((node) => `${node.module}.${node.action}`).sort()).toEqual(
+    [...template.requiredBackendCapabilities!].sort(),
+  );
+  const values = (action: string) =>
+    Object.fromEntries(
+      Object.entries(nodes.find((node) => node.action === action)!.params).map(([key, param]) => [
+        key,
+        param.value ?? param.default,
+      ]),
+    );
+  expect(values('ModelsLoader')).toMatchObject({
+    weight_format: 'fp8r',
+    dtype: 'bfloat16',
+    auto_offload: false,
+    offload_mode: 'none',
+  });
+  expect(values('Denoise')).toMatchObject({
+    width: 512,
+    height: 512,
+    num_inference_steps: 16,
+    seed: { value: 481001, isRandom: false },
+  });
+  expect(values('EncodePrompt')).toMatchObject({
+    prompt: template.prompt,
+    max_sequence_length: 8192,
+    layout_conditioning: null,
+  });
+  expect(actual.semanticGraph.edges).toHaveLength(7);
+  expect(selections).toContainEqual(
+    expect.objectContaining({
+      pipelineClass: template.executionSelection!.pipelineClass,
+      task: 'text_to_image',
+      executionProfileId: template.executionSelection!.executionProfileId,
+      authoringRecipeId: template.executionSelection!.authoringRecipeId,
+    }),
+  );
+  expect(fixture.activeProvider).toBeNull();
+  expect(forbiddenPosts).toEqual([]);
+  await page.screenshot({ path: test.info().outputPath('experimental-ceramic-radio-created.png') });
+});
 
 async function selectOperationPipeline(page: Page, pipeline: string, task?: string) {
   const panel = page.getByRole('region', { name: 'Diffusers operations' });

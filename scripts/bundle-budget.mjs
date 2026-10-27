@@ -1,3 +1,7 @@
+// Explicit declared Experimental discovery measures largest/startup/deferred gzip
+// 488406/666710/326605 versus accepted 488399/666704/326318. Add only the
+// measured 287-byte deferred growth, retaining 152 bytes of aggregate headroom.
+// Existing startup and chunk caps, dependencies and loading boundaries stay fixed.
 // Pinned NASA/Monet planning definitions measure largest/startup/deferred gzip
 // 488399/666704/326318 versus 488210/666514/326348. Add only measured
 // 189/190-byte startup growth, preserving 15/17-byte headroom and all deferred caps.
@@ -530,6 +534,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  287 +
   44 +
   2064 +
   935 +
