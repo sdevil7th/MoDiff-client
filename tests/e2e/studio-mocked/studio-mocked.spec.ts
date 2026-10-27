@@ -32247,6 +32247,94 @@ test('custom import reports dependency and Python errors without enabling or alt
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
 });
 
+test('My workflows retains newly saved documents after closing their tabs without a manual reload', async ({
+  page,
+}) => {
+  await page.routeWebSocket('**/ws**', (socket) => {
+    socket.send(
+      JSON.stringify({
+        type: 'welcome',
+        sid: new URL(socket.url()).searchParams.get('sid'),
+        instance: 'mock',
+        current: null,
+        queued: {},
+      }),
+    );
+  });
+  let summaryRequests = 0;
+  page.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname.endsWith('/workflows') &&
+      new URL(request.url()).searchParams.get('view') === 'summary'
+    )
+      summaryRequests++;
+  });
+  await openDeveloperWorkflows(page);
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  await expect.poll(() => summaryRequests).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByTestId('task-browser').getByTestId('workflow-task-text_to_image').click();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  const readsBeforeSave = summaryRequests;
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  const title = 'Saved while the workflow library stays open';
+  await page.getByTestId('save-workflow-name').fill(title);
+  const savedResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      response.url().includes('/workflows/') &&
+      response.request().postDataJSON().title === title &&
+      response.ok(),
+  );
+  await page.getByTestId('confirm-save-workflow').click();
+  const saved = (await (await savedResponse).json()) as { id: string; title: string; intent: string };
+  expect(saved.intent).toBe('saved');
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: `Close ${title}`, exact: true }).click();
+  await expect(page.getByTestId(`workflow-tab-${saved.id}`)).toHaveCount(0);
+  const row = page.getByTestId(`saved-workflow-${saved.id}`);
+  await expect(row.getByRole('button', { name: title, exact: true })).toBeVisible();
+  expect(summaryRequests).toBe(readsBeforeSave);
+  await row.getByRole('button', { name: title, exact: true }).click();
+  await expect(page.getByTestId(`workflow-tab-${saved.id}`)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBeGreaterThan(0);
+
+  // A previously requested summary can arrive after a newer Save. Its older
+  // empty result must not erase that acknowledged document either.
+  let releaseSummary!: () => void;
+  const pendingSummary = new Promise<void>((resolve) => {
+    releaseSummary = resolve;
+  });
+  let summaryStarted = false;
+  let summaryFinished = false;
+  await page.route('**/workflows?view=summary', async (route) => {
+    summaryStarted = true;
+    await pendingSummary;
+    await route.fulfill({ json: { workflows: [] } });
+    summaryFinished = true;
+  });
+  try {
+    await page.getByRole('button', { name: 'Reload workflows', exact: true }).click();
+    await expect.poll(() => summaryStarted).toBe(true);
+    const savedAgain = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' && response.url().endsWith(`/workflows/${saved.id}`) && response.ok(),
+    );
+    await page.getByTestId('topbar-save-workflow').click();
+    await savedAgain;
+    await page.getByRole('button', { name: `Close ${title}`, exact: true }).click();
+    releaseSummary();
+    await expect.poll(() => summaryFinished).toBe(true);
+    await expect(row.getByRole('button', { name: title, exact: true })).toBeVisible();
+    expect(summaryRequests).toBe(readsBeforeSave + 1);
+  } finally {
+    releaseSummary();
+  }
+});
+
 test('saved workflow browsing bounds mounted rows and searches the full library', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);

@@ -307,6 +307,10 @@ New documents autosave as recovery drafts. Explicit Save promotes them to My
 workflows; a delayed autosave cannot demote a saved document. Existing documents
 without an intent marker are treated as saved without rewriting their files.
 Unknown historical documents are not reclassified or deleted.
+The open library incorporates acknowledged backend saves and deletions immediately,
+so closing a newly saved tab keeps its row available without Reload workflows.
+These summary updates do not refetch on canvas edits or overwrite newer unsaved
+tab contents. An older list response cannot undo a later save acknowledgement.
 
 Shared select, combobox and multiselect menus use an 18rem preferred cap, further
 limited by available viewport space. The cap is passed through Headless UI's

@@ -219,7 +219,13 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // candidates still miss startup/chunk limits (646985/468683 and 647014/468706).
 // Retain the strict current-owner/parser checks and allow 128 startup/chunk
 // bytes only; dependencies, lazy boundaries, minifier and deferred caps stay fixed.
+// Acknowledged Save/Delete summaries keep the saved list current after closing a
+// tab. Measured gzip grows 488406 -> 488472 (+66) for the largest startup chunk,
+// 666710 -> 666779 (+69) for startup, and 326605 -> 326783 (+178) deferred.
+// Add only those measured costs, preserving 8/11/152 bytes of existing headroom.
+// Dependencies, startup membership, lazy boundaries and the 64 KiB chunk cap stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  66 +
   189 +
   55 +
   82 +
@@ -335,6 +341,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  69 +
   190 +
   53 +
   82 +
@@ -534,6 +541,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  178 +
   287 +
   44 +
   2064 +

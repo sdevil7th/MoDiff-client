@@ -53,6 +53,16 @@ function contentSignature(tab: WorkflowTab) {
 const backendSignatures = new Map<string, string>();
 const pendingSignatures = new Map<string, string>();
 const saveChains = new Map<string, Promise<void>>();
+type BackendWorkflowChange = { id: string; tab: WorkflowTab | null };
+const backendWorkflowListeners = new Set<(change: BackendWorkflowChange) => void>();
+
+/** Observe acknowledged documents without opening tabs or refetching on edits. */
+export function subscribeBackendWorkflowChanges(listener: (change: BackendWorkflowChange) => void) {
+  backendWorkflowListeners.add(listener);
+  return () => {
+    backendWorkflowListeners.delete(listener);
+  };
+}
 const CLOSED_WORKFLOW_TABS_KEY = 'modiff-closed-workflow-tabs';
 const WORKFLOW_SYNC_TIMEOUT_MS = 120_000;
 
@@ -95,6 +105,7 @@ export function markBackendWorkflow(tab: WorkflowTab) {
   forgetFreshWorkflowId(tab.id);
   backendSignatures.set(tab.id, contentSignature(tab));
   pendingSignatures.delete(tab.id);
+  backendWorkflowListeners.forEach((listener) => listener({ id: tab.id, tab }));
 }
 
 export function forgetBackendWorkflow(id: string) {
@@ -103,6 +114,7 @@ export function forgetBackendWorkflow(id: string) {
   pendingSignatures.delete(id);
   closedWorkflowIds.delete(id);
   persistClosedWorkflowIds();
+  backendWorkflowListeners.forEach((listener) => listener({ id, tab: null }));
 }
 
 /**
