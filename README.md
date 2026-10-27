@@ -7,10 +7,10 @@ MoDiff Client is the graph-first web interface for the MoDiff generative-media b
 The client is built with React 19, TypeScript, Vite, Tailwind CSS, Headless UI, Zustand, Lucide React, and [`@xyflow/react`](https://reactflow.dev/).
 
 For Qwen-Image 2.1, use the generic image nodes in Workflows. The backend's
-[integration guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/qwen-image-21.md)
+[integration guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/qwen-image-21.md)
 explains attention-context reuse, runtime requirements and current qualification limits.
 
-The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/image-demo.md) lists the tested workflows, settings,
+The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/image-demo.md) lists the tested workflows, settings,
 measured reuse behavior and remaining qualification work.
 
 > [!IMPORTANT]
@@ -22,15 +22,26 @@ Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/),
 Node.js `24.12.0`, and npm `11.6.2`. uv can provision Python 3.12.
 Use two terminals for the backend and the editable frontend.
 
-The setup and workflow updates described here are on `fix-ui-ux-issues` in both
-repositories. Select that branch until these changes are released on `main`.
+The interim Windows candidate is on `codex/windows-delivery-20261026` in both
+repositories. These updates are not released on `main`. The reviewed application
+pair is:
+
+| Repository    | Reviewed commit                            |
+| ------------- | ------------------------------------------ |
+| MoDiff        | `ae09c2014f01198d359a1310d63a1d8d619796be` |
+| MoDiff-client | `fd3d3dacbcda0b4f44ff23497276658f0233eea8` |
+
+These are the exact application revisions reviewed on 27 October 2026, not a claim
+that every model or hardware combination is qualified. Record `git rev-parse HEAD`
+in each checkout; if the branch advances, use its newly reviewed paired handoff.
+For an exact reproduction, check out the two commits above in separate checkouts.
 
 **Terminal 1 — backend:** clone both repositories into the same parent directory,
 then start the backend. These commands work in Linux shells and Windows PowerShell.
 
 ```text
-git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
 uv sync --extra cpu
 uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
@@ -43,7 +54,7 @@ Transformers and PEFT are installed with the base application; ordinary image an
 LoRA workflows need no optional-runtime installation or activation. Setup installs
 Python packages without downloading model weights. `uv sync` reconciles `.venv`
 with the selected profile: use a separate checkout when testing a different
-accelerator. See the [full setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for specialized AMD profiles,
+accelerator. See the [full setup guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/developer-setup.md) for specialized AMD profiles,
 explicit `uv pip` commands, repair, and upgrades.
 
 **Terminal 2 — frontend:** from the same parent directory, run:
@@ -56,7 +67,7 @@ npm run dev
 
 Keep the backend running at <http://127.0.0.1:8088> and open the URL printed by
 Vite for the editable frontend. Press `Ctrl+C` in each terminal to stop it.
-See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for accelerator prerequisites,
+See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/developer-setup.md) for accelerator prerequisites,
 optional runtimes, repair, and bundled-app setup.
 
 ## Install and run MoDiff
@@ -64,15 +75,15 @@ optional runtimes, repair, and bundled-app setup.
 Clone both repositories into the same parent directory. The backend installer
 automatically finds this sibling client, installs its locked Node.js toolchain
 and packages, downloads the verified Gallery assets, and bundles the frontend.
-The backend [installation guide](https://github.com/sdevil7th/MoDiff/tree/fix-ui-ux-issues#install-and-run)
+The backend [installation guide](https://github.com/sdevil7th/MoDiff/tree/codex/windows-delivery-20261026#install-and-run)
 is the canonical source for installer profiles, prerequisites, repair, and
 platform support.
 
 Linux or macOS:
 
 ```bash
-git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
 ./install.sh --accelerator auto
 ./run.sh
@@ -81,8 +92,8 @@ cd MoDiff
 Windows PowerShell:
 
 ```powershell
-git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
 .\install.ps1 -Accelerator auto
 .\run.ps1
@@ -116,7 +127,7 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 
 In the editor, **Export → Service package** exposes named scalar inputs and
 persisted preview outputs for the same lowered API graph. See the backend's
-[service guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/service-prototyping.md)
+[service guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/service-prototyping.md)
 for the CLI, environment manifest and model-free example.
 
 ## Repository Pairing
@@ -392,7 +403,7 @@ require Custom memory. See the backend custom-node guide for contracts and examp
 Approved Modular blocks that omit model ports receive a **Models** input when
 their Python contract requires components. Connect **Load Models → Pipeline
 Components** to reuse compatible loaded weights. This does not download missing
-block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/custom-nodes.md)
+block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/custom-nodes.md)
 for the VAE reconstruction example and component requirements.
 Blocks with official component types also expose **Load Models — [block name]**
 after approval. Select pinned, downloaded sources for its components, use **Custom**

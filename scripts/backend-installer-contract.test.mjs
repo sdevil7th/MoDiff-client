@@ -121,8 +121,8 @@ test('README follows the paired install and development launcher contract', () =
   assert.ok(installStart > quickStart, 'Developer quick start must precede launcher installation');
   const quick = readme.slice(quickStart, installStart);
   for (const command of [
-    'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff',
-    'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
+    'git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff.git MoDiff',
+    'git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
     'cd MoDiff',
     'uv sync --extra cpu',
     'uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error',
@@ -140,12 +140,18 @@ test('README follows the paired install and development launcher contract', () =
   assert.ok(developmentEnd > developmentStart);
   const development = readme.slice(developmentStart, developmentEnd);
 
-  assert.match(readme, /git clone --branch fix-ui-ux-issues https:\/\/github\.com\/sdevil7th\/MoDiff\.git MoDiff/);
   assert.match(
     readme,
-    /git clone --branch fix-ui-ux-issues https:\/\/github\.com\/sdevil7th\/MoDiff-client\.git MoDiff-client/,
+    /git clone --branch codex\/windows-delivery-20261026 https:\/\/github\.com\/sdevil7th\/MoDiff\.git MoDiff/,
   );
-  assert.match(readme, /https:\/\/github\.com\/sdevil7th\/MoDiff\/tree\/fix-ui-ux-issues#install-and-run/);
+  assert.match(
+    readme,
+    /git clone --branch codex\/windows-delivery-20261026 https:\/\/github\.com\/sdevil7th\/MoDiff-client\.git MoDiff-client/,
+  );
+  assert.match(
+    readme,
+    /https:\/\/github\.com\/sdevil7th\/MoDiff\/tree\/codex\/windows-delivery-20261026#install-and-run/,
+  );
   assert.match(development, /\.\/install-dev\.sh --accelerator auto/);
   assert.match(development, /\.\/run-dev\.sh/);
   assert.match(development, /\.\\install-dev\.ps1 -BackendPath \.\.\\MoDiff -Accelerator auto/);
@@ -160,4 +166,23 @@ test('README follows the paired install and development launcher contract', () =
     if (!path) continue;
     assert.doesNotThrow(() => readFileSync(new URL(path, root)), `README link target does not exist: ${target}`);
   }
+});
+
+test('current setup guides select the published candidate and identify its reviewed application pair', () => {
+  const clientRoot = new URL('..', import.meta.url);
+  const guides = [
+    new URL('README.md', clientRoot),
+    new URL('CONTRIBUTING.md', clientRoot),
+    new URL('docs/windows-support.md', clientRoot),
+  ];
+  for (const guide of guides) {
+    const text = readFileSync(guide, 'utf8');
+    assert.doesNotMatch(text, /fix-ui-ux-issues/, `${guide.pathname} still advertises the superseded setup branch`);
+    assert.match(text, /codex\/windows-delivery-20261026/, `${guide.pathname} must identify the current candidate`);
+  }
+  const readme = readFileSync(guides[0], 'utf8');
+  assert.match(readme, /ae09c2014f01198d359a1310d63a1d8d619796be/, 'Reviewed backend commit is missing');
+  assert.match(readme, /fd3d3dacbcda0b4f44ff23497276658f0233eea8/, 'Reviewed client commit is missing');
+  assert.match(readme, /interim Windows candidate/i);
+  assert.match(readme, /not.*(?:release|released).*`main`/);
 });

@@ -68,7 +68,7 @@ and PEFT are installed with the backend, with no separate activation for normal
 image and LoRA workflows. Setup downloads packages, not inference weights.
 `uv sync` reconciles the selected environment; use another checkout to test a
 different accelerator. The backend's
-[developer setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md)
+[developer setup guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/developer-setup.md)
 also documents explicit `uv pip` commands, repair, and uv upgrades.
 
 Windows uses PyTorch's default allocator. MoDiff does not set
@@ -258,7 +258,7 @@ route that exceeds the workstation's capacity, or needs an unsupported optional
 kernel, is a separate compatibility result; capture its exact message and
 resource plan. Passing the mocked client gates does not establish Windows GPU
 compatibility or image parity. The backend's
-[image template validation guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/image-template-validation.md)
+[image template validation guide](https://github.com/sdevil7th/MoDiff/blob/codex/windows-delivery-20261026/docs/image-template-validation.md)
 documents paired output comparison and the runtime, recipe, and raw-output
 evidence to retain. Historical Gallery examples remain historical until a new
 execution has its own matching proof.
