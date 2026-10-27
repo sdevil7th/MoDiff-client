@@ -4473,6 +4473,151 @@ test('runtime option normalization supports the real registry descriptor contrac
   ]);
 });
 
+test('template readiness scopes a successful model prerequisite check to Run', () => {
+  const quick = templatesModule.STUDIO_TEMPLATES.find((template) => template.id === 'z_image_quick_concept');
+  assert.ok(quick);
+  const context = readinessContext({ hfCache: ['Tongyi-MAI/Z-Image-Turbo'] });
+  const originalContext = structuredClone(context);
+  const ready = readinessModule.getTemplateReadiness(quick, context);
+
+  // A per-model recipe has no submitted graph or live full-workflow memory proof.
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.label, 'Auto check at Run');
+  assert.match(ready.summary, /complete workflow and current memory.*before submitting a task/u);
+  assert.doesNotMatch(ready.summary, /hardware looks usable|Auto plan is ready/u);
+  assert.deepEqual(ready.compatibility, context.autoResourcePlan.compatibility);
+  assert.equal(ready.decision.state, 'ready');
+  assert.deepEqual(ready.issues, []);
+  assert.deepEqual(ready.modelInstallTargets, []);
+  assert.deepEqual(context, originalContext);
+
+  const custom = readinessModule.getTemplateReadiness(quick, {
+    ...context,
+    form: { ...context.form, resourceMode: 'expert' },
+  });
+  assert.equal(custom.status, ready.status);
+  assert.equal(custom.label, 'Check at Run');
+  assert.match(custom.summary, /complete workflow using your Custom memory settings.*before submitting a task/u);
+  assert.doesNotMatch(custom.summary, /Auto plan|hardware.*usable|current memory/u);
+  assert.deepEqual(custom.decision, ready.decision);
+  assert.deepEqual(custom.compatibility, ready.compatibility);
+
+  const pending = readinessModule.getTemplateReadiness(quick, { ...context, autoResourcePlan: null });
+  assert.equal(pending.status, 'preparing');
+  assert.equal(pending.label, 'Checking models');
+  assert.equal(pending.decision.state, 'preparing');
+  assert.ok(pending.issues.some((issue) => issue.id === 'auto-plan-checking' && issue.blocking));
+  const blocked = readinessModule.getTemplateReadiness(quick, {
+    ...context,
+    autoResourcePlan: {
+      ...context.autoResourcePlan,
+      compatibility: {
+        ...context.autoResourcePlan.compatibility,
+        state: 'needs_setup',
+        severity: 'error',
+        code: 'memory_unavailable',
+        summary: 'Memory unavailable',
+        detail: 'The model prerequisite check cannot proceed.',
+      },
+      issue: { category: 'device' },
+    },
+  });
+  assert.equal(blocked.status, 'needs_setup');
+  assert.equal(blocked.decision.state, 'blocked');
+  assert.equal(blocked.issues[0].category, 'hardware_fit');
+  assert.equal(blocked.summary, 'The model prerequisite check cannot proceed.');
+});
+
+test('template readiness scope preserves model-free readiness and explicit Custom prerequisites', () => {
+  const quick = templatesModule.STUDIO_TEMPLATES.find((template) => template.id === 'z_image_quick_concept');
+  assert.ok(quick);
+  const builtin = {
+    ...quick,
+    modelType: 'BuiltinDataOperation',
+    mode: 'text_select',
+    modelArtifact: undefined,
+    executionSelection: undefined,
+    inputRequirements: undefined,
+    inputBindings: undefined,
+    requiredBackendCapabilities: [],
+    workflowBlockSettings: undefined,
+  };
+  const builtInReady = readinessModule.getTemplateReadiness(builtin, readinessContext());
+  assert.equal(builtInReady.status, 'ready');
+  assert.equal(builtInReady.label, 'Ready now');
+  assert.match(builtInReady.summary, /Built-in processing needs no model download/u);
+  assert.doesNotMatch(builtInReady.summary, /Auto plan|hardware/u);
+  assert.deepEqual(builtInReady.modelInstallTargets, []);
+
+  const revision = 'a'.repeat(40);
+  const customTemplate = {
+    ...quick,
+    modelArtifact: { source: 'hub', value: 'Tongyi-MAI/Z-Image-Turbo', revision },
+    example: { ...quick.example, modelRevision: revision },
+    executionSelection: {
+      schemaVersion: 1,
+      pipelineClass: 'ZImageModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'unit-custom-prerequisite',
+      bindingSpec: { modelType: quick.modelType, mode: quick.mode },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+    },
+  };
+  const customContext = {
+    ...readinessContext({
+      autoResourcePlan: null,
+      form: { ...profilesModule.DEFAULT_STUDIO_FORM, resourceMode: 'expert' },
+      hfCache: [
+        {
+          id: 'Tongyi-MAI/Z-Image-Turbo',
+          installed: true,
+          complete: true,
+          planned_revision: revision,
+          planned_files: [],
+        },
+      ],
+      nodesRegistry: { 'modules.ModularDiffusers.ModelsLoader': {} },
+      runtime: {
+        ready: true,
+        runtimeEnvironment: { profileVerified: true, executionReady: true },
+        packages: Object.fromEntries(
+          ['torch', 'diffusers', 'transformers', 'peft'].map((name) => [name, { available: true }]),
+        ),
+        missing_required_packages: [],
+      },
+    }),
+    studioModelCapabilities: [
+      {
+        modelType: quick.modelType,
+        defaultRepo: 'Tongyi-MAI/Z-Image-Turbo',
+        executionProfiles: [
+          {
+            id: 'unit-custom-prerequisite',
+            model_type: quick.modelType,
+            pipeline_class: 'ZImageModularPipeline',
+            modes: [quick.mode],
+            default_repo: 'Tongyi-MAI/Z-Image-Turbo',
+          },
+        ],
+      },
+    ],
+  };
+  const custom = readinessModule.getTemplateReadiness(customTemplate, customContext);
+  assert.equal(custom.status, 'ready');
+  assert.equal(custom.label, 'Custom · experimental');
+  assert.equal(custom.tone, 'warning');
+  assert.match(custom.summary, /hardware fit and output quality remain experimental/u);
+  assert.deepEqual(custom.issues, []);
+  const missingRuntime = readinessModule.getTemplateReadiness(customTemplate, {
+    ...customContext,
+    runtimeStatus: { ...customContext.runtimeStatus, ready: false },
+  });
+  assert.equal(missingRuntime.status, 'needs_backend');
+  assert.equal(missingRuntime.decision.state, 'blocked');
+  assert.ok(missingRuntime.issues.some((issue) => issue.id === 'custom:base-runtime' && issue.blocking));
+});
+
 test('template readiness classifies ready, input, model, and backend states', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
   const { getTemplateReadiness } = readinessModule;

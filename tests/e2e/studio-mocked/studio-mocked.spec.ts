@@ -16802,7 +16802,13 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   await templateSearch.fill('Aspect-Ratio Expansion');
   await page.getByTestId('template-browser-use-qwen_outpaint_aspect_template').click();
   await expect(page.getByTestId('template-detail-qwen_outpaint_aspect_template')).toBeVisible();
-  await expect(page.getByTestId('template-readiness-qwen_outpaint_aspect_template')).toContainText('Ready now');
+  await expect(page.getByTestId('template-readiness-qwen_outpaint_aspect_template')).toContainText('Auto check at Run');
+  await expect(page.getByTestId('template-readiness-qwen_outpaint_aspect_template')).toContainText(
+    'Run checks the complete workflow and current memory before submitting a task.',
+  );
+  await expect(page.getByTestId('template-readiness-qwen_outpaint_aspect_template')).not.toContainText(
+    'hardware looks usable',
+  );
   await expect(page.getByTestId('template-detail-qwen_outpaint_aspect_template')).toContainText('Included inputs');
   await expect(page.getByTestId('template-browser-create-qwen_outpaint_aspect_template')).toContainText('Use template');
   await page

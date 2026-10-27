@@ -7,7 +7,7 @@ import {
   type StudioCompatibilityAssessment,
   type StudioAutoResourcePlan,
 } from './autoResource';
-import { getModelRequirementsForMode, STUDIO_MODEL_LABELS, STUDIO_MODEL_PROFILES } from './modelProfiles';
+import { getModelRequirementsForMode, STUDIO_MODEL_PROFILES } from './modelProfiles';
 import { resolveTemplateInputs } from './templateInputs';
 import { buildRunReadinessDecision } from './runReadiness';
 import type {
@@ -594,14 +594,22 @@ export function getTemplateReadiness(
                 : 'needs_setup';
 
   const copy = statusCopy(status);
+  // Template plans check model prerequisites; only Run assesses the submitted graph.
+  const modelFree = profile.runtimeKind === 'builtin' && modelRequirements(template).length === 0;
+  const customMemory = context.form?.resourceMode === 'expert';
+  const readyLabel = modelFree ? copy.label : customMemory ? 'Check at Run' : 'Auto check at Run';
   const summary =
     status === 'ready'
-      ? `${STUDIO_MODEL_LABELS[template.modelType]} Auto plan is ready, hardware looks usable, and no required inputs are missing.`
+      ? modelFree
+        ? 'Built-in processing needs no model download. Run checks the complete workflow and required inputs before submitting a task.'
+        : customMemory
+          ? 'Model prerequisites and required inputs passed this template check. Run checks the complete workflow using your Custom memory settings before submitting a task.'
+          : 'Model prerequisites and required inputs passed this template check. Run checks the complete workflow and current memory before submitting a task.'
       : (issues[0]?.detail ?? 'Review the required setup before running this recipe.');
 
   return {
     status,
-    label: copy.label,
+    label: status === 'ready' ? readyLabel : copy.label,
     tone: copy.tone,
     summary,
     compatibility,
