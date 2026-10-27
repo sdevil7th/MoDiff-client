@@ -448,7 +448,6 @@ function executedModularExpertPlanFromGraph(apiGraph) {
     typeof form.offloadMode !== 'string' ||
     typeof form.device !== 'string' ||
     typeof form.modelType !== 'string' ||
-    typeof form.modelRepo !== 'string' ||
     !Array.isArray(snapshot.nodes)
   )
     return null;
@@ -485,7 +484,10 @@ function executedModularExpertPlanFromGraph(apiGraph) {
     repo.source !== 'hub' ||
     typeof repo.value !== 'string' ||
     !repo.value ||
-    repo.value !== form.modelRepo ||
+    // Normal template forms retain model type and controls; the immutable
+    // repository lives on the executed loader. A retained optional form
+    // repository must agree, but its absence cannot erase that actual owner.
+    (form.modelRepo !== undefined && repo.value !== form.modelRepo) ||
     typeof revision !== 'string' ||
     !/^[0-9a-f]{40}$/u.test(revision) ||
     apiParamValue(owner, 'model_type') !== form.modelType ||

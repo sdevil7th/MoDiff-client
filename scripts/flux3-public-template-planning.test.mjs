@@ -382,10 +382,10 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
       ...exactness.getTemplateLockedSettings(value),
       mode: value.mode,
       modelType: value.modelType,
-      modelRepo: repository,
       device,
       referenceImages: references,
     };
+    assert.equal(Object.hasOwn(form, 'modelRepo'), false, 'Normal creator form does not store the loader repository.');
     assert.deepEqual(
       [form.weightFormat, form.dtype, form.quantizationMode, form.resourceMode],
       ['fp8r', 'bfloat16', 'none', 'expert'],
@@ -536,6 +536,9 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
         `manual-resource-v1:${selection.pipelineClass}|bfloat16|none|none`,
       );
       assert.equal(executionReceiptIdentity({}, plan).peakMemoryBytes, null, 'No fabricated measurement.');
+      const retainedRepo = structuredClone(current);
+      retainedRepo.runtimeHints.workflowSnapshot.studioForm.modelRepo = repository;
+      assert.deepEqual(executionPlanIdentity(retainedRepo).plan, plan, 'An optional matching repository stays valid.');
     }
     const ordinary = visualGroups.unpackVisualOperationGroups(grouped).graph;
     const ordinaryApi = flow.useFlowStore.getState().exportGraph('native-expert-proof-ordinary', undefined, {
@@ -573,6 +576,9 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
         (g) => {
           g.runtimeHints.workflowSnapshot.studioForm.modelRepo = 'Other/Model';
         },
+        ...[null, '', 123, { source: 'hub', value: repository }].map((modelRepo) => (g) => {
+          g.runtimeHints.workflowSnapshot.studioForm.modelRepo = modelRepo;
+        }),
         (g) => {
           g.runtimeHints.workflowSnapshot.studioForm.trustRemoteCode = true;
         },
