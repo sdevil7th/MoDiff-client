@@ -121,6 +121,40 @@ test('insertion preserves the discovery policy and rejects stale endpoints witho
   );
 });
 
+test('generic drag suggestions and insertion exclude hidden or disabled candidate sockets in both directions', async () => {
+  const { matchingNodeHandleForInsertion } = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  for (const handleType of ['source', 'target']) {
+    const display = handleType === 'source' ? 'input' : 'output';
+    const origin = {
+      handleId: 'image',
+      node: definition({ image: { type: 'image', display: display === 'input' ? 'output' : 'input' } }),
+    };
+    for (const restriction of ['hidden', 'disabled']) {
+      for (const allowUnverified of [false, true]) {
+        const unavailable = { type: 'image', display, [restriction]: true };
+        const node = definition({ unavailable });
+        const selection = { dataType: 'image', handleType, origin, allowUnverified };
+        assert.deepEqual(
+          search.connectionSearchEntries({ candidate: node }, 'image', handleType, '', 'all', origin, allowUnverified),
+          [],
+          `${restriction} ${display} must not be suggested`,
+        );
+        assert.equal(matchingNodeHandleForInsertion(node, selection, origin), undefined);
+        const visible = definition({ unavailable, image: { type: 'image', display } });
+        assert.equal(
+          search.matchingNodeHandleForDrop(visible, 'image', handleType, origin, allowUnverified)?.[0],
+          'image',
+        );
+        assert.equal(matchingNodeHandleForInsertion(visible, selection, origin)?.[0], 'image');
+        if (display === 'input') {
+          const widget = definition({ unavailable: { ...unavailable, display: 'text', isInput: true } });
+          assert.equal(matchingNodeHandleForInsertion(widget, selection, origin), undefined);
+        }
+      }
+    }
+  }
+});
+
 test('insertion revalidates derived Block crossing sockets using the normal connector resolver', async () => {
   const { matchingNodeHandleForInsertion } = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
   const schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');

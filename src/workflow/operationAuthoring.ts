@@ -1226,7 +1226,23 @@ export function planOperationChange(
       node: nodes.find((n) => n.id === operationIds.get(m.operationId))!,
       field: m.field,
     }));
-    const existing = group.members.flatMap((m) => {
+    const drivers = edges.filter((e) => members.some((m) => e.target === m.node.id && e.targetHandle === m.field));
+    // Reconciliation must not restore the authored values that an explicit
+    // reset just cleared. A wired member still owns the entire shared group.
+    const resetSharedDefaults =
+      options.restoreDefaults &&
+      drivers.length === 0 &&
+      members.every(({ node, field }) => {
+        const operation = operationAuthoring(node)!.operation;
+        return (
+          !operationOwnsModel(operation) &&
+          publicSetting(node.data.params[field]!) &&
+          operation.ports.some(
+            (port) => port.name === field && port.direction === 'input' && port.semantics?.kind === 'value',
+          )
+        );
+      });
+    const existing = (resetSharedDefaults ? [] : group.members).flatMap((m) => {
       const old = before.get(m.operationId),
         field = old?.data.params[m.field];
       if (!old || !field || operationFieldValue(field) === undefined) return [];
@@ -1246,7 +1262,6 @@ export function planOperationChange(
       throw new Error(
         `The shared ${group.name} has conflicting or incompatible values. Align the existing controls before changing this task.`,
       );
-    const drivers = edges.filter((e) => members.some((m) => e.target === m.node.id && e.targetHandle === m.field));
     if (new Set(drivers.map((e) => `${e.source}:${e.sourceHandle}`)).size > 1)
       throw new Error(
         `The shared ${group.name} has several input sources. Choose one source before changing this task.`,
@@ -1263,7 +1278,7 @@ export function planOperationChange(
       }
     }
     changes.push(
-      `Share ${group.name} across ${members.map((m) => m.node.data.label).join(' and ')}; preserve its authored value${group.name === 'seed' ? ' and use one random draw per run' : ''}.`,
+      `Share ${group.name} across ${members.map((m) => m.node.data.label).join(' and ')}; ${resetSharedDefaults ? 'use model defaults' : 'preserve its authored value'}${group.name === 'seed' ? ' and use one random draw per run' : ''}.`,
     );
   }
   for (const entry of pendingLayouts) {

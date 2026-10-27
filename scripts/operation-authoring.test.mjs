@@ -807,6 +807,112 @@ function seededStarter(imageTask = false) {
   return s;
 }
 
+function sharedCreativeStarter() {
+  const recipe = seededStarter(true);
+  for (const field of ['width', 'height']) {
+    for (const stage of recipe.nodes.slice(1)) {
+      stage.node.params[field] = { type: 'int', display: 'number', default: 1024, min: 64, max: 4096 };
+      stage.operation.ports.push({
+        ...structuredClone(stage.operation.ports.find((port) => port.name === 'seed')),
+        name: field,
+        semanticName: field,
+      });
+    }
+    recipe.sharedInputs.push({
+      name: field,
+      members: recipe.nodes.slice(1).map((stage) => ({ operationId: stage.operation.operationId, field })),
+    });
+  }
+  return recipe;
+}
+
+function authoredSharedCreativeGraph(recipe) {
+  const graph = authoring.createOperationStarter(recipe, { x: 0, y: 0 });
+  for (const node of graph.nodes.slice(1)) {
+    node.data.params.seed.value = { value: '4109', isRandom: false };
+    node.data.params.width.value = 768;
+    node.data.params.height.value = 512;
+    node.data.operationAuthoring.authored = ['seed', 'width', 'height'];
+  }
+  return graph;
+}
+
+test('explicit model defaults reset unconnected shared seed and size instead of restoring the old values', () => {
+  const recipe = sharedCreativeStarter();
+  const graph = authoredSharedCreativeGraph(recipe);
+  const before = structuredClone(graph);
+  const reset = authoring.planOperationChange(graph, graph.nodes[0].id, recipe, { restoreDefaults: true });
+  for (const node of reset.graph.nodes.slice(1)) {
+    assert.equal(authoring.operationFieldValue(node.data.params.seed), 0);
+    assert.equal(authoring.operationFieldValue(node.data.params.width), 1024);
+    assert.equal(authoring.operationFieldValue(node.data.params.height), 1024);
+  }
+  assert.deepEqual(graph, before, 'Reset preview cannot mutate the current graph.');
+});
+
+test('explicit model defaults preserve a connected shared group and its custom source while resetting other groups', () => {
+  for (const connectedField of ['seed', 'width', 'height']) {
+    const recipe = sharedCreativeStarter();
+    const graph = authoredSharedCreativeGraph(recipe);
+    const source = {
+      id: 'custom-source',
+      type: 'custom',
+      position: { x: -100, y: 80 },
+      data: { module: 'custom.Workbench', action: 'Value', params: { output: { type: 'int', display: 'output' } } },
+    };
+    graph.nodes.push(source);
+    graph.nodes[1].data.params[connectedField].isInput = true;
+    graph.edges.push({
+      id: 'custom-wire',
+      source: source.id,
+      sourceHandle: 'output',
+      target: graph.nodes[1].id,
+      targetHandle: connectedField,
+    });
+    const before = structuredClone(graph);
+    const reset = authoring.planOperationChange(graph, graph.nodes[0].id, recipe, { restoreDefaults: true });
+    assert.deepEqual(
+      reset.graph.nodes.find((node) => node.id === source.id),
+      source,
+    );
+    assert.ok(reset.graph.edges.some((edge) => edge.id === 'custom-wire'));
+    assert.equal(reset.graph.edges.filter((edge) => edge.source === source.id).length, 2);
+    for (const node of reset.graph.nodes.filter((node) => node.data.params.seed)) {
+      for (const field of ['seed', 'width', 'height']) {
+        assert.deepEqual(
+          authoring.operationFieldValue(node.data.params[field]),
+          field === connectedField
+            ? authoring.operationFieldValue(graph.nodes[1].data.params[field])
+            : field === 'seed'
+              ? 0
+              : 1024,
+        );
+      }
+    }
+    assert.deepEqual(graph, before);
+  }
+});
+
+test('ordinary model changes still preserve authored shared seed and size', () => {
+  const recipe = sharedCreativeStarter();
+  const graph = authoredSharedCreativeGraph(recipe);
+  const target = structuredClone(recipe);
+  target.pipelineClass = 'OtherPipeline';
+  for (const stage of target.nodes) {
+    stage.operation.pipelineClass = target.pipelineClass;
+    stage.operation.binding.pipelineClass = target.pipelineClass;
+  }
+  target.nodes[0].node.params.pipeline_class.value = target.pipelineClass;
+  const changed = authoring.planOperationChange(graph, graph.nodes[0].id, target, { replaceModel: true });
+  for (const node of changed.graph.nodes.filter((node) => node.data.params.seed)) {
+    for (const field of ['seed', 'width', 'height'])
+      assert.deepEqual(
+        authoring.operationFieldValue(node.data.params[field]),
+        authoring.operationFieldValue(graph.nodes[1].data.params[field]),
+      );
+  }
+});
+
 test('task extension carries the seed, shared edits undo together, and random mode exports one draw', async () => {
   const old = authoring.createOperationStarter(seededStarter(), { x: 0, y: 0 });
   old.nodes[1].data.params.seed.value = { value: '4109', isRandom: false };

@@ -128,6 +128,7 @@ export function matchingNodeHandleForDrop(
 ) {
   if (handleType !== 'source' && handleType !== 'target') return undefined;
   return Object.entries(nodeConnectorParams({ data: node })).find(([handleId, param]) => {
+    if (param.hidden || param.disabled) return false;
     if (requiredHandleId !== undefined && handleId !== requiredHandleId) return false;
     if (
       !allowUnverified &&
