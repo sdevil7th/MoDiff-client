@@ -134,6 +134,16 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+The reviewed authored-device import, immutable Model Install and page-owned
+workspace checkpoint changes measure 671659 gzip bytes of startup JavaScript,
+with a 493170-byte largest startup chunk and 327133 deferred bytes. Compared with
+the accepted 9ff client, the measured growth is 1651 startup bytes, 1649 largest-
+chunk bytes and 156 deferred bytes. The startup ceilings are 671670 and 493178,
+retaining 11 and 8 bytes of headroom. Both deferred ceilings remain unchanged at
+327269 aggregate and 65536 per chunk. The same four startup and 89 deferred
+assets keep their loading membership; dependencies, chunk rules, minifier and
+identity validators stay fixed. The following measurements remain historical.
+
 The Windows saved-form and service-cache follow-up measures 669945 gzip bytes
 of startup JavaScript, with a 491457-byte largest startup chunk and 327044
 deferred bytes. Relative to the earlier 28 October candidate, the measured

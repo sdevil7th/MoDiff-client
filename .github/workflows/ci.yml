@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Reviewed variant planning and offline pinned Hub-source resolution.
-          ref: 8f8c40bab9a389a0199c96c1add0a26a967928bd
+          ref: dc26f353b5e82da7fdde7cfbd7e8d6bd786f3acc
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -86,7 +86,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 8f8c40bab9a389a0199c96c1add0a26a967928bd
+          ref: dc26f353b5e82da7fdde7cfbd7e8d6bd786f3acc
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

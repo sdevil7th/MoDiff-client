@@ -247,7 +247,12 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 666710 -> 666779 (+69) for startup, and 326605 -> 326783 (+178) deferred.
 // Add only those measured costs, preserving 8/11/152 bytes of existing headroom.
 // Dependencies, startup membership, lazy boundaries and the 64 KiB chunk cap stay fixed.
+// Authored-device import, immutable Install pins and page-owned checkpoints measure
+// largest/startup/deferred gzip 493170/671659/327133 versus 491521/670008/326977.
+// Allow only measured startup growth (+1649/+1651), retaining 8/11 bytes headroom.
+// Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  1649 +
   64 +
   643 +
   322 +
@@ -368,6 +373,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  1651 +
   63 +
   650 +
   498 +
