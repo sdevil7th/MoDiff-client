@@ -84,7 +84,7 @@
     "test:task-templates": "node --test scripts/task-template-contracts.test.mjs",
     "test:template-assets:local": "node --test scripts/template-default-inputs.test.mjs",
     "test:template-quality": "node --test scripts/template-quality.test.mjs",
-    "test:live-qwen-proof": "node --test scripts/live-qwen-proof.test.mjs scripts/hardware-qualification.test.mjs scripts/release-qualification-policy.test.mjs scripts/resource-qualification.test.mjs scripts/route-resource-qualification.test.mjs scripts/resource-qualification-campaign.test.mjs scripts/template-qualification.test.mjs scripts/release-qualification-campaign.test.mjs",
+    "test:live-qwen-proof": "node --test scripts/live-qwen-proof.test.mjs scripts/canonical-runtime-hints.test.mjs scripts/hardware-qualification.test.mjs scripts/release-qualification-policy.test.mjs scripts/resource-qualification.test.mjs scripts/route-resource-qualification.test.mjs scripts/resource-qualification-campaign.test.mjs scripts/template-qualification.test.mjs scripts/release-qualification-campaign.test.mjs",
     "test:release-contract": "node --test scripts/backend-installer-contract.test.mjs scripts/backend-node-registry.test.mjs scripts/release-contract.test.mjs scripts/template-asset-release-contract.test.mjs",
     "test:live-backend-contract": "node scripts/live-backend-contract.mjs",
     "test:gallery-harness": "node --test scripts/template-gallery-harness.test.mjs",

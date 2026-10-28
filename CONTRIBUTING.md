@@ -321,6 +321,15 @@ observations retain the ordinary model-list response. `outputs` contains ordered
 the original browser downloads and raw task body; do not reconstruct their
 fields from a catalog or replace defaults, paths, prompts, or model pins.
 
+For the initial hinted DDIM accounting route, also retain `graphCompleted` as a
+`{path, bytes, sha256}` reference to the **original** `graph_completed` WebSocket
+JSON frame (at most 16 MiB). Public run-detail GET responses deliberately omit
+`runtimeHints`; do not add invented hints to them. The shared factory and reader
+join the submitted hints, frame, raw task, output and consumed receipt by
+task/session/client-run/input-hash/workflow/canvas epoch, attempt zero, complete
+runtime/source identity and measurement. The frame has no attempt index or
+completion timestamp; those remain bound to the original raw task.
+
 This initial path supports input-free execution only (`inputs: []`). Every
 submitted literal must have matching native consumed-input evidence; omissions,
 overrides, unsupported scalar connections, unresolved model components, retries,
@@ -343,7 +352,21 @@ provenance factory accepts an optional canonical proof from the existing reader:
 the trusted current canonical export, actual original task/output and complete
 native accounting. It derives the plan itself and binds task, attempt, output,
 model and completion identities without adding runtime hints or rewriting proofs.
-The default factory path remains unchanged. Input files, builtins, quantized
+The optional hinted policy accepts only the existing ordinary five-node,
+unquantized float32 resident DDIM CIFAR-10 graph, either correlation-only or the
+actual Studio Expert producer payload. It rejects unknown hints, coercions,
+Auto, nonempty retry plans/history, offload, model variants and unsupported
+execution authority. It accounts for the full saved observation form and the
+actual advisory CUDA reset decision; `fraction: 1` alone does not prove that a
+reset succeeded. Hinted and unhinted accounting also check the complete current,
+submitted and creator API envelopes: only `sid`, `nodes`, `paths`, the reviewed
+`runtimeHints`, and an optional empty `loops` array are admitted. Nonempty or
+malformed loops, service execution, deterministic/provenance routes and unknown
+top-level authority need separate accounting; the historical canonical identity
+alone does not cover them. Submitted and original completion hashes become part of the
+derived plan. The recorder retains the original frame unchanged, and the release
+projection repeats the same closed validation. Valid legacy unhinted descriptors and
+the default factory path remain unchanged. Input files, builtins, quantized
 configurations and other accounting policies remain unsupported by this initial
 join. A genuine unchanged native DDIM run is still required before a usability
 claim. Mocked protocol checks are not native, quality, hardware or release evidence.

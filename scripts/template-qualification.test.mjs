@@ -26,7 +26,7 @@ import {
   validateCanonicalWorkflowEvidence,
 } from './release-contract-core.mjs';
 import { canonicalGraphIdentity, sha256Value } from './live-proof-provenance.mjs';
-import { mockedDdimAccountingFixture } from './canonical-provenance-fixtures.mjs';
+import { hintedCanonicalHookCase, mockedDdimAccountingFixture } from './canonical-provenance-fixtures.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -497,8 +497,9 @@ test('standalone canonical recording has an explicit evidence boundary without a
   assert.doesNotMatch(result.stderr, /not in the runtime catalog/);
 });
 
-async function writeStandaloneEvidence(directory, { input = false, accounting = false } = {}) {
+async function writeStandaloneEvidence(directory, { input = false, accounting = false, hinted = false } = {}) {
   const nativeFixture = accounting ? mockedDdimAccountingFixture() : null;
+  const hintedFixture = hinted ? await hintedCanonicalHookCase() : null;
   const backendRoot = join(directory, 'backend');
   const evidenceRoot = join(directory, 'originals');
   mkdirSync(evidenceRoot, { recursive: true });
@@ -597,7 +598,7 @@ async function writeStandaloneEvidence(directory, { input = false, accounting = 
       },
     ],
   });
-  const [api] = await exportCanonicalWorkflowGraphs(ROOT, [graph]);
+  let [api] = await exportCanonicalWorkflowGraphs(ROOT, [graph]);
   if (nativeFixture)
     assert.equal(canonicalGraphIdentity(api).hash, canonicalGraphIdentity(nativeFixture.apiGraph).hash);
   else
@@ -608,6 +609,7 @@ async function writeStandaloneEvidence(directory, { input = false, accounting = 
       autoOffload: false,
       quantizationMode: 'none',
     };
+  if (hintedFixture) api = hintedFixture.apiGraph;
   const source = { gitCommit: 'b'.repeat(40), files: [{ path: 'main.py', sha256: 'c'.repeat(64) }] };
   source.fingerprint = sha256Value('backend-source-v1', source);
   const runtime = {
@@ -625,13 +627,14 @@ async function writeStandaloneEvidence(directory, { input = false, accounting = 
       capturedAt: '2026-10-27T00:00:00.000Z',
     },
   };
-  const form = {
+  const form = hintedFixture?.executedOutput.formSnapshot ?? {
     modelType: manifest.modelType,
     mode: manifest.mode,
     prompt: 'Synthetic metadata-only protocol test',
     seed: 7,
   };
   const task = {
+    ...(hintedFixture ? hintedFixture.executionReceipt : {}),
     task_id: nativeFixture?.receipt.taskId ?? 'synthetic-task',
     status: 'completed',
     attempt_index: 0,
@@ -651,14 +654,14 @@ async function writeStandaloneEvidence(directory, { input = false, accounting = 
   const output = {
     id: 'synthetic-output',
     taskId: task.task_id,
-    clientRunId: 'synthetic-run',
-    runInputHash: 'run_synthetic',
-    workflowTabId: 'synthetic-owned',
+    clientRunId: hintedFixture?.executedOutput.clientRunId ?? 'synthetic-run',
+    runInputHash: hintedFixture?.executedOutput.runInputHash ?? 'run_synthetic',
+    workflowTabId: hintedFixture?.executedOutput.workflowTabId ?? 'synthetic-owned',
     attemptIndex: 0,
     nodeId: nativeFixture?.receipt.nodeId ?? 'preview',
     fieldKey: 'image',
     formSnapshot: form,
-    graphSnapshot: graph,
+    graphSnapshot: hintedFixture?.executedOutput.graphSnapshot ?? graph,
     apiGraphSnapshot: api,
     mediaHash: `sha256:bytes:${media.sha256}`,
     mediaItems: [
@@ -702,7 +705,21 @@ async function writeStandaloneEvidence(directory, { input = false, accounting = 
     workflowId: manifest.id,
     creatorPackage: write(join(evidenceRoot, 'creator.json'), creator),
     outputPackage: write(join(evidenceRoot, 'output.json'), outputPackage),
-    runDetail: write(join(evidenceRoot, 'run.json'), { workflow_id: output.workflowTabId, task, outputs: [output] }),
+    runDetail: write(join(evidenceRoot, 'run.json'), {
+      workflow_id: output.workflowTabId,
+      task,
+      outputs: [output],
+      ...(hintedFixture ? { workflow_title: task.workflow_title, workflow_snapshot: task.workflow_snapshot } : {}),
+    }),
+    ...(hintedFixture
+      ? {
+          graphCompleted: write(join(evidenceRoot, 'graph-completed.json'), {
+            ...hintedFixture.canonicalAccountingProof.graphCompleted,
+            runtimeFingerprint: runtime,
+            runtimeMeasurement: task.runtimeMeasurement,
+          }),
+        }
+      : {}),
     nodes: write(join(evidenceRoot, 'nodes.json'), {
       nodes: Object.fromEntries(
         Object.values(api.nodes).map((node) => [
@@ -862,6 +879,114 @@ test('actual mocked DDIM accounting records through the shared factory and reval
       for (const row of output.resolvedExecutionInputs.nodes) delete row.fieldAccounting;
     }
     assert.throws(() => validateCanonicalWorkflowEvidence(omitted), /Consumed literal is missing/);
+  } finally {
+    disposeFixture(directory);
+  }
+});
+
+test('hinted DDIM descriptor retains and revalidates the hash-bound original completion without adding GET hints', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-ddim-hints-'));
+  try {
+    const fixture = await writeStandaloneEvidence(directory, { accounting: true, hinted: true });
+    const completionPath = join(fixture.evidenceRoot, 'graph-completed.json');
+    const runPath = join(fixture.evidenceRoot, 'run.json');
+    const originals = [fixture.evidencePath, completionPath, runPath].map((path) => readFileSync(path));
+    const readEvidence = () =>
+      readCanonicalWorkflowEvidence({
+        clientRoot: ROOT,
+        backendRoot: fixture.backendRoot,
+        workflowId: fixture.manifest.id,
+        evidencePath: fixture.evidencePath,
+      });
+    const result = await readEvidence();
+    assert.equal(result.provenance.graph.executionPlan.runtimeHintAccounting.policy, 'canonical-ddim-runtime-hints-v1');
+    assert.ok(
+      result.retainedFiles.some(
+        (ref) => ref.path === 'graph-completed.json' && ref.sha256 === fixture.descriptor.graphCompleted.sha256,
+      ),
+    );
+    assert.ok(Object.values(result.receipt.qualificationClaims).every((value) => value === false));
+    assert.equal(JSON.parse(readFileSync(runPath, 'utf8')).task.runtimeHints, undefined);
+    [fixture.evidencePath, completionPath, runPath].forEach((path, index) =>
+      assert.deepEqual(readFileSync(path), originals[index]),
+    );
+    const descriptor = structuredClone(fixture.descriptor);
+    delete descriptor.graphCompleted;
+    fixture.write(fixture.evidencePath, descriptor);
+    await assert.rejects(readEvidence, /completion/);
+    fixture.write(fixture.evidencePath, fixture.descriptor);
+    writeFileSync(completionPath, Buffer.concat([originals[1], Buffer.from(' ')]));
+    await assert.rejects(readEvidence, /size|hash/);
+    writeFileSync(completionPath, originals[1]);
+    const wrongTask = JSON.parse(originals[1]);
+    wrongTask.task_id = 'another-task';
+    descriptor.graphCompleted = fixture.write(completionPath, wrongTask);
+    fixture.write(fixture.evidencePath, descriptor);
+    await assert.rejects(readEvidence, /another task/);
+  } finally {
+    disposeFixture(directory);
+  }
+});
+
+test('canonical descriptor rejects top-level loop and service authority even when every original API snapshot agrees', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-authority-'));
+  try {
+    const fixture = await writeStandaloneEvidence(directory, { accounting: true, hinted: true });
+    const original = Object.fromEntries(
+      ['creator', 'output', 'run'].map((name) => [
+        name,
+        JSON.parse(readFileSync(join(fixture.evidenceRoot, `${name}.json`), 'utf8')),
+      ]),
+    );
+    const authorities = {
+      loops: [
+        { id: 'unreviewed-loop', bodyNodeIds: ['node-05'], resultNodeId: 'node-05', iterations: 2, maxRetries: 1 },
+      ],
+      servicePackage: { package: {}, values: {} },
+      futureExecutionAuthority: {},
+    };
+    for (const [key, authority] of Object.entries(authorities)) {
+      const bodies = structuredClone(original);
+      for (const graph of [
+        bodies.creator.apiGraph,
+        bodies.output.apiGraph,
+        bodies.output.latestOutput.apiGraphSnapshot,
+        bodies.run.outputs[0].apiGraphSnapshot,
+      ])
+        graph[key] = structuredClone(authority);
+      const descriptor = structuredClone(fixture.descriptor);
+      descriptor.creatorPackage = fixture.write(join(fixture.evidenceRoot, 'creator.json'), bodies.creator);
+      descriptor.outputPackage = fixture.write(join(fixture.evidenceRoot, 'output.json'), bodies.output);
+      descriptor.runDetail = fixture.write(join(fixture.evidenceRoot, 'run.json'), bodies.run);
+      fixture.write(fixture.evidencePath, descriptor);
+      await assert.rejects(
+        () =>
+          readCanonicalWorkflowEvidence({
+            clientRoot: ROOT,
+            backendRoot: fixture.backendRoot,
+            workflowId: fixture.manifest.id,
+            evidencePath: fixture.evidencePath,
+          }),
+        /Unsupported canonical graph/,
+      );
+    }
+    const creatorOnly = structuredClone(original);
+    creatorOnly.creator.apiGraph.loops = authorities.loops;
+    const descriptor = structuredClone(fixture.descriptor);
+    descriptor.creatorPackage = fixture.write(join(fixture.evidenceRoot, 'creator.json'), creatorOnly.creator);
+    descriptor.outputPackage = fixture.write(join(fixture.evidenceRoot, 'output.json'), creatorOnly.output);
+    descriptor.runDetail = fixture.write(join(fixture.evidenceRoot, 'run.json'), creatorOnly.run);
+    fixture.write(fixture.evidencePath, descriptor);
+    await assert.rejects(
+      () =>
+        readCanonicalWorkflowEvidence({
+          clientRoot: ROOT,
+          backendRoot: fixture.backendRoot,
+          workflowId: fixture.manifest.id,
+          evidencePath: fixture.evidencePath,
+        }),
+      /Unsupported canonical graph/,
+    );
   } finally {
     disposeFixture(directory);
   }
