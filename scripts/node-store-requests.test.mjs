@@ -2168,7 +2168,13 @@ test('a replacement worker welcome refreshes runtime readiness and fences the ol
   const older = nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
   websocketMessagesModule.handleWebsocketMessage(
     { type: 'welcome', sid: 'same-session', instance: 'replacement-worker', current: null, queued: {}, recent: [] },
-    { sid: 'same-session', setSid: () => {}, getSid: () => 'same-session', setLoopTimer: () => {} },
+    {
+      sid: 'same-session',
+      ws: { url: 'ws://127.0.0.1:5191/ws?sid=same-session' },
+      setSid: () => {},
+      getSid: () => 'same-session',
+      setLoopTimer: () => {},
+    },
   );
   const welcomeRuntimeReads = runtimeReads;
   replacementRead.resolve(jsonResponse({ ready: true, packages: { transformers: { available: true } } }));

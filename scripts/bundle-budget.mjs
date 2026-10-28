@@ -1,3 +1,9 @@
+// Passive saved-form preservation and authoritative service-cache status measure
+// largest/startup/deferred gzip 491457/669945/327044 versus the accepted
+// 490814/669295/326710. Add only aggregate growth 643/650/334, preserving
+// 8/11/225 bytes of headroom. All 89 deferred bodies match after normalizing
+// versioned URLs; the same four startup and 89 deferred assets retain membership.
+// Dependencies, chunk rules, minifier, validators and 65536-byte chunk cap stay fixed.
 // Windows Block sizing/disabled-stage/label/default/readiness fixes and the
 // reviewed Vite 8.1.4 -> 8.1.6 security update measure largest/startup/deferred
 // gzip 490814/669295/326710 versus accepted 490492/668797/326749. Add only
@@ -236,6 +242,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Add only those measured costs, preserving 8/11/152 bytes of existing headroom.
 // Dependencies, startup membership, lazy boundaries and the 64 KiB chunk cap stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  643 +
   322 +
   2020 +
   66 +
@@ -354,6 +361,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  650 +
   498 +
   2018 +
   69 +
@@ -556,6 +564,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  334 +
   178 +
   287 +
   44 +

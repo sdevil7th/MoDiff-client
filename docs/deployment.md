@@ -134,15 +134,26 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
-The 28 October Windows candidate measures 669295 gzip bytes of startup
+The Windows saved-form and service-cache follow-up measures 669945 gzip bytes
+of startup JavaScript, with a 491457-byte largest startup chunk and 327044
+deferred bytes. Relative to the earlier 28 October candidate, the measured
+aggregate increases are 650 startup bytes, 643 largest-chunk bytes and 334
+deferred bytes. All 89 deferred bodies are identical after normalizing versioned
+URLs; their compressed-size difference comes from the changed version strings.
+Current ceilings are 669956, 491465 and 327269 bytes respectively, preserving
+11, 8 and 225 bytes of headroom. The same four startup and 89 deferred assets
+keep their loading membership; dependencies, chunk rules, minifier settings,
+validators and the 65536-byte per-deferred-chunk ceiling stay fixed.
+
+The earlier 28 October Windows candidate measures 669295 gzip bytes of startup
 JavaScript, with a 490814-byte largest startup chunk and 326710 deferred bytes.
 The Block/checkbox/default/readiness correctness fixes and reviewed Vite
 8.1.4 → 8.1.6 security update add 498 aggregate startup bytes and 322 bytes to
 the largest startup chunk versus the last accepted build. Allow only those
-measured increases: current ceilings are 669306 and 490822 bytes, retaining
+measured increases: its ceilings are 669306 and 490822 bytes, retaining
 11 and 8 bytes of headroom. The same four startup and 89 deferred assets keep
 their loading membership; chunk rules, minifier settings and validators stay
-fixed. Deferred limits remain 326935 bytes aggregate and 65536 bytes per chunk.
+fixed. Its deferred limits are 326935 bytes aggregate and 65536 bytes per chunk.
 The earlier measurements below describe their historical checkpoints. The
 original failed measurement remains evidence for its original source and limits.
 
