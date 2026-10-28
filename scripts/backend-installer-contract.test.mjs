@@ -35,6 +35,52 @@ function fixture({ managed = true, requirements = 'torch==2.8.0\n' } = {}) {
   return root;
 }
 
+function reviewedSetupSourceContract(readme, workflow) {
+  const sections = Array.from(
+    readme.matchAll(/^application source pair is:\r?\n\r?\n([\s\S]*?)\r?\n\r?\nCI backend contract:/gmu),
+    (match) => match[1],
+  );
+  assert.equal(sections.length, 1, 'README must declare one reviewed application source table');
+  const [header, separator, ...rows] = sections[0].split(/\r?\n/u);
+  assert.match(header, /^\|\s*Repository\s*\|\s*Application source before final packaging\s*\|$/u);
+  assert.match(separator, /^\|[ :\-]+\|[ :\-]+\|$/u);
+  assert.equal(rows.length, 2, 'Reviewed application source table must contain exactly two rows');
+  const pairs = rows.map((row) => {
+    const match = /^\|\s*(MoDiff(?:-client)?)\s*\|\s*`([a-f0-9]{40})`\s*\|$/u.exec(row);
+    assert.ok(match, 'Each application source row must name its repository and a full immutable commit');
+    return [match[1], match[2]];
+  });
+  assert.deepEqual(
+    pairs.map(([repository]) => repository).sort(),
+    ['MoDiff', 'MoDiff-client'],
+    'Reviewed application source repositories must be unique and complete',
+  );
+  const ciPins = Array.from(readme.matchAll(/^CI backend contract: `([^`\r\n]+)`\.[ \t]*\r?$/gmu), (match) => match[1]);
+  assert.equal(ciPins.length, 1, 'README must declare exactly one CI backend contract pin');
+  assert.match(ciPins[0], /^[a-f0-9]{40}$/u, 'The declared CI backend contract must be an immutable commit');
+  const checkouts = Array.from(workflow.matchAll(/^([ \t]+)repository: sdevil7th\/MoDiff[ \t]*\r?$/gmu));
+  assert.equal(checkouts.length, 2, 'Both CI jobs must check out the reviewed backend repository');
+  const backendRefs = checkouts.map((checkout) => {
+    const fields = [];
+    const followingLines = workflow
+      .slice(checkout.index + checkout[0].length)
+      .split(/\r?\n/u)
+      .slice(1);
+    for (const line of followingLines) {
+      if (!line.trim()) continue;
+      const indentation = /^[ \t]*/u.exec(line)[0].length;
+      if (indentation < checkout[1].length) break;
+      if (line.trimStart().startsWith('ref:')) fields.push(line.trim());
+    }
+    assert.equal(fields.length, 1, 'Each backend checkout must declare exactly one ref');
+    const match = /^ref: ([a-f0-9]{40})$/u.exec(fields[0]);
+    assert.ok(match, 'Each CI backend ref must be a full immutable commit');
+    return match[1];
+  });
+  assert.deepEqual(backendRefs, [ciPins[0], ciPins[0]], 'Both CI jobs must match the documented CI backend contract');
+  return { applicationSource: Object.fromEntries(pairs), ciBackendCommit: ciPins[0] };
+}
+
 test('package identity binds the native uv lock and specialized profile requirements', () => {
   const root = fixture();
   try {
@@ -181,16 +227,76 @@ test('current setup guides select the published candidate and identify its revie
     assert.match(text, /codex\/windows-delivery-20261026/, `${guide.pathname} must identify the current candidate`);
   }
   const readme = readFileSync(guides[0], 'utf8');
-  const backendSourceCommit = '8f8c40bab9a389a0199c96c1add0a26a967928bd';
-  const clientSourceCommit = '8f0a95e2c7267b04f9e9195e7de30a3eeb01d1b7';
-  assert.ok(readme.includes(backendSourceCommit), 'Reviewed backend application source commit is missing');
-  assert.ok(readme.includes(clientSourceCommit), 'Reviewed client application source commit is missing');
   const workflow = readFileSync(new URL('.github/workflows/ci.yml', clientRoot), 'utf8');
-  const backendRefs = Array.from(
-    workflow.matchAll(/repository: sdevil7th\/MoDiff\s+(?:#[^\n]*\n\s*)?ref: ([a-f0-9]{40})/gu),
-    (match) => match[1],
-  );
-  assert.deepEqual(backendRefs, [backendSourceCommit, backendSourceCommit], 'Both CI jobs must pin the source pair');
+  reviewedSetupSourceContract(readme, workflow);
   assert.match(readme, /interim Windows candidate/i);
   assert.match(readme, /not.*(?:release|released).*`main`/);
+});
+
+test('reviewed setup source contract keeps application revisions separate from the exact CI backend pin', () => {
+  const root = new URL('..', import.meta.url);
+  const readme = readFileSync(new URL('README.md', root), 'utf8');
+  const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+  const first = reviewedSetupSourceContract(readme, workflow);
+  const nextBackend = 'a'.repeat(40);
+  const nextClient = 'b'.repeat(40);
+  const changed = readme
+    .replace(first.applicationSource.MoDiff, nextBackend)
+    .replace(first.applicationSource['MoDiff-client'], nextClient);
+  assert.deepEqual(reviewedSetupSourceContract(changed, workflow), {
+    applicationSource: { MoDiff: nextBackend, 'MoDiff-client': nextClient },
+    ciBackendCommit: first.ciBackendCommit,
+  });
+});
+
+test('reviewed setup source contract rejects missing duplicate mutable and drifting source declarations', () => {
+  const root = new URL('..', import.meta.url);
+  const readme = readFileSync(new URL('README.md', root), 'utf8');
+  const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+  const contract = reviewedSetupSourceContract(readme, workflow);
+  const backendRow = readme.split('\n').find((line) => /^\| MoDiff\s+\|/u.test(line));
+  const clientRow = readme.split('\n').find((line) => /^\| MoDiff-client\s+\|/u.test(line));
+  const ciLine = `CI backend contract: \`${contract.ciBackendCommit}\`.`;
+  const mutations = {
+    'missing backend row': [readme.replace(`${backendRow}\n`, ''), workflow],
+    'missing client row': [readme.replace(`${clientRow}\n`, ''), workflow],
+    'duplicate backend row': [readme.replace(clientRow, backendRow), workflow],
+    'duplicate client row': [readme.replace(backendRow, clientRow), workflow],
+    'unknown application repository': [readme.replace(backendRow, backendRow.replace('MoDiff', 'Other')), workflow],
+    'mutable backend source': [
+      readme.replace(contract.applicationSource.MoDiff, 'codex/windows-delivery-20261026'),
+      workflow,
+    ],
+    'short client source': [readme.replace(contract.applicationSource['MoDiff-client'], '1234567'), workflow],
+    'hash prefix with suffix': [
+      readme.replace(contract.applicationSource.MoDiff, `${contract.applicationSource.MoDiff}0`),
+      workflow,
+    ],
+    'missing CI declaration': [readme.replace(ciLine, ''), workflow],
+    'duplicate CI declaration': [readme.replace(ciLine, `${ciLine}\n${ciLine}`), workflow],
+    'mutable CI declaration': [
+      readme.replace(ciLine, 'CI backend contract: `codex/windows-delivery-20261026`.'),
+      workflow,
+    ],
+    'one drifting CI job': [readme, workflow.replace(`ref: ${contract.ciBackendCommit}`, `ref: ${'c'.repeat(40)}`)],
+    'both drifting CI jobs': [
+      readme,
+      workflow.replaceAll(`ref: ${contract.ciBackendCommit}`, `ref: ${'c'.repeat(40)}`),
+    ],
+    'mutable CI job': [
+      readme,
+      workflow.replace(`ref: ${contract.ciBackendCommit}`, 'ref: codex/windows-delivery-20261026'),
+    ],
+    'missing CI ref': [readme, workflow.replace(`ref: ${contract.ciBackendCommit}`, '# removed backend ref')],
+    'duplicate CI ref': [
+      readme,
+      workflow.replace(
+        `ref: ${contract.ciBackendCommit}`,
+        `ref: ${contract.ciBackendCommit}\n          ref: ${contract.ciBackendCommit}`,
+      ),
+    ],
+    'missing backend checkout': [readme, workflow.replace('repository: sdevil7th/MoDiff', 'repository: other/MoDiff')],
+  };
+  for (const [label, [changedReadme, changedWorkflow]] of Object.entries(mutations))
+    assert.throws(() => reviewedSetupSourceContract(changedReadme, changedWorkflow), undefined, label);
 });

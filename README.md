@@ -31,6 +31,11 @@ application source pair is:
 | MoDiff        | `fe84ed1ad6eeb77d904742780ec511fce441e4e4` |
 | MoDiff-client | `109da623e65747ae09e18cf699cf12f1485e7644` |
 
+CI backend contract: `dc26f353b5e82da7fdde7cfbd7e8d6bd786f3acc`.
+
+Both CI jobs use this exact immutable backend pin. It can include documentation
+descendants of the reviewed application source above.
+
 These application source revisions were reviewed on 28 October 2026. Final
 documentation, CI pairing and bundled-client packaging commits can be later
 descendants; they do not expand model or hardware qualification. Record
