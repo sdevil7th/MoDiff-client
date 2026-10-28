@@ -2576,24 +2576,19 @@ test('existing saved canonical imports are adopted during workflow-tab normaliza
   }
 });
 
-test('legacy whole image imports keep ordinary graph authority without inventing a managed receipt', async () => {
+test('explicit whole image imports keep ordinary graph authority without inventing a managed receipt', async () => {
   const graph = JSON.parse(
     await readFile(
       path.resolve(ROOT, '../MoDiff/data/graphs/studio/marigold-depth-pipeline/depth-estimation.json'),
       'utf8',
     ),
   );
-  const previous = studioStoreModule.useStudioStore.getState().workflowTabs;
+  const previousStudio = studioStoreModule.useStudioStore.getState();
+  const previousFlow = flowStoreModule.useFlowStore.getState();
   try {
-    studioStoreModule.useStudioStore.getState().mergeBackendWorkflow({
-      id: 'legacy-whole-image-import',
-      title: 'Depth',
-      createdAt: 1,
-      updatedAt: 1,
-      dirty: false,
-      source: 'import',
-      backendRevision: 1,
-      snapshot: {
+    const importedId = studioStoreModule.useStudioStore.getState().createWorkflowTab(
+      'Depth',
+      {
         nodes: graph.nodes,
         edges: graph.edges,
         studioForm: profilesModule.DEFAULT_STUDIO_FORM,
@@ -2602,10 +2597,9 @@ test('legacy whole image imports keep ordinary graph authority without inventing
         activeTemplateId: null,
         sourceOutputId: null,
       },
-    });
-    const snapshot = studioStoreModule.useStudioStore
-      .getState()
-      .workflowTabs.find((t) => t.id === 'legacy-whole-image-import').snapshot;
+      'import',
+    );
+    const snapshot = studioStoreModule.useStudioStore.getState().workflowTabs.find((t) => t.id === importedId).snapshot;
     assert.equal(snapshot.studioGraphBinding, null);
     assert.equal(snapshot.studioForm.mode, 'depth_estimation');
     assert.equal(snapshot.studioForm.modelType, 'MarigoldDepthPipeline');
@@ -2633,7 +2627,52 @@ test('legacy whole image imports keep ordinary graph authority without inventing
       .workflowTabs.find((t) => t.id === 'explicit-image-receipt');
     assert.equal(explicit.snapshot.studioGraphBinding.finalizationProofInvalid, true);
   } finally {
-    studioStoreModule.useStudioStore.setState({ workflowTabs: previous });
+    flowStoreModule.useFlowStore.setState(previousFlow);
+    studioStoreModule.useStudioStore.setState(previousStudio);
+  }
+});
+
+test('saved whole image hydration preserves its recognized form while keeping the exact ordinary graph', async () => {
+  const graph = JSON.parse(
+    await readFile(
+      path.resolve(ROOT, '../MoDiff/data/graphs/studio/marigold-depth-pipeline/depth-estimation.json'),
+      'utf8',
+    ),
+  );
+  const previousStudio = studioStoreModule.useStudioStore.getState();
+  const previousFlow = flowStoreModule.useFlowStore.getState();
+  const savedForm = { ...profilesModule.DEFAULT_STUDIO_FORM, prompt: 'Retain this saved form', seed: 321 };
+  try {
+    studioStoreModule.useStudioStore.getState().mergeBackendWorkflow({
+      id: 'saved-ordinary-depth',
+      title: 'Saved depth graph',
+      createdAt: 1,
+      updatedAt: 1,
+      source: 'import',
+      revision: 1,
+      snapshot: {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        studioForm: savedForm,
+        studioGraphBinding: null,
+        selectedMode: savedForm.mode,
+        activeTemplateId: null,
+        sourceOutputId: null,
+      },
+    });
+    const snapshot = studioStoreModule.useStudioStore
+      .getState()
+      .workflowTabs.find((t) => t.id === 'saved-ordinary-depth').snapshot;
+    assert.deepEqual(snapshot.studioForm, savedForm);
+    assert.equal(snapshot.selectedMode, savedForm.mode);
+    assert.equal(snapshot.studioGraphBinding, null);
+    assert.deepEqual(snapshot.edges, graph.edges);
+    for (const node of graph.nodes) {
+      assert.deepEqual(snapshot.nodes.find((n) => n.id === node.id).data.params, node.data.params);
+    }
+  } finally {
+    flowStoreModule.useFlowStore.setState(previousFlow);
+    studioStoreModule.useStudioStore.setState(previousStudio);
   }
 });
 

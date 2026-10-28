@@ -182,6 +182,8 @@ test('passive ordinary image restore preserves the complete saved form and does 
       ['modules.ImageOperations', 'ProcessImage'],
       ['modules.DiffusersImage', 'LoadPipeline'],
       ['modules.Spandrel', 'Upscaler'],
+      ['modules.HuggingFaceTransformers', 'LoadDepthEstimationModel'],
+      ['modules.HuggingFaceTransformers', 'LoadImageTextToTextModel'],
     ]) {
       for (const transition of ['switch', 'close', 'backend hydration', 'reload']) {
         await t.test(`${action}: ${transition}`, async () => {
