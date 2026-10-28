@@ -657,6 +657,8 @@ export async function installEphemeralGalleryStorage(page) {
     for (const key of persistentKeys) {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
+      // Keep legacy recovery bytes intact without hydrating foreign graphs in this owned test page.
+      originalSetItem.call(sessionStorage, `${key}.legacy-recovered.v1`, '1');
     }
   });
 }

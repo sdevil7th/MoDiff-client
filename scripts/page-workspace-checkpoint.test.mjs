@@ -1,3 +1,6 @@
+import { runInNewContext } from 'node:vm';
+import { installEphemeralWorkflowStorage } from './workflow-library-ephemeral-storage.mjs';
+import { installEphemeralGalleryStorage } from './template-gallery-runner.mjs';
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import path from 'node:path';
@@ -25,11 +28,12 @@ function activate(page) {
   globalThis.location = page.window.location;
 }
 
-async function page(local, session = storage()) {
+async function page(local, session = storage(), initialize) {
   const context = {
     window: { localStorage: local, sessionStorage: session, location: { origin: 'http://127.0.0.1:5191' } },
   };
   activate(context);
+  initialize?.();
   const server = await createServer({
     root: ROOT,
     configFile: false,
@@ -319,3 +323,95 @@ test('page checkpoints retain more than twelve dirty workflows without changing 
   const reloaded = await page(shared, context.window.sessionStorage);
   assert.deepEqual(workspace(reloaded), expected);
 });
+
+for (const [label, install] of [
+  ['Workflow', installEphemeralWorkflowStorage],
+  ['Gallery', installEphemeralGalleryStorage],
+]) {
+  test(`${label} owned generator startup cannot recover a foreign legacy workspace`, async () => {
+    let initialize;
+    await install({
+      addInitScript: async (script) => {
+        initialize = script;
+      },
+      route: async () => {},
+    });
+    class MemoryStorage {
+      values = new Map();
+      getItem(key) {
+        return this.values.get(key) ?? null;
+      }
+      setItem(key, value) {
+        this.values.set(key, String(value));
+      }
+      removeItem(key) {
+        this.values.delete(key);
+      }
+    }
+    const shared = new MemoryStorage();
+    const session = new MemoryStorage();
+    const foreignNode = {
+      id: 'foreign-graph',
+      type: 'custom',
+      position: { x: 1, y: 2 },
+      data: {
+        type: 'custom',
+        label: 'Foreign graph',
+        module: 'fixture.Text',
+        action: 'Text',
+        params: { text: { type: 'string', value: 'foreign authored graph' } },
+      },
+    };
+    const foreignFlow = JSON.stringify({
+      version: 1,
+      state: { nodes: [foreignNode], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+    });
+    const foreignStudio = JSON.stringify({
+      version: 0,
+      state: {
+        form: { prompt: 'foreign authored prompt' },
+        activeWorkflowTabId: 'foreign-document',
+        workflowTabs: [
+          {
+            id: 'foreign-document',
+            title: 'Foreign document',
+            createdAt: 1,
+            updatedAt: 2,
+            dirty: true,
+            source: 'manual',
+            snapshot: {
+              nodes: [foreignNode],
+              edges: [],
+              studioForm: { prompt: 'foreign authored prompt' },
+              studioGraphBinding: null,
+            },
+          },
+        ],
+      },
+    });
+    shared.setItem('studio', foreignStudio);
+    shared.setItem('reactflow', foreignFlow);
+    const app = await page(shared, session, () =>
+      runInNewContext(`(${initialize.toString()})()`, {
+        Storage: MemoryStorage,
+        localStorage: shared,
+        sessionStorage: session,
+      }),
+    );
+    assert.deepEqual(
+      app.studio.getState().workflowTabs,
+      [],
+      'the actual Studio factory must not return retained foreign alias bytes',
+    );
+    assert.equal(app.studio.getState().activeWorkflowTabId, null);
+    assert.deepEqual(
+      app.flow.getState().nodes,
+      [],
+      'the actual Flow factory must not return retained foreign alias bytes',
+    );
+    assert.equal(shared.getItem('studio'), foreignStudio, 'keep exact legacy recovery bytes');
+    assert.equal(shared.getItem('reactflow'), foreignFlow);
+    assert.equal(session.getItem('modiff.studio'), null, 'generated workspace remains ephemeral');
+    assert.equal(session.getItem('modiff.flow'), null);
+  });
+}
