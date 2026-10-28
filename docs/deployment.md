@@ -134,6 +134,19 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+The save/read hydration ownership fix measures 671695 gzip bytes of startup
+JavaScript, with a 493208-byte largest startup chunk and 327026 deferred bytes.
+Compared with the accepted authored-device import, immutable Model Install and
+workspace checkpoint build, the measured aggregate startup growth is 36 bytes,
+including 38 bytes in the largest startup chunk. The startup ceilings are 671706
+and 493216, preserving 11 and 8 bytes of headroom. Both deferred ceilings remain
+unchanged at 327269 aggregate and 65536 per chunk. The same four startup and 89
+deferred assets keep their loading membership; all deferred bodies match after
+versioned URL normalization. The 107-byte deferred decrease reflects versioned
+import compression. These are aggregate build measurements, not per-module
+attribution. Dependencies, chunk rules, minifier and identity validators stay
+fixed. The following measurements remain historical.
+
 The reviewed authored-device import, immutable Model Install and page-owned
 workspace checkpoint changes measure 671659 gzip bytes of startup JavaScript,
 with a 493170-byte largest startup chunk and 327133 deferred bytes. Compared with
