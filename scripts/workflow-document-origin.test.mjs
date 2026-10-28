@@ -542,6 +542,7 @@ for (const scenario of [
 ]) {
   test(`workflow import viewport: ${scenario.name} retains the graph and reports success`, async () => {
     const previousFlow = flow.getState();
+    const previousStudio = studio.getState();
     const previousReader = globalThis.FileReader;
     const previousFetch = globalThis.fetch;
     const currentViewport = { x: 25, y: -30, zoom: 0.75 };
@@ -564,6 +565,7 @@ for (const scenario of [
             label: 'Retained source',
             params: {
               file: { type: 'str', display: 'filebrowser', value: ['images/retained.png'] },
+              device: { type: 'string', value: 'cpu:0', default: 'cpu' },
               image: { type: 'image', display: 'output' },
             },
             operationAuthoring,
@@ -578,7 +580,10 @@ for (const scenario of [
             module: 'modules.Image',
             action: 'Preview',
             label: 'Retained preview',
-            params: { image: { type: 'image', display: 'input' } },
+            params: {
+              image: { type: 'image', display: 'input' },
+              device: { type: 'string', value: 'cpu:0', default: 'cpu' },
+            },
           },
         },
       ],
@@ -615,6 +620,7 @@ for (const scenario of [
         throw new Error('Import must not dispatch.');
       };
       flow.setState({ nodes: [], edges: [], viewport: { ...currentViewport } });
+      studio.setState({ form: { ...studio.getState().form, device: 'cuda:0' } });
       const previousViewport = flow.getState().viewport;
       for (const toast of notifications.getToastItems()) notifications.closeSnackbar(toast.id);
       let handleDrop;
@@ -650,6 +656,9 @@ for (const scenario of [
       );
       assert.deepEqual(flow.getState().nodes[0].data.operationAuthoring, operationAuthoring);
       assert.deepEqual(flow.getState().nodes[0].data.params.file.value, ['images/retained.png']);
+      for (const node of flow.getState().nodes) {
+        assert.deepEqual(node.data.params.device, graph.nodes.find(({ id }) => id === node.id).data.params.device);
+      }
       assert.deepEqual(
         flow.getState().edges.map(({ id, source, sourceHandle, target, targetHandle }) => ({
           id,
@@ -669,6 +678,7 @@ for (const scenario of [
       assert.deepEqual(requests, []);
     } finally {
       flow.setState(previousFlow);
+      studio.setState(previousStudio);
       globalThis.FileReader = previousReader;
       globalThis.fetch = previousFetch;
     }

@@ -1106,8 +1106,12 @@ is the single policy selector.
 Both storage keys and legacy normalizers remain unchanged. A restored workflow
 keeps its own resource settings while tabs share the global editing preference.
 Explicit graph imports preserve the document's normalized memory policy while
-inferring their image recipe summary. Passive tab switching, closing, backend
-hydration and browser reload retain a recognized saved ordinary image form;
+inferring their image recipe summary. Raw graph imports also retain each node's
+authored device value and default, including mixed CPU/accelerator placement;
+the current form device does not rebase them. Summary defaults do not repair
+missing or malformed graph fields. Explicit device rebasing remains separate.
+Passive tab switching, closing, backend hydration and browser reload retain a
+recognized saved ordinary image form;
 Save As, Duplicate and output Restore retain that form too. These paths do not
 replace authored captions, model/task summaries or resource settings from graph
 inference, and an unchanged checkpoint does not trigger an autosave. The saved

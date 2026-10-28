@@ -2451,6 +2451,67 @@ test('device rebasing only changes declared device parameters', () => {
   assert.equal(rebased.metadata.preferredLabel, 'cuda:0');
 });
 
+test('ordinary graph imports preserve authored per-node devices and defaults independently of the current form', async (t) => {
+  for (const device of ['cpu:0', 'cuda:1', 'mps:0', 'xpu:0']) {
+    await t.test(device, () => {
+      const graph = canonicalModularTextToImageGraph();
+      const loader = graph.nodes.find((node) => node.id === 'models');
+      const preview = graph.nodes.find((node) => node.id === 'preview');
+      // An ordinary operation graph owns its values, even when its shape also
+      // resembles a historical managed template.
+      loader.data.operationAuthoring = { schemaVersion: 1 };
+      loader.data.params.device = { value: device, default: 'cpu:0' };
+      preview.data.params.device = { value: 'cpu:0', default: 'cpu' };
+      preview.data.params.notes = { value: 'cuda:0' };
+      const original = structuredClone(graph);
+
+      const snapshot = workflowInferenceModule.workflowSnapshotFromGraph(graph, 'smoothstep', {
+        ...profilesModule.DEFAULT_STUDIO_FORM,
+        device: 'cuda:0',
+      });
+
+      assert.equal(snapshot.studioGraphBinding, null);
+      assert.deepEqual(snapshot.nodes, graph.nodes);
+      assert.deepEqual(
+        snapshot.edges,
+        graph.edges.map((edge) => ({ ...edge, type: 'smoothstep' })),
+      );
+      assert.deepEqual(snapshot.viewport, graph.viewport);
+      assert.equal(snapshot.studioForm.device, device, 'The imported loader supplies the form summary.');
+      assert.deepEqual(graph, original, 'Import must not mutate the source graph.');
+      snapshot.nodes[0].data.params.device.value = 'cpu';
+      assert.deepEqual(graph, original, 'The imported snapshot must not share mutable node data with its source.');
+    });
+  }
+});
+
+test('ordinary graph imports leave missing and malformed device fields intact while inferring a fallback summary', async (t) => {
+  for (const params of [
+    {},
+    { device: { value: undefined, default: 'cpu:0' } },
+    { device: { value: null, default: null } },
+    { device: { value: '', default: '' } },
+    { device: { value: 0, default: false } },
+  ]) {
+    await t.test(JSON.stringify(params), () => {
+      const graph = canonicalModularTextToImageGraph();
+      const loader = graph.nodes.find((node) => node.id === 'models');
+      loader.data.operationAuthoring = { schemaVersion: 1 };
+      Object.assign(loader.data.params, params);
+      const original = JSON.parse(JSON.stringify(graph));
+
+      const snapshot = workflowInferenceModule.workflowSnapshotFromGraph(graph, 'smoothstep', {
+        ...profilesModule.DEFAULT_STUDIO_FORM,
+        device: 'cuda:0',
+      });
+
+      assert.deepEqual(snapshot.nodes, original.nodes, 'Summary inference must not repair saved node values.');
+      assert.equal(snapshot.studioForm.device, params.device?.default === 'cpu:0' ? 'cpu:0' : 'cuda:0');
+      assert.deepEqual(JSON.parse(JSON.stringify(graph)), original);
+    });
+  }
+});
+
 test('role-marked generated Studio workflow imports retain their managed contract', () => {
   const graph = canonicalModularTextToImageGraph();
   graph.nodes = graph.nodes.map((node, index) => ({
