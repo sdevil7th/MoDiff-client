@@ -3458,7 +3458,26 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   if (binding.nodes.qwenQuantization) applyExpertQuantizationConfig(binding, form);
 }
 
-function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
+function applyRecipeDefaults(
+  nodeId: string | undefined,
+  form: StudioFormState,
+  defaults: Record<string, unknown>,
+  initialize: boolean,
+) {
+  const explicitAttention =
+    form.resourceMode === 'expert' && typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
+      ? form.attentionBackend
+      : undefined;
+  for (const [field, value] of Object.entries(defaults)) {
+    const explicit = field === 'attention_backend' ? explicitAttention : undefined;
+    // Custom recipe controls belong to the graph unless the form explicitly
+    // edits the same control. Creation still applies the reviewed defaults once.
+    if (form.resourceMode === 'expert' && !initialize && explicit === undefined) continue;
+    setParamIfPresent(nodeId, [field], explicit ?? value);
+  }
+}
+
+function applyFormValues(binding: StudioGraphBinding, form: StudioFormState, initializeRecipe = false) {
   const {
     models,
     qwenQuantization,
@@ -3546,23 +3565,27 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersQuantization, ['backend'], audioQuantizationMode);
     setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
     setParamIfPresent(diffusersQuantization, ['dtype'], audioDtype);
-    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    setParamIfPresent(
+    applyRecipeDefaults(
       diffusersRecipe,
-      ['attention_backend'],
-      typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
-        ? form.attentionBackend
-        : (autoCandidate?.attentionBackend ?? 'auto'),
+      form,
+      {
+        device_map: 'none',
+        attention_backend:
+          typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
+            ? form.attentionBackend
+            : (autoCandidate?.attentionBackend ?? 'auto'),
+        attention_components: '',
+        vae_slicing: true,
+        vae_tiling: true,
+        regional_compile: autoCandidate?.regionalCompile ?? false,
+        denoiser_cache: autoCandidate?.denoiserCache ?? 'none',
+        layerwise_casting: autoCandidate?.layerwiseCasting ?? false,
+        channels_last: autoCandidate?.channelsLast ?? false,
+      },
+      initializeRecipe,
     );
-    setParamIfPresent(diffusersRecipe, ['attention_components'], '');
-    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
-    setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
-    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
-    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
-    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
-    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
 
     // An audio LoRA is architecture-specific. Keep its declared base model
     // authoritative across later Studio graph reconciliation; otherwise the
@@ -3631,21 +3654,27 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     );
     setParamIfPresent(diffusersQuantization, ['components'], ['transformer']);
     setParamIfPresent(diffusersQuantization, ['dtype'], autoCandidate?.dtype ?? form.dtype);
-    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], resolvedOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    const attentionBackend = autoCandidate?.attentionBackend ?? 'auto';
-    setParamIfPresent(diffusersRecipe, ['attention_backend'], attentionBackend);
-    setParamIfPresent(diffusersRecipe, ['attention_components'], supportsNativeFlash ? 'transformer' : '');
-    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
     // Decode activation pressure can exceed sampling pressure by tens of GiB.
     // Wan I2V also VAE-encodes an 81-frame padded conditioning tensor before
     // denoising, which can exceed resident-model headroom even at 768x512.
-    setParamIfPresent(diffusersRecipe, ['vae_tiling'], needsVaeTiling);
-    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
-    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
-    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
-    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
+    applyRecipeDefaults(
+      diffusersRecipe,
+      form,
+      {
+        device_map: 'none',
+        attention_backend: autoCandidate?.attentionBackend ?? 'auto',
+        attention_components: supportsNativeFlash ? 'transformer' : '',
+        vae_slicing: true,
+        vae_tiling: needsVaeTiling,
+        regional_compile: autoCandidate?.regionalCompile ?? false,
+        denoiser_cache: autoCandidate?.denoiserCache ?? 'none',
+        layerwise_casting: autoCandidate?.layerwiseCasting ?? false,
+        channels_last: autoCandidate?.channelsLast ?? false,
+      },
+      initializeRecipe,
+    );
 
     setModelRepo(wanPipeline, resolvedArtifact);
     if (pipelineClass) setParamIfPresent(wanPipeline, ['pipeline_class'], pipelineClass);
@@ -3718,17 +3747,24 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersQuantization, ['backend'], autoQuantizationMode);
     setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
     setParamIfPresent(diffusersQuantization, ['dtype'], imageDtype);
-    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    setParamIfPresent(diffusersRecipe, ['attention_backend'], autoCandidate?.attentionBackend ?? 'auto');
-    setParamIfPresent(diffusersRecipe, ['attention_components'], '');
-    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
-    setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
-    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
-    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
-    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
-    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
+    applyRecipeDefaults(
+      diffusersRecipe,
+      form,
+      {
+        device_map: 'none',
+        attention_backend: autoCandidate?.attentionBackend ?? 'auto',
+        attention_components: '',
+        vae_slicing: true,
+        vae_tiling: true,
+        regional_compile: autoCandidate?.regionalCompile ?? false,
+        denoiser_cache: autoCandidate?.denoiserCache ?? 'none',
+        layerwise_casting: autoCandidate?.layerwiseCasting ?? false,
+        channels_last: autoCandidate?.channelsLast ?? false,
+      },
+      initializeRecipe,
+    );
 
     setModelRepo(diffusersImagePipeline, autoArtifact ?? capability.defaultRepo);
     if (pipelineClass) {
@@ -4047,9 +4083,10 @@ function createSkeletonGraph(
   context: WorkflowOperationContext,
 ): BridgeResult {
   assertWorkflowOperationContext(context);
+  const existingNodeIds = new Set(useFlowStore.getState().nodes.map((node) => node.id));
   const binding = buildOrReuseBinding(form);
   applyAuxiliaryNodePresentation(binding, form);
-  applyFormValues(binding, form);
+  applyFormValues(binding, form, !existingNodeIds.has(binding.nodes.diffusersRecipe ?? ''));
   const managedEdgeIds = connectBaseGraph(binding);
   const updatedBinding = {
     ...binding,

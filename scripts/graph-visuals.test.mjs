@@ -148,6 +148,281 @@ function edge(id, source, target, sourceHandle = 'output', targetHandle = 'input
   return { id, source, target, sourceHandle, targetHandle, type: 'default' };
 }
 
+async function importedCanonicalRecipe(graphPath) {
+  const inference = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  const canonical = JSON.parse(fs.readFileSync(path.resolve(ROOT, '../MoDiff/data/graphs', graphPath), 'utf8'));
+  const studio = studioStoreModule.useStudioStore;
+  const flow = flowStoreModule.useFlowStore;
+  const previousStudio = studio.getState();
+  const previousFlow = flow.getState();
+  const snapshot = inference.workflowSnapshotFromGraph(canonical, 'default', {
+    ...previousStudio.form,
+    device: 'cuda:0',
+  });
+  flow.getState().replaceGraph(snapshot);
+  studio.setState({
+    form: snapshot.studioForm,
+    selectedMode: snapshot.selectedMode,
+    graphBinding: snapshot.studioGraphBinding,
+    autoResourcePlan: null,
+  });
+  return {
+    studio,
+    flow,
+    recipe: flow.getState().nodes.find((node) => node.data.studioRole === 'diffusersRecipe'),
+    restore() {
+      studio.setState(previousStudio);
+      flow.setState(previousFlow);
+    },
+  };
+}
+
+function graphOwnedRecipeValues(recipe) {
+  return Object.fromEntries(
+    Object.entries(recipe.data.params)
+      .filter(
+        ([key, field]) =>
+          !['device', 'offload_mode'].includes(key) &&
+          (Object.hasOwn(field, 'value') || Object.hasOwn(field, 'default')),
+      )
+      .map(([key, field]) => [key, field.value ?? field.default]),
+  );
+}
+
+test('switching only memory to Custom preserves authored Diffusers recipe controls', async () => {
+  const fixture = await importedCanonicalRecipe('studio/ddim-pipeline/unconditional-image.json');
+  try {
+    const authored = graphOwnedRecipeValues(fixture.recipe);
+    assert.equal(authored.attention_backend, '_native_math');
+    assert.equal(authored.vae_slicing, false);
+    assert.equal(authored.vae_tiling, false);
+    // The top-bar memory handler changes the form, then calls this same synchronization.
+    fixture.studio.getState().updateForm({ resourceMode: 'expert' });
+    assert.equal(graphBridge.syncStudioGraphValues(fixture.studio.getState().form), true);
+    assert.deepEqual(
+      graphOwnedRecipeValues(fixture.flow.getState().nodes.find((node) => node.id === fixture.recipe.id)),
+      authored,
+      'choosing Custom must retain authored recipe controls which have no corresponding form edit',
+    );
+  } finally {
+    fixture.restore();
+  }
+});
+
+for (const [kind, graphPath] of [
+  ['image', 'studio/ddim-pipeline/unconditional-image.json'],
+  ['audio', 'studio/stable-audio-pipeline/text-to-audio.json'],
+  ['video', 'studio/cog-video-x-pipeline/text-to-video.json'],
+]) {
+  test(`Custom reconciliation preserves ${kind} recipe controls and synchronizes explicit form values`, async () => {
+    const fixture = await importedCanonicalRecipe(graphPath);
+    try {
+      for (const [key, value] of Object.entries({
+        device_map: 'manual',
+        attention_backend: '_native_math',
+        attention_components: 'unet',
+        vae_slicing: false,
+        vae_tiling: false,
+        regional_compile: true,
+        compile_components: 'unet',
+        compile_backend: 'eager',
+        compile_mode: 'reduce-overhead',
+        compile_fullgraph: true,
+        compile_dynamic: true,
+        denoiser_cache: 'first_block',
+        cache_threshold: 0.2,
+        layerwise_casting: true,
+        layerwise_casting_components: 'unet',
+        layerwise_storage_dtype: 'float8_e5m2',
+        layerwise_compute_dtype: 'float32',
+        channels_last: true,
+        channels_last_components: 'unet',
+      })) {
+        assert.ok(fixture.recipe.data.params[key], `${kind}: real recipe field ${key}`);
+        fixture.flow.getState().setParam(fixture.recipe.id, key, value);
+      }
+      const authored = graphOwnedRecipeValues(
+        fixture.flow.getState().nodes.find((node) => node.id === fixture.recipe.id),
+      );
+      fixture.studio.getState().updateForm({ resourceMode: 'expert', device: 'cpu:0', offloadMode: 'none' });
+      assert.equal(graphBridge.syncStudioGraphValues(fixture.studio.getState().form), true);
+      const current = fixture.flow.getState().nodes.find((node) => node.id === fixture.recipe.id);
+      assert.deepEqual(graphOwnedRecipeValues(current), authored);
+      assert.equal(current.data.params.device.value, 'cpu:0');
+      assert.equal(current.data.params.offload_mode.value, 'none');
+
+      fixture.studio.getState().updateForm({ device: 'cuda:0', autoOffload: true, offloadMode: 'model_cpu' });
+      assert.equal(graphBridge.syncStudioGraphValues(fixture.studio.getState().form), true);
+      const offloaded = fixture.flow.getState().nodes.find((node) => node.id === fixture.recipe.id);
+      assert.deepEqual(graphOwnedRecipeValues(offloaded), authored);
+      assert.equal(offloaded.data.params.device.value, 'cuda:0');
+      assert.equal(offloaded.data.params.offload_mode.value, 'model_cpu');
+
+      fixture.studio.getState().updateForm({ attentionBackend: 'auto' });
+      assert.equal(graphBridge.syncStudioGraphValues(fixture.studio.getState().form), true);
+      assert.deepEqual(
+        graphOwnedRecipeValues(fixture.flow.getState().nodes.find((node) => node.id === fixture.recipe.id)),
+        { ...authored, attention_backend: 'auto' },
+      );
+    } finally {
+      fixture.restore();
+    }
+  });
+}
+
+for (const [kind, graphPath] of [
+  ['image', 'studio/stable-diffusion-pipeline/text-to-image.json'],
+  ['audio', 'studio/stable-audio-pipeline/text-to-audio.json'],
+  ['video', 'studio/cog-video-x-pipeline/text-to-video.json'],
+]) {
+  for (const resourceMode of ['auto', 'expert']) {
+    test(`new ${resourceMode} ${kind} graph initializes recipe defaults before later Custom edits`, async () => {
+      const fixture = await importedCanonicalRecipe(graphPath);
+      const nodeStore = nodesStoreModule.useNodesStore;
+      const previousNodes = nodeStore.getState();
+      const previousFetch = globalThis.fetch;
+      const previousWebSocket = globalThis.WebSocket;
+      try {
+        const registry = Object.fromEntries(
+          fixture.flow
+            .getState()
+            .nodes.map((node) => [`${node.data.module}.${node.data.action}`, structuredClone(node.data)]),
+        );
+        const loader = Object.values(registry).find((item) => item.action === 'LoadPipeline');
+        const generator = Object.values(registry).find((item) =>
+          ['Generate', 'UnconditionalGenerate'].includes(item.action),
+        );
+        const contractAction = `update_${kind}_contract`;
+        // Portable graphs omit executable field actions. Supply the same small
+        // declarative contract fixture used by the graph materialization tests.
+        loader.params.pipeline_class.onChange = contractAction;
+        generator.params.pipeline.onSignal = contractAction;
+        if (kind === 'video') generator.params.mode.onChange = contractAction;
+        if (kind === 'image') generator.params.prompt = { type: 'string', value: '' };
+        nodeStore.setState({
+          nodesRegistry: registry,
+          studioModelCapabilities: [
+            {
+              modelType: fixture.studio.getState().form.modelType,
+              executionProfiles: [
+                {
+                  modes: [fixture.studio.getState().form.mode],
+                  execution_path: `direct-diffusers-${kind}`,
+                },
+              ],
+            },
+          ],
+          studioExecutionSpecInvalid: false,
+        });
+        fixture.flow.setState({ nodes: [], edges: [] });
+        const form = { ...fixture.studio.getState().form, resourceMode, attentionBackend: undefined };
+        fixture.studio.setState({ form, graphBinding: null, graphFinalization: null, autoResourcePlan: null });
+        globalThis.fetch = async (_input, init) => {
+          const payload = JSON.parse(String(init?.body));
+          assert.equal(payload.fn, contractAction, 'only the isolated fixture contract may be called');
+          const flow = fixture.flow.getState();
+          const current = flow.nodes.find((item) => item.id === payload.node);
+          if (current.data.action === 'LoadPipeline') {
+            flow.setParam(
+              payload.node,
+              'pipeline',
+              {
+                direction: 'output',
+                value: {
+                  pipelineClass: current.data.params.pipeline_class.value,
+                  mode: form.mode,
+                  modes: [form.mode],
+                  taskType: generator.params.task_type?.value,
+                },
+              },
+              'signal',
+            );
+          } else {
+            const contract = flow.getParam(payload.node, 'pipeline', 'signal')?.value;
+            flow.setParam(payload.node, `${kind}_contract`, contract);
+            if (kind === 'audio') flow.setParam(payload.node, 'task_type', contract.taskType);
+          }
+          return new Response(JSON.stringify({ error: false, nodes: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        };
+        globalThis.WebSocket = undefined;
+        await graphBridge.createOrUpdateStudioGraph(form);
+        const recipe = fixture.flow.getState().nodes.find((node) => node.data.studioRole === 'diffusersRecipe');
+        assert.ok(recipe);
+        assert.notEqual(recipe.id, fixture.recipe.id, 'the initialization path must create a new owner');
+        const initialized = graphOwnedRecipeValues(recipe);
+        assert.equal(initialized.device_map, 'none');
+        assert.equal(initialized.attention_backend, 'auto');
+        assert.equal(initialized.attention_components, '');
+        assert.equal(initialized.vae_slicing, true);
+        const needsVideoTiling =
+          resourceMode !== 'expert' ||
+          form.offloadMode !== 'none' ||
+          form.width * form.height * form.numFrames > 40_000_000;
+        assert.equal(initialized.vae_tiling, kind === 'video' ? needsVideoTiling : true);
+        assert.equal(initialized.regional_compile, false);
+        assert.equal(initialized.denoiser_cache, 'none');
+        assert.equal(initialized.layerwise_casting, false);
+        assert.equal(initialized.channels_last, false);
+
+        fixture.flow.getState().setParam(recipe.id, 'vae_slicing', false);
+        fixture.studio.getState().updateForm({ resourceMode: 'expert' });
+        assert.equal(graphBridge.syncStudioGraphValues(fixture.studio.getState().form), true);
+        assert.equal(
+          fixture.flow.getState().nodes.find((node) => node.id === recipe.id).data.params.vae_slicing.value,
+          false,
+          'subsequent Custom reconciliation must retain the newly authored value',
+        );
+      } finally {
+        globalThis.fetch = previousFetch;
+        globalThis.WebSocket = previousWebSocket;
+        nodeStore.setState(previousNodes);
+        fixture.restore();
+      }
+    });
+  }
+}
+
+test('Auto recipe candidate retains precedence over a stale Custom attention form value', async () => {
+  const fixture = await importedCanonicalRecipe('studio/ddim-pipeline/unconditional-image.json');
+  try {
+    const form = { ...fixture.studio.getState().form, resourceMode: 'auto', attentionBackend: 'auto' };
+    const binding = fixture.studio.getState().graphBinding;
+    const loader = fixture.flow.getState().nodes.find((item) => item.id === binding.nodes.diffusersImagePipeline);
+    const candidate = {
+      id: 'recipe-attention-regression',
+      executionProfileId: 'ddim:direct',
+      modelType: form.modelType,
+      mode: form.mode,
+      loaderModule: loader.data.module,
+      loaderAction: loader.data.action,
+      executionPath: 'direct-diffusers-image',
+      pipelineClass: loader.data.params.pipeline_class.value,
+      modelRepo: 'google/ddpm-cifar10-32',
+      modelDependencies: [],
+      attentionBackend: '_native_flash',
+      regionalCompile: true,
+      denoiserCache: 'first_block',
+      layerwiseCasting: true,
+      channelsLast: true,
+    };
+    const plan = { schemaVersion: 2, selectedCandidate: candidate, candidates: [structuredClone(candidate)] };
+    fixture.studio.setState({ form, autoResourcePlan: plan, autoFieldOverrides: {} });
+    assert.equal(studioStoreModule.currentAutoResourcePlanTarget(plan, form, binding), false);
+    assert.equal(graphBridge.syncStudioGraphValues(form), true);
+    const recipe = fixture.flow.getState().nodes.find((item) => item.id === fixture.recipe.id);
+    assert.equal(recipe.data.params.attention_backend.value, candidate.attentionBackend);
+    assert.equal(recipe.data.params.regional_compile.value, true);
+    assert.equal(recipe.data.params.denoiser_cache.value, 'first_block');
+    assert.equal(recipe.data.params.layerwise_casting.value, true);
+    assert.equal(recipe.data.params.channels_last.value, true);
+  } finally {
+    fixture.restore();
+  }
+});
+
 function managedNode(id, role, extras = {}) {
   const base = node(id, extras.x ?? 0, extras.y ?? 0, { params: extras.params ?? {} });
   return {
