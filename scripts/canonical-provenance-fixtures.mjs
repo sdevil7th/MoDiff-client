@@ -175,6 +175,149 @@ export function canonicalHookCase() {
   };
 }
 
+// Exercise the real serialized FE producers. The task, completion, runtime,
+// allocation and media below remain synthetic protocol fixtures, not live proof.
+export async function hintedCanonicalHookCase({ managed = true, memory = true, targetNode = false } = {}) {
+  const value = canonicalHookCase();
+  const { graph } = mockedDdimAccountingFixture();
+  const previousWindow = globalThis.window;
+  globalThis.window ??= { location: { origin: 'http://localhost' } };
+  const server = await createServer({
+    configFile: false,
+    root: ROOT,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, hmr: false, watch: null },
+    appType: 'custom',
+  });
+  try {
+    const [{ useStudioStore }, { useNodesStore }, preparation, profiles, inference] = await Promise.all([
+      server.ssrLoadModule('/src/stores/useStudioStore.ts'),
+      server.ssrLoadModule('/src/stores/useNodeStore.ts'),
+      server.ssrLoadModule('/src/studio/runPreparation.ts'),
+      server.ssrLoadModule('/src/studio/modelProfiles.ts'),
+      server.ssrLoadModule('/src/studio/workflowInference.ts'),
+    ]);
+    const fallbackForm = {
+      ...profiles.DEFAULT_STUDIO_FORM,
+      modelType: 'DDIMPipeline',
+      mode: 'unconditional_image',
+      resourceMode: 'expert',
+      device: 'cuda:0',
+      dtype: 'float32',
+      quantizationMode: 'none',
+      offloadMode: 'none',
+      autoOffload: false,
+      randomSeed: false,
+      width: 32,
+      height: 32,
+      steps: 50,
+      guidanceScale: 0,
+    };
+    const output = value.executedOutput;
+    const snapshot = inference.workflowSnapshotFromGraph(graph, 'default', fallbackForm);
+    // Ordinary imports initially select Auto. This bounded protocol case models
+    // the explicit Custom/Expert choice without changing any authored node,
+    // wire, model pin, sampling control or resident execution recipe.
+    const form = { ...snapshot.studioForm, resourceMode: 'expert' };
+    snapshot.studioForm = form;
+    assert.ok(snapshot.studioGraphBinding, 'The ordinary canonical import is managed by the real adoption path.');
+    useStudioStore.setState({
+      form,
+      graphBinding: snapshot.studioGraphBinding,
+      activeTemplateId: null,
+      autoResourcePlan: null,
+      autoFieldOverrides: {},
+      activeWorkflowTabId: output.workflowTabId,
+      workflowCanvasEpoch: 7,
+      workflowTabs: [{ id: output.workflowTabId, title: 'Protocol DDIM', snapshot }],
+    });
+    useNodesStore.setState({
+      studioModelCapabilities: [],
+      runtimeStatus: memory
+        ? {
+            packages: {
+              torch: {
+                cuda_available: true,
+                cuda_devices: [{ index: 0, memory_total_bytes: 16 * 1024 ** 3, memory_free_bytes: 12 * 1024 ** 3 }],
+              },
+            },
+          }
+        : null,
+    });
+    const identity = {
+      clientRunId: output.clientRunId,
+      runInputHash: preparation.getStudioRunInputHash(form, value.apiGraph),
+    };
+    value.apiGraph = JSON.parse(
+      JSON.stringify(
+        preparation.applyRunCorrelationHints(
+          managed ? preparation.applyStudioRuntimeHints(value.apiGraph, identity) : value.apiGraph,
+          identity,
+          { formSnapshot: form, ...(targetNode ? { targetNodeId: output.nodeId } : {}) },
+        ),
+      ),
+    );
+    output.apiGraphSnapshot = value.apiGraph;
+    output.runInputHash = identity.runInputHash;
+    output.formSnapshot = form;
+    output.graphSnapshot = { nodes: snapshot.nodes, edges: snapshot.edges, viewport: snapshot.viewport };
+    output.sid = value.apiGraph.sid;
+    const task = value.executionReceipt;
+    Object.assign(task, {
+      sid: output.sid,
+      client_run_id: identity.clientRunId,
+      run_input_hash: identity.runInputHash,
+      workflow_tab_id: output.workflowTabId,
+      workflow_canvas_epoch: 7,
+      workflow_title: 'Protocol DDIM',
+      workflow_snapshot: snapshot,
+      ...(targetNode ? { node_id: output.nodeId } : {}),
+    });
+    const run = value.canonicalAccountingProof.run;
+    Object.assign(run, { workflow_title: task.workflow_title, workflow_snapshot: snapshot });
+    value.canonicalAccountingProof.graphCompleted = {
+      type: 'graph_completed',
+      sid: task.sid,
+      task_id: task.task_id,
+      client_run_id: task.client_run_id,
+      run_input_hash: task.run_input_hash,
+      workflow_tab_id: task.workflow_tab_id,
+      workflow_canvas_epoch: task.workflow_canvas_epoch,
+      ...(targetNode ? { node_id: output.nodeId } : {}),
+      executionTime: 1,
+      runtimeFingerprint: task.runtimeFingerprint,
+      deterministicMode: null,
+      runtimeHints: {
+        ...structuredClone(value.apiGraph.runtimeHints),
+        controlledArtifacts: [],
+        loaderContract: ['modules.DiffusersImage.LoadPipeline'],
+      },
+      runtimeBudget: managed
+        ? {
+            applied: false,
+            reason: 'CUDA budget is advisory; reset PyTorch process memory fraction to full device.',
+            cuda_index: 0,
+            cuda_budget_policy: 'advisory',
+            fraction: 1,
+            model_repo: value.apiGraph.runtimeHints.modelRepo,
+            model_name: value.apiGraph.runtimeHints.modelName,
+            execution_path: null,
+            offload_mode: 'none',
+          }
+        : { applied: false, reason: 'Runtime hints did not target a CUDA device.' },
+      runtimeMeasurement: task.runtimeMeasurement,
+      runtimePreparation: null,
+      resourceRetryHistory: [],
+    };
+    return value;
+  } finally {
+    await server.close();
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+}
+
 export function appliedOrderCase() {
   const literal = (value) => ({ value });
   const adapters = [0, 1].map((scale, index) => ({

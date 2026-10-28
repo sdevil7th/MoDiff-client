@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
 import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
+import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
@@ -1342,7 +1343,9 @@ function accountingDigest(kind, value) {
  * The optional shared-factory hook binds this join to the original task/output.
  * Native acceptance remains separate; the default factory path stays unchanged.
  */
-export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target }) {
+export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target, runtimeEvidence }) {
+  assertCanonicalDdimGraphEnvelope(expectedApiGraph);
+  assertCanonicalDdimGraphEnvelope(apiGraph);
   same(
     canonicalGraphIdentity(apiGraph),
     canonicalGraphIdentity(expectedApiGraph),
@@ -1350,10 +1353,6 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
   );
   assert.equal(target.modelType, 'DDIMPipeline', 'Canonical accounting model is outside the reviewed initial scope.');
   assert.equal(target.task, 'unconditional_image');
-  assert.ok(
-    !apiGraph.runtimeHints || Object.keys(apiGraph.runtimeHints).length === 0,
-    'Declared runtime hints need a separate accounting policy.',
-  );
   assert.equal(consumed?.schemaVersion, 1);
   assert.equal(consumed.source, 'backend-execution');
   assert.equal(consumed.truncated, false);
@@ -1654,13 +1653,21 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     channelsLast: recipeValues.channels_last,
     layerwiseCasting: recipeValues.layerwise_casting,
   };
+  if (apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0)
+    plan.runtimeHintAccounting = canonicalDdimRuntimeHintAccounting({
+      apiGraph,
+      consumed,
+      plan,
+      runtimeEvidence,
+      digest: sha256Value,
+    });
   return { ownerId: owner.row.nodeId, plan, hash: sha256Value('execution-plan-v1', plan) };
 }
 
 function canonicalAccountingProofPlan({ apiGraph, executedOutput, executionReceipt, taskId, proof }) {
   accountingKeys(
     proof,
-    ['expectedApiGraph', 'target', 'run'],
+    ['expectedApiGraph', 'target', 'run', ...(Object.hasOwn(proof, 'graphCompleted') ? ['graphCompleted'] : [])],
     'Canonical proof accepts original evidence, not a supplied plan.',
   );
   const { run, target, expectedApiGraph } = proof;
@@ -1706,7 +1713,13 @@ function canonicalAccountingProofPlan({ apiGraph, executedOutput, executionRecei
   assert.equal(consumed?.taskId, taskId, 'Canonical consumed receipt belongs to another task.');
   assert.equal(consumed.attemptIndex, 0, 'Canonical consumed receipt attempt differs.');
   assert.equal(consumed.nodeId, executedOutput.nodeId, 'Canonical consumed receipt output owner differs.');
-  return canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target });
+  return canonicalAccountingExecutionPlan({
+    expectedApiGraph,
+    apiGraph,
+    consumed,
+    target,
+    runtimeEvidence: { run, output: executedOutput, graphCompleted: proof.graphCompleted },
+  });
 }
 
 export function createRunProvenance({

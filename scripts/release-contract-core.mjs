@@ -1,4 +1,5 @@
 import { canonicalJsonHash } from './canonical-json.mjs';
+import { assertCanonicalDdimGraphEnvelope } from './canonical-runtime-hints.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
@@ -177,6 +178,7 @@ export function validateCanonicalWorkflowEvidence({
   outputPackage,
   run,
   provenance,
+  graphCompleted,
 }) {
   assert.equal(provenance?.format, 'modiff.live-proof.provenance.v2');
   assert.deepEqual(validateRunProvenance(provenance), [], 'Shared provenance validation failed.');
@@ -248,8 +250,15 @@ export function validateCanonicalWorkflowEvidence({
   );
   const hasAccounting =
     consumed.fieldAccountingStatus !== undefined || consumed.nodes.some((row) => row.fieldAccounting !== undefined);
+  if (hasAccounting) assertCanonicalDdimGraphEnvelope(creator.apiGraph);
   const plan = hasAccounting
-    ? canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph: output.apiGraphSnapshot, consumed, target })
+    ? canonicalAccountingExecutionPlan({
+        expectedApiGraph,
+        apiGraph: output.apiGraphSnapshot,
+        consumed,
+        target,
+        runtimeEvidence: { run, output, graphCompleted },
+      })
     : executionPlanIdentity(output.apiGraphSnapshot);
   if (hasAccounting) {
     assert.equal(consumed.nodeId, output.nodeId, 'Canonical consumed receipt output owner differs.');
@@ -580,6 +589,12 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const creator = readJson(evidence.creatorPackage);
   const outputPackage = readJson(evidence.outputPackage);
   const run = readJson(evidence.runDetail);
+  // Optional for legacy unhinted evidence; hinted DDIM accounting requires this
+  // original native frame. read() retains and rechecks its original bytes/hash.
+  const graphCompleted =
+    evidence.graphCompleted === undefined
+      ? undefined
+      : JSON.parse(read(evidence.graphCompleted, 16 * 1024 * 1024).bytes.toString('utf8'));
   const output = outputPackage.latestOutput;
   assert.ok(
     output?.apiGraphSnapshot && output?.graphSnapshot && creator.graph && creator.apiGraph,
@@ -706,7 +721,14 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     taskId: run.task?.task_id,
     ...(output.resolvedExecutionInputs?.fieldAccountingStatus !== undefined ||
     output.resolvedExecutionInputs?.nodes?.some((row) => row.fieldAccounting !== undefined)
-      ? { canonicalAccountingProof: { expectedApiGraph, target, run } }
+      ? {
+          canonicalAccountingProof: {
+            expectedApiGraph,
+            target,
+            run,
+            ...(graphCompleted === undefined ? {} : { graphCompleted }),
+          },
+        }
       : {}),
     capturedAt: new Date(run.task?.completed_at * 1000).toISOString(),
   });
@@ -717,6 +739,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     outputPackage,
     run,
     provenance,
+    graphCompleted,
   });
   // Recheck before any caller writes. All generated metadata remains separate
   // from the untouched exported packages and the raw task/observation bodies.
