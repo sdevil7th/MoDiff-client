@@ -181,8 +181,8 @@ test('current setup guides select the published candidate and identify its revie
     assert.match(text, /codex\/windows-delivery-20261026/, `${guide.pathname} must identify the current candidate`);
   }
   const readme = readFileSync(guides[0], 'utf8');
-  const backendSourceCommit = '84b79f3c83a7d5ab2e904e8231bc4f56f53b1999';
-  const clientSourceCommit = 'e50617208a444fbe203c0e296de431ea22161ebe';
+  const backendSourceCommit = '8f8c40bab9a389a0199c96c1add0a26a967928bd';
+  const clientSourceCommit = '8f0a95e2c7267b04f9e9195e7de30a3eeb01d1b7';
   assert.ok(readme.includes(backendSourceCommit), 'Reviewed backend application source commit is missing');
   assert.ok(readme.includes(clientSourceCommit), 'Reviewed client application source commit is missing');
   const workflow = readFileSync(new URL('.github/workflows/ci.yml', clientRoot), 'utf8');
