@@ -23,6 +23,7 @@ let taskStoreModule;
 let websocketModule;
 let websocketStoreModule;
 let memoryFormattingModule;
+let serverActionsModule;
 let server;
 let originalFetch;
 
@@ -70,6 +71,7 @@ before(async () => {
   websocketModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   websocketStoreModule = await server.ssrLoadModule('/src/stores/useWebsocketStore.ts');
   memoryFormattingModule = await server.ssrLoadModule('/src/utils/formatMemory.ts');
+  serverActionsModule = await server.ssrLoadModule('/src/utils/serverActions.ts');
   originalFetch = globalThis.fetch;
 });
 
@@ -2824,6 +2826,468 @@ test('native CPU executed frames retain unavailable memory measurements and node
     assert.deepEqual(node.data.executionTime, frame.executionTime);
   }
 });
+
+test('service execution reconciles global cache without acquiring the visible workflow', async (testContext) => {
+  const previousFetch = globalThis.fetch;
+  testContext.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+  const flow = flowStoreModule.useFlowStore;
+  const studio = studioStoreModule.useStudioStore;
+  let cacheReads = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/cache')) {
+      cacheReads += 1;
+      return jsonResponse({ error: false, instance: 'service-cache-worker', cachedNodes: ['preview', 'hidden-leaf'] });
+    }
+    return jsonResponse({ instance: 'service-cache-worker', nodes: {}, outputs: [] });
+  };
+  nodesStoreModule.useNodesStore.setState({ instance: 'service-cache-worker' });
+  const context = {
+    sid: 'cache-browser',
+    ws: { url: 'ws://127.0.0.1:5191/ws?sid=cache-browser' },
+    getSid: () => 'cache-browser',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  };
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'welcome',
+      sid: 'cache-browser',
+      instance: 'service-cache-worker',
+      cachedNodes: [],
+      current: { task_id: 'service-cache-task', sid: 'service_private', status: 'running', attempt_index: 0 },
+      queued: {},
+    },
+    context,
+  );
+  const before = structuredClone({
+    params: flow.getState().nodes[0].data.params,
+    form: studio.getState().form,
+    tabs: studio.getState().workflowTabs,
+    past: flow.getState().past,
+    edges: flow.getState().edges,
+    activeTaskId: flow.getState().nodes[0].data.activeTaskId,
+    progress: flow.getState().nodes[0].data.progress,
+  });
+  assert.equal(studio.getState().currentRunContext, null, 'service has no invented Studio ownership');
+  websocketModule.handleWebsocketMessage(
+    { type: 'executed', node: 'preview', task_id: 'service-cache-task', attempt_index: 0, status: 'succeeded' },
+    context,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(cacheReads, 1, 'the successful service frame requests current backend cache membership');
+  assert.deepEqual(flow.getState().runtimeCachedNodeIds, ['preview', 'hidden-leaf']);
+  assert.equal(flow.getState().nodes[0].data.isCached, true);
+  assert.equal(flow.getState().nodes[0].data.activeTaskId, before.activeTaskId);
+  assert.equal(flow.getState().nodes[0].data.progress, before.progress);
+  assert.deepEqual(
+    {
+      params: flow.getState().nodes[0].data.params,
+      form: studio.getState().form,
+      tabs: studio.getState().workflowTabs,
+      past: flow.getState().past,
+      edges: flow.getState().edges,
+      activeTaskId: flow.getState().nodes[0].data.activeTaskId,
+      progress: flow.getState().nodes[0].data.progress,
+    },
+    before,
+  );
+  assert.deepEqual(snackbarModule.getToastItems(), []);
+});
+
+function serviceCacheFixture(testContext, name, cached = []) {
+  const previousFetch = globalThis.fetch;
+  testContext.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+  const flow = flowStoreModule.useFlowStore;
+  const reads = [];
+  let cacheResponse = () => jsonResponse({ error: false, instance: name, cachedNodes: [] });
+  let releaseResponse = () => jsonResponse({ error: false, nodes: ['preview'] });
+  let sid = `${name}-browser`;
+  const context = {
+    sid,
+    ws: { url: `ws://127.0.0.1:5191/ws?sid=${sid}` },
+    getSid: () => sid,
+    setSid: (next) => {
+      sid = next;
+    },
+    setLoopTimer: () => undefined,
+  };
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes('/hf_cache/') && init.method === 'DELETE') return releaseResponse();
+    if (String(url).endsWith('/runtime/gpu_cleanup') && init.method === 'POST') return releaseResponse();
+    if (String(url).endsWith('/cache')) {
+      if (init.method === 'DELETE') return releaseResponse();
+      reads.push(String(url));
+      return cacheResponse();
+    }
+    return jsonResponse({ instance: name, nodes: {}, outputs: [] });
+  };
+  nodesStoreModule.useNodesStore.setState({ instance: name });
+  const welcome = (instance = name, ws = context.ws, nextSid = sid) => {
+    const nextContext = { ...context, ws };
+    websocketModule.handleWebsocketMessage(
+      {
+        type: 'welcome',
+        sid: nextSid,
+        instance,
+        cachedNodes: cached,
+        current: { task_id: name, sid: `service_${name}`, status: 'running', attempt_index: 0 },
+        queued: {},
+      },
+      nextContext,
+    );
+    return nextContext;
+  };
+  welcome();
+  return {
+    flow,
+    reads,
+    context,
+    welcome,
+    respondCache: (callback) => {
+      cacheResponse = callback;
+    },
+    respondRelease: (callback) => {
+      releaseResponse = callback;
+    },
+    execute: (overrides = {}, owner = context) =>
+      websocketModule.handleWebsocketMessage(
+        {
+          type: 'executed',
+          node: 'preview',
+          task_id: name,
+          attempt_index: 0,
+          status: 'succeeded',
+          ...overrides,
+        },
+        owner,
+      ),
+    terminal: (type = 'task_completed') =>
+      websocketModule.handleWebsocketMessage(
+        {
+          type,
+          task_id: name,
+          sid: `service_${name}`,
+          current: null,
+          queued: {},
+        },
+        context,
+      ),
+  };
+}
+
+const flushCacheReads = () => new Promise((resolve) => setImmediate(resolve));
+
+test('service cache reads coalesce and retain hidden runtime IDs without clearing unrelated progress', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-coalesced');
+  const first = deferredResponse();
+  const second = deferredResponse();
+  const replies = [first, second];
+  f.respondCache(() => replies.shift().promise);
+  const root = blockV2Root('service-cache-block');
+  const runtimeId = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'generate');
+  const node = f.flow.getState().nodes[0];
+  f.flow.setState({ nodes: [{ ...node, data: { ...node.data, progress: 37, activeTaskId: 'another-task' } }] });
+  f.execute({ node: runtimeId });
+  f.execute({ node: 'another-hidden-leaf' });
+  assert.equal(f.reads.length, 1);
+  first.resolve(jsonResponse({ error: false, instance: 'service-cache-coalesced', cachedNodes: [runtimeId] }));
+  await flushCacheReads();
+  assert.equal(f.reads.length, 2, 'one follow-up covers the newer execution notification');
+  assert.equal(f.flow.getState().nodes[0].data.progress, 37);
+  assert.equal(f.flow.getState().nodes[0].data.activeTaskId, 'another-task');
+  second.resolve(jsonResponse({ error: false, instance: 'service-cache-coalesced', cachedNodes: [runtimeId] }));
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, [runtimeId]);
+  f.flow.getState().replaceGraph({ nodes: [root], edges: [], viewport: { x: 0, y: 0, zoom: 1 } });
+  assert.equal(
+    f.flow.getState().nodes[0].data.isCached,
+    true,
+    'exact hidden leaf projects after its Block is restored',
+  );
+  assert.equal(f.flow.getState().toObject().runtimeCachedNodeIds, undefined);
+});
+
+test('service cache reconciliation rejects unrelated, old-attempt and terminal execution frames', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-guards');
+  for (const overrides of [
+    { task_id: 'other-task' },
+    { attempt_index: -1 },
+    { attempt_index: 1 },
+    { attempt_index: undefined },
+    { attempt_index: 0.5 },
+    { status: 'running' },
+    { status: 'failed' },
+  ])
+    f.execute(overrides);
+  assert.equal(f.reads.length, 0);
+  f.terminal();
+  await flushCacheReads();
+  assert.equal(f.reads.length, 1, 'terminal service state reconciles actual membership once');
+  f.execute();
+  await flushCacheReads();
+  assert.equal(f.reads.length, 1, 'a late executed frame cannot revive a terminal task');
+});
+
+for (const releaseKind of ['cache release', 'GPU cleanup', 'model deletion']) {
+  const invokeRelease = () =>
+    releaseKind === 'cache release'
+      ? serverActionsModule.deleteNodeCache(['preview'])
+      : releaseKind === 'GPU cleanup'
+        ? serverActionsModule.cleanupGpuMemory()
+        : serverActionsModule.deleteHfCacheEntry('model', 'plan');
+  test(`service cache snapshots cannot outrun ${releaseKind} dispatch or acknowledgement`, async (t) => {
+    const f = serviceCacheFixture(t, `service-cache-release-${releaseKind}`);
+    const beforeDispatch = deferredResponse();
+    const whileReleasing = deferredResponse();
+    const release = deferredResponse();
+    const replies = [beforeDispatch, whileReleasing];
+    f.respondCache(() =>
+      replies.length
+        ? replies.shift().promise
+        : jsonResponse({
+            error: false,
+            instance: `service-cache-release-${releaseKind}`,
+            cachedNodes: [],
+          }),
+    );
+    f.respondRelease(() => release.promise);
+    f.execute();
+    const deletion = invokeRelease();
+    beforeDispatch.resolve(
+      jsonResponse({ error: false, instance: `service-cache-release-${releaseKind}`, cachedNodes: ['preview'] }),
+    );
+    await flushCacheReads();
+    assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false, 'dispatch retires an older read');
+    f.execute();
+    release.resolve(
+      jsonResponse({
+        error: false,
+        nodes: ['preview'],
+        deleted: true,
+        plan: {},
+        runtimeRelease: {
+          released: { nodes: 1, models: 0, diffusers_components: 0, offload_files: 0 },
+          allocatorTrimmed: true,
+          errors: [],
+        },
+      }),
+    );
+    const result = await deletion;
+    for (const id of result.nodes) f.flow.getState().setNodeCached(id, false);
+    whileReleasing.resolve(
+      jsonResponse({ error: false, instance: `service-cache-release-${releaseKind}`, cachedNodes: ['preview'] }),
+    );
+    await flushCacheReads();
+    assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false, 'ACK retires reads begun during teardown');
+    f.execute();
+    await flushCacheReads();
+    assert.equal(f.reads.length, 3);
+    assert.deepEqual(
+      f.flow.getState().runtimeCachedNodeIds,
+      [],
+      'late frame requests truth rather than asserting cached',
+    );
+  });
+
+  test(`failed ${releaseKind} also retires in-flight reads without optimistic cache clearing`, async (t) => {
+    const f = serviceCacheFixture(t, `service-cache-failed-${releaseKind}`, ['preview']);
+    const reading = deferredResponse();
+    const release = deferredResponse();
+    f.respondRelease(() => release.promise);
+    const deletion = invokeRelease();
+    f.respondCache(() => reading.promise);
+    f.execute();
+    release.resolve(jsonResponse({ error: true, message: 'Release failed.' }, 500));
+    await assert.rejects(deletion, /Release failed/);
+    reading.resolve(jsonResponse({ error: false, instance: `service-cache-failed-${releaseKind}`, cachedNodes: [] }));
+    await flushCacheReads();
+    assert.equal(f.flow.getState().nodes[0].data.isCached, true);
+  });
+}
+
+test('service cache responses require the same socket and welcome worker instance', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-replacement');
+  const oldRead = deferredResponse();
+  f.respondCache(() => oldRead.promise);
+  f.execute();
+  const replacement = f.welcome('replacement-worker', { url: f.context.ws.url });
+  oldRead.resolve(jsonResponse({ error: false, instance: 'service-cache-replacement', cachedNodes: ['preview'] }));
+  await flushCacheReads();
+  assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false);
+  nodesStoreModule.useNodesStore.setState({ instance: 'replacement-worker' });
+  f.execute({}, f.context);
+  assert.equal(f.reads.length, 1, 'retired socket cannot schedule a cache read even with the same SID');
+  f.respondCache(() => jsonResponse({ error: false, instance: 'wrong-worker', cachedNodes: ['preview'] }));
+  f.execute({}, replacement);
+  await flushCacheReads();
+  assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false);
+  f.respondCache(() => jsonResponse({ error: false, instance: 'replacement-worker', cachedNodes: ['preview'] }));
+  f.execute({}, replacement);
+  await flushCacheReads();
+  assert.equal(f.flow.getState().nodes[0].data.isCached, true);
+});
+
+test('service cache snapshots are retired by acknowledged registry changes on the same socket', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-registry', ['preview']);
+  const oldRead = deferredResponse();
+  f.respondCache(() => oldRead.promise);
+  f.execute();
+  nodesStoreModule.useNodesStore.setState({ instance: 'custom-source-acknowledgement' });
+  oldRead.resolve(jsonResponse({ error: false, instance: 'service-cache-registry', cachedNodes: [] }));
+  await flushCacheReads();
+  assert.deepEqual(
+    f.flow.getState().runtimeCachedNodeIds,
+    ['preview'],
+    'pre-ACK response cannot replace current truth',
+  );
+  f.respondCache(() => jsonResponse({ error: false, instance: 'service-cache-registry', cachedNodes: [] }));
+  f.execute();
+  await flushCacheReads();
+  assert.deepEqual(
+    f.flow.getState().runtimeCachedNodeIds,
+    ['preview'],
+    'old worker identity cannot satisfy the new ACK',
+  );
+  f.respondCache(() => jsonResponse({ error: false, instance: 'custom-source-acknowledgement', cachedNodes: [] }));
+  f.execute();
+  await flushCacheReads();
+  assert.deepEqual(
+    f.flow.getState().runtimeCachedNodeIds,
+    [],
+    'a new read can bind to the acknowledged same-socket identity',
+  );
+});
+
+test('service cache snapshots fail closed while initial registry identity lags a new welcome', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-registry-lag', ['preview']);
+  const owner = f.welcome('new-worker');
+  await flushCacheReads();
+  f.respondCache(() => jsonResponse({ error: false, instance: 'new-worker', cachedNodes: [] }));
+  f.execute({}, owner);
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+  nodesStoreModule.useNodesStore.setState({ instance: 'new-worker' });
+  f.execute({}, owner);
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, []);
+});
+
+test('service cache snapshots require a nonempty welcome SID and reject disconnected reads', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-null-sid', ['preview']);
+  const pending = deferredResponse();
+  f.respondCache(() => pending.promise);
+  f.execute();
+  f.context.setSid(null);
+  pending.resolve(jsonResponse({ error: false, instance: 'service-cache-null-sid', cachedNodes: [] }));
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+  for (const invalidSid of [null, '', '   ']) {
+    const owner = f.welcome('service-cache-null-sid', f.context.ws, invalidSid);
+    f.execute({}, owner);
+    await flushCacheReads();
+    assert.equal(f.reads.length, 1, 'null or blank welcome SID never owns a cache read');
+  }
+});
+
+test('service cache snapshots cannot overwrite newer accepted workflow cache writes', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-owned-race');
+  const pending = deferredResponse();
+  f.respondCache(() => pending.promise);
+  f.terminal();
+  const studio = studioStoreModule.useStudioStore;
+  studio.getState().captureRunContext(graph(), undefined, { clientRunId: 'new-owned-cache-run' });
+  studio.getState().attachRunResponse({ task_id: 'new-owned-cache-task', sid: 'session-1' }, 'new-owned-cache-run');
+  taskStoreModule.useTaskStore.setState({
+    currentTask: { task_id: 'new-owned-cache-task', status: 'running', attempt_index: 0 },
+  });
+  f.execute({ task_id: 'new-owned-cache-task', client_run_id: 'new-owned-cache-run' });
+  assert.equal(f.flow.getState().nodes[0].data.isCached, true, 'accepted owned execution records its new cache fact');
+  pending.resolve(jsonResponse({ error: false, instance: 'service-cache-owned-race', cachedNodes: [] }));
+  await flushCacheReads();
+  assert.equal(
+    f.flow.getState().nodes[0].data.isCached,
+    true,
+    'older service snapshot cannot clear the newer owned execution',
+  );
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+});
+
+test('service cache snapshots cannot repopulate owners after a newer task starts and fails before execution', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-start-failure');
+  const pending = deferredResponse();
+  f.respondCache(() => pending.promise);
+  f.terminal();
+  const studio = studioStoreModule.useStudioStore;
+  studio.getState().captureRunContext(graph(), undefined, { clientRunId: 'new-start-failure-run' });
+  studio.getState().attachRunResponse({ task_id: 'new-start-failure-task', sid: 'session-1' }, 'new-start-failure-run');
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'task_started',
+      task_id: 'new-start-failure-task',
+      client_run_id: 'new-start-failure-run',
+      current: { task_id: 'new-start-failure-task', status: 'running', attempt_index: 0 },
+      queued: {},
+    },
+    f.context,
+  );
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'task_failed',
+      task_id: 'new-start-failure-task',
+      client_run_id: 'new-start-failure-run',
+      message: 'Preparation failed before any node executed.',
+      current: null,
+      queued: {},
+    },
+    f.context,
+  );
+  pending.resolve(jsonResponse({ error: false, instance: 'service-cache-start-failure', cachedNodes: ['preview'] }));
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, [], 'the pre-start roster cannot restore removed owners');
+  assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false);
+});
+
+test('service cache snapshots reject malformed and unbounded rosters without replacing cache truth', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-parser', ['preview']);
+  const invalid = [
+    null,
+    { error: true, instance: 'service-cache-parser', cachedNodes: [] },
+    { error: false, cachedNodes: [] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: 'preview' },
+    { error: false, instance: 'service-cache-parser', cachedNodes: [0] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: [''] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: ['x'.repeat(16_385)] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: Array(30_001).fill('x') },
+    { error: false, instance: 'service-cache-parser', cachedNodes: Array(129).fill('x'.repeat(16_384)) },
+  ];
+  for (const payload of invalid) {
+    f.respondCache(() => jsonResponse(payload));
+    f.execute();
+    await flushCacheReads();
+    assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+  }
+  f.respondCache(() => jsonResponse({ error: false, instance: 'service-cache-parser', cachedNodes: [] }));
+  f.execute();
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, [], 'a later valid snapshot remains usable');
+});
+
+for (const terminal of ['task_completed', 'task_cancelled', 'task_failed']) {
+  test(`service ${terminal} reconciles released cache without clearing a newer task's progress`, async (t) => {
+    const f = serviceCacheFixture(t, `cache-${terminal}`, ['preview']);
+    const node = f.flow.getState().nodes[0];
+    f.flow.setState({ nodes: [{ ...node, data: { ...node.data, activeTaskId: 'newer-task', progress: 61 } }] });
+    f.terminal(terminal);
+    await flushCacheReads();
+    assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, []);
+    assert.equal(f.flow.getState().nodes[0].data.progress, 61);
+    assert.equal(f.flow.getState().nodes[0].data.activeTaskId, 'newer-task');
+  });
+}
 
 test('memory measurements permit mixed finite values and null without weakening other telemetry', () => {
   const message = {

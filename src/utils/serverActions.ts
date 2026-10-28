@@ -145,9 +145,22 @@ export function cancelQueuedTask(taskId: string) {
   );
 }
 
+// Cache snapshots are presentation only. Releases and reconnects retire reads
+// already in flight, including reads sent while teardown was pending.
+let runtimeCacheReadGeneration = 0;
+
+export function invalidateRuntimeCacheReads() {
+  runtimeCacheReadGeneration += 1;
+}
+
+export function currentRuntimeCacheReadGeneration() {
+  return runtimeCacheReadGeneration;
+}
+
 export function deleteNodeCache(nodeIds: string[]) {
   const uniqueNodeIds = [...new Set(nodeIds.filter(Boolean))];
   if (uniqueNodeIds.length === 0) return Promise.resolve<CacheDeletionResult>({ error: false, nodes: [] });
+  invalidateRuntimeCacheReads();
   return serverAction<CacheDeletionResult>(
     '/cache',
     'Could not clear the node cache.',
@@ -163,11 +176,14 @@ export function deleteNodeCache(nodeIds: string[]) {
         throw new Error('The cache deletion response has an invalid node list.');
       }
     },
-  );
+  ).finally(invalidateRuntimeCacheReads);
 }
 
 export function cleanupGpuMemory() {
-  return serverAction<GpuCleanupResult>('/runtime/gpu_cleanup', 'Accelerator cleanup failed.', { method: 'POST' });
+  invalidateRuntimeCacheReads();
+  return serverAction<GpuCleanupResult>('/runtime/gpu_cleanup', 'Accelerator cleanup failed.', {
+    method: 'POST',
+  }).finally(invalidateRuntimeCacheReads);
 }
 
 /** Invalidate results on the next Run while retaining model owners and previews. */
@@ -242,6 +258,7 @@ export function fetchHfCacheDeletionPlan(hash: string, allowRedownload = false) 
 }
 
 export function deleteHfCacheEntry(hash: string, planHash: string, allowRedownload = false) {
+  invalidateRuntimeCacheReads();
   return serverAction<HfCacheDeletionResult>(
     `/hf_cache/${encodeURIComponent(hash)}`,
     'Could not delete the Hugging Face model.',
@@ -270,7 +287,7 @@ export function deleteHfCacheEntry(hash: string, planHash: string, allowRedownlo
         throw new Error('The Hugging Face cache deletion receipt is invalid.');
       }
     },
-  );
+  ).finally(invalidateRuntimeCacheReads);
 }
 
 export function fetchHfIncompleteCleanupPlan() {
