@@ -295,6 +295,7 @@ export function useWorkflowBackendSync() {
     const cancelHydration = () => {
       if (cancelled) return;
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       controller.abort(new Error('Workflow hydration page lifecycle ended.'));
     };
     // A document reload/close can destroy an in-flight network request without running React's
@@ -351,7 +352,6 @@ export function useWorkflowBackendSync() {
     return () => {
       window.removeEventListener('pagehide', handlePageHide);
       cancelHydration();
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, [workflowCanvasHydrated]);
 
