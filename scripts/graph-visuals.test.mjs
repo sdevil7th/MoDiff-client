@@ -41,6 +41,7 @@ let graphLayout;
 let graphTypedHandle;
 let managedControlSync;
 let modelSelection;
+let modelFieldInstall;
 let nodeFactory;
 let flowStoreModule;
 let nodesStoreModule;
@@ -92,6 +93,7 @@ before(async () => {
   graphTypedHandle = await server.ssrLoadModule('/src/ui/GraphTypedHandle.tsx');
   managedControlSync = await server.ssrLoadModule('/src/studio/managedControlSync.ts');
   modelSelection = await server.ssrLoadModule('/src/studio/modelSelection.ts');
+  modelFieldInstall = await server.ssrLoadModule('/src/utils/modelFieldInstall.ts');
   nodeFactory = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
@@ -8868,6 +8870,663 @@ test('model selector applies only backend class and id filters to opaque install
   });
 });
 
+function customModelFieldFixture(component = 'image_annotator') {
+  const field = `source__${component}__repo`;
+  const pinField = `source__${component}__revision`;
+  const repo = 'component-owner/reviewed-model';
+  const revision = 'b'.repeat(40);
+  const owner = node('component-loader');
+  owner.data.module = 'custom.ReviewedBlock';
+  owner.data.action = 'LoadModels';
+  owner.data.params = {
+    [field]: { display: 'modelselect', value: { source: 'hub', value: repo } },
+    [pinField]: { type: 'string', value: revision },
+    revision: { type: 'string', value: 'a'.repeat(40) },
+  };
+  flowStoreModule.useFlowStore.setState({ nodes: [owner], edges: [] });
+  return {
+    owner,
+    repo,
+    revision,
+    field,
+    pinField,
+    props: {
+      nodeId: owner.id,
+      fieldKey: field,
+      module: owner.data.module,
+      action: owner.data.action,
+    },
+  };
+}
+
+test('custom component Install forwards its own immutable sibling pin, not a base revision', async () => {
+  const fixture = customModelFieldFixture();
+  const calls = [];
+  await modelFieldInstall.installModelField(fixture.props, fixture.repo, 'test-session', async (...args) =>
+    calls.push(args),
+  );
+  assert.deepEqual(calls, [[fixture.repo, 'test-session', { revision: fixture.revision }]]);
+});
+
+test('another cached revision cannot hide the custom component exact-pin Install action', () => {
+  const fixture = customModelFieldFixture();
+  assert.equal(
+    modelFieldInstall.modelFieldIsInstalled(fixture.props, fixture.repo, [
+      {
+        id: fixture.repo,
+        installed: true,
+        complete: true,
+        planned_revision: 'c'.repeat(40),
+      },
+    ]),
+    false,
+  );
+});
+
+test('custom component Install reads the current sibling and keeps independent components separate', async () => {
+  const fixture = customModelFieldFixture();
+  const otherField = 'source__processor__repo';
+  const otherRevision = 'd'.repeat(40);
+  flowStoreModule.useFlowStore.getState().setParam(fixture.owner.id, fixture.pinField, 'c'.repeat(40));
+  const current = flowStoreModule.useFlowStore.getState().nodes[0];
+  flowStoreModule.useFlowStore.setState({
+    nodes: [
+      {
+        ...current,
+        data: {
+          ...current.data,
+          params: {
+            ...current.data.params,
+            [otherField]: { display: 'modelselect', value: { source: 'hub', value: fixture.repo } },
+            source__processor__revision: { value: otherRevision },
+          },
+        },
+      },
+    ],
+  });
+  const before = structuredClone(flowStoreModule.useFlowStore.getState().nodes);
+  const calls = [];
+  const install = async (...args) => calls.push(args);
+  await modelFieldInstall.installModelField(fixture.props, fixture.repo, null, install);
+  await modelFieldInstall.installModelField({ ...fixture.props, fieldKey: otherField }, fixture.repo, null, install);
+  assert.deepEqual(calls, [
+    [fixture.repo, null, { revision: 'c'.repeat(40) }],
+    [fixture.repo, null, { revision: otherRevision }],
+  ]);
+  assert.deepEqual(
+    flowStoreModule.useFlowStore.getState().nodes,
+    before,
+    'install inspection must not rewrite authored sources',
+  );
+});
+
+test('custom component Install rejects absent, mutable, malformed and default-only revision pins', () => {
+  for (const revisionParam of [
+    undefined,
+    {},
+    { value: '' },
+    { value: 'main' },
+    { value: 'A'.repeat(40) },
+    { value: ` ${'a'.repeat(40)}` },
+    { value: { value: 'a'.repeat(40) } },
+    { value: 123 },
+    { default: 'a'.repeat(40) },
+  ]) {
+    const fixture = customModelFieldFixture();
+    if (revisionParam === undefined) delete fixture.owner.data.params[fixture.pinField];
+    else fixture.owner.data.params[fixture.pinField] = revisionParam;
+    let calls = 0;
+    assert.throws(
+      () =>
+        modelFieldInstall.installModelField(fixture.props, fixture.repo, null, () => {
+          calls += 1;
+        }),
+      /exact lowercase 40-character revision/,
+    );
+    assert.equal(calls, 0);
+    assert.equal(
+      modelFieldInstall.modelFieldIsInstalled(fixture.props, fixture.repo, [{ id: fixture.repo, installed: true }]),
+      false,
+    );
+  }
+});
+
+test('custom component Install rejects connected or dynamically supplied pins even with a stored fallback', () => {
+  for (const supplied of [
+    { isConnected: true },
+    { sourceId: 'upstream' },
+    { sourceKey: 'value' },
+    { signal: { direction: 'input', value: 'a'.repeat(40) } },
+  ]) {
+    const fixture = customModelFieldFixture();
+    Object.assign(fixture.owner.data.params[fixture.pinField], supplied);
+    assert.throws(
+      () =>
+        modelFieldInstall.installModelField(fixture.props, fixture.repo, null, () => assert.fail('must not install')),
+      /literal component repository and revision/,
+    );
+  }
+  for (const field of ['source__image_annotator__repo', 'source__image_annotator__revision']) {
+    const fixture = customModelFieldFixture();
+    flowStoreModule.useFlowStore.setState({
+      edges: [edge('connected', 'value-node', fixture.owner.id, 'output', field)],
+    });
+    assert.throws(
+      () =>
+        modelFieldInstall.installModelField(fixture.props, fixture.repo, null, () => assert.fail('must not install')),
+      /literal component repository and revision/,
+    );
+  }
+});
+
+test('custom component Install verifies pins through a real created V2 Block and its public/crossing connections', async () => {
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  for (const connected of [false, 'public', 'crossing', 'internal']) {
+    const fixture = customModelFieldFixture();
+    fixture.owner.selected = true;
+    fixture.owner.data.params[fixture.field].type = 'string';
+    const valueNode = node('value-node', 0, 0, { params: { output: { display: 'output', type: 'string' } } });
+    valueNode.selected = true;
+    const draft = userBlocksModule.createUserBlockFromSelection(
+      {
+        nodes: connected === 'internal' ? [fixture.owner, valueNode] : [fixture.owner],
+        edges:
+          connected === 'internal'
+            ? [edge('internal-pin', valueNode.id, fixture.owner.id, 'output', fixture.pinField)]
+            : [],
+      },
+      'Pinned components',
+    );
+    assert.equal(draft.ok, true);
+    const prepared = creation.prepareUserBlockCreationV2(draft, draft.block);
+    const root = prepared.graph.nodes.find((node) => node.data.blockInstanceV2);
+    let instance = root.data.blockInstanceV2;
+    const modelControl = instance.effectiveInterface.controls.find(
+      (control) => control.binding.fieldId === fixture.field,
+    );
+    assert.ok(modelControl);
+    flowStoreModule.useFlowStore.setState(prepared.graph);
+    assert.throws(
+      () =>
+        modelFieldInstall.installModelField(
+          {
+            nodeId: root.id,
+            module: root.data.module,
+            action: root.data.action,
+            fieldKey: modelControl.controlId,
+          },
+          fixture.repo,
+          null,
+          () => assert.fail('must not install'),
+        ),
+      /Expand this Block/,
+    );
+    const semanticId = instance.effectiveGraph.nodes.find(
+      (node) => node.data.module === fixture.owner.data.module,
+    ).nodeId;
+    instance = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+      controls: instance.effectiveInterface.controls,
+      boundary: {
+        ...instance.effectiveInterface.boundary,
+        inputs: [
+          {
+            portId: 'revision-in',
+            label: 'Revision',
+            valueType: 'string',
+            required: false,
+            binding: { nodeId: semanticId, fieldOrPortId: fixture.pinField },
+          },
+        ],
+      },
+    });
+    instance = runtime.setBlockPresentationV2(instance, { expanded: true });
+    const graph = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+    const projected = graph.nodes.find((node) => node.data.blockProjectionNodeId === semanticId);
+    assert.ok(projected.data.params[fixture.field]);
+    const visibleModelFields = Object.entries(projected.data.params).filter(
+      ([, field]) => field.display === 'modelselect' && !field.hidden,
+    );
+    assert.equal(
+      visibleModelFields.length,
+      1,
+      'exercise the actual visible model control, not only a hidden backing field',
+    );
+    if (connected && connected !== 'internal') {
+      graph.nodes.push(valueNode);
+      graph.edges.push(
+        edge(
+          'outside-pin',
+          valueNode.id,
+          instance.instanceId,
+          'output',
+          connected === 'public' ? 'revision-in' : `block-crossing:input:${semanticId}:${fixture.pinField}`,
+        ),
+      );
+    }
+    flowStoreModule.useFlowStore.setState(graph);
+    const props = { ...fixture.props, nodeId: projected.id, fieldKey: visibleModelFields[0][0] };
+    const calls = [];
+    if (connected) {
+      assert.throws(
+        () => modelFieldInstall.installModelField(props, fixture.repo, null, () => assert.fail('must not install')),
+        /literal component repository and revision/,
+      );
+    } else {
+      await modelFieldInstall.installModelField(props, fixture.repo, null, async (...args) => calls.push(args));
+      assert.deepEqual(calls, [[fixture.repo, null, { revision: fixture.revision }]]);
+    }
+  }
+});
+
+test('custom component Install rejects stale repository, owner and workflow controls', () => {
+  const fixture = customModelFieldFixture();
+  assert.throws(
+    () =>
+      modelFieldInstall.installModelField(fixture.props, 'other/repository', null, () =>
+        assert.fail('must not install'),
+      ),
+    /component repository changed/,
+  );
+  assert.throws(
+    () =>
+      modelFieldInstall.installModelField({ ...fixture.props, module: 'custom.Other' }, fixture.repo, null, () =>
+        assert.fail('must not install'),
+      ),
+    /model field changed/,
+  );
+  const context = studioStoreModule.captureWorkflowOperationContext();
+  studioStoreModule.useStudioStore.setState({ activeWorkflowTabId: 'different-workflow' });
+  assert.throws(
+    () =>
+      modelFieldInstall.installModelField({ ...fixture.props, workflowContext: context }, fixture.repo, null, () =>
+        assert.fail('must not install'),
+      ),
+    /workflow changed/,
+  );
+});
+
+test('custom component Install asks to expand a collapsed legacy control instead of guessing its pin', () => {
+  const fixture = customModelFieldFixture();
+  fixture.owner.selected = true;
+  const draft = userBlocksModule.createUserBlockFromSelection(
+    { nodes: [fixture.owner], edges: [] },
+    'Legacy component',
+  );
+  assert.equal(draft.ok, true);
+  const control = draft.block.exposedParams.find((item) => item.paramKey === fixture.field);
+  assert.ok(control);
+  flowStoreModule.useFlowStore.setState({ nodes: [draft.blockNode], edges: [] });
+  assert.throws(
+    () =>
+      modelFieldInstall.installModelField(
+        { ...fixture.props, nodeId: draft.blockNode.id, fieldKey: control.id },
+        fixture.repo,
+        null,
+        () => assert.fail('must not install'),
+      ),
+    /Expand this Block/,
+  );
+});
+
+test('nested legacy component controls require expansion rather than an unpinned fallback', () => {
+  const fixture = customModelFieldFixture();
+  fixture.owner.selected = true;
+  const inner = userBlocksModule.createUserBlockFromSelection({ nodes: [fixture.owner], edges: [] }, 'Legacy inner');
+  assert.equal(inner.ok, true);
+  inner.blockNode.selected = true;
+  const outer = userBlocksModule.createUserBlockFromSelection({ nodes: [inner.blockNode], edges: [] }, 'Legacy outer');
+  assert.equal(outer.ok, true);
+  const control = outer.block.exposedParams.find(
+    (item) => item.display === 'modelselect' || outer.blockNode.data.params[item.id]?.display === 'modelselect',
+  );
+  assert.ok(control);
+  flowStoreModule.useFlowStore.setState({ nodes: [outer.blockNode], edges: [] });
+  const props = {
+    nodeId: outer.blockNode.id,
+    fieldKey: control.id,
+    module: outer.blockNode.data.module,
+    action: outer.blockNode.data.action,
+  };
+  assert.throws(
+    () => modelFieldInstall.installModelField(props, fixture.repo, null, () => assert.fail('must not install')),
+    /Expand this Block/,
+  );
+  assert.equal(
+    modelFieldInstall.modelFieldIsInstalled(props, fixture.repo, [{ id: fixture.repo, installed: true }]),
+    false,
+  );
+});
+
+test('ordinary collapsed V2 model controls keep their catalog install and installed visibility', async () => {
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const owner = node('ordinary-model', 0, 0, {
+    params: {
+      model: { display: 'modelselect', type: 'string', value: { source: 'hub', value: 'owner/ordinary-model' } },
+    },
+  });
+  owner.selected = true;
+  owner.data.module = 'custom.OrdinaryNode';
+  owner.data.action = 'LoadOther';
+  const draft = userBlocksModule.createUserBlockFromSelection({ nodes: [owner], edges: [] }, 'Ordinary model');
+  assert.equal(draft.ok, true);
+  const graph = creation.prepareUserBlockCreationV2(draft, draft.block).graph;
+  const root = graph.nodes.find((node) => node.data.blockInstanceV2);
+  const control = root.data.blockInstanceV2.effectiveInterface.controls.find(
+    (item) => item.binding.fieldId === 'model',
+  );
+  flowStoreModule.useFlowStore.setState(graph);
+  const props = { nodeId: root.id, module: root.data.module, action: root.data.action, fieldKey: control.controlId };
+  const calls = [];
+  await modelFieldInstall.installModelField(props, 'owner/ordinary-model', null, async (...args) => calls.push(args));
+  assert.deepEqual(calls, [['owner/ordinary-model', null]]);
+  assert.equal(
+    modelFieldInstall.modelFieldIsInstalled(props, 'owner/ordinary-model', [
+      { id: 'owner/ordinary-model', installed: true },
+    ]),
+    true,
+  );
+  const originalBinding = structuredClone(control.binding);
+  const originalMirrors = control.mirrorBindings;
+  for (const malformed of [undefined, {}, { nodeId: '', fieldId: 'model' }]) {
+    control.binding = malformed;
+    assert.throws(
+      () =>
+        modelFieldInstall.installModelField(props, 'owner/ordinary-model', null, () => assert.fail('must not install')),
+      /Expand this Block/,
+    );
+    assert.equal(
+      modelFieldInstall.modelFieldIsInstalled(props, 'owner/ordinary-model', [
+        { id: 'owner/ordinary-model', installed: true },
+      ]),
+      false,
+    );
+  }
+  control.binding = originalBinding;
+  control.mirrorBindings = {};
+  assert.throws(
+    () =>
+      modelFieldInstall.installModelField(props, 'owner/ordinary-model', null, () => assert.fail('must not install')),
+    /Expand this Block/,
+  );
+  control.mirrorBindings = originalMirrors;
+});
+
+test('nested created V2 component model aliases cannot fall through to an unpinned install', async () => {
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  const fixture = customModelFieldFixture();
+  fixture.owner.selected = true;
+  fixture.owner.data.params[fixture.field].type = 'string';
+  const innerDraft = userBlocksModule.createUserBlockFromSelection(
+    { nodes: [fixture.owner], edges: [] },
+    'Inner components',
+  );
+  assert.equal(innerDraft.ok, true);
+  const inner = creation
+    .prepareUserBlockCreationV2(innerDraft, innerDraft.block)
+    .graph.nodes.find((node) => node.data.blockInstanceV2);
+  inner.selected = true;
+  const outerDraft = userBlocksModule.createUserBlockFromSelection({ nodes: [inner], edges: [] }, 'Outer components');
+  assert.equal(outerDraft.ok, true);
+  const outer = creation
+    .prepareUserBlockCreationV2(outerDraft, outerDraft.block)
+    .graph.nodes.find((node) => node.data.blockInstanceV2);
+  const instance = runtime.setBlockPresentationV2(outer.data.blockInstanceV2, { expanded: true });
+  const graph = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+  const aliases = graph.nodes.flatMap((node) =>
+    Object.entries(node.data.params ?? {})
+      .filter(([field, param]) => field.startsWith('block-') && param.display === 'modelselect' && !param.hidden)
+      .map(([field]) => ({ nodeId: node.id, module: node.data.module, action: node.data.action, fieldKey: field })),
+  );
+  assert.ok(aliases.length, 'exercise a real visible projected container alias');
+  flowStoreModule.useFlowStore.setState(graph);
+  for (const props of aliases) {
+    const calls = [];
+    assert.throws(
+      () => modelFieldInstall.installModelField(props, fixture.repo, null, (...args) => calls.push(args)),
+      /Expand this Block|component revision/,
+    );
+    assert.deepEqual(calls, []);
+    assert.equal(
+      modelFieldInstall.modelFieldIsInstalled(props, fixture.repo, [{ id: fixture.repo, installed: true }]),
+      false,
+    );
+  }
+});
+
+async function nestedModelControlFixture(owner, localSurface) {
+  const creation = await server.ssrLoadModule('/src/studio/userBlockCreationV2.ts');
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  owner.selected = true;
+  owner.data.params.test_input = { display: 'input', type: 'string' };
+  const innerDraft = userBlocksModule.createUserBlockFromSelection({ nodes: [owner], edges: [] }, 'Inner model');
+  assert.equal(innerDraft.ok, true);
+  const inner = creation
+    .prepareUserBlockCreationV2(innerDraft, innerDraft.block)
+    .graph.nodes.find((item) => item.data.blockInstanceV2);
+  let instance = inner.data.blockInstanceV2;
+  let containerId;
+  if (localSurface) {
+    inner.selected = true;
+    const sibling = node('composition-sibling', 300, 0, { params: { output: { display: 'output', type: 'string' } } });
+    sibling.selected = true;
+    const input = instance.effectiveInterface.boundary.inputs.find(
+      (port) => port.binding.fieldOrPortId === 'test_input',
+    );
+    assert.ok(input);
+    const outerDraft = creation.createUserBlockDraftV2(
+      {
+        nodes: [inner, sibling],
+        edges: [
+          {
+            id: 'composition-wire',
+            source: sibling.id,
+            sourceHandle: 'output',
+            target: inner.id,
+            targetHandle: input.portId,
+          },
+        ],
+      },
+      [],
+    );
+    assert.equal(outerDraft.ok, true, JSON.stringify(outerDraft));
+    const outer = creation
+      .prepareUserBlockCreationV2(outerDraft, outerDraft.block)
+      .graph.nodes.find((item) => item.data.blockInstanceV2);
+    instance = outer.data.blockInstanceV2;
+    containerId = instance.effectiveGraph.nodes.find((item) => item.containerInterface)?.nodeId;
+    assert.ok(containerId, 'normal composition retains the embedded Block interface');
+  } else {
+    // Use the same structural-edit functions as native graph edits; no fabricated Block hash or alias.
+    containerId = 'ordinary-container';
+    instance = runtime.addBlockEffectiveGraphNodeV2(instance, {
+      nodeId: containerId,
+      nodeType: 'group',
+      data: { label: 'Nested group', params: {} },
+    });
+    instance = runtime.replaceBlockEffectiveGraphV2(instance, {
+      ...instance.effectiveGraph,
+      nodes: instance.effectiveGraph.nodes.map((item) =>
+        item.nodeId === owner.id ? { ...item, parentNodeId: containerId } : item,
+      ),
+    });
+  }
+  instance = runtime.setBlockPresentationV2(instance, { expanded: true, collapsedContainerNodeIds: [containerId] });
+  const graph = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(instance));
+  const prefix = localSurface ? 'block-local-control:' : 'block-control:';
+  const aliases = graph.nodes.flatMap((item) =>
+    Object.entries(item.data.params ?? {})
+      .filter(([field, param]) => field.startsWith(prefix) && param.display === 'modelselect' && !param.hidden)
+      .map(([field]) => ({ nodeId: item.id, module: item.data.module, action: item.data.action, fieldKey: field })),
+  );
+  assert.ok(aliases.length, `normal projection creates visible ${prefix} aliases`);
+  flowStoreModule.useFlowStore.setState(graph);
+  return { graph, aliases };
+}
+
+for (const localSurface of [false, true]) {
+  test(`nested V2 ${localSurface ? 'local-container' : 'root-bound'} model aliases preserve ordinary catalog behavior`, async () => {
+    const owner = node('ordinary-nested-model', 0, 0, {
+      params: {
+        model: { display: 'modelselect', type: 'string', value: { source: 'hub', value: 'owner/ordinary-model' } },
+      },
+    });
+    owner.data.module = 'custom.OrdinaryNode';
+    owner.data.action = 'LoadOther';
+    const { graph, aliases } = await nestedModelControlFixture(owner, localSurface);
+    const before = structuredClone(graph);
+    for (const props of aliases) {
+      const calls = [];
+      await modelFieldInstall.installModelField(props, 'owner/ordinary-model', null, async (...args) =>
+        calls.push(args),
+      );
+      assert.deepEqual(calls, [['owner/ordinary-model', null]]);
+      assert.equal(
+        modelFieldInstall.modelFieldIsInstalled(props, 'owner/ordinary-model', [
+          { id: 'owner/ordinary-model', installed: true },
+        ]),
+        true,
+      );
+    }
+    assert.deepEqual(flowStoreModule.useFlowStore.getState().nodes, before.nodes);
+  });
+
+  test(`nested V2 ${localSurface ? 'local-container' : 'root-bound'} component aliases fail closed with malformed ownership`, async () => {
+    const fixture = customModelFieldFixture();
+    fixture.owner.data.params[fixture.field].type = 'string';
+    const { graph, aliases } = await nestedModelControlFixture(fixture.owner, localSurface);
+    for (const props of aliases) {
+      const calls = [];
+      assert.throws(
+        () => modelFieldInstall.installModelField(props, fixture.repo, null, (...args) => calls.push(args)),
+        /Expand this Block/,
+      );
+      assert.deepEqual(calls, []);
+      assert.equal(
+        modelFieldInstall.modelFieldIsInstalled(props, fixture.repo, [{ id: fixture.repo, installed: true }]),
+        false,
+      );
+      const param = graph.nodes.find((item) => item.id === props.nodeId).data.params[props.fieldKey];
+      const meta = localSurface ? param.fieldOptions.blockContainerControlV1 : param.fieldOptions.blockBindingV2;
+      const ownerId = meta.ownerId;
+      meta.ownerId = 'wrong-instance';
+      assert.throws(
+        () => modelFieldInstall.installModelField(props, fixture.repo, null, () => assert.fail('must not install')),
+        /Expand this Block/,
+      );
+      meta.ownerId = ownerId;
+      const metadataKey = localSurface ? 'blockContainerControlV1' : 'blockBindingV2';
+      delete param.fieldOptions[metadataKey];
+      assert.throws(
+        () => modelFieldInstall.installModelField(props, fixture.repo, null, () => assert.fail('must not install')),
+        /Expand this Block/,
+      );
+      param.fieldOptions[metadataKey] = meta;
+    }
+    const root = graph.nodes.find((item) => item.data.blockInstanceV2);
+    const container = root.data.blockInstanceV2.effectiveGraph.nodes.find((item) => item.nodeType === 'group');
+    assert.ok(container);
+    container.parentNodeId = container.nodeId;
+    assert.throws(
+      () => modelFieldInstall.installModelField(aliases[0], fixture.repo, null, () => assert.fail('must not install')),
+      /Cyclic|Expand this Block/,
+    );
+    assert.equal(
+      modelFieldInstall.modelFieldIsInstalled(aliases[0], fixture.repo, [{ id: fixture.repo, installed: true }]),
+      false,
+    );
+  });
+}
+
+test('custom component Install rejects malformed Hub choices and stale custom-owner metadata', () => {
+  const fixture = customModelFieldFixture();
+  for (const choice of [
+    null,
+    'owner/model',
+    { source: 'local', value: fixture.repo },
+    { source: 'hub', value: null },
+  ]) {
+    fixture.owner.data.params[fixture.field].value = choice;
+    assert.throws(
+      () =>
+        modelFieldInstall.installModelField(fixture.props, fixture.repo, null, () => assert.fail('must not install')),
+      /component repository changed/,
+    );
+  }
+  fixture.owner.data.params[fixture.field].value = { source: 'hub', value: fixture.repo };
+  for (const module of [null, {}, 'custom.OtherOwner']) {
+    fixture.owner.data.module = module;
+    assert.throws(
+      () =>
+        modelFieldInstall.installModelField(fixture.props, fixture.repo, null, () => assert.fail('must not install')),
+      /model field changed/,
+    );
+  }
+});
+
+test('custom component cache visibility requires exact positive revision evidence', () => {
+  const fixture = customModelFieldFixture();
+  for (const record of [
+    { id: fixture.repo, installed: true },
+    { id: fixture.repo, complete: true },
+    { id: fixture.repo, planned_revision: fixture.revision },
+    { id: fixture.repo, complete: false, installed: false, planned_revision: fixture.revision },
+    { id: fixture.repo, installed: true, complete: true, repair_required: true, planned_revision: fixture.revision },
+  ]) {
+    assert.equal(modelFieldInstall.modelFieldIsInstalled(fixture.props, fixture.repo, [record]), false);
+  }
+  assert.equal(
+    modelFieldInstall.modelFieldIsInstalled(fixture.props, fixture.repo, [
+      {
+        id: fixture.repo,
+        installed: true,
+        complete: true,
+        planned_revision: fixture.revision,
+      },
+    ]),
+    true,
+  );
+  flowStoreModule.useFlowStore.getState().setParam(fixture.owner.id, fixture.pinField, 'c'.repeat(40));
+  assert.equal(
+    modelFieldInstall.modelFieldIsInstalled(fixture.props, fixture.repo, [
+      {
+        id: fixture.repo,
+        installed: true,
+        complete: true,
+        planned_revision: fixture.revision,
+      },
+    ]),
+    false,
+    'changing only the sibling revision must expose Install again',
+  );
+});
+
+test('ordinary unpinned model fields retain their existing catalog install and cache behavior', async () => {
+  for (const [module, action, field] of [
+    ['modules.DiffusersImage', 'LoadPipeline', 'model_id'],
+    ['custom.OrdinaryNode', 'LoadOther', 'model'],
+    ['modules.ModularDiffusers', 'AutoModelLoader', 'model_id'],
+  ]) {
+    const owner = node('ordinary-loader');
+    Object.assign(owner.data, {
+      module,
+      action,
+      params: { [field]: { display: 'modelselect', value: { source: 'hub', value: 'owner/model' } } },
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [owner], edges: [] });
+    const props = { nodeId: owner.id, fieldKey: field, module, action };
+    const calls = [];
+    await modelFieldInstall.installModelField(props, 'owner/model', null, async (...args) => calls.push(args));
+    assert.deepEqual(calls, [['owner/model', null]]);
+    assert.equal(modelFieldInstall.modelFieldIsInstalled(props, 'owner/model', [{ id: 'owner/model' }]), true);
+    assert.equal(
+      modelFieldInstall.modelFieldIsInstalled(props, 'owner/model', [{ id: 'owner/model', installed: false }]),
+      false,
+    );
+  }
+});
+
 test('model selector contains no client-owned model-family inference', () => {
   const selectionSource = fs.readFileSync(path.join(ROOT, 'src', 'studio', 'modelSelection.ts'), 'utf8');
   const fieldSource = fs.readFileSync(path.join(ROOT, 'src', 'fields', 'ModelSelectField.tsx'), 'utf8');
@@ -8883,6 +9542,8 @@ test('model selector subscribes to discovered indexes and preserves the selected
   assert.doesNotMatch(source, /useNodesStore\.getState\(\)/);
   assert.match(source, /hfCache: state\.hfCache/);
   assert.match(source, /localModels: state\.localModels/);
+  assert.match(source, /await installModelField\(props, currentModelId, sid, installHfModel\)/);
+  assert.match(source, /modelFieldIsInstalled\(props, currentModelId, hfCache, fieldGraph\)/);
   const refreshBody = source.match(/const handleRefresh = async \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
   assert.doesNotMatch(refreshBody, /updateStore\([^,]+,\s*\{[^}]*value/);
 });
