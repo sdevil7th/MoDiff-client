@@ -1097,9 +1097,17 @@ is the single policy selector.
 
 Both storage keys and legacy normalizers remain unchanged. A restored workflow
 keeps its own resource settings while tabs share the global editing preference.
-Import, tab switching and backend hydration preserve the document's normalized
-memory policy before resolving an inferred image recipe. Graph-derived summaries
-may refresh; they must not replace an explicit Custom policy with Automatic.
+Explicit graph imports preserve the document's normalized memory policy while
+inferring their image recipe summary. Passive tab switching, closing, backend
+hydration and browser reload retain a recognized saved ordinary image form;
+Save As, Duplicate and output Restore retain that form too. These paths do not
+replace authored captions, model/task summaries or resource settings from graph
+inference, and an unchanged checkpoint does not trigger an autosave. The saved
+selected mode remains the existing mirror of the normalized form mode. Managed
+and template recovery keep their existing separate rules. Graph inference must
+not replace an explicit Custom policy with Automatic.
+Missing or unrecognized legacy forms still infer a graph summary, including
+output restores before default-value coercion could hide the missing form.
 Missing or invalid legacy choices and fresh raw-graph inference still default to Automatic.
 Graph Fix and Run Issues may open Expert tools without changing execution policy.
 Older clients can read the same workflow fields but still couple their controls;

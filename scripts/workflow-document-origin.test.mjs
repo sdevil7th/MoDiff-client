@@ -124,14 +124,14 @@ test('ordinary image document normalization preserves memory policy through impo
           const snapshot = ordinaryImageSnapshot(module, action, value);
           const original = structuredClone(snapshot);
           const id = studio.getState().createWorkflowTab('Saved image graph', snapshot, 'import');
-          const assertDocument = () => {
+          const assertDocument = (expectedPrompt = 'Current graph caption') => {
             const saved = tab(id).snapshot;
             assert.equal(saved.studioForm.resourceMode, expected);
             assert.equal(studio.getState().form.resourceMode, expected);
             assert.equal(
               saved.studioForm.prompt,
-              'Current graph caption',
-              'Graph inference still refreshes its summary.',
+              expectedPrompt,
+              'Explicit import infers a summary; passive hydration retains the saved form.',
             );
             assert.equal(saved.studioGraphBinding, null);
             assert.deepEqual(
@@ -155,7 +155,7 @@ test('ordinary image document normalization preserves memory policy through impo
             revision: 1,
             snapshot,
           });
-          assertDocument();
+          assertDocument('Saved form summary');
           assert.deepEqual(snapshot, original, 'Normalization cannot mutate the input document.');
         });
       }
@@ -171,6 +171,267 @@ test('fresh ordinary graph inference still defaults to Automatic without a saved
   const inference = await server.ssrLoadModule('/src/studio/workflowInference.ts');
   const snapshot = ordinaryImageSnapshot('modules.ImageOperations', 'ProcessImage', 'expert');
   assert.equal(inference.inferStudioFormFromWorkflow(snapshot.nodes, snapshot.studioForm).resourceMode, 'auto');
+});
+
+test('passive ordinary image restore preserves the complete saved form and does not autosave an inferred summary', async (t) => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  const previousFetch = globalThis.fetch;
+  try {
+    for (const [module, action] of [
+      ['modules.ImageOperations', 'ProcessImage'],
+      ['modules.DiffusersImage', 'LoadPipeline'],
+      ['modules.Spandrel', 'Upscaler'],
+    ]) {
+      for (const transition of ['switch', 'close', 'backend hydration', 'reload']) {
+        await t.test(`${action}: ${transition}`, async () => {
+          studio.setState({ workflowTabs: [], activeWorkflowTabId: null });
+          const snapshot = ordinaryImageSnapshot(module, action, 'expert');
+          snapshot.nodes[1].data.params.operation.value = 'image_stitch';
+          snapshot.nodes[1].data.retainedAuthoring = { version: 3, labels: ['keep', 'unchanged'] };
+          const id = studio.getState().createWorkflowTab('Retained ordinary document', snapshot, 'import');
+          // Author after explicit import so the retained form deliberately differs
+          // from the existing graph-derived summary, as in the Linux reproduction.
+          studio.getState().updateForm({
+            ...defaultForm,
+            resourceMode: 'expert',
+            prompt: 'Keep this authored form summary',
+            negativePrompt: 'Retained negative caption',
+            dtype: 'float16',
+            device: 'cuda:0',
+            autoOffload: true,
+            offloadMode: 'group_disk',
+            steps: 17,
+            guidanceScale: 6.25,
+            seed: 123,
+            randomSeed: false,
+            width: 768,
+            height: 512,
+            aspectRatio: 'custom',
+            referenceImages: ['images/retained-reference.png'],
+          });
+          studio.getState().saveActiveWorkflowTab(true);
+          const original = structuredClone({ ...tab(id), dirty: false, intent: 'saved', backendRevision: 2 });
+          studio.setState({ workflowTabs: [structuredClone(original)] });
+          sync.markBackendWorkflow(original);
+          const requests = [];
+          globalThis.fetch = async (url, options) => {
+            requests.push([String(url), options?.method ?? 'GET']);
+            return response(record(tab(id)));
+          };
+
+          if (transition === 'switch' || transition === 'close') {
+            const otherId = studio.getState().createWorkflowTab('Another document');
+            const other = structuredClone(tab(otherId));
+            if (transition === 'switch') studio.getState().switchWorkflowTab(id);
+            else studio.getState().closeWorkflowTab(otherId);
+            if (transition === 'switch') assert.deepEqual(tab(otherId), other, 'Unrelated tab remains exact.');
+          } else if (transition === 'backend hydration') {
+            studio.setState({ workflowTabs: [], activeWorkflowTabId: id });
+            studio.getState().mergeBackendWorkflow({ ...original, revision: 2 });
+          } else {
+            const persisted = studio.persist.getOptions().partialize(studio.getState());
+            storage.setItem('modiff.studio', JSON.stringify({ state: persisted, version: 0 }));
+            await studio.persist.rehydrate();
+          }
+
+          assert.deepEqual(studio.getState().form, original.snapshot.studioForm);
+          assert.equal(studio.getState().selectedMode, original.snapshot.selectedMode);
+          studio.getState().saveActiveWorkflowTab(true);
+          assert.deepEqual(tab(id).snapshot, original.snapshot, 'Passive checkpoint retains the complete snapshot.');
+          assert.equal(tab(id).dirty, false, 'Passive restore is not an authored edit.');
+          sync.queueWorkflowPut(tab(id), (error) => assert.fail(String(error)));
+          await new Promise(setImmediate);
+          assert.deepEqual(requests, [], 'The autosave chain must not PUT a replacement summary.');
+        });
+      }
+    }
+  } finally {
+    globalThis.fetch = previousFetch;
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
+});
+
+test('saved ordinary image copies and output restores preserve their authored form', async (t) => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  try {
+    for (const [module, action] of [
+      ['modules.ImageOperations', 'ProcessImage'],
+      ['modules.DiffusersImage', 'LoadPipeline'],
+      ['modules.Spandrel', 'Upscaler'],
+    ]) {
+      for (const source of ['manual', 'gallery']) {
+        await t.test(`${action}: ${source}`, () => {
+          studio.setState({ workflowTabs: [], activeWorkflowTabId: null });
+          const snapshot = ordinaryImageSnapshot(module, action, 'expert');
+          snapshot.studioForm = {
+            ...snapshot.studioForm,
+            prompt: 'Keep the saved copy caption',
+            seed: 123,
+            randomSeed: false,
+            width: 768,
+            height: 512,
+            aspectRatio: 'custom',
+          };
+          const original = structuredClone(snapshot);
+          if (source === 'manual') {
+            // Both Save As and My workflows Duplicate pass this explicit source.
+            studio.getState().createWorkflowTab('Saved workflow copy', snapshot, 'manual');
+          } else {
+            studio.getState().restoreWorkflowFromOutput({
+              id: 'retained-output',
+              prompt: snapshot.studioForm.prompt,
+              formSnapshot: snapshot.studioForm,
+              graphSnapshot: snapshot,
+            });
+          }
+          const restored = tab(studio.getState().activeWorkflowTabId).snapshot;
+          assert.deepEqual(restored.studioForm, original.studioForm);
+          assert.equal(restored.selectedMode, original.studioForm.mode);
+          assert.deepEqual(restored.nodes, original.nodes);
+          assert.deepEqual(restored.edges, original.edges);
+          assert.deepEqual(snapshot, original, 'Copy and restore cannot mutate their source snapshot.');
+        });
+      }
+    }
+  } finally {
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
+});
+
+test('legacy ordinary output restores still infer a missing or unrecognized original form', async (t) => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  try {
+    for (const [module, action] of [
+      ['modules.ImageOperations', 'ProcessImage'],
+      ['modules.DiffusersImage', 'LoadPipeline'],
+      ['modules.Spandrel', 'Upscaler'],
+    ]) {
+      for (const formSnapshot of [undefined, { mode: 'unknown-mode', modelType: 'unknown-model' }]) {
+        await t.test(`${action}: ${formSnapshot ? 'unrecognized' : 'missing'}`, () => {
+          studio.setState({ workflowTabs: [], activeWorkflowTabId: null });
+          const graphSnapshot = ordinaryImageSnapshot(module, action, 'expert');
+          studio.getState().restoreWorkflowFromOutput({
+            id: 'legacy-output',
+            prompt: '',
+            formSnapshot,
+            graphSnapshot,
+          });
+          const form = studio.getState().form;
+          assert.equal(form.prompt, 'Current graph caption');
+          assert.equal(tab(studio.getState().activeWorkflowTabId).source, 'gallery');
+        });
+      }
+    }
+  } finally {
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
+});
+
+test('legacy ordinary snapshots without a recognized form still infer their graph summary', async (t) => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  try {
+    for (const supplied of [undefined, { mode: 'unknown-mode', modelType: 'unknown-model' }]) {
+      await t.test(supplied ? 'unrecognized legacy form' : 'bare graph', () => {
+        const snapshot = ordinaryImageSnapshot('modules.ImageOperations', 'ProcessImage', 'expert');
+        if (supplied) snapshot.studioForm = supplied;
+        else delete snapshot.studioForm;
+        delete snapshot.selectedMode;
+        studio.setState({ workflowTabs: [], activeWorkflowTabId: 'legacy-image' });
+        studio.getState().mergeBackendWorkflow({
+          id: 'legacy-image',
+          title: 'Legacy image graph',
+          source: 'import',
+          createdAt: 1,
+          updatedAt: 2,
+          revision: 1,
+          snapshot,
+        });
+        assert.equal(studio.getState().form.modelType, 'BuiltinImageOperation');
+        assert.equal(studio.getState().form.mode, 'image_upscale');
+        assert.equal(studio.getState().form.prompt, 'Current graph caption');
+        assert.equal(studio.getState().graphBinding, null);
+      });
+    }
+  } finally {
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
+});
+
+test('restored selectedMode remains the existing mirror of its saved form mode', () => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  try {
+    const id = studio
+      .getState()
+      .createWorkflowTab(
+        'Legacy mode mirror',
+        ordinaryImageSnapshot('modules.ImageOperations', 'ProcessImage', 'expert'),
+        'import',
+      );
+    const original = structuredClone(tab(id));
+    original.snapshot.selectedMode = 'text_to_image';
+    assert.notEqual(original.snapshot.selectedMode, original.snapshot.studioForm.mode);
+    studio.setState({ workflowTabs: [], activeWorkflowTabId: id });
+    studio.getState().mergeBackendWorkflow({ ...original, revision: 2 });
+    assert.deepEqual(tab(id).snapshot.studioForm, original.snapshot.studioForm);
+    assert.equal(studio.getState().selectedMode, original.snapshot.studioForm.mode);
+    assert.equal(tab(id).snapshot.selectedMode, original.snapshot.studioForm.mode);
+  } finally {
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
+});
+
+test('explicit ordinary model, task and form edits still persist through the autosave chain', async () => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  const previousFetch = globalThis.fetch;
+  try {
+    const id = studio
+      .getState()
+      .createWorkflowTab(
+        'Editable ordinary document',
+        ordinaryImageSnapshot('modules.ImageOperations', 'ProcessImage', 'expert'),
+        'import',
+      );
+    studio.getState().saveActiveWorkflowTab(false);
+    sync.markBackendWorkflow(tab(id));
+    const originalGraph = structuredClone({ nodes: tab(id).snapshot.nodes, edges: tab(id).snapshot.edges });
+    const requests = [];
+    globalThis.fetch = async (_url, options) => {
+      requests.push(JSON.parse(options.body));
+      return response({ ...record(tab(id)), revision: 2 });
+    };
+    studio.getState().updateForm({
+      modelType: 'BuiltinImageOperation',
+      mode: 'image_stitch',
+      prompt: 'An intentional new caption',
+      seed: 987,
+      steps: 23,
+    });
+    studio.getState().saveActiveWorkflowTab(true);
+    const authoredForm = structuredClone(studio.getState().form);
+    sync.queueWorkflowPut(tab(id), (error) => assert.fail(String(error)));
+    await new Promise(setImmediate);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].snapshot.studioForm, authoredForm);
+    assert.equal(requests[0].snapshot.studioForm.mode, 'image_stitch');
+    assert.equal(requests[0].snapshot.selectedMode, 'image_stitch');
+    assert.deepEqual({ nodes: tab(id).snapshot.nodes, edges: tab(id).snapshot.edges }, originalGraph);
+    assert.equal(tab(id).dirty, false);
+  } finally {
+    globalThis.fetch = previousFetch;
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
 });
 
 test('a genuinely new tab skips its first GET and consumes its marker before the ordinary PUT', async () => {

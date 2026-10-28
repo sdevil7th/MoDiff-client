@@ -234,6 +234,7 @@ type StudioActions = {
     snapshot?: WorkflowTabSnapshot,
     source?: WorkflowTab['source'],
     sourceLabel?: string,
+    normalizationIntent?: 'restore' | 'import',
   ) => string;
   switchWorkflowTab: (id: string) => void;
   closeWorkflowTab: (id: string) => void;
@@ -536,6 +537,7 @@ function normalizeWorkflowSnapshot(
   snapshot: unknown,
   templateSourceId: StudioTemplateId | null = null,
   allowCanonicalAdoption = true,
+  intent: 'restore' | 'import' = 'restore',
 ): WorkflowTabSnapshot {
   const value = isRecord(snapshot) ? snapshot : {};
   const hasPersistedTemplateId = Object.prototype.hasOwnProperty.call(value, 'activeTemplateId');
@@ -634,7 +636,15 @@ function normalizeWorkflowSnapshot(
     shouldRecoverManagedIdentity && !ordinaryImageImport
       ? adoptManagedWorkflowGraph(nodes, edges as import('@xyflow/react').Edge[], inferredManagedForm)
       : null;
-  const studioForm = adoptedGraph || ordinaryImageImport ? inferredManagedForm : persistedStudioForm;
+  // Restoring an ordinary graph is not permission to replace its authored form
+  // with a graph-derived summary. Explicit imports and legacy snapshots without
+  // a recognized form still infer it; managed/template recovery stays separate.
+  const hasPersistedForm =
+    isRecord(value.studioForm) &&
+    value.studioForm.mode === persistedStudioForm.mode &&
+    value.studioForm.modelType === persistedStudioForm.modelType;
+  const inferOrdinaryForm = ordinaryImageImport && (intent === 'import' || !hasPersistedForm);
+  const studioForm = adoptedGraph || inferOrdinaryForm ? inferredManagedForm : persistedStudioForm;
   const normalizedNodes = adoptedGraph?.nodes ?? nodes;
   const executionNormalizedNodes =
     ordinaryImageImport || ordinaryOperationGraph
@@ -2419,6 +2429,12 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
 
       restoreWorkflowFromOutput: (output) => {
         const restoredForm = coerceStudioFormState(output.formSnapshot);
+        // Coercion supplies a valid fallback even for legacy outputs without a
+        // saved form. Preserve that distinction until the new tab is normalized.
+        const hasSavedForm =
+          isRecord(output.formSnapshot) &&
+          output.formSnapshot.mode === restoredForm.mode &&
+          output.formSnapshot.modelType === restoredForm.modelType;
         const snapshot: WorkflowTabSnapshot = {
           nodes: output.graphSnapshot?.nodes ?? [],
           edges: output.graphSnapshot?.edges ?? [],
@@ -2435,6 +2451,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
           snapshot,
           'gallery',
           output.id,
+          hasSavedForm ? 'restore' : 'import',
         );
       },
 
@@ -2742,10 +2759,13 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         });
       },
 
-      createWorkflowTab: (title, snapshot, source = 'new', sourceLabel) => {
+      createWorkflowTab: (title, snapshot, source = 'new', sourceLabel, normalizationIntent) => {
         const id = nanoid();
         const state = get();
-        const nextSnapshot = normalizeWorkflowSnapshot(snapshot ?? blankWorkflowSnapshot());
+        // Save As, Duplicate and output Restore already carry an authored
+        // document. Creating their tab must not reinterpret its saved form.
+        const intent = normalizationIntent ?? (source === 'manual' || source === 'gallery' ? 'restore' : 'import');
+        const nextSnapshot = normalizeWorkflowSnapshot(snapshot ?? blankWorkflowSnapshot(), null, true, intent);
         const templateSourceId =
           source === 'template' && !snapshot ? (coerceStudioTemplateId(sourceLabel) ?? null) : null;
         if (templateSourceId) {
