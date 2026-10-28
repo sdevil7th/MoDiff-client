@@ -466,6 +466,7 @@ test('Audio Block preserves full-setting native edits and generates audio when a
   await page.addInitScript(() => {
     if (sessionStorage.getItem('audio-acceptance-initialized')) return;
     localStorage.clear();
+    sessionStorage.clear();
     sessionStorage.setItem('audio-acceptance-initialized', 'yes');
   });
   // Start only after the intentionally restarted backend has loaded its registry.

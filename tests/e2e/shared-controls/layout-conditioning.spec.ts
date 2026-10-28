@@ -183,7 +183,10 @@ test('layout default, unsupported source regions and disabled inputs keep their 
   const node = widget(page);
   await expect(node.getByRole('radio', { name: 'Structured layout', exact: true })).toBeChecked();
   await expect(node.getByRole('button', { name: 'Edit subject', exact: true })).toBeVisible();
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.goto('/control-state-matrix.html?layout-conditioning&source-region');
   await expect(node.getByRole('alert')).toContainText('source regions are unavailable');
   await expect(node.getByRole('button', { name: 'Add region', exact: true })).toBeDisabled();
@@ -192,7 +195,10 @@ test('layout default, unsupported source regions and disabled inputs keep their 
   await expect(node.getByRole('checkbox', { name: 'Use a source region', exact: true })).toHaveCount(0);
   await node.getByRole('button', { name: 'Apply region', exact: true }).click();
   expect(await exported(page)).toEqual(sourceBefore);
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
   await page.goto('/control-state-matrix.html?layout-conditioning&structured-default&disabled');
   await expect(node.getByRole('radio', { name: 'Raw prompt', exact: true })).toBeDisabled();
   await expect(node.getByRole('button', { name: 'Edit subject', exact: true })).toBeDisabled();

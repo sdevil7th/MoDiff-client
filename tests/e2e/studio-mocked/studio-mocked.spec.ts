@@ -14900,7 +14900,10 @@ test('mocked Expert Model Manager gates the exact MiniMax Music 3 snapshot on re
   mockHfTokenConfigured = true;
   await ensureFrontend();
   await installMockRoutes(page);
-  await page.addInitScript(() => window.localStorage.clear());
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
   await page.unroute('**/model_capabilities**');
   await page.route('**/model_capabilities**', async (route) => {
     const capabilities = [
@@ -21127,7 +21130,10 @@ test('startup run recovery preserves the selected saved workflow until explicit 
   // A genuinely fresh browser with no saved document should still recover the
   // running workflow. Preserving an editing tab must not disable that fallback.
   workflows.clear();
-  await page.evaluate(() => window.localStorage.clear());
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId(`workflow-tab-${identity.remoteId}`)).toHaveAttribute('aria-selected', 'true');
 });
@@ -28506,6 +28512,7 @@ async function sharedNestedBlockInterface(page: Page, workspace: 'auto' | 'exper
   await page.addInitScript(() => {
     if (sessionStorage.getItem('nested-preview-editor-proof')) return;
     localStorage.clear();
+    sessionStorage.clear();
     sessionStorage.setItem('nested-preview-editor-proof', '1');
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });

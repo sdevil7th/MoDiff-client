@@ -112,6 +112,7 @@ test(`ordinary image composite preserves edited values through native Save, expa
   await page.addInitScript(() => {
     if (sessionStorage.getItem('ordinary-image-proof')) return;
     localStorage.clear();
+    sessionStorage.clear();
     sessionStorage.setItem('ordinary-image-proof', '1');
   });
   const readinessServer = process.env.MODIFF_LIVE_BACKEND_URL ?? 'http://127.0.0.1:8088';
