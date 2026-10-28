@@ -26,6 +26,17 @@ without running them. Use Load deliberately, then Reload after editing. Disable
 keeps the source. Registry refresh does not rewrite existing node port definitions.
 Code/dependency identity changes invalidate execution until Reload.
 
+An approved custom Block's **Load Models** component fields use their own exact
+lowercase 40-character revisions when you select **Install** beside a Hub model.
+Another cached revision does not hide that install action; missing exact cache
+evidence keeps it available. Set a literal repository and revision first:
+connected, missing or mutable pins report a correction instead of downloading a
+default branch. Expand a Block to install from its component loader when the
+collapsed or nested control cannot prove the pin owner. Ordinary model controls
+retain their catalog behavior. Alias inspection follows declared ownership only;
+malformed, cyclic or excessive control chains require expansion. This installs model files only;
+source approval, dependency readiness and Custom memory requirements still apply.
+
 ## Image/audio attachment
 
 On the loader inspector, open **Workflow stage actions → Add image / audio input…**,
