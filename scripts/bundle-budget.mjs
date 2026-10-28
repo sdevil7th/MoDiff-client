@@ -1,3 +1,9 @@
+// Custom recipe preservation and page-lifecycle retry cancellation measure
+// largest/startup/deferred gzip 491521/670008/326977 versus the accepted
+// 491457/669945/327044. Add only measured startup growth 64/63, preserving
+// 8/11 bytes of headroom. The same four startup and 89 deferred assets retain
+// membership; all deferred bodies match after versioned URL normalization.
+// Dependencies, minifier, loading boundaries and both deferred caps stay fixed.
 // Passive saved-form preservation and authoritative service-cache status measure
 // largest/startup/deferred gzip 491457/669945/327044 versus the accepted
 // 490814/669295/326710. Add only aggregate growth 643/650/334, preserving
@@ -242,6 +248,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Add only those measured costs, preserving 8/11/152 bytes of existing headroom.
 // Dependencies, startup membership, lazy boundaries and the 64 KiB chunk cap stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  64 +
   643 +
   322 +
   2020 +
@@ -361,6 +368,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  63 +
   650 +
   498 +
   2018 +
