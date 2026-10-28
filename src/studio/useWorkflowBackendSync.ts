@@ -314,11 +314,16 @@ export function useWorkflowBackendSync() {
         for (const tab of store.workflowTabs) {
           if (isWorkflowTabClosed(tab.id)) continue;
           const cleanBaseline = tab.dirty ? undefined : (JSON.parse(JSON.stringify(tab)) as WorkflowTab);
+          const readRevision =
+            useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id)?.backendRevision ?? 0;
           const backendTab = await readWorkflowForHydration(tab, controller.signal);
           if (cancelled) return;
           const current = useStudioStore.getState();
           const latestTab = current.workflowTabs.find((item) => item.id === tab.id);
           if (isWorkflowTabClosed(tab.id) || !latestTab) continue;
+          // A save/broadcast can overtake this GET. The store rejects its older
+          // revision; its stale content must not replace the acknowledged signature either.
+          if (backendTab && (latestTab.backendRevision ?? 0) > (backendTab.backendRevision ?? 0)) continue;
           // Dirty protects an unacknowledged document, including a committed PUT whose response was lost.
           // Reuse only an exact match with the latest open tab; the normal merge still protects live edits.
           if (backendTab && (!tab.dirty || contentSignature(latestTab) === contentSignature(backendTab))) {
@@ -332,9 +337,19 @@ export function useWorkflowBackendSync() {
             });
             continue;
           }
+          // Skip a missing read only when an exact acknowledgement overtook it.
+          // An acknowledgement predating this GET cannot waive genuine recreation.
+          if (
+            !backendTab &&
+            (latestTab.backendRevision ?? 0) > readRevision &&
+            backendSignatures.get(tab.id) === contentSignature(latestTab)
+          ) {
+            clearDirtyMarkerForExactBackendDocument(tab.id);
+            continue;
+          }
           // A new local document, or a synchronous checkpoint newer than the
           // last backend revision, must be uploaded before hydration finishes.
-          const saved = await putWorkflow(tab, controller.signal);
+          const saved = await putWorkflow(latestTab, controller.signal);
           if (cancelled || !saved) continue;
           markBackendWorkflow(saved);
           const latest = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);

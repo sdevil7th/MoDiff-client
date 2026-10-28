@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const HOOK_EFFECTS = '\0workflow-sync-hook-effects';
+const HOOK_STORE = '\0workflow-sync-hook-store';
 const storage = () => {
   const values = new Map();
   return {
@@ -26,6 +28,8 @@ before(async () => {
     localStorage: storage(),
     sessionStorage: storage(),
     location: globalThis.location,
+    addEventListener() {},
+    removeEventListener() {},
   };
   globalThis.localStorage = globalThis.window.localStorage;
   globalThis.sessionStorage = globalThis.window.sessionStorage;
@@ -36,6 +40,34 @@ before(async () => {
     optimizeDeps: { entries: [], noDiscovery: true },
     server: { middlewareMode: true, watch: null },
     appType: 'custom',
+    plugins: [
+      {
+        name: 'workflow-sync-controlled-hook-effects',
+        enforce: 'pre',
+        transform(code, id) {
+          if (id.replaceAll('\\', '/').endsWith('/src/studio/useWorkflowBackendSync.ts'))
+            return code.replace("from 'react'", "from 'workflow-sync-controlled-react'");
+        },
+        resolveId(id, importer) {
+          if (!importer?.replaceAll('\\', '/').endsWith('/src/studio/useWorkflowBackendSync.ts')) return;
+          if (id === 'workflow-sync-controlled-react') return HOOK_EFFECTS;
+          if (id === '../stores/useStudioStore') return HOOK_STORE;
+        },
+        load(id) {
+          if (id === HOOK_EFFECTS)
+            return `export const useEffect = effect => globalThis.workflowSyncHook.effects.push(effect);
+              export const useMemo = read => read();
+              export const useState = initial => [initial === false ? globalThis.workflowSyncHook.hydrated : initial,
+                value => { if (initial === false) { globalThis.workflowSyncHook.hydrated = value;
+                  if (value) globalThis.workflowSyncHook.finish(); } }];`;
+          if (id === HOOK_STORE)
+            return `import {useStudioStore as actual} from '/src/stores/useStudioStore.ts';
+              export const useStudioStore = selector => selector(actual.getState());
+              useStudioStore.getState = actual.getState;
+              useStudioStore.setState = actual.setState;`;
+        },
+      },
+    ],
   });
   studio = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   sync = await server.ssrLoadModule('/src/studio/useWorkflowBackendSync.ts');
@@ -390,6 +422,212 @@ function startupHydrationFixture({ dirty = false } = {}) {
     options: { hydrationBaseline: { tab: structuredClone(normalized), canvasEpoch: 25, registry } },
   };
 }
+
+async function delayedHydration({ dirty = true, beforeRead, duringRead, backendFor, autosave = false }) {
+  const fixture = startupHydrationFixture({ dirty });
+  // Start with the normal materialized checkpoint already on the backend:
+  // registry-populated empty previews/connection flags are a separate contract.
+  studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+  const checkpoint = structuredClone(studio.useStudioStore.getState().workflowTabs[0]);
+  checkpoint.dirty = dirty;
+  fixture.baseline = structuredClone(checkpoint);
+  fixture.incoming = structuredClone(checkpoint);
+  fixture.incoming.backendRevision = 12;
+  fixture.incoming.snapshot.nodes[0].data.params.text.value = 'New backend text';
+  studio.useStudioStore.setState({ workflowTabs: [checkpoint] });
+  studio.useStudioStore.setState({ workflowCanvasHydrated: true });
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  const timers = [];
+  let finish;
+  let finishRead;
+  let failRead;
+  let fail;
+  const finished = new Promise((resolve, reject) => {
+    finish = resolve;
+    fail = reject;
+  });
+  const deadline = setTimeout(() => fail(new Error('Controlled hydration did not settle.')), 5000);
+  const read = new Promise((resolve, reject) => {
+    finishRead = resolve;
+    failRead = reject;
+  });
+  globalThis.workflowSyncHook = { effects: [], hydrated: false, finish };
+  globalThis.window.setTimeout = (callback, delay) => {
+    timers.push({ callback, delay });
+    return timers.length;
+  };
+  globalThis.window.clearTimeout = () => {};
+  globalThis.fetch = async (_url, options = {}) => {
+    if (options.method !== 'PUT') {
+      options.signal?.addEventListener('abort', () => failRead(options.signal.reason), { once: true });
+      return read;
+    }
+    const body = JSON.parse(options.body);
+    writes.push(body);
+    return new Response(JSON.stringify({ ...body, id: fixture.baseline.id, revision: 30 }));
+  };
+  let cleanup;
+  try {
+    await beforeRead?.(fixture);
+    sync.useWorkflowBackendSync();
+    cleanup = globalThis.workflowSyncHook.effects[0]();
+    await duringRead?.(fixture);
+    const backend = backendFor ? backendFor(fixture) : fixture.baseline;
+    finishRead(
+      backend
+        ? new Response(JSON.stringify({ ...backend, revision: backend.backendRevision }))
+        : new Response(JSON.stringify({ error: true }), { status: 404 }),
+    );
+    await finished;
+    if (autosave) {
+      globalThis.workflowSyncHook.effects = [];
+      sync.useWorkflowBackendSync();
+      globalThis.workflowSyncHook.effects[1]();
+      for (const timer of timers) if (timer.delay === 500) timer.callback();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    return { fixture, writes, current: structuredClone(studio.useStudioStore.getState().workflowTabs[0]) };
+  } finally {
+    clearTimeout(deadline);
+    cleanup?.();
+    globalThis.fetch = originalFetch;
+    delete globalThis.workflowSyncHook;
+    delete globalThis.window.setTimeout;
+    delete globalThis.window.clearTimeout;
+  }
+}
+
+test('delayed hydration never republishes its captured snapshot over a newer checkpoint', async () => {
+  let latest;
+  const result = await delayedHydration({
+    duringRead() {
+      flow.useFlowStore.getState().setParamWithHistory('hydration-text', 'text', 'New local text');
+      studio.useStudioStore.getState().updateForm({ prompt: 'New local form' });
+      studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+      latest = structuredClone(studio.useStudioStore.getState().workflowTabs[0]);
+    },
+  });
+  assert.equal(result.writes.length, 1);
+  assert.notDeepEqual(
+    result.writes[0].snapshot,
+    result.fixture.baseline.snapshot,
+    'no metadata-only echo of old content',
+  );
+  assert.deepEqual(result.writes[0].snapshot, latest.snapshot, 'the actual current checkpoint owns the PUT');
+  assert.deepEqual(result.current.snapshot, latest.snapshot, 'acknowledgement retains the current graph and form');
+});
+
+test('delayed hydration cannot replace a newer acknowledgement signature with an older read', async () => {
+  let acknowledged;
+  const result = await delayedHydration({
+    dirty: false,
+    duringRead(fixture) {
+      acknowledged = structuredClone(fixture.baseline);
+      acknowledged.backendRevision = 29;
+      acknowledged.snapshot.nodes[0].data.params.text.value = 'New acknowledged text';
+      sync.markBackendWorkflow(acknowledged);
+      studio.useStudioStore.getState().mergeBackendWorkflow(acknowledged);
+    },
+    autosave: true,
+  });
+  assert.equal(result.current.backendRevision, 29);
+  assert.deepEqual(result.current.snapshot, acknowledged.snapshot);
+  assert.equal(result.writes.length, 0, 'an old GET must not trigger an autosave of already acknowledged content');
+});
+
+test('delayed hydration cannot republish a newer acknowledgement after an overtaken missing read', async () => {
+  let acknowledged;
+  const result = await delayedHydration({
+    dirty: false,
+    backendFor: () => null,
+    duringRead(fixture) {
+      acknowledged = structuredClone(fixture.baseline);
+      acknowledged.backendRevision = 29;
+      acknowledged.snapshot.nodes[0].data.params.text.value = 'New acknowledged text';
+      sync.markBackendWorkflow(acknowledged);
+      studio.useStudioStore.getState().mergeBackendWorkflow(acknowledged);
+    },
+    autosave: true,
+  });
+  assert.equal(result.current.backendRevision, 29);
+  assert.deepEqual(result.current.snapshot, acknowledged.snapshot);
+  assert.equal(result.writes.length, 0, 'an overtaken 404 must not republish already acknowledged content');
+});
+
+test('delayed hydration uploads a newer dirty checkpoint after an acknowledgement and missing read', async () => {
+  let latest;
+  const result = await delayedHydration({
+    dirty: false,
+    backendFor: () => null,
+    duringRead(fixture) {
+      const acknowledged = structuredClone(fixture.baseline);
+      acknowledged.backendRevision = 29;
+      sync.markBackendWorkflow(acknowledged);
+      studio.useStudioStore.getState().mergeBackendWorkflow(acknowledged);
+      flow.useFlowStore.getState().setParamWithHistory('hydration-text', 'text', 'New unacknowledged text');
+      studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+      latest = structuredClone(studio.useStudioStore.getState().workflowTabs[0]);
+    },
+  });
+  assert.equal(result.writes.length, 1);
+  assert.deepEqual(result.writes[0].snapshot, latest.snapshot);
+  assert.deepEqual(result.current.snapshot, latest.snapshot);
+});
+
+test('delayed hydration recreates a genuinely missing document acknowledged before its read', async () => {
+  let acknowledged;
+  const result = await delayedHydration({
+    dirty: false,
+    backendFor: () => null,
+    beforeRead(fixture) {
+      acknowledged = structuredClone(fixture.baseline);
+      acknowledged.backendRevision = 29;
+      sync.markBackendWorkflow(acknowledged);
+      studio.useStudioStore.getState().mergeBackendWorkflow(acknowledged);
+    },
+    autosave: true,
+  });
+  assert.equal(result.writes.length, 1, 'an acknowledgement predating this GET cannot waive a genuine 404');
+  assert.deepEqual(result.writes[0].snapshot, acknowledged.snapshot);
+  assert.deepEqual(result.current.snapshot, acknowledged.snapshot);
+});
+
+test('delayed hydration acknowledges an exact restored dirty document without a PUT', async () => {
+  const result = await delayedHydration({ autosave: true });
+  assert.equal(result.writes.length, 0);
+  assert.equal(result.current.dirty, false);
+  assert.deepEqual(result.current.snapshot, result.fixture.baseline.snapshot);
+});
+
+test('delayed hydration creates a missing document from the current checkpoint', async () => {
+  let latest;
+  const result = await delayedHydration({
+    backendFor: () => null,
+    duringRead() {
+      flow.useFlowStore.getState().setParamWithHistory('hydration-text', 'text', 'Current new draft');
+      studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+      latest = structuredClone(studio.useStudioStore.getState().workflowTabs[0]);
+    },
+  });
+  assert.equal(result.writes.length, 1);
+  assert.deepEqual(result.writes[0].snapshot, latest.snapshot);
+  assert.deepEqual(result.current.snapshot, latest.snapshot);
+});
+
+test('delayed hydration retains a genuinely dirty document against a newer remote document', async () => {
+  const result = await delayedHydration({ backendFor: (fixture) => fixture.incoming });
+  assert.equal(result.writes.length, 1);
+  assert.deepEqual(result.writes[0].snapshot, result.fixture.baseline.snapshot);
+  assert.deepEqual(result.current.snapshot, result.fixture.baseline.snapshot);
+});
+
+test('delayed hydration accepts a newer remote document for an unchanged clean tab', async () => {
+  const result = await delayedHydration({ dirty: false, backendFor: (fixture) => fixture.incoming, autosave: true });
+  assert.equal(result.writes.length, 0);
+  assert.equal(result.current.dirty, false);
+  assert.deepEqual(result.current.snapshot, result.fixture.incoming.snapshot);
+});
 
 function checkpointedSavedWorkflow() {
   startupHydrationFixture();
