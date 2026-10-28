@@ -656,6 +656,7 @@ export async function installEphemeralGalleryStorage(page) {
 
     for (const key of persistentKeys) {
       localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
     }
   });
 }

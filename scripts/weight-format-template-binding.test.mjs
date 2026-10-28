@@ -6,7 +6,9 @@ import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const original = Object.fromEntries(['window', 'localStorage', 'fetch'].map((key) => [key, globalThis[key]]));
+const original = Object.fromEntries(
+  ['window', 'localStorage', 'sessionStorage', 'fetch'].map((key) => [key, globalThis[key]]),
+);
 let server, fixture;
 const load = (name) => server.ssrLoadModule(`/src/${name}.ts`);
 
@@ -17,9 +19,16 @@ before(async () => {
     setItem: (key, value) => storage.set(key, String(value)),
     removeItem: (key) => storage.delete(key),
   };
+  const sessionValues = new Map();
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
   globalThis.window = {
     location: { origin: 'http://127.0.0.1:5191' },
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
     dispatchEvent: () => true,
   };
   globalThis.fetch = async (url, options) => {
@@ -921,7 +930,7 @@ test('actual persistence hydration retains unsupported format documents as block
   ];
   const oldStudio = useStudioStore.getState(),
     oldFlow = useFlowStore.getState();
-  const oldStorage = localStorage.getItem('modiff.studio'),
+  const oldStorage = sessionStorage.getItem('modiff.studio'),
     oldFetch = globalThis.fetch;
   let requests = 0;
   globalThis.fetch = async () => {
@@ -929,7 +938,7 @@ test('actual persistence hydration retains unsupported format documents as block
     throw new Error('hydration must not contact the backend');
   };
   try {
-    localStorage.setItem(
+    sessionStorage.setItem(
       'modiff.studio',
       JSON.stringify({
         version: 0,
@@ -1033,7 +1042,7 @@ test('actual persistence hydration retains unsupported format documents as block
     globalThis.fetch = oldFetch;
     useFlowStore.setState(oldFlow, true);
     useStudioStore.setState(oldStudio, true);
-    if (oldStorage === null) localStorage.removeItem('modiff.studio');
-    else localStorage.setItem('modiff.studio', oldStorage);
+    if (oldStorage === null) sessionStorage.removeItem('modiff.studio');
+    else sessionStorage.setItem('modiff.studio', oldStorage);
   }
 });

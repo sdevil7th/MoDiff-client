@@ -299,7 +299,7 @@ async function prepareRestorationStartup(page: Page, workflowId: string) {
         hydrated: state.workflowCanvasHydrated,
         tab,
         slots: state.previewSlots,
-        storage: localStorage.getItem('modiff.studio'),
+        storage: window.sessionStorage.getItem('modiff.studio'),
       };
     });
   const waitForCanvas = () => expect.poll(async () => (await read()).hydrated).toBe(true);
@@ -10089,7 +10089,7 @@ test('mocked Studio restores legacy template tabs as managed without moving thei
       }
     });
 
-    const flowPersisted = JSON.parse(window.localStorage.getItem('modiff.flow') ?? '{}') as {
+    const flowPersisted = JSON.parse(window.sessionStorage.getItem('modiff.flow') ?? '{}') as {
       state?: {
         nodes?: Array<{
           id: string;
@@ -10101,7 +10101,7 @@ test('mocked Studio restores legacy template tabs as managed without moving thei
       };
       version?: number;
     };
-    const studioPersisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+    const studioPersisted = JSON.parse(window.sessionStorage.getItem('modiff.studio') ?? '{}') as {
       state?: {
         activeTemplateId?: string | null;
         activeWorkflowTabId?: string | null;
@@ -10141,8 +10141,8 @@ test('mocked Studio restores legacy template tabs as managed without moving thei
     delete activeTab.snapshot.studioGraphBinding;
     studio.activeTemplateId = null;
 
-    window.localStorage.setItem('modiff.flow', JSON.stringify(flowPersisted));
-    window.localStorage.setItem('modiff.studio', JSON.stringify(studioPersisted));
+    window.sessionStorage.setItem('modiff.flow', JSON.stringify(flowPersisted));
+    window.sessionStorage.setItem('modiff.studio', JSON.stringify(studioPersisted));
     window.sessionStorage.setItem(
       'legacy-managed-expected',
       JSON.stringify({
@@ -10221,7 +10221,7 @@ test('canonical saved modular imports are adopted as managed and real topology e
   await installMockRoutes(page);
   await page.addInitScript(
     ({ graph, form }) => {
-      if (window.localStorage.getItem('modiff.studio')) return;
+      if (window.sessionStorage.getItem('modiff.studio')) return;
       const tabId = 'canonical-import';
       const snapshot = {
         ...graph,
@@ -10307,7 +10307,7 @@ test('canonical saved modular imports are adopted as managed and real topology e
     )
     .toEqual({ bound: false, nodeCount: graph.nodes.length + 1 });
   const persistedCustomCheckpoint = await page.evaluate(() => {
-    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') || '{}');
+    const persisted = JSON.parse(window.sessionStorage.getItem('modiff.studio') || '{}');
     const tab = persisted?.state?.workflowTabs?.find(
       (candidate: { id?: string }) => candidate.id === 'canonical-import',
     );
@@ -16150,7 +16150,7 @@ test('mocked audio template stays managed after a page reload', async ({ page })
       async () =>
         page.evaluate(() => {
           const current = window.__MODIFF_E2E__!.getState();
-          const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+          const persisted = JSON.parse(window.sessionStorage.getItem('modiff.studio') ?? '{}') as {
             state?: {
               activeWorkflowTabId?: string | null;
               workflowTabs?: Array<{
@@ -16186,7 +16186,7 @@ test('mocked audio template stays managed after a page reload', async ({ page })
 
   const beforeReload = await page.evaluate(() => {
     const current = window.__MODIFF_E2E__!.getState();
-    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+    const persisted = JSON.parse(window.sessionStorage.getItem('modiff.studio') ?? '{}') as {
       state?: {
         activeWorkflowTabId?: string | null;
         workflowTabs?: Array<{
@@ -16327,7 +16327,7 @@ test('LTX workflow keeps its model identity and renders numeric Export Video FPS
   expect(pageErrors).toEqual([]);
 
   await page.evaluate(() => {
-    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+    const persisted = JSON.parse(window.sessionStorage.getItem('modiff.studio') ?? '{}') as {
       state?: {
         form?: { modelType?: string };
         activeWorkflowTabId?: string | null;
@@ -16349,7 +16349,7 @@ test('LTX workflow keeps its model identity and renders numeric Export Video FPS
     if (activeTab?.snapshot?.studioGraphBinding) {
       activeTab.snapshot.studioGraphBinding.modelType = 'ZImageModularPipeline';
     }
-    window.localStorage.setItem('modiff.studio', JSON.stringify(persisted));
+    window.sessionStorage.setItem('modiff.studio', JSON.stringify(persisted));
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
@@ -16395,7 +16395,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
     await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('ace_step_text_to_audio');
   });
   const audioCanvas = await page.evaluate(() => {
-    const persisted = JSON.parse(window.localStorage.getItem('modiff.flow') ?? '{}') as {
+    const persisted = JSON.parse(window.sessionStorage.getItem('modiff.flow') ?? '{}') as {
       state?: { nodes?: Array<{ id: string }>; edges?: unknown[]; viewport?: unknown };
     };
     if (!persisted.state?.nodes?.length) throw new Error('The audio canvas cache was not persisted.');
@@ -16424,7 +16424,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
 
   const managedVideo = await page.evaluate((audioCanvas) => {
     const state = window.__MODIFF_E2E__!.getState();
-    const studioPersisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+    const studioPersisted = JSON.parse(window.sessionStorage.getItem('modiff.studio') ?? '{}') as {
       state?: {
         activeWorkflowTabId?: string | null;
         workflowTabs?: Array<{
@@ -16439,7 +16439,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
     if (!activeTab?.snapshot?.studioGraphBinding) {
       throw new Error('The managed video snapshot was not persisted.');
     }
-    const flowPersisted = JSON.parse(window.localStorage.getItem('modiff.flow') ?? '{}') as {
+    const flowPersisted = JSON.parse(window.sessionStorage.getItem('modiff.flow') ?? '{}') as {
       state?: { nodes?: unknown[]; edges?: unknown[]; viewport?: unknown };
     };
     if (!flowPersisted.state) throw new Error('The fast canvas cache was not persisted.');
@@ -16449,7 +16449,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
     flowPersisted.state.nodes = audioCanvas.nodes;
     flowPersisted.state.edges = audioCanvas.edges;
     flowPersisted.state.viewport = audioCanvas.viewport;
-    window.localStorage.setItem('modiff.flow', JSON.stringify(flowPersisted));
+    window.sessionStorage.setItem('modiff.flow', JSON.stringify(flowPersisted));
 
     return {
       activeTabId: studioPersisted.state?.activeWorkflowTabId ?? null,
@@ -16495,7 +16495,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
   // cache must never be written into the active video document.
   await page.waitForTimeout(900);
   const durable = await page.evaluate(() => {
-    const persisted = JSON.parse(window.localStorage.getItem('modiff.studio') ?? '{}') as {
+    const persisted = JSON.parse(window.sessionStorage.getItem('modiff.studio') ?? '{}') as {
       state?: {
         activeWorkflowTabId?: string | null;
         workflowTabs?: Array<{ id: string; snapshot?: { nodes?: Array<{ id: string }> } }>;
@@ -21394,7 +21394,7 @@ test('active node execution follows its exact workflow across tabs, notification
   await expect
     .poll(() =>
       page.evaluate(
-        (workflowTabId) => window.localStorage.getItem('modiff.studio')?.includes(workflowTabId) ?? false,
+        (workflowTabId) => window.sessionStorage.getItem('modiff.studio')?.includes(workflowTabId) ?? false,
         identity.workflowTabId,
       ),
     )
@@ -26401,7 +26401,7 @@ async function sharedSavedBlockLifecycle(page: Page, workspace: 'auto' | 'expert
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const raw = window.localStorage.getItem('modiff.studio');
+        const raw = window.sessionStorage.getItem('modiff.studio');
         if (!raw) return false;
         const persisted = JSON.parse(raw) as {
           state?: {
@@ -26434,7 +26434,7 @@ async function sharedSavedBlockLifecycle(page: Page, workspace: 'auto' | 'expert
             snapshot?: { nodes?: Array<{ data?: { type?: string } }> };
           }>
         ).find((tab) => tab.id === studio.activeWorkflowTabId);
-        const raw = window.localStorage.getItem('modiff.studio');
+        const raw = window.sessionStorage.getItem('modiff.studio');
         const persisted = raw
           ? (JSON.parse(raw) as {
               state?: {

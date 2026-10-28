@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import { EventEmitter } from 'node:events';
@@ -10200,6 +10201,54 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(verifier, /modules\.Video.*UpscaleVideo/);
   assert.match(verifier, /nateraw\/real-esrgan\/RealESRGAN_x2plus\.pth/);
   assert.match(verifier, /video-upscale graph is missing its exact reviewed artifact or route/);
+});
+
+test('canonical generation suppresses workspace checkpoints in both browser storage scopes', async () => {
+  let initialize;
+  await installEphemeralWorkflowStorage({
+    addInitScript: async (script) => {
+      initialize = script;
+    },
+    route: async () => {},
+  });
+  class MemoryStorage {
+    values = new Map();
+    getItem(key) {
+      return this.values.get(key) ?? null;
+    }
+    setItem(key, value) {
+      this.values.set(key, String(value));
+    }
+    removeItem(key) {
+      this.values.delete(key);
+    }
+  }
+  const shared = new MemoryStorage();
+  const session = new MemoryStorage();
+  const workspaceKeys = ['modiff.studio', 'modiff.flow'];
+  for (const target of [shared, session]) {
+    for (const key of workspaceKeys) target.setItem(key, 'previous test workspace');
+    target.setItem('modiff.settings', 'preserved preferences');
+  }
+  shared.setItem('studio', 'legacy recovery retained');
+  shared.setItem('reactflow', 'legacy flow retained');
+  runInNewContext(`(${initialize.toString()})()`, {
+    Storage: MemoryStorage,
+    localStorage: shared,
+    sessionStorage: session,
+  });
+  for (const target of [shared, session]) {
+    for (const key of workspaceKeys) {
+      assert.equal(target.getItem(key), null, 'remove prior owned-test workspace bytes');
+      target.setItem(key, 'generated graph must stay ephemeral');
+      assert.equal(target.getItem(key), null, 'block generated workspace writes in both scopes');
+    }
+    assert.equal(target.getItem('modiff.settings'), 'preserved preferences');
+    target.setItem('modiff.settings', 'updated preferences');
+    assert.equal(target.getItem('modiff.settings'), 'updated preferences');
+  }
+  assert.equal(shared.getItem('studio'), 'legacy recovery retained');
+  assert.equal(shared.getItem('reactflow'), 'legacy flow retained');
 });
 
 test('canonical generation isolates browser and backend workflow persistence', async () => {

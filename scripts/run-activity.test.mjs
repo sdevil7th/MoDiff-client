@@ -66,8 +66,15 @@ before(async () => {
     removeItem: (key) => storage.delete(key),
     setItem: (key, value) => storage.set(key, String(value)),
   };
+  const sessionValues = new Map();
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
   globalThis.window = {
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
     location: { origin: 'http://127.0.0.1:5191' },
   };
   server = await createServer({
@@ -354,20 +361,20 @@ test('the browser checkpoint preserves every dirty document beyond twelve tabs',
   const before = store.getState();
   try {
     store.setState({ workflowTabs: tabs, activeWorkflowTabId: 'unsaved-14' });
-    assert.deepEqual(JSON.parse(localStorage.getItem('modiff.studio')).state.workflowTabs, tabs);
+    assert.deepEqual(JSON.parse(sessionStorage.getItem('modiff.studio')).state.workflowTabs, tabs);
   } finally {
     store.setState(before);
   }
 });
 
 test('checkpoint quota failure visibly requests preservation and clears only after a successful write', () => {
-  const write = localStorage.setItem;
+  const write = sessionStorage.setItem;
   const warn = console.warn;
   const store = studioStoreModule.useStudioStore;
   const messages = [];
   try {
     console.warn = (...args) => messages.push(args);
-    localStorage.setItem = () => {
+    sessionStorage.setItem = () => {
       throw new DOMException('Full', 'QuotaExceededError');
     };
     store.setState({ launcherDismissed: true });
@@ -376,14 +383,14 @@ test('checkpoint quota failure visibly requests preservation and clears only aft
     assert.equal(warnings.length, 1);
     assert.equal(warnings[0].persist, true);
     assert.match(warnings[0].message, /Save or export unsaved workflows before refreshing/);
-    localStorage.setItem = write;
+    sessionStorage.setItem = write;
     store.setState({ launcherDismissed: true });
     assert.equal(
       snackbarModule.getToastItems().some((item) => item.id === 'studio-checkpoint-write-failed'),
       false,
     );
   } finally {
-    localStorage.setItem = write;
+    sessionStorage.setItem = write;
     console.warn = warn;
     store.setState({ launcherDismissed: false });
   }
@@ -393,12 +400,13 @@ for (const label of ['flow', 'settings']) {
   test(`${label} mutations survive checkpoint quota failures with a visible preservation warning`, () => {
     const store = label === 'flow' ? flowStoreModule.useFlowStore : settingsStoreModule.useSettingsStore;
     const before = store.getState();
-    const write = localStorage.setItem;
+    const targetStorage = label === 'flow' ? sessionStorage : localStorage;
+    const write = targetStorage.setItem;
     const warn = console.warn;
     const mutation = label === 'flow' ? { viewport: { x: 17, y: 19, zoom: 0.75 } } : { isRightPanelOpen: false };
     try {
       console.warn = () => {};
-      localStorage.setItem = () => {
+      targetStorage.setItem = () => {
         throw new DOMException('Full', 'QuotaExceededError');
       };
       assert.doesNotThrow(() => store.setState(mutation));
@@ -408,7 +416,7 @@ for (const label of ['flow', 'settings']) {
         1,
       );
     } finally {
-      localStorage.setItem = write;
+      targetStorage.setItem = write;
       console.warn = warn;
       store.setState(before);
     }
@@ -420,15 +428,18 @@ test('checkpoint warning clears only after every failed namespace has recovered'
   const settings = settingsStoreModule.useSettingsStore;
   const studio = studioStoreModule.useStudioStore;
   const before = [flow.getState(), settings.getState(), studio.getState()];
-  const write = localStorage.setItem;
+  const localWrite = localStorage.setItem;
+  const sessionWrite = sessionStorage.setItem;
   const warn = console.warn;
   const failed = new Set(['modiff.flow', 'modiff.settings']);
   try {
     console.warn = () => {};
-    localStorage.setItem = (name, value) => {
+    const failingWrite = (storage, write) => (name, value) => {
       if (failed.has(name)) throw new DOMException('Full', 'QuotaExceededError');
-      return write.call(localStorage, name, value);
+      return write.call(storage, name, value);
     };
+    localStorage.setItem = failingWrite(localStorage, localWrite);
+    sessionStorage.setItem = failingWrite(sessionStorage, sessionWrite);
     assert.doesNotThrow(() => flow.setState({ viewport: { x: 17, y: 19, zoom: 0.75 } }));
     assert.doesNotThrow(() => settings.setState({ isRightPanelOpen: false }));
     studio.setState({ launcherDismissed: true });
@@ -449,7 +460,8 @@ test('checkpoint warning clears only after every failed namespace has recovered'
       false,
     );
   } finally {
-    localStorage.setItem = write;
+    localStorage.setItem = localWrite;
+    sessionStorage.setItem = sessionWrite;
     console.warn = warn;
     [flow, settings, studio].forEach((store, index) => store.setState(before[index]));
   }
@@ -501,7 +513,7 @@ test('reordering tabs changes only their order and persists that order', () => {
   }
   assert.equal(flowStoreModule.useFlowStore.getState(), flow);
   assert.deepEqual(
-    JSON.parse(localStorage.getItem('modiff.studio')).state.workflowTabs.map((tab) => tab.id),
+    JSON.parse(sessionStorage.getItem('modiff.studio')).state.workflowTabs.map((tab) => tab.id),
     after.workflowTabs.map((tab) => tab.id),
   );
   after.moveWorkflowTab(source.id, target.id, 'after');

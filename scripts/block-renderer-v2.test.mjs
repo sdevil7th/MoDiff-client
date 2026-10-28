@@ -35,9 +35,16 @@ before(async () => {
     removeItem: (key) => storage.delete(key),
     setItem: (key, value) => storage.set(key, String(value)),
   };
+  const sessionValuesForPage = new Map();
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValuesForPage.get(key) ?? null,
+    setItem: (key, value) => sessionValuesForPage.set(key, String(value)),
+    removeItem: (key) => sessionValuesForPage.delete(key),
+  };
   globalThis.window = {
     dispatchEvent: () => true,
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
     location: { origin: 'http://127.0.0.1:5191' },
   };
   server = await createServer({
@@ -68,6 +75,7 @@ after(async () => {
   await server?.close();
   delete globalThis.window;
   delete globalThis.localStorage;
+  delete globalThis.sessionStorage;
 });
 
 beforeEach(() => {

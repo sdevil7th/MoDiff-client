@@ -11,8 +11,7 @@ import { Node, Edge, OnNodesChange, OnEdgesChange, NodeChange, EdgeChange, Conne
 import { nanoid } from 'nanoid';
 
 import type { ApiGraphExport, NodeMemoryUsage } from '../types/api';
-import { migrateLocalStorageKey } from '../utils/persistMigration';
-import { createResilientCheckpointStorage } from '../utils/checkpointStorage';
+import { createPageCheckpointStorage } from '../utils/checkpointStorage';
 import { arrangeGraphNodes } from '../workflow/graphLayout';
 import {
   handleConnect,
@@ -348,7 +347,6 @@ type FlowHistoryTransaction = {
 const FLOW_STORAGE_KEY = 'modiff.flow';
 const FLOW_STORAGE_VERSION = 1;
 const FLOW_HISTORY_LIMIT = 50;
-migrateLocalStorageKey('reactflow', FLOW_STORAGE_KEY);
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -2746,7 +2744,7 @@ export const useFlowStore = create<FlowStore>()(
     }),
     {
       name: FLOW_STORAGE_KEY,
-      storage: createJSONStorage(createResilientCheckpointStorage),
+      storage: createJSONStorage(() => createPageCheckpointStorage('reactflow')),
       version: FLOW_STORAGE_VERSION,
       migrate: (persisted) => normalizePersistedFlowState(persisted),
       merge: (persisted, current) => ({

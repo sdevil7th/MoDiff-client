@@ -48,6 +48,7 @@ let studioStore;
 let topBarAutoPolicy;
 let originalFetch;
 let storage;
+let sessionValues;
 let compiledCatalogRequests;
 
 test('full FLUX.2 has an exact Expert Model Manager profile without Auto promotion', () => {
@@ -78,10 +79,17 @@ before(async () => {
     removeItem: (key) => storage.delete(key),
     setItem: (key, value) => storage.set(key, String(value)),
   };
+  sessionValues = new Map();
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
   globalThis.window = {
     dispatchEvent: () => true,
     location: { origin: 'http://127.0.0.1:5191' },
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
   };
   server = await createServer({
     root: ROOT,
@@ -777,7 +785,9 @@ function transientNodes() {
 }
 
 function persistedFlowText() {
-  return storage.get('modiff.flow') ?? '';
+  const checkpoint = sessionValues.get('modiff.flow');
+  assert.ok(typeof checkpoint === 'string' && checkpoint.length > 0, 'inspect an actual nonempty page checkpoint');
+  return checkpoint;
 }
 
 function autoReceipt(instance) {
@@ -805,6 +815,7 @@ function deferred() {
 
 beforeEach(() => {
   storage.clear();
+  sessionValues.clear();
   const configured = fixture();
   flowStore.useFlowStore.setState({
     nodes: [baseNode()],

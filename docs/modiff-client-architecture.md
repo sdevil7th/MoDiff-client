@@ -1944,3 +1944,21 @@ workflow graphs carry the exact `weight_format` field into the complete backend
 workflow Auto plan; only that plan can admit a declared format and workload.
 Native-only plans cannot be reused as format-specific readiness or hardware-fit
 evidence.
+
+## Browser page workspace checkpoints
+
+Studio workflow tabs, the active document/form and the Flow canvas checkpoint use
+`sessionStorage`, so another app page's welcome/output refresh cannot overwrite
+the workspace restored on reload. Settings continue using shared `localStorage`.
+When a page has no checkpoint, it recovers exact bytes once from the current
+`modiff.studio`/`modiff.flow` shared keys before trying `studio`/`reactflow` aliases.
+The page keeps a per-key recovery marker; clearing its checkpoint does not revive
+an old shared document on reload. Shared recovery bytes are never overwritten or
+removed. Existing document normalization and dirty-workflow retention still apply.
+A blocked/full session store keeps live editing usable and shows the existing
+Save/export warning; it never falls back to shared workspace writes. Session
+checkpoints survive page reload. Saved workflows and server-backed drafts remain
+available after app/server restart; closed-page or browser-session recovery uses
+saved workflows/exports, with no promise to restore a closed page's unsaved tab
+roster. Legacy import can recover only the retained historical shared snapshot,
+not values that an older page already overwrote.

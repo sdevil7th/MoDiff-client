@@ -62,12 +62,13 @@ export async function installEphemeralWorkflowStorage(page) {
     const originalSetItem = Storage.prototype.setItem;
 
     Storage.prototype.setItem = function setEphemeralWorkflowItem(key, value) {
-      if (this === localStorage && generatedGraphKeys.has(String(key))) return;
+      if ((this === localStorage || this === sessionStorage) && generatedGraphKeys.has(String(key))) return;
       return originalSetItem.call(this, key, value);
     };
 
     for (const key of generatedGraphKeys) {
       localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
     }
   });
 }

@@ -28,9 +28,16 @@ before(async () => {
     removeItem: (key) => storage.delete(key),
     setItem: (key, value) => storage.set(key, String(value)),
   };
+  const sessionValues = new Map();
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
   globalThis.window = {
     dispatchEvent: () => true,
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
     location: { origin: 'http://127.0.0.1:5191' },
   };
   server = await createServer({
@@ -144,7 +151,7 @@ for (const method of ['updateCacheStatus', 'resetStatus']) {
       undefined,
       'cache snapshot is never workflow authority',
     );
-    const persisted = JSON.parse(globalThis.localStorage.getItem('modiff.flow'));
+    const persisted = JSON.parse(globalThis.sessionStorage.getItem('modiff.flow'));
     assert.equal(
       persisted.state.runtimeCachedNodeIds,
       undefined,
@@ -1347,7 +1354,7 @@ test('terminal cleanup is task-scoped and durable graph snapshots never retain e
   assert.equal(durableCleared.data.params.output.artifacts, undefined);
   assert.equal(durableCleared.data.params.output.signal.value, undefined);
 
-  const persisted = JSON.parse(globalThis.localStorage.getItem('modiff.flow')).state;
+  const persisted = JSON.parse(globalThis.sessionStorage.getItem('modiff.flow')).state;
   const persistedActive = persisted.nodes.find((item) => item.id === 'newer-task-node');
   assert.equal(persistedActive.data.progress, undefined);
   assert.equal(persistedActive.data.activeTaskId, undefined);
@@ -1401,7 +1408,7 @@ test('persisted flow hydration versions, strips behavior, and filters malformed 
       onSignal: { action: 'value', target: 'persisted_target' },
     },
   });
-  globalThis.localStorage.setItem(
+  globalThis.sessionStorage.setItem(
     'modiff.flow',
     JSON.stringify({
       version: 1,

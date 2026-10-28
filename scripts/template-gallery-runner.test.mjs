@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -970,6 +971,54 @@ test('gallery runner refuses to reuse an occupied implicit frontend port', async
   } finally {
     await new Promise((resolveClose) => server.close(resolveClose));
   }
+});
+
+test('gallery runner suppresses workspace checkpoints in both browser storage scopes', async () => {
+  let initialize;
+  await installEphemeralGalleryStorage({
+    addInitScript: async (script) => {
+      initialize = script;
+    },
+    route: async () => {},
+  });
+  class MemoryStorage {
+    values = new Map();
+    getItem(key) {
+      return this.values.get(key) ?? null;
+    }
+    setItem(key, value) {
+      this.values.set(key, String(value));
+    }
+    removeItem(key) {
+      this.values.delete(key);
+    }
+  }
+  const shared = new MemoryStorage();
+  const session = new MemoryStorage();
+  const workspaceKeys = ['modiff.studio', 'modiff.flow'];
+  for (const target of [shared, session]) {
+    for (const key of workspaceKeys) target.setItem(key, 'previous test workspace');
+    target.setItem('modiff.settings', 'preserved preferences');
+  }
+  shared.setItem('studio', 'legacy recovery retained');
+  shared.setItem('reactflow', 'legacy flow retained');
+  runInNewContext(`(${initialize.toString()})()`, {
+    Storage: MemoryStorage,
+    localStorage: shared,
+    sessionStorage: session,
+  });
+  for (const target of [shared, session]) {
+    for (const key of workspaceKeys) {
+      assert.equal(target.getItem(key), null, 'remove prior owned-test workspace bytes');
+      target.setItem(key, 'generated graph must stay ephemeral');
+      assert.equal(target.getItem(key), null, 'block generated workspace writes in both scopes');
+    }
+    assert.equal(target.getItem('modiff.settings'), 'preserved preferences');
+    target.setItem('modiff.settings', 'updated preferences');
+    assert.equal(target.getItem('modiff.settings'), 'updated preferences');
+  }
+  assert.equal(shared.getItem('studio'), 'legacy recovery retained');
+  assert.equal(shared.getItem('reactflow'), 'legacy flow retained');
 });
 
 test('gallery runner disables large persisted graph state before page navigation', async () => {

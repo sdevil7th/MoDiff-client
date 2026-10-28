@@ -51,9 +51,8 @@ import {
 } from '../studio/templateExactness';
 import { STUDIO_TEMPLATES, getPreset } from '../studio/templates';
 import { adoptManagedWorkflowGraph, inferStudioFormFromWorkflow } from '../studio/workflowInference';
-import { migrateLocalStorageKey } from '../utils/persistMigration';
 import { createLatestRequestGate, formatRequestError, requestBlob } from '../utils/requestJson';
-import { createResilientCheckpointStorage } from '../utils/checkpointStorage';
+import { createPageCheckpointStorage } from '../utils/checkpointStorage';
 import type { MediaArtifact } from '../utils/imageArtifacts';
 import { autoPlanKeyForForm, autoResourcePlanTargetMatches, type StudioAutoResourcePlan } from '../studio/autoResource';
 import type {
@@ -1569,7 +1568,6 @@ function isNonEmptyPreviewValue(value: unknown) {
 }
 
 const STUDIO_STORAGE_KEY = 'modiff.studio';
-migrateLocalStorageKey('studio', STUDIO_STORAGE_KEY);
 
 export type WorkflowOperationContext = {
   workflowTabId: string | null;
@@ -3230,7 +3228,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
     }),
     {
       name: STUDIO_STORAGE_KEY,
-      storage: createJSONStorage(createResilientCheckpointStorage),
+      storage: createJSONStorage(() => createPageCheckpointStorage('studio')),
       partialize: (state) => ({
         selectedMode: state.selectedMode,
         form: state.form,
