@@ -134,6 +134,17 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+The versioned FLUX3 prompts, scoped image receipts and protected-PNG template
+authoring measure 672742 gzip bytes of startup JavaScript, with a 494259-byte
+largest startup chunk and 328069 deferred bytes. Compared with the accepted
+hydration build, aggregate growth is 1047/1051/1043 bytes respectively. The
+ceilings are 672753/494267/328312, retaining 11/8/243 bytes of headroom. Four
+startup assets retain their loading membership; deferred assets grow from 89 to
+90 with a template-authoring facade. Dependencies, minifier, eager loading
+boundaries, graph/media/identity validators and the independent 65536-byte
+deferred chunk cap stay fixed. These are aggregate measurements, not per-module
+attribution. The following measurements remain historical.
+
 The save/read hydration ownership fix measures 671695 gzip bytes of startup
 JavaScript, with a 493208-byte largest startup chunk and 327026 deferred bytes.
 Compared with the accepted authored-device import, immutable Model Install and

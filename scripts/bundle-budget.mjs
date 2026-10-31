@@ -1,3 +1,10 @@
+// Versioned FLUX3 prompts, scoped image receipts and ordinary protected-PNG
+// authoring measure largest/startup/deferred gzip 494259/672742/328069 versus
+// accepted 493208/671695/327026. Add only measured growth 1051/1047/1043,
+// preserving 8/11/243 bytes of headroom. Four startup assets are unchanged;
+// deferred assets grow 89 -> 90 with the template-authoring facade. No new
+// dependency or eager loading boundary; the 65536-byte deferred chunk cap,
+// minifier, graph/media/identity validators and all other checks stay fixed.
 // Save/read hydration ownership measures largest/startup/deferred gzip
 // 493208/671695/327026 versus the accepted 493170/671659/327133.
 // Add only measured aggregate startup growth 38/36, preserving 8/11 bytes
@@ -258,6 +265,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Allow only measured startup growth (+1649/+1651), retaining 8/11 bytes headroom.
 // Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  1051 +
   38 +
   1649 +
   64 +
@@ -380,6 +388,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  1047 +
   36 +
   1651 +
   63 +
@@ -586,6 +595,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  1043 +
   334 +
   178 +
   287 +
