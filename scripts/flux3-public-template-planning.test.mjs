@@ -86,6 +86,22 @@ test('ten reviewed recipes enter Experimental without inline execution or hardwa
   }
 });
 
+test('published preview discovery keeps exact declared creator authority and rejects private or mutable replacements', async () => {
+  const browser = await server.ssrLoadModule('/src/studio/templateBrowser.ts');
+  for (const id of ids) {
+    const template = card(id);
+    assert.equal(browser.hasDeclaredExperimentalCreator(template), true, id);
+    for (const replacement of [
+      { ...template, executionSelection: { ...template.executionSelection, executionProfileId: 'private-fixture' } },
+      { ...template, executionSelection: { ...template.executionSelection, authoringRecipeId: 'private-fixture' } },
+      { ...template, executionSelection: { ...template.executionSelection, memoryPolicy: 'auto' } },
+      { ...template, modelArtifact: { ...template.modelArtifact, revision: 'main' } },
+    ]) {
+      assert.equal(browser.hasDeclaredExperimentalCreator(replacement), false, id);
+    }
+  }
+});
+
 test('each card resolves the real public profile and immutable artifact while stale or private identities refuse', () => {
   const capabilities = fixture.capabilitiesPayload.capabilities;
   assert.equal(fixture.activeProvider, null);

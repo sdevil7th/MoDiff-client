@@ -188,8 +188,8 @@ function recommendedRank(template: StudioTemplate, form: StudioFormState) {
   return rank;
 }
 
-/** Explicit planning discovery only; this grants no model or execution eligibility. */
-function hasDeclaredExperimentalCreator(template: StudioTemplate) {
+/** Explicit Experimental discovery only; this grants no model or execution eligibility. */
+export function hasDeclaredExperimentalCreator(template: StudioTemplate) {
   const selection = template.executionSelection;
   const declared = IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id] ?? AUDIO_TEMPLATE_EXECUTION_SELECTIONS[template.id];
   const artifact = template.modelArtifact;

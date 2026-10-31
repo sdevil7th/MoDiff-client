@@ -11172,9 +11172,53 @@ async function installPublicFlux3AuthoringRoutes(
   return fixture;
 }
 
+test('published Experimental cards remain discoverable after Gallery metadata loads', async ({ page }) => {
+  await ensureFrontend();
+  await installPublicFlux3AuthoringRoutes(page, false, false, true);
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'public/template-gallery/manifest.json'), 'utf8'),
+  );
+  const previewPixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route(/\/template-gallery\/[^/?]+\.(?:webp|png|jpe?g)(?:\?.*)?$/u, (route) =>
+    route.fulfill({ body: previewPixel, contentType: 'image/png' }),
+  );
+  const forbiddenPosts: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /\/(?:graph|execute|install|download)(?:\/|$)/u.test(new URL(request.url()).pathname)
+    )
+      forbiddenPosts.push(new URL(request.url()).pathname);
+  });
+  await page.route('**/template-gallery/manifest.json*', (route) => route.fulfill({ json: manifest }));
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-experimental').click();
+  await page.getByTestId('template-browser-search').fill('FLUX 3');
+  const cards = page.locator('[data-testid^="template-browser-card-flux3_"]');
+  await expect(cards).toHaveCount(10);
+  for (const card of await cards.all()) {
+    // Offscreen previews are lazy; comparisons use Before/After image labels.
+    await card.scrollIntoViewIfNeeded();
+    await expect(card.getByRole('img').first()).toBeVisible();
+    await expect(card).not.toContainText('No preview yet');
+  }
+  await page.getByTestId('template-browser-category-all').click();
+  await expect(cards).toHaveCount(0);
+  expect(forbiddenPosts).toEqual([]);
+});
+
 test('Experimental public cards create the exact FLUX3 Ceramic Radio graph through ordinary UI', async ({ page }) => {
   await ensureFrontend();
   const fixture = await installPublicFlux3AuthoringRoutes(page, false, false, true);
+  const unpublishedManifest = {
+    ...JSON.parse(await fs.readFile(path.join(CLIENT_ROOT, 'public/template-gallery/manifest.json'), 'utf8')),
+    examples: [],
+  };
+  await page.route('**/template-gallery/manifest.json*', (route) => route.fulfill({ json: unpublishedManifest }));
   // Match the genuine creator fixture's CPU-only device options. This is UI
   // authoring transport, not a hardware fit or execution qualification.
   await page.route('**/runtime/status**', (route) =>

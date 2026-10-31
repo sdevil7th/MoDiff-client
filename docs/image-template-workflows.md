@@ -175,7 +175,9 @@ disabled. The locked public settings are Expert with no offload and
 are separate recipes and cannot qualify these locks. The ten fixed-input outputs
 passed their bounded visual reviews and have exact-file publication approval.
 They enter Experimental with their original task/source/model/input provenance;
-the model profiles' global qualification flags remain unchanged. Matching older
+publishing a preview keeps explicitly declared experimental creators in that
+category. It does not grant visibility through the ordinary model catalog or
+change the model profiles' global qualification flags. Matching older
 evidence retains its historical scope. Separate native Auto checks cover the six
 basic routes and the selected NASA/Monet lifecycle cases only on the tested Linux
 x86_64 ROCm gfx1151 shared-memory host. They do not qualify larger workloads,

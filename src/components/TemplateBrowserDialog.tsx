@@ -46,6 +46,7 @@ import {
 import {
   TEMPLATE_BROWSER_CATEGORIES,
   filterStudioTemplates,
+  hasDeclaredExperimentalCreator,
   templateDisplayName,
   templateModelDisplayName,
   templateMediaSlots,
@@ -547,7 +548,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     [autoPlanForTemplate],
   );
   const isExperimentalTemplate = useCallback(
-    (template: StudioTemplate) => !templateHasPublishedMedia(template, manifest),
+    (template: StudioTemplate) =>
+      hasDeclaredExperimentalCreator(template) || !templateHasPublishedMedia(template, manifest),
     [manifest],
   );
   const filteredTemplates = useMemo(() => {
