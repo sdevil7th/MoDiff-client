@@ -31,7 +31,7 @@ application source pair is:
 | MoDiff        | `fe84ed1ad6eeb77d904742780ec511fce441e4e4` |
 | MoDiff-client | `109da623e65747ae09e18cf699cf12f1485e7644` |
 
-CI backend contract: `c995a3334a18d1fcf9b33c08272fa89e269306cb`.
+CI backend contract: `2bd56fca4b712bfde22c0f2012b5bcc597efb2f1`.
 
 Both CI jobs use this exact immutable backend pin. It can include documentation
 descendants of the reviewed application source above.
