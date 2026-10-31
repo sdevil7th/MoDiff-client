@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired native contracts and lossless Save Image history previews.
-          ref: 2bd56fca4b712bfde22c0f2012b5bcc597efb2f1
+          ref: 77855588174697b07f13e0bd8e544217d0cfc8cb
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 2bd56fca4b712bfde22c0f2012b5bcc597efb2f1
+          ref: 77855588174697b07f13e0bd8e544217d0cfc8cb
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

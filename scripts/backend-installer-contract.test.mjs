@@ -167,8 +167,8 @@ test('README follows the paired install and development launcher contract', () =
   assert.ok(installStart > quickStart, 'Developer quick start must precede launcher installation');
   const quick = readme.slice(quickStart, installStart);
   for (const command of [
-    'git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff.git MoDiff',
-    'git clone --branch codex/windows-delivery-20261026 https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
+    'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff',
+    'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
     'cd MoDiff',
     'uv sync --extra cpu',
     'uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error',
@@ -186,18 +186,12 @@ test('README follows the paired install and development launcher contract', () =
   assert.ok(developmentEnd > developmentStart);
   const development = readme.slice(developmentStart, developmentEnd);
 
+  assert.match(readme, /git clone --branch fix-ui-ux-issues https:\/\/github\.com\/sdevil7th\/MoDiff\.git MoDiff/);
   assert.match(
     readme,
-    /git clone --branch codex\/windows-delivery-20261026 https:\/\/github\.com\/sdevil7th\/MoDiff\.git MoDiff/,
+    /git clone --branch fix-ui-ux-issues https:\/\/github\.com\/sdevil7th\/MoDiff-client\.git MoDiff-client/,
   );
-  assert.match(
-    readme,
-    /git clone --branch codex\/windows-delivery-20261026 https:\/\/github\.com\/sdevil7th\/MoDiff-client\.git MoDiff-client/,
-  );
-  assert.match(
-    readme,
-    /https:\/\/github\.com\/sdevil7th\/MoDiff\/tree\/codex\/windows-delivery-20261026#install-and-run/,
-  );
+  assert.match(readme, /https:\/\/github\.com\/sdevil7th\/MoDiff\/tree\/fix-ui-ux-issues#install-and-run/);
   assert.match(development, /\.\/install-dev\.sh --accelerator auto/);
   assert.match(development, /\.\/run-dev\.sh/);
   assert.match(development, /\.\\install-dev\.ps1 -BackendPath \.\.\\MoDiff -Accelerator auto/);
@@ -223,8 +217,12 @@ test('current setup guides select the published candidate and identify its revie
   ];
   for (const guide of guides) {
     const text = readFileSync(guide, 'utf8');
-    assert.doesNotMatch(text, /fix-ui-ux-issues/, `${guide.pathname} still advertises the superseded setup branch`);
-    assert.match(text, /codex\/windows-delivery-20261026/, `${guide.pathname} must identify the current candidate`);
+    assert.doesNotMatch(
+      text,
+      /codex\/windows-delivery-20261026/,
+      `${guide.pathname} still advertises the superseded setup branch`,
+    );
+    assert.match(text, /fix-ui-ux-issues/, `${guide.pathname} must identify the current candidate`);
   }
   const readme = readFileSync(guides[0], 'utf8');
   const workflow = readFileSync(new URL('.github/workflows/ci.yml', clientRoot), 'utf8');
@@ -263,10 +261,7 @@ test('reviewed setup source contract rejects missing duplicate mutable and drift
     'duplicate backend row': [readme.replace(clientRow, backendRow), workflow],
     'duplicate client row': [readme.replace(backendRow, clientRow), workflow],
     'unknown application repository': [readme.replace(backendRow, backendRow.replace('MoDiff', 'Other')), workflow],
-    'mutable backend source': [
-      readme.replace(contract.applicationSource.MoDiff, 'codex/windows-delivery-20261026'),
-      workflow,
-    ],
+    'mutable backend source': [readme.replace(contract.applicationSource.MoDiff, 'fix-ui-ux-issues'), workflow],
     'short client source': [readme.replace(contract.applicationSource['MoDiff-client'], '1234567'), workflow],
     'hash prefix with suffix': [
       readme.replace(contract.applicationSource.MoDiff, `${contract.applicationSource.MoDiff}0`),
@@ -274,19 +269,13 @@ test('reviewed setup source contract rejects missing duplicate mutable and drift
     ],
     'missing CI declaration': [readme.replace(ciLine, ''), workflow],
     'duplicate CI declaration': [readme.replace(ciLine, `${ciLine}\n${ciLine}`), workflow],
-    'mutable CI declaration': [
-      readme.replace(ciLine, 'CI backend contract: `codex/windows-delivery-20261026`.'),
-      workflow,
-    ],
+    'mutable CI declaration': [readme.replace(ciLine, 'CI backend contract: `fix-ui-ux-issues`.'), workflow],
     'one drifting CI job': [readme, workflow.replace(`ref: ${contract.ciBackendCommit}`, `ref: ${'c'.repeat(40)}`)],
     'both drifting CI jobs': [
       readme,
       workflow.replaceAll(`ref: ${contract.ciBackendCommit}`, `ref: ${'c'.repeat(40)}`),
     ],
-    'mutable CI job': [
-      readme,
-      workflow.replace(`ref: ${contract.ciBackendCommit}`, 'ref: codex/windows-delivery-20261026'),
-    ],
+    'mutable CI job': [readme, workflow.replace(`ref: ${contract.ciBackendCommit}`, 'ref: fix-ui-ux-issues')],
     'missing CI ref': [readme, workflow.replace(`ref: ${contract.ciBackendCommit}`, '# removed backend ref')],
     'duplicate CI ref': [
       readme,
