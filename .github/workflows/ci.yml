@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Reviewed variant planning and offline pinned Hub-source resolution.
-          ref: dc26f353b5e82da7fdde7cfbd7e8d6bd786f3acc
+          # Paired native contracts and lossless Save Image history previews.
+          ref: 14ab69de8b9f6ed92049beca8a0e5c935c20dd13
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -68,7 +68,9 @@ jobs:
   browser:
     name: Client browser quality
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The full serial suite exceeds one hour on hosted runners. Keep its full
+    # test set and single worker; bound the job without truncating coverage.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: MoDiff-client
@@ -86,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: dc26f353b5e82da7fdde7cfbd7e8d6bd786f3acc
+          ref: 14ab69de8b9f6ed92049beca8a0e5c935c20dd13
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

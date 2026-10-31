@@ -1964,7 +1964,7 @@ let mockHfTokenConfigured = false;
 let mockOptionalRuntimeMutationCalls = 0;
 let mockOptionalRuntimeProcessStatus = 'base';
 let mockOptionalRuntimeQualified = false;
-let mockOptionalRuntimeDelayMs = 0;
+let mockOptionalRuntimeResponseGate: Promise<void> | null = null;
 let mockOptionalRuntimeActions = false;
 let mockOptionalRuntimeRollbackToBase = false;
 let mockOptionalRuntimeJobState: 'idle' | 'running' | 'ready' | 'cancelled' = 'idle';
@@ -6545,8 +6545,7 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
       await route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":true}' });
       return;
     }
-    const delay = mockOptionalRuntimeDelayMs;
-    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    if (mockOptionalRuntimeResponseGate) await mockOptionalRuntimeResponseGate;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -7588,7 +7587,7 @@ test.beforeEach(() => {
   mockOptionalRuntimeMutationCalls = 0;
   mockOptionalRuntimeProcessStatus = 'base';
   mockOptionalRuntimeQualified = false;
-  mockOptionalRuntimeDelayMs = 0;
+  mockOptionalRuntimeResponseGate = null;
   mockOptionalRuntimeActions = false;
   mockOptionalRuntimeRollbackToBase = false;
   mockOptionalRuntimeJobState = 'idle';
@@ -8850,10 +8849,19 @@ test('optional runtime setup is GET-only and keeps a pending target non-actionab
   mockOptionalRuntimeProcessStatus = 'active';
   await page.getByTestId('setup-refresh').click();
   await expect(profile).toContainText('active');
-  mockOptionalRuntimeDelayMs = 500;
-  await page.getByTestId('setup-refresh').click();
-  await expect(disclosure).toContainText('Loading optional runtimes');
-  mockOptionalRuntimeDelayMs = 0;
+  // Keep the response pending until the loading assertion has observed it.
+  // A fixed 500 ms delay can expire before CI gets to that assertion.
+  let releaseResponse = () => {};
+  mockOptionalRuntimeResponseGate = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  try {
+    await page.getByTestId('setup-refresh').click();
+    await expect(disclosure).toContainText('Loading optional runtimes');
+  } finally {
+    releaseResponse();
+    mockOptionalRuntimeResponseGate = null;
+  }
   await expect(disclosure).not.toContainText('Loading optional runtimes');
   await expect(profile).toContainText('active');
   expect(mockOptionalRuntimeMutationCalls).toBe(0);
@@ -9497,7 +9505,7 @@ test('template browser keeps compact layouts, opens card details, and loads 12-c
     'template-browser-card-',
     '',
   );
-  await clickSelectedCard.click({ position: { x: 8, y: 8 } });
+  await page.getByTestId(`template-browser-card-${clickSelectedCardId}`).click({ position: { x: 8, y: 8 } });
   await expect(page.getByTestId(`template-detail-${clickSelectedCardId}`)).toBeVisible();
   await page.getByTestId(`template-detail-${clickSelectedCardId}`).getByRole('button', { name: 'Templates' }).click();
 
@@ -9533,7 +9541,12 @@ test('template details use one narrow scroll pane and split only when the modal 
 
   const firstCard = page.locator('[data-testid^="template-browser-card-"]').first();
   const templateId = (await firstCard.getAttribute('data-testid'))!.replace('template-browser-card-', '');
-  await firstCard.getByRole('button', { name: /^View details for / }).click();
+  // Readiness can reorder Recommended cards between this read and the click.
+  // Keep the captured identity rather than resolving a new first card.
+  await page
+    .getByTestId(`template-browser-card-${templateId}`)
+    .getByRole('button', { name: /^View details for / })
+    .click();
   await expect(page.getByTestId(`template-detail-${templateId}`)).toBeVisible();
 
   const measureDetailLayout = () =>
