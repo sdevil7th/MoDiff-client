@@ -38,6 +38,7 @@ const expected = {
 let server, publicTemplates, candidates, builder, exactness, groups, operations, starterRequests, flowStore;
 let defaults, fixture, backendCaption, backendCaptionBytes;
 let readiness, usagePolicies, quality;
+let historicalImageIds;
 const backend = path.resolve('../MoDiff');
 
 before(async () => {
@@ -61,6 +62,8 @@ before(async () => {
   });
   const module = await server.ssrLoadModule('/src/studio/templates.ts');
   publicTemplates = module.STUDIO_TEMPLATES;
+  const baseline = JSON.parse(await readFile('tests/fixtures/image-template-creator-contracts.v1.json', 'utf8'));
+  historicalImageIds = new Set(baseline.templates.map((row) => row.templateId));
   candidates = candidateIds.map((id) => module.STUDIO_TEMPLATES.find((item) => item.id === id));
   assert.ok(candidates.every(Boolean));
   builder = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
@@ -140,10 +143,10 @@ function build(template, options = {}) {
 
 test('two experimental Custom recipes extend image coverage while preserving the historical 54 and publishing no proof', () => {
   assert.equal(
-    publicTemplates.filter((item) => item.example?.mediaType === 'image' && !candidateIds.includes(item.id)).length,
+    publicTemplates.filter((item) => item.example?.mediaType === 'image' && historicalImageIds.has(item.id)).length,
     54,
   );
-  assert.equal(publicTemplates.filter((item) => item.example?.mediaType === 'image').length, 56);
+  assert.equal(publicTemplates.filter((item) => item.example?.mediaType === 'image').length, 66);
   for (const template of candidates) {
     assert.equal(
       publicTemplates.some((item) => item.id === template.id),

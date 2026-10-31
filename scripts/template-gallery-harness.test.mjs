@@ -855,8 +855,8 @@ test('public provenance redacts machine paths and source commit ids', () => {
 });
 
 test('gallery harness loads all Studio templates from the TypeScript runtime', () => {
-  assert.equal(runtime.templates.length, 80);
-  assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 80);
+  assert.equal(runtime.templates.length, 90);
+  assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 90);
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_music3_chamber_pop'));
   assert.equal(
     runtime.templates.some((template) => template.id === 'wan_22_i2v_seed_vault'),

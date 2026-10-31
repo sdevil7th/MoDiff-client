@@ -2419,24 +2419,19 @@ test('typed template identities preserve contract-only workflow discovery and re
       }),
       false,
     );
-    assert.equal(
-      STUDIO_TEMPLATES.some((template) => template.modelType === capability.modelType),
-      false,
-      'Private fixture model types gain no visible Studio cards.',
-    );
   }
   const privateProfileIds = new Set(payload.evaluationAuthoring.executionProfiles.map((profile) => profile.id));
   const privateRecipeIds = new Set(
     payload.evaluationAuthoring.authoringRecipes.map((recipe) => recipe.authoringRecipeId),
   );
   assert.equal(
-    PLANNING_STUDIO_TEMPLATES.some(
+    [...STUDIO_TEMPLATES, ...PLANNING_STUDIO_TEMPLATES].some(
       (template) =>
         privateProfileIds.has(template.executionSelection?.executionProfileId) ||
         privateRecipeIds.has(template.executionSelection?.authoringRecipeId),
     ),
     false,
-    'Planning cards cannot promote this fixture private execution-profile or recipe authority.',
+    'Public and planning cards cannot promote fixture-private profiles or recipes; a shared model family is not execution authority.',
   );
   for (const alter of [
     (p) => {

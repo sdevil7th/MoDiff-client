@@ -1701,7 +1701,7 @@ export type StudioTemplate = {
    * prompt instead of expanding it with generic production language that can
    * dilute the adapter's documented conditioning.
    */
-  promptQualityPolicy?: 'modality_complete' | 'adapter_reference';
+  promptQualityPolicy?: 'modality_complete' | 'adapter_reference' | 'raw_layout_reference';
   prompt: string;
   negativePrompt?: string;
   presetId?: StudioPresetId;

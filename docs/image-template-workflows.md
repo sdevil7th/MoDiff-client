@@ -8,25 +8,28 @@ Opening an existing saved workflow preserves its graph.
 
 ## Current template inventory
 
-The current inventory contains 56 image templates. The historical 54 converted
+The current inventory contains 66 image templates. The historical 54 converted
 templates retain their creator prompts, seeds, sizes, inference settings,
 immutable model revisions and required input roles. Their fresh graphs
 use explicit execution-profile selections rather than a family-wide default.
 
-| Native stage family        | Templates | Tasks                                          |
-| -------------------------- | --------: | ---------------------------------------------- |
-| Z-Image Turbo              |         7 | Text to image and styles using LoRAs           |
-| Qwen Image                 |        10 | Text to image and ControlNet image layout      |
-| Qwen Image Edit            |         7 | Image editing, inpainting and outpainting      |
-| Qwen Image Edit Plus       |         7 | Single-image and multiple-reference editing    |
-| Qwen Image Layered         |         1 | Layer decomposition                            |
-| FLUX Schnell, Dev and Krea |        11 | Text to image and styles using LoRAs           |
-| FLUX Kontext               |         2 | Single-image and multiple-reference editing    |
-| FLUX.2 Klein               |         3 | Text to image and image/reference editing      |
-| FLUX.2 Dev                 |         1 | Full-model text to image                       |
-| Cosmos 3 Super             |         1 | Full-model text to image with mandatory safety |
+| Native stage family        | Templates | Tasks                                             |
+| -------------------------- | --------: | ------------------------------------------------- |
+| Z-Image Turbo              |         7 | Text to image and styles using LoRAs              |
+| Qwen Image                 |        10 | Text to image and ControlNet image layout         |
+| Qwen Image Edit            |         7 | Image editing, inpainting and outpainting         |
+| Qwen Image Edit Plus       |         7 | Single-image and multiple-reference editing       |
+| Qwen Image Layered         |         1 | Layer decomposition                               |
+| FLUX Schnell, Dev and Krea |        11 | Text to image and styles using LoRAs              |
+| FLUX Kontext               |         2 | Single-image and multiple-reference editing       |
+| FLUX.2 Klein               |         3 | Text to image and image/reference editing         |
+| FLUX.2 Dev                 |         1 | Full-model text to image                          |
+| Cosmos 3 Super             |         1 | Full-model text to image with mandatory safety    |
+| FLUX 3 Klein Distilled     |         5 | Generation, reference edits, raw layout and style |
+| FLUX 3 Klein Base          |         5 | Generation, reference edits, raw layout and style |
 
-The 48 historical native recipes and two additional full-model candidates contain
+The 48 historical native recipes, two additional full-model candidates and ten
+reviewed FLUX 3 recipes contain
 real model loading, input encoding, denoising and latent decoding stages. The two
 full-model candidates remain separately unqualified; their presence does not
 establish Auto readiness or fit on ordinary hardware. Fresh eligible native graphs present **Model Setup → Encode Inputs
@@ -151,33 +154,36 @@ parity. Use the backend's [image template validation guide](https://github.com/s
 for matched old/new runs, runtime and input identity checks, decoded-image
 comparison and the Windows validation procedure.
 
-## Qualification-only blocked-template probes
+## Reviewed FLUX 3 recipes
 
-The two FLUX 3 style planning candidates now name the selected immutable
+The two reviewed FLUX 3 style recipes name the selected immutable
 adapters: [NASA concept art](https://huggingface.co/kocabiyik/nsc7-style-lora/blob/9b998d3bdc3b4aeb2113ab4e8cbd9fe2ebfa1cae/README.md)
 for Distilled at scale `0.75`, and [Monet oil painting](https://huggingface.co/pjecuacion/flux3-klein-mnt-oil-monet-lora/blob/0d94b6a4601892499defd8c5d89c24f78e78043b/README.md)
 for Base at scale `0.65`. Both cards declare the
 [FLUX Kommunity License v1.0](https://huggingface.co/black-forest-labs/flux-3-image-klein-base/blob/1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4/LICENSE.md).
 Their training-data provenance is the authors' statement, not independent rights
-verification. The Base planning candidate explicitly replaces Tarot; saved Tarot
+verification. The Base recipe explicitly replaces Tarot; saved Tarot
 workflows and historical evidence keep their original identities.
 
-The revised candidates use the ring-habitat and meadow-fox prompts, seeds
+The revised recipes use the ring-habitat and meadow-fox prompts, seeds
 `481205` and `481405`, 512-square FP8r/BF16 recipes, 16/50 steps and guidance 1/3.5.
 The original radio/fox recipes and their failed outputs retain their historical
-identities. The two plain-radio candidates use revised two-front-control prompts
+identities. The two plain-radio recipes use revised two-front-control prompts
 and seeds `481402` (Distilled) and `481401` (Base). PUP remains
 disabled. The locked public settings are Expert with no offload and
 `autoOffload=false`. Successful local `model_cpu` / `autoOffload=true` trials
-are a separate recipe and cannot qualify these locks. NASA's advertised style
-effect remains unproved; Monet's painterly scale-zero baseline must be considered
-when reviewing the adapter effect. Inspect actual outputs for invented marks and
-signatures. Both candidates remain blocked planning entries without public media,
-template qualification, Gallery eligibility, hardware-fit proof or output
-publication approval. Adapter terms and local test consent do not approve an
-output's publication.
+are separate recipes and cannot qualify these locks. The ten fixed-input outputs
+passed their bounded visual reviews and have exact-file publication approval.
+They enter Experimental with their original task/source/model/input provenance;
+the model profiles' global qualification flags remain unchanged. Matching older
+evidence retains its historical scope. Separate native Auto checks cover the six
+basic routes and the selected NASA/Monet lifecycle cases only on the tested Linux
+x86_64 ROCm gfx1151 shared-memory host. They do not qualify larger workloads,
+Windows fit, or other hardware. Fixed-output acceptance does not establish a
+general adapter benefit or NASA endorsement. Inspect new outputs for invented
+marks and signatures; their rights are separate from approval of these exact files.
 
-The two packaging planning recipes preserve the ordered model references, then
+The two packaging recipes preserve the ordered model references, then
 compose the generated photograph onto the second reference using ordinary image
 nodes. The declared mask protects all pixels outside the photo panel. Three
 explicit Lanczos resize/pad operations precede a 1024-square crop at `y=205`
@@ -188,6 +194,18 @@ requires the declared mask, a single-image batch and the paired backend's PNG
 Save Image preview contract. The authored mask and selected output media must be
 published and verified through the normal asset contract before Gallery admission.
 Existing saved graphs retain their own nodes, settings and outputs.
+
+The two raw-coordinate examples retain their literal caption plus JSON prompt.
+Their `raw_layout_reference` quality policy checks one caption, matching unique
+object IDs, integer `bbox` coordinates in `0..1000`, valid box extents and concrete
+descriptions with visual treatment. The audit is bounded to 16,384 characters and
+32 objects. Malformed or incomplete documents fail; this policy never executes
+JSON, seeds a structured-layout widget or rewrites the prompt. Distilled's exact
+public profile has no negative-prompt input. The reviewed Base recipes use empty
+negative conditioning at CFG up to 3.5 while retaining Base's negative-input
+support. These declarations do not extend to a different execution profile.
+
+## Qualification-only blocked-template probes
 
 A complete recipe may remain a blocked planning template while its exact output
 and visual quality are unqualified. The Gallery runner's explicit
@@ -220,6 +238,6 @@ reading operator extensions. Its historical migration fixture checks the origina
 54 creator contracts, typed graph
 exports, component policies, shared guidance and seeds, controlled extras,
 save/restore, undo/redo and stale asynchronous construction. The current public
-catalog contains 56 image templates; additional native candidates have separate
+catalog contains 66 image templates; additional native candidates have separate
 selected-recipe tests. Those are contract tests. Real model generation, paired
 image comparison, visual review and hardware qualification remain separate evidence.

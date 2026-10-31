@@ -276,7 +276,7 @@ function qualificationFixtureProcess(
   return { result, registryPath, backendDirectory };
 }
 
-test('experimental canonical LoRA variants require blocked-probe opt-in and retain their exact graph hash', async (t) => {
+test('public experimental LoRA variants require explicit canonical lookup and retain their exact graph hash', async (t) => {
   for (const templateId of ['flux3_klein_fp8r512_lora_style', 'flux3_klein_base_fp8r512_lora_style']) {
     await t.test(templateId, async () => {
       const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-experimental-'));
@@ -285,7 +285,7 @@ test('experimental canonical LoRA variants require blocked-probe opt-in and reta
       try {
         const ordinary = qualificationFixtureProcess(directory, provenance, [], { experimental: true });
         assert.notEqual(ordinary.result.status, 0);
-        assert.match(ordinary.result.stderr, /not in the runtime catalog/);
+        assert.match(ordinary.result.stderr, /no current canonical workflow/);
         assert.equal(existsSync(ordinary.registryPath), false);
         const explicit = qualificationFixtureProcess(directory, provenance, ['--allow-blocked-probe'], {
           experimental: true,
@@ -308,7 +308,7 @@ test('experimental canonical LoRA variants require blocked-probe opt-in and reta
         );
         assert.ok(manifest.experimentalWorkflows.every((record) => record.qualifiedRuntimeProfiles.length === 0));
         const runtime = await loadTemplateRuntime(ROOT, { includePlanning: true });
-        assert.equal(runtime.templates.find((item) => item.id === templateId).example.status, 'blocked');
+        assert.equal(runtime.templates.find((item) => item.id === templateId).example.status, 'unverified');
       } finally {
         disposeFixture(directory);
       }

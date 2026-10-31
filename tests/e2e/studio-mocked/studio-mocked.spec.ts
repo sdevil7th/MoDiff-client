@@ -12,7 +12,7 @@ import {
   IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
   AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
 } from '../../../src/studio/templateOperationSelections';
-import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../../../src/studio/templates';
+import { STUDIO_TEMPLATES } from '../../../src/studio/templates';
 import { hashString, stableStringify } from '../../../src/studio/stableHash';
 import { REGISTERED_BLOCK_V2_ROUTES } from '../../../src/studio/registeredBlockV2Routes';
 import { acknowledgementRequiredForTemplate } from '../../../src/studio/modelUsagePolicies';
@@ -11172,7 +11172,7 @@ async function installPublicFlux3AuthoringRoutes(
   return fixture;
 }
 
-test('Experimental planning cards create the exact FLUX3 Ceramic Radio graph through ordinary UI', async ({ page }) => {
+test('Experimental public cards create the exact FLUX3 Ceramic Radio graph through ordinary UI', async ({ page }) => {
   await ensureFrontend();
   const fixture = await installPublicFlux3AuthoringRoutes(page, false, false, true);
   // Match the genuine creator fixture's CPU-only device options. This is UI
@@ -11218,7 +11218,7 @@ test('Experimental planning cards create the exact FLUX3 Ceramic Radio graph thr
   await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(10);
   await search.fill('Ceramic Radio');
   await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(2);
-  const template = PLANNING_STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_text_to_image')!;
+  const template = STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_text_to_image')!;
   const previousWorkflow = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
   await expect(page.getByTestId(`template-browser-card-${template.id}`)).toContainText('No preview yet');
   await page.getByTestId(`template-browser-create-card-${template.id}`).click();

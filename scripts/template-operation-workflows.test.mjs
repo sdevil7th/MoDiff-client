@@ -92,7 +92,7 @@ before(async () => {
   const { STUDIO_TEMPLATES: currentTemplates } = await server.ssrLoadModule('/src/studio/templates.ts');
   // This closed migration fixture protects the original 54 creator contracts.
   // Additional native SDK image recipes have full coverage in the independent
-  // image-full-native-template-candidates test, including all public image IDs.
+  // image-full-native-template-candidates and flux3-public-template-planning tests.
   const baseline = JSON.parse(await readFile('tests/fixtures/image-template-creator-contracts.v1.json', 'utf8'));
   const historicalImageIds = new Set(baseline.templates.map((row) => row.templateId));
   templates = currentTemplates.filter((item) => item.example?.mediaType !== 'image' || historicalImageIds.has(item.id));

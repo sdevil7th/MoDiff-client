@@ -4011,18 +4011,26 @@ function protectedPhotoSettings(cropTop: number): StudioTemplateWorkflowBlockSet
 
 const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   ...BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow),
-  // Kept in PLANNING_STUDIO_TEMPLATES until exact runtime/media/rights review.
+  // Reviewed fixed-input examples retain their experimental Custom contracts.
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_text_to_image',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - Text to Image: Ceramic Radio v2',
+      label: 'FLUX 3 Image Klein Distilled — Text to Image: Ceramic Radio v2',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'text_to_image',
       modelType: 'Flux3DistilledModularPipeline',
       runtimeReuseKey: 'Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'flux',
-      tags: ['flux3', 'public-intent', 'planning', 'text-to-image', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: [
+        'flux3',
+        'experimental',
+        'reviewed-example',
+        'text-to-image',
+        'fp8r',
+        '512-square',
+        'bounded-custom-recipe',
+      ],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein',
@@ -4036,15 +4044,16 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.Image.Preview',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description: TWO_CONTROL_RADIO_PROMPT,
       userGoal:
         'Inspect the ordinary editable graph and select only the declared runtime and prompt enhancement choices.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481402,
         modelRevision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
         lockedSettings: {
@@ -4065,11 +4074,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux3_klein_fp8r512_text_to_image,
       promptGuide: {
@@ -4087,14 +4094,22 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_single_reference_edit',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - Image Edit: Amber Glass',
+      label: 'FLUX 3 Image Klein Distilled — Image Edit: Amber Glass',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'edit_image',
       modelType: 'Flux3DistilledModularPipeline',
       runtimeReuseKey: 'Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'edit',
-      tags: ['flux3', 'public-intent', 'planning', 'single-reference-edit', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: [
+        'flux3',
+        'experimental',
+        'reviewed-example',
+        'single-reference-edit',
+        'fp8r',
+        '512-square',
+        'bounded-custom-recipe',
+      ],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein',
@@ -4110,15 +4125,16 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.Image.Load',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description:
         'Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.',
       userGoal: 'Use the included approved cobalt glass input and review the amber-color edit.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481002,
         modelRevision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
         lockedSettings: {
@@ -4139,11 +4155,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
       inputRequirements: {
         referenceImages: 1,
@@ -4188,14 +4202,22 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_multi_reference_edit',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - Two-Reference Edit + Protected Packaging v2',
+      label: 'FLUX 3 Image Klein Distilled — Two-Reference Edit + Protected Packaging v2',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'edit_image',
       modelType: 'Flux3DistilledModularPipeline',
       runtimeReuseKey: 'Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'reference',
-      tags: ['flux3', 'public-intent', 'planning', 'multi-reference-edit', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: [
+        'flux3',
+        'experimental',
+        'reviewed-example',
+        'multi-reference-edit',
+        'fp8r',
+        '512-square',
+        'bounded-custom-recipe',
+      ],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein',
@@ -4215,8 +4237,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.Image.Load',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description:
         'Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.',
       userGoal:
@@ -4224,7 +4247,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481003,
         modelRevision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
         lockedSettings: {
@@ -4243,11 +4266,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         },
         // The primary graph output is the protected PNG, after 512px generation.
         expectedOutput: { width: 1024, height: 1024 },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. Generation keeps the two original references in order. The separate ordinary compositor uses the second reference and the authored mask to preserve guide pixels; this is generated plus composited, with no native Fill claim. Original failed recipes remain historical. The new mask and public outputs still require publication and technical acceptance.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. Generation keeps the two original references in order. The separate ordinary compositor uses the second reference and the authored mask to preserve guide pixels; this is generated plus composited, with no native Fill claim. Original failed recipes remain historical. The authored mask and selected final PNG have exact-file publication approval.',
       },
       inputRequirements: {
         referenceImages: 2,
@@ -4305,7 +4326,8 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_raw_coordinate_prompt',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - Raw Prompt Coordinates: Apple',
+      promptQualityPolicy: 'raw_layout_reference',
+      label: 'FLUX 3 Image Klein Distilled — Raw Prompt Coordinates: Apple',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'text_to_image',
       modelType: 'Flux3DistilledModularPipeline',
@@ -4313,14 +4335,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       category: 'reference',
       tags: [
         'flux3',
-        'public-intent',
-        'planning',
+        'experimental',
+        'reviewed-example',
         'fp8r',
         '512-square',
-        'unqualified-recipe',
+        'bounded-custom-recipe',
         'raw-prompt-coordinates',
       ],
-      difficulty: 'blocked',
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein',
@@ -4334,15 +4356,16 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.Image.Preview',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description:
         'A still life with <apple_1>.\n[{"id":"apple_1","bbox":[250,125,750,875],"desc":"A red apple, with a green leaf."}]',
       userGoal: 'Inspect the literal raw coordinate prompt; the structured-layout widget remains unset/null.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481004,
         modelRevision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
         lockedSettings: {
@@ -4363,11 +4386,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. Spatial adherence is unproved. This is not a seeded region-widget or generated-table template.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'The raw prompt uses the existing shared layout fixture syntax, y-first integer coordinates [250,125,750,875]. The layout_conditioning field remains null through normal T2I defaults. PUP stays disabled so the literal table is not rewritten. No source-reference IDs, widget geometry, strict generated-table completion or F3-06 proof is claimed.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. The raw prompt uses the existing shared layout fixture syntax, y-first integer coordinates [250,125,750,875]. The layout_conditioning field remains null through normal T2I defaults. PUP stays disabled so the literal table is not rewritten. No source-reference IDs, widget geometry, strict generated-table completion or F3-06 proof is claimed. This is not a seeded region-widget or generated-table template.',
       },
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux3_klein_fp8r512_raw_coordinate_prompt,
       promptGuide: {
@@ -4388,14 +4409,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_lora_style',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - NASA Concept-Art LoRA v2 (Test Candidate)',
+      label: 'FLUX 3 Image Klein Distilled — LoRA Style: Ring Habitat',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'text_to_image',
       modelType: 'Flux3DistilledModularPipeline',
       runtimeReuseKey: 'Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'lora',
-      tags: ['flux3', 'public-intent', 'planning', 'lora-style', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: ['flux3', 'experimental', 'reviewed-example', 'lora-style', 'fp8r', '512-square', 'bounded-custom-recipe'],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein',
@@ -4410,15 +4431,15 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.ModularDiffusers.Lora',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description: RING_HABITAT_PROMPT,
-      userGoal:
-        'Inspect the pinned NASA concept-art adapter and exact public recipe; style quality and publication remain pending.',
+      userGoal: 'Use the pinned concept-art adapter and review the generated result under its declared terms.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481205,
         modelRevision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
         lockedSettings: {
@@ -4439,11 +4460,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, style-quality review and output publication approval remain pending for this exact public recipe; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. The selected adapter declares FLUX Kommunity License v1.0; its terms do not approve generated output publication.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No public output media, template receipt or fit measurement is attached. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; their subtle visual changes do not establish the promised NASA concept-art style. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; their subtle visual changes do not establish the promised NASA concept-art style. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
       evidencePolicy: 'generated',
       workflowBlocks: ['lora'],
@@ -4474,7 +4493,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           'The exact public source profile is required; package qualification alone is not a template image proof.',
           'PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.',
           'With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout.',
-          "The pinned nsc7 adapter declares FLUX Kommunity License v1.0 and recommends Distilled scale 0.75-1.0. This candidate fixes scale 0.75 and the final nsc7 style trigger. Training-data provenance is the author's statement; no NASA endorsement or public output approval is implied.",
+          "The pinned nsc7 adapter declares FLUX Kommunity License v1.0 and recommends Distilled scale 0.75-1.0. This recipe fixes scale 0.75 and the final nsc7 style trigger. Training-data provenance is the author's statement; no NASA endorsement is implied.",
         ],
       },
     },
@@ -4484,14 +4503,22 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_text_to_image',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Text to Image: Ceramic Radio v2',
+      label: 'FLUX 3 Image Klein Base — Text to Image: Ceramic Radio v2',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'text_to_image',
       modelType: 'Flux3ModularPipeline',
       runtimeReuseKey: 'Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'flux',
-      tags: ['flux3', 'public-intent', 'planning', 'text-to-image', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: [
+        'flux3',
+        'experimental',
+        'reviewed-example',
+        'text-to-image',
+        'fp8r',
+        '512-square',
+        'bounded-custom-recipe',
+      ],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein-base',
@@ -4506,15 +4533,16 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.ModularDiffusers.Guider',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description: TWO_CONTROL_RADIO_PROMPT,
       userGoal:
         'Inspect the ordinary editable graph and select only the declared runtime and prompt enhancement choices.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481401,
         modelRevision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
         lockedSettings: {
@@ -4535,11 +4563,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux3_klein_base_fp8r512_text_to_image,
       promptGuide: {
@@ -4557,14 +4583,22 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_single_reference_edit',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Image Edit: Amber Glass',
+      label: 'FLUX 3 Image Klein Base — Image Edit: Amber Glass',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'edit_image',
       modelType: 'Flux3ModularPipeline',
       runtimeReuseKey: 'Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'edit',
-      tags: ['flux3', 'public-intent', 'planning', 'single-reference-edit', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: [
+        'flux3',
+        'experimental',
+        'reviewed-example',
+        'single-reference-edit',
+        'fp8r',
+        '512-square',
+        'bounded-custom-recipe',
+      ],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein-base',
@@ -4581,15 +4615,16 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.ModularDiffusers.Guider',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description:
         'Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.',
       userGoal: 'Use the included approved cobalt glass input and review the amber-color edit.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481102,
         modelRevision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
         lockedSettings: {
@@ -4610,11 +4645,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
       inputRequirements: {
         referenceImages: 1,
@@ -4659,14 +4692,22 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_multi_reference_edit',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Two-Reference Edit + Protected Packaging v3',
+      label: 'FLUX 3 Image Klein Base — Two-Reference Edit + Protected Packaging v3',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'edit_image',
       modelType: 'Flux3ModularPipeline',
       runtimeReuseKey: 'Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'reference',
-      tags: ['flux3', 'public-intent', 'planning', 'multi-reference-edit', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: [
+        'flux3',
+        'experimental',
+        'reviewed-example',
+        'multi-reference-edit',
+        'fp8r',
+        '512-square',
+        'bounded-custom-recipe',
+      ],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein-base',
@@ -4687,8 +4728,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.ModularDiffusers.Guider',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description:
         'Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.',
       userGoal:
@@ -4696,7 +4738,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481103,
         modelRevision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
         lockedSettings: {
@@ -4715,11 +4757,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         },
         // The primary graph output is the protected PNG, after 512px generation.
         expectedOutput: { width: 1024, height: 1024 },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. Generation keeps the two original references in order. The separate ordinary compositor uses the second reference and the authored mask to preserve guide pixels; this is generated plus composited, with no native Fill claim. Original failed recipes remain historical. The new mask and public outputs still require publication and technical acceptance.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. Generation keeps the two original references in order. The separate ordinary compositor uses the second reference and the authored mask to preserve guide pixels; this is generated plus composited, with no native Fill claim. Original failed recipes remain historical. The authored mask and selected final PNG have exact-file publication approval.',
       },
       inputRequirements: {
         referenceImages: 2,
@@ -4777,7 +4817,8 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_raw_coordinate_prompt',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Raw Prompt Coordinates: Apple',
+      promptQualityPolicy: 'raw_layout_reference',
+      label: 'FLUX 3 Image Klein Base — Raw Prompt Coordinates: Apple',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'text_to_image',
       modelType: 'Flux3ModularPipeline',
@@ -4785,14 +4826,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       category: 'reference',
       tags: [
         'flux3',
-        'public-intent',
-        'planning',
+        'experimental',
+        'reviewed-example',
         'fp8r',
         '512-square',
-        'unqualified-recipe',
+        'bounded-custom-recipe',
         'raw-prompt-coordinates',
       ],
-      difficulty: 'blocked',
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein-base',
@@ -4807,15 +4848,16 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.ModularDiffusers.Guider',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description:
         'A still life with <apple_1>.\n[{"id":"apple_1","bbox":[250,125,750,875],"desc":"A red apple, with a green leaf."}]',
       userGoal: 'Inspect the literal raw coordinate prompt; the structured-layout widget remains unset/null.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481104,
         modelRevision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
         lockedSettings: {
@@ -4836,11 +4878,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. Spatial adherence is unproved. This is not a seeded region-widget or generated-table template.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'The raw prompt uses the existing shared layout fixture syntax, y-first integer coordinates [250,125,750,875]. The layout_conditioning field remains null through normal T2I defaults. PUP stays disabled so the literal table is not rewritten. No source-reference IDs, widget geometry, strict generated-table completion or F3-06 proof is claimed.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. The raw prompt uses the existing shared layout fixture syntax, y-first integer coordinates [250,125,750,875]. The layout_conditioning field remains null through normal T2I defaults. PUP stays disabled so the literal table is not rewritten. No source-reference IDs, widget geometry, strict generated-table completion or F3-06 proof is claimed. This is not a seeded region-widget or generated-table template.',
       },
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux3_klein_base_fp8r512_raw_coordinate_prompt,
       promptGuide: {
@@ -4861,14 +4901,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_lora_style',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Monet Oil-Painting LoRA v3 (Test Candidate)',
+      label: 'FLUX 3 Image Klein Base — LoRA Style: Meadow Fox',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'text_to_image',
       modelType: 'Flux3ModularPipeline',
       runtimeReuseKey: 'Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert',
       category: 'lora',
-      tags: ['flux3', 'public-intent', 'planning', 'lora-style', 'fp8r', '512-square', 'unqualified-recipe'],
-      difficulty: 'blocked',
+      tags: ['flux3', 'experimental', 'reviewed-example', 'lora-style', 'fp8r', '512-square', 'bounded-custom-recipe'],
+      difficulty: 'advanced',
       modelArtifact: {
         source: 'hub',
         value: 'black-forest-labs/flux-3-image-klein-base',
@@ -4884,15 +4924,16 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         'modules.ModularDiffusers.Guider',
       ],
       vramEstimate:
-        'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
-      runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
+        'FP8r storage does not guarantee native FP8 GEMM or fit on other hardware. Use the live resource check; fixed-input examples were tested on the reviewed Linux host.',
+      runtimeEstimate:
+        'Fixed-input output accepted on the tested Linux host; timing depends on model, task and placement.',
       description: MEADOW_FOX_PROMPT,
       userGoal:
-        'Inspect the pinned Base Monet replacement and exact public recipe; output qualification and publication remain pending.',
+        'Inspect the pinned Base Monet replacement and exact public recipe; review the resulting style and preserve the adapter terms.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
-        status: 'blocked',
+        status: 'unverified',
         lockedSeed: 481405,
         modelRevision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
         lockedSettings: {
@@ -4913,11 +4954,9 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
-        runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
-        blockReason:
-          'Native output and template qualification, visual review and output publication approval remain pending for this exact public recipe; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. The selected Monet replacement declares FLUX Kommunity License v1.0; its terms do not approve generated output publication.',
+        runtimeEstimate: 'Reviewed fixed-input example on Linux; timing varies by placement',
         notes:
-          'No public output media, template receipt or fit measurement is attached. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; a painterly baseline alone does not prove adapter benefit. This Base-trained rank16 Monet candidate replaces the public Tarot plan without changing saved Tarot workflows. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
+          'A reviewed fixed-input output is registered with its original provenance; this example does not qualify other prompts, placements or hardware. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; a painterly baseline alone does not prove adapter benefit. This Base-trained rank16 Monet candidate replaces the public Tarot plan without changing saved Tarot workflows. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate.',
       },
       evidencePolicy: 'generated',
       workflowBlocks: ['lora'],
@@ -4943,7 +4982,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           'The exact public source profile is required; package qualification alone is not a template image proof.',
           'PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.',
           'With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout.',
-          "The pinned Monet adapter declares FLUX Kommunity License v1.0. Keep mnt_oil at the start of the prompt and scale 0.65 for this versioned Base candidate. The author warns about invented corner signatures; inspect the actual output. Its training-data provenance is the author's statement, and output publication remains unapproved.",
+          "The pinned Monet adapter declares FLUX Kommunity License v1.0. Keep mnt_oil at the start of the prompt and scale 0.65 for this versioned Base recipe. The author warns about invented corner signatures; inspect the actual output. Its training-data provenance is the author's statement, and new outputs still require their own rights review.",
         ],
       },
     },

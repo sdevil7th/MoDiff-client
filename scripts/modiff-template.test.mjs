@@ -2810,9 +2810,19 @@ test('persisted inferred bindings self-repair stale model metadata from canonica
   }
 });
 
-test('template prompts are unique, detailed, and not generic placeholders', () => {
-  const prompts = templatesModule.STUDIO_TEMPLATES.map((template) => template.prompt);
-  assert.equal(new Set(prompts).size, prompts.length);
+test('template prompt recipes are distinct, detailed, and not generic placeholders', () => {
+  // A retained comparison may use the same prompt with distinct pinned models.
+  // Duplicate authoring authority within the same model/task is still refused.
+  const recipes = templatesModule.STUDIO_TEMPLATES.map((template) =>
+    JSON.stringify([
+      template.modelType,
+      template.mode,
+      template.modelArtifact,
+      template.executionSelection?.executionProfileId,
+      template.prompt,
+    ]),
+  );
+  assert.equal(new Set(recipes).size, recipes.length);
 
   const weakFragments = [
     'one clear subject, cinematic lighting',
@@ -2835,6 +2845,10 @@ test('template prompts are unique, detailed, and not generic placeholders', () =
         pendingAudit.issues.map((issue) => issue.code),
         ['unresolved_backend_default'],
       );
+    } else if (template.promptQualityPolicy === 'raw_layout_reference') {
+      assert.equal(template.mode, 'text_to_image');
+      assert.ok(template.prompt.length >= 40);
+      assert.equal(templateQualityModule.auditTemplateQuality(template).passed, true);
     } else if (template.promptQualityPolicy === 'adapter_reference') {
       assert.equal(template.category, 'lora', `${template.id} adapter reference prompts are limited to LoRA recipes`);
       assert.ok(template.prompt.length >= 20, `${template.id} retains a meaningful adapter reference prompt`);
@@ -4317,9 +4331,14 @@ test('template browser exposes the complete workflow catalog across task and ada
     difficulty: 'all',
     sort: 'recommended',
   });
-  const authoredAdapterIds = STUDIO_TEMPLATES.filter((template) => template.category === 'lora').map(
-    (template) => template.id,
-  );
+  const visible = (template) =>
+    profilesModule.isStudioModelVisibleInCatalog(template.modelType, {
+      currentModelType: form.modelType,
+      includeWorkflowOnly: true,
+    });
+  const authoredAdapterIds = STUDIO_TEMPLATES.filter(
+    (template) => template.category === 'lora' && visible(template),
+  ).map((template) => template.id);
   assert.deepEqual(
     authoredAdapterIds.filter((templateId) => !adapterTemplates.some((template) => template.id === templateId)),
     [],
@@ -4357,14 +4376,23 @@ test('template browser exposes the complete workflow catalog across task and ada
     difficulty: 'all',
     sort: 'recommended',
   });
-  assert.equal(completeInventory.length, STUDIO_TEMPLATES.length);
+  assert.deepEqual(
+    completeInventory.map((template) => template.id).sort(),
+    STUDIO_TEMPLATES.filter(visible)
+      .map((template) => template.id)
+      .sort(),
+  );
   assert.ok(completeInventory.length >= defaultInventory.length);
 });
 
-test('Experimental discovers all ten declared FLUX3 planning creators without promoting ordinary discovery', () => {
+test('Experimental discovers all ten reviewed FLUX3 creators without promoting ordinary discovery', () => {
   const { STUDIO_TEMPLATES, PLANNING_STUDIO_TEMPLATES } = templatesModule;
-  const planning = PLANNING_STUDIO_TEMPLATES.filter((template) => /^flux3_klein(?:_base)?_fp8r512_/.test(template.id));
+  const planning = STUDIO_TEMPLATES.filter((template) => /^flux3_klein(?:_base)?_fp8r512_/.test(template.id));
   assert.equal(planning.length, 10);
+  assert.equal(
+    PLANNING_STUDIO_TEMPLATES.some((template) => /^flux3_klein(?:_base)?_fp8r512_/.test(template.id)),
+    false,
+  );
   const before = JSON.stringify(planning);
   const form = profilesModule.DEFAULT_STUDIO_FORM;
   const filter = {
@@ -4388,7 +4416,7 @@ test('Experimental discovers all ten declared FLUX3 planning creators without pr
   assert.equal(shown(planning, { query: 'Ceramic Radio' }).length, 2);
   assert.equal(shown(planning, { mode: 'text_to_image' }).length, 6);
   assert.equal(shown(planning, { modelType: 'Flux3ModularPipeline' }).length, 5);
-  assert.equal(shown(planning, { includeBlocked: false }).length, 0);
+  assert.equal(shown(planning, { includeBlocked: false }).length, 10);
   assert.equal(shown(planning, { difficulty: 'starter' }).length, 0);
   for (const category of ['all', 'recommended', 'image', 'edit', 'adapters'])
     assert.equal(
@@ -4400,17 +4428,15 @@ test('Experimental discovers all ten declared FLUX3 planning creators without pr
       profilesModule.isStudioModelVisibleInCatalog(template.modelType, { includeWorkflowOnly: true }),
       false,
     );
-    assert.equal(template.difficulty, 'blocked');
-    assert.equal(template.example.status, 'blocked');
-    assert.equal(template.readinessPolicy, 'planning');
+    assert.equal(template.difficulty, 'advanced');
+    assert.equal(template.example.status, 'unverified');
+    assert.equal(template.readinessPolicy, template.inputRequirements ? 'requires_input' : 'runnable');
   }
   assert.equal(JSON.stringify(planning), before);
 });
 
 test('Experimental refuses undeclared or incomplete internal creator selections', () => {
-  const template = templatesModule.PLANNING_STUDIO_TEMPLATES.find(
-    (item) => item.id === 'flux3_klein_fp8r512_text_to_image',
-  );
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_text_to_image');
   const variants = [
     { ...template, id: 'undeclared-internal-creator' },
     { ...template, executionSelection: undefined },

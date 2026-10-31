@@ -60,21 +60,23 @@ after(async () => {
   }
 });
 
-const card = (id) => templates.PLANNING_STUDIO_TEMPLATES.find((item) => item.id === id);
+const card = (id) => templates.STUDIO_TEMPLATES.find((item) => item.id === id);
 
-test('ten public-intent descriptors remain blocked planning entries without output or qualification claims', () => {
+test('ten reviewed recipes enter Experimental without inline execution or hardware qualification claims', () => {
   assert.equal(new Set(ids).size, 10);
   for (const id of ids) {
     const value = card(id);
     assert.ok(value, id);
     assert.equal(
-      templates.STUDIO_TEMPLATES.some((item) => item.id === id),
+      templates.PLANNING_STUDIO_TEMPLATES.some((item) => item.id === id),
       false,
     );
-    assert.equal(value.difficulty, 'blocked');
-    assert.equal(value.readinessPolicy, 'planning');
-    assert.equal(value.example.status, 'blocked');
-    assert.match(value.example.blockReason, /grants no Gallery, Auto or hardware qualification/);
+    assert.equal(value.difficulty, 'advanced');
+    assert.equal(value.readinessPolicy, value.inputRequirements ? 'requires_input' : 'runnable');
+    assert.equal(value.example.status, 'unverified');
+    assert.equal(Object.hasOwn(value.example, 'blockReason'), false);
+    assert.ok(value.tags.includes('experimental'));
+    assert.match(value.example.notes, /does not qualify other prompts, placements or hardware/);
     for (const key of ['outputPath', 'thumbnailPath', 'mediaHash', 'runtimeFingerprint', 'verificationTimestamp'])
       assert.equal(Object.hasOwn(value.example, key), false, `${id}:${key}`);
     assert.equal(
@@ -216,7 +218,7 @@ test('raw coordinate examples are complete prompt text without seeded layout or 
     assert.equal(Object.hasOwn(value.example.lockedSettings, 'layoutConditioning'), false);
     assert.match(value.example.notes, /layout_conditioning field remains null/);
     assert.match(value.example.notes, /PUP stays disabled/);
-    assert.match(value.example.blockReason, /not a seeded region-widget or generated-table template/);
+    assert.match(value.example.notes, /not a seeded region-widget or generated-table template/);
   }
 });
 
@@ -273,8 +275,8 @@ test('selected NASA and Monet candidates bind exact adapters and prompts without
     assert.equal(value.description, expected.prompt);
     assert.equal(value.negativePrompt, '');
     assert.equal(value.example.lockedSeed, expected.seed);
-    assert.match(value.label, /Test Candidate/);
-    assert.match(value.example.blockReason, /output publication approval/);
+    assert.match(value.label, /LoRA Style:/);
+    assert.equal(value.example.status, 'unverified');
     assert.match(value.example.notes, /model_cpu.*autoOffload=true/);
     assert.match(value.example.notes, /none.*autoOffload=false/);
     assert.match(value.promptGuide.modelHints.join(' '), /FLUX Kommunity License/);
@@ -287,7 +289,7 @@ test('revised plain-radio recipes retain distinct tested seeds', () => {
 });
 
 // Complete source inputs are not native output, fit or publication proof.
-test('all ten fixed-input recipes are source-complete while exact public proof remains pending', () => {
+test('all ten reviewed fixed-input recipes retain complete source authority without inline qualification', () => {
   for (const id of ids) {
     const value = card(id);
     assert.deepEqual(inputs.resolveTemplateInputs(value).missingLabels, []);
@@ -298,12 +300,12 @@ test('all ten fixed-input recipes are source-complete while exact public proof r
   for (const id of ids) {
     const value = card(id);
     assert.equal(
-      templates.STUDIO_TEMPLATES.some((item) => item.id === id),
+      templates.PLANNING_STUDIO_TEMPLATES.some((item) => item.id === id),
       false,
     );
-    assert.equal(value.readinessPolicy, 'planning');
-    assert.equal(value.example.status, 'blocked');
-    assert.match(value.example.blockReason, /Native output and template qualification/);
+    assert.equal(value.readinessPolicy, value.inputRequirements ? 'requires_input' : 'runnable');
+    assert.equal(value.example.status, 'unverified');
+    assert.equal(Object.hasOwn(value.example, 'blockReason'), false);
     assert.equal(Object.hasOwn(value.example, 'outputPath'), false);
     assert.equal(Object.hasOwn(value.example, 'runtimeFingerprint'), false);
   }
@@ -311,7 +313,7 @@ test('all ten fixed-input recipes are source-complete while exact public proof r
 
 // This uses captured source metadata and mocked managed input paths only. It
 // constructs ordinary graphs; it does not read media, execute or qualify models.
-test('all ten fixed-input planning cards create exact ordinary FP8r task graphs', async () => {
+test('all ten reviewed cards create the unchanged ordinary FP8r task graphs', async () => {
   const load = (name) => server.ssrLoadModule(`/src/${name}.ts`);
   const [operations, catalog, choices, requests, creator, flow, defaults, exactness, visualGroups] = await Promise.all([
     load('workflow/operationContracts'),
@@ -789,7 +791,7 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
       }
     }
     assert.deepEqual(value, cardBefore);
-    assert.equal(value.example.status, 'blocked');
+    assert.equal(value.example.status, 'unverified');
   }
   assert.deepEqual(registry, registryBefore);
   assert.deepEqual(captured, capturedBefore);
