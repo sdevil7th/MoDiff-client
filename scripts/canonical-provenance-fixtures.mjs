@@ -471,35 +471,22 @@ export async function legacyCreatorFactoryCases() {
       appType: 'custom',
     });
     const load = (name) => server.ssrLoadModule(`/src/${name}.ts`);
-    const [
-      templates,
-      inputs,
-      selection,
-      operations,
-      catalog,
-      choices,
-      requests,
-      creator,
-      flow,
-      defaults,
-      exactness,
-      groups,
-    ] = await Promise.all(
-      [
-        'studio/templates',
-        'studio/templateInputs',
-        'studio/templateModelSelection',
-        'workflow/operationContracts',
-        'workflow/operationCatalog',
-        'workflow/workflowChoices',
-        'workflow/operationStarterRequest',
-        'studio/templateOperationWorkflow',
-        'stores/useFlowStore',
-        'studio/modelProfiles',
-        'studio/templateExactness',
-        'workflow/visualOperationGroupProjection',
-      ].map(load),
-    );
+    const [inputs, selection, operations, catalog, choices, requests, creator, flow, defaults, exactness, groups] =
+      await Promise.all(
+        [
+          'studio/templateInputs',
+          'studio/templateModelSelection',
+          'workflow/operationContracts',
+          'workflow/operationCatalog',
+          'workflow/workflowChoices',
+          'workflow/operationStarterRequest',
+          'studio/templateOperationWorkflow',
+          'stores/useFlowStore',
+          'studio/modelProfiles',
+          'studio/templateExactness',
+          'workflow/visualOperationGroupProjection',
+        ].map(load),
+      );
     const fixture = JSON.parse(
       readFileSync(new URL('../tests/fixtures/public-flux3-template-creators.v1.json', import.meta.url), 'utf8'),
     );
@@ -515,7 +502,11 @@ export async function legacyCreatorFactoryCases() {
     );
     const descriptors = choices.parseWorkflowModelDescriptors(payload, support);
     const cases = [];
-    const cards = templates.PLANNING_STUDIO_TEMPLATES.filter((card) => /^flux3_klein(?:_base)?_fp8r512_/.test(card.id));
+    // Golden byte vectors describe the original creator definitions. Current
+    // versioned cards have separate authoring tests and must not rewrite them.
+    const { cards } = JSON.parse(
+      readFileSync(new URL('../tests/fixtures/legacy-flux3-template-cards.v1.json', import.meta.url), 'utf8'),
+    );
     assert.equal(cards.length, 10);
     for (const card of cards) {
       const { capability } = selection.resolveTemplateModelSelection(card, payload.capabilities);

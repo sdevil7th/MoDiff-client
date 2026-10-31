@@ -1207,7 +1207,7 @@ test('canonical hook rejects detached task, output, accounting and model evidenc
   }
 });
 
-test('default factory output remains byte identical for all ten grouped and ordinary FLUX3 creators', async () => {
+test('default factory output remains byte identical for the ten historical grouped and ordinary FLUX3 creators', async () => {
   const expected = JSON.parse(
     readFileSync(new URL('../tests/fixtures/legacy-provenance-factory.v1.json', import.meta.url), 'utf8'),
   );
