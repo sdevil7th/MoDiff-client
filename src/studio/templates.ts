@@ -4241,11 +4241,8 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           offloadMode: 'none',
           weightFormat: 'fp8r',
         },
-        expectedOutput: {
-          width: 512,
-          height: 512,
-        },
-        galleryExpectedOutput: { width: 1024, height: 1024 },
+        // The primary graph output is the protected PNG, after 512px generation.
+        expectedOutput: { width: 1024, height: 1024 },
         runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
         blockReason:
           'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
@@ -4716,11 +4713,8 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           offloadMode: 'none',
           weightFormat: 'fp8r',
         },
-        expectedOutput: {
-          width: 512,
-          height: 512,
-        },
-        galleryExpectedOutput: { width: 1024, height: 1024 },
+        // The primary graph output is the protected PNG, after 512px generation.
+        expectedOutput: { width: 1024, height: 1024 },
         runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
         blockReason:
           'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',

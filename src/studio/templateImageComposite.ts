@@ -76,5 +76,6 @@ export function attachTemplateImageComposite({
   set(save, ['quality'], 100);
   set(save, ['metadata'], '');
   save.data.label = 'Protected image (PNG)';
+  save.data.studioRole = 'compositeOutput';
   connect(composite, ['output'], save, ['image']);
 }

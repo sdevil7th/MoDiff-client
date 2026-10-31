@@ -1185,6 +1185,10 @@ test('gallery runner selects the generated audio export instead of the source lo
     'upscalePreview',
   );
   assert.equal(preferredOutputRoleForTemplate({ modelType: 'QwenImageModularPipeline' }), '');
+  assert.equal(
+    preferredOutputRoleForTemplate({ mediaType: 'image', workflowBlocks: ['masked_composite'] }),
+    'compositeOutput',
+  );
 });
 
 test('gallery runner reuses runtime only for an explicit matching loader-contract key', () => {

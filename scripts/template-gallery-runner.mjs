@@ -1505,6 +1505,7 @@ export function preferredOutputRoleForTemplate(template) {
   }
   if (template.mediaType === 'video') return 'videoExport';
   if (template.workflowBlocks?.includes('upscaler')) return 'upscalePreview';
+  if (template.workflowBlocks?.includes('masked_composite')) return 'compositeOutput';
   if (template.modelType === 'AceStepAudioPipeline') return 'audioExport';
   return '';
 }

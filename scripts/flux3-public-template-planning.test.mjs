@@ -153,7 +153,7 @@ test('approved named source images bind ordinary one- and ordered two-reference 
           mask.defaultAssets[0].runtimeSha256,
           'sha256:bytes:d36162153e2009e0b2f3a711825d39e67c02ba3577971a444bd92eebe81169ac',
         );
-        assert.deepEqual(value.example.galleryExpectedOutput, { width: 1024, height: 1024 });
+        assert.deepEqual(value.example.expectedOutput, { width: 1024, height: 1024 });
       }
     }
   }
@@ -199,7 +199,7 @@ test('locked diffusion recipes remain explicit and independent of optional PUP N
         ['bfloat16', 'none', 'expert', false, 'none'],
       );
       assert.equal(locked.randomSeed, false);
-      assert.equal(value.example.expectedOutput.width, 512);
+      assert.equal(value.example.expectedOutput.width, kind === 'multi_reference_edit' ? 1024 : 512);
       assert.equal(locked.weightFormat, 'fp8r');
     }
   }
@@ -595,6 +595,7 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
       assert.equal(composites.length, 1);
       assert.equal(saves.length, 1);
       assert.equal(saves[0].data.params.saved_images.fieldOptions.format, 'PNG');
+      assert.equal(saves[0].data.studioRole, 'compositeOutput');
       assert.match(saves[0].data.params.filename.value, /\.png$/u);
       for (const [source, output, target, input] of [
         [backgrounds[0], 'image', composites[0], 'background'],
