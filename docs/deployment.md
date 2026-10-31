@@ -43,10 +43,12 @@ disk reads rather than Hub requests. See
 
 Release qualification fingerprints the backend's actual installer inputs:
 `pyproject.toml`, `modiff/compatibility/accelerators.v1.json`, and every profile
-requirements file named by that manifest. The backend intentionally declares
-`[tool.uv] managed = false`; its accelerator-aware installer owns the executable
-environment, so there is no repository `uv.lock` and the client release contract
-must not require or synthesize one.
+requirements file named by that manifest. Native CPU, CUDA and XPU setup uses
+the committed `uv.lock` with the selected accelerator extra; Apple Silicon uses
+the native default. Specialized AMD setup retains its reviewed direct-wheel
+profile. The release fingerprint currently covers the declared installer inputs;
+record the selected lock resolution and installed versions with live evidence
+rather than treating an installer fingerprint as proof of a runtime installation.
 
 Before starting the long-running template qualification campaign on a clean
 host, refresh its plan and verify every selected template's exact immutable
@@ -132,18 +134,117 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+The versioned FLUX3 prompts, scoped image receipts and protected-PNG template
+authoring measure 672742 gzip bytes of startup JavaScript, with a 494259-byte
+largest startup chunk and 328069 deferred bytes. Compared with the accepted
+hydration build, aggregate growth is 1047/1051/1043 bytes respectively. The
+ceilings are 672753/494267/328312, retaining 11/8/243 bytes of headroom. Four
+startup assets retain their loading membership; deferred assets grow from 89 to
+90 with a template-authoring facade. Dependencies, minifier, eager loading
+boundaries, graph/media/identity validators and the independent 65536-byte
+deferred chunk cap stay fixed. These are aggregate measurements, not per-module
+attribution. The following measurements remain historical.
+
+The save/read hydration ownership fix measures 671695 gzip bytes of startup
+JavaScript, with a 493208-byte largest startup chunk and 327026 deferred bytes.
+Compared with the accepted authored-device import, immutable Model Install and
+workspace checkpoint build, the measured aggregate startup growth is 36 bytes,
+including 38 bytes in the largest startup chunk. The startup ceilings are 671706
+and 493216, preserving 11 and 8 bytes of headroom. Both deferred ceilings remain
+unchanged at 327269 aggregate and 65536 per chunk. The same four startup and 89
+deferred assets keep their loading membership; all deferred bodies match after
+versioned URL normalization. The 107-byte deferred decrease reflects versioned
+import compression. These are aggregate build measurements, not per-module
+attribution. Dependencies, chunk rules, minifier and identity validators stay
+fixed. The following measurements remain historical.
+
+The reviewed authored-device import, immutable Model Install and page-owned
+workspace checkpoint changes measure 671659 gzip bytes of startup JavaScript,
+with a 493170-byte largest startup chunk and 327133 deferred bytes. Compared with
+the accepted 9ff client, the measured growth is 1651 startup bytes, 1649 largest-
+chunk bytes and 156 deferred bytes. The startup ceilings are 671670 and 493178,
+retaining 11 and 8 bytes of headroom. Both deferred ceilings remain unchanged at
+327269 aggregate and 65536 per chunk. The same four startup and 89 deferred
+assets keep their loading membership; dependencies, chunk rules, minifier and
+identity validators stay fixed. The following measurements remain historical.
+
+The Windows saved-form and service-cache follow-up measures 669945 gzip bytes
+of startup JavaScript, with a 491457-byte largest startup chunk and 327044
+deferred bytes. Relative to the earlier 28 October candidate, the measured
+aggregate increases are 650 startup bytes, 643 largest-chunk bytes and 334
+deferred bytes. All 89 deferred bodies are identical after normalizing versioned
+URLs; their compressed-size difference comes from the changed version strings.
+Current ceilings are 669956, 491465 and 327269 bytes respectively, preserving
+11, 8 and 225 bytes of headroom. The same four startup and 89 deferred assets
+keep their loading membership; dependencies, chunk rules, minifier settings,
+validators and the 65536-byte per-deferred-chunk ceiling stay fixed.
+
+The earlier 28 October Windows candidate measures 669295 gzip bytes of startup
+JavaScript, with a 490814-byte largest startup chunk and 326710 deferred bytes.
+The Block/checkbox/default/readiness correctness fixes and reviewed Vite
+8.1.4 → 8.1.6 security update add 498 aggregate startup bytes and 322 bytes to
+the largest startup chunk versus the last accepted build. Allow only those
+measured increases: its ceilings are 669306 and 490822 bytes, retaining
+11 and 8 bytes of headroom. The same four startup and 89 deferred assets keep
+their loading membership; chunk rules, minifier settings and validators stay
+fixed. Its deferred limits are 326935 bytes aggregate and 65536 bytes per chunk.
+The earlier measurements below describe their historical checkpoints. The
+original failed measurement remains evidence for its original source and limits.
+
 That gate also checks emitted module identity: static imports, dynamic imports
 (including minified backtick strings), and preloads must use one versioned URL
 per module. Duplicate URLs create independent workflow stores and can break
 portable export. Shared Lucide dependencies initialize in `graph-vendor` so
 lazy panels cannot capture undefined icons through an entry-chunk cycle. The
-startup graph ceiling is 613 KiB gzip, with a 439 KiB largest startup chunk.
-Explicit default-equal edit provenance and validation of bounded inactive
-model drafts bring measured startup to about 612.1 KiB. Their synchronous
-validation stays with the editor; model-change planning and right-panel forms
-remain lazy. No dependency was added. Deferred code is separately bounded by
-the budget script. Test cold panel startup,
-native portable import/Save/export, and browser resource URLs on the built app.
+earlier startup graph ceiling was 642816 gzip bytes, with a 464512-byte largest startup
+chunk. The reviewed media-migration build measures 642098 startup bytes and
+463792 bytes for its largest startup chunk. Model-change planning and
+right-panel forms remain lazy. Preserving one declared media source across
+new required inputs adds 746 deferred gzip bytes, from 267236 to 267982;
+the source-label follow-up adds another 588 bytes and the reviewed deferred
+aggregate ceiling at that stage was 268800 bytes. The existing
+65536-byte deferred-chunk ceiling and dependencies stay fixed. Test cold
+panel startup, native portable import/Save/export, and browser resource URLs
+on the built app.
+
+The combined Windows and Linux recovery, checkpoint, preview and complete-scope
+Auto fixes measure 642639 startup bytes, a 464333-byte largest startup chunk and
+268989 deferred bytes after sharing normalized attention/progress, preview
+identities and unique media drivers. These reviewed changes add bounded ceilings
+of 512 startup bytes and 256 deferred bytes, making the deferred ceiling at that stage
+269056 bytes. Earlier failed measurements remain failures for their original
+source and limits. No dependencies, lazy boundaries or deferred-chunk limit change.
+
+Bounded optional-runtime status polling then adds visible last-progress errors,
+eight-failure transient recovery and explicit status-only retry in the existing
+lazy workspace. Its reviewed upstream build adds 457 deferred bytes and allows
+512 bytes. Preserve that allowance alongside the Windows allowance:
+268800 + 256 + 512 = 269568 deferred bytes. The combined build measures 642643
+startup bytes, a 464336-byte largest startup chunk and 269414 deferred bytes.
+The startup ceilings remain 642816 and 464512 bytes, and the individual deferred
+chunk ceiling remains 65536 bytes. Dependencies and loading boundaries stay fixed.
+
+Declared text/JSON Gallery previews, original-file downloads and Session JSON
+classification reuse the existing text viewer, Previous formatter and export path.
+Together with captured-null and declared-family preservation, their measured build
+adds 915 deferred gzip bytes, from 269414 to 270329. A bounded
+1024-byte aggregate allowance makes the ceiling 269568 + 1024 = 270592 bytes.
+Startup measures 642694 bytes and the largest startup chunk 464387 bytes; their
+ceilings remain 642816 and 464512, and the deferred chunk ceiling remains 65536.
+No dependency or loading-boundary change is included in this allowance.
+
+The subsequent Linux update adds exact experimental full-image recipe metadata
+and reviewed terms, backend-bound Custom prerequisites, and non-JSON transient
+HTTP status recovery. Preserve its bounded allowances alongside the Windows
+fixes: startup 642816 + 1536 = 644352 bytes; largest startup chunk
+464512 + 1536 = 466048 bytes; deferred aggregate
+268800 + 512 + 256 + 1024 + 128 + 2048 = 272768 bytes. The shared 512-byte
+optional-runtime polling allowance is counted once. The combined build measures
+644101 startup bytes, a 465794-byte largest startup chunk, and 272590 deferred
+bytes. The largest deferred chunk is 36508 bytes against the unchanged 65536-byte
+ceiling. Dependencies and loading boundaries remain unchanged; the new recipe
+cards are editorial illustrations with unverified examples, not generated-output,
+Auto, hardware-fit or Gallery qualification.
 
 When updating selected loader field metadata, regenerate the paired
 `BlockDefinitionV2` catalog and frontend identity pins together. This metadata

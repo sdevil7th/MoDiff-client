@@ -345,6 +345,8 @@ For gated models, accept the provider's terms and authenticate through supported
 
 ## Run Readiness
 
+Template cards show **Auto check at Run** when their model prerequisites and required inputs pass the template check. This is not a current memory-fit assessment of the complete workflow. Run checks the actual graph and current memory before submitting an Auto task. Explicit Custom recipes retain their experimental prerequisite status; built-in processing that needs no model download can show **Ready now**.
+
 The current graph is checked before submission. Blocking issues can include:
 
 - Backend or websocket unavailable

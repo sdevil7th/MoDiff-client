@@ -207,6 +207,8 @@ export function resolveHuggingFaceClusterBindingValues(
       admission.sealedBindingValues.true !== true) ||
     (Object.prototype.hasOwnProperty.call(admission.sealedBindingValues, 'false') &&
       admission.sealedBindingValues.false !== false) ||
+    (Object.prototype.hasOwnProperty.call(admission.sealedBindingValues, 'controlnetOffloadMode') &&
+      admission.sealedBindingValues.controlnetOffloadMode !== 'none') ||
     (Object.prototype.hasOwnProperty.call(admission.sealedBindingValues, 'ordinary') &&
       admission.sealedBindingValues.ordinary !== 'ordinary') ||
     (Object.prototype.hasOwnProperty.call(admission.sealedBindingValues, 'fp16') &&

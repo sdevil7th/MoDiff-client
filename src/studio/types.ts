@@ -213,7 +213,9 @@ export type StudioModelType =
   | 'BuiltinImageOperation'
   | 'BuiltinVideoOperation'
   | 'SpandrelVideoUpscale'
-  | 'SpandrelImageUpscale';
+  | 'SpandrelImageUpscale'
+  | 'Flux3ModularPipeline'
+  | 'Flux3DistilledModularPipeline';
 
 export type StudioAspectRatio = '1:1' | '4:3' | '3:4' | '16:9' | '9:16' | 'custom';
 export type StudioQuantizationMode = 'none' | 'bnb_4bit' | 'bnb_8bit' | 'quanto_float8' | 'torchao_float8';
@@ -248,6 +250,16 @@ export type StudioPresetId =
   | 'flux_control';
 
 export type StudioTemplateId =
+  | 'flux3_klein_fp8r512_text_to_image'
+  | 'flux3_klein_fp8r512_single_reference_edit'
+  | 'flux3_klein_fp8r512_multi_reference_edit'
+  | 'flux3_klein_fp8r512_raw_coordinate_prompt'
+  | 'flux3_klein_fp8r512_lora_style'
+  | 'flux3_klein_base_fp8r512_text_to_image'
+  | 'flux3_klein_base_fp8r512_single_reference_edit'
+  | 'flux3_klein_base_fp8r512_multi_reference_edit'
+  | 'flux3_klein_base_fp8r512_raw_coordinate_prompt'
+  | 'flux3_klein_base_fp8r512_lora_style'
   | 'z_image_quick_concept'
   | 'z_image_product_mockup'
   | 'z_image_poster'
@@ -315,6 +327,8 @@ export type StudioTemplateId =
   | 'flux_redux_edit'
   | 'flux_redux_multi_reference'
   | 'flux2_klein_text_to_image'
+  | 'flux2_dev_text_to_image'
+  | 'cosmos3_super_text_to_image'
   | 'flux2_klein_edit'
   | 'flux2_klein_multi_reference'
   | 'wan_vace_video_to_video'
@@ -822,6 +836,8 @@ export type StudioFormState = {
   confirmedCommunityArtifact?: string;
   dtype: 'float32' | 'float16' | 'bfloat16';
   quantizationMode: StudioQuantizationMode;
+  /** Immutable storage format; omission is historical native, null is a blocked saved value. */
+  weightFormat?: import('./weightFormat').StudioWeightFormat | null;
   device: string;
   autoOffload: boolean;
   offloadMode: StudioOffloadMode;
@@ -839,6 +855,8 @@ export type StudioFormState = {
   referenceImages: string[];
   referenceVideos: string[];
   maskImage: string;
+  /** Optional authored crop padding for an image task that declares the field. */
+  paddingMaskCrop?: number | null;
   controlImage: string;
   controlMode: number;
   ipAdapterImage: string;
@@ -883,6 +901,28 @@ export type StudioInpaintContractStatus = {
   missingInputs?: string[];
 };
 
+/** Selected-profile graph authoring permission; not runtime or Auto qualification. */
+export type StudioImageAdapterAuthoringPolicy = {
+  schemaVersion: 1;
+  mediaKind: 'image';
+  adapterNodeKey: 'modules.ModularDiffusers.Lora' | 'modules.DiffusersImage.LoadAdapter';
+  tasks: string[];
+  maxOwnedAdapters: number;
+  repositoryRevisions: Array<{ repo: string; revision: string }>;
+  /** Exact declared effective controls for Add/Move; Remove remains structural recovery. */
+  requiredControls?: Record<string, string | boolean | null>;
+};
+
+export type StudioAudioAdapterAuthoringPolicy = Omit<
+  StudioImageAdapterAuthoringPolicy,
+  'mediaKind' | 'adapterNodeKey' | 'maxOwnedAdapters'
+> & {
+  mediaKind: 'audio';
+  adapterNodeKey: 'modules.DiffusersAudio.LoadAdapter';
+  maxOwnedAdapters: 1;
+};
+export type StudioAdapterAuthoringPolicy = StudioImageAdapterAuthoringPolicy | StudioAudioAdapterAuthoringPolicy;
+
 export type StudioExecutionProfile = {
   id: string;
   model_type: StudioModelType;
@@ -895,6 +935,9 @@ export type StudioExecutionProfile = {
   default_repo: string;
   fallback_repo?: string | null;
   compatible_repos?: string[];
+  /** Current backend-reviewed immutable artifact pairs for selected adapter authoring. */
+  repository_revisions?: Array<{ repo: string; revision: string }>;
+  adapterAuthoring?: StudioAdapterAuthoringPolicy;
   quantizable_components: string[];
   default_quantized_components: string[];
   supported_offload_modes: StudioOffloadMode[];
@@ -911,6 +954,18 @@ export type StudioExecutionProfile = {
     delivery: 'base' | 'optional_overlay';
   }>;
   optional_runtime_profiles?: string[];
+  /** Source-declared sealed Diffusers overlay; visibility does not grant execution. */
+  required_diffusers_provider?: string;
+  /** Explicit per-task editing offers; workflow metadata parsing validates these. */
+  authoringRecipes?: readonly {
+    executionProfileId: string;
+    pipelineClass: string;
+    task: string;
+    authoringRecipeId: string;
+    rawAuthoringRecipeId?: string;
+    rawAuthoringRecipeChoices?: readonly { authoringRecipeId: string; label: string }[];
+    layoutAuthoringRecipeChoices?: readonly { authoringRecipeId: string; label: string }[];
+  }[];
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   expert_cuda_policy?: StudioExpertCudaPolicy;
   expert_quantization_policy?: StudioExpertQuantizationPolicy;
@@ -936,6 +991,8 @@ export type StudioExecutionSpec = {
   actions: [];
   /** Declared non-media sink roles retained for execution/audit side effects. */
   auxiliaryTerminalRoles?: StudioGraphRole[];
+  /** Hash-covered dependency, identical to the selected execution profile. */
+  requiredDiffusersProvider?: string;
   contentHash: string;
 };
 
@@ -1074,6 +1131,8 @@ export type StudioModelProfile = {
   artifactInstallRequired?: boolean;
   alternateArtifact?: string;
   defaultDtype: StudioFormState['dtype'];
+  /** Backend-owned default for new drafts; never an execution-time override. */
+  defaultWeightFormat?: 'native' | 'fp8r' | 'nvfp4';
   defaultSize: { width: number; height: number; aspectRatio: StudioAspectRatio };
   recommendedSteps: number;
   recommendedGuidance: number;
@@ -1234,7 +1293,7 @@ export type StudioTemplateIntentGroup =
   | 'planning';
 
 export type StudioTemplateWorkflowBlock =
-  'lora' | 'upscaler' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack' | 'lyric_video';
+  'lora' | 'upscaler' | 'masked_composite' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack' | 'lyric_video';
 
 export type StudioTemplateModelArtifact = {
   source: 'hub' | 'local';
@@ -1269,6 +1328,15 @@ export type StudioTemplateLoraSettings = {
 };
 
 export type StudioTemplateWorkflowBlockSettings = {
+  maskedComposite?: {
+    backgroundReferenceIndex: number;
+    foregroundSize: { width: number; height: number };
+    verticalPad: { width: number; height: number };
+    horizontalPad: { width: number; height: number };
+    crop: { x: number; y: number; width: number; height: number };
+    maskChannel: 'luminance' | 'alpha' | 'red' | 'green' | 'blue';
+    invertMask: boolean;
+  };
   lora?: StudioTemplateLoraSettings;
   upscaler?: {
     model: StudioTemplateModelArtifact;
@@ -1460,6 +1528,7 @@ export type StudioTemplateLockedSettings = Pick<
   | 'guidanceScale'
   | 'resourceMode'
   | 'dtype'
+  | 'weightFormat'
   | 'quantizationMode'
   | 'autoOffload'
   | 'offloadMode'
@@ -1568,11 +1637,33 @@ export type StudioTemplatePredictability = {
   requiredModels?: StudioModelRequirement[];
 };
 
+export type StudioTemplateExecutionSelection = {
+  schemaVersion: 1;
+  pipelineClass: string;
+  task: string;
+  executionProfileId: string;
+  /** Existing backend recipe supplies semantic field/utility bindings only. */
+  bindingSpec: { modelType: StudioModelType; mode: StudioMode };
+  implementation: 'native_stages' | 'pipeline_stages' | 'whole_pipeline';
+  /** Fresh authoring only: an empty initial text input retains its resolved
+   * backend default. Authored text and subsequent edits always take priority. */
+  backendDefaultInputs?: Array<'prompt' | 'negativePrompt'>;
+  /** Explicit initial recipe policy; Auto and Gallery qualification stay separate. */
+  memoryPolicy?: 'custom_experimental';
+  /** Exact backend declaration for fresh graph bindings and initial controls. */
+  authoringRecipeId?: string;
+  /** Original whole-pipeline default identity for a single native descriptor. */
+  loraPolicy?: { defaultAdapterName: string };
+  note?: string;
+};
+
 export type StudioTemplate = {
   id: StudioTemplateId;
   label: string;
   mode: StudioMode;
   modelType: StudioModelType;
+  /** Exact recipe artifact name when one backend class serves several model variants. */
+  modelDisplayName?: string;
   intentGroup?: StudioTemplateIntentGroup;
   category?: StudioTemplateCategory;
   tags?: string[];
@@ -1585,6 +1676,10 @@ export type StudioTemplate = {
   requiredBackendCapabilities?: string[];
   workflowBlocks?: StudioTemplateWorkflowBlock[];
   workflowBlockSettings?: StudioTemplateWorkflowBlockSettings;
+  /** Exact fresh-workflow choice; never applied to an existing saved graph. */
+  executionSelection?: StudioTemplateExecutionSelection;
+  /** Declared immutable artifact for this fresh recipe's backend model owner. */
+  modelArtifact?: StudioTemplateModelArtifact;
   videoDelivery?: 'native' | 'spatial_upscale';
   /**
    * `user_supplied` marks a runnable bring-your-own-model recipe whose card
@@ -1606,7 +1701,7 @@ export type StudioTemplate = {
    * prompt instead of expanding it with generic production language that can
    * dilute the adapter's documented conditioning.
    */
-  promptQualityPolicy?: 'modality_complete' | 'adapter_reference';
+  promptQualityPolicy?: 'modality_complete' | 'adapter_reference' | 'raw_layout_reference';
   prompt: string;
   negativePrompt?: string;
   presetId?: StudioPresetId;
@@ -1730,7 +1825,12 @@ export type StudioOutputProvenance = {
   };
 };
 
+export type LegacyStudioOutputField =
+  'mode' | 'modelType' | 'seed' | 'width' | 'height' | 'steps' | 'guidanceScale' | 'numFrames' | 'fps';
+
 export type StudioOutput = {
+  /** Presence in receipt-free historical metadata; never backend execution evidence. */
+  legacyRecordedFields?: LegacyStudioOutputField[];
   resolvedExecutionInputs?: import('./resolvedExecutionInputs').ResolvedExecutionInputs;
   id: string;
   clientRunId?: string;

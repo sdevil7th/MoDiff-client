@@ -1,0 +1,1890 @@
+{
+  "schemaVersion": 1,
+  "proofScope": "Historical synthetic metadata-only compatibility inputs; no execution, media or hardware evidence.",
+  "source": {
+    "repository": "sdevil7th/MoDiff-client",
+    "commit": "b65021977db6f08bc2562346f5c3ad8f0774b244",
+    "path": "src/studio/templates.ts",
+    "sha256": "2a2a54382e2bc9ffcdc1d4d2e86329ed033c57c56cec019c2540a57118ad8a26"
+  },
+  "cards": [
+    {
+      "id": "flux3_klein_fp8r512_text_to_image",
+      "label": "FLUX 3 Distilled Quick 512 FP8r - Text to Image: Ceramic Radio",
+      "modelDisplayName": "FLUX 3 Image Klein Distilled",
+      "mode": "text_to_image",
+      "modelType": "Flux3DistilledModularPipeline",
+      "runtimeReuseKey": "Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "flux",
+      "tags": ["flux3", "public-intent", "planning", "text-to-image", "fp8r", "512-square", "unqualified-recipe"],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein",
+        "revision": "8454017f9ebaada30c998fccd9f67a80c7580f68"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.",
+      "userGoal": "Inspect the ordinary editable graph and select only the declared runtime and prompt enhancement choices.",
+      "presetId": "flux_fast",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481001,
+        "modelRevision": "8454017f9ebaada30c998fccd9f67a80c7580f68",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 16,
+          "guidanceScale": 1,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.",
+        "notes": "No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate."
+      },
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3DistilledModularPipeline",
+        "task": "text_to_image",
+        "executionProfileId": "flux3-klein:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3DistilledModularPipeline",
+          "mode": "text_to_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein:official:text-to-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "one unmistakable focal subject",
+          "specific pose or product orientation",
+          "distinctive silhouette and proportions"
+        ],
+        "environment": [
+          "named location, era, weather, and background activity",
+          "foreground, midground, and background depth",
+          "intentional negative space for supporting copy"
+        ],
+        "composition": [
+          "clear visual hierarchy and camera-relative placement",
+          "balanced edge spacing with a deliberate focal path",
+          "subject scale composed for the target aspect ratio"
+        ],
+        "materials": [
+          "named surface materials and finish",
+          "microtexture, wear, and edge detail",
+          "physically coherent reflections and translucency"
+        ],
+        "style": [
+          "editorial realism with restrained art direction",
+          "cinematic production design with natural detail",
+          "premium commercial finish without stock-photo staging"
+        ],
+        "lighting": [
+          "defined key, fill, and rim-light relationship",
+          "specific color temperature and shadow softness",
+          "motivated light with realistic contact shadows"
+        ],
+        "camera": [
+          "named shot size, angle, and focal length",
+          "intentional aperture and focus plane",
+          "perspective appropriate to the subject scale"
+        ],
+        "textRendering": [
+          "short exact copy in quotation marks",
+          "defined type placement, scale, and alignment",
+          "high-contrast lettering with clear reading order"
+        ],
+        "parameters": [
+          "detail density suited to the final resolution",
+          "one coherent scene rather than a contact sheet",
+          "controlled complexity at the requested aspect ratio"
+        ],
+        "negative": [
+          "generic stock-photo composition",
+          "flat plastic surfaces",
+          "muddy microdetail",
+          "warped geometry",
+          "unreadable lettering",
+          "duplicated objects"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout."
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "image",
+      "mediaSlots": [
+        {
+          "id": "primary",
+          "label": "Preview",
+          "kind": "image",
+          "role": "preview",
+          "placeholder": "image example pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481001,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_single_reference_edit",
+      "label": "FLUX 3 Distilled Quick 512 FP8r - Image Edit: Amber Glass",
+      "modelDisplayName": "FLUX 3 Image Klein Distilled",
+      "mode": "edit_image",
+      "modelType": "Flux3DistilledModularPipeline",
+      "runtimeReuseKey": "Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "edit",
+      "tags": [
+        "flux3",
+        "public-intent",
+        "planning",
+        "single-reference-edit",
+        "fp8r",
+        "512-square",
+        "unqualified-recipe"
+      ],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein",
+        "revision": "8454017f9ebaada30c998fccd9f67a80c7580f68"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.ImageEncode",
+        "modules.Image.Load"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.",
+      "userGoal": "Use the included approved cobalt glass input and review the amber-color edit.",
+      "presetId": "flux_fast",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481002,
+        "modelRevision": "8454017f9ebaada30c998fccd9f67a80c7580f68",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 16,
+          "guidanceScale": 1,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.",
+        "notes": "No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate."
+      },
+      "inputRequirements": {
+        "referenceImages": 1
+      },
+      "inputBindings": [
+        {
+          "id": "flux3_klein_fp8r512_single_reference_edit-references",
+          "label": "Approved cobalt glass source",
+          "mediaType": "image",
+          "origin": "template",
+          "requiredAt": "workflow_start",
+          "field": "referenceImages",
+          "defaultAssets": [
+            {
+              "id": "approved-cobalt-glass-source",
+              "label": "Approved cobalt glass cube on stone",
+              "mediaType": "image",
+              "runtimePath": "/template-gallery/inputs/flux2_klein_edit.before.png",
+              "runtimeSha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+              "fileName": "flux2_klein_edit.before.png",
+              "previewPath": "/template-gallery/inputs/flux2_klein_edit.before.png"
+            }
+          ]
+        }
+      ],
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3DistilledModularPipeline",
+        "task": "edit_image",
+        "executionProfileId": "flux3-klein:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3DistilledModularPipeline",
+          "mode": "edit_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein:official:edit-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "the named source subject",
+          "the selected object or masked region",
+          "the original scene as the visual anchor"
+        ],
+        "environment": [
+          "retain the source environment",
+          "continue nearby texture and scene structure",
+          "match local atmosphere and depth"
+        ],
+        "composition": [
+          "keep the original crop and subject placement",
+          "match the source perspective",
+          "integrate the edit at the existing scale"
+        ],
+        "materials": [
+          "name the replacement material and finish",
+          "match neighboring texture scale",
+          "preserve plausible reflections and contact shadows"
+        ],
+        "style": [
+          "match the source visual language",
+          "photoreal localized retouch",
+          "production-ready material replacement"
+        ],
+        "lighting": [
+          "match source exposure and color temperature",
+          "preserve existing light direction",
+          "add physically consistent contact shadows"
+        ],
+        "camera": [
+          "keep the original focal length",
+          "preserve viewpoint and vanishing lines",
+          "maintain the source focus plane"
+        ],
+        "textRendering": [
+          "leave unrelated copy unchanged",
+          "replace only the quoted text",
+          "preserve typographic alignment and print texture"
+        ],
+        "parameters": [
+          "edit strength proportional to the requested change",
+          "enough denoising for integration without identity drift"
+        ],
+        "negative": [
+          "identity drift",
+          "changed camera angle",
+          "unrequested background changes",
+          "visible edit seam",
+          "halo around the mask",
+          "mismatched texture scale"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout."
+        ],
+        "preservation": [
+          "preserve identity, pose, camera, and crop",
+          "keep unedited geometry and background unchanged",
+          "retain existing brand marks and readable copy"
+        ],
+        "change": [
+          "change only the explicitly named region",
+          "describe the replacement shape, material, and color",
+          "state the intended relighting or cleanup precisely"
+        ],
+        "continuity": [
+          "match source illumination and shadow direction",
+          "continue edges, grain, and depth of field through the edit",
+          "blend boundaries without halos or texture repetition"
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "compareSlider",
+      "mediaSlots": [
+        {
+          "id": "before",
+          "label": "Before",
+          "kind": "comparison_before",
+          "role": "before",
+          "placeholder": "source asset pending"
+        },
+        {
+          "id": "after",
+          "label": "After",
+          "kind": "comparison_after",
+          "role": "after",
+          "placeholder": "image result pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481002,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_multi_reference_edit",
+      "label": "FLUX 3 Distilled Quick 512 FP8r - Two-Reference Edit: Glass Packaging",
+      "modelDisplayName": "FLUX 3 Image Klein Distilled",
+      "mode": "edit_image",
+      "modelType": "Flux3DistilledModularPipeline",
+      "runtimeReuseKey": "Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "reference",
+      "tags": [
+        "flux3",
+        "public-intent",
+        "planning",
+        "multi-reference-edit",
+        "fp8r",
+        "512-square",
+        "unqualified-recipe"
+      ],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein",
+        "revision": "8454017f9ebaada30c998fccd9f67a80c7580f68"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.ImageEncode",
+        "modules.Image.Load"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.",
+      "userGoal": "Use the two included approved inputs in order: glass subject first, flat packaging layout second.",
+      "presetId": "flux_fast",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481003,
+        "modelRevision": "8454017f9ebaada30c998fccd9f67a80c7580f68",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 16,
+          "guidanceScale": 1,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.",
+        "notes": "No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. The second reference is normal edit-image conditioning, not ControlNet or source-owned structured geometry."
+      },
+      "inputRequirements": {
+        "referenceImages": 2
+      },
+      "inputBindings": [
+        {
+          "id": "flux3_klein_fp8r512_multi_reference_edit-references",
+          "label": "Ordered glass subject and packaging layout references",
+          "mediaType": "image",
+          "origin": "template",
+          "requiredAt": "workflow_start",
+          "field": "referenceImages",
+          "defaultAssets": [
+            {
+              "id": "approved-cobalt-glass-source",
+              "label": "Approved cobalt glass cube on stone",
+              "mediaType": "image",
+              "runtimePath": "/template-gallery/inputs/flux2_klein_edit.before.png",
+              "runtimeSha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+              "fileName": "flux2_klein_edit.before.png",
+              "previewPath": "/template-gallery/inputs/flux2_klein_edit.before.png"
+            },
+            {
+              "id": "approved-packaging-dieline-source",
+              "label": "Approved cream and yellow packaging dieline",
+              "mediaType": "image",
+              "runtimePath": "/template-gallery/inputs/qwen_control_image_layout.before.png",
+              "runtimeSha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+              "fileName": "qwen_control_image_layout.before.png",
+              "previewPath": "/template-gallery/inputs/qwen_control_image_layout.before.png"
+            }
+          ]
+        }
+      ],
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3DistilledModularPipeline",
+        "task": "edit_image",
+        "executionProfileId": "flux3-klein:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3DistilledModularPipeline",
+          "mode": "edit_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein:official:edit-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "the named source subject",
+          "the selected object or masked region",
+          "the original scene as the visual anchor"
+        ],
+        "environment": [
+          "retain the source environment",
+          "continue nearby texture and scene structure",
+          "match local atmosphere and depth"
+        ],
+        "composition": [
+          "keep the original crop and subject placement",
+          "match the source perspective",
+          "integrate the edit at the existing scale"
+        ],
+        "materials": [
+          "name the replacement material and finish",
+          "match neighboring texture scale",
+          "preserve plausible reflections and contact shadows"
+        ],
+        "style": [
+          "match the source visual language",
+          "photoreal localized retouch",
+          "production-ready material replacement"
+        ],
+        "lighting": [
+          "match source exposure and color temperature",
+          "preserve existing light direction",
+          "add physically consistent contact shadows"
+        ],
+        "camera": [
+          "keep the original focal length",
+          "preserve viewpoint and vanishing lines",
+          "maintain the source focus plane"
+        ],
+        "textRendering": [
+          "leave unrelated copy unchanged",
+          "replace only the quoted text",
+          "preserve typographic alignment and print texture"
+        ],
+        "parameters": [
+          "edit strength proportional to the requested change",
+          "enough denoising for integration without identity drift"
+        ],
+        "negative": [
+          "identity drift",
+          "changed camera angle",
+          "unrequested background changes",
+          "visible edit seam",
+          "halo around the mask",
+          "mismatched texture scale"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout."
+        ],
+        "preservation": [
+          "preserve identity, pose, camera, and crop",
+          "keep unedited geometry and background unchanged",
+          "retain existing brand marks and readable copy"
+        ],
+        "change": [
+          "change only the explicitly named region",
+          "describe the replacement shape, material, and color",
+          "state the intended relighting or cleanup precisely"
+        ],
+        "continuity": [
+          "match source illumination and shadow direction",
+          "continue edges, grain, and depth of field through the edit",
+          "blend boundaries without halos or texture repetition"
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "compareSlider",
+      "mediaSlots": [
+        {
+          "id": "before",
+          "label": "Before",
+          "kind": "comparison_before",
+          "role": "before",
+          "placeholder": "source asset pending"
+        },
+        {
+          "id": "after",
+          "label": "After",
+          "kind": "comparison_after",
+          "role": "after",
+          "placeholder": "image result pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481003,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_raw_coordinate_prompt",
+      "label": "FLUX 3 Distilled Quick 512 FP8r - Raw Prompt Coordinates: Apple",
+      "modelDisplayName": "FLUX 3 Image Klein Distilled",
+      "mode": "text_to_image",
+      "modelType": "Flux3DistilledModularPipeline",
+      "runtimeReuseKey": "Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "reference",
+      "tags": [
+        "flux3",
+        "public-intent",
+        "planning",
+        "fp8r",
+        "512-square",
+        "unqualified-recipe",
+        "raw-prompt-coordinates"
+      ],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein",
+        "revision": "8454017f9ebaada30c998fccd9f67a80c7580f68"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "A still life with <apple_1>.\n[{\"id\":\"apple_1\",\"bbox\":[250,125,750,875],\"desc\":\"A red apple, with a green leaf.\"}]",
+      "userGoal": "Inspect the literal raw coordinate prompt; the structured-layout widget remains unset/null.",
+      "presetId": "flux_fast",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481004,
+        "modelRevision": "8454017f9ebaada30c998fccd9f67a80c7580f68",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 16,
+          "guidanceScale": 1,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. Spatial adherence is unproved. This is not a seeded region-widget or generated-table template.",
+        "notes": "The raw prompt uses the existing shared layout fixture syntax, y-first integer coordinates [250,125,750,875]. The layout_conditioning field remains null through normal T2I defaults. PUP stays disabled so the literal table is not rewritten. No source-reference IDs, widget geometry, strict generated-table completion or F3-06 proof is claimed."
+      },
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3DistilledModularPipeline",
+        "task": "text_to_image",
+        "executionProfileId": "flux3-klein:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3DistilledModularPipeline",
+          "mode": "text_to_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein:official:text-to-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "one unmistakable focal subject",
+          "specific pose or product orientation",
+          "distinctive silhouette and proportions"
+        ],
+        "environment": [
+          "named location, era, weather, and background activity",
+          "foreground, midground, and background depth",
+          "intentional negative space for supporting copy"
+        ],
+        "composition": [
+          "clear visual hierarchy and camera-relative placement",
+          "balanced edge spacing with a deliberate focal path",
+          "subject scale composed for the target aspect ratio"
+        ],
+        "materials": [
+          "named surface materials and finish",
+          "microtexture, wear, and edge detail",
+          "physically coherent reflections and translucency"
+        ],
+        "style": [
+          "editorial realism with restrained art direction",
+          "cinematic production design with natural detail",
+          "premium commercial finish without stock-photo staging"
+        ],
+        "lighting": [
+          "defined key, fill, and rim-light relationship",
+          "specific color temperature and shadow softness",
+          "motivated light with realistic contact shadows"
+        ],
+        "camera": [
+          "named shot size, angle, and focal length",
+          "intentional aperture and focus plane",
+          "perspective appropriate to the subject scale"
+        ],
+        "textRendering": [
+          "short exact copy in quotation marks",
+          "defined type placement, scale, and alignment",
+          "high-contrast lettering with clear reading order"
+        ],
+        "parameters": [
+          "detail density suited to the final resolution",
+          "one coherent scene rather than a contact sheet",
+          "controlled complexity at the requested aspect ratio"
+        ],
+        "negative": [
+          "generic stock-photo composition",
+          "flat plastic surfaces",
+          "muddy microdetail",
+          "warped geometry",
+          "unreadable lettering",
+          "duplicated objects"
+        ],
+        "modelHints": [
+          "Keep PUP disabled for this raw-coordinate example.",
+          "The table is literal prompt text; no authored-region widget is seeded.",
+          "Native spatial adherence and output quality remain unqualified."
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "A still life with <apple_1>.\n[{\"id\":\"apple_1\",\"bbox\":[250,125,750,875],\"desc\":\"A red apple, with a green leaf.\"}]",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "image",
+      "mediaSlots": [
+        {
+          "id": "primary",
+          "label": "Preview",
+          "kind": "image",
+          "role": "preview",
+          "placeholder": "image example pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "A still life with <apple_1>.\n[{\"id\":\"apple_1\",\"bbox\":[250,125,750,875],\"desc\":\"A red apple, with a green leaf.\"}]",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481004,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_lora_style",
+      "label": "FLUX 3 Distilled Quick 512 FP8r - NASA Concept-Art LoRA (Test Candidate)",
+      "modelDisplayName": "FLUX 3 Image Klein Distilled",
+      "mode": "text_to_image",
+      "modelType": "Flux3DistilledModularPipeline",
+      "runtimeReuseKey": "Flux3DistilledModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "lora",
+      "tags": ["flux3", "public-intent", "planning", "lora-style", "fp8r", "512-square", "unqualified-recipe"],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein",
+        "revision": "8454017f9ebaada30c998fccd9f67a80c7580f68"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.Lora"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style",
+      "userGoal": "Inspect the pinned NASA concept-art adapter and exact public recipe; style quality and publication remain pending.",
+      "presetId": "flux_fast",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481005,
+        "modelRevision": "8454017f9ebaada30c998fccd9f67a80c7580f68",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 16,
+          "guidanceScale": 1,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, style-quality review and output publication approval remain pending for this exact public recipe; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. The selected adapter declares FLUX Kommunity License v1.0; its terms do not approve generated output publication.",
+        "notes": "No public output media, template receipt or fit measurement is attached. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; their subtle visual changes do not establish the promised NASA concept-art style. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate."
+      },
+      "evidencePolicy": "generated",
+      "workflowBlocks": ["lora"],
+      "workflowBlockSettings": {
+        "lora": {
+          "model": {
+            "source": "hub",
+            "value": "kocabiyik/nsc7-style-lora",
+            "revision": "9b998d3bdc3b4aeb2113ab4e8cbd9fe2ebfa1cae",
+            "sha256": "ae6c417cb3bb8ee6f5272a8115d7720587319c6099fffa80f8d39bbbf307daf7",
+            "byteSize": 160696320,
+            "license": "FLUX Kommunity License v1.0"
+          },
+          "baseModel": {
+            "source": "hub",
+            "value": "black-forest-labs/flux-3-image-klein",
+            "revision": "8454017f9ebaada30c998fccd9f67a80c7580f68"
+          },
+          "weightName": "nsc7-style-lora.safetensors",
+          "adapterName": "nsc7",
+          "scale": 0.75
+        }
+      },
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3DistilledModularPipeline",
+        "task": "text_to_image",
+        "executionProfileId": "flux3-klein:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3DistilledModularPipeline",
+          "mode": "text_to_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein:official:text-to-image:prompt-preview-append-fp32:v1",
+        "loraPolicy": {
+          "defaultAdapterName": "nsc7"
+        }
+      },
+      "promptGuide": {
+        "subject": [
+          "one unmistakable focal subject",
+          "specific pose or product orientation",
+          "distinctive silhouette and proportions"
+        ],
+        "environment": [
+          "named location, era, weather, and background activity",
+          "foreground, midground, and background depth",
+          "intentional negative space for supporting copy"
+        ],
+        "composition": [
+          "clear visual hierarchy and camera-relative placement",
+          "balanced edge spacing with a deliberate focal path",
+          "subject scale composed for the target aspect ratio"
+        ],
+        "materials": [
+          "named surface materials and finish",
+          "microtexture, wear, and edge detail",
+          "physically coherent reflections and translucency"
+        ],
+        "style": [
+          "editorial realism with restrained art direction",
+          "cinematic production design with natural detail",
+          "premium commercial finish without stock-photo staging"
+        ],
+        "lighting": [
+          "defined key, fill, and rim-light relationship",
+          "specific color temperature and shadow softness",
+          "motivated light with realistic contact shadows"
+        ],
+        "camera": [
+          "named shot size, angle, and focal length",
+          "intentional aperture and focus plane",
+          "perspective appropriate to the subject scale"
+        ],
+        "textRendering": [
+          "short exact copy in quotation marks",
+          "defined type placement, scale, and alignment",
+          "high-contrast lettering with clear reading order"
+        ],
+        "parameters": [
+          "detail density suited to the final resolution",
+          "one coherent scene rather than a contact sheet",
+          "controlled complexity at the requested aspect ratio"
+        ],
+        "negative": [
+          "generic stock-photo composition",
+          "flat plastic surfaces",
+          "muddy microdetail",
+          "warped geometry",
+          "unreadable lettering",
+          "duplicated objects"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout.",
+          "The pinned nsc7 adapter declares FLUX Kommunity License v1.0 and recommends Distilled scale 0.75-1.0. This candidate fixes scale 0.75 and the final nsc7 style trigger. Training-data provenance is the author's statement; no NASA endorsement or public output approval is implied."
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "image",
+      "mediaSlots": [
+        {
+          "id": "primary",
+          "label": "Preview",
+          "kind": "image",
+          "role": "preview",
+          "placeholder": "image example pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481005,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_text_to_image",
+      "label": "FLUX 3 Base 512 FP8r (50 steps) - Text to Image: Ceramic Radio",
+      "modelDisplayName": "FLUX 3 Image Klein Base",
+      "mode": "text_to_image",
+      "modelType": "Flux3ModularPipeline",
+      "runtimeReuseKey": "Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "flux",
+      "tags": ["flux3", "public-intent", "planning", "text-to-image", "fp8r", "512-square", "unqualified-recipe"],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein-base",
+        "revision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.Guider"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.",
+      "userGoal": "Inspect the ordinary editable graph and select only the declared runtime and prompt enhancement choices.",
+      "presetId": "flux_quality",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481101,
+        "modelRevision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 50,
+          "guidanceScale": 3.5,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.",
+        "notes": "No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate."
+      },
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3ModularPipeline",
+        "task": "text_to_image",
+        "executionProfileId": "flux3-klein-base:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3ModularPipeline",
+          "mode": "text_to_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein-base:official:text-to-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "one unmistakable focal subject",
+          "specific pose or product orientation",
+          "distinctive silhouette and proportions"
+        ],
+        "environment": [
+          "named location, era, weather, and background activity",
+          "foreground, midground, and background depth",
+          "intentional negative space for supporting copy"
+        ],
+        "composition": [
+          "clear visual hierarchy and camera-relative placement",
+          "balanced edge spacing with a deliberate focal path",
+          "subject scale composed for the target aspect ratio"
+        ],
+        "materials": [
+          "named surface materials and finish",
+          "microtexture, wear, and edge detail",
+          "physically coherent reflections and translucency"
+        ],
+        "style": [
+          "editorial realism with restrained art direction",
+          "cinematic production design with natural detail",
+          "premium commercial finish without stock-photo staging"
+        ],
+        "lighting": [
+          "defined key, fill, and rim-light relationship",
+          "specific color temperature and shadow softness",
+          "motivated light with realistic contact shadows"
+        ],
+        "camera": [
+          "named shot size, angle, and focal length",
+          "intentional aperture and focus plane",
+          "perspective appropriate to the subject scale"
+        ],
+        "textRendering": [
+          "short exact copy in quotation marks",
+          "defined type placement, scale, and alignment",
+          "high-contrast lettering with clear reading order"
+        ],
+        "parameters": [
+          "detail density suited to the final resolution",
+          "one coherent scene rather than a contact sheet",
+          "controlled complexity at the requested aspect ratio"
+        ],
+        "negative": [
+          "generic stock-photo composition",
+          "flat plastic surfaces",
+          "muddy microdetail",
+          "warped geometry",
+          "unreadable lettering",
+          "duplicated objects"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout."
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "image",
+      "mediaSlots": [
+        {
+          "id": "primary",
+          "label": "Preview",
+          "kind": "image",
+          "role": "preview",
+          "placeholder": "image example pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481101,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_single_reference_edit",
+      "label": "FLUX 3 Base 512 FP8r (50 steps) - Image Edit: Amber Glass",
+      "modelDisplayName": "FLUX 3 Image Klein Base",
+      "mode": "edit_image",
+      "modelType": "Flux3ModularPipeline",
+      "runtimeReuseKey": "Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "edit",
+      "tags": [
+        "flux3",
+        "public-intent",
+        "planning",
+        "single-reference-edit",
+        "fp8r",
+        "512-square",
+        "unqualified-recipe"
+      ],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein-base",
+        "revision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.ImageEncode",
+        "modules.Image.Load",
+        "modules.ModularDiffusers.Guider"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.",
+      "userGoal": "Use the included approved cobalt glass input and review the amber-color edit.",
+      "presetId": "flux_quality",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481102,
+        "modelRevision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 50,
+          "guidanceScale": 3.5,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.",
+        "notes": "No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate."
+      },
+      "inputRequirements": {
+        "referenceImages": 1
+      },
+      "inputBindings": [
+        {
+          "id": "flux3_klein_base_fp8r512_single_reference_edit-references",
+          "label": "Approved cobalt glass source",
+          "mediaType": "image",
+          "origin": "template",
+          "requiredAt": "workflow_start",
+          "field": "referenceImages",
+          "defaultAssets": [
+            {
+              "id": "approved-cobalt-glass-source",
+              "label": "Approved cobalt glass cube on stone",
+              "mediaType": "image",
+              "runtimePath": "/template-gallery/inputs/flux2_klein_edit.before.png",
+              "runtimeSha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+              "fileName": "flux2_klein_edit.before.png",
+              "previewPath": "/template-gallery/inputs/flux2_klein_edit.before.png"
+            }
+          ]
+        }
+      ],
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3ModularPipeline",
+        "task": "edit_image",
+        "executionProfileId": "flux3-klein-base:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3ModularPipeline",
+          "mode": "edit_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein-base:official:edit-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "the named source subject",
+          "the selected object or masked region",
+          "the original scene as the visual anchor"
+        ],
+        "environment": [
+          "retain the source environment",
+          "continue nearby texture and scene structure",
+          "match local atmosphere and depth"
+        ],
+        "composition": [
+          "keep the original crop and subject placement",
+          "match the source perspective",
+          "integrate the edit at the existing scale"
+        ],
+        "materials": [
+          "name the replacement material and finish",
+          "match neighboring texture scale",
+          "preserve plausible reflections and contact shadows"
+        ],
+        "style": [
+          "match the source visual language",
+          "photoreal localized retouch",
+          "production-ready material replacement"
+        ],
+        "lighting": [
+          "match source exposure and color temperature",
+          "preserve existing light direction",
+          "add physically consistent contact shadows"
+        ],
+        "camera": [
+          "keep the original focal length",
+          "preserve viewpoint and vanishing lines",
+          "maintain the source focus plane"
+        ],
+        "textRendering": [
+          "leave unrelated copy unchanged",
+          "replace only the quoted text",
+          "preserve typographic alignment and print texture"
+        ],
+        "parameters": [
+          "edit strength proportional to the requested change",
+          "enough denoising for integration without identity drift"
+        ],
+        "negative": [
+          "identity drift",
+          "changed camera angle",
+          "unrequested background changes",
+          "visible edit seam",
+          "halo around the mask",
+          "mismatched texture scale"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout."
+        ],
+        "preservation": [
+          "preserve identity, pose, camera, and crop",
+          "keep unedited geometry and background unchanged",
+          "retain existing brand marks and readable copy"
+        ],
+        "change": [
+          "change only the explicitly named region",
+          "describe the replacement shape, material, and color",
+          "state the intended relighting or cleanup precisely"
+        ],
+        "continuity": [
+          "match source illumination and shadow direction",
+          "continue edges, grain, and depth of field through the edit",
+          "blend boundaries without halos or texture repetition"
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "compareSlider",
+      "mediaSlots": [
+        {
+          "id": "before",
+          "label": "Before",
+          "kind": "comparison_before",
+          "role": "before",
+          "placeholder": "source asset pending"
+        },
+        {
+          "id": "after",
+          "label": "After",
+          "kind": "comparison_after",
+          "role": "after",
+          "placeholder": "image result pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "Edit reference image 1: change the cobalt-blue transparent glass cube to warm amber transparent glass. Preserve its square silhouette, thick glass base, camera perspective, position on the pale rough stone slab, neutral background, soft light direction and grounded shadow. Keep the object unbranded; add no objects, logos or text.",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481102,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_multi_reference_edit",
+      "label": "FLUX 3 Base 512 FP8r (50 steps) - Two-Reference Edit: Glass Packaging",
+      "modelDisplayName": "FLUX 3 Image Klein Base",
+      "mode": "edit_image",
+      "modelType": "Flux3ModularPipeline",
+      "runtimeReuseKey": "Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "reference",
+      "tags": [
+        "flux3",
+        "public-intent",
+        "planning",
+        "multi-reference-edit",
+        "fp8r",
+        "512-square",
+        "unqualified-recipe"
+      ],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein-base",
+        "revision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.ImageEncode",
+        "modules.Image.Load",
+        "modules.ModularDiffusers.Guider"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.",
+      "userGoal": "Use the two included approved inputs in order: glass subject first, flat packaging layout second.",
+      "presetId": "flux_quality",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481103,
+        "modelRevision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 50,
+          "guidanceScale": 3.5,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.",
+        "notes": "No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. The second reference is normal edit-image conditioning, not ControlNet or source-owned structured geometry."
+      },
+      "inputRequirements": {
+        "referenceImages": 2
+      },
+      "inputBindings": [
+        {
+          "id": "flux3_klein_base_fp8r512_multi_reference_edit-references",
+          "label": "Ordered glass subject and packaging layout references",
+          "mediaType": "image",
+          "origin": "template",
+          "requiredAt": "workflow_start",
+          "field": "referenceImages",
+          "defaultAssets": [
+            {
+              "id": "approved-cobalt-glass-source",
+              "label": "Approved cobalt glass cube on stone",
+              "mediaType": "image",
+              "runtimePath": "/template-gallery/inputs/flux2_klein_edit.before.png",
+              "runtimeSha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+              "fileName": "flux2_klein_edit.before.png",
+              "previewPath": "/template-gallery/inputs/flux2_klein_edit.before.png"
+            },
+            {
+              "id": "approved-packaging-dieline-source",
+              "label": "Approved cream and yellow packaging dieline",
+              "mediaType": "image",
+              "runtimePath": "/template-gallery/inputs/qwen_control_image_layout.before.png",
+              "runtimeSha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+              "fileName": "qwen_control_image_layout.before.png",
+              "previewPath": "/template-gallery/inputs/qwen_control_image_layout.before.png"
+            }
+          ]
+        }
+      ],
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3ModularPipeline",
+        "task": "edit_image",
+        "executionProfileId": "flux3-klein-base:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3ModularPipeline",
+          "mode": "edit_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein-base:official:edit-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "the named source subject",
+          "the selected object or masked region",
+          "the original scene as the visual anchor"
+        ],
+        "environment": [
+          "retain the source environment",
+          "continue nearby texture and scene structure",
+          "match local atmosphere and depth"
+        ],
+        "composition": [
+          "keep the original crop and subject placement",
+          "match the source perspective",
+          "integrate the edit at the existing scale"
+        ],
+        "materials": [
+          "name the replacement material and finish",
+          "match neighboring texture scale",
+          "preserve plausible reflections and contact shadows"
+        ],
+        "style": [
+          "match the source visual language",
+          "photoreal localized retouch",
+          "production-ready material replacement"
+        ],
+        "lighting": [
+          "match source exposure and color temperature",
+          "preserve existing light direction",
+          "add physically consistent contact shadows"
+        ],
+        "camera": [
+          "keep the original focal length",
+          "preserve viewpoint and vanishing lines",
+          "maintain the source focus plane"
+        ],
+        "textRendering": [
+          "leave unrelated copy unchanged",
+          "replace only the quoted text",
+          "preserve typographic alignment and print texture"
+        ],
+        "parameters": [
+          "edit strength proportional to the requested change",
+          "enough denoising for integration without identity drift"
+        ],
+        "negative": [
+          "identity drift",
+          "changed camera angle",
+          "unrequested background changes",
+          "visible edit seam",
+          "halo around the mask",
+          "mismatched texture scale"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout."
+        ],
+        "preservation": [
+          "preserve identity, pose, camera, and crop",
+          "keep unedited geometry and background unchanged",
+          "retain existing brand marks and readable copy"
+        ],
+        "change": [
+          "change only the explicitly named region",
+          "describe the replacement shape, material, and color",
+          "state the intended relighting or cleanup precisely"
+        ],
+        "continuity": [
+          "match source illumination and shadow direction",
+          "continue edges, grain, and depth of field through the edit",
+          "blend boundaries without halos or texture repetition"
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "compareSlider",
+      "mediaSlots": [
+        {
+          "id": "before",
+          "label": "Before",
+          "kind": "comparison_before",
+          "role": "before",
+          "placeholder": "source asset pending"
+        },
+        {
+          "id": "after",
+          "label": "After",
+          "kind": "comparison_after",
+          "role": "after",
+          "placeholder": "image result pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481103,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_raw_coordinate_prompt",
+      "label": "FLUX 3 Base 512 FP8r (50 steps) - Raw Prompt Coordinates: Apple",
+      "modelDisplayName": "FLUX 3 Image Klein Base",
+      "mode": "text_to_image",
+      "modelType": "Flux3ModularPipeline",
+      "runtimeReuseKey": "Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "reference",
+      "tags": [
+        "flux3",
+        "public-intent",
+        "planning",
+        "fp8r",
+        "512-square",
+        "unqualified-recipe",
+        "raw-prompt-coordinates"
+      ],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein-base",
+        "revision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.Guider"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "A still life with <apple_1>.\n[{\"id\":\"apple_1\",\"bbox\":[250,125,750,875],\"desc\":\"A red apple, with a green leaf.\"}]",
+      "userGoal": "Inspect the literal raw coordinate prompt; the structured-layout widget remains unset/null.",
+      "presetId": "flux_quality",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481104,
+        "modelRevision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 50,
+          "guidanceScale": 3.5,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. Spatial adherence is unproved. This is not a seeded region-widget or generated-table template.",
+        "notes": "The raw prompt uses the existing shared layout fixture syntax, y-first integer coordinates [250,125,750,875]. The layout_conditioning field remains null through normal T2I defaults. PUP stays disabled so the literal table is not rewritten. No source-reference IDs, widget geometry, strict generated-table completion or F3-06 proof is claimed."
+      },
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3ModularPipeline",
+        "task": "text_to_image",
+        "executionProfileId": "flux3-klein-base:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3ModularPipeline",
+          "mode": "text_to_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein-base:official:text-to-image:prompt-preview-append-fp32:v1"
+      },
+      "promptGuide": {
+        "subject": [
+          "one unmistakable focal subject",
+          "specific pose or product orientation",
+          "distinctive silhouette and proportions"
+        ],
+        "environment": [
+          "named location, era, weather, and background activity",
+          "foreground, midground, and background depth",
+          "intentional negative space for supporting copy"
+        ],
+        "composition": [
+          "clear visual hierarchy and camera-relative placement",
+          "balanced edge spacing with a deliberate focal path",
+          "subject scale composed for the target aspect ratio"
+        ],
+        "materials": [
+          "named surface materials and finish",
+          "microtexture, wear, and edge detail",
+          "physically coherent reflections and translucency"
+        ],
+        "style": [
+          "editorial realism with restrained art direction",
+          "cinematic production design with natural detail",
+          "premium commercial finish without stock-photo staging"
+        ],
+        "lighting": [
+          "defined key, fill, and rim-light relationship",
+          "specific color temperature and shadow softness",
+          "motivated light with realistic contact shadows"
+        ],
+        "camera": [
+          "named shot size, angle, and focal length",
+          "intentional aperture and focus plane",
+          "perspective appropriate to the subject scale"
+        ],
+        "textRendering": [
+          "short exact copy in quotation marks",
+          "defined type placement, scale, and alignment",
+          "high-contrast lettering with clear reading order"
+        ],
+        "parameters": [
+          "detail density suited to the final resolution",
+          "one coherent scene rather than a contact sheet",
+          "controlled complexity at the requested aspect ratio"
+        ],
+        "negative": [
+          "generic stock-photo composition",
+          "flat plastic surfaces",
+          "muddy microdetail",
+          "warped geometry",
+          "unreadable lettering",
+          "duplicated objects"
+        ],
+        "modelHints": [
+          "Keep PUP disabled for this raw-coordinate example.",
+          "The table is literal prompt text; no authored-region widget is seeded.",
+          "Native spatial adherence and output quality remain unqualified."
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "A still life with <apple_1>.\n[{\"id\":\"apple_1\",\"bbox\":[250,125,750,875],\"desc\":\"A red apple, with a green leaf.\"}]",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "image",
+      "mediaSlots": [
+        {
+          "id": "primary",
+          "label": "Preview",
+          "kind": "image",
+          "role": "preview",
+          "placeholder": "image example pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "A still life with <apple_1>.\n[{\"id\":\"apple_1\",\"bbox\":[250,125,750,875],\"desc\":\"A red apple, with a green leaf.\"}]",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481104,
+          "randomSeed": false
+        }
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_lora_style",
+      "label": "FLUX 3 Base 512 FP8r (50 steps) - Monet Oil-Painting LoRA (Test Candidate)",
+      "modelDisplayName": "FLUX 3 Image Klein Base",
+      "mode": "text_to_image",
+      "modelType": "Flux3ModularPipeline",
+      "runtimeReuseKey": "Flux3ModularPipeline:fp8r:bfloat16:none:resident:none:expert",
+      "category": "lora",
+      "tags": ["flux3", "public-intent", "planning", "lora-style", "fp8r", "512-square", "unqualified-recipe"],
+      "difficulty": "blocked",
+      "modelArtifact": {
+        "source": "hub",
+        "value": "black-forest-labs/flux-3-image-klein-base",
+        "revision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4"
+      },
+      "requiredBackendCapabilities": [
+        "modules.ModularDiffusers.ModelsLoader",
+        "modules.ModularDiffusers.EncodePrompt",
+        "modules.ModularDiffusers.Denoise",
+        "modules.ModularDiffusers.DecodeLatents",
+        "modules.Image.Preview",
+        "modules.ModularDiffusers.Lora",
+        "modules.ModularDiffusers.Guider"
+      ],
+      "vramEstimate": "Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.",
+      "runtimeEstimate": "Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.",
+      "description": "mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.",
+      "userGoal": "Inspect the pinned Base Monet replacement and exact public recipe; output qualification and publication remain pending.",
+      "presetId": "flux_quality",
+      "example": {
+        "mediaType": "image",
+        "status": "blocked",
+        "lockedSeed": 481105,
+        "modelRevision": "1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4",
+        "lockedSettings": {
+          "width": 512,
+          "height": 512,
+          "randomSeed": false,
+          "steps": 50,
+          "guidanceScale": 3.5,
+          "maxSequenceLength": 8192,
+          "dtype": "bfloat16",
+          "quantizationMode": "none",
+          "resourceMode": "expert",
+          "autoOffload": false,
+          "offloadMode": "none",
+          "weightFormat": "fp8r"
+        },
+        "expectedOutput": {
+          "width": 512,
+          "height": 512
+        },
+        "runtimeEstimate": "Pending measured exact 512 FP8r recipe",
+        "blockReason": "Native output and template qualification, visual review and output publication approval remain pending for this exact public recipe; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification. The selected Monet replacement declares FLUX Kommunity License v1.0; its terms do not approve generated output publication.",
+        "notes": "No public output media, template receipt or fit measurement is attached. Local model_cpu trials with autoOffload=true are separate from this locked none / autoOffload=false recipe; a painterly baseline alone does not prove adapter benefit. This Base-trained rank16 Monet candidate replaces the public Tarot plan without changing saved Tarot workflows. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate."
+      },
+      "evidencePolicy": "generated",
+      "workflowBlocks": ["lora"],
+      "workflowBlockSettings": {
+        "lora": {
+          "model": {
+            "source": "hub",
+            "value": "pjecuacion/flux3-klein-mnt-oil-monet-lora",
+            "revision": "0d94b6a4601892499defd8c5d89c24f78e78043b",
+            "sha256": "a25e926d8e5fd0069ed5ee3db67be8ac191df4d713bc807e2abfe61a8f885047",
+            "byteSize": 80381072,
+            "license": "FLUX Kommunity License v1.0"
+          },
+          "weightName": "mnt_oil_klein3.safetensors",
+          "adapterName": "mnt_oil",
+          "scale": 1
+        }
+      },
+      "executionSelection": {
+        "schemaVersion": 1,
+        "pipelineClass": "Flux3ModularPipeline",
+        "task": "text_to_image",
+        "executionProfileId": "flux3-klein-base:official-provider:v1",
+        "bindingSpec": {
+          "modelType": "Flux3ModularPipeline",
+          "mode": "text_to_image"
+        },
+        "implementation": "native_stages",
+        "memoryPolicy": "custom_experimental",
+        "authoringRecipeId": "flux3-klein-base:official:text-to-image:prompt-preview-append-fp32:v1",
+        "loraPolicy": {
+          "defaultAdapterName": "mnt_oil"
+        }
+      },
+      "promptGuide": {
+        "subject": [
+          "one unmistakable focal subject",
+          "specific pose or product orientation",
+          "distinctive silhouette and proportions"
+        ],
+        "environment": [
+          "named location, era, weather, and background activity",
+          "foreground, midground, and background depth",
+          "intentional negative space for supporting copy"
+        ],
+        "composition": [
+          "clear visual hierarchy and camera-relative placement",
+          "balanced edge spacing with a deliberate focal path",
+          "subject scale composed for the target aspect ratio"
+        ],
+        "materials": [
+          "named surface materials and finish",
+          "microtexture, wear, and edge detail",
+          "physically coherent reflections and translucency"
+        ],
+        "style": [
+          "editorial realism with restrained art direction",
+          "cinematic production design with natural detail",
+          "premium commercial finish without stock-photo staging"
+        ],
+        "lighting": [
+          "defined key, fill, and rim-light relationship",
+          "specific color temperature and shadow softness",
+          "motivated light with realistic contact shadows"
+        ],
+        "camera": [
+          "named shot size, angle, and focal length",
+          "intentional aperture and focus plane",
+          "perspective appropriate to the subject scale"
+        ],
+        "textRendering": [
+          "short exact copy in quotation marks",
+          "defined type placement, scale, and alignment",
+          "high-contrast lettering with clear reading order"
+        ],
+        "parameters": [
+          "detail density suited to the final resolution",
+          "one coherent scene rather than a contact sheet",
+          "controlled complexity at the requested aspect ratio"
+        ],
+        "negative": [
+          "generic stock-photo composition",
+          "flat plastic surfaces",
+          "muddy microdetail",
+          "warped geometry",
+          "unreadable lettering",
+          "duplicated objects"
+        ],
+        "modelHints": [
+          "The exact public source profile is required; package qualification alone is not a template image proof.",
+          "PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.",
+          "With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout.",
+          "The pinned Monet adapter declares FLUX Kommunity License v1.0. Keep mnt_oil at the start of the prompt and scale 1 for this Base candidate. The author warns about invented corner signatures; inspect the actual output. Its training-data provenance is the author's statement, and output publication remains unapproved."
+        ]
+      },
+      "intentGroup": "planning",
+      "readinessPolicy": "planning",
+      "recipeSummary": "mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.",
+      "outputKinds": ["image"],
+      "thumbnailVariant": "image",
+      "mediaSlots": [
+        {
+          "id": "primary",
+          "label": "Preview",
+          "kind": "image",
+          "role": "preview",
+          "placeholder": "image example pending"
+        }
+      ],
+      "verificationStatus": "blocked",
+      "prompt": "mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.",
+      "negativePrompt": "",
+      "predictability": {
+        "lockReason": "Prompt, model, seed, size, steps, guidance, dtype, and runtime fingerprint must stay unchanged.",
+        "exactnessNotes": [
+          "Exact means decoded pixels, frames, or audio PCM match the stored hash.",
+          "Changing the prompt or any locked setting makes the shown example modified.",
+          "A manifest entry is required before this template can display an Exact badge."
+        ],
+        "deterministicSettings": {
+          "seed": 481105,
+          "randomSeed": false
+        }
+      }
+    }
+  ]
+}

@@ -7,9 +7,15 @@ import getDecimalPlaces from '../utils/getDecimalPlaces';
 
 import { FieldFrame, ModiffFieldShell, NumberFieldFrame } from '../ui';
 import { GraphControlInput, GraphIconButton } from '../ui/GraphControls';
-import { cx } from '../utils/classNames';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+
+function incrementValue(value: number | string, increment: number) {
+  const currentValue = Number(value);
+  const nextValue = currentValue + increment;
+  const precision = Math.max(getDecimalPlaces(currentValue), getDecimalPlaces(increment));
+  return precision <= 100 ? Number(nextValue.toFixed(precision)) : nextValue;
+}
 
 export default function NumberField(props: FieldProps) {
   const [isFocused, setIsFocused] = useState(false);
@@ -22,38 +28,40 @@ export default function NumberField(props: FieldProps) {
   const isSlider = props.fieldType === 'slider' && props.min !== undefined && props.max !== undefined;
   const minValue = props.min !== undefined ? props.min : -Number.MAX_SAFE_INTEGER;
   const maxValue = props.max !== undefined ? props.max : Number.MAX_SAFE_INTEGER;
-  const decimals = props.dataType === 'float' ? getDecimalPlaces(props.step) : 0;
-  const increment = props.step !== undefined ? props.step : props.dataType === 'float' ? 0.1 : 1;
+  const isFloat = props.dataType === 'float';
+  const decimals = isFloat ? getDecimalPlaces(props.step) : 0;
+  const increment = props.step !== undefined ? props.step : isFloat ? 0.1 : 1;
   const inputId = props.inputId ?? `${props.nodeId}-${props.fieldKey}`;
 
   const formatValue = useCallback(
-    (value: number | string, force: boolean = false) => {
-      if (isFocused && !force) {
-        return value;
-      }
-      const newValue = isNaN(Number(value)) ? numericDefault : Number(value);
-      return Math.min(maxValue, Math.max(minValue, newValue)).toFixed(decimals);
+    (value: number | string, useStepPrecision = !isFloat) => {
+      const newValue = Number(value);
+      const boundedValue = Math.min(
+        maxValue,
+        Math.max(minValue, Number.isFinite(newValue) ? newValue : numericDefault),
+      );
+      return decimals <= 100 && (useStepPrecision || getDecimalPlaces(boundedValue) <= decimals)
+        ? boundedValue.toFixed(decimals)
+        : String(boundedValue);
     },
-    [decimals, numericDefault, isFocused, maxValue, minValue],
+    [numericDefault, isFloat, decimals, maxValue, minValue],
   );
   const committedValue = formatValue(
     typeof fieldValue === 'number' || typeof fieldValue === 'string' ? fieldValue : numericDefault,
-    true,
   );
-  const [draftValue, setDraftValue] = useState(String(committedValue));
+  const [draftValue, setDraftValue] = useState(committedValue);
 
   useEffect(() => {
     if (!isFocused && !dragStartRef.current) {
-      setDraftValue(String(committedValue));
+      setDraftValue(committedValue);
     }
   }, [committedValue, isFocused]);
 
   const commitValue = useCallback(
     (value: number | string) => {
-      const nextValue = String(formatValue(value, true));
+      const nextValue = formatValue(value);
       setDraftValue(nextValue);
-      updateStore(fieldKey, nextValue);
-      return nextValue;
+      updateStore(fieldKey, Number(nextValue));
     },
     [fieldKey, formatValue, updateStore],
   );
@@ -62,8 +70,7 @@ export default function NumberField(props: FieldProps) {
     (direction: 'left' | 'right') => {
       if (!inputRef.current) return;
 
-      const nextValue =
-        direction === 'left' ? Number(inputRef.current.value) - increment : Number(inputRef.current.value) + increment;
+      const nextValue = incrementValue(inputRef.current.value, direction === 'left' ? -increment : increment);
       const inputWasFocused = document.activeElement === inputRef.current;
       if (inputWasFocused) {
         skipNextCommitRef.current = true;
@@ -75,7 +82,7 @@ export default function NumberField(props: FieldProps) {
     [commitValue, increment],
   );
 
-  const activeValue = isFocused || dragStartRef.current ? draftValue : props.value;
+  const activeValue = isFocused || dragStartRef.current ? draftValue : fieldValue;
   const sliderPercent = isSlider
     ? isNaN(Number(activeValue))
       ? 0
@@ -105,8 +112,9 @@ export default function NumberField(props: FieldProps) {
       const valueRange = isSlider ? (step / 250) * deltaX : deltaX;
       const newValue = dragStartRef.current.value + valueRange * increment;
 
-      dragStartRef.current.currentValue = Number(formatValue(newValue, true));
-      setDraftValue(String(formatValue(newValue, true)));
+      const formattedValue = formatValue(newValue, true);
+      dragStartRef.current.currentValue = Number(formattedValue);
+      setDraftValue(formattedValue);
     },
     [formatValue, increment, isSlider, maxValue, minValue],
   );
@@ -133,14 +141,14 @@ export default function NumberField(props: FieldProps) {
         const x = e.clientX - rect.left;
         const relPos = Math.max(0, Math.min(1, x / rect.width));
         const newValue = minValue + (maxValue - minValue) * relPos;
-        commitValue(newValue);
+        commitValue(formatValue(newValue, true));
       } else {
-        setDraftValue(String(committedValue));
+        setDraftValue(committedValue);
       }
 
       dragStartRef.current = null;
     },
-    [commitValue, committedValue, handleMouseMove, isSlider, maxValue, minValue],
+    [commitValue, committedValue, formatValue, handleMouseMove, isSlider, maxValue, minValue],
   );
 
   const handleMouseDown = useCallback(
@@ -155,7 +163,7 @@ export default function NumberField(props: FieldProps) {
       // blur any currently focused element
       (document.activeElement as HTMLElement)?.blur();
 
-      const startValue = Number(isFocused ? draftValue : fieldValue);
+      const startValue = Number(fieldValue);
       dragStartRef.current = {
         x: e.clientX,
         value: Number.isFinite(startValue) ? startValue : numericDefault,
@@ -165,7 +173,7 @@ export default function NumberField(props: FieldProps) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [draftValue, fieldValue, handleMouseMove, handleMouseUp, isFocused, numericDefault],
+    [fieldValue, handleMouseMove, handleMouseUp, isFocused, numericDefault],
   );
 
   const handleKeyDown = useCallback(
@@ -177,18 +185,13 @@ export default function NumberField(props: FieldProps) {
           commitValue(input.value);
         } else {
           skipNextCommitRef.current = true;
-          setDraftValue(String(committedValue));
+          setDraftValue(committedValue);
         }
         input.blur();
         setIsFocused(false);
-      } else if (e.key === 'ArrowUp') {
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
-        const newValue = formatValue(Number(input.value) + increment, true);
-        setDraftValue(String(newValue));
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        const newValue = formatValue(Number(input.value) - increment, true);
-        setDraftValue(String(newValue));
+        setDraftValue(formatValue(incrementValue(input.value, e.key === 'ArrowUp' ? increment : -increment)));
       }
     },
     [commitValue, committedValue, formatValue, increment],
@@ -238,7 +241,7 @@ export default function NumberField(props: FieldProps) {
       >
         <GraphIconButton
           type="button"
-          disabled={Number(props.value) <= minValue}
+          disabled={Number(fieldValue) <= minValue}
           onClick={() => handleChevronClick('left')}
           className="shrink-0 disabled:opacity-35"
           label={`Decrease ${props.label}`}
@@ -259,12 +262,10 @@ export default function NumberField(props: FieldProps) {
             value={draftValue}
             onChange={(event) => setDraftValue(event.target.value)}
             autoComplete="off"
-            className={cx(
-              'nodrag min-w-0 flex-1 cursor-default bg-transparent p-0 text-right text-sm text-modiff-text outline-none disabled:cursor-not-allowed',
-            )}
+            className="nodrag min-w-0 flex-1 cursor-default bg-transparent p-0 text-right text-sm text-modiff-text outline-none disabled:cursor-not-allowed"
             onFocus={() => {
               setIsFocused(true);
-              setDraftValue(String(committedValue));
+              setDraftValue(committedValue);
             }}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
@@ -272,7 +273,7 @@ export default function NumberField(props: FieldProps) {
         </ModiffFieldShell>
         <GraphIconButton
           type="button"
-          disabled={Number(props.value) >= maxValue}
+          disabled={Number(fieldValue) >= maxValue}
           onClick={() => handleChevronClick('right')}
           className="shrink-0 disabled:opacity-35"
           label={`Increase ${props.label}`}

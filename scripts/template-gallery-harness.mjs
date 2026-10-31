@@ -1,11 +1,22 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
-import { dirname, extname, join, resolve } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+  copyFileSync,
+} from 'node:fs';
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'vite';
 import { compareRunProvenance, runtimeLockFromProvenance } from './live-proof-provenance.mjs';
 import templateGalleryContract from '../src/studio/templateGalleryContract.json' with { type: 'json' };
+import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
+import { validateTemplateAssetRelease, validateTemplateAssetSource } from './template-asset-source-contract.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_GALLERY_DIR = join(ROOT, 'public', 'template-gallery');
@@ -1776,11 +1787,11 @@ function writeBrowserSafeBeforePreview(videoPath, previewPath, args) {
   );
 }
 
-function readManifest() {
-  if (!existsSync(PUBLIC_MANIFEST)) {
+function readManifest(manifestPath = PUBLIC_MANIFEST) {
+  if (!existsSync(manifestPath)) {
     return { schemaVersion: 2, generatedAt: new Date(0).toISOString(), runtimeFingerprint: 'unverified', examples: [] };
   }
-  return JSON.parse(readFileSync(PUBLIC_MANIFEST, 'utf8'));
+  return JSON.parse(readFileSync(manifestPath, 'utf8'));
 }
 
 function validateManifestShape(manifest) {
@@ -2178,38 +2189,184 @@ async function generate(args, artifactDir) {
   };
 }
 
-async function verify(args, artifactDir) {
-  const runtime = await loadTemplateRuntime();
+// This is a local verification of the checked-in immutable publication scope,
+// not a rights approval or an anonymous verification of the remote Dataset.
+function canonicalGalleryAssetPath(path) {
+  return (
+    typeof path === 'string' &&
+    path.startsWith('template-gallery/') &&
+    !path.includes('\\') &&
+    !path.split('/').some((part) => !part || part === '.' || part === '..' || part.includes(':'))
+  );
+}
+
+function galleryVerificationScope(root) {
+  const read = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
+  const source = validateTemplateAssetSource(read('src/studio/templateAssetSource.json'));
+  if (source.mode === 'local') return { source, assets: [], withheld: [] };
+  const manifest = read('config/template-assets.v1.json');
+  validateTemplateAssetRelease(source, manifest);
+  const rights = read('config/template-asset-rights.v1.json');
+  const assets = manifest.assets;
+  const paths = Array.isArray(assets) ? assets.map((asset) => asset?.path) : [];
+  const identity = (rows) =>
+    `sha256:canonical-json:${storageJsonHash({ schemaVersion: 1, assetVersion: manifest.assetVersion, assets: rows })}`;
+  if (
+    !Array.isArray(assets) ||
+    !assets.length ||
+    paths.some((path) => !canonicalGalleryAssetPath(path)) ||
+    new Set(paths.map((path) => path.toLowerCase())).size !== paths.length ||
+    paths.join('\n') !== [...paths].sort().join('\n') ||
+    assets.some(
+      (asset) =>
+        !Number.isSafeInteger(asset.size) || asset.size < 0 || !/^sha256:bytes:[a-f0-9]{64}$/.test(asset.sha256),
+    ) ||
+    manifest.assetCount !== assets.length ||
+    manifest.totalBytes !== assets.reduce((sum, asset) => sum + asset.size, 0) ||
+    !Array.isArray(manifest.missingAssets) ||
+    manifest.missingAssets.length ||
+    manifest.assetSetId !== identity(assets)
+  ) {
+    throw new Error('Gallery verification requires the exact complete storage manifest.');
+  }
+  if (
+    rights.schemaVersion !== 1 ||
+    rights.assetSetId !== manifest.assetSetId ||
+    !Array.isArray(rights.records) ||
+    rights.records.length !== assets.length ||
+    new Set(rights.records.map((row) => row.path)).size !== assets.length
+  ) {
+    throw new Error('Gallery verification rights ledger does not cover the exact storage manifest.');
+  }
+  const rightsByPath = new Map(rights.records.map((row) => [row.path, row]));
+  const unavailable = new Set(source.unavailableAssets ?? []);
+  const withheld = [];
+  for (const asset of assets) {
+    const row = rightsByPath.get(asset.path);
+    if (
+      !row ||
+      row.sha256 !== asset.sha256 ||
+      (unavailable.has(asset.path)
+        ? row.publishDecision !== 'hold' || typeof row.holdReason !== 'string' || !row.holdReason.trim()
+        : row.publishDecision !== 'approved')
+    ) {
+      throw new Error(`Gallery verification rights/source mismatch: ${asset.path}`);
+    }
+    if (unavailable.has(asset.path)) withheld.push({ path: asset.path, sha256: asset.sha256, reason: row.holdReason });
+  }
+  const available = assets.filter((asset) => !unavailable.has(asset.path));
+  if (!available.length || withheld.length !== unavailable.size || source.assetSetId !== identity(available)) {
+    throw new Error('Gallery verification source is not the exact nonempty approved asset subset.');
+  }
+  return { source, assets: available, withheld };
+}
+
+export async function verifyGallery(
+  args,
+  artifactDir,
+  { root = ROOT, runtime: suppliedRuntime, decodeMedia = decodedMediaHash } = {},
+) {
+  const runtime = suppliedRuntime ?? (await loadTemplateRuntime(root));
   const templatesById = new Map(runtime.templates.map((template) => [template.id, template]));
-  const manifest = readManifest();
+  const manifest = readManifest(join(root, 'public', 'template-gallery', 'manifest.json'));
   const errors = validateManifestShape(manifest);
+  const scope = galleryVerificationScope(root);
+  const unavailable = new Set(scope.withheld.map((asset) => asset.path));
+  const isWithheld = (path) => typeof path === 'string' && unavailable.has(path.replace(/^\//, ''));
+  const withheldExamples = [];
+  const publicRoot = join(realpathSync(root), 'public');
+  if (lstatSync(publicRoot).isSymbolicLink()) throw new Error('Gallery public root must not be a link.');
+  const assertContainedFile = (filename, label) => {
+    if (!existsSync(filename)) return;
+    const stat = lstatSync(filename);
+    const resolved = relative(publicRoot, realpathSync(filename));
+    if (
+      !stat.isFile() ||
+      stat.isSymbolicLink() ||
+      isAbsolute(resolved) ||
+      resolved === '..' ||
+      resolved.startsWith('..\\') ||
+      resolved.startsWith('../')
+    ) {
+      throw new Error(`Gallery asset is not a contained regular file: ${label}`);
+    }
+  };
+  const publishedPaths = new Set(scope.assets.map((asset) => asset.path));
+  const storagePaths = new Set([...publishedPaths, ...unavailable]);
+  for (const entry of manifest.examples ?? []) {
+    for (const field of [
+      'outputPath',
+      'thumbnailPath',
+      'beforePath',
+      'afterPath',
+      'cardPreviewPath',
+      'provenancePath',
+      'qualityReviewPath',
+    ]) {
+      const path = entry[field];
+      if (path == null && ['beforePath', 'afterPath', 'cardPreviewPath'].includes(field)) continue;
+      if (typeof path !== 'string' || !path.startsWith('/') || !canonicalGalleryAssetPath(path.slice(1))) {
+        throw new Error(`${entry.templateId} ${field} must be a canonical Gallery path.`);
+      }
+      if (scope.source.mode === 'huggingface') {
+        if (!storagePaths.has(path.slice(1)))
+          throw new Error(`${entry.templateId} ${field} is not listed in the complete storage manifest.`);
+        if (['provenancePath', 'qualityReviewPath'].includes(field) && !publishedPaths.has(path.slice(1))) {
+          throw new Error(`${entry.templateId} ${field} sidecar must be available in the approved subset.`);
+        }
+      }
+      assertContainedFile(join(publicRoot, path.slice(1)), `${entry.templateId} ${field}`);
+    }
+  }
+  for (const asset of scope.assets) {
+    const filename = join(publicRoot, asset.path);
+    if (!existsSync(filename)) {
+      errors.push(`Published asset missing: ${asset.path}`);
+      continue;
+    }
+    assertContainedFile(filename, asset.path);
+    if (lstatSync(filename).size !== asset.size || `sha256:bytes:${sha256(readFileSync(filename))}` !== asset.sha256) {
+      errors.push(`Published asset byte identity mismatch: ${asset.path}`);
+    }
+  }
   if ((manifest.examples?.length ?? 0) === 0) {
     errors.push('Gallery manifest is vacuous: at least one reviewed or exact runtime-generated example is required.');
   }
   for (const entry of manifest.examples ?? []) {
+    const withheldPaths = [
+      ...new Set(
+        ['outputPath', 'thumbnailPath', 'beforePath', 'afterPath', 'cardPreviewPath']
+          .map((field) => entry[field])
+          .filter(isWithheld)
+          .map((path) => path.replace(/^\//, '')),
+      ),
+    ].sort();
+    if (withheldPaths.length) withheldExamples.push({ templateId: entry.templateId, assets: withheldPaths });
     const verificationStatus =
       entry.verificationStatus ?? (entry.qualityReviewStatus === EXACT_QUALITY_REVIEW_STATUS ? 'exact' : 'reviewed');
     const exactPublication = verificationStatus === 'exact';
     const requiredReviewStatus = exactPublication ? EXACT_QUALITY_REVIEW_STATUS : REVIEWED_QUALITY_REVIEW_STATUS;
-    const outputPath = join(ROOT, 'public', entry.outputPath.replace(/^\//, ''));
-    if (!existsSync(outputPath)) {
+    const outputPath = join(root, 'public', entry.outputPath.replace(/^\//, ''));
+    if (!isWithheld(entry.outputPath) && !existsSync(outputPath)) {
       errors.push(`${entry.templateId} media file missing: ${entry.outputPath}`);
       continue;
     }
-    const thumbnailPath = join(ROOT, 'public', entry.thumbnailPath.replace(/^\//, ''));
-    if (!existsSync(thumbnailPath)) {
+    const thumbnailPath = join(root, 'public', entry.thumbnailPath.replace(/^\//, ''));
+    if (!isWithheld(entry.thumbnailPath) && !existsSync(thumbnailPath)) {
       errors.push(`${entry.templateId} thumbnail file missing: ${entry.thumbnailPath}`);
     }
-    const decoded = await decodedMediaHash(outputPath, entry.mediaType ?? 'image', args);
-    if (decoded.hash !== entry.mediaHash) {
+    const decoded = isWithheld(entry.outputPath)
+      ? null
+      : await decodeMedia(outputPath, entry.mediaType ?? 'image', args);
+    if (decoded && decoded.hash !== entry.mediaHash) {
       errors.push(`${entry.templateId} decoded hash mismatch: expected ${entry.mediaHash}, got ${decoded.hash}`);
     }
-    if (entry.decodedAudioHash && decoded.embeddedAudio?.hash !== entry.decodedAudioHash) {
+    if (decoded && entry.decodedAudioHash && decoded.embeddedAudio?.hash !== entry.decodedAudioHash) {
       errors.push(
         `${entry.templateId} decoded audio hash mismatch: expected ${entry.decodedAudioHash}, got ${decoded.embeddedAudio?.hash ?? 'missing'}`,
       );
     }
-    if (entry.audiovisualMediaHash && decoded.audiovisualMediaHash !== entry.audiovisualMediaHash) {
+    if (decoded && entry.audiovisualMediaHash && decoded.audiovisualMediaHash !== entry.audiovisualMediaHash) {
       errors.push(
         `${entry.templateId} audiovisual hash mismatch: expected ${entry.audiovisualMediaHash}, got ${decoded.audiovisualMediaHash ?? 'missing'}`,
       );
@@ -2244,9 +2401,10 @@ async function verify(args, artifactDir) {
         errors.push(`${entry.templateId} manifest template input contract is stale for the current bundled defaults`);
       }
       errors.push(
-        ...technicalMediaErrors(decoded, galleryExpectedOutput(template), entry.mediaType ?? 'image').map(
-          (error) => `${entry.templateId} technical media gate: ${error}`,
-        ),
+        ...(decoded
+          ? technicalMediaErrors(decoded, galleryExpectedOutput(template), entry.mediaType ?? 'image')
+          : []
+        ).map((error) => `${entry.templateId} technical media gate: ${error}`),
       );
       if (requiresBeforeMedia(template) && (!entry.beforePath || !entry.afterPath || !entry.beforeMediaHash)) {
         errors.push(
@@ -2254,8 +2412,8 @@ async function verify(args, artifactDir) {
         );
       }
     }
-    if (entry.beforePath) {
-      const beforePath = join(ROOT, 'public', entry.beforePath.replace(/^\//, ''));
+    if (entry.beforePath && !isWithheld(entry.beforePath)) {
+      const beforePath = join(root, 'public', entry.beforePath.replace(/^\//, ''));
       if (!existsSync(beforePath)) {
         errors.push(`${entry.templateId} before media file missing: ${entry.beforePath}`);
       } else {
@@ -2266,15 +2424,15 @@ async function verify(args, artifactDir) {
           );
         }
         if (MEDIA_EXTENSIONS.video.has(extname(entry.beforePath).toLowerCase())) {
-          const decodedBeforePreview = await decodedMediaHash(beforePath, 'video', args);
+          const decodedBeforePreview = await decodeMedia(beforePath, 'video', args);
           errors.push(
             ...beforePreviewContractErrors(decodedBeforePreview).map((error) => `${entry.templateId} ${error}`),
           );
         }
       }
     }
-    if (entry.mediaType === 'video' && entry.cardPreviewPath) {
-      const cardPreviewPath = join(ROOT, 'public', entry.cardPreviewPath.replace(/^\//, ''));
+    if (entry.mediaType === 'video' && entry.cardPreviewPath && !isWithheld(entry.cardPreviewPath)) {
+      const cardPreviewPath = join(root, 'public', entry.cardPreviewPath.replace(/^\//, ''));
       if (!existsSync(cardPreviewPath)) {
         errors.push(`${entry.templateId} card preview file missing: ${entry.cardPreviewPath}`);
       } else {
@@ -2284,11 +2442,11 @@ async function verify(args, artifactDir) {
             `${entry.templateId} card preview hash mismatch: expected ${entry.cardPreviewSha256}, got ${cardPreviewSha256}`,
           );
         }
-        const decodedCardPreview = await decodedMediaHash(cardPreviewPath, 'video', args);
+        const decodedCardPreview = await decodeMedia(cardPreviewPath, 'video', args);
         errors.push(...cardPreviewContractErrors(decodedCardPreview).map((error) => `${entry.templateId} ${error}`));
       }
     }
-    const provenancePath = join(ROOT, 'public', String(entry.provenancePath ?? '').replace(/^\//, ''));
+    const provenancePath = join(root, 'public', String(entry.provenancePath ?? '').replace(/^\//, ''));
     if (!existsSync(provenancePath)) {
       errors.push(`${entry.templateId} provenance missing: ${entry.provenancePath}`);
     } else {
@@ -2373,7 +2531,7 @@ async function verify(args, artifactDir) {
         );
       }
     }
-    const qualityReviewPath = join(ROOT, 'public', String(entry.qualityReviewPath ?? '').replace(/^\//, ''));
+    const qualityReviewPath = join(root, 'public', String(entry.qualityReviewPath ?? '').replace(/^\//, ''));
     if (!existsSync(qualityReviewPath)) {
       errors.push(`${entry.templateId} quality review missing: ${entry.qualityReviewPath}`);
       continue;
@@ -2412,10 +2570,17 @@ async function verify(args, artifactDir) {
     }
   }
 
+  const availableExamples = (manifest.examples?.length ?? 0) - withheldExamples.length;
+  if (availableExamples === 0) errors.push('Gallery verification has no available published examples.');
   return {
     mode: 'verify',
     artifactDir,
     examples: manifest.examples?.length ?? 0,
+    verificationScope:
+      scope.source.mode === 'huggingface' ? 'pinned-remote-assets-materialized-locally' : 'complete-local',
+    verifiedExamples: errors.length === 0 ? availableExamples : 0,
+    withheldExamples,
+    withheldAssets: scope.withheld,
     errors,
     ok: errors.length === 0,
   };
@@ -2425,7 +2590,7 @@ async function main() {
   const args = parseArgs(process.argv);
   const artifactDir = artifactDirFor(args.mode);
   mkdirSync(PUBLIC_GALLERY_DIR, { recursive: true });
-  const result = args.mode === 'generate' ? await generate(args, artifactDir) : await verify(args, artifactDir);
+  const result = args.mode === 'generate' ? await generate(args, artifactDir) : await verifyGallery(args, artifactDir);
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   if (result.errors?.length) {

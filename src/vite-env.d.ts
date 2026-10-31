@@ -3,6 +3,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_SERVER_ADDRESS: string;
+  readonly MODIFF_SUPERVISOR_CONTROL_EXPLICIT?: boolean;
   readonly VITE_MODIFF_TEMPLATE_ASSET_MODE?: 'local' | 'huggingface';
   readonly VITE_MODIFF_TEMPLATE_ASSET_REPO?: string;
   readonly VITE_MODIFF_TEMPLATE_ASSET_REVISION?: string;

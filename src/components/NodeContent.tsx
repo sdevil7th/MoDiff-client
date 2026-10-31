@@ -13,10 +13,10 @@ import {
   type WorkflowOperationContext,
 } from '../stores/useStudioStore';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from '../studio/autoResource';
-import { NodeParams, type NodeParamOptions, type NodeParamSignal } from '../stores/useNodeStore';
+import { NodeParams, type NodeParamOptions, type NodeParamSignal, useNodesStore } from '../stores/useNodeStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { classifyManagedControl } from '../studio/managedControlPolicy';
-import { runtimeOptionValues } from '../studio/runtimeOptions';
+import { registeredRuntimeOptionPresentation, runtimeOptionValues } from '../studio/runtimeOptions';
 import { sanitizeModiffFieldStyle, type ModiffFieldStyle } from '../theme';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { GraphControlButton } from '../ui/GraphControls';
@@ -52,6 +52,8 @@ import UIImagecompareField from '../fields/UIImagecompareField';
 const UIVideoField = lazy(() => import('../fields/UIVideoField'));
 const UIAudioField = lazy(() => import('../fields/UIAudioField'));
 const SplineField = lazy(() => import('../fields/SplineField'));
+const LayoutConditioningField = lazy(() => import('../fields/LayoutConditioningField'));
+const PromptEnhancementControls = lazy(() => import('./PromptEnhancementControls'));
 
 export type FieldProps = {
   nodeId: string;
@@ -151,6 +153,7 @@ const NodeContent = memo(function NodeContent({
   const studioResourceMode = studioForm.resourceMode;
   const studioGraphBinding = useStudioStore((state) => state.graphBinding);
   const graphNode = useFlowStore((state) => state.nodes.find((node) => node.id === nodeId));
+  const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const connectionNotes = useFlowStore(
     useShallow((state) =>
       blockControlConnectionNotesV2(
@@ -210,7 +213,12 @@ const NodeContent = memo(function NodeContent({
       Array.isArray(data.type) && data.type.length > 0 ? data.type[0] : data.type || 'string'
     ) as string;
     const connectionType = data.type || 'string';
-    const options = liveFieldOptions(module, key, display, data.options || []);
+    const options = liveFieldOptions(
+      module,
+      key,
+      display,
+      registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[`${module}.${action}`]?.params),
+    );
     const fieldType = getFieldType(display, dataType, options);
     // A managed model choice already resolves the repository, implementation
     // route and pipeline class atomically. Keep model_type in the persisted
@@ -380,6 +388,13 @@ const NodeContent = memo(function NodeContent({
 
   return (
     <>
+      {graphNode?.data.operationAuthoring?.ancillaryParent &&
+      !graphNode.data.blockInstanceV2 &&
+      !graphNode.data.blockProjectionOwnerId ? (
+        <Suspense fallback={null}>
+          <PromptEnhancementControls ownerId={graphNode.id} />
+        </Suspense>
+      ) : null}
       {encodeImageSummary}
       {resolutionNotice}
       {orderedMainFields}
@@ -610,6 +625,12 @@ const FieldMemo = memo((props: FieldProps) => {
       return <ModelSelectField {...props} />;
     case 'layerconfig':
       return <LayerConfigField {...props} />;
+    case 'layout':
+      return (
+        <Suspense fallback={<div role="status">Loading layout editor...</div>}>
+          <LayoutConditioningField {...props} />
+        </Suspense>
+      );
     case 'selectdialog':
       return <SelectDialogField {...props} />;
     case 'ui_text':

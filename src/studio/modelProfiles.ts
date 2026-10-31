@@ -79,6 +79,10 @@ export const FLUX2_KLEIN_BASE_REPO = 'black-forest-labs/FLUX.2-klein-base-4B';
 export const FLUX2_DEV_REPO = 'black-forest-labs/FLUX.2-dev';
 export const FLUX2_DEV_REVISION = '26afe3a78bb242c0a8bb181dcc8937bb16e5c66c';
 export const FLUX2_KLEIN_BASE_REVISION = 'a3b4f4849157f664bdbc776fd7453c2783562f4d';
+export const FLUX3_BASE_REPO = 'black-forest-labs/flux-3-image-klein-base';
+export const FLUX3_BASE_REVISION = '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4';
+export const FLUX3_DISTILLED_REPO = 'black-forest-labs/flux-3-image-klein';
+export const FLUX3_DISTILLED_REVISION = '8454017f9ebaada30c998fccd9f67a80c7580f68';
 export const FLUX_DEV_FP8_REPO = 'black-forest-labs/FLUX.1-dev-FP8';
 export const FLUX_KONTEXT_NVFP4_REPO = 'black-forest-labs/FLUX.1-Kontext-dev-NVFP4';
 export const SDXL_BASE_REPO = 'stabilityai/stable-diffusion-xl-base-1.0';
@@ -449,6 +453,8 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Built-in Video Operations',
   'Real-ESRGAN x2 Video Upscale',
   'Real-ESRGAN x2 Image Upscale',
+  'FLUX 3 Image Klein Base',
+  'FLUX 3 Image Klein',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -559,6 +565,8 @@ export const HUNYUAN_VIDEO_15_LICENSE_REPO = 'tencent/HunyuanVideo-1.5';
 export const HUNYUAN_VIDEO_15_LICENSE_REVISION = '9b49404b3f5df2a8f0b31df27a0c7ab872e7b038';
 export const COSMOS3_DISTILLED_T2I_REPO = 'nvidia/Cosmos3-Super-Text2Image-4Step';
 export const COSMOS3_DISTILLED_T2I_REVISION = 'aa0d5a57b7b045d68daa60fbacd84ec723c7cb7b';
+export const COSMOS3_SUPER_T2I_REPO = 'nvidia/Cosmos3-Super-Text2Image';
+export const COSMOS3_SUPER_T2I_REVISION = 'daf3d374804be4c512c2135568a7cb95d4341d79';
 export const COSMOS3_DISTILLED_I2V_REPO = 'nvidia/Cosmos3-Super-Image2Video-4Step';
 export const COSMOS3_DISTILLED_I2V_REVISION = 'cd55ce81bc5cea51a09c37cd7652144e7278f049';
 export const COSMOS3_NANO_REPO = 'nvidia/Cosmos3-Nano';
@@ -1035,6 +1043,47 @@ const EXPERT_WORKFLOW_PENDING = {
   galleryEligible: false,
   liveProof: false,
 } satisfies Partial<StudioModelProfileSource>;
+
+/** Static presentation for reviewed identities, never a runnable or public admission.
+ * Current backend profiles and recipes remain authoritative for ordinary graphs. */
+function contractOnlyImageProfile(
+  defaultRepo: string,
+  revision: string,
+  steps: number,
+  guidance: number,
+  supportsGuidance: boolean,
+): StudioModelProfileSource {
+  return {
+    family: 'FLUX Image',
+    catalogVisibility: 'internal',
+    defaultRepo,
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 1024, height: 1024, aspectRatio: '1:1' },
+    recommendedSteps: steps,
+    recommendedGuidance: guidance,
+    recommendedMaxSequenceLength: 8192,
+    supportsNegativePrompt: supportsGuidance,
+    supportFlags: 5,
+    outputKind: 'image',
+    offloadSupport: {
+      modes: ['none', 'model_cpu', 'group_cpu', 'group_disk'],
+      default: 'none',
+      lowVram: 'none',
+      emergency: 'none',
+    },
+    lowVram: { dtype: 'bfloat16', autoOffload: false, offloadMode: 'none', steps, width: 1024, height: 1024 },
+    modes: ['text_to_image', 'edit_image'],
+    modeRequirements: { edit_image: { requiredImages: ['referenceImages'] } },
+    revisionCandidates: [revision],
+    executionStatus: 'expert_only',
+    qualificationStatus: 'contract-only-presentation',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: false,
+    galleryEligible: false,
+    liveProof: false,
+  };
+}
 
 function expertVideoProfile(
   source: StudioModelProfileSource,
@@ -3725,6 +3774,8 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     galleryEligible: false,
     liveProof: true,
   },
+  Flux3ModularPipeline: contractOnlyImageProfile(FLUX3_BASE_REPO, FLUX3_BASE_REVISION, 50, 3.5, true),
+  Flux3DistilledModularPipeline: contractOnlyImageProfile(FLUX3_DISTILLED_REPO, FLUX3_DISTILLED_REVISION, 16, 1, false),
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 if (STUDIO_MODEL_LABEL_VALUES.length !== Object.keys(STUDIO_MODEL_PROFILE_SOURCES).length) {
@@ -4332,7 +4383,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceTextGenerationModel',
     supportedModes: TRANSFORMERS_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed SmolLM2 135M Instruct float32 profile with bounded token controls.',
     qualityDefaults: 'Deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLLM2_135M_INSTRUCT_REPO],
@@ -4343,7 +4395,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceImageTextToTextModel',
     supportedModes: TRANSFORMERS_IMAGE_TEXT_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed SmolVLM 256M Instruct float32 profile with one bounded local image.',
     qualityDefaults: 'One image, deterministic generation, at most 256 new tokens.',
     artifacts: [SMOLVLM_256M_INSTRUCT_REPO],
@@ -4354,7 +4407,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceAnyToAnyModel',
     supportedModes: TRANSFORMERS_ANY_TO_ANY_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'Expert-only execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum: 'Expert-only execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed Janus Pro 1B bfloat16 profile after acknowledging the pinned model terms.',
     qualityDefaults: 'Bounded text generation or native 384x384 image generation.',
     artifacts: [JANUS_PRO_1B_REPO],
@@ -4365,7 +4418,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceSpeechRecognitionModel',
     supportedModes: SPEECH_STUDIO_MODES,
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed Whisper Tiny float32 profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, segment timestamps.',
     artifacts: [WHISPER_TINY_REPO],
@@ -4376,7 +4430,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     modelType: 'HuggingFaceCTCSpeechRecognitionModel',
     supportedModes: ['speech_to_text'],
     autoStatus: 'manual_only',
-    minimum: 'CPU or accelerator execution with the pinned safetensors snapshot and optional Transformers runtime.',
+    minimum:
+      'CPU or accelerator execution with the pinned safetensors snapshot and the required base Transformers runtime.',
     recommended: 'Use the reviewed Wav2Vec2 Base 960h float32 CTC profile and bounded local audio.',
     qualityDefaults: '30-second chunks, 5-second stride, word timestamps.',
     artifacts: [WAV2VEC2_BASE_960H_REPO],
@@ -4490,6 +4545,8 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
     notes: 'Uses the generic Spandrel image upscaler and preserves the model-reported native scale.',
     manualOnlyReason: 'One exact ROCm run is qualified; broader platform coverage remains pending.',
   },
+  Flux3ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3ModularPipeline'),
+  Flux3DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3DistilledModularPipeline'),
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {

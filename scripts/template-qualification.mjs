@@ -4,11 +4,86 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
-import { canonicalWorkflowContract, findCanonicalWorkflowRecord } from './release-contract-core.mjs';
+import { validateRunProvenance } from './live-proof-provenance.mjs';
+import {
+  canonicalWorkflowContract,
+  canonicalEvidenceWritePath,
+  findCanonicalWorkflowRecord,
+  readCanonicalWorkflowEvidence,
+} from './release-contract-core.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(CLIENT_ROOT, '..', 'MoDiff'));
+const qualificationArgs = process.argv.slice(2);
+if (qualificationArgs[0] === '--workflow' && qualificationArgs.length === 2 && qualificationArgs[1]) {
+  if (!process.env.MODIFF_CANONICAL_WORKFLOW_EVIDENCE) {
+    throw new Error('Set MODIFF_CANONICAL_WORKFLOW_EVIDENCE to the retained original canonical evidence descriptor.');
+  }
+  const evidencePath = resolve(process.env.MODIFF_CANONICAL_WORKFLOW_EVIDENCE);
+  const result = await readCanonicalWorkflowEvidence({
+    clientRoot: CLIENT_ROOT,
+    backendRoot: BACKEND_ROOT,
+    workflowId: qualificationArgs[1],
+    evidencePath,
+  });
+  const descriptorBytes = result.descriptorBytes;
+  const descriptorHash = sha256Bytes(descriptorBytes);
+  const retainedDirectory = canonicalEvidenceWritePath(
+    BACKEND_ROOT,
+    `data/qualification/release/canonical-workflow-evidence/${descriptorHash}`,
+  );
+  if (existsSync(retainedDirectory))
+    throw new Error('Canonical evidence destination already exists; retain and inspect the existing receipt.');
+  for (const ref of result.retainedFiles) {
+    if (['evidence.json', 'derived-provenance.json'].includes(ref.path))
+      throw new Error('Evidence file uses a reserved retention name.');
+  }
+  const registryPath = canonicalEvidenceWritePath(
+    BACKEND_ROOT,
+    'data/qualification/release/canonical-workflow-run-receipts.v1.json',
+  );
+  const previous = existsSync(registryPath)
+    ? readJson(registryPath)
+    : { schemaVersion: 1, format: 'modiff.canonical-workflow-run-receipt-registry.v1', receipts: [] };
+  if (
+    previous.schemaVersion !== 1 ||
+    previous.format !== 'modiff.canonical-workflow-run-receipt-registry.v1' ||
+    !Array.isArray(previous.receipts)
+  ) {
+    throw new Error('Canonical workflow receipt registry has an invalid schema.');
+  }
+  mkdirSync(retainedDirectory, { recursive: true });
+  for (const ref of result.retainedFiles) {
+    const destination = canonicalEvidenceWritePath(retainedDirectory, ref.path);
+    mkdirSync(dirname(destination), { recursive: true });
+    if (!existsSync(destination)) copyFileSync(ref.absolutePath, destination);
+    if (sha256Bytes(readFileSync(destination)) !== ref.sha256)
+      throw new Error('Retained original evidence hash differs.');
+  }
+  writeFileSync(join(retainedDirectory, 'evidence.json'), descriptorBytes, { flag: 'wx' });
+  writeFileSync(join(retainedDirectory, 'derived-provenance.json'), `${JSON.stringify(result.provenance, null, 2)}\n`, {
+    flag: 'wx',
+  });
+  const receipt = {
+    ...result.receipt,
+    evidencePath: relative(BACKEND_ROOT, join(retainedDirectory, 'evidence.json')).split('\\').join('/'),
+    evidenceSha256: descriptorHash,
+    evidenceBytes: descriptorBytes.length,
+  };
+  const receipts = [...previous.receipts, receipt].sort(
+    (a, b) => a.workflowId.localeCompare(b.workflowId) || a.capturedAt.localeCompare(b.capturedAt),
+  );
+  writeFileSync(registryPath, `${JSON.stringify({ ...previous, receipts }, null, 2)}\n`);
+  console.log(
+    `Retained exact canonical execution evidence for ${receipt.workflowId}; approval and release policy are unchanged.`,
+  );
+  process.exit(0);
+}
+if (qualificationArgs.length > 1 || qualificationArgs.some((value) => value !== '--allow-blocked-probe')) {
+  throw new Error('Template qualification accepts only one optional --allow-blocked-probe argument.');
+}
+const allowBlockedProbe = qualificationArgs.length === 1;
 const ARTIFACT_ROOT = process.env.MODIFF_LIVE_PROOF_ARTIFACT ? resolve(process.env.MODIFF_LIVE_PROOF_ARTIFACT) : null;
 const DIRECT_PROVENANCE_PATH = process.env.MODIFF_TEMPLATE_PROVENANCE
   ? resolve(process.env.MODIFF_TEMPLATE_PROVENANCE)
@@ -79,15 +154,27 @@ if (Number(provenance.schemaVersion) < 2 || provenance.format !== 'modiff.live-p
 if ((provenance.blockers ?? []).length > 0) {
   throw new Error(`Template proof contains blocker(s): ${provenance.blockers.join(' ')}`);
 }
+// Optional applied-state claims must authenticate their own observations and
+// lock. Historical proofs without this extension keep their original scope.
+if (provenance.adapterApplications !== undefined || provenance.adapterApplicationsHash !== undefined) {
+  const blockers = validateRunProvenance(provenance);
+  if (blockers.length) throw new Error(`Applied adapter proof is invalid: ${blockers.join(' ')}`);
+}
 
-const runtime = await loadTemplateRuntime(CLIENT_ROOT);
+const runtime = await loadTemplateRuntime(CLIENT_ROOT, { includePlanning: allowBlockedProbe });
 const templateId = provenance.template?.id ?? status.templateId;
 const template = runtime.templates.find((item) => item.id === templateId);
 if (!template) throw new Error(`Template ${String(templateId)} is not in the runtime catalog.`);
 const workflowManifest = readJson(
   required(join(BACKEND_ROOT, 'data', 'workflow-library-manifest.json'), 'Canonical workflow manifest'),
 );
-const workflowRecords = (workflowManifest.workflows ?? []).map((manifest) => {
+// Explicit blocked probes may retain execution evidence against an experimental
+// canonical graph. This lookup never promotes its catalog or qualification state.
+const scopedWorkflows = [
+  ...(workflowManifest.workflows ?? []),
+  ...(allowBlockedProbe ? (workflowManifest.experimentalWorkflows ?? []) : []),
+];
+const workflowRecords = scopedWorkflows.map((manifest) => {
   const graph = readJson(required(join(BACKEND_ROOT, 'data', 'graphs', manifest.graphPath), manifest.id));
   return { manifest, graph };
 });

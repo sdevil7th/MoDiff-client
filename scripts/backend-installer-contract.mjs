@@ -19,15 +19,13 @@ function readJson(path, label) {
   }
 }
 
-function assertUvIsInstallerManaged(pyproject, path) {
+function assertUvProjectManaged(pyproject, path) {
   const header = /^\[tool\.uv\]\s*$/m.exec(pyproject);
   const afterHeader = header ? pyproject.slice(header.index + header[0].length) : '';
   const nextSection = /^\[[^\]]+\]\s*$/m.exec(afterHeader);
   const section = afterHeader.slice(0, nextSection?.index ?? afterHeader.length);
-  if (!section || !/^\s*managed\s*=\s*false\s*(?:#.*)?$/m.test(section)) {
-    throw new Error(
-      `${path} must declare [tool.uv] managed = false because accelerator profile installers own the environment.`,
-    );
+  if (/^\s*managed\s*=\s*false\s*(?:#.*)?$/m.test(section)) {
+    throw new Error(`${path} must allow native uv project management.`);
   }
 }
 
@@ -47,7 +45,8 @@ function safeRequirementsPath(backendRoot, value, profileId) {
 export function buildBackendInstallerPackageSet(backendRoot) {
   const pyprojectPath = join(backendRoot, 'pyproject.toml');
   const pyproject = readFileSync(requiredFile(pyprojectPath, 'Backend pyproject'), 'utf8');
-  assertUvIsInstallerManaged(pyproject, pyprojectPath);
+  assertUvProjectManaged(pyproject, pyprojectPath);
+  const uvLockPath = requiredFile(join(backendRoot, 'uv.lock'), 'Backend uv lock');
 
   const manifestRelativePath = 'modiff/compatibility/accelerators.v1.json';
   const manifestPath = join(backendRoot, manifestRelativePath);
@@ -84,8 +83,10 @@ export function buildBackendInstallerPackageSet(backendRoot) {
 
   return {
     id: 'backend-installer-profiles',
-    installStrategy: 'installer-owned-profile-requirements',
-    uvProjectManaged: false,
+    installStrategy: 'native-uv-with-specialized-accelerator-profiles',
+    uvProjectManaged: true,
+    uvLockPath: 'uv.lock',
+    uvLockSha256: sha256File(uvLockPath),
     pyprojectPath: 'pyproject.toml',
     pyprojectSha256: sha256File(pyprojectPath),
     runtimeManifestPath: manifestRelativePath,

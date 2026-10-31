@@ -388,6 +388,7 @@ const OUTPUT_PREVIEW_POLICY = {
 
 const MODELS_POLICY = {
   model_type: advanced('modelType'),
+  weight_format: advanced('weightFormat'),
   repo_id: advanced(),
   model_id: advanced(),
   dtype: advanced('dtype'),

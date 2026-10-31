@@ -11,13 +11,27 @@ import '../theme/modiff.css';
 import { ControlStateMatrix } from './ControlStateMatrix';
 import { ModiffSnackbarProvider } from './ModiffSnackbarProvider';
 import { NodeFieldLayoutFixture } from './NodeFieldLayoutFixture';
+import { LayoutConditioningFixture } from './LayoutConditioningFixture';
+import { WorkflowModelInventoryFixture } from './WorkflowModelInventoryFixture';
 import { useStudioStore } from '../stores/useStudioStore';
 
 const fieldLayout = new URLSearchParams(window.location.search).has('node-field-layout');
+const layoutConditioning = new URLSearchParams(window.location.search).has('layout-conditioning');
+const modelInventory = new URLSearchParams(window.location.search).has('model-inventory');
 if (fieldLayout) useStudioStore.setState({ form: { ...useStudioStore.getState().form, resourceMode: 'auto' } });
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ModiffSnackbarProvider>{fieldLayout ? <NodeFieldLayoutFixture /> : <ControlStateMatrix />}</ModiffSnackbarProvider>
+    <ModiffSnackbarProvider>
+      {modelInventory ? (
+        <WorkflowModelInventoryFixture />
+      ) : layoutConditioning ? (
+        <LayoutConditioningFixture />
+      ) : fieldLayout ? (
+        <NodeFieldLayoutFixture />
+      ) : (
+        <ControlStateMatrix />
+      )}
+    </ModiffSnackbarProvider>
   </StrictMode>,
 );

@@ -18,6 +18,8 @@ let stableHashModule;
 let studioStoreModule;
 let flowStoreModule;
 let originalFetch;
+let controlModule;
+let websocketMessagesModule;
 
 function requestStates() {
   return Object.fromEntries(
@@ -53,6 +55,8 @@ before(async () => {
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  controlModule = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
+  websocketMessagesModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   operationContractsModule = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   optionalRuntimesModule = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
   runReadinessModule = await server.ssrLoadModule('/src/studio/runReadiness.ts');
@@ -61,6 +65,7 @@ before(async () => {
 });
 
 beforeEach(() => {
+  controlModule.resetSupervisorControl();
   nodesStoreModule.useNodesStore.setState({
     nodesRegistry: {},
     isLoading: false,
@@ -196,6 +201,52 @@ function fluxExecutionProfile(
     live_proof: false,
   };
 }
+
+test('execution-profile repository revisions are bounded, immutable and owned by that exact profile', () => {
+  const profile = {
+    ...fluxExecutionProfile(),
+    fallback_repo: 'review/fallback',
+    compatible_repos: ['review/compatible'],
+  };
+  const parse = (pairs) =>
+    optionalRuntimesModule.parseOptionalRuntimeExecutionProfiles(
+      [{ ...structuredClone(profile), ...(pairs === undefined ? {} : { repository_revisions: pairs }) }],
+      undefined,
+      (mode) => mode === 'text_to_image',
+    )[0];
+  const valid = [
+    { repo: profile.default_repo, revision: 'a'.repeat(40) },
+    { repo: profile.fallback_repo, revision: 'b'.repeat(40) },
+    { repo: profile.compatible_repos[0], revision: 'a'.repeat(40) },
+  ];
+  assert.deepEqual(parse(valid).repository_revisions, valid);
+  assert.deepEqual(
+    parse([valid[1]]).repository_revisions,
+    [valid[1]],
+    'A lowercase declared repository remains exact.',
+  );
+  assert.equal(
+    parse(undefined).repository_revisions,
+    undefined,
+    'Older metadata remains parseable without granting Add.',
+  );
+  assert.deepEqual(parse([]).repository_revisions, []);
+  for (const pairs of [
+    null,
+    {},
+    [null],
+    [{ ...valid[0], extra: true }],
+    [{ repo: 'unrelated/repository', revision: 'a'.repeat(40) }],
+    [{ repo: 'Review/Fallback', revision: valid[1].revision }],
+    [{ repo: profile.default_repo, revision: 'main' }],
+    [{ repo: profile.default_repo, revision: 'A'.repeat(40) }],
+    [{ repo: profile.default_repo, revision: 123 }],
+    [valid[0], valid[0]],
+    [valid[0], { ...valid[0], revision: 'b'.repeat(40) }],
+    Array.from({ length: 33 }, () => valid[0]),
+  ])
+    assert.throws(() => parse(pairs), /runtime contract/i);
+});
 
 function fluxExecutionSpec(overrides = {}) {
   const semantic = {
@@ -1790,6 +1841,57 @@ test('optional runtime status uses latest-response ordering and clears malformed
   assert.match(state.discoveryRequests.optionalRuntimes.error, /runtime contract/i);
 });
 
+test('optional runtime catalog restores bounded activation jobs through validation and restart', () => {
+  const job = {
+    id: 'optjob-Activate1234',
+    operation: 'activate',
+    profileId: 'huggingface-transformers-peft-5.14.1-0.20.0',
+    specDigest: `sha256:${'1'.repeat(64)}`,
+    createdAt: 1,
+    updatedAt: 2,
+    status: 'restarting',
+    progress: { phase: 'restarting', message: 'Waiting for the replacement worker.' },
+    result: { environmentId: 'runtime-2-12345678', requiresActivation: false, restartRequired: true },
+  };
+  const catalog = optionalRuntimesModule.parseOptionalRuntimeCatalog(optionalRuntimeCatalog({ latestJob: job }));
+  assert.deepEqual(catalog.latestJob, job);
+  for (const [status, phase] of [
+    ['running', 'validating'],
+    ['verifying', 'verifying'],
+    ['ready', 'ready'],
+  ]) {
+    const parsed = optionalRuntimesModule.parseOptionalRuntimeJobResponse({
+      error: false,
+      job: { ...job, status, progress: { ...job.progress, phase } },
+    });
+    assert.equal(parsed.status, status);
+  }
+  for (const malformed of [
+    { operation: 'execute' },
+    { updatedAt: -1 },
+    { createdAt: Infinity },
+    { id: '../private' },
+    { status: 'connected' },
+  ]) {
+    assert.throws(
+      () =>
+        optionalRuntimesModule.parseOptionalRuntimeCatalog(
+          optionalRuntimeCatalog({ latestJob: { ...job, ...malformed } }),
+        ),
+      /runtime contract/i,
+    );
+  }
+});
+
+test('optional runtime profiles distinguish verified base dependencies from legacy optional cards', () => {
+  const payload = optionalRuntimeCatalog();
+  assert.equal(optionalRuntimesModule.parseOptionalRuntimeCatalog(payload).profiles[0].baseIncluded, false);
+  payload.profiles[0].baseIncluded = true;
+  assert.equal(optionalRuntimesModule.parseOptionalRuntimeCatalog(payload).profiles[0].baseIncluded, true);
+  payload.profiles[0].baseIncluded = 'true';
+  assert.throws(() => optionalRuntimesModule.parseOptionalRuntimeCatalog(payload), /runtime contract/i);
+});
+
 test('requestJson aborts requests at the configured timeout', async () => {
   globalThis.fetch = (_url, init) =>
     new Promise((_resolve, reject) => {
@@ -1971,6 +2073,117 @@ test('runtime discovery normalizes legacy and managed runtime payloads', async (
   assert.equal(environment.installation.steps.length, 1);
   assert.equal(environment.installation.steps[0].requiresAdmin, true);
   assert.equal(environment.installation.resumeCommand, './install.sh --resume');
+});
+
+test('runtime discovery publishes supervisor capability and retains it across temporary health failures', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({ ready: true, workerControl: { available: true, address: 'http://127.0.0.1:43001' } });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  assert.deepEqual(nodesStoreModule.useNodesStore.getState().runtimeStatus.workerControl, {
+    available: true,
+    address: 'http://127.0.0.1:43001',
+  });
+  globalThis.fetch = async () => {
+    throw new TypeError('Worker is temporarily restarting.');
+  };
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  assert.equal(nodesStoreModule.useNodesStore.getState().runtimeStatus, null);
+  assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:43001');
+  globalThis.fetch = async () => jsonResponse({ ready: true, workerControl: { available: false, address: null } });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  assert.equal(controlModule.supervisorControlAddress(), null);
+});
+
+test('runtime discovery resolves a published adjacent supervisor through the configured production tunnel', async () => {
+  const config = (await server.ssrLoadModule('/app.config.ts')).default;
+  const previous = { ...config };
+  Object.assign(config, {
+    backendAddress: 'http://127.0.0.1:18088',
+    supervisorAddress: 'http://127.0.0.1:18089',
+    supervisorAddressExplicit: false,
+  });
+  try {
+    globalThis.fetch = async () =>
+      jsonResponse({
+        ready: true,
+        server: { host: '127.0.0.1', port: 8088, scheme: 'http' },
+        workerControl: { available: true, address: 'http://127.0.0.1:8089' },
+      });
+    await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+    assert.equal(
+      nodesStoreModule.useNodesStore.getState().runtimeStatus.workerControl.address,
+      'http://127.0.0.1:18089',
+    );
+    assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:18089');
+    globalThis.fetch = async () => {
+      throw new TypeError('Owned tunneled worker restarting.');
+    };
+    await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+    assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:18089');
+  } finally {
+    Object.assign(config, previous);
+  }
+});
+
+test('malformed runtime control metadata rejects discovery without replacing the last verified destination', async () => {
+  globalThis.fetch = async () =>
+    jsonResponse({ ready: true, workerControl: { available: true, address: 'http://127.0.0.1:43001' } });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  globalThis.fetch = async () =>
+    jsonResponse({ ready: true, workerControl: { available: true, address: 'http://example.com:43001' } });
+  await nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  assert.equal(nodesStoreModule.useNodesStore.getState().discoveryRequests.runtime.status, 'error');
+  assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:43001');
+});
+
+test('a stale runtime response cannot overwrite current worker-control discovery', async () => {
+  const first = deferred(),
+    second = deferred();
+  let count = 0;
+  globalThis.fetch = () => (++count === 1 ? first.promise : second.promise);
+  const older = nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  const newer = nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  second.resolve(jsonResponse({ ready: true, workerControl: { available: true, address: 'http://127.0.0.1:43001' } }));
+  await newer;
+  first.resolve(jsonResponse({ ready: true, workerControl: { available: false, address: null } }));
+  await older;
+  assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:43001');
+});
+
+test('a replacement worker welcome refreshes runtime readiness and fences the old response', async () => {
+  const oldRead = deferred();
+  const replacementRead = deferred();
+  let runtimeReads = 0;
+  nodesStoreModule.useNodesStore.setState({
+    instance: 'old-worker',
+    runtimeStatus: { ready: false, packages: { transformers: { available: false } } },
+  });
+  globalThis.fetch = (url) => {
+    const pathname = new URL(url).pathname;
+    if (pathname === '/runtime/status') return ++runtimeReads === 1 ? oldRead.promise : replacementRead.promise;
+    if (pathname === '/nodes') return Promise.resolve(jsonResponse({ nodes: {}, instance: 'replacement-worker' }));
+    if (pathname === '/studio_outputs') return Promise.resolve(jsonResponse({ outputs: [] }));
+    throw new Error(`Unexpected request: ${pathname}`);
+  };
+  const older = nodesStoreModule.useNodesStore.getState().fetchRuntimeStatus();
+  websocketMessagesModule.handleWebsocketMessage(
+    { type: 'welcome', sid: 'same-session', instance: 'replacement-worker', current: null, queued: {}, recent: [] },
+    {
+      sid: 'same-session',
+      ws: { url: 'ws://127.0.0.1:5191/ws?sid=same-session' },
+      setSid: () => {},
+      getSid: () => 'same-session',
+      setLoopTimer: () => {},
+    },
+  );
+  const welcomeRuntimeReads = runtimeReads;
+  replacementRead.resolve(jsonResponse({ ready: true, packages: { transformers: { available: true } } }));
+  for (let turn = 0; turn < 10; turn++) await new Promise((resolve) => setImmediate(resolve));
+  oldRead.resolve(jsonResponse({ ready: false, packages: { transformers: { available: false } } }));
+  await older;
+  assert.equal(welcomeRuntimeReads, 2);
+  assert.equal(nodesStoreModule.useNodesStore.getState().runtimeStatus.ready, true);
+  assert.equal(nodesStoreModule.useNodesStore.getState().runtimeStatus.packages.transformers.available, true);
 });
 
 test('runtime fingerprint changes invalidate every cached Auto plan', async () => {

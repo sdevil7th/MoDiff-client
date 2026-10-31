@@ -1,6 +1,6 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { lazy, Suspense, useEffect, useState, useMemo, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import config from '../../app.config';
 
 import {
@@ -43,6 +43,7 @@ import {
   deleteWorkflowNow,
   markWorkflowTabOpen,
   saveDetachedWorkflowNow,
+  subscribeBackendWorkflowChanges,
 } from '../studio/useWorkflowBackendSync';
 
 const DeveloperWorkflowLauncher = lazy(() => import('./DeveloperWorkflowLauncher'));
@@ -60,7 +61,7 @@ export interface GraphData {
   requiredArtifacts?: string[];
 }
 
-const graphListRequestGate = createLatestRequestGate<'graphs'>();
+const graphListRequestGate = createLatestRequestGate<'graphs' | 'saved'>();
 const SAVED_WORKFLOWS_PAGE_SIZE = 50;
 
 type SavedWorkflowSummary = Omit<WorkflowTab, 'snapshot'> & { snapshot?: WorkflowTab['snapshot'] };
@@ -127,6 +128,7 @@ function GraphList() {
   const [isLoading, setIsLoading] = useState(false);
   const [graphs, setGraphs] = useState<GraphData[]>([]);
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflowSummary[]>([]);
+  const acknowledgedChanges = useRef(new Map<string, SavedWorkflowSummary | null>());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [savedPage, setSavedPage] = useState(0);
@@ -166,14 +168,50 @@ function GraphList() {
   }, []);
 
   const fetchSavedWorkflows = useCallback(async () => {
+    const ticket = graphListRequestGate.begin('saved');
+    const before = new Map(acknowledgedChanges.current);
     try {
-      const payload = await requestJson<unknown>(`${config.serverAddress}/workflows?view=summary`);
+      const payload = await requestJson<unknown>(`${config.serverAddress}/workflows?view=summary`, {
+        signal: ticket.signal,
+      });
       const records = isRecord(payload) && Array.isArray(payload.workflows) ? payload.workflows : [];
-      setSavedWorkflows(records.map(backendWorkflowSummary).filter((tab): tab is SavedWorkflowSummary => Boolean(tab)));
+      if (!ticket.isLatest()) return;
+      const rows = new Map(
+        records
+          .map(backendWorkflowSummary)
+          .filter((tab): tab is SavedWorkflowSummary => Boolean(tab))
+          .map((tab) => [tab.id, tab]),
+      );
+      // A response requested before Save/Delete must not erase its later
+      // acknowledgement. A fresh manual reload still replaces older summaries.
+      for (const [id, tab] of acknowledgedChanges.current) {
+        if (before.get(id) === tab) continue;
+        if (!tab) rows.delete(id);
+        else if ((rows.get(id)?.backendRevision ?? 0) <= (tab.backendRevision ?? 0)) rows.set(id, tab);
+      }
+      setSavedWorkflows([...rows.values()]);
     } catch (error) {
-      console.warn('Could not refresh My workflows.', error);
+      if (ticket.isLatest()) console.warn('Could not refresh My workflows.', error);
+    } finally {
+      ticket.finish();
     }
   }, []);
+
+  useEffect(
+    () =>
+      subscribeBackendWorkflowChanges(({ id, tab }) => {
+        const summary = tab ? backendWorkflowSummary({ ...tab, revision: tab.backendRevision }) : null;
+        const acknowledged = acknowledgedChanges.current.get(id);
+        if (summary && (acknowledged?.backendRevision ?? 0) > (summary.backendRevision ?? 0)) return;
+        acknowledgedChanges.current.set(id, summary);
+        setSavedWorkflows((current) => {
+          const previous = current.find((item) => item.id === id);
+          if (summary && (previous?.backendRevision ?? 0) > (summary.backendRevision ?? 0)) return current;
+          return [...current.filter((item) => item.id !== id), ...(summary ? [summary] : [])];
+        });
+      }),
+    [],
+  );
 
   // Fetch graphs on component mount
   useEffect(() => {

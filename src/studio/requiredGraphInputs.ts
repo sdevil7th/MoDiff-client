@@ -5,12 +5,16 @@ import type { NodeData } from '../stores/useNodeStore';
 import type { RunReadinessIssue } from './types';
 import { runtimeProgressTarget } from './userBlocks';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
+import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
+import type { OperationContract } from '../workflow/operationContracts';
+import { processImageInputRequirements } from '../workflow/processImageInputRequirements';
 
 /** Inspect current declarations on the same lowered graph used by Run. */
 export function inspectRequiredGraphInputs(
   visible: CustomNodeType[],
   graph: { nodes: CustomNodeType[]; edges: Edge[] },
   registry: Record<string, NodeData>,
+  operations: readonly OperationContract[] = [],
 ): RunReadinessIssue[] {
   const enabled = new Map(graph.nodes.filter((node) => !node.data.uiState?.disabled).map((node) => [node.id, node]));
   const issues: RunReadinessIssue[] = [];
@@ -24,24 +28,34 @@ export function inspectRequiredGraphInputs(
   );
   for (const node of enabled.values()) {
     const declared = registry[`${node.data.module}.${node.data.action}`]?.params;
+    const requirements = processImageInputRequirements(node, registry, operations, graph.edges);
     for (const field of new Set([...Object.keys(declared ?? {}), ...Object.keys(node.data.params)])) {
       const saved = node.data.params[field] ?? declared![field]!;
       const param = declared?.[field] ?? saved;
       if (
-        !param.required ||
+        !(requirements?.[field]?.required ?? param.required) ||
         param.disabled ||
         param.display === 'output' ||
-        !(param.isInput || param.display === 'input')
+        !(param.isInput || param.display === 'input' || param.display === 'modelselect')
       )
         continue;
-      const value = saved.value ?? saved.default ?? param.default;
-      if (value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length)) continue;
+      const selected = saved.value ?? saved.default ?? param.default;
+      const value =
+        param.display === 'modelselect' && selected && typeof selected === 'object' && !Array.isArray(selected)
+          ? 'value' in selected
+            ? selected.value
+            : undefined
+          : selected;
+      const present = param.display === 'modelselect' && typeof value === 'string' ? value.trim() : value;
+      if (present !== undefined && present !== null && present !== '' && (!Array.isArray(present) || present.length))
+        continue;
       const supplied = graph.edges.some((edge) => {
         if (edge.target !== node.id || edge.targetHandle !== field) return false;
         const source = enabled.get(edge.source)?.data.params[edge.sourceHandle ?? ''];
         return source?.display === 'output' && connectionTypesAreCompatible(source.type, saved.type);
       });
       if (supplied) continue;
+      if (operationInputIsSuppliedByBundle(node, field, graph)) continue;
       const target = visible.some((item) => item.id === node.id && !item.hidden)
         ? node.id
         : (owners.get(node.id) ?? runtimeProgressTarget(visible, node.id) ?? node.id);

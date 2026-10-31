@@ -16,6 +16,8 @@ import {
 import config from '../../app.config';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { studioWeightFormatProfile, hasNonNativeStudioWeightFormat } from '../studio/weightFormat';
+import type { StudioFormState } from '../studio/types';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { scopedOutputsForWorkflow, useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
@@ -697,6 +699,8 @@ export function ModelsLibraryPanel() {
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const studioExecutionSpecInvalid = useNodesStore((state) => state.studioExecutionSpecInvalid);
   const studioModelCapabilitiesAuthoritative = useNodesStore((state) => state.studioModelCapabilitiesAuthoritative);
   const installHfModel = useNodesStore((state) => state.installHfModel);
   const fetchRuntimeStatus = useNodesStore((state) => state.fetchRuntimeStatus);
@@ -726,14 +730,37 @@ export function ModelsLibraryPanel() {
   }, [fetchHfCache, fetchLocalModels, fetchModelCacheDiagnostics, fetchRuntimeStatus]);
 
   const hasWorkflowModelContext = Boolean(activeTemplateId || graphBinding || sourceOutputId);
-  const workflowProfile = STUDIO_MODEL_PROFILES[form.modelType];
+  const workflowProfile = studioWeightFormatProfile(
+    form,
+    STUDIO_MODEL_PROFILES[form.modelType],
+    studioModelCapabilities,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+  );
   const supportedProfiles = useMemo(
     () =>
       getCatalogModelProfiles({
         currentModelType: hasWorkflowModelContext ? form.modelType : null,
         includeWorkflowOnly: true,
+      }).flatMap((profile) => {
+        if (profile.modelType !== form.modelType || !hasNonNativeStudioWeightFormat(form)) return [profile];
+        const selected = studioWeightFormatProfile(
+          form,
+          profile,
+          studioModelCapabilities,
+          workflowModelDescriptors,
+          studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+        );
+        return selected ? [selected] : [];
       }),
-    [form.modelType, hasWorkflowModelContext],
+    [
+      form,
+      hasWorkflowModelContext,
+      studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative,
+      workflowModelDescriptors,
+      studioExecutionSpecInvalid,
+    ],
   );
   const supportedPlanForms = useMemo(
     () => supportedProfiles.map((profile) => getFormDefaultsForModel(profile.modelType)),
@@ -789,6 +816,9 @@ export function ModelsLibraryPanel() {
           localModels,
           modelCacheDiagnostics,
           includePipeline: false,
+          backendCapabilities: studioModelCapabilities,
+          workflowModelDescriptors,
+          studioExecutionSpecInvalid: studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
         })
       : [];
 
@@ -915,6 +945,11 @@ export function ModelsLibraryPanel() {
             ) : null}
           </section>
         ) : null}
+        {hasWorkflowModelContext && hasNonNativeStudioWeightFormat(form) && !workflowProfile ? (
+          <p role="status" className="text-xs text-hf-orange">
+            {getStudioModelCacheStatus(null, hfCache, localModels, modelCacheDiagnostics).reason}
+          </p>
+        ) : null}
         {hasWorkflowModelContext && workflowProfile ? (
           <section className="grid gap-1" data-testid="left-model-current">
             <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-subtle-text">
@@ -922,6 +957,7 @@ export function ModelsLibraryPanel() {
             </div>
             <SupportedModelRow
               autoPlan={autoResourcePlans[autoPlanKeyForForm(form)]}
+              form={hasNonNativeStudioWeightFormat(form) ? form : undefined}
               installProgress={hfDownloadProgress}
               onInstall={handleInstall}
               onOpenSetup={openSetup}
@@ -1043,6 +1079,11 @@ export function ModelsLibraryPanel() {
                             onInstall={handleInstall}
                             onOpenSetup={openSetup}
                             profile={profile}
+                            form={
+                              profile.modelType === form.modelType && hasNonNativeStudioWeightFormat(form)
+                                ? form
+                                : undefined
+                            }
                             status={getStudioModelCacheStatus(profile, hfCache, localModels, modelCacheDiagnostics)}
                           />
                         );
@@ -1061,6 +1102,7 @@ export function ModelsLibraryPanel() {
 
 function SupportedModelRow({
   autoPlan,
+  form,
   installProgress,
   onInstall,
   onOpenSetup,
@@ -1068,19 +1110,28 @@ function SupportedModelRow({
   status,
 }: {
   autoPlan?: StudioAutoResourcePlan;
+  form?: StudioFormState;
   installProgress: ReturnType<typeof useNodesStore.getState>['hfDownloadProgress'];
   onInstall: (target: StudioAutoResourceInstallTarget) => Promise<void>;
   onOpenSetup: () => void;
   profile: (typeof STUDIO_MODEL_PROFILES)[keyof typeof STUDIO_MODEL_PROFILES];
   status: ReturnType<typeof getStudioModelCacheStatus>;
 }) {
-  const installTarget = autoResourceInstallTarget(autoPlan) ?? {
+  const installTarget = autoResourceInstallTarget(autoPlan, form) ?? {
     repo: profile.defaultRepo,
     label: profile.label,
     actionLabel: 'Install',
+    ...(form && hasNonNativeStudioWeightFormat(form)
+      ? {
+          revision: profile.revisionCandidates![0],
+          files: [...profile.downloadFiles!],
+          repair: status.repairRequired,
+          actionLabel: status.repairRequired ? 'Repair' : 'Install',
+        }
+      : {}),
   };
   const progress = installProgress[installTarget.repo];
-  const compatibility = autoResourceCompatibility(autoPlan);
+  const compatibility = autoResourceCompatibility(autoPlan, form);
   const installing =
     progress?.status === 'queued' || progress?.status === 'running' || progress?.status === 'downloading';
   const blocked = compatibility.state === 'unsuitable' && !status.runnable;

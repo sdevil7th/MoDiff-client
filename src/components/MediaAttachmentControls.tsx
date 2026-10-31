@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { assertWorkflowOperationContext, captureWorkflowOperationContext } from '../stores/useStudioStore';
@@ -13,7 +13,7 @@ import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { commitOperationGraph, operationGraphSignature } from '../workflow/operationGraphTransaction';
 import { ModiffButton, ModiffDisclosure, ModiffFieldShell, ModiffSelect } from '../ui';
 import { formatRequestError } from '../utils/requestJson';
-import { nodeConnectorParam, nodeConnectorParams } from '../studio/nodeConnectorResolution';
+import { mediaAttachmentSources } from '../workflow/mediaAttachmentSources';
 
 export default function MediaAttachmentControls({
   node,
@@ -29,6 +29,7 @@ export default function MediaAttachmentControls({
   const operations = useNodesStore((state) => state.operationContracts);
   const support = useNodesStore((state) => state.pipelineSupport);
   const nodes = useFlowStore((state) => state.nodes);
+  const edges = useFlowStore((state) => state.edges);
   const [selected, setSelected] = useState('');
   const [sourceKey, setSourceKey] = useState(
     initialSource ? JSON.stringify([initialSource.nodeId, initialSource.handleId]) : '',
@@ -46,26 +47,12 @@ export default function MediaAttachmentControls({
     choices.find((item) => item.key === selected) ??
     choices.find((item) => item.task === hint?.operation.task) ??
     choices[0];
+  const kind = choice?.kind;
+  const sources = useMemo(
+    () => (kind ? mediaAttachmentSources(nodes, edges, kind, initialSource) : []),
+    [nodes, edges, kind, initialSource],
+  );
   if (!choice || (node.parentId && !node.data.blockProjectionOwnerId)) return null;
-  const sources = nodes.flatMap((candidate) => {
-    const params = { ...nodeConnectorParams(candidate) };
-    if (initialSource?.nodeId === candidate.id) {
-      const initial = nodeConnectorParam(candidate, initialSource.handleId);
-      if (initial) params[initialSource.handleId] = initial;
-    }
-    return Object.entries(params)
-      .filter(
-        ([, field]) =>
-          field.display === 'output' &&
-          !field.hidden &&
-          !field.disabled &&
-          (Array.isArray(field.type) ? field.type : [field.type]).includes(choice.kind),
-      )
-      .map(([handle, field]) => ({
-        value: JSON.stringify([candidate.id, handle]),
-        label: `${candidate.data.label} · ${field.label ?? handle}`,
-      }));
-  });
   async function attach() {
     if (!choice || pending.current) return;
     const controller = new AbortController();

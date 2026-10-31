@@ -1,9 +1,18 @@
+import {
+  prepareExecutionScope,
+  assertCurrentExecutionScope,
+  recordExecutionScopeExport,
+  type PreparedExecutionScope,
+} from '../workflow/prepareExecutionScope';
+import { expandFlowExecutionGraph, flowExecutionScopeSourceKey } from '../stores/useFlowStore';
+import { buildApiGraphExport } from '../stores/flowGraphExport';
 import type { Edge } from '@xyflow/react';
 import config from '../../app.config';
 import { useFlowStore, type APIGraphExport, type CustomNodeType } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
 import { formatRequestError, requestJson } from '../utils/requestJson';
+import { isWorkflowResourceValue, type WorkflowResourcePatch, type WorkflowResourceUpdate } from '../types/api';
 import { canonicalBlockStringifyV2, type BlockInstanceV2 } from './blockSchemaV2';
 import {
   blockProjectionNodeIdV2,
@@ -19,7 +28,7 @@ export type WorkflowAutoPlanV2 = {
   canAutoRun: boolean;
   issues: string[];
   message: string;
-  patches: { nodeId: string; field: 'offload_mode' | 'auto_offload'; value: string | boolean }[];
+  patches: WorkflowResourcePatch[];
   loaders: { nodeId: string; modelType: string; repository: string; consumers: string[]; candidateId: string }[];
   requirements: Record<string, number>;
   available: Record<string, number | null>;
@@ -45,11 +54,7 @@ export function parseWorkflowAutoPlanV2(value: unknown): WorkflowAutoPlanV2 {
     ) ||
     !Array.isArray(value.patches) ||
     !value.patches.every(
-      (patch) =>
-        record(patch) &&
-        typeof patch.nodeId === 'string' &&
-        ((patch.field === 'auto_offload' && typeof patch.value === 'boolean') ||
-          (patch.field === 'offload_mode' && typeof patch.value === 'string')),
+      (patch) => record(patch) && typeof patch.nodeId === 'string' && isWorkflowResourceValue(patch.field, patch.value),
     ) ||
     !Array.isArray(value.loaders) ||
     !value.loaders.every(
@@ -82,7 +87,14 @@ export async function fetchWorkflowAutoPlanV2(graph: APIGraphExport, signal?: Ab
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       schemaVersion: 1,
-      graph: { nodes: graph.nodes, paths: graph.paths, ...(graph.loops ? { loops: graph.loops } : {}) },
+      graph: {
+        nodes: graph.nodes,
+        paths: graph.paths,
+        ...(graph.loops ? { loops: graph.loops } : {}),
+        ...(graph.runtimeHints?.executionPurpose
+          ? { runtimeHints: { executionPurpose: graph.runtimeHints.executionPurpose } }
+          : {}),
+      },
     }),
     timeoutMs: 120_000,
     signal,
@@ -91,12 +103,15 @@ export async function fetchWorkflowAutoPlanV2(graph: APIGraphExport, signal?: Ab
 }
 
 export async function inspectWorkflowAutoPlanV2(targetNodeId?: string, signal?: AbortSignal) {
+  const pending = prepareExecutionScope({ targetNodeId, signal });
+  const executionScope = pending ? await pending : undefined;
   const flow = useFlowStore.getState();
   const { prepareLegacyGraphForAutoV2 } = await import('./legacyBlockMovementV2');
   const prepared = prepareLegacyGraphForAutoV2(flow.nodes, flow.edges, targetNodeId);
   const graph = flow.exportGraph('', targetNodeId ? (prepared.remapped.get(targetNodeId) ?? targetNodeId) : undefined, {
     randomizeSeeds: false,
     sourceGraph: prepared,
+    executionScope,
   });
   if (
     !prepared.nodes.some((node) =>
@@ -146,6 +161,7 @@ function resourceValueOwners(instance: BlockInstanceV2) {
 export async function prepareWorkflowAutoExecutionV2(
   graph: APIGraphExport,
   preparedLegacy?: { nodes: CustomNodeType[]; edges: Edge[] },
+  executionScope?: PreparedExecutionScope,
 ) {
   const workflowId = useStudioStore.getState().activeWorkflowTabId;
   const beforeKey = semanticFlowKey();
@@ -176,6 +192,7 @@ export async function prepareWorkflowAutoExecutionV2(
       ]);
     throw error;
   }
+  assertCurrentExecutionScope(executionScope);
   const result = applyWorkflowAutoSettingsV2(graph, plan.patches, preparedLegacy);
   const groups = useFlowStore.getState().nodes.flatMap((node) => {
     const instance = node.data.blockInstanceV2;
@@ -183,7 +200,12 @@ export async function prepareWorkflowAutoExecutionV2(
       ? resourceValueOwners(instance).flatMap(({ bindings }) => {
           if (
             bindings.length < 2 ||
-            !bindings.every((binding) => binding.fieldId === 'offload_mode' || binding.fieldId === 'auto_offload')
+            !bindings.every(
+              (binding) =>
+                binding.fieldId === 'offload_mode' ||
+                binding.fieldId === 'auto_offload' ||
+                binding.fieldId === 'weight_loading_mode',
+            )
           )
             return [];
           return [
@@ -195,9 +217,10 @@ export async function prepareWorkflowAutoExecutionV2(
         })
       : [];
   });
-  return {
+  const prepared = {
     ...result,
     runtimeHints: {
+      ...(graph.runtimeHints?.executionPurpose ? { executionPurpose: graph.runtimeHints.executionPurpose } : {}),
       workflowAutoPlan: {
         schemaVersion: 1,
         graphHash: plan.plannedGraphHash,
@@ -206,6 +229,13 @@ export async function prepareWorkflowAutoExecutionV2(
       resourceMode: 'auto',
     },
   };
+  if (executionScope)
+    recordExecutionScopeExport(
+      executionScope,
+      flowExecutionScopeSourceKey(useFlowStore.getState().nodes, useFlowStore.getState().edges),
+      prepared,
+    );
+  return prepared;
 }
 
 export function applyWorkflowAutoSettingsV2(
@@ -286,11 +316,16 @@ export function applyWorkflowAutoSettingsV2(
   return result;
 }
 
-export function applyRuntimeWorkflowAutoSettingsV2(
-  updates: (WorkflowAutoPlanV2['patches'][number] & { previousValue?: string | boolean | null })[],
-) {
+export function applyRuntimeWorkflowAutoSettingsV2(updates: WorkflowResourceUpdate[]) {
   const flow = useFlowStore.getState();
-  const graph = flow.exportGraph('', undefined, { randomizeSeeds: false });
+  // Compare the current literal values without requesting fresh execution authority
+  // for an already-owned run's resource update. This snapshot is never submitted.
+  const graph = buildApiGraphExport({
+    ...expandFlowExecutionGraph(flow.nodes, flow.edges),
+    sid: '',
+    setParam: flow.setParam,
+    randomizeSeeds: false,
+  });
   for (const update of updates) {
     const param = graph.nodes[update.nodeId]?.params[update.field];
     if (!param || param.sourceId || (param.value ?? null) !== (update.previousValue ?? null))

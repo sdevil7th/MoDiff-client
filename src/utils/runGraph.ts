@@ -1,5 +1,12 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
+import {
+  assertCurrentExecutionScope,
+  assertExecutionScopeSubmission,
+  hasAncillaryExecutionClaim,
+  prepareExecutionScope,
+  type PreparedExecutionScope,
+} from '../workflow/prepareExecutionScope';
 import { enqueueSnackbar } from '../ui/snackbar';
 import config from '../../app.config';
 import { useFlowStore, type APIGraphExport } from '../stores/useFlowStore';
@@ -35,8 +42,22 @@ export const runGraph = async (
   sid: string,
   targetNodeId?: string,
   preparedGraph?: APIGraphExport,
+  executionScope?: PreparedExecutionScope,
 ): Promise<RunGraphResponse> => {
-  const graph = preparedGraph ?? useFlowStore.getState().exportGraph(sid, targetNodeId);
+  const flow = useFlowStore.getState();
+  if (!executionScope && !preparedGraph) {
+    const pending = prepareExecutionScope({ targetNodeId });
+    if (pending) executionScope = await pending;
+  }
+  if (
+    (hasAncillaryExecutionClaim(flow.nodes) ||
+      Object.prototype.hasOwnProperty.call(preparedGraph?.runtimeHints ?? {}, 'executionPurpose')) &&
+    !executionScope
+  )
+    throw new Error('Resolve a current execution scope before submitting a claimed graph.');
+  assertCurrentExecutionScope(executionScope);
+  const graph = preparedGraph ?? flow.exportGraph(sid, targetNodeId, { executionScope });
+  if (executionScope) assertExecutionScopeSubmission(executionScope, graph);
 
   try {
     const data = await requestJson(`${config.serverAddress}/graph`, {

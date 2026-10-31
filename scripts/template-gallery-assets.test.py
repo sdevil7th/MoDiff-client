@@ -560,10 +560,10 @@ class TemplateGalleryAssetTests(unittest.TestCase):
                 provisional_ledger["assetSetId"],
                 provisional_manifest["assetSetId"],
             )
-            self.assertIn(
-                "must not be activated",
-                (staging / "README.md").read_text(encoding="utf-8"),
-            )
+            card = (staging / "README.md").read_text(encoding="utf-8")
+            self.assertIn("Do not use the complete-set `activate` command", card)
+            self.assertIn("separately reviewed source-descriptor update", card)
+            self.assertIn("full anonymous verification", card)
 
     def test_provisional_upload_cli_has_no_activate_option(self) -> None:
         parsed = assets.parser().parse_args(
@@ -577,6 +577,103 @@ class TemplateGalleryAssetTests(unittest.TestCase):
         )
         self.assertIs(parsed.handler, assets.command_upload_provisional)
         self.assertFalse(hasattr(parsed, "activate"))
+
+    def test_provisional_command_stages_approved_bytes_before_hub_access(self) -> None:
+        for fault in (None, "missing", "changed", "link", "parent-link", "rights", "unsafe-held"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                gallery = root / "gallery"
+                gallery.mkdir()
+                payload = b"approved original bytes"
+                relative = "nested/approved.bin"
+                source = gallery / relative
+                source.parent.mkdir()
+                source.write_bytes(payload)
+                manifest = ready_manifest([
+                    asset_record("template-gallery/held.bin", b"withheld and absent"),
+                    asset_record("template-gallery/" + relative, payload),
+                ])
+                ledger = assets.build_rights_template(manifest)
+                ledger["records"][1].update({
+                    "publishDecision": "approved",
+                    "creatorOrRightsholder": "Unit fixture author",
+                    "creationMethod": "Original deterministic unit fixture",
+                    "sourceLicense": "not-applicable",
+                    "modelTerms": ["not-applicable"],
+                    "aiGenerated": False,
+                    "humanLikenessConsent": "not-applicable",
+                    "marks": [], "requiredAttribution": [],
+                    "assetLicense": "CC0-1.0",
+                    "reviewedBy": "Unit fixture reviewer", "reviewedAt": "2026-10-31",
+                })
+                if fault == "missing":
+                    source.unlink()
+                elif fault == "changed":
+                    source.write_bytes(b"unapproved replacement")
+                elif fault == "link":
+                    target = root / "external.bin"
+                    target.write_bytes(payload)
+                    source.unlink()
+                    self.create_symlink_or_skip(source, target)
+                elif fault == "parent-link":
+                    target = root / "external"
+                    target.mkdir()
+                    (target / "approved.bin").write_bytes(payload)
+                    source.unlink()
+                    source.parent.rmdir()
+                    self.create_symlink_or_skip(source.parent, target, target_is_directory=True)
+                elif fault == "rights":
+                    ledger["records"][0]["sha256"] = "sha256:bytes:" + "a" * 64
+                elif fault == "unsafe-held":
+                    manifest["assets"][0]["path"] = "template-gallery/../held.bin"
+                checked_manifest, checked_rights = root / "manifest.json", root / "rights.json"
+                assets.write_json(checked_manifest, manifest)
+                assets.write_json(checked_rights, ledger)
+                card = root / "README.md"
+                card.write_text("---\nlicense: apache-2.0\n---\nFixture\n", encoding="utf-8")
+                calls = []
+
+                class FakeApi:
+                    def upload_folder(self, **kwargs: object) -> SimpleNamespace:
+                        staging = Path(kwargs["folder_path"])
+                        self_path = staging / "template-gallery" / relative
+                        assert self_path.read_bytes() == payload
+                        assert not (staging / "template-gallery/held.bin").exists()
+                        calls.append(kwargs)
+                        return SimpleNamespace(oid="0123456789abcdef0123456789abcdef01234567")
+
+                def hub_after_staging():
+                    # The source must have been checked before authentication,
+                    # even when the materialized approved set is rejected.
+                    return FakeApi, None, None
+
+                with (
+                    patch.object(assets, "GALLERY_ROOT", gallery),
+                    patch.object(assets, "ASSET_MANIFEST_PATH", checked_manifest),
+                    patch.object(assets, "ASSET_RIGHTS_PATH", checked_rights),
+                    patch.object(assets, "DATASET_CARD_PATH", card),
+                    patch.object(assets, "DATASET_LICENSE_PATH", root / "absent-license"),
+                    patch.object(assets, "required_asset_paths", return_value={"held.bin", relative}),
+                    patch.object(assets, "required_assets_by_purpose",
+                                 return_value={"held.bin": {"runtime"}, relative: {"runtime"}}),
+                    patch.object(assets, "require_hub", side_effect=hub_after_staging) as hub,
+                    patch.object(assets, "ensure_public_repo"),
+                    patch.object(assets, "verify_public_provisional_snapshot"),
+                    redirect_stdout(io.StringIO()),
+                ):
+                    args = SimpleNamespace(public=True, confirm_redistribution_rights=True,
+                                           repo_id="unit-fixture/gallery", create=False, make_public=False)
+                    if fault is None:
+                        self.assertEqual(assets.command_upload_provisional(args), 0)
+                        self.assertEqual(len(calls), 1)
+                        with self.assertRaises(assets.AssetPipelineError):
+                            assets.verify_checked_manifest(require_ready=True)
+                    else:
+                        with self.assertRaises(assets.AssetPipelineError):
+                            assets.command_upload_provisional(args)
+                        hub.assert_not_called()
+                self.assertEqual(json.loads(checked_manifest.read_text(encoding="utf-8")), manifest)
+                self.assertEqual(json.loads(checked_rights.read_text(encoding="utf-8")), ledger)
 
     def test_upload_replaces_only_managed_dataset_prefixes(self) -> None:
         calls: list[dict[str, object]] = []
@@ -750,6 +847,115 @@ class TemplateGalleryAssetTests(unittest.TestCase):
         materialized_verification.assert_called_once_with(
             Path("/verified/snapshot"), manifest, reject_unexpected=True
         )
+
+    def test_full_remote_verification_preserves_complete_and_exact_approved_subset_contracts(self) -> None:
+        repo = "modiff-project/template-gallery"
+        revision = "0123456789abcdef0123456789abcdef01234567"
+        cases = ("complete", "subset", "source-revision", "complete-identity", "missing-path",
+                 "published-hold", "rights-mismatch", "asset-bytes", "unexpected-file")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source_path, rights_path = root / "source.json", root / "rights.json"
+                manifest_path, snapshot = root / "manifest.json", root / "snapshot"
+                payloads = {"template-gallery/approved.bin": b"original public demo",
+                            "template-gallery/held.bin": b"permission still pending"}
+                complete = ready_manifest([asset_record(path, body) for path, body in payloads.items()])
+                with patch.object(assets, "ASSET_RIGHTS_PATH", rights_path):
+                    ledger = assets.build_rights_template(complete)
+                for index, record in enumerate(ledger["records"]):
+                    if index == 0 or case == "complete":
+                        record.update({
+                            "publishDecision": "approved", "holdReason": None,
+                            "creatorOrRightsholder": "Unit fixture author",
+                            "creationMethod": "Original geometric unit fixture",
+                            "sourceLicense": "not-applicable", "modelTerms": [], "aiGenerated": False,
+                            "humanLikenessConsent": "not-applicable", "marks": [], "requiredAttribution": [],
+                            "assetLicense": "Unit fixture terms", "reviewedBy": "Unit fixture reviewer",
+                            "reviewedAt": "2026-10-25",
+                        })
+                if case == "complete":
+                    remote, remote_rights, unavailable = complete, ledger, []
+                else:
+                    remote, remote_rights, unavailable = assets.build_provisional_publication(complete, ledger)
+                source = {"mode": "huggingface", "repoId": repo, "revision": revision,
+                          "assetSetId": remote["assetSetId"]}
+                if case != "complete":
+                    source.update(completeAssetSetId=complete["assetSetId"], unavailableAssets=unavailable)
+                if case == "source-revision":
+                    source["revision"] = "f" * 40
+                elif case == "complete-identity":
+                    source["completeAssetSetId"] = "sha256:canonical-json:" + "0" * 64
+                elif case == "missing-path":
+                    source["unavailableAssets"] = []
+                elif case == "published-hold":
+                    # Independent local/remote copies prove matching held rights
+                    # reach the approval guard, rather than the ledger-mismatch guard.
+                    remote_rights = json.loads(json.dumps(remote_rights))
+                    for record in (ledger["records"][0], remote_rights["records"][0]):
+                        record.update(publishDecision="hold", holdReason="Unit hold remains.")
+                    self.assertIsNot(ledger["records"][0], remote_rights["records"][0])
+                    self.assertEqual(ledger["records"][0], remote_rights["records"][0])
+                elif case == "rights-mismatch":
+                    remote_rights = json.loads(json.dumps(remote_rights))
+                    remote_rights["records"][0]["sha256"] = "sha256:bytes:" + "0" * 64
+                for record in remote["assets"]:
+                    target = snapshot / record["path"]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(payloads[record["path"]])
+                metadata = snapshot / "_modiff"
+                metadata.mkdir()
+                assets.write_json(metadata / "template-assets.v1.json", remote)
+                assets.write_json(metadata / "template-asset-rights.v1.json", remote_rights)
+                if case == "asset-bytes":
+                    (snapshot / "template-gallery/approved.bin").write_bytes(b"changed")
+                elif case == "unexpected-file":
+                    (metadata / "unreviewed.json").write_text("{}", encoding="utf-8")
+                assets.write_json(source_path, source)
+                assets.write_json(rights_path, ledger)
+                assets.write_json(manifest_path, complete)
+                source_before, rights_before = source_path.read_bytes(), rights_path.read_bytes()
+                api = Mock()
+                api.repo_info.return_value = SimpleNamespace(private=False)
+                api_factory = Mock(return_value=api)
+                snapshot_download = Mock(return_value=str(snapshot))
+                output = io.StringIO()
+                with (
+                    patch.object(assets, "SOURCE_CONFIG_PATH", source_path),
+                    patch.object(assets, "ASSET_RIGHTS_PATH", rights_path),
+                    patch.object(assets, "ASSET_MANIFEST_PATH", manifest_path),
+                    patch.object(assets, "required_asset_paths", return_value={"approved.bin", "held.bin"}),
+                    patch.object(assets, "remote_manifest", return_value=remote),
+                    patch.object(assets, "remote_rights_ledger", return_value=remote_rights),
+                    patch.object(assets, "require_hub", return_value=(api_factory, None, snapshot_download)),
+                    redirect_stdout(output),
+                ):
+                    args = SimpleNamespace(repo_id=repo, revision=revision, full=True)
+                    if case in {"complete", "subset"}:
+                        self.assertEqual(assets.command_verify_remote(args), 0)
+                        self.assertIn(f"for {remote['assetCount']} assets", output.getvalue())
+                    elif case == "published-hold":
+                        with self.assertRaisesRegex(assets.AssetPipelineError, "includes a held rights record"):
+                            assets.assert_remote_manifest_matches(repo, revision)
+                        api_factory.assert_not_called()
+                        snapshot_download.assert_not_called()
+                        with self.assertRaisesRegex(assets.AssetPipelineError, "includes a held rights record"):
+                            assets.command_verify_remote(args)
+                    else:
+                        with self.assertRaises(assets.AssetPipelineError):
+                            assets.command_verify_remote(args)
+                self.assertEqual(source_path.read_bytes(), source_before)
+                self.assertEqual(rights_path.read_bytes(), rights_before)
+                if case in {"complete", "subset", "asset-bytes", "unexpected-file"}:
+                    api_factory.assert_called_once_with(token=False)
+                    api.repo_info.assert_called_once_with(repo_id=repo, repo_type="dataset",
+                                                         revision=revision, token=False)
+                    snapshot_download.assert_called_once_with(
+                        repo_id=repo, repo_type="dataset", revision=revision, token=False,
+                        allow_patterns=["template-gallery/**", "_modiff/**"])
+                else:
+                    api_factory.assert_not_called()
+                    snapshot_download.assert_not_called()
 
     def test_activation_writes_source_only_after_full_public_byte_verification(
         self,

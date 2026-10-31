@@ -1,4 +1,12 @@
 import type { ModelCacheDiagnostics } from '../stores/useNodeStore';
+import { hashString } from './stableHash';
+import type { CustomNodeType } from '../stores/useFlowStore';
+import type { WorkflowModelDescriptor } from '../workflow/workflowChoices';
+import {
+  selectedNodeWeightFormatArtifact,
+  studioWeightFormatProfile,
+  hasNonNativeStudioWeightFormat,
+} from './weightFormat';
 import {
   autoPlanIsReady,
   autoResourceInstallTarget,
@@ -6,9 +14,14 @@ import {
   type StudioAutoResourceInstallTarget,
   type StudioAutoResourcePlan,
 } from './autoResource';
-import { getRepoCacheStatus, localModelsContain, type StudioModelCacheStatus } from './modelCache';
+import {
+  getRepoCacheStatus,
+  getStudioModelCacheStatus,
+  localModelsContain,
+  type StudioModelCacheStatus,
+} from './modelCache';
 import { getModelRequirementsForMode, getProfileForForm } from './modelProfiles';
-import type { StudioFormState, StudioModelRequirement } from './types';
+import type { StudioFormState, StudioModelRequirement, StudioModelProfile } from './types';
 
 export type WorkflowArtifactRequirementRole =
   'Pipeline' | 'Adapter' | 'Control' | 'Safety checker' | 'Text encoder' | 'VAE' | 'Transformer' | 'Other component';
@@ -39,6 +52,9 @@ type WorkflowArtifactRequirementOptions = {
   localModels: unknown[];
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
   includePipeline?: boolean;
+  backendCapabilities?: readonly StudioModelProfile[];
+  workflowModelDescriptors?: readonly WorkflowModelDescriptor[];
+  studioExecutionSpecInvalid?: boolean;
 };
 
 export type WorkflowGraphArtifactReference = {
@@ -48,10 +64,14 @@ export type WorkflowGraphArtifactReference = {
   value: string;
   paramKey: string;
   revision?: string;
+  /** Selected source-reviewed inventory; never arbitrary graph-provided paths. */
+  downloadFiles?: string[];
 };
 
 type GraphWorkflowArtifactRequirementOptions = {
   references: WorkflowGraphArtifactReference[];
+  nodes?: readonly CustomNodeType[];
+  workflowModelDescriptors?: readonly WorkflowModelDescriptor[];
   hfCache: unknown[];
   localModels: unknown[];
   modelCacheDiagnostics: ModelCacheDiagnostics | null;
@@ -161,8 +181,36 @@ export function getStudioWorkflowArtifactRequirements({
   includePipeline = true,
   localModels,
   modelCacheDiagnostics,
+  backendCapabilities = [],
+  workflowModelDescriptors = [],
+  studioExecutionSpecInvalid = false,
 }: WorkflowArtifactRequirementOptions): WorkflowArtifactRequirement[] {
-  const profile = getProfileForForm(form);
+  const nativeProfile = getProfileForForm(form);
+  const profile = studioWeightFormatProfile(
+    form,
+    nativeProfile,
+    backendCapabilities,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid,
+  );
+  if (!profile) {
+    const status = getStudioModelCacheStatus(null, hfCache, localModels, modelCacheDiagnostics);
+    return includePipeline
+      ? [
+          {
+            id: `profile:${form.modelType}:weight-format-unavailable`,
+            role: 'Pipeline',
+            label: nativeProfile.label,
+            repo: nativeProfile.defaultRepo,
+            artifact: nativeProfile.defaultRepo,
+            source: 'profile',
+            status,
+            primaryAction: 'Details',
+            details: status.reason,
+          },
+        ]
+      : [];
+  }
   const requirements: WorkflowArtifactRequirement[] = [];
 
   if (includePipeline && profile.artifactInstallRequired !== false) {
@@ -203,7 +251,14 @@ export function getStudioWorkflowArtifactRequirements({
           details: profile.artifactLabel,
           hfCache,
           id: `profile:${profile.modelType}:${profile.defaultRepo}`,
-          installTarget: { repo: profile.defaultRepo, label: profile.label, actionLabel: 'Install' },
+          installTarget: {
+            repo: profile.defaultRepo,
+            label: profile.label,
+            actionLabel: 'Install',
+            ...(hasNonNativeStudioWeightFormat(form)
+              ? { revision: profile.revisionCandidates![0], files: [...profile.downloadFiles!] }
+              : {}),
+          },
           label: profile.label,
           localModels,
           modelCacheDiagnostics,
@@ -243,16 +298,67 @@ export function getStudioWorkflowArtifactRequirements({
 
 export function getGraphWorkflowArtifactRequirements({
   references,
+  nodes = [],
+  workflowModelDescriptors = [],
   hfCache,
   localModels,
   modelCacheDiagnostics,
 }: GraphWorkflowArtifactRequirementOptions): WorkflowArtifactRequirement[] {
-  const requirements = references.map((reference): WorkflowArtifactRequirement => {
+  const invalidFormatNodes = new Set<string>();
+  const selections = new Map<string, NonNullable<ReturnType<typeof selectedNodeWeightFormatArtifact>>>();
+  for (const node of nodes) {
+    if (node.data.module !== 'modules.ModularDiffusers' || node.data.action !== 'ModelsLoader') continue;
+    try {
+      const selected = selectedNodeWeightFormatArtifact(node, workflowModelDescriptors);
+      if (selected) selections.set(node.id, selected);
+    } catch {
+      invalidFormatNodes.add(node.id);
+    }
+  }
+  const selectedReferences = references.map((reference) => {
+    const selected = selections.get(reference.nodeId)?.selection;
+    return selected && reference.kind === 'repo' && selected.repo === reference.value
+      ? { ...reference, revision: selected.revision, downloadFiles: [...selected.downloadFiles] }
+      : reference;
+  });
+  const seen = new Set<string>();
+  const exactReferences = selectedReferences.filter((reference) => {
     const label = reference.value.split(/[\\/]/).pop() || reference.value;
+    const selection = reference.downloadFiles
+      ? ':' + JSON.stringify([reference.revision, reference.downloadFiles])
+      : '';
+    const key = `${roleForArtifact(reference.value, label)}:${reference.value}`.toLowerCase() + selection;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const requirements = exactReferences.map((reference): WorkflowArtifactRequirement => {
+    const label = reference.value.split(/[\\/]/).pop() || reference.value;
+    const selectionId = reference.downloadFiles
+      ? ':selection-' + hashString(JSON.stringify([reference.revision, reference.downloadFiles]))
+      : '';
+    const id = `graph:${reference.nodeId}:${reference.paramKey}:${reference.value}${selectionId}`;
+    if (invalidFormatNodes.has(reference.nodeId)) {
+      const status = getStudioModelCacheStatus(null, hfCache, localModels, modelCacheDiagnostics);
+      return {
+        id,
+        role: roleForArtifact(reference.value, label),
+        label,
+        repo: reference.value,
+        artifact: reference.value,
+        source: 'graph',
+        status,
+        primaryAction: 'Details',
+        nodeId: reference.nodeId,
+        nodeLabel: reference.nodeLabel,
+        paramKey: reference.paramKey,
+        details: status.reason,
+      };
+    }
     if (reference.kind === 'path') {
       const status = localPathStatus(reference.value, localModels);
       return {
-        id: `graph:${reference.nodeId}:${reference.paramKey}:${reference.value}`,
+        id,
         role: roleForArtifact(reference.value, label),
         label,
         repo: reference.value,
@@ -273,13 +379,18 @@ export function getGraphWorkflowArtifactRequirements({
       label,
       actionLabel: 'Install' as const,
       revision: reference.revision,
+      ...(reference.downloadFiles ? { files: [...reference.downloadFiles] } : {}),
     };
     const status = getRepoCacheStatus(reference.value, hfCache, localModels, modelCacheDiagnostics, {
       revision: reference.revision,
+      ...(reference.downloadFiles ? { files: [...reference.downloadFiles] } : {}),
     });
-    const primaryAction = actionForStatus(status, installTarget);
+    const effectiveInstallTarget = status.repairRequired
+      ? { ...installTarget, repair: true, actionLabel: 'Repair' as const }
+      : installTarget;
+    const primaryAction = actionForStatus(status, effectiveInstallTarget);
     return {
-      id: `graph:${reference.nodeId}:${reference.paramKey}:${reference.value}`,
+      id,
       role: roleForArtifact(reference.value, label),
       label,
       repo: reference.value,
@@ -289,7 +400,7 @@ export function getGraphWorkflowArtifactRequirements({
       primaryAction,
       installTarget:
         primaryAction === 'Install' || primaryAction === 'Repair'
-          ? { ...installTarget, actionLabel: primaryAction }
+          ? { ...effectiveInstallTarget, actionLabel: primaryAction }
           : undefined,
       nodeId: reference.nodeId,
       nodeLabel: reference.nodeLabel,
@@ -298,5 +409,5 @@ export function getGraphWorkflowArtifactRequirements({
     };
   });
 
-  return dedupeRequirements(requirements);
+  return requirements;
 }

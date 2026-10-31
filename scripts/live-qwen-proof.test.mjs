@@ -1,6 +1,12 @@
+import { appliedOrderCase, canonicalHookCase, legacyCreatorFactoryCases } from './canonical-provenance-fixtures.mjs';
+import { canonicalJsonHash } from './canonical-json.mjs';
+import { validateAppliedAdapterSection } from './applied-adapter-provenance.mjs';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
@@ -15,6 +21,7 @@ import {
 } from './live-qwen-proof.mjs';
 import {
   backendSourceEvidence,
+  backendSourceIdentity,
   canonicalGraphIdentity,
   compareRunProvenance,
   createRunProvenance,
@@ -27,10 +34,279 @@ import {
   selectBackendRuntimeFingerprintEvidence,
   selectInstalledModelIdentity,
   sha256Value,
+  stableStringify,
   validateRunProvenance,
+  validateAppliedAdapterProof,
 } from './live-proof-provenance.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('optional native applied adapter proof locks exact order and distinguishes reuse without changing historical requirements', () => {
+  const args = appliedOrderCase();
+  const before = JSON.stringify(args);
+  const proof = createRunProvenance(args);
+  assert.deepEqual(proof.blockers, []);
+  const application = validateAppliedAdapterProof(proof, { required: true }).owners[0].application;
+  assert.deepEqual(
+    application.adapters.map((item) => [item.adapterName, item.scale]),
+    [
+      ['protocol_0', 0],
+      ['protocol_1', 1],
+    ],
+  );
+  assert.equal(application.observation, 'activated');
+  assert.equal(JSON.stringify(args), before);
+  args.executedOutput.resolvedExecutionInputs.nodes[0].appliedAdapters.observation = 'reused';
+  const reused = createRunProvenance(args);
+  const observed = validateAppliedAdapterProof(reused, { required: true }).owners[0].application;
+  assert.equal(observed.applicationId, application.applicationId);
+  assert.equal(observed.stateSha256, application.stateSha256);
+  assert.equal(observed.observation, 'reused');
+  assert.notEqual(reused.adapterApplicationsHash, proof.adapterApplicationsHash);
+  const historical = appliedOrderCase();
+  delete historical.executedOutput.resolvedExecutionInputs;
+  const old = createRunProvenance(historical);
+  assert.deepEqual(old.blockers, []);
+  assert.equal(old.adapterApplications, undefined);
+  assert.equal(validateAppliedAdapterProof(old), null);
+  assert.throws(
+    () => validateAppliedAdapterProof(old, { required: true }),
+    /Original applied adapter order evidence is required/,
+  );
+  const unavailable = appliedOrderCase();
+  unavailable.executedOutput.resolvedExecutionInputs.nodes[0].appliedAdapters = {
+    schemaVersion: 1,
+    status: 'unavailable',
+    reason: 'unobserved-application',
+  };
+  const incomplete = createRunProvenance(unavailable);
+  assert.deepEqual(incomplete.blockers, []);
+  assert.throws(() => validateAppliedAdapterProof(incomplete, { required: true }), /unavailable/);
+});
+
+test('strict applied adapter proof compares legacy decimal scale literals without rewriting original evidence', () => {
+  for (const [submitted, observed] of [
+    ['1.5', 1.5],
+    ['0', 0],
+    ['-0.75', -0.75],
+    ['1e0', 1],
+  ]) {
+    const args = appliedOrderCase();
+    args.apiGraph.nodes['adapter-0'].params.scale.value = submitted;
+    args.executedOutput.apiGraphSnapshot = structuredClone(args.apiGraph);
+    const application = args.executedOutput.resolvedExecutionInputs.nodes[0].appliedAdapters;
+    application.adapters[0].scale = observed;
+    application.stateSha256 = `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: application.adapters })}`;
+    const before = JSON.stringify(args);
+    const proof = createRunProvenance(args);
+    assert.deepEqual(proof.blockers, []);
+    assert.equal(
+      validateAppliedAdapterProof(proof, { required: true }).owners[0].application.adapters[0].scale,
+      observed,
+    );
+    assert.equal(JSON.stringify(args), before);
+    assert.equal(args.apiGraph.nodes['adapter-0'].params.scale.value, submitted);
+    application.adapters[0].scale = observed + 0.25;
+    application.stateSha256 = `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: application.adapters })}`;
+    assert.throws(() => validateAppliedAdapterProof(createRunProvenance(args), { required: true }), /scale differs/);
+  }
+});
+
+test('strict applied adapter proof rejects ambiguous, nonfinite and coercible non-decimal scale controls', () => {
+  for (const submitted of [
+    '',
+    ' ',
+    ' 0',
+    '0 ',
+    '0x0',
+    '0b0',
+    'NaN',
+    'Infinity',
+    '1e999',
+    '20.1',
+    '-20.1',
+    '0'.repeat(65),
+    false,
+    null,
+    [],
+    {},
+  ]) {
+    const args = appliedOrderCase();
+    args.apiGraph.nodes['adapter-0'].params.scale.value = submitted;
+    args.executedOutput.apiGraphSnapshot = structuredClone(args.apiGraph);
+    assert.throws(
+      () => validateAppliedAdapterProof(createRunProvenance(args), { required: true }),
+      undefined,
+      JSON.stringify(submitted),
+    );
+  }
+  const args = appliedOrderCase();
+  const application = args.executedOutput.resolvedExecutionInputs.nodes[0].appliedAdapters;
+  application.adapters[0].scale = '0';
+  application.stateSha256 = `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: application.adapters })}`;
+  assert.throws(() => validateAppliedAdapterSection(application));
+});
+
+test('applied adapter proof rejects valid-digest order, scale, artifact and owner forgeries', () => {
+  const mutations = {
+    order: (args, app) => {
+      app.adapters.reverse();
+    },
+    scale: (args, app) => {
+      app.adapters[0].scale = 1;
+    },
+    artifact: (args, app) => {
+      app.adapters[0].artifact.sha256 = 'c'.repeat(64);
+    },
+    revision: (args, app) => {
+      app.adapters[0].artifact.revision = 'c'.repeat(40);
+    },
+    scheduler: (args, app) => {
+      app.adapters[0].scheduler = { className: 'Unknown', configSha256: `sha256:${'a'.repeat(64)}` };
+    },
+    owner: (args) => {
+      args.executedOutput.resolvedExecutionInputs.nodes[0].nodeId = 'adapter-0';
+    },
+    task: (args) => {
+      args.executionReceipt.task_id = 'other';
+    },
+    'missing native version': (args) => {
+      delete args.executedOutput.resolvedExecutionInputs.schemaVersion;
+    },
+    'unknown native version': (args) => {
+      args.executedOutput.resolvedExecutionInputs.schemaVersion = 2;
+    },
+    snapshot: (args) => {
+      args.executedOutput.apiGraphSnapshot.nodes['adapter-0'].params.scale.value = 0.5;
+    },
+    attempt: (args) => {
+      args.executedOutput.attemptIndex = 1;
+    },
+    model: (args) => {
+      args.modelIdentities[0].selectedRevision = 'c'.repeat(40);
+    },
+    duplicate: (args, app) => {
+      app.adapters[1].adapterName = app.adapters[0].adapterName;
+    },
+    unknown: (args, app) => {
+      app.path = '/private';
+    },
+    detached: (args) => {
+      args.apiGraph.nodes.loader.params.lora_list.sourceId = 'adapter-0';
+    },
+    unexecuted: (args) => {
+      args.apiGraph.paths[0] = ['loader', 'preview'];
+    },
+    cycle: (args) => {
+      args.apiGraph.nodes['adapter-0'].params.previous_loras = { sourceId: 'adapter-1', sourceKey: 'lora' };
+    },
+  };
+  for (const [label, mutate] of Object.entries(mutations)) {
+    const args = appliedOrderCase();
+    const app = args.executedOutput.resolvedExecutionInputs.nodes[0].appliedAdapters;
+    mutate(args, app);
+    app.stateSha256 = `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: app.adapters })}`;
+    assert.throws(
+      () => {
+        const proof = createRunProvenance(args);
+        assert.deepEqual(proof.blockers, []);
+        validateAppliedAdapterProof(proof, { required: true });
+      },
+      undefined,
+      label,
+    );
+  }
+  const forged = createRunProvenance(appliedOrderCase());
+  forged.adapterApplications.owners[0].application.observation = 'reused';
+  assert.ok(validateRunProvenance(forged).some((blocker) => /adapter/i.test(blocker)));
+});
+
+test('optional applied observations do not impose explicit order-case requirements on existing template proofs', () => {
+  const args = appliedOrderCase();
+  // Existing generated adapter names are a supported loader behavior. The
+  // observation remains retainable; the new strict literal-order case is held.
+  args.apiGraph.nodes['adapter-0'].params.adapter_name.value = '';
+  args.executedOutput.apiGraphSnapshot = structuredClone(args.apiGraph);
+  const proof = createRunProvenance(args);
+  assert.deepEqual(proof.blockers, []);
+  assert.ok(validateAppliedAdapterProof(proof));
+  assert.throws(() => validateAppliedAdapterProof(proof, { required: true }), /Generated adapter names/);
+  const detached = appliedOrderCase();
+  detached.apiGraph.nodes.preview.params.image = { value: 'unrelated' };
+  detached.executedOutput.apiGraphSnapshot = structuredClone(detached.apiGraph);
+  assert.ok(createRunProvenance(detached).blockers.some((blocker) => /detached/.test(blocker)));
+});
+
+test('backend Git identity accepts only its exact repository and linked worktree', () => {
+  const temporary = mkdtempSync(resolve(tmpdir(), 'modiff-exact-git-root-'));
+  const repository = resolve(temporary, 'repository');
+  const worktree = resolve(temporary, 'linked');
+  const backend = resolve(ROOT, '../MoDiff');
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    resolve(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  let linked = false;
+  function git(...args) {
+    const result = spawnSync('git', ['-c', 'core.hooksPath=', ...args], {
+      cwd: repository,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    assert.equal(result.status, 0, result.stderr || result.error?.message);
+    return result.stdout.trim();
+  }
+  function agreesWithWorker(root) {
+    const observed = spawnSync(
+      python,
+      [
+        '-I',
+        '-B',
+        '-c',
+        'import json,sys; sys.path.insert(0,sys.argv[1]); from modiff.backend_source_identity import backend_source_identity; print(json.dumps(backend_source_identity(sys.argv[2])))',
+        backend,
+        root,
+      ],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    assert.equal(observed.status, 0, observed.stderr || observed.error?.message);
+    const worker = JSON.parse(observed.stdout);
+    const client = backendSourceIdentity(root);
+    assert.equal(worker.gitCommit, client.gitCommit);
+    assert.equal(worker.fingerprint, client.fingerprint);
+    return client;
+  }
+  try {
+    mkdirSync(repository);
+    writeFileSync(resolve(repository, 'main.py'), "print('identity')\n");
+    writeFileSync(resolve(repository, 'pyproject.toml'), '[project]\nname = "identity"\n');
+    git('init', '--template=');
+    git('add', 'main.py', 'pyproject.toml');
+    git(
+      '-c',
+      'user.name=MoDiff fixture',
+      '-c',
+      'user.email=fixture@example.invalid',
+      'commit',
+      '--no-gpg-sign',
+      '-m',
+      'source fixture',
+    );
+    const commit = git('rev-parse', 'HEAD');
+    assert.equal(agreesWithWorker(repository).gitCommit, commit);
+    git('worktree', 'add', '--detach', worktree, 'HEAD');
+    linked = true;
+    assert.equal(agreesWithWorker(worktree).gitCommit, commit);
+    const copied = resolve(repository, 'copied-backend');
+    mkdirSync(copied);
+    for (const name of ['main.py', 'pyproject.toml'])
+      writeFileSync(resolve(copied, name), readFileSync(resolve(repository, name)));
+    assert.equal(agreesWithWorker(copied).gitCommit, null);
+  } finally {
+    if (linked) git('worktree', 'remove', '--force', worktree);
+    assert.equal(dirname(temporary), resolve(tmpdir()));
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
 
 test('execution identity ignores admission-proof status while locking the actual resource plan', () => {
   const graph = {
@@ -147,6 +423,48 @@ test('live proof rejects missing or changing backend source identity', () => {
     /changed while the live proof was running/,
   );
   assert.match(backendSourceDriftBlocker(stable, null), /could not be captured/);
+});
+
+test('backend source identity orders normalized paths before hashing shared directory prefixes', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-source-identity-'));
+  const sources = [
+    ['main.py', "print('identity')\n"],
+    ['pyproject.toml', '[project]\nname = "identity"\n'],
+    ['modules/ImageFilters/main.py', 'FILTER = 1\n'],
+    ['modules/ImageOperations/main.py', 'OPERATION = 1\n'],
+    ['modules/Image/main.py', 'IMAGE = 1\n'],
+    ['modules/VideoColor/main.py', 'COLOR = 1\n'],
+    ['modules/VideoConditioning/main.py', 'CONDITIONING = 1\n'],
+    ['modules/Video/main.py', 'VIDEO = 1\n'],
+  ];
+  try {
+    for (const [relativePath, contents] of sources) {
+      const target = resolve(root, relativePath);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, contents, 'utf8');
+    }
+    const expectedFiles = [...sources]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([relativePath, contents]) => ({
+        path: relativePath,
+        sha256: createHash('sha256').update(contents).digest('hex'),
+      }));
+    const identity = backendSourceIdentity(root);
+    assert.equal(identity.gitCommit, null);
+    assert.deepEqual(identity.files, expectedFiles);
+    assert.equal(
+      identity.fingerprint,
+      sha256Value('backend-source-v1', {
+        files: expectedFiles,
+        gitCommit: null,
+      }),
+    );
+
+    writeFileSync(resolve(root, 'modules/Image/main.py'), 'IMAGE = 2\n', 'utf8');
+    assert.notEqual(backendSourceIdentity(root).fingerprint, identity.fingerprint);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('source evidence binds both filesystem snapshots to the executing worker startup claim', () => {
@@ -787,4 +1105,117 @@ test('qualification provenance rejects output dimensions that violate the templa
       item.includes('output.items.0.height does not match the template contract: expected 768, got 1328'),
     ),
   );
+});
+
+test('canonical factory hook derives the actual DDIM owner without runtime hints', () => {
+  const args = canonicalHookCase();
+  const before = JSON.stringify(args);
+  const proof = createRunProvenance(args);
+  assert.equal(proof.graph.executionPlan.source, 'executed-canonical-accounting-v1');
+  assert.equal(proof.graph.executionPlan.modelType, 'DDIMPipeline');
+  assert.equal(proof.graph.executionPlan.device, 'cuda:0');
+  assert.equal(proof.graph.executionPlan.deviceMap, 'cuda');
+  assert.equal(proof.execution.resourceCandidateId, 'manual-resource-v1:DDIMPipeline|float32|none|none');
+  assert.equal(proof.taskId, args.executionReceipt.task_id);
+  assert.deepEqual(proof.blockers, []);
+  assert.equal(args.apiGraph.runtimeHints, undefined);
+  assert.equal(JSON.stringify(args), before);
+});
+
+test('canonical hook rejects detached task, output, accounting and model evidence', () => {
+  const mutations = {
+    'wrong factory task': (args) => {
+      args.taskId = 'other';
+    },
+    'wrong raw task': (args) => {
+      args.canonicalAccountingProof.run.task.task_id = 'other';
+    },
+    'failed task': (args) => {
+      args.executionReceipt.status = 'failed';
+    },
+    retry: (args) => {
+      args.executionReceipt.attempt_index = 1;
+    },
+    'different measured task': (args) => {
+      args.executionReceipt = { ...args.executionReceipt, completed_at: 102 };
+    },
+    'contradictory Expert candidate': (args) => {
+      args.executionReceipt.resourceCandidateId = 'auto-candidate';
+    },
+    'invented task hints': (args) => {
+      args.executionReceipt.runtimeHints = { autoResourceCandidateId: 'invented' };
+    },
+    'output task': (args) => {
+      args.executedOutput.taskId = 'other';
+    },
+    'output attempt': (args) => {
+      args.executedOutput.attemptIndex = 1;
+    },
+    'wrong workflow': (args) => {
+      args.canonicalAccountingProof.run.workflow_id = 'other';
+    },
+    'missing raw output': (args) => {
+      args.canonicalAccountingProof.run.outputs = [];
+    },
+    'duplicate raw output': (args) => {
+      args.canonicalAccountingProof.run.outputs.push(structuredClone(args.executedOutput));
+    },
+    'detached output receipt': (args) => {
+      args.canonicalAccountingProof.run.outputs = [structuredClone(args.executedOutput)];
+      args.executedOutput.resolvedExecutionInputs.nodes[0].fieldAccounting.complete = false;
+    },
+    'consumed task': (args) => {
+      args.executedOutput.resolvedExecutionInputs.taskId = 'other';
+    },
+    'consumed attempt': (args) => {
+      args.executedOutput.resolvedExecutionInputs.attemptIndex = 1;
+    },
+    'consumed output owner': (args) => {
+      args.executedOutput.nodeId = 'node-04';
+    },
+    'untrusted changed graph': (args) => {
+      args.canonicalAccountingProof.expectedApiGraph.nodes['node-04'].params.seed.value = 43;
+    },
+    'caller plan': (args) => {
+      args.canonicalAccountingProof.plan = { device: 'cpu:0' };
+    },
+    'missing accounting': (args) => {
+      delete args.executedOutput.resolvedExecutionInputs.nodes[0].fieldAccounting;
+    },
+    'wrong effective control': (args) => {
+      args.executedOutput.resolvedExecutionInputs.nodes.find(
+        (row) => row.action === 'LoadPipeline',
+      ).fieldAccounting.fields.device.value = 'cpu:0';
+    },
+    'wrong installed model': (args) => {
+      args.modelIdentities[0].selectedRevision = 'a'.repeat(40);
+    },
+    'different runtime': (args) => {
+      args.runtimeFingerprint = { ...args.runtimeFingerprint, fingerprint: 'other' };
+    },
+    'missing duration': (args) => {
+      delete args.executionReceipt.completed_at;
+    },
+    'wrong completion time': (args) => {
+      args.capturedAt = '2026-10-27T00:00:00.000Z';
+    },
+  };
+  for (const [label, mutate] of Object.entries(mutations)) {
+    const args = canonicalHookCase();
+    mutate(args);
+    assert.throws(() => createRunProvenance(args), undefined, label);
+  }
+});
+
+test('default factory output remains byte identical for the ten historical grouped and ordinary FLUX3 creators', async () => {
+  const expected = JSON.parse(
+    readFileSync(new URL('../tests/fixtures/legacy-provenance-factory.v1.json', import.meta.url), 'utf8'),
+  );
+  const observed = [];
+  for (const { id, args } of await legacyCreatorFactoryCases()) {
+    assert.equal(Object.hasOwn(args, 'canonicalAccountingProof'), false);
+    const bytes = Buffer.from(stableStringify(createRunProvenance(args)));
+    observed.push({ id, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+  }
+  assert.deepEqual(observed, expected.vectors);
 });

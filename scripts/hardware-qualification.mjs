@@ -52,7 +52,25 @@ async function readGalleryEvidence(path) {
   const response = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(5_000) });
   if (!response.ok) throw new Error(`Backend health returned HTTP ${response.status}.`);
   const health = await response.json();
-  if (output.terminalTask.runtimeFingerprint && health.runtime_fingerprint !== output.terminalTask.runtimeFingerprint) {
+  // Current task receipts retain the full runtime observation. Compare its
+  // reported identity without replacing that object or the provenance lock.
+  // Older Gallery reports stored this same reported identity as a string.
+  const observedRuntime = output.terminalTask.runtimeFingerprint;
+  const reportedFingerprint =
+    typeof observedRuntime === 'string'
+      ? observedRuntime
+      : observedRuntime && typeof observedRuntime === 'object' && !Array.isArray(observedRuntime)
+        ? observedRuntime.fingerprint
+        : null;
+  if (
+    typeof reportedFingerprint !== 'string' ||
+    !reportedFingerprint.trim() ||
+    typeof health.runtime_fingerprint !== 'string' ||
+    !health.runtime_fingerprint.trim()
+  ) {
+    throw new Error('Gallery run or current backend is missing a runtime fingerprint.');
+  }
+  if (health.runtime_fingerprint !== reportedFingerprint) {
     throw new Error('Current backend runtime does not match the completed gallery run.');
   }
   return {

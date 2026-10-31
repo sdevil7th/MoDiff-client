@@ -38,8 +38,9 @@ function resolveRandomFieldValue(
   sharedRandomValues: Map<string, number>,
   operationSharedKey?: string,
 ) {
-  const randomValue = isRecord(paramData.value) ? paramData.value : null;
-  const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : paramData.value;
+  const effectiveValue = paramData.value ?? paramData.default;
+  const randomValue = isRecord(effectiveValue) ? effectiveValue : null;
+  const fieldValue = randomValue && 'value' in randomValue ? randomValue.value : effectiveValue;
   const isRandom = randomValue && 'isRandom' in randomValue ? Boolean(randomValue.isRandom) : false;
 
   if (!isRandom) {
@@ -126,27 +127,19 @@ function assertExecutableDeviceOffloadPlan(node: FlowGraphNode) {
   }
 }
 
-export function buildApiGraphExport({
-  randomizeSeeds = true,
+/** Existing terminal/ancestry selection, independent of values or model readiness. */
+export function selectFlowGraphExecutionScope({
   nodes,
   edges,
-  sid,
   targetNodeId,
   targetNodeIds,
-  setParam,
-}: BuildApiGraphExportOptions): ApiGraphExport {
-  ({ nodes, edges } = lowerReviewedLoopConnectionsV2(nodes, edges));
-  const sessionId = sid || '';
-
+}: Pick<BuildApiGraphExportOptions, 'nodes' | 'edges' | 'targetNodeId' | 'targetNodeIds'>): {
+  nodes: FlowGraphNode[];
+  paths: string[][];
+} {
   const executableNodes = executableFlowNodes(nodes);
 
-  if (executableNodes.length === 0) {
-    return {
-      sid: sessionId,
-      nodes: {},
-      paths: [],
-    };
-  }
+  if (executableNodes.length === 0) return { nodes: [], paths: [] };
 
   const targets = [...new Set(targetNodeIds ?? (targetNodeId ? [targetNodeId] : []))];
   if (targetNodeIds && !targets.length) throw new Error('The selected Block has no executable output path.');
@@ -202,7 +195,50 @@ export function buildApiGraphExport({
     nodesToInclude = Array.from(allPathNodes);
   }
 
-  const filteredExecutableNodes = executableNodes.filter((node) => nodesToInclude.includes(node.id));
+  const paths: string[][] = [];
+
+  if (targets.length) {
+    for (const id of targets) {
+      const path = walkBackwards(id);
+      if (path.length > 0) paths.push(path);
+    }
+  } else {
+    const outputNodes = executableNodes.filter((node) => {
+      const outgoers = getOutgoingNodes(node.id);
+      return outgoers.length === 0;
+    });
+
+    const endNodes = outputNodes.length > 0 ? outputNodes : executableNodes;
+    endNodes.forEach((node) => {
+      const path = walkBackwards(node.id);
+      if (path.length > 0) {
+        paths.push(path);
+      }
+    });
+  }
+
+  return { nodes: executableNodes.filter((node) => nodesToInclude.includes(node.id)), paths };
+}
+
+export function buildApiGraphExport({
+  randomizeSeeds = true,
+  nodes,
+  edges,
+  sid,
+  targetNodeId,
+  targetNodeIds,
+  setParam,
+}: BuildApiGraphExportOptions): ApiGraphExport {
+  ({ nodes, edges } = lowerReviewedLoopConnectionsV2(nodes, edges));
+  const sessionId = sid || '';
+
+  const { nodes: filteredExecutableNodes, paths } = selectFlowGraphExecutionScope({
+    nodes,
+    edges,
+    targetNodeId,
+    targetNodeIds,
+  });
+  if (!filteredExecutableNodes.length) return { sid: sessionId, nodes: {}, paths: [] };
   filteredExecutableNodes.forEach(assertExecutableDeviceOffloadPlan);
   const includedNodeIds = new Set(filteredExecutableNodes.map((node) => node.id));
 
@@ -269,28 +305,6 @@ export function buildApiGraphExport({
       params,
     };
   });
-
-  const paths: string[][] = [];
-
-  if (targets.length) {
-    for (const id of targets) {
-      const path = walkBackwards(id);
-      if (path.length > 0) paths.push(path);
-    }
-  } else {
-    const outputNodes = executableNodes.filter((node) => {
-      const outgoers = getOutgoingNodes(node.id);
-      return outgoers.length === 0;
-    });
-
-    const endNodes = outputNodes.length > 0 ? outputNodes : executableNodes;
-    endNodes.forEach((node) => {
-      const path = walkBackwards(node.id);
-      if (path.length > 0) {
-        paths.push(path);
-      }
-    });
-  }
 
   const loops = nodes
     .filter((node) => node.data.type === 'loop' && !isNodeDisabled(node))

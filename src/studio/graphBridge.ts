@@ -36,14 +36,20 @@ import {
   AUDIO_STUDIO_MODES,
   STUDIO_MODEL_PROFILES,
   VIDEO_STUDIO_MODES,
-  WAN_VACE_REVISION,
   getModelRequirementsForMode,
 } from './modelProfiles';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
 import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
+import { resolveStudioExecutionSpecValues } from './executionSpecValues';
+import {
+  assertStudioWeightFormatOptions,
+  assertFormWeightFormatSelection,
+  explicitStudioWeightFormat,
+} from './weightFormat';
 import { syncManagedFormControlAliases } from './managedControlSync';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import { hashString, stableStringify } from './templateExactness';
+import { orderedAdapterChainLinks } from './adapterChainLinks';
 import { STUDIO_TEMPLATES } from './templates';
 import {
   CONTROLLED_ROLE_NODE_KEYS,
@@ -620,7 +626,8 @@ function hasPartialCombinedControlGroup(binding: StudioGraphBinding) {
 function bindingFingerprint(form: StudioFormState) {
   const spec = executionSpecForForm(form);
   const receipt = spec ? `:${spec.id}:${spec.contentHash}` : spec === null ? ':invalid-spec' : '';
-  return `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}${receipt}`;
+  const format = explicitStudioWeightFormat(form);
+  return `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}${receipt}${format !== undefined ? `:weight-format=${format === null ? 'blocked' : format}` : ''}`;
 }
 
 function bindingMatchesForm(binding: StudioGraphBinding, form: StudioFormState) {
@@ -817,13 +824,26 @@ function graphProofParamSchema(params: Record<string, NodeParams> | undefined) {
 function managedParamSchemaMatchesRegistry(
   params: Record<string, NodeParams>,
   reviewedParams: Record<string, NodeParams> | undefined,
+  controlledScalarInputs: readonly string[] = [],
 ) {
   if (!reviewedParams) return false;
   for (const [field, reviewedParam] of Object.entries(reviewedParams)) {
     const param = params[field];
     if (
       !param ||
-      REVIEWED_EXECUTION_PARAM_KEYS.some((key) => stableStringify(param[key]) !== stableStringify(reviewedParam[key]))
+      REVIEWED_EXECUTION_PARAM_KEYS.some((key) => {
+        // Reviewed controlled routes can enable a declared scalar's existing socket.
+        // Every other execution-schema field must still match the backend registry.
+        if (
+          key === 'isInput' &&
+          controlledScalarInputs.includes(field) &&
+          reviewedParam.display === undefined &&
+          reviewedParam.isInput !== true &&
+          param.isInput === true
+        )
+          return false;
+        return stableStringify(param[key]) !== stableStringify(reviewedParam[key]);
+      })
     ) {
       return false;
     }
@@ -1024,18 +1044,31 @@ function expectedControlledEdgeSpecs(
   const loraId = loraContractId(contractIds);
 
   if (loraId === 'lora.modular.v1') {
-    add(makeConnectionSpec(loraNodes[0]?.id, ['lora'], binding.nodes.models, ['lora_list', 'loras']));
+    if (binding.nodes.models)
+      for (const link of orderedAdapterChainLinks({
+        adapterIds: loraNodes.map((node) => node.id),
+        inputHandles: ['previous_loras'],
+        outputHandles: ['lora'],
+        target: { nodeId: binding.nodes.models, handles: ['lora_list', 'loras'] },
+      }))
+        add(makeConnectionSpec(link.source, link.sourceHandles, link.target, link.targetHandles));
+    else valid = false;
   } else if (loraId === 'lora.diffusers-image.v1' || loraId === 'lora.diffusers-audio.v1') {
     const pipeline =
       loraId === 'lora.diffusers-image.v1' ? binding.nodes.diffusersImagePipeline : binding.nodes.audioPipeline;
     const generate =
       loraId === 'lora.diffusers-image.v1' ? diffusersImageActionNode(binding) : binding.nodes.audioGenerate;
     remove((spec) => spec.source === pipeline && spec.target === generate);
-    add(makeConnectionSpec(pipeline, ['pipeline'], loraNodes[0]?.id, ['pipeline']));
-    for (let index = 1; index < loraNodes.length; index += 1) {
-      add(makeConnectionSpec(loraNodes[index - 1]?.id, ['output'], loraNodes[index]?.id, ['pipeline']));
-    }
-    add(makeConnectionSpec(loraNodes[loraNodes.length - 1]?.id, ['output'], generate, ['pipeline']));
+    if (pipeline && generate)
+      for (const link of orderedAdapterChainLinks({
+        adapterIds: loraNodes.map((node) => node.id),
+        inputHandles: ['pipeline'],
+        outputHandles: ['output'],
+        source: { nodeId: pipeline, handles: ['pipeline'] },
+        target: { nodeId: generate, handles: ['pipeline'] },
+      }))
+        add(makeConnectionSpec(link.source, link.sourceHandles, link.target, link.targetHandles));
+    else valid = false;
   }
 
   const sequence = id('videoSequence');
@@ -1264,7 +1297,13 @@ function controlledGraphSemanticsAreValid(binding: StudioGraphBinding, form: Stu
     if (
       !node ||
       (node.data.studioRole !== 'qualityVideoLoop' &&
-        !managedParamSchemaMatchesRegistry(node.data.params, reviewedParams))
+        !managedParamSchemaMatchesRegistry(
+          node.data.params,
+          reviewedParams,
+          node.data.studioRole === 'qualityVideoRetain' && contractIds.some((id) => id.startsWith('quality-video.'))
+            ? ['fps']
+            : [],
+        ))
     ) {
       return false;
     }
@@ -3370,197 +3409,46 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   if (candidate && candidate.executionProfileId !== spec.executionProfileId) {
     throw new Error('The selected Auto candidate does not match the Studio execution specification.');
   }
-  const quantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
   const audioTemplateBaseModel = binding.nodes.audioPipeline ? activeAudioTemplateBaseModel() : null;
   const capability = useNodesStore.getState().studioModelCapabilities.find((item) => item.modelType === spec.modelType);
-  const bindsDefaultRevision = spec.bindings.some(([, , source]) => source === 'defaultRevision');
-  const defaultRevision = capability?.revisionCandidates ?? [];
-  if (bindsDefaultRevision && defaultRevision.length !== 1) {
-    throw new Error('The Studio execution specification requires one reviewed default model revision.');
+  const values = resolveStudioExecutionSpecValues(form, spec, capability, {
+    candidate,
+    audioTemplateBaseModel,
+    seed: seedValue(form),
+  });
+  const declaredFormat = assertFormWeightFormatSelection(
+    form,
+    spec,
+    capability,
+    useNodesStore.getState().workflowModelDescriptors,
+  );
+  for (const [role, param, source] of spec.bindings) {
+    if (source !== 'weightFormat') continue;
+    const nodeId = binding.nodes[role];
+    const node = nodeId ? getNode(nodeId) : undefined;
+    const field = node?.data.params[param];
+    if (declaredFormat) {
+      if (
+        !nodeId ||
+        !field ||
+        node?.data.module !== 'modules.ModularDiffusers' ||
+        node.data.action !== 'ModelsLoader' ||
+        param !== 'weight_format'
+      )
+        throw new Error('The declared weight format needs its exact model-loader control.');
+      // Instance metadata comes from the current exact backend declaration;
+      // the normal backend field update remains authoritative for this model.
+      useFlowStore.getState().setParam(nodeId, param, [...declaredFormat.options], 'options');
+      useFlowStore.getState().setParam(nodeId, param, false, 'hidden');
+    }
+    assertStudioWeightFormatOptions(values[source], nodeId ? getNode(nodeId)?.data.params[param] : undefined);
   }
   const bindsAuxiliaryModel = spec.bindings.some(([, , source]) => ['kind', 'repo', 'revision'].includes(source));
-  const auxiliaryRequirements = capability ? getModelRequirementsForMode(capability, form.mode) : [];
-  if (bindsAuxiliaryModel && auxiliaryRequirements.length !== 1) {
-    throw new Error('The Studio execution specification requires one reviewed auxiliary model.');
-  }
-  const auxiliaryRequirement = auxiliaryRequirements[0];
-  if (bindsAuxiliaryModel && !auxiliaryRequirement?.revision) {
-    throw new Error('The reviewed auxiliary model requires an immutable revision.');
-  }
-  const bindsMotionAdapter = spec.bindings.some(([, , source]) =>
-    ['motionAdapterRepo', 'motionAdapterRevision'].includes(source),
-  );
-  const motionAdapters = auxiliaryRequirements.filter((requirement) => requirement.kind === 'adapter');
-  if (bindsMotionAdapter && motionAdapters.length !== 1) {
-    throw new Error('The Studio execution specification requires one reviewed motion adapter.');
-  }
-  const motionAdapter = motionAdapters[0];
-  if (bindsMotionAdapter && !motionAdapter?.revision) {
-    throw new Error('The reviewed motion adapter requires an immutable revision.');
-  }
-  const controlnetRequirement = auxiliaryRequirements.find((requirement) => requirement.kind === 'controlnet');
-  const ipAdapterRequirement = auxiliaryRequirements.find((requirement) => requirement.id === 'sdxl-ip-adapter');
-  const bindsReviewedControlnet = spec.bindings.some(([, , source]) => source === 'controlnetRepo');
-  const bindsReviewedIPAdapter = spec.bindings.some(([, , source]) => source === 'ipAdapterRepo');
-  if (bindsReviewedControlnet && !controlnetRequirement?.revision) {
-    throw new Error('The reviewed ControlNet component requires one immutable dependency.');
-  }
-  if (bindsReviewedIPAdapter && !ipAdapterRequirement?.revision) {
-    throw new Error('The reviewed IP-Adapter component requires one immutable dependency.');
-  }
-  const unionControlnet = form.mode.includes('control_union');
-  const hasDistinctLastImage = spec.bindings.some(([, , source]) => source === 'lastImage');
-  const values: Record<string, unknown> = {
-    ...form,
-    referenceImages: hasDistinctLastImage ? form.referenceImages.slice(0, 1) : [...form.referenceImages],
-    quantizationMode,
-    quantizedComponents: ['transformer'],
-    deviceMapNone: 'none',
-    attentionBackend:
-      typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto',
-    nativeMath: '_native_math',
-    empty: '',
-    true: true,
-    false: false,
-    depth: 'depth',
-    addAlpha: 'add alpha',
-    removeAlpha: 'remove alpha',
-    regionalCompile: false,
-    denoiserCache: 'none',
-    layerwiseCasting: false,
-    channelsLast: false,
-    artifact: audioTemplateBaseModel ?? spec.defaultRepo,
-    defaultRevision: defaultRevision[0],
-    pipelineClass: spec.pipelineClass,
-    executionProfileId: spec.executionProfileId,
-    defaultWorkflow: 'default',
-    workflowId:
-      (
-        {
-          image_to_image: 'img2img',
-          text_to_video: 'text2video',
-          image_to_video: 'image2video',
-          video_to_video: 'video2video',
-        } as Partial<Record<StudioMode, string>>
-      )[spec.mode] ?? 'text2image',
-    semanticGeneratorBlock: 'semantic_generator',
-    workflowPromptEnhancerBlock: 'prompt_enhancer',
-    workflowTextEncoderBlock: 'text_encoder',
-    workflowImageEncoderBlock: 'vae_encoder',
-    workflowDenoiseBlock: 'denoise',
-    workflowDecodeBlock: 'decode',
-    kind: auxiliaryRequirement?.kind,
-    repo: auxiliaryRequirement ? { source: 'hub', value: auxiliaryRequirement.repo } : undefined,
-    revision: auxiliaryRequirement?.revision,
-    controlnetKind: controlnetRequirement?.kind,
-    controlnetRepo: controlnetRequirement ? { source: 'hub', value: controlnetRequirement.repo } : undefined,
-    controlnetRevision: controlnetRequirement?.revision,
-    controlnetWeightVariant: unionControlnet ? '' : 'fp16',
-    controlnetRouteVariant: unionControlnet ? 'union' : 'ordinary',
-    controlnetLoadClass: unionControlnet ? 'ControlNetUnionModel' : '',
-    ipAdapterRepo: ipAdapterRequirement ? { source: 'hub', value: ipAdapterRequirement.repo } : undefined,
-    ipAdapterRevision: ipAdapterRequirement?.revision,
-    ipAdapterWeightName: ipAdapterRequirement ? 'sdxl_models/ip-adapter_sdxl.safetensors' : undefined,
-    classifierFreeGuidance: 'ClassifierFreeGuidance',
-    motionAdapterRepo: motionAdapter ? { source: 'hub', value: motionAdapter.repo } : undefined,
-    motionAdapterRevision: motionAdapter?.revision,
-    wanVaceRevision: WAN_VACE_REVISION,
-    cannyLowThreshold: 0.1,
-    cannyHighThreshold: 0.2,
-    videoCannyLowThreshold100: 100,
-    videoCannyHighThreshold200: 200,
-    controlGuidanceStart: 0,
-    controlGuidanceEnd: 1,
-    resolution: form.width,
-    cfgNormalize: false,
-    useEnglishPrompt: false,
-    maskThreshold127: 127,
-    inpaintMaskGrow96: 96,
-    outpaintMaskGrow0: 0,
-    text2music: 'text2music',
-    text2audio: 'text2audio',
-    cover: 'cover',
-    continuation: 'continuation',
-    repaint: 'repaint',
-    transcribe: 'transcribe',
-    translate: 'translate',
-    anyToAnyText: 'text',
-    anyToAnyImage: 'image',
-    maxNewTokens: 256,
-    minNewTokens: 0,
-    doSample: false,
-    temperature: 1,
-    topP: 1,
-    topK: 50,
-    numBeams: 1,
-    repetitionPenalty: 1,
-    useChatTemplate: true,
-    bpmNormalized: form.bpm > 0 ? form.bpm : 0,
-    sampleRate16000: 16000,
-    sampleRate24000: 24000,
-    sampleRate44100: 44100,
-    sampleRate48000: 48000,
-    numWaveforms1: 1,
-    numWaveforms3: 3,
-    referenceWindow15: 15,
-    targetPeakMinus1: -1,
-    maxAdjustment12: 12,
-    boundaryFade001: 0.01,
-    lastImage: hasDistinctLastImage ? (form.referenceImages[1] ?? '') : '',
-    poseVideo: '',
-    faceVideo: '',
-    backgroundVideo: '',
-    promptRef: '人物动作的参考视频',
-    segmentFrameLength: 81,
-    previousConditioningFrames: 1,
-    segmentFrameLength77: 77,
-    previousConditioningFrames1: 1,
-    motionEncodeBatchSize1: 1,
-    temporalTileSize80: 80,
-    temporalOverlap24: 24,
-    temporalOverlapConditionStrength05: 0.5,
-    adainFactor025: 0.25,
-    framepackSampling: 'inverted_anti_drifting',
-    latentWindowSize9: 9,
-    trueCfgScale1: 1,
-    seed: seedValue(form),
-  };
   if (binding.nodes.diffusersImagePipeline && !bindsAuxiliaryModel) {
     setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_kind'], 'none');
     setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_model_id'], '');
     setParamIfPresent(binding.nodes.diffusersImagePipeline, ['conditioning_revision'], '');
   }
-  const candidateValues: Record<string, unknown> = {
-    ...candidate,
-    ...formPatchForAutoCandidate(candidate),
-    'installTarget.repo': candidate?.installTarget?.repo,
-  };
-  for (const field of [...spec.autoFields].reverse()) {
-    if (
-      audioTemplateBaseModel &&
-      (field === 'resolvedArtifact' || field === 'artifact' || field === 'installTarget.repo' || field === 'modelRepo')
-    )
-      continue;
-    const value = candidateValues[field];
-    if (value === undefined) continue;
-    values[
-      field === 'resolvedArtifact' || field === 'artifact' || field === 'installTarget.repo' || field === 'modelRepo'
-        ? 'artifact'
-        : field
-    ] = value;
-  }
-  values.pipelineQuantizedComponents = quantizationMode === 'none' ? [] : values.quantizedComponents;
-  values.autoOffload = values.offloadMode !== 'none';
-  values.nativeFlashAttention =
-    candidate?.attentionBackend ?? (form.device.startsWith('cuda') ? '_native_flash' : 'auto');
-  values.transformer = values.nativeFlashAttention === '_native_flash' ? 'transformer' : '';
-  values.dualTransformer = values.nativeFlashAttention === '_native_flash' ? 'transformer,transformer_2' : '';
-  values.dualQuantizedComponents = candidate?.quantizedComponents ?? ['transformer', 'transformer_2'];
-  values.videoVaeTiling =
-    form.resourceMode !== 'expert' ||
-    values.offloadMode !== 'none' ||
-    form.width * form.height * form.numFrames > 40_000_000;
-  values.useGuidanceScale2 = form.guidanceScale2 > 0;
   for (const [role, param, source] of spec.bindings) {
     const nodeId = binding.nodes[role];
     if (!nodeId || !(param in (getNode(nodeId)?.data.params ?? {}))) continue;
@@ -3570,7 +3458,26 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   if (binding.nodes.qwenQuantization) applyExpertQuantizationConfig(binding, form);
 }
 
-function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
+function applyRecipeDefaults(
+  nodeId: string | undefined,
+  form: StudioFormState,
+  defaults: Record<string, unknown>,
+  initialize: boolean,
+) {
+  const explicitAttention =
+    form.resourceMode === 'expert' && typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
+      ? form.attentionBackend
+      : undefined;
+  for (const [field, value] of Object.entries(defaults)) {
+    const explicit = field === 'attention_backend' ? explicitAttention : undefined;
+    // Custom recipe controls belong to the graph unless the form explicitly
+    // edits the same control. Creation still applies the reviewed defaults once.
+    if (form.resourceMode === 'expert' && !initialize && explicit === undefined) continue;
+    setParamIfPresent(nodeId, [field], explicit ?? value);
+  }
+}
+
+function applyFormValues(binding: StudioGraphBinding, form: StudioFormState, initializeRecipe = false) {
   const {
     models,
     qwenQuantization,
@@ -3658,23 +3565,27 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersQuantization, ['backend'], audioQuantizationMode);
     setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
     setParamIfPresent(diffusersQuantization, ['dtype'], audioDtype);
-    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    setParamIfPresent(
+    applyRecipeDefaults(
       diffusersRecipe,
-      ['attention_backend'],
-      typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
-        ? form.attentionBackend
-        : (autoCandidate?.attentionBackend ?? 'auto'),
+      form,
+      {
+        device_map: 'none',
+        attention_backend:
+          typeof form.attentionBackend === 'string' && form.attentionBackend.trim()
+            ? form.attentionBackend
+            : (autoCandidate?.attentionBackend ?? 'auto'),
+        attention_components: '',
+        vae_slicing: true,
+        vae_tiling: true,
+        regional_compile: autoCandidate?.regionalCompile ?? false,
+        denoiser_cache: autoCandidate?.denoiserCache ?? 'none',
+        layerwise_casting: autoCandidate?.layerwiseCasting ?? false,
+        channels_last: autoCandidate?.channelsLast ?? false,
+      },
+      initializeRecipe,
     );
-    setParamIfPresent(diffusersRecipe, ['attention_components'], '');
-    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
-    setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
-    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
-    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
-    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
-    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
 
     // An audio LoRA is architecture-specific. Keep its declared base model
     // authoritative across later Studio graph reconciliation; otherwise the
@@ -3743,21 +3654,27 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     );
     setParamIfPresent(diffusersQuantization, ['components'], ['transformer']);
     setParamIfPresent(diffusersQuantization, ['dtype'], autoCandidate?.dtype ?? form.dtype);
-    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], resolvedOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    const attentionBackend = autoCandidate?.attentionBackend ?? 'auto';
-    setParamIfPresent(diffusersRecipe, ['attention_backend'], attentionBackend);
-    setParamIfPresent(diffusersRecipe, ['attention_components'], supportsNativeFlash ? 'transformer' : '');
-    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
     // Decode activation pressure can exceed sampling pressure by tens of GiB.
     // Wan I2V also VAE-encodes an 81-frame padded conditioning tensor before
     // denoising, which can exceed resident-model headroom even at 768x512.
-    setParamIfPresent(diffusersRecipe, ['vae_tiling'], needsVaeTiling);
-    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
-    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
-    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
-    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
+    applyRecipeDefaults(
+      diffusersRecipe,
+      form,
+      {
+        device_map: 'none',
+        attention_backend: autoCandidate?.attentionBackend ?? 'auto',
+        attention_components: supportsNativeFlash ? 'transformer' : '',
+        vae_slicing: true,
+        vae_tiling: needsVaeTiling,
+        regional_compile: autoCandidate?.regionalCompile ?? false,
+        denoiser_cache: autoCandidate?.denoiserCache ?? 'none',
+        layerwise_casting: autoCandidate?.layerwiseCasting ?? false,
+        channels_last: autoCandidate?.channelsLast ?? false,
+      },
+      initializeRecipe,
+    );
 
     setModelRepo(wanPipeline, resolvedArtifact);
     if (pipelineClass) setParamIfPresent(wanPipeline, ['pipeline_class'], pipelineClass);
@@ -3830,17 +3747,24 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
     setParamIfPresent(diffusersQuantization, ['backend'], autoQuantizationMode);
     setParamIfPresent(diffusersQuantization, ['components'], autoCandidate?.quantizedComponents ?? ['transformer']);
     setParamIfPresent(diffusersQuantization, ['dtype'], imageDtype);
-    setParamIfPresent(diffusersRecipe, ['device_map'], 'none');
     setParamIfPresent(diffusersRecipe, ['offload_mode'], autoOffloadMode);
     setParamIfPresent(diffusersRecipe, ['device'], form.device);
-    setParamIfPresent(diffusersRecipe, ['attention_backend'], autoCandidate?.attentionBackend ?? 'auto');
-    setParamIfPresent(diffusersRecipe, ['attention_components'], '');
-    setParamIfPresent(diffusersRecipe, ['vae_slicing'], true);
-    setParamIfPresent(diffusersRecipe, ['vae_tiling'], true);
-    setParamIfPresent(diffusersRecipe, ['regional_compile'], autoCandidate?.regionalCompile ?? false);
-    setParamIfPresent(diffusersRecipe, ['denoiser_cache'], autoCandidate?.denoiserCache ?? 'none');
-    setParamIfPresent(diffusersRecipe, ['layerwise_casting'], autoCandidate?.layerwiseCasting ?? false);
-    setParamIfPresent(diffusersRecipe, ['channels_last'], autoCandidate?.channelsLast ?? false);
+    applyRecipeDefaults(
+      diffusersRecipe,
+      form,
+      {
+        device_map: 'none',
+        attention_backend: autoCandidate?.attentionBackend ?? 'auto',
+        attention_components: '',
+        vae_slicing: true,
+        vae_tiling: true,
+        regional_compile: autoCandidate?.regionalCompile ?? false,
+        denoiser_cache: autoCandidate?.denoiserCache ?? 'none',
+        layerwise_casting: autoCandidate?.layerwiseCasting ?? false,
+        channels_last: autoCandidate?.channelsLast ?? false,
+      },
+      initializeRecipe,
+    );
 
     setModelRepo(diffusersImagePipeline, autoArtifact ?? capability.defaultRepo);
     if (pipelineClass) {
@@ -3971,10 +3895,21 @@ function applyFormValues(binding: StudioGraphBinding, form: StudioFormState) {
   }
 }
 
+function assertGraphWeightFormatSelection(form: StudioFormState) {
+  const metadata = useNodesStore.getState();
+  return assertFormWeightFormatSelection(
+    form,
+    executionSpecForForm(form),
+    metadata.studioModelCapabilities.find((item) => item.modelType === form.modelType),
+    metadata.workflowModelDescriptors,
+  );
+}
+
 export function syncStudioGraphValues(form: StudioFormState = useStudioStore.getState().form) {
   const plannedForm = resolveGraphResourceForm(form);
   const binding = useStudioStore.getState().graphBinding;
   if (!binding) return false;
+  assertGraphWeightFormatSelection(plannedForm);
   syncManagedFormControlAliases(plannedForm, binding);
   applyFormValues(binding, plannedForm);
   return true;
@@ -4030,6 +3965,7 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
   const studio = useStudioStore.getState();
   let binding = studio.graphBinding;
   if (!binding) return false;
+  assertGraphWeightFormatSelection(plannedForm);
   if (!bindingMatchesForm(binding, plannedForm)) {
     const canMigrateControlledFingerprint = Boolean(
       binding.controlled &&
@@ -4147,9 +4083,10 @@ function createSkeletonGraph(
   context: WorkflowOperationContext,
 ): BridgeResult {
   assertWorkflowOperationContext(context);
+  const existingNodeIds = new Set(useFlowStore.getState().nodes.map((node) => node.id));
   const binding = buildOrReuseBinding(form);
   applyAuxiliaryNodePresentation(binding, form);
-  applyFormValues(binding, form);
+  applyFormValues(binding, form, !existingNodeIds.has(binding.nodes.diffusersRecipe ?? ''));
   const managedEdgeIds = connectBaseGraph(binding);
   const updatedBinding = {
     ...binding,
@@ -4732,6 +4669,7 @@ async function createOrUpdateStudioGraphInner(
   const form = resolveGraphResourceForm(formInput);
   const existingStudio = useStudioStore.getState();
   const existingBinding = existingStudio.graphBinding;
+  assertGraphWeightFormatSelection(form);
   if (existingBinding?.controlled) {
     if (
       bindingFinalizationProofMatches(existingBinding, form) &&

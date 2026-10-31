@@ -1,3 +1,10 @@
+import {
+  prepareExecutionScope,
+  assertCurrentExecutionScope,
+  assertExecutionScopeGraph,
+  executionScopeIncludesRoot,
+  type PreparedExecutionScope,
+} from '../workflow/prepareExecutionScope';
 import { nanoid } from 'nanoid';
 import { resolveFlowExecutionTargetNodeId, useFlowStore, type APIGraphExport } from '../stores/useFlowStore';
 import {
@@ -47,6 +54,8 @@ export type CoordinatedGraphRunOptions = {
   preparedGraph?: APIGraphExport;
   studioContext?: StudioContextOptions;
   workflowContext?: WorkflowOperationContext;
+  executionScope?: PreparedExecutionScope;
+  previewTarget?: { nodeId: string; outputField: string };
   /** Keep the currently executing run as canvas owner until this queued run starts. */
   deferCanvasOwnership?: boolean;
 };
@@ -67,9 +76,16 @@ export async function coordinateGraphRun({
   preparedGraph,
   studioContext,
   workflowContext,
+  executionScope,
+  previewTarget,
   deferCanvasOwnership = false,
 }: CoordinatedGraphRunOptions): Promise<CoordinatedGraphRunResult> {
   if (workflowContext) assertWorkflowOperationContext(workflowContext);
+  if (!executionScope) {
+    const pending = prepareExecutionScope({ targetNodeId, previewTarget, workflowContext });
+    if (pending) executionScope = await pending;
+  }
+  assertCurrentExecutionScope(executionScope);
   let requestedTarget = targetNodeId
     ? useFlowStore.getState().nodes.find((node) => node.id === targetNodeId)
     : undefined;
@@ -77,6 +93,7 @@ export async function coordinateGraphRun({
     .getState()
     .nodes.filter(
       (node) =>
+        executionScopeIncludesRoot(executionScope, node.id) &&
         node.data.huggingFaceClusterRole === 'root' &&
         !node.data.blockCompilationTransientV2 &&
         node.data.huggingFaceClusterInstance?.execution &&
@@ -96,14 +113,17 @@ export async function coordinateGraphRun({
     } else await prepareHuggingFaceClustersForRun(clusterInstanceIds);
   }
   const manualMode = useStudioStore.getState().form.resourceMode === 'expert';
+  const wholeWorkflowAuto = !manualMode;
   // An exact catalog/source receipt does not carry executable resource hints.
   // Every custom graph, including one untouched registered Block, must plan
   // the lowered execution scope before it can submit in Auto.
-  const workflowAuto = !manualMode && (!studioContext || studioContext.applyRuntimeMetadata === false);
+  const workflowAuto =
+    !manualMode && (executionScope !== undefined || !studioContext || studioContext.applyRuntimeMetadata === false);
   const registeredInstanceIds = useFlowStore
     .getState()
     .nodes.filter(
       (node) =>
+        executionScopeIncludesRoot(executionScope, node.id) &&
         node.data.blockInstanceV2 &&
         (node.data.blockInstanceV2.definitionSnapshot.source.kind === 'diffusers_catalog' ||
           node.data.blockInstanceV2.definitionSnapshot.source.kind === 'transformers_catalog') &&
@@ -119,11 +139,13 @@ export async function coordinateGraphRun({
     if (!eligibility.eligible) throw new Error(eligibility.reason);
     await prepareRegisteredBlockAutoAuthoritiesV2(registeredInstanceIds);
   }
+  assertCurrentExecutionScope(executionScope);
   const currentFlow = useFlowStore.getState();
   const legacyPreparation =
     workflowAuto &&
     currentFlow.nodes.some(
       (node) =>
+        executionScopeIncludesRoot(executionScope, node.id) &&
         !node.data.blockInstanceV2 &&
         (node.data.userBlockSnapshot || node.data.userBlockId || node.data.huggingFaceClusterRole === 'root'),
     )
@@ -140,21 +162,26 @@ export async function coordinateGraphRun({
         nodes: legacyPreparation.nodes,
         edges: legacyPreparation.edges,
         exportGraph: (sid: string, target?: string) =>
-          currentFlow.exportGraph(sid, target, { sourceGraph: legacyPreparation }),
+          currentFlow.exportGraph(sid, target, { sourceGraph: legacyPreparation, executionScope }),
       }
     : currentFlow;
   requestedTarget = targetNodeId ? flow.nodes.find((node) => node.id === targetNodeId) : undefined;
   let lowerModularComposition: ((graph: APIGraphExport) => APIGraphExport) | undefined;
   if (
-    flow.nodes.some((node) =>
-      node.data.blockInstanceV2?.effectiveGraph.nodes.some(
-        (child) => child.modularDiffusers?.kind === 'upstream_block',
-      ),
+    flow.nodes.some(
+      (node) =>
+        executionScopeIncludesRoot(executionScope, node.id) &&
+        node.data.blockInstanceV2?.effectiveGraph.nodes.some(
+          (child) => child.modularDiffusers?.kind === 'upstream_block',
+        ),
     )
   ) {
     lowerModularComposition = await (
       await import('./modularComposition')
-    ).prepareModularCompositionExecutionV2(currentFlow, flow.nodes);
+    ).prepareModularCompositionExecutionV2(
+      currentFlow,
+      flow.nodes.filter((node) => executionScopeIncludesRoot(executionScope, node.id)),
+    );
     if (workflowContext) assertWorkflowOperationContext(workflowContext);
   }
   if (!manualMode && !workflowAuto) {
@@ -173,7 +200,9 @@ export async function coordinateGraphRun({
       // V2 roots use their embedded BlockDefinitionV2 snapshot and are
       // validated by expandBlockGraphV2ForExecution during export. They are
       // not legacy User Nodes and must not be sent through the V1 registry.
-      nodes: flow.nodes.filter((node) => node.data.blockInstanceV2 === undefined),
+      nodes: flow.nodes.filter(
+        (node) => node.data.blockInstanceV2 === undefined && executionScopeIncludesRoot(executionScope, node.id),
+      ),
       edges: flow.edges,
     },
     useUserBlockStore.getState().blocks,
@@ -185,14 +214,18 @@ export async function coordinateGraphRun({
     );
   }
   useStudioStore.getState().saveActiveWorkflowTab(true);
-  const currentFlowGraph = flow.exportGraph(sid, targetNodeId);
+  assertCurrentExecutionScope(executionScope);
+  const currentFlowGraph = flow.exportGraph(sid, targetNodeId, { executionScope });
+  if (executionScope && preparedGraph) assertExecutionScopeGraph(preparedGraph, currentFlowGraph);
   let exportedGraph = lowerModularComposition
     ? lowerModularComposition(preparedGraph ?? currentFlowGraph)
     : (preparedGraph ?? currentFlowGraph);
-  if (workflowAuto) {
+  // Managed Studio graphs retain their existing source-authority checks above,
+  // and every Auto run also plans its complete lowered execution scope.
+  if (wholeWorkflowAuto) {
     exportedGraph = await (
       await import('./workflowAutoExecutionV2')
-    ).prepareWorkflowAutoExecutionV2(exportedGraph, legacyPreparation);
+    ).prepareWorkflowAutoExecutionV2(exportedGraph, legacyPreparation, executionScope);
     if (workflowContext) assertWorkflowOperationContext(workflowContext, { includeForm: false });
   }
   // `studioContext` identifies a Studio-owned graph in both Auto and Expert
@@ -200,23 +233,27 @@ export async function coordinateGraphRun({
   // graph must still carry the exact model/resource choices that the visible
   // Studio graph executes. Raw/imported manual graphs do not pass a Studio
   // context and therefore continue to receive correlation metadata only.
-  const managedRun = Boolean(studioContext);
+  const managedRun = Boolean(studioContext) && !executionScope;
   const preparedGraphForRun =
     !managedRun || studioContext?.applyRuntimeMetadata === false
       ? exportedGraph
       : applyDeterministicRunMetadata(exportedGraph, { force: studioContext?.forceDeterministic });
-  const clusterRunForm = huggingFaceClusterRunForm(preparedGraphForRun, { strict: !manualMode && !workflowAuto });
-  const blockRunProjection = registeredBlockRunFormForFlowV2(
-    flow.nodes,
-    requestedTarget?.data.blockInstanceV2 ? requestedTarget.id : undefined,
-    manualMode ? 'expert' : 'auto',
-    { rejectAmbiguous: !manualMode && !workflowAuto },
-  );
+  const clusterRunForm = executionScope
+    ? undefined
+    : huggingFaceClusterRunForm(preparedGraphForRun, { strict: !manualMode && !workflowAuto });
+  const blockRunProjection = executionScope
+    ? undefined
+    : registeredBlockRunFormForFlowV2(
+        flow.nodes,
+        requestedTarget?.data.blockInstanceV2 ? requestedTarget.id : undefined,
+        manualMode ? 'expert' : 'auto',
+        { rejectAmbiguous: !manualMode && !workflowAuto },
+      );
   const blockRunForm = blockRunProjection?.form;
-  const userBlockRunForm = userBlockRunFormForFlowV2(
-    flow.nodes,
-    requestedTarget?.data.blockInstanceV2 ? requestedTarget.id : undefined,
-  )?.form;
+  const userBlockRunForm = executionScope
+    ? undefined
+    : userBlockRunFormForFlowV2(flow.nodes, requestedTarget?.data.blockInstanceV2 ? requestedTarget.id : undefined)
+        ?.form;
   const exactRunForm = clusterRunForm ?? blockRunForm ?? userBlockRunForm;
   const runForm = exactRunForm ?? useStudioStore.getState().form;
   const routeAdmissions = blockRunProjection
@@ -272,6 +309,13 @@ export async function coordinateGraphRun({
     registeredBlockRuntimeHints,
     { stripStaleRouteHints: Boolean(blockRunProjection && preparedGraph && !resourceRouteBinding) },
   );
+  assertCurrentExecutionScope(executionScope);
+  if (currentFlowGraph.runtimeHints?.executionPurpose)
+    graphWithRegisteredBlockRuntimeHints.runtimeHints = {
+      ...graphWithRegisteredBlockRuntimeHints.runtimeHints,
+      executionPurpose: currentFlowGraph.runtimeHints.executionPurpose,
+      resourceMode: manualMode ? 'expert' : 'auto',
+    };
   const identity = {
     clientRunId: nanoid(),
     runInputHash: getStudioRunInputHash(runForm, graphWithRegisteredBlockRuntimeHints),
@@ -281,16 +325,26 @@ export async function coordinateGraphRun({
       ? applyStudioRuntimeHints(graphWithRegisteredBlockRuntimeHints, identity)
       : graphWithRegisteredBlockRuntimeHints;
   const graphWithExecutionAuthority = workflowAuto
+    ? graphWithManagedMetadata
+    : applyHuggingFaceClusterRuntimeHints(graphWithManagedMetadata, { strict: !manualMode });
+  // Studio/Cluster metadata may replace runtime hints. Restore the independent
+  // whole-workflow receipt after those existing provenance projections.
+  const graphWithWorkflowAutoPlan = wholeWorkflowAuto
     ? {
-        ...graphWithManagedMetadata,
+        ...graphWithExecutionAuthority,
         runtimeHints: {
-          ...graphWithManagedMetadata.runtimeHints,
+          ...graphWithExecutionAuthority.runtimeHints,
           resourceMode: 'auto' as const,
           workflowAutoPlan: exportedGraph.runtimeHints!.workflowAutoPlan,
         },
       }
-    : applyHuggingFaceClusterRuntimeHints(graphWithManagedMetadata, { strict: !manualMode });
-  const submittedGraph = applyRunCorrelationHints(graphWithExecutionAuthority, identity, {
+    : graphWithExecutionAuthority;
+  if (currentFlowGraph.runtimeHints?.executionPurpose)
+    graphWithWorkflowAutoPlan.runtimeHints = {
+      ...graphWithWorkflowAutoPlan.runtimeHints,
+      executionPurpose: currentFlowGraph.runtimeHints.executionPurpose,
+    };
+  const submittedGraph = applyRunCorrelationHints(graphWithWorkflowAutoPlan, identity, {
     targetNodeId: executionTargetNodeId,
     formSnapshot: exactRunForm,
   });
@@ -300,7 +354,7 @@ export async function coordinateGraphRun({
     form: exactRunForm,
   });
   if (workflowContext) assertWorkflowOperationContext(workflowContext);
-  const response = await runGraph(sid, executionTargetNodeId, submittedGraph);
+  const response = await runGraph(sid, executionTargetNodeId, submittedGraph, executionScope);
   useStudioStore.getState().attachRunResponse(response, identity.clientRunId);
   const taskId = typeof response.task_id === 'string' && response.task_id.trim() ? response.task_id : undefined;
   if (taskId) {

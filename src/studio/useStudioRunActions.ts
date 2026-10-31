@@ -18,7 +18,7 @@ import {
   getStudioGraphShapeKey,
   syncStudioGraphValues,
 } from './graphBridge';
-import { validateCurrentRun } from './runReadiness';
+import { normalizeStudioRuntimeDevice, validateCurrentRun } from './runReadiness';
 import {
   autoPlanIsReady,
   autoPlanKeyForForm,
@@ -26,13 +26,38 @@ import {
   formPatchForAutoCandidate,
   selectedAutoCandidate,
 } from './autoResource';
+import { prepareExecutionScope, executionScopeRootIds } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from './runCoordinator';
 import { prepareHuggingFaceClustersForRun } from './huggingFaceClusterPreparation';
 import { materializeTemplateDefaultInputs } from './templateInputs';
 import { STUDIO_TEMPLATES } from './templates';
-import { exactStudioExecutionProfileForForm } from './executionSpecs';
+import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
+import { assertFormWeightFormatSelection, hasNonNativeStudioWeightFormat } from './weightFormat';
 import { DEFAULT_STUDIO_FORM, STUDIO_MODEL_PROFILES } from './modelProfiles';
 import type { StudioFormState, StudioMode, StudioModelType } from './types';
+
+// Run the same admission before the model-change owner commits its form.
+// A model selection may replace its artifact; it must not silently erase an
+// explicit storage choice or leave the new form paired with the old graph.
+export function studioModelChangeWeightFormatPatch(
+  current: StudioFormState,
+  modelType: StudioModelType,
+  metadata: Pick<
+    ReturnType<typeof useNodesStore.getState>,
+    'studioModelCapabilities' | 'studioExecutionSpecInvalid' | 'workflowModelDescriptors'
+  >,
+): Partial<StudioFormState> {
+  if (!hasNonNativeStudioWeightFormat(current)) return {};
+  const capability = metadata.studioModelCapabilities.find((item) => item.modelType === modelType);
+  const candidate = { ...current, modelType, modelRepo: capability?.defaultRepo };
+  const spec = exactStudioExecutionSpecForForm(
+    metadata.studioModelCapabilities,
+    metadata.studioExecutionSpecInvalid,
+    candidate,
+  );
+  assertFormWeightFormatSelection(candidate, spec, capability, metadata.workflowModelDescriptors);
+  return { modelRepo: capability!.defaultRepo };
+}
 
 export async function ensureStudioAutoPlanReadyForRun(
   context: WorkflowOperationContext = captureWorkflowOperationContext(),
@@ -205,6 +230,7 @@ export function useStudioRunActions({
       const context = captureWorkflowOperationContext();
       setIsWorking(true);
       try {
+        normalizeStudioRuntimeDevice(context);
         await createOrUpdateStudioGraph(useStudioStore.getState().form, context);
       } catch (error) {
         if (isWorkflowOperationCancelled(error)) return;
@@ -220,6 +246,15 @@ export function useStudioRunActions({
     (modelType: StudioModelType) => {
       const current = useStudioStore.getState().form;
       const nodeStore = useNodesStore.getState();
+      let weightFormatPatch: Partial<StudioFormState>;
+      try {
+        weightFormatPatch = studioModelChangeWeightFormatPatch(current, modelType, nodeStore);
+      } catch (error) {
+        const message = String(error);
+        useStudioStore.getState().setLastError(message);
+        enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
+        return;
+      }
       const executionProfile = exactStudioExecutionProfileForForm(
         nodeStore.studioModelCapabilities,
         nodeStore.studioExecutionSpecInvalid,
@@ -232,6 +267,7 @@ export function useStudioRunActions({
         : 'none';
       const profile = STUDIO_MODEL_PROFILES[modelType];
       useStudioStore.getState().updateForm({
+        ...weightFormatPatch,
         modelType,
         quantizationMode,
         pagScale: profile.recommendedPagScale ?? DEFAULT_STUDIO_FORM.pagScale,
@@ -259,12 +295,14 @@ export function useStudioRunActions({
     const context = captureWorkflowOperationContext();
     setIsWorking(true);
     try {
-      const autoReady = await ensureAutoPlanReady(context);
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      const autoReady = executionScope ? true : await ensureAutoPlanReady(context);
       if (!autoReady) return;
-      await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
+      if (!executionScope) await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
       assertWorkflowOperationContext(context);
-      await prepareHuggingFaceClustersForRun();
-      const validation = validateCurrentRun({ sid, isConnected, includeStudio: true });
+      await prepareHuggingFaceClustersForRun(executionScopeRootIds(executionScope));
+      const validation = validateCurrentRun({ sid, isConnected, includeStudio: !executionScope, executionScope });
       if (!validation.canRun) {
         const message = validation.blocking[0]?.message || 'This Studio workflow is not ready to run.';
         useStudioStore.getState().setLastError(message);
@@ -272,7 +310,12 @@ export function useStudioRunActions({
       }
 
       useStudioStore.getState().addPromptHistory(useStudioStore.getState().form.prompt);
-      await coordinateGraphRun({ sid, studioContext: {}, workflowContext: context });
+      await coordinateGraphRun({
+        sid,
+        studioContext: executionScope ? undefined : {},
+        workflowContext: context,
+        executionScope,
+      });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
       const message = String(error);
@@ -319,6 +362,25 @@ export function useStudioRunActions({
     async (templateId: string) => {
       const template = STUDIO_TEMPLATES.find((item) => item.id === templateId);
       if (!template) return;
+      if (template.executionSelection && template.example?.mediaType === 'image') {
+        const context = captureWorkflowOperationContext();
+        setIsWorking(true);
+        try {
+          const { createWorkflowFromTemplate } = await import('./templateWorkflow');
+          assertWorkflowOperationContext(context);
+          const result = await createWorkflowFromTemplate(template);
+          if (result.graphError) throw new Error(result.graphError);
+        } catch (error) {
+          if (!isWorkflowOperationCancelled(error)) {
+            const message = String(error);
+            useStudioStore.getState().setLastError(message);
+            enqueueSnackbar(message, { variant: 'error', autoHideDuration: 7000 });
+          }
+        } finally {
+          setIsWorking(false);
+        }
+        return;
+      }
       if (useFlowStore.getState().nodes.length > 0) {
         useStudioStore.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
       }

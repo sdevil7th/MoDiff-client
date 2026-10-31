@@ -169,6 +169,31 @@ test('an installed Expert-only artifact remains ready in Model Manager without a
   assert.equal(autoResourceModule.modelInstallIsReady(false, expertOnlyPlan), false);
 });
 
+test('model Ready detail follows complete Auto artifacts instead of an incomplete install destination', () => {
+  const missing = 'The installed snapshot does not include the exact revision and files required by this workflow';
+  const plan = {
+    error: false,
+    selectedCandidate: {
+      id: 'complete-external-snapshot',
+      installed: true,
+      artifactStatus: { installed: true, complete: true },
+      artifactValidation: { repairRequired: false },
+    },
+  };
+  assert.equal(autoResourceModule.modelInstallIsReady(false, plan), true);
+  assert.equal(
+    autoResourceModule.modelInstallReadyReason(false, missing, plan),
+    'Required model artifacts are complete and available for this workflow.',
+  );
+  assert.equal(
+    autoResourceModule.modelInstallReadyReason(true, 'Available in the configured cache', plan),
+    'Available in the configured cache',
+  );
+  const incomplete = { ...plan, selectedCandidate: { ...plan.selectedCandidate, artifactStatus: { complete: false } } };
+  assert.equal(autoResourceModule.modelInstallIsReady(false, incomplete), false);
+  assert.equal(autoResourceModule.modelInstallReadyReason(false, missing, incomplete), null);
+});
+
 test('every public Studio template resolves an exact canonical workflow contract', async () => {
   const manifest = JSON.parse(
     await readFile(path.join(ROOT, '..', 'MoDiff', 'data', 'workflow-library-manifest.json'), 'utf8'),
@@ -2426,6 +2451,67 @@ test('device rebasing only changes declared device parameters', () => {
   assert.equal(rebased.metadata.preferredLabel, 'cuda:0');
 });
 
+test('ordinary graph imports preserve authored per-node devices and defaults independently of the current form', async (t) => {
+  for (const device of ['cpu:0', 'cuda:1', 'mps:0', 'xpu:0']) {
+    await t.test(device, () => {
+      const graph = canonicalModularTextToImageGraph();
+      const loader = graph.nodes.find((node) => node.id === 'models');
+      const preview = graph.nodes.find((node) => node.id === 'preview');
+      // An ordinary operation graph owns its values, even when its shape also
+      // resembles a historical managed template.
+      loader.data.operationAuthoring = { schemaVersion: 1 };
+      loader.data.params.device = { value: device, default: 'cpu:0' };
+      preview.data.params.device = { value: 'cpu:0', default: 'cpu' };
+      preview.data.params.notes = { value: 'cuda:0' };
+      const original = structuredClone(graph);
+
+      const snapshot = workflowInferenceModule.workflowSnapshotFromGraph(graph, 'smoothstep', {
+        ...profilesModule.DEFAULT_STUDIO_FORM,
+        device: 'cuda:0',
+      });
+
+      assert.equal(snapshot.studioGraphBinding, null);
+      assert.deepEqual(snapshot.nodes, graph.nodes);
+      assert.deepEqual(
+        snapshot.edges,
+        graph.edges.map((edge) => ({ ...edge, type: 'smoothstep' })),
+      );
+      assert.deepEqual(snapshot.viewport, graph.viewport);
+      assert.equal(snapshot.studioForm.device, device, 'The imported loader supplies the form summary.');
+      assert.deepEqual(graph, original, 'Import must not mutate the source graph.');
+      snapshot.nodes[0].data.params.device.value = 'cpu';
+      assert.deepEqual(graph, original, 'The imported snapshot must not share mutable node data with its source.');
+    });
+  }
+});
+
+test('ordinary graph imports leave missing and malformed device fields intact while inferring a fallback summary', async (t) => {
+  for (const params of [
+    {},
+    { device: { value: undefined, default: 'cpu:0' } },
+    { device: { value: null, default: null } },
+    { device: { value: '', default: '' } },
+    { device: { value: 0, default: false } },
+  ]) {
+    await t.test(JSON.stringify(params), () => {
+      const graph = canonicalModularTextToImageGraph();
+      const loader = graph.nodes.find((node) => node.id === 'models');
+      loader.data.operationAuthoring = { schemaVersion: 1 };
+      Object.assign(loader.data.params, params);
+      const original = JSON.parse(JSON.stringify(graph));
+
+      const snapshot = workflowInferenceModule.workflowSnapshotFromGraph(graph, 'smoothstep', {
+        ...profilesModule.DEFAULT_STUDIO_FORM,
+        device: 'cuda:0',
+      });
+
+      assert.deepEqual(snapshot.nodes, original.nodes, 'Summary inference must not repair saved node values.');
+      assert.equal(snapshot.studioForm.device, params.device?.default === 'cpu:0' ? 'cpu:0' : 'cuda:0');
+      assert.deepEqual(JSON.parse(JSON.stringify(graph)), original);
+    });
+  }
+});
+
 test('role-marked generated Studio workflow imports retain their managed contract', () => {
   const graph = canonicalModularTextToImageGraph();
   graph.nodes = graph.nodes.map((node, index) => ({
@@ -2551,6 +2637,106 @@ test('existing saved canonical imports are adopted during workflow-tab normaliza
   }
 });
 
+test('explicit whole image imports keep ordinary graph authority without inventing a managed receipt', async () => {
+  const graph = JSON.parse(
+    await readFile(
+      path.resolve(ROOT, '../MoDiff/data/graphs/studio/marigold-depth-pipeline/depth-estimation.json'),
+      'utf8',
+    ),
+  );
+  const previousStudio = studioStoreModule.useStudioStore.getState();
+  const previousFlow = flowStoreModule.useFlowStore.getState();
+  try {
+    const importedId = studioStoreModule.useStudioStore.getState().createWorkflowTab(
+      'Depth',
+      {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        studioForm: profilesModule.DEFAULT_STUDIO_FORM,
+        studioGraphBinding: null,
+        selectedMode: 'text_to_image',
+        activeTemplateId: null,
+        sourceOutputId: null,
+      },
+      'import',
+    );
+    const snapshot = studioStoreModule.useStudioStore.getState().workflowTabs.find((t) => t.id === importedId).snapshot;
+    assert.equal(snapshot.studioGraphBinding, null);
+    assert.equal(snapshot.studioForm.mode, 'depth_estimation');
+    assert.equal(snapshot.studioForm.modelType, 'MarigoldDepthPipeline');
+    assert.deepEqual(snapshot.edges, graph.edges);
+    for (const node of graph.nodes) {
+      assert.deepEqual(snapshot.nodes.find((n) => n.id === node.id).data.params, node.data.params);
+    }
+    const binding = workflowInferenceModule.adoptManagedWorkflowGraph(
+      graph.nodes,
+      graph.edges,
+      snapshot.studioForm,
+    ).binding;
+    studioStoreModule.useStudioStore.getState().mergeBackendWorkflow({
+      id: 'explicit-image-receipt',
+      title: 'Explicit',
+      createdAt: 1,
+      updatedAt: 1,
+      dirty: false,
+      source: 'import',
+      backendRevision: 1,
+      snapshot: { ...snapshot, studioGraphBinding: { ...binding, finalizationProofInvalid: true } },
+    });
+    const explicit = studioStoreModule.useStudioStore
+      .getState()
+      .workflowTabs.find((t) => t.id === 'explicit-image-receipt');
+    assert.equal(explicit.snapshot.studioGraphBinding.finalizationProofInvalid, true);
+  } finally {
+    flowStoreModule.useFlowStore.setState(previousFlow);
+    studioStoreModule.useStudioStore.setState(previousStudio);
+  }
+});
+
+test('saved whole image hydration preserves its recognized form while keeping the exact ordinary graph', async () => {
+  const graph = JSON.parse(
+    await readFile(
+      path.resolve(ROOT, '../MoDiff/data/graphs/studio/marigold-depth-pipeline/depth-estimation.json'),
+      'utf8',
+    ),
+  );
+  const previousStudio = studioStoreModule.useStudioStore.getState();
+  const previousFlow = flowStoreModule.useFlowStore.getState();
+  const savedForm = { ...profilesModule.DEFAULT_STUDIO_FORM, prompt: 'Retain this saved form', seed: 321 };
+  try {
+    studioStoreModule.useStudioStore.getState().mergeBackendWorkflow({
+      id: 'saved-ordinary-depth',
+      title: 'Saved depth graph',
+      createdAt: 1,
+      updatedAt: 1,
+      source: 'import',
+      revision: 1,
+      snapshot: {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        studioForm: savedForm,
+        studioGraphBinding: null,
+        selectedMode: savedForm.mode,
+        activeTemplateId: null,
+        sourceOutputId: null,
+      },
+    });
+    const snapshot = studioStoreModule.useStudioStore
+      .getState()
+      .workflowTabs.find((t) => t.id === 'saved-ordinary-depth').snapshot;
+    assert.deepEqual(snapshot.studioForm, savedForm);
+    assert.equal(snapshot.selectedMode, savedForm.mode);
+    assert.equal(snapshot.studioGraphBinding, null);
+    assert.deepEqual(snapshot.edges, graph.edges);
+    for (const node of graph.nodes) {
+      assert.deepEqual(snapshot.nodes.find((n) => n.id === node.id).data.params, node.data.params);
+    }
+  } finally {
+    flowStoreModule.useFlowStore.setState(previousFlow);
+    studioStoreModule.useStudioStore.setState(previousStudio);
+  }
+});
+
 test('persisted inferred bindings self-repair stale model metadata from canonical nodes', () => {
   const graph = canonicalModularTextToImageGraph();
   const modelNode = graph.nodes.find((node) => node.id === 'models');
@@ -2624,9 +2810,19 @@ test('persisted inferred bindings self-repair stale model metadata from canonica
   }
 });
 
-test('template prompts are unique, detailed, and not generic placeholders', () => {
-  const prompts = templatesModule.STUDIO_TEMPLATES.map((template) => template.prompt);
-  assert.equal(new Set(prompts).size, prompts.length);
+test('template prompt recipes are distinct, detailed, and not generic placeholders', () => {
+  // A retained comparison may use the same prompt with distinct pinned models.
+  // Duplicate authoring authority within the same model/task is still refused.
+  const recipes = templatesModule.STUDIO_TEMPLATES.map((template) =>
+    JSON.stringify([
+      template.modelType,
+      template.mode,
+      template.modelArtifact,
+      template.executionSelection?.executionProfileId,
+      template.prompt,
+    ]),
+  );
+  assert.equal(new Set(recipes).size, recipes.length);
 
   const weakFragments = [
     'one clear subject, cinematic lighting',
@@ -2639,14 +2835,33 @@ test('template prompts are unique, detailed, and not generic placeholders', () =
     assert.ok(template.intentGroup, `${template.id} has an intent group`);
     assert.ok(template.recipeSummary, `${template.id} has a recipe summary`);
     assert.ok(template.mediaSlots?.length > 0, `${template.id} has media placeholders`);
-    if (template.promptQualityPolicy === 'adapter_reference') {
+    const backendDefaultPrompt =
+      !template.prompt && template.executionSelection?.backendDefaultInputs?.includes('prompt');
+    if (backendDefaultPrompt) {
+      const pendingAudit = templateQualityModule.auditTemplateQuality(template);
+      assert.equal(pendingAudit.promptResolution, 'unresolved_backend_default');
+      assert.equal(pendingAudit.passed, false, `${template.id} needs its actual backend starter audit`);
+      assert.deepEqual(
+        pendingAudit.issues.map((issue) => issue.code),
+        ['unresolved_backend_default'],
+      );
+    } else if (template.promptQualityPolicy === 'raw_layout_reference') {
+      assert.equal(template.mode, 'text_to_image');
+      assert.ok(template.prompt.length >= 40);
+      assert.equal(templateQualityModule.auditTemplateQuality(template).passed, true);
+    } else if (template.promptQualityPolicy === 'adapter_reference') {
       assert.equal(template.category, 'lora', `${template.id} adapter reference prompts are limited to LoRA recipes`);
       assert.ok(template.prompt.length >= 20, `${template.id} retains a meaningful adapter reference prompt`);
     } else {
       assert.ok(template.prompt.length >= 120, `${template.id} prompt is detailed`);
     }
     const audit = templateQualityModule.auditTemplateQuality(template);
-    assert.deepEqual(audit.issues, [], `${template.id} has a modality-complete prompt and model-aware negative policy`);
+    if (!backendDefaultPrompt)
+      assert.deepEqual(
+        audit.issues,
+        [],
+        `${template.id} has a modality-complete prompt and model-aware negative policy`,
+      );
     for (const fragment of weakFragments) {
       assert.equal(
         template.prompt.toLowerCase().includes(fragment),
@@ -4116,9 +4331,14 @@ test('template browser exposes the complete workflow catalog across task and ada
     difficulty: 'all',
     sort: 'recommended',
   });
-  const authoredAdapterIds = STUDIO_TEMPLATES.filter((template) => template.category === 'lora').map(
-    (template) => template.id,
-  );
+  const visible = (template) =>
+    profilesModule.isStudioModelVisibleInCatalog(template.modelType, {
+      currentModelType: form.modelType,
+      includeWorkflowOnly: true,
+    });
+  const authoredAdapterIds = STUDIO_TEMPLATES.filter(
+    (template) => template.category === 'lora' && visible(template),
+  ).map((template) => template.id);
   assert.deepEqual(
     authoredAdapterIds.filter((templateId) => !adapterTemplates.some((template) => template.id === templateId)),
     [],
@@ -4156,16 +4376,113 @@ test('template browser exposes the complete workflow catalog across task and ada
     difficulty: 'all',
     sort: 'recommended',
   });
-  assert.equal(completeInventory.length, STUDIO_TEMPLATES.length);
+  assert.deepEqual(
+    completeInventory.map((template) => template.id).sort(),
+    STUDIO_TEMPLATES.filter(visible)
+      .map((template) => template.id)
+      .sort(),
+  );
   assert.ok(completeInventory.length >= defaultInventory.length);
+});
+
+test('Experimental discovers all ten reviewed FLUX3 creators without promoting ordinary discovery', () => {
+  const { STUDIO_TEMPLATES, PLANNING_STUDIO_TEMPLATES } = templatesModule;
+  const planning = STUDIO_TEMPLATES.filter((template) => /^flux3_klein(?:_base)?_fp8r512_/.test(template.id));
+  assert.equal(planning.length, 10);
+  assert.equal(
+    PLANNING_STUDIO_TEMPLATES.some((template) => /^flux3_klein(?:_base)?_fp8r512_/.test(template.id)),
+    false,
+  );
+  const before = JSON.stringify(planning);
+  const form = profilesModule.DEFAULT_STUDIO_FORM;
+  const filter = {
+    category: 'experimental',
+    includeBlocked: true,
+    query: '',
+    modelType: 'all',
+    mode: 'all',
+    difficulty: 'all',
+    sort: 'recommended',
+  };
+  const shown = (entries, changes = {}) =>
+    browserModule.filterStudioTemplates(entries, form, { ...filter, ...changes });
+  assert.deepEqual(
+    shown(planning)
+      .map(({ id }) => id)
+      .sort(),
+    planning.map(({ id }) => id).sort(),
+  );
+  assert.equal(shown(planning, { query: 'FLUX 3' }).length, 10);
+  assert.equal(shown(planning, { query: 'Ceramic Radio' }).length, 2);
+  assert.equal(shown(planning, { mode: 'text_to_image' }).length, 6);
+  assert.equal(shown(planning, { modelType: 'Flux3ModularPipeline' }).length, 5);
+  assert.equal(shown(planning, { includeBlocked: false }).length, 10);
+  assert.equal(shown(planning, { difficulty: 'starter' }).length, 0);
+  for (const category of ['all', 'recommended', 'image', 'edit', 'adapters'])
+    assert.equal(
+      shown([...STUDIO_TEMPLATES, ...planning], { category }).some((item) => planning.includes(item)),
+      false,
+    );
+  for (const template of planning) {
+    assert.equal(
+      profilesModule.isStudioModelVisibleInCatalog(template.modelType, { includeWorkflowOnly: true }),
+      false,
+    );
+    assert.equal(template.difficulty, 'advanced');
+    assert.equal(template.example.status, 'unverified');
+    assert.equal(template.readinessPolicy, template.inputRequirements ? 'requires_input' : 'runnable');
+  }
+  assert.equal(JSON.stringify(planning), before);
+});
+
+test('Experimental refuses undeclared or incomplete internal creator selections', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_text_to_image');
+  const variants = [
+    { ...template, id: 'undeclared-internal-creator' },
+    { ...template, executionSelection: undefined },
+    ...['pipelineClass', 'task', 'executionProfileId', 'authoringRecipeId', 'implementation', 'memoryPolicy'].map(
+      (key) => ({
+        ...template,
+        executionSelection: { ...template.executionSelection, [key]: undefined },
+      }),
+    ),
+    { ...template, executionSelection: { ...template.executionSelection, schemaVersion: 2 } },
+    { ...template, executionSelection: { ...template.executionSelection, executionProfileId: 'arbitrary-profile' } },
+    { ...template, executionSelection: { ...template.executionSelection, bindingSpec: undefined } },
+    {
+      ...template,
+      executionSelection: {
+        ...template.executionSelection,
+        bindingSpec: { modelType: template.modelType, mode: 'edit_image' },
+      },
+    },
+    { ...template, modelType: 'Flux3ModularPipeline' },
+    { ...template, modelArtifact: undefined },
+    { ...template, modelArtifact: { ...template.modelArtifact, revision: 'main' } },
+    { ...template, modelArtifact: { ...template.modelArtifact, value: '' } },
+    { ...template, modelArtifact: { source: 'local', value: 'unverified-model.safetensors' } },
+  ];
+  for (const variant of variants) {
+    assert.deepEqual(
+      browserModule.filterStudioTemplates([variant], profilesModule.DEFAULT_STUDIO_FORM, {
+        category: 'experimental',
+        includeBlocked: true,
+        query: '',
+        modelType: 'all',
+        difficulty: 'all',
+        sort: 'recommended',
+      }),
+      [],
+      JSON.stringify(variant.executionSelection),
+    );
+  }
 });
 
 test('every template name identifies its exact model and operation', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
-  const { STUDIO_MODEL_LABELS } = profilesModule;
   for (const template of STUDIO_TEMPLATES) {
     assert.ok(
-      template.label.startsWith(`${STUDIO_MODEL_LABELS[template.modelType]} — `),
+      template.label.startsWith(`${browserModule.templateModelDisplayName(template)} — `),
       `${template.id} must begin with its model name`,
     );
     assert.doesNotMatch(template.label, /^(Low VRAM|High quality|Fast LoRA)$/i);
@@ -4173,6 +4490,22 @@ test('every template name identifies its exact model and operation', () => {
   assert.equal(
     STUDIO_TEMPLATES.find((template) => template.id === 'low_vram')?.label,
     'Z-Image Turbo — Text to Image: Auto-Offload Preview',
+  );
+});
+
+test('template artifact display names distinguish same-class variants without changing their backend identity', () => {
+  const cosmos = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'cosmos3_super_text_to_image');
+  const flux = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'flux2_dev_text_to_image');
+  assert.equal(browserModule.templateModelDisplayName(cosmos), 'Cosmos 3 Super');
+  assert.equal(browserModule.templateModelDisplayName(flux), 'FLUX.2-dev');
+  assert.equal(cosmos.modelType, 'Cosmos3OmniModularPipeline');
+  assert.equal(flux.modelType, 'Flux2ModularPipeline');
+  assert.ok(browserModule.templateSearchText(cosmos).includes('nvidia/cosmos3-super-text2image'));
+  const variant = { ...cosmos, modelDisplayName: 'Another exact artifact variant' };
+  assert.equal(browserModule.templateModelDisplayName(variant), 'Another exact artifact variant');
+  assert.equal(
+    browserModule.templateModelDisplayName({ ...variant, modelDisplayName: '  ' }),
+    profilesModule.STUDIO_MODEL_LABELS[cosmos.modelType],
   );
 });
 
@@ -4264,6 +4597,151 @@ test('runtime option normalization supports the real registry descriptor contrac
     'quality',
     'fast',
   ]);
+});
+
+test('template readiness scopes a successful model prerequisite check to Run', () => {
+  const quick = templatesModule.STUDIO_TEMPLATES.find((template) => template.id === 'z_image_quick_concept');
+  assert.ok(quick);
+  const context = readinessContext({ hfCache: ['Tongyi-MAI/Z-Image-Turbo'] });
+  const originalContext = structuredClone(context);
+  const ready = readinessModule.getTemplateReadiness(quick, context);
+
+  // A per-model recipe has no submitted graph or live full-workflow memory proof.
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.label, 'Auto check at Run');
+  assert.match(ready.summary, /complete workflow and current memory.*before submitting a task/u);
+  assert.doesNotMatch(ready.summary, /hardware looks usable|Auto plan is ready/u);
+  assert.deepEqual(ready.compatibility, context.autoResourcePlan.compatibility);
+  assert.equal(ready.decision.state, 'ready');
+  assert.deepEqual(ready.issues, []);
+  assert.deepEqual(ready.modelInstallTargets, []);
+  assert.deepEqual(context, originalContext);
+
+  const custom = readinessModule.getTemplateReadiness(quick, {
+    ...context,
+    form: { ...context.form, resourceMode: 'expert' },
+  });
+  assert.equal(custom.status, ready.status);
+  assert.equal(custom.label, 'Check at Run');
+  assert.match(custom.summary, /complete workflow using your Custom memory settings.*before submitting a task/u);
+  assert.doesNotMatch(custom.summary, /Auto plan|hardware.*usable|current memory/u);
+  assert.deepEqual(custom.decision, ready.decision);
+  assert.deepEqual(custom.compatibility, ready.compatibility);
+
+  const pending = readinessModule.getTemplateReadiness(quick, { ...context, autoResourcePlan: null });
+  assert.equal(pending.status, 'preparing');
+  assert.equal(pending.label, 'Checking models');
+  assert.equal(pending.decision.state, 'preparing');
+  assert.ok(pending.issues.some((issue) => issue.id === 'auto-plan-checking' && issue.blocking));
+  const blocked = readinessModule.getTemplateReadiness(quick, {
+    ...context,
+    autoResourcePlan: {
+      ...context.autoResourcePlan,
+      compatibility: {
+        ...context.autoResourcePlan.compatibility,
+        state: 'needs_setup',
+        severity: 'error',
+        code: 'memory_unavailable',
+        summary: 'Memory unavailable',
+        detail: 'The model prerequisite check cannot proceed.',
+      },
+      issue: { category: 'device' },
+    },
+  });
+  assert.equal(blocked.status, 'needs_setup');
+  assert.equal(blocked.decision.state, 'blocked');
+  assert.equal(blocked.issues[0].category, 'hardware_fit');
+  assert.equal(blocked.summary, 'The model prerequisite check cannot proceed.');
+});
+
+test('template readiness scope preserves model-free readiness and explicit Custom prerequisites', () => {
+  const quick = templatesModule.STUDIO_TEMPLATES.find((template) => template.id === 'z_image_quick_concept');
+  assert.ok(quick);
+  const builtin = {
+    ...quick,
+    modelType: 'BuiltinDataOperation',
+    mode: 'text_select',
+    modelArtifact: undefined,
+    executionSelection: undefined,
+    inputRequirements: undefined,
+    inputBindings: undefined,
+    requiredBackendCapabilities: [],
+    workflowBlockSettings: undefined,
+  };
+  const builtInReady = readinessModule.getTemplateReadiness(builtin, readinessContext());
+  assert.equal(builtInReady.status, 'ready');
+  assert.equal(builtInReady.label, 'Ready now');
+  assert.match(builtInReady.summary, /Built-in processing needs no model download/u);
+  assert.doesNotMatch(builtInReady.summary, /Auto plan|hardware/u);
+  assert.deepEqual(builtInReady.modelInstallTargets, []);
+
+  const revision = 'a'.repeat(40);
+  const customTemplate = {
+    ...quick,
+    modelArtifact: { source: 'hub', value: 'Tongyi-MAI/Z-Image-Turbo', revision },
+    example: { ...quick.example, modelRevision: revision },
+    executionSelection: {
+      schemaVersion: 1,
+      pipelineClass: 'ZImageModularPipeline',
+      task: 'text_to_image',
+      executionProfileId: 'unit-custom-prerequisite',
+      bindingSpec: { modelType: quick.modelType, mode: quick.mode },
+      implementation: 'native_stages',
+      memoryPolicy: 'custom_experimental',
+    },
+  };
+  const customContext = {
+    ...readinessContext({
+      autoResourcePlan: null,
+      form: { ...profilesModule.DEFAULT_STUDIO_FORM, resourceMode: 'expert' },
+      hfCache: [
+        {
+          id: 'Tongyi-MAI/Z-Image-Turbo',
+          installed: true,
+          complete: true,
+          planned_revision: revision,
+          planned_files: [],
+        },
+      ],
+      nodesRegistry: { 'modules.ModularDiffusers.ModelsLoader': {} },
+      runtime: {
+        ready: true,
+        runtimeEnvironment: { profileVerified: true, executionReady: true },
+        packages: Object.fromEntries(
+          ['torch', 'diffusers', 'transformers', 'peft'].map((name) => [name, { available: true }]),
+        ),
+        missing_required_packages: [],
+      },
+    }),
+    studioModelCapabilities: [
+      {
+        modelType: quick.modelType,
+        defaultRepo: 'Tongyi-MAI/Z-Image-Turbo',
+        executionProfiles: [
+          {
+            id: 'unit-custom-prerequisite',
+            model_type: quick.modelType,
+            pipeline_class: 'ZImageModularPipeline',
+            modes: [quick.mode],
+            default_repo: 'Tongyi-MAI/Z-Image-Turbo',
+          },
+        ],
+      },
+    ],
+  };
+  const custom = readinessModule.getTemplateReadiness(customTemplate, customContext);
+  assert.equal(custom.status, 'ready');
+  assert.equal(custom.label, 'Custom · experimental');
+  assert.equal(custom.tone, 'warning');
+  assert.match(custom.summary, /hardware fit and output quality remain experimental/u);
+  assert.deepEqual(custom.issues, []);
+  const missingRuntime = readinessModule.getTemplateReadiness(customTemplate, {
+    ...customContext,
+    runtimeStatus: { ...customContext.runtimeStatus, ready: false },
+  });
+  assert.equal(missingRuntime.status, 'needs_backend');
+  assert.equal(missingRuntime.decision.state, 'blocked');
+  assert.ok(missingRuntime.issues.some((issue) => issue.id === 'custom:base-runtime' && issue.blocking));
 });
 
 test('template readiness classifies ready, input, model, and backend states', () => {
@@ -6532,6 +7010,40 @@ test('canonical workflows reject retired or mutable Hub attention backends', () 
   assert.equal(workflowNodeAttentionBackendError({ data: { params: {} } }), null);
 });
 
+test('canonical workflows allow only portable native math attention on CPU', () => {
+  const node = (backend, device, options = []) => ({
+    data: {
+      params: {
+        attention_backend: { value: backend, options },
+        device: { value: device },
+      },
+    },
+  });
+  for (const device of ['cpu', 'cpu:0']) {
+    for (const backend of ['auto', 'inherit', 'native', '_native_math'])
+      assert.equal(workflowNodeAttentionBackendError(node(backend, device)), null, `${backend} on ${device}`);
+    for (const backend of [
+      '_native_flash',
+      '_native_efficient',
+      '_native_cudnn',
+      '_native_future',
+      '_native_math_extra',
+      ['_native_math'],
+    ])
+      assert.match(workflowNodeAttentionBackendError(node(backend, device)), /selects accelerator attention/);
+    for (const backend of ['aiter', 'aiter_fa2_hub']) {
+      assert.match(workflowNodeAttentionBackendError(node(backend, device)), /unsupported attention/);
+      assert.match(
+        workflowNodeAttentionBackendError(node('_native_math', device, ['auto', { value: backend }])),
+        /unsupported attention/,
+      );
+    }
+  }
+  for (const backend of ['_native_math', '_native_flash', '_native_efficient', '_native_cudnn'])
+    assert.equal(workflowNodeAttentionBackendError(node(backend, 'cuda:0')), null);
+  assert.match(workflowNodeAttentionBackendError(node('auto', 'cuda:0', { aiter: 'Retired' })), /aiter/);
+});
+
 test('Hub-backed adapter member filenames are not treated as standalone local models', () => {
   const references = runReadinessModule.collectNodeModelReferences({
     id: 'audio-lora',
@@ -7337,5 +7849,48 @@ test('template creation waits for initial capabilities and cannot continue into 
     nodeStore.setState(previousNodes);
     studioStore.setState(previousStudio);
     flowStore.setState(previousFlow);
+  }
+});
+
+test('legacy template provenance still recovers its original role-marked managed graph', () => {
+  const graph = canonicalModularTextToImageGraph();
+  const roles = ['models', 'prompt', 'denoise', 'decode', 'preview'];
+  graph.nodes = graph.nodes.map((node, index) => ({
+    ...node,
+    data: { ...node.data, studioRole: roles[index] },
+  }));
+  const studio = studioStoreModule.useStudioStore;
+  const before = studio.getState();
+  const beforeFlow = flowStoreModule.useFlowStore.getState();
+  try {
+    studio.getState().mergeBackendWorkflow({
+      id: 'legacy-template-role-recovery',
+      title: 'Saved Z template',
+      source: 'template',
+      sourceLabel: 'z_image_quick_concept',
+      revision: 1,
+      snapshot: { ...graph, studioForm: profilesModule.DEFAULT_STUDIO_FORM, selectedMode: 'text_to_image' },
+    });
+    const saved = studio.getState().workflowTabs.find((tab) => tab.id === 'legacy-template-role-recovery');
+    assert.equal(saved.source, 'template');
+    assert.equal(saved.snapshot.activeTemplateId, 'z_image_quick_concept');
+    assert.deepEqual(
+      saved.snapshot.studioGraphBinding.managedNodeIds,
+      graph.nodes.map((node) => node.id),
+    );
+    assert.deepEqual(
+      saved.snapshot.studioGraphBinding.managedEdgeIds,
+      graph.edges.map((edge) => edge.id),
+    );
+    assert.deepEqual(
+      saved.snapshot.nodes.map((node) => node.position),
+      graph.nodes.map((node) => node.position),
+    );
+    assert.deepEqual(saved.snapshot.edges, graph.edges);
+    assert.deepEqual(saved.snapshot.viewport, graph.viewport);
+    assert.ok(saved.snapshot.nodes.every((node) => node.data.studioOwned));
+  } finally {
+    studio.setState(before);
+    flowStoreModule.useFlowStore.setState(beforeFlow);
   }
 });

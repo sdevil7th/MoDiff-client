@@ -1,6 +1,5 @@
 import type { Edge, Viewport } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
-import { rebaseGraphDevices } from './deviceRebase';
 import {
   BUILTIN_AUDIO_OPERATION_MODES,
   BUILTIN_DATA_OPERATION_MODES,
@@ -762,7 +761,9 @@ export function workflowSnapshotFromGraph(
   edgeType: string,
   fallback: StudioFormState = DEFAULT_STUDIO_FORM,
 ): WorkflowTabSnapshot {
-  const portableGraph = rebaseGraphDevices(cloneJson(graph), fallback.device);
+  // Import retains each node's authored placement. The current form is only
+  // context for summary inference, not permission to move every node's device.
+  const portableGraph = cloneJson(graph);
   const nodes = cloneJson((Array.isArray(portableGraph.nodes) ? portableGraph.nodes : []) as CustomNodeType[]);
   const edges = cloneJson(Array.isArray(portableGraph.edges) ? portableGraph.edges : []).map((edge) => ({
     ...edge,

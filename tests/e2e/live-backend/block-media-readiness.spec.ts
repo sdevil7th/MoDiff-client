@@ -12,6 +12,7 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
   await page.addInitScript(() => {
     if (!sessionStorage.getItem('media-preflight-proof')) {
       localStorage.clear();
+      sessionStorage.clear();
       sessionStorage.setItem('media-preflight-proof', '1');
     }
   });

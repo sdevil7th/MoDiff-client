@@ -1,7 +1,11 @@
 import type { ModelCacheDiagnostics } from '../stores/useNodeStore';
 import type { StudioModelProfile } from '../studio/types';
+import type { StudioExecutionProfile, StudioImageAdapterAuthoringPolicy } from '../studio/types';
 import { getRepoCacheStatus, getStudioModelCacheStatus, type StudioModelCacheStatus } from '../studio/modelCache';
 import type { PipelineSupport, PipelineTaskSupport } from './operationCatalog';
+import { parseWorkflowModelInventory, type WorkflowModelInventory } from './workflowModelInventory';
+import { parseAuthoringRecipeOffers } from './authoringRecipeOffers';
+import { identifier } from './operationContracts';
 
 export type WorkflowChoice = {
   id: string;
@@ -12,9 +16,42 @@ export type WorkflowChoice = {
   profileId?: string;
   support: PipelineTaskSupport;
   cache: StudioModelCacheStatus | null;
+  evaluationOnly?: true;
+  authoringRecipeId?: string;
 };
 
-export type WorkflowModelDescriptor = { profileId: string; pipeline: string; label: string; repo: string };
+/** Generic selected-profile authority; it does not widen the legacy Studio model union. */
+export type WorkflowImageAdapterProfile = Pick<
+  StudioExecutionProfile,
+  | 'id'
+  | 'pipeline_class'
+  | 'loader_module'
+  | 'loader_action'
+  | 'execution_path'
+  | 'default_repo'
+  | 'optionalRuntimeRequirement'
+> & {
+  model_type: string;
+  modes: string[];
+  repository_revisions: StudioImageAdapterAuthoringPolicy['repositoryRevisions'];
+  adapterAuthoring: StudioImageAdapterAuthoringPolicy;
+};
+
+export type WorkflowModelDescriptor = {
+  profileId: string;
+  pipeline: string;
+  label: string;
+  repo: string;
+  inventory?: WorkflowModelInventory;
+  evaluationOnly?: true;
+  modelType?: string;
+  adapterAuthoringProfile?: WorkflowImageAdapterProfile;
+  authoringRecipes?: Readonly<Record<string, string>>;
+  /** Explicit backend alternative for a null authored layout; never inferred from model names. */
+  rawPromptAuthoringRecipes?: Readonly<Record<string, string>>;
+  rawPromptAuthoringChoices?: Readonly<Record<string, readonly { authoringRecipeId: string; label: string }[]>>;
+  layoutPromptAuthoringChoices?: Readonly<Record<string, readonly { authoringRecipeId: string; label: string }[]>>;
+};
 
 /** Presentation-only identities for generic workflows, independent of legacy Studio forms. */
 export function parseWorkflowModelDescriptors(
@@ -45,20 +82,69 @@ export function parseWorkflowModelDescriptors(
   const result: WorkflowModelDescriptor[] = [];
   for (const raw of payload.capabilities as unknown[]) {
     const model = object(raw);
-    if (typeof model.modelType === 'string' && known.has(model.modelType)) continue;
+    const knownModel = typeof model.modelType === 'string' && known.has(model.modelType);
     const profiles = model.executionProfiles;
+    // Older known-model records retain their legacy presentation boundary.
+    // Explicit offers opt into this same generic profile/task contract.
+    if (
+      knownModel &&
+      (!Array.isArray(profiles) ||
+        !profiles.some(
+          (profile) =>
+            profile !== null &&
+            typeof profile === 'object' &&
+            Object.prototype.hasOwnProperty.call(profile, 'authoringRecipes'),
+        ))
+    )
+      continue;
     if (profiles === undefined) continue;
     if (!Array.isArray(profiles) || profiles.length > 512) invalid();
     for (const rawProfile of profiles as unknown[]) {
       const profile = object(rawProfile);
+      const hasOffers = Object.prototype.hasOwnProperty.call(profile, 'authoringRecipes');
+      if (knownModel && !hasOffers) continue;
       const profileId = text(profile.id);
       if (!selectedIds.has(profileId)) continue;
       const pipeline = text(profile.pipeline_class);
       if (profile.public === false || !selected.has(`${pipeline}:${profileId}`)) continue;
+      if (hasOffers && profile.public !== true) invalid();
       if (text(profile.model_type) !== text(model.modelType) || seen.has(profileId)) invalid();
       if (profile.public !== undefined && typeof profile.public !== 'boolean') invalid();
       seen.add(profileId);
-      result.push({ profileId, pipeline, label: text(model.label), repo: text(profile.default_repo) });
+      const repo = text(profile.default_repo);
+      const inventory = parseWorkflowModelInventory(model, repo);
+      let offers: Pick<
+        WorkflowModelDescriptor,
+        'authoringRecipes' | 'rawPromptAuthoringRecipes' | 'rawPromptAuthoringChoices' | 'layoutPromptAuthoringChoices'
+      > = {};
+      if (hasOffers) {
+        const declaredModes = Array.isArray(profile.modes) ? profile.modes : invalid();
+        if (!declaredModes.length || declaredModes.length > 64) invalid();
+        const modes = declaredModes.map(identifier);
+        if (new Set(modes).size !== modes.length) invalid();
+        const parsed = parseAuthoringRecipeOffers(
+          profile.authoringRecipes,
+          [{ id: profileId, pipeline, modes }],
+          support,
+          invalid,
+        );
+        offers = {
+          ...(parsed.recipes.has(profileId) ? { authoringRecipes: parsed.recipes.get(profileId) } : {}),
+          ...(parsed.rawRecipes.has(profileId) ? { rawPromptAuthoringRecipes: parsed.rawRecipes.get(profileId) } : {}),
+          ...(parsed.rawChoices.has(profileId) ? { rawPromptAuthoringChoices: parsed.rawChoices.get(profileId) } : {}),
+          ...(parsed.layoutChoices.has(profileId)
+            ? { layoutPromptAuthoringChoices: parsed.layoutChoices.get(profileId) }
+            : {}),
+        };
+      }
+      result.push({
+        profileId,
+        pipeline,
+        label: text(model.label),
+        repo,
+        ...(inventory ? { inventory } : {}),
+        ...offers,
+      });
     }
   }
   return result;
@@ -87,11 +173,26 @@ export function workflowChoices(
           profileId: string;
           label: string;
           repo: string;
+          evaluationOnly?: true;
+          authoringRecipes?: Readonly<Record<string, string>>;
         }>((id) => {
           const entry = profiles.get(id);
-          if (entry)
-            return [{ model: entry.model, profileId: id, label: entry.model.label, repo: entry.profile.default_repo }];
           const descriptor = descriptors.find((d) => d.profileId === id && d.pipeline === pipeline.pipelineClass);
+          if (entry)
+            return [
+              {
+                model: entry.model,
+                profileId: id,
+                label: entry.model.label,
+                repo: entry.profile.default_repo,
+                ...(descriptor &&
+                !descriptor.evaluationOnly &&
+                descriptor.repo === entry.profile.default_repo &&
+                descriptor.authoringRecipes
+                  ? { authoringRecipes: descriptor.authoringRecipes }
+                  : {}),
+              },
+            ];
           return descriptor ? [{ model: undefined, ...descriptor }] : [];
         });
         if (!matches.length)
@@ -106,13 +207,15 @@ export function workflowChoices(
               cache: null,
             },
           ];
-        return matches.map(({ model, profileId, label, repo }) => ({
+        return matches.map(({ model, profileId, label, repo, evaluationOnly, authoringRecipes }) => ({
           id: `${pipeline.pipelineClass}:${task.task}:${profileId}`,
           pipeline: pipeline.pipelineClass,
           task: task.task,
           label,
           repo,
           profileId,
+          ...(evaluationOnly ? { evaluationOnly } : {}),
+          ...(authoringRecipes?.[task.task] ? { authoringRecipeId: authoringRecipes[task.task] } : {}),
           support: task,
           cache:
             model && model.defaultRepo === repo
@@ -142,6 +245,16 @@ const TASK_LABELS: Record<string, string> = {
 };
 export function workflowTaskLabel(task: string): string {
   return TASK_LABELS[task] ?? task.replace(/_/gu, ' ').replace(/^./u, (c) => c.toUpperCase());
+}
+
+/** Search presentation text independently of punctuation in a model or repository name. */
+export function workflowModelMatchesQuery(choice: Pick<WorkflowChoice, 'label' | 'repo'>, query: string): boolean {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const text = normalize(`${choice.label} ${choice.repo ?? ''}`);
+  return query
+    .trim()
+    .split(/\s+/u)
+    .every((part) => text.includes(normalize(part)));
 }
 
 /** One model row per repository/task, with exact backend routes still selectable. */

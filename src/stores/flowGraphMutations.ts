@@ -10,6 +10,8 @@ import {
   setBlockPresentationV2,
 } from '../studio/blockRuntimeV2';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
 import { useNodesStore } from './useNodeStore';
@@ -45,6 +47,7 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
     const definition = registry[`${node.data.module}.${node.data.action}`];
     const liveParams = definition?.params;
     const storedParams = node.data.params;
+    const operation = operationAuthoring(node)?.operation;
     const params = Object.fromEntries(
       Object.entries(storedParams).map(([fieldKey, storedParam]) => {
         const liveParam = liveParams?.[fieldKey];
@@ -68,6 +71,16 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
     );
     for (const [fieldKey, liveParam] of Object.entries(liveParams ?? {})) {
       if (hasOwn(storedParams, fieldKey)) continue;
+      // The generic registry contains sockets for other pipeline/task modes.
+      // An authored operation's selected contract owns its missing inputs;
+      // UI fields and hidden scalar defaults still hydrate normally.
+      if (
+        operation &&
+        liveParam.hidden &&
+        liveParam.display === 'input' &&
+        !operation.ports.some((port) => port.direction === 'input' && port.name === fieldKey)
+      )
+        continue;
       if (liveParam.display?.startsWith('ui_') || liveParam.hidden) params[fieldKey] = { ...liveParam };
     }
     return { ...node, data: { ...node.data, params } };
@@ -215,8 +228,18 @@ function persistFinalBlockV2ProjectionPositions(
       );
 
     const previous = root.data.blockInstanceV2.presentation.internalLayout[semanticNodeId];
-    const width = projection.measured?.width ?? projection.width ?? previous?.width;
-    const height = projection.measured?.height ?? projection.height ?? previous?.height;
+    // An expanded frame's derived bounds are not the manually sized compact
+    // card. A header move may update position without replacing that own size.
+    const retainCompactSize =
+      previous?.sizeMode === 'compact' &&
+      projection.data.blockProjectionContainer === true &&
+      projection.data.blockProjectionContainerExpanded !== false;
+    const width = retainCompactSize
+      ? previous.width
+      : (projection.measured?.width ?? projection.width ?? previous?.width);
+    const height = retainCompactSize
+      ? previous.height
+      : (projection.measured?.height ?? projection.height ?? previous?.height);
     const blockInstanceV2 = setBlockPresentationV2(root.data.blockInstanceV2, {
       internalLayout: {
         [semanticNodeId]: {
@@ -224,6 +247,7 @@ function persistFinalBlockV2ProjectionPositions(
           y: projection.position.y,
           ...(typeof width === 'number' && Number.isFinite(width) && width > 0 ? { width } : {}),
           ...(typeof height === 'number' && Number.isFinite(height) && height > 0 ? { height } : {}),
+          ...(previous?.sizeMode ? { sizeMode: previous.sizeMode } : {}),
         },
       },
     });
@@ -317,7 +341,8 @@ export function replaceFlowGraph(
 ) {
   const previousNodes = get().nodes;
   const previousNodeIds = new Set(previousNodes.map((node) => node.id));
-  const nodes = withLiveFieldContracts(replacement.nodes);
+  const restored = withLiveFieldContracts(replacement.nodes);
+  const nodes = projectFlowCacheStatus(restored, get().runtimeCachedNodeIds);
   const nextNodeIds = new Set(nodes.map((node) => node.id));
   const removedNodeIds = [...previousNodeIds].filter((nodeId) => !nextNodeIds.has(nodeId));
   const edges = decorateConnectionEdges(

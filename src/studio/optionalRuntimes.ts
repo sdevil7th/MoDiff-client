@@ -4,6 +4,7 @@ import {
   runtimeText as string,
 } from './runtimeOptimizations';
 import { isStudioArtifactId, REPO_ID } from './executionSpecs';
+import type { StudioExecutionProfile, StudioImageAdapterAuthoringPolicy, StudioAdapterAuthoringPolicy } from './types';
 
 export type OptionalRuntimeRequirement = {
   schemaVersion: 1;
@@ -38,6 +39,7 @@ export type OptionalRuntimeProfileStatus = {
   status: 'missing' | 'present_unqualified' | 'wrong_version';
   overlayStatus: 'active' | 'missing' | 'repair_required' | 'staged' | 'staged_unchecked';
   satisfiesProfiles: Array<{ profileId: string; specDigest: string }>;
+  baseIncluded: boolean;
 };
 
 export type OptionalRuntimeCatalog = {
@@ -48,13 +50,17 @@ export type OptionalRuntimeCatalog = {
   activeEnvironmentId: string | null;
   previousEnvironmentId: string | null;
   installBusy: boolean;
+  latestJob: OptionalRuntimeJob | null;
 };
 
 export type OptionalRuntimeJob = {
   id: string;
   profileId: string;
   specDigest: string;
-  status: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready';
+  operation: 'install' | 'activate';
+  createdAt: number;
+  updatedAt: number;
+  status: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready' | 'restarting' | 'verifying';
   progress: {
     phase:
       | 'queued'
@@ -62,6 +68,10 @@ export type OptionalRuntimeJob = {
       | 'downloading'
       | 'installing'
       | 'validating'
+      | 'activating'
+      | 'restarting'
+      | 'restart_required'
+      | 'verifying'
       | 'promoting'
       | 'ready'
       | 'cancelling'
@@ -72,6 +82,7 @@ export type OptionalRuntimeJob = {
   result?: {
     environmentId: string;
     requiresActivation: boolean;
+    restartRequired?: boolean;
   };
 };
 
@@ -231,6 +242,137 @@ function parseExpertMpsPolicy(value: unknown): StudioExpertMpsPolicy {
   };
 }
 
+export function parseAdapterAuthoringPolicy(
+  value: unknown,
+  modes: readonly string[],
+  repositoryRevisions: readonly { repo: string; revision: string }[] | undefined,
+  context: Pick<StudioExecutionProfile, 'loader_module' | 'loader_action' | 'execution_path'> | undefined,
+): StudioAdapterAuthoringPolicy {
+  const item = record(value);
+  if (
+    ![Object.prototype, null].includes(Object.getPrototypeOf(item)) ||
+    Object.getOwnPropertySymbols(item).length ||
+    Object.values(Object.getOwnPropertyDescriptors(item)).some(
+      (descriptor) => !descriptor.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value'),
+    )
+  )
+    invalid();
+  if (
+    Object.keys(item)
+      .filter((key) => key !== 'requiredControls')
+      .sort()
+      .join() !== 'adapterNodeKey,maxOwnedAdapters,mediaKind,repositoryRevisions,schemaVersion,tasks' ||
+    item.schemaVersion !== 1 ||
+    (item.mediaKind !== 'image' && item.mediaKind !== 'audio') ||
+    (item.mediaKind === 'audio'
+      ? item.adapterNodeKey !== 'modules.DiffusersAudio.LoadAdapter' || item.maxOwnedAdapters !== 1
+      : item.adapterNodeKey !== 'modules.ModularDiffusers.Lora' &&
+        item.adapterNodeKey !== 'modules.DiffusersImage.LoadAdapter') ||
+    !Number.isInteger(item.maxOwnedAdapters) ||
+    (item.maxOwnedAdapters as number) < 1 ||
+    (item.maxOwnedAdapters as number) > 32
+  )
+    invalid();
+  if (
+    !context ||
+    !['loader_module', 'loader_action', 'execution_path'].every((key) =>
+      Object.prototype.hasOwnProperty.call(context, key),
+    )
+  )
+    invalid();
+  const native =
+    context.loader_module === 'modules.ModularDiffusers' &&
+    context.loader_action === 'ModelsLoader' &&
+    context.execution_path === 'modular-diffusers';
+  const direct =
+    context.loader_module === 'modules.DiffusersImage' &&
+    context.loader_action === 'LoadPipeline' &&
+    context.execution_path === 'direct-diffusers-image';
+  const audio =
+    context.loader_module === 'modules.DiffusersAudio' &&
+    context.loader_action === 'LoadPipeline' &&
+    context.execution_path === 'direct-diffusers-audio';
+  if (item.mediaKind === 'audio' ? !audio : item.adapterNodeKey === 'modules.ModularDiffusers.Lora' ? !native : !direct)
+    invalid();
+  const tasks = ids(item.tasks, /^[a-z][a-z0-9_]{0,63}$/u, false) as string[];
+  if (tasks.some((task) => !modes.includes(task))) invalid();
+  const pairs = item.repositoryRevisions;
+  if (!Array.isArray(pairs) || !pairs.length || pairs.length > 32) invalid();
+  const seen = new Set<string>();
+  const parsedPairs = pairs.map((raw) => {
+    const pair = record(raw);
+    if (Object.keys(pair).sort().join() !== 'repo,revision') invalid();
+    const repo = string(pair.repo, /^[A-Za-z\d_][A-Za-z\d_.-]{0,95}\/[A-Za-z\d_][A-Za-z\d_.-]{0,95}$/u)!;
+    const revision = string(pair.revision, /^[a-f0-9]{40}$/u)!;
+    if (
+      seen.has(repo.toLowerCase()) ||
+      !repositoryRevisions?.some((declared) => declared.repo === repo && declared.revision === revision)
+    )
+      invalid();
+    seen.add(repo.toLowerCase());
+    return { repo, revision };
+  });
+  let requiredControls: StudioImageAdapterAuthoringPolicy['requiredControls'];
+  if ('requiredControls' in item && !Object.prototype.hasOwnProperty.call(item, 'requiredControls')) invalid();
+  if (Object.prototype.hasOwnProperty.call(item, 'requiredControls')) {
+    const controls = record(item.requiredControls);
+    if (
+      ![Object.prototype, null].includes(Object.getPrototypeOf(controls)) ||
+      Object.getOwnPropertySymbols(controls).length
+    )
+      invalid();
+    const entries = Object.getOwnPropertyDescriptors(controls);
+    const keys = Object.keys(entries);
+    if (!keys.length || keys.length > 32) invalid();
+    requiredControls = {};
+    for (const key of keys) {
+      if (!/^[a-z][a-z0-9_]{0,63}$/u.test(key) || ['constructor', 'prototype'].includes(key)) invalid();
+      const descriptor = entries[key]!;
+      if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || !descriptor.enumerable) invalid();
+      const scalar: unknown = descriptor.value;
+      if (
+        scalar !== null &&
+        typeof scalar !== 'boolean' &&
+        !(
+          typeof scalar === 'string' &&
+          scalar.length > 0 &&
+          scalar === scalar.trim() &&
+          scalar.length <= 128 &&
+          !/[\p{Cc}\u2028\u2029]/u.test(scalar)
+        )
+      )
+        invalid();
+      requiredControls[key] = scalar as string | boolean | null;
+    }
+  }
+  const common = {
+    schemaVersion: 1 as const,
+    tasks,
+    repositoryRevisions: parsedPairs,
+    ...(requiredControls ? { requiredControls } : {}),
+  };
+  return item.mediaKind === 'audio'
+    ? { ...common, mediaKind: 'audio', adapterNodeKey: 'modules.DiffusersAudio.LoadAdapter', maxOwnedAdapters: 1 }
+    : {
+        ...common,
+        mediaKind: 'image',
+        adapterNodeKey: item.adapterNodeKey as StudioImageAdapterAuthoringPolicy['adapterNodeKey'],
+        maxOwnedAdapters: item.maxOwnedAdapters as number,
+      };
+}
+
+/** Retained image-only boundary for existing callers. */
+export function parseImageAdapterAuthoringPolicy(
+  value: unknown,
+  modes: readonly string[],
+  repositoryRevisions: readonly { repo: string; revision: string }[] | undefined,
+  context: Pick<StudioExecutionProfile, 'loader_module' | 'loader_action' | 'execution_path'> | undefined,
+): StudioImageAdapterAuthoringPolicy {
+  const policy = parseAdapterAuthoringPolicy(value, modes, repositoryRevisions, context);
+  if (policy.mediaKind !== 'image') invalid();
+  return policy;
+}
+
 export function parseOptionalRuntimeExecutionProfiles<T extends string>(
   value: unknown,
   aggregate: OptionalRuntimeRequirement | undefined,
@@ -245,6 +387,32 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
       if (repo != null && (typeof repo !== 'string' || !isStudioArtifactId(repo))) invalid();
     }
     if (profile.compatible_repos !== undefined) ids(profile.compatible_repos, REPO_ID, true);
+    if (profile.repository_revisions !== undefined) {
+      const pairs = profile.repository_revisions;
+      if (!Array.isArray(pairs) || pairs.length > 32) invalid();
+      const declared = [profile.default_repo, profile.fallback_repo, ...((profile.compatible_repos as string[]) ?? [])];
+      const seen = new Set<string>();
+      profile.repository_revisions = pairs.map((raw) => {
+        const pair = record(raw);
+        if (Object.keys(pair).sort().join() !== 'repo,revision') invalid();
+        const repo = string(pair.repo, REPO_ID)!;
+        const revision = string(pair.revision, /^[a-f0-9]{40}$/u)!;
+        if (!declared.includes(repo) || seen.has(repo)) invalid();
+        seen.add(repo);
+        return { repo, revision };
+      });
+    }
+    if (Object.prototype.hasOwnProperty.call(profile, 'adapterAuthoring'))
+      profile.adapterAuthoring = parseAdapterAuthoringPolicy(
+        profile.adapterAuthoring,
+        modes,
+        profile.repository_revisions as StudioImageAdapterAuthoringPolicy['repositoryRevisions'] | undefined,
+        {
+          loader_module: string(profile.loader_module)!,
+          loader_action: string(profile.loader_action)!,
+          execution_path: string(profile.execution_path)!,
+        },
+      );
     if (profile.optionalRuntimeRequirement !== undefined && profile.optional_runtime_requirement !== undefined)
       invalid();
     const rawRequirement = profile.optionalRuntimeRequirement ?? profile.optional_runtime_requirement;
@@ -282,6 +450,19 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
             profile.optional_runtime_delivery !== requirement.delivery)))
     )
       invalid();
+    if (Object.prototype.hasOwnProperty.call(profile, 'required_diffusers_provider')) {
+      const provider = profile.required_diffusers_provider;
+      if (typeof provider !== 'string' || !runtimeId.test(provider)) invalid();
+      const declared = ids(profile.optional_runtime_profiles, runtimeId, false);
+      if (
+        profile.optional_runtime_delivery !== 'optional_overlay' ||
+        !declared.includes(provider) ||
+        requirement?.delivery !== 'optional_overlay' ||
+        requirement.requiredNow !== true ||
+        !requirement.profileIds.includes(provider)
+      )
+        invalid();
+    }
     delete profile.optional_runtime_requirement;
     profile.modes = modes;
     profile.optionalRuntimeRequirement = requirement;
@@ -294,6 +475,7 @@ export function parseOptionalRuntimeExecutionProfiles<T extends string>(
     return profile as Record<string, unknown> & {
       id: string;
       modes: T[];
+      adapterAuthoring?: StudioImageAdapterAuthoringPolicy;
       optionalRuntimeRequirement?: OptionalRuntimeRequirement;
       expert_cuda_policy?: StudioExpertCudaPolicy;
       expert_quantization_policy?: StudioExpertQuantizationPolicy;
@@ -341,6 +523,7 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
   string(item.contractState);
   string(item.status, /^(?:missing|present_unqualified|wrong_version)$/);
   string(item.overlayStatus, /^(?:active|missing|repair_required|staged|staged_unchecked)$/);
+  if (item.baseIncluded !== undefined && typeof item.baseIncluded !== 'boolean') invalid();
   const rawSatisfiedProfiles = item.satisfiesProfiles ?? [];
   if (!Array.isArray(rawSatisfiedProfiles) || rawSatisfiedProfiles.length > 32) invalid();
   const satisfiesProfiles = rawSatisfiedProfiles.map((rawProfile) => {
@@ -355,7 +538,11 @@ function parseProfile(value: unknown): OptionalRuntimeProfileStatus {
     satisfiesProfiles.length
   )
     invalid();
-  return { ...(item as unknown as OptionalRuntimeProfileStatus), satisfiesProfiles };
+  return {
+    ...(item as unknown as OptionalRuntimeProfileStatus),
+    satisfiesProfiles,
+    baseIncluded: item.baseIncluded === true,
+  };
 }
 
 function nullableId(value: unknown, pattern: RegExp) {
@@ -448,24 +635,36 @@ export function parseOptionalRuntimeCatalog(value: unknown): OptionalRuntimeCata
     activeEnvironmentId,
     previousEnvironmentId,
     installBusy: payload.activeInstallJob !== null,
+    latestJob: payload.latestJob === undefined || payload.latestJob === null ? null : parseJob(payload.latestJob),
   };
 }
 
 function parseJob(value: unknown): OptionalRuntimeJob {
   const item = record(value);
   const progress = record(item.progress);
+  const timestamp = (value: unknown) => {
+    if (value === undefined || value === null) return 0;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) invalid();
+    return value as number;
+  };
   const parsed: OptionalRuntimeJob = {
     id: string(item.id, jobId)!,
     profileId: string(item.profileId, runtimeId)!,
     specDigest: string(item.specDigest, specDigest)!,
+    operation:
+      item.operation === undefined
+        ? 'install'
+        : (string(item.operation, /^(?:install|activate)$/) as OptionalRuntimeJob['operation']),
+    createdAt: timestamp(item.createdAt),
+    updatedAt: timestamp(item.updatedAt),
     status: string(
       item.status,
-      /^(?:queued|running|cancelling|cancelled|failed|ready)$/,
+      /^(?:queued|running|cancelling|cancelled|failed|ready|restarting|verifying)$/,
     ) as OptionalRuntimeJob['status'],
     progress: {
       phase: string(
         progress.phase,
-        /^(?:queued|copying|downloading|installing|validating|promoting|ready|cancelling|cancelled|failed)$/,
+        /^(?:queued|copying|downloading|installing|validating|activating|restarting|restart_required|verifying|promoting|ready|cancelling|cancelled|failed)$/,
       ) as OptionalRuntimeJob['progress']['phase'],
       message: string(progress.message)!,
     },
@@ -473,9 +672,11 @@ function parseJob(value: unknown): OptionalRuntimeJob {
   if (item.result !== undefined) {
     const result = record(item.result);
     if (typeof result.requiresActivation !== 'boolean') invalid();
+    if (result.restartRequired !== undefined && typeof result.restartRequired !== 'boolean') invalid();
     parsed.result = {
       environmentId: string(result.environmentId, environmentId)!,
       requiresActivation: result.requiresActivation,
+      ...(result.restartRequired === undefined ? {} : { restartRequired: result.restartRequired }),
     };
   }
   return parsed;

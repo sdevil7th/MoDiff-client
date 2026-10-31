@@ -39,6 +39,7 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { isUserBlockExpandedInstance } from '../studio/userBlocks';
 import { isHuggingFaceClusterExpanded } from '../studio/huggingFaceClusterGraph';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { prepareHuggingFaceClustersForRun } from '../studio/huggingFaceClusterPreparation';
 import { validateCurrentRun } from '../studio/runReadiness';
@@ -287,6 +288,8 @@ export function SelectionToolbar({
   const handleRunFromNode = useCallback(async () => {
     if (!singleActionNode) return;
     try {
+      const pending = prepareExecutionScope({ targetNodeId: singleActionNode.id });
+      const executionScope = pending ? await pending : undefined;
       if (singleActionNode.data.huggingFaceClusterRole === 'root' || singleActionNode.data.blockInstanceV2) {
         await prepareHuggingFaceClustersForRun([singleActionNode.id]);
       }
@@ -295,9 +298,10 @@ export function SelectionToolbar({
         isConnected,
         includeStudio: false,
         targetNodeId: singleActionNode.id,
+        executionScope,
       });
       if (!validation.canRun || !sid) return;
-      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id });
+      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id, executionScope });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       enqueueSnackbar(message, { variant: 'error', persist: true });
@@ -335,7 +339,7 @@ export function SelectionToolbar({
     if (!singleActionNode) return;
     try {
       const result = await recomputeNodeOutputs([singleActionNode.id]);
-      if (result.nodes.length) setNodeCached(singleActionNode.id, false);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar(
         result.nodes.length
           ? 'Outputs will recompute on the next Run. Loaded models are retained.'
@@ -350,8 +354,8 @@ export function SelectionToolbar({
   const handleClearCache = useCallback(async () => {
     if (!singleActionNode) return;
     try {
-      await deleteNodeCache([singleActionNode.id]);
-      setNodeCached(singleActionNode.id, false);
+      const result = await deleteNodeCache([singleActionNode.id]);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

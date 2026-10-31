@@ -5,7 +5,8 @@ import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import { connectionTypes, connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { nodeConnectionSemanticsAreCompatible } from '../workflow/nodeConnectionMatching';
-import { expandBlockGraphV2ForExecution } from './blockRuntimeV2';
+import { blockProjectionNodeIdV2, expandBlockGraphV2ForExecution } from './blockRuntimeV2';
+import { blockConnectionTargetsV2, blockCrossingParamV2 } from './blockCrossingConnectionsV2';
 import { inspectBlockSeedBindingsV2 } from './blockSeedRepairV2';
 import { inspectBlockDerivedControlsV2 } from './blockDerivedControlRepairV2';
 import { inspectReviewedStateV2 } from './reviewedStateDiagnosticsV2';
@@ -14,6 +15,9 @@ import { reviewedLoopRepairEdgeV2 } from './reviewedLoopRepairV2';
 import type { HuggingFaceNodeLibraryBlockDefinition } from './huggingFaceNodeLibrary';
 import { isBlockRootV2Node, nodeConnectorParam, nodeConnectorParams } from './nodeConnectorResolution';
 import type { RunReadinessIssue } from './types';
+import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
+import type { OperationContract } from '../workflow/operationContracts';
+import { processImageInputRequirements } from '../workflow/processImageInputRequirements';
 
 export type GraphFixConfidence = 'safe' | 'choice';
 export type GraphFixExternalAction = 'open_model_manager' | 'open_assets' | 'open_setup' | 'inspect_node';
@@ -75,6 +79,7 @@ export type GraphFixContext = {
   nodes: CustomNodeType[];
   edges: Edge[];
   registry: Record<string, NodeData>;
+  operationContracts?: readonly OperationContract[];
   readinessIssues?: RunReadinessIssue[];
   modularBlockDefinitions?: readonly HuggingFaceNodeLibraryBlockDefinition[];
 };
@@ -124,24 +129,27 @@ function nodeRegistryKey(node: Pick<CustomNodeType, 'data'>) {
   return `${node.data.module}.${node.data.action}`;
 }
 
-function nodesWithLiveContracts(nodes: CustomNodeType[], registry: Record<string, NodeData>) {
+function nodesWithLiveContracts(context: GraphFixContext) {
+  const { nodes, registry } = context;
   return nodes.map((node) => {
     // Block V2 owns an immutable embedded definition snapshot. Applying a
     // registry contract to its empty root params would create a second socket
     // authority and make Graph Fix disagree with the canvas/runtime.
     if (isBlockRootV2Node(node)) return node;
     const definition = registry[nodeRegistryKey(node)];
-    if (!definition) return node;
+    const requirements = processImageInputRequirements(node, registry, context.operationContracts ?? [], context.edges);
+    if (!definition && !requirements) return node;
     const params = Object.fromEntries(
       Object.entries(node.data.params).map(([key, stored]) => {
-        const live = definition.params[key];
-        if (!live) return [key, stored];
+        const live = definition?.params[key];
+        if (!live && requirements?.[key] === undefined) return [key, stored];
         return [
           key,
           {
             ...stored,
-            type: live.type ?? stored.type,
-            required: live.required ?? stored.required,
+            type: live?.type ?? stored.type,
+            required: requirements?.[key]?.required ?? live?.required ?? stored.required,
+            hidden: requirements?.[key]?.hidden ?? stored.hidden,
           },
         ];
       }),
@@ -218,7 +226,7 @@ export function graphNodeIsOutputLike(node: Pick<CustomNodeType, 'data'>) {
   return /\b(preview|export|save|display|output|gallery)\b|viewer\b/.test(text);
 }
 
-function blockHasConnectedOutput(node: CustomNodeType) {
+function blockHasConnectedOutput(node: CustomNodeType, incoming: ReadonlySet<string>) {
   if (!isBlockRootV2Node(node) || !node.data.blockInstanceV2) return false;
   // Inspect the saved semantic graph, not visible projections: collapse must not
   // hide an existing output from Fix. Do not compile a potentially invalid draft.
@@ -230,7 +238,10 @@ function blockHasConnectedOutput(node: CustomNodeType) {
     (child) =>
       enabled.has(child.nodeId) &&
       graphNodeIsOutputLike({ data: child.data as unknown as NodeData }) &&
-      graph.edges.some((edge) => edge.targetNodeId === child.nodeId && enabled.has(edge.sourceNodeId)),
+      (graph.edges.some((edge) => edge.targetNodeId === child.nodeId && enabled.has(edge.sourceNodeId)) ||
+        inputFields({ data: child.data as unknown as NodeData }).some(([field]) =>
+          incoming.has(`${blockProjectionNodeIdV2(node.id, child.nodeId)}:${field}`),
+        )),
   );
 }
 
@@ -626,7 +637,7 @@ function outputCandidates(issueId: string, context: GraphFixContext, existingOut
 }
 
 export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
-  context = { ...context, nodes: nodesWithLiveContracts(context.nodes, context.registry) };
+  context = { ...context, nodes: nodesWithLiveContracts(context) };
   const issues: GraphFixIssue[] = [];
   const nodesById = new Map(context.nodes.map((node) => [node.id, node]));
   const validIncoming = new Set<string>();
@@ -801,9 +812,35 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
     const target = nodesById.get(edge.target);
     const sourceHandle = edge.sourceHandle ?? '';
     const targetHandle = edge.targetHandle ?? '';
-    const sourceParam = nodeConnectorParam(source, sourceHandle);
-    const targetParam = nodeConnectorParam(target, targetHandle);
-    if (!source || !target || !sourceHandle || !targetHandle || !sourceParam || !targetParam) {
+    let sourceParam: NodeParams | undefined;
+    let targetParam: NodeParams | undefined;
+    let blockTargets: ReturnType<typeof blockConnectionTargetsV2> = [];
+    try {
+      sourceParam = nodeConnectorParam(source, sourceHandle);
+      targetParam = nodeConnectorParam(target, targetHandle);
+      if (source?.data.blockInstanceV2) {
+        for (const binding of blockConnectionTargetsV2(source, sourceHandle, 'output'))
+          blockCrossingParamV2(source.data.blockInstanceV2, { ...binding, direction: 'output' });
+      }
+      if (target?.data.blockInstanceV2) {
+        blockTargets = blockConnectionTargetsV2(target, targetHandle, 'input');
+        for (const binding of blockTargets)
+          blockCrossingParamV2(target.data.blockInstanceV2, { ...binding, direction: 'input' });
+      }
+    } catch {
+      // A stale/malformed crossing is a broken link, never output connectivity.
+      sourceParam = targetParam = undefined;
+    }
+    if (
+      !source ||
+      !target ||
+      !sourceHandle ||
+      !targetHandle ||
+      !sourceParam ||
+      !targetParam ||
+      sourceParam.display !== 'output' ||
+      targetParam.display === 'output'
+    ) {
       const issueId = candidateId('broken-link', edge.id);
       issues.push({
         id: issueId,
@@ -867,14 +904,24 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
       return;
     }
     validIncoming.add(`${target.id}:${targetHandle}`);
+    if (!source.data.uiState?.disabled && !target.data.uiState?.disabled) {
+      // Durable crossing and public/mirrored inputs reach semantic leaves even
+      // when their canvas projections are collapsed or absent after reload.
+      for (const binding of blockTargets)
+        validIncoming.add(`${blockProjectionNodeIdV2(target.id, binding.nodeId)}:${binding.fieldOrPortId}`);
+    }
   });
 
   const enabled = executableNodes(context.nodes);
   const outputNodes = enabled.filter(graphNodeIsOutputLike);
   const connectedOutputs = outputNodes.filter((node) =>
-    context.edges.some((edge) => edge.target === node.id && nodesById.has(edge.source)),
+    inputFields(node).some(([handle]) => validIncoming.has(`${node.id}:${handle}`)),
   );
-  if (enabled.length > 0 && connectedOutputs.length === 0 && !enabled.some(blockHasConnectedOutput)) {
+  if (
+    enabled.length > 0 &&
+    connectedOutputs.length === 0 &&
+    !enabled.some((node) => blockHasConnectedOutput(node, validIncoming))
+  ) {
     const issueId = 'missing-output';
     const candidates = outputCandidates(issueId, context, outputNodes);
     if (candidates.length) {
@@ -900,6 +947,7 @@ export function buildGraphFixPlan(context: GraphFixContext): GraphFixPlan {
       if (blockInputHasFieldControl(target, targetHandle)) return;
       if (!inputIsRequired(targetHandle, targetParam, Boolean(target.data.skipParamsCheck))) return;
       if (validIncoming.has(`${target.id}:${targetHandle}`)) return;
+      if (operationInputIsSuppliedByBundle(target, targetHandle, context)) return;
       if (missingOutputTargetIds.has(target.id) && connectedOutputs.length === 0) return;
       const issueId = candidateId('missing-input', target.id, targetHandle);
       const candidates = missingInputCandidates(issueId, context, target, targetHandle, targetParam);

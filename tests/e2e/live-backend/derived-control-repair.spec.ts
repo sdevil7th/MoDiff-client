@@ -15,6 +15,7 @@ test('saved Qwen derived-step override is unchanged until explicit Fix and survi
   await page.addInitScript(() => {
     if (sessionStorage.getItem('derived-control-proof')) return;
     localStorage.clear();
+    sessionStorage.clear();
     sessionStorage.setItem('derived-control-proof', '1');
   });
   await page.goto('/');

@@ -1564,6 +1564,116 @@ test('root Run includes every local branch even without a preview and never runs
   }
 });
 
+test('disabled Block leaves survive projection, persistence and whole-workflow export', () => {
+  const baseline = instance(previewFixture);
+  const graph = structuredClone(baseline.effectiveGraph);
+  graph.nodes.find((n) => n.nodeId === 'caption').data.uiState = {
+    disabled: true,
+    errorMessage: 'Transient runtime error',
+    encodingSummaries: { image: { graphHash: 'old-run', value: 'transient' } },
+  };
+  graph.nodes.find((n) => n.nodeId === 'sibling').data.uiState = {
+    disabled: false,
+    validationMessage: 'Transient validation',
+  };
+  const current = runtime.replaceBlockEffectiveGraphV2(baseline, graph);
+  const before = structuredClone(current);
+  const root = runtime.createBlockRootNodeV2(
+    runtime.setBlockPresentationV2(current, { expanded: true, collapsedContainerNodeIds: [] }),
+  );
+  for (const view of [
+    runtime.blockOperationGraphV2(current),
+    runtime.materializeBlockProjectionV2(root),
+    runtime.expandBlockGraphV2ForExecution([root], []),
+  ]) {
+    assert.deepEqual(view.nodes.find((n) => n.data.blockProjectionNodeId === 'caption').data.uiState, {
+      disabled: true,
+    });
+    assert.deepEqual(view.nodes.find((n) => n.data.blockProjectionNodeId === 'sibling').data.uiState, {
+      disabled: false,
+    });
+  }
+  const enabledExport = loadStore(baseline)().exportGraph('disabled-leaf');
+  const disabledId = runtime.blockProjectionNodeIdV2(current.instanceId, 'caption');
+  delete enabledExport.nodes[disabledId];
+  enabledExport.paths = enabledExport.paths.filter((p) => !p.includes(disabledId));
+  const get = loadStore(current);
+  const expected = ['generate', 'sibling'].map((id) => runtime.blockProjectionNodeIdV2(current.instanceId, id));
+  const exported = get().exportGraph('disabled-leaf');
+  assert.deepEqual(exported, enabledExport, 'only the disabled leaf is omitted from the exact API graph');
+  assert.deepEqual(Object.keys(exported.nodes).sort(), expected.sort());
+  assert.deepEqual(exported.paths.map((p) => [...p]).sort(), expected.map((id) => [id]).sort());
+  const saved = JSON.parse(JSON.stringify(get().toObject()));
+  get().replaceGraph(saved);
+  assert.deepEqual(get().exportGraph('disabled-leaf'), exported);
+  assert.deepEqual(
+    get().nodes.find((n) => n.id === current.instanceId).data.blockInstanceV2.definitionSnapshot,
+    baseline.definitionSnapshot,
+  );
+  assert.deepEqual(current, before, 'projection must not rewrite disabled or transient saved data');
+});
+
+test('required image readiness uses directly disabled Block leaves and disabled ancestors', async () => {
+  const { inspectBlockMediaInputsV2 } = await server.ssrLoadModule('/src/studio/blockMediaReadinessV2.ts');
+  const baseline = instance(previewFixture);
+  const graph = structuredClone(baseline.effectiveGraph);
+  const leaf = graph.nodes.find((n) => n.nodeId === 'caption');
+  Object.assign(leaf.data, {
+    module: 'modules.ModularDiffusers',
+    action: 'ImageEncode',
+    label: 'Encode Image',
+    operationAuthoring: {
+      schemaVersion: 1,
+      defaults: {},
+      retained: [],
+      operation: {
+        pipelineClass: 'ExamplePipeline',
+        task: 'image_to_image',
+        operationId: 'diffusion.encode_image',
+        nodeKey: 'modules.ModularDiffusers.ImageEncode',
+        nodeType: 'custom',
+        blockName: 'ImageEncode',
+        decomposition: 'block',
+        support: 'declared',
+        workflowId: null,
+        binding: { pipelineClass: 'ExamplePipeline', values: {} },
+        ports: [
+          {
+            name: 'image',
+            semanticName: 'image',
+            direction: 'input',
+            roles: ['value'],
+            types: ['image'],
+            required: true,
+            hidden: false,
+            semantics: { kind: 'media', scope: null, state: null, owner: 'none', members: [] },
+          },
+        ],
+      },
+    },
+  });
+  leaf.data.params.image = { type: 'image', display: 'input' };
+  const inspect = () => {
+    const current = runtime.replaceBlockEffectiveGraphV2(baseline, graph);
+    const before = structuredClone(current);
+    const root = runtime.createBlockRootNodeV2(current);
+    const issues = inspectBlockMediaInputsV2([root], runtime.expandBlockGraphV2ForExecution([root], []));
+    assert.deepEqual(current, before);
+    assert.deepEqual(current.definitionSnapshot, baseline.definitionSnapshot);
+    return issues;
+  };
+  assert.deepEqual(
+    inspect().map((issue) => issue.message),
+    ['Encode Image needs image before running.'],
+  );
+  leaf.data.uiState = { disabled: true };
+  assert.deepEqual(inspect(), [], 'retained unmatched image stage must not block text-to-image');
+  leaf.data.uiState.disabled = false;
+  assert.equal(inspect().length, 1, 're-enabling the image stage restores required-media validation');
+  graph.nodes.find((n) => n.nodeId === 'stage').data.uiState = { disabled: true };
+  assert.deepEqual(inspect(), [], 'an enabled leaf still inherits its disabled ancestor');
+});
+
 test('nested Run excludes disabled children and explains an entirely disabled subtree', () => {
   const definition = structuredClone(previewFixture);
   definition.graph.nodes.find((n) => n.nodeId === 'caption').data.uiState = { disabled: true };

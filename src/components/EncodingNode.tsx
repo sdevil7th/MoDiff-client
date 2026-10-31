@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import { useShallow } from 'zustand/react/shallow';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
@@ -18,14 +18,20 @@ import NodeInspectionDetails from './NodeInspectionDetails';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
+import {
+  visualOperationGroup,
+  visualOperationGroupMedia,
+  visualStagePresentation,
+} from '../workflow/visualOperationGroupProjection';
+const StageNodeControls = lazy(() => import('./StageNodeControls'));
 
 /** Dedicated frontend node; the existing stage contract only binds values,
  * persistence and execution. It never expands into a canvas container. */
 const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
   const instance = node.data.blockInstanceV2!;
   const guidance = isFocusedGuidance(instance);
-  const label = guidance ? 'Guidance' : 'Encode Inputs';
-  const stagesLabel = guidance ? 'guidance' : 'encoding';
+  const kind = visualOperationGroup({ ...node, position: instance.presentation.position })!;
+  const { label, name: stagesLabel } = visualStagePresentation(kind, visualOperationGroupMedia(node));
   const view = useMemo(() => blockViewModelV2(instance), [instance]);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [interfaceOpen, setInterfaceOpen] = useState(false);
@@ -68,12 +74,18 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
       <CustomNode
         {...node}
         surface={{
-          testId: `${guidance ? 'guidance' : 'encoding'}-node-${node.id}`,
-          controls: guidance ? (
-            <GuidanceNodeControls instance={instance} />
-          ) : (
-            <EncodingNodeControls instance={instance} updateStore={update} />
-          ),
+          testId: `${kind === 'inputs' ? 'encoding' : kind}-node-${node.id}`,
+          hasAudioPreview: view.previewViews.some((preview) => preview.binding.mediaType === 'audio'),
+          controls:
+            kind === 'inputs' ? (
+              <EncodingNodeControls instance={instance} updateStore={update} />
+            ) : guidance ? (
+              <GuidanceNodeControls instance={instance} />
+            ) : (
+              <Suspense fallback={<p role="status">Loading stage controls…</p>}>
+                <StageNodeControls node={{ ...node, position: view.position }} updateStore={update} />
+              </Suspense>
+            ),
           actions: (
             <EncodingNodeMenu
               node={{ ...node, position: view.position }}

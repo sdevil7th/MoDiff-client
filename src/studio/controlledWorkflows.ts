@@ -23,6 +23,8 @@ import {
   type ControlledNodeRole,
 } from './controlledWorkflowContracts';
 import { resolveStudioResourceForm } from './resourcePlanner';
+import { loraWorkflowFieldValues, upscaleWorkflowFieldValues } from './controlledWorkflowValues';
+import { MAX_ORDERED_ADAPTERS, orderedAdapterChainLinks } from './adapterChainLinks';
 import type {
   StudioAudioFitSettings,
   StudioFormState,
@@ -288,9 +290,11 @@ export async function addLoraWorkflowBlock(
   const adapterSettings: StudioTemplateLoraSettings[] = settings
     ? [settings, ...(settings.additionalAdapters ?? [])]
     : [];
-  if (adapterSettings.length > 1 && !usesDirectDiffusersImage) {
+  if (adapterSettings.length > 1 && !usesDirectDiffusersImage && (!modelsNode || binding?.nodes.videoExport)) {
     throw new Error('Multiple LoRA adapters currently require the Diffusers image pipeline.');
   }
+  if (adapterSettings.length > MAX_ORDERED_ADAPTERS)
+    throw new Error(`A LoRA chain supports at most ${MAX_ORDERED_ADAPTERS} adapters.`);
   const effectiveSettings = adapterSettings.length > 0 ? adapterSettings : [undefined];
   const basePosition = positionNear(
     modelsNode ?? directPipelineNode ?? audioPipelineNode,
@@ -303,6 +307,23 @@ export async function addLoraWorkflowBlock(
       ? 'lora.diffusers-image.v1'
       : 'lora.modular.v1';
   const loraNode = runControlledGraphTransaction(context, contractId, () => {
+    const currentAdapters = useFlowStore
+      .getState()
+      .nodes.filter(
+        (node) => node.data.studioRole === 'loraAdapter' || node.data.studioRole?.startsWith('loraAdapter:'),
+      );
+    const currentAdapterIds = new Set(currentAdapters.map((node) => node.id));
+    const sink = modelsNode ?? directGenerateNode ?? audioGenerateNode;
+    if (
+      useFlowStore
+        .getState()
+        .edges.some(
+          (edge) => currentAdapterIds.has(edge.source) && !currentAdapterIds.has(edge.target) && edge.target !== sink,
+        )
+    )
+      throw new Error(
+        'This LoRA chain is shared with another consumer. Edit its ordinary graph connections to preserve that branch.',
+      );
     const expectedRoles = new Set(
       effectiveSettings.map((_, index) => (index === 0 ? 'loraAdapter' : `loraAdapter:${index}`)),
     );
@@ -323,22 +344,7 @@ export async function addLoraWorkflowBlock(
         x: basePosition.x + index * 310,
         y: basePosition.y,
       });
-      setParamIfPresent(nodeId, ['scale'], adapter?.scale ?? 1);
-      setParamIfPresent(nodeId, ['replace_existing'], index === 0);
-      if (adapter?.model) {
-        setParamIfPresent(nodeId, ['model', 'adapter_path'], {
-          source: adapter.model.source,
-          value: adapter.model.value,
-        });
-        setParamIfPresent(nodeId, ['revision'], adapter.model.revision ?? '');
-        setParamIfPresent(nodeId, ['expected_sha256'], adapter.model.sha256 ?? '');
-      }
-      if (adapter?.weightName) {
-        setParamIfPresent(nodeId, ['weight_name'], adapter.weightName);
-      }
-      if (adapter?.adapterName) {
-        setParamIfPresent(nodeId, ['adapter_name'], adapter.adapterName);
-      }
+      for (const { fields, value } of loraWorkflowFieldValues(adapter, index)) setParamIfPresent(nodeId, fields, value);
       return nodeId;
     });
     const primaryLoraNode = loraNodes[0];
@@ -349,12 +355,6 @@ export async function addLoraWorkflowBlock(
       });
       setParamIfPresent(audioPipelineNode, ['revision'], settings.baseModel.revision ?? '');
     }
-    if (settings?.schedulerClass) {
-      setParamIfPresent(primaryLoraNode, ['scheduler_class'], settings.schedulerClass);
-    }
-    if (settings?.schedulerConfig) {
-      setParamIfPresent(primaryLoraNode, ['scheduler_config'], JSON.stringify(settings.schedulerConfig));
-    }
     let connected = false;
     if (usesDirectDiffusersImage || usesDirectDiffusersAudio) {
       const flow = useFlowStore.getState();
@@ -364,20 +364,43 @@ export async function addLoraWorkflowBlock(
         .filter(
           (edge) =>
             (edge.source === sourcePipelineNode &&
+              edge.sourceHandle === 'pipeline' &&
+              edge.targetHandle === 'pipeline' &&
               (edge.target === targetGenerateNode || loraNodes.includes(edge.target))) ||
             (loraNodes.includes(edge.source) &&
+              edge.sourceHandle === 'output' &&
+              edge.targetHandle === 'pipeline' &&
               (edge.target === targetGenerateNode || loraNodes.includes(edge.target))),
         )
         .map((edge) => edge.id);
       if (bypassEdges.length > 0) flow.removeEdges(bypassEdges);
-      connected = ensureConnection(sourcePipelineNode, ['pipeline'], loraNodes[0], ['pipeline']);
-      for (let index = 1; index < loraNodes.length && connected; index += 1) {
-        connected = ensureConnection(loraNodes[index - 1], ['output'], loraNodes[index], ['pipeline']);
-      }
-      connected =
-        connected && ensureConnection(loraNodes[loraNodes.length - 1], ['output'], targetGenerateNode, ['pipeline']);
+      if (sourcePipelineNode && targetGenerateNode)
+        connected = orderedAdapterChainLinks({
+          adapterIds: loraNodes,
+          inputHandles: ['pipeline'],
+          outputHandles: ['output'],
+          source: { nodeId: sourcePipelineNode, handles: ['pipeline'] },
+          target: { nodeId: targetGenerateNode, handles: ['pipeline'] },
+        }).every((link) => ensureConnection(link.source, link.sourceHandles, link.target, link.targetHandles));
     } else {
-      connected = ensureConnection(primaryLoraNode, ['lora'], modelsNode, ['lora_list', 'loras']);
+      const flow = useFlowStore.getState();
+      const staleChainEdges = flow.edges
+        .filter(
+          (edge) =>
+            loraNodes.includes(edge.source) &&
+            edge.sourceHandle === 'lora' &&
+            ((loraNodes.includes(edge.target) && edge.targetHandle === 'previous_loras') ||
+              (edge.target === modelsNode && ['lora_list', 'loras'].includes(edge.targetHandle ?? ''))),
+        )
+        .map((edge) => edge.id);
+      if (staleChainEdges.length > 0) flow.removeEdges(staleChainEdges);
+      if (modelsNode)
+        connected = orderedAdapterChainLinks({
+          adapterIds: loraNodes,
+          inputHandles: ['previous_loras'],
+          outputHandles: ['lora'],
+          target: { nodeId: modelsNode, handles: ['lora_list', 'loras'] },
+        }).every((link) => ensureConnection(link.source, link.sourceHandles, link.target, link.targetHandles));
     }
     if (!connected) {
       throw new Error('LoRA node was created, but its pipeline connection could not be completed.');
@@ -453,13 +476,8 @@ export async function addUpscaleWorkflowBlock(
       'upscaler',
       positionNear(decodeNode ?? directImageNode ?? videoDeliverySource, { x: 930, y: 170 }, { x: 330, y: 250 }),
     );
-    setParamIfPresent(upscalerNode, ['device'], form.device);
-    if (settings?.model) {
-      setParamIfPresent(upscalerNode, ['model_id'], settings.model);
-    }
-    if (settings?.downscale !== undefined) {
-      setParamIfPresent(upscalerNode, ['downscale'], settings.downscale);
-    }
+    for (const { fields, value } of upscaleWorkflowFieldValues(settings, form.device))
+      setParamIfPresent(upscalerNode, fields, value);
     if (qualityVideoGenerateNode && qualityVideoRetainNode) {
       removeEdgesBetween(qualityVideoGenerateNode.id, qualityVideoRetainNode.id, ['video_out'], ['video']);
       const generateConnected = ensureConnection(qualityVideoGenerateNode.id, ['video_out'], upscalerNode, ['image']);
@@ -711,12 +729,14 @@ export async function addQualityVideoSequenceWorkflowBlock(
     setParamIfPresent(recipe, ['device_map'], 'none');
     setParamIfPresent(recipe, ['offload_mode'], sequenceOffloadMode);
     setParamIfPresent(recipe, ['device'], executionDevice);
-    const supportsNativeFlash = executionDevice.startsWith('cuda');
-    setParamIfPresent(recipe, ['attention_backend'], supportsNativeFlash ? '_native_flash' : 'auto');
+    // A CUDA device does not prove that this Torch build contains flash SDPA.
+    // Preserve an explicit expert choice; ordinary authoring uses native auto.
+    const attentionBackend = executionForm.attentionBackend ?? 'auto';
+    setParamIfPresent(recipe, ['attention_backend'], attentionBackend);
     setParamIfPresent(
       recipe,
       ['attention_components'],
-      supportsNativeFlash ? (mode === 'text_to_video' ? 'transformer' : 'transformer,transformer_2') : '',
+      attentionBackend !== 'auto' ? (mode === 'text_to_video' ? 'transformer' : 'transformer,transformer_2') : '',
     );
     setParamIfPresent(recipe, ['vae_slicing'], true);
     // Video VAE decode can require substantially more memory than denoising.
@@ -742,6 +762,8 @@ export async function addQualityVideoSequenceWorkflowBlock(
     setParamIfPresent(jobs, ['negative_prompt'], form.negativePrompt);
     setParamIfPresent(retain, ['quality'], 10);
     setParamIfPresent(retain, ['pin'], true);
+    // ExportAsset exposes FPS as a scalar control until its input socket is enabled.
+    setParamIfPresent(retain, ['fps'], true, 'isInput');
     setParamIfPresent(join, ['transition_seconds'], settings.transitionSeconds);
     setParamIfPresent(join, ['pin'], true);
 

@@ -68,6 +68,10 @@ is cancelled. The activity shelf still reports a running task and opens it on
 explicit selection; a fresh empty session can recover its snapshot. Recovery
 must not mutate the running graph or steal the user's editing tab.
 
+Workflow snapshots and portable packages may omit the viewport. Import and
+restore retain the current valid camera when it is absent or rejected by the
+existing viewport normalizer, without changing graph content or provenance.
+
 ## Graph State And Mutations
 
 `src/stores/useFlowStore.ts` is the source of truth for:
@@ -86,6 +90,11 @@ Mutation logic is split into:
 - `flowGraphExport.ts`
 
 The store persists only nodes, edges, and viewport under `modiff.flow`. Runtime, history, and in-flight state are not persisted. A legacy `reactflow` key is migrated when present.
+
+Native Delete uses `removeElements` in one history transaction, including selected
+nodes, descendants, incident edges and separately selected edges. The existing
+Block deletion checks run before removing any selected wires. One Undo restores
+the complete graph; a rejected structural deletion leaves the selection intact.
 
 Encode Inputs uses the ordinary node surface. Supported inactive image-encoding
 sockets are derived read-only from backend operation contracts. Connecting one
@@ -140,6 +149,50 @@ enumeration stays in the popup's lazy `nodeConnectionSearch` module, outside
 canvas startup.
 
 Expert's Stages panel also resolves connected starters from `POST /operations/starter`.
+An explicitly validated evaluation runtime can publish a separate, bounded
+`evaluationAuthoring` namespace for Custom memory authoring. Its private profiles
+join the same generic model picker and starter path. A reviewed identity can have
+internal presentation typing for future templates without becoming a runnable
+Studio capability. Explicit contract-only and display-only records must retain
+false Automatic/template/Gallery/live flags and no published execution profiles,
+runnable modes or qualified modes. The separate private authoring namespace
+remains authoritative; presentation typing does not change its starter or grant
+qualification.
+The parser rejects any collision with an existing public pipeline profile, and
+selection and Apply both require Custom memory. Ordinary runtime discovery omits
+the namespace and retains the existing choices.
+
+Compatible evaluation models remain visible while Automatic memory is selected,
+with a Custom-memory requirement. Searching by model or repository ignores
+spacing and punctuation. An explicit button changes the current workflow to
+Custom; browsing, cancelling, or changing memory never selects or runs a model.
+Optional evaluation `adapterAuthoring` uses the existing immutable policy parser
+and requires current verified runtime metadata, the exact selected task/profile,
+and all declared loader controls before normal Add/Edit LoRA is available. It
+does not expand the public model union or grant Auto support. Optional per-task
+`authoringRecipes` select a current declared starter; its enhancement offer is
+attached after ordinary media/output completion without enabling a provider.
+
+An optional per-task `rawAuthoringRecipeId` declares a distinct raw-prompt
+alternative. Explicit Enable selects that exact alternative for a null layout,
+or the original declaration for authored regions. Both fresh responses must
+declare identical parent operations, bindings, values and edges. Selection and
+Enable commit together; existing bindings and explicit structured recipes are
+not migrated. Missing, malformed or changed metadata refuses without mutation.
+Optional `rawAuthoringRecipeChoices` adds at most four unique, labelled raw
+alternatives, including the declared default. The pre-Enable selector changes
+only a local choice. Enable revalidates the exact selected recipe; an explicit
+raw choice refuses a structured layout instead of selecting a different provider.
+The existing parent identity retains that choice through Disable and reload.
+These choices grant no runtime installation, resource fit or model qualification.
+
+Static registered fields render versioned option availability from the current
+node registry, including after a cross-platform import or registry refresh. This
+projection preserves saved values, labels, membership and graph/recipe hashes;
+an imported-only or ambiguous option remains unavailable. Dynamic actions and
+`optionsSource` retain their existing authority and consent. No registry refresh
+changes an authored selection or performs an install.
+
 The backend supplies ordinary node schemas and reviewed connections; the client
 assigns canvas IDs through the normal node factory. The result is a normal graph,
 with no template receipt or additional execution representation. Users can build
@@ -154,6 +207,8 @@ Backend-declared `sharedInputs` bind seed controls of stages that continue one
 generator. `operationSharedInputs` validates their loader scope and membership;
 ordinary parameter edits update the group under one history transaction. Export
 uses one random draw per group and rejects inconsistent literals or input sources.
+Untouched random-field controls use the declared default before unwrapping the
+stored value, so Run and inspection retain a locked zero seed consistently.
 New stages inherit the existing shared value; a connected custom source is wired
 to every member. Distinct loader branches remain independent. No additional
 execution representation or model-family dispatch is introduced. The lazy
@@ -173,6 +228,68 @@ Resolved dynamic `layerconfig` fields may use dotted module paths with numeric
 indices only when the backend also declares the path as a selectable option.
 Reserved/empty path segments, undeclared paths, operation ports and ordinary
 parameter names remain subject to strict validation.
+
+An optional `layout_conditioning` value uses the built-in `layout` editor only
+when its field declares `fieldOptions.layoutConditioning`. Version 1 retains
+its original placement/source grammar and declared reference count of 1–8.
+Version 2 declares explicit `place`, `relocate` and `remove` actions. Removal
+uses a null target box and requires a bound source; placement has no source.
+Both versions use normalized XYXY coordinates, at most 32 unique region IDs,
+4096 Unicode code points per description and a 64 KiB compact UTF-8 JSON limit.
+Text is preserved, including whitespace; unpaired surrogates are refused.
+Raw mode stores `null`. Edits use normal parameter history and Block bindings
+and never rewrite the prompt field. The backend owns effective serialization.
+
+Source tools remain disabled unless the selected version-2 descriptor declares
+`supportsBoundSourceRegions: true` and the operator reads an actual encoded
+reference summary through the ordinary cache route. The string output
+`layout_reference_summary` on the actual Image Encode supplier is joined to its producer's persisted task, attempt,
+run-input hash, workflow and exact current source ancestry. The comparison uses
+durable signal declarations: runtime `signal.value` payloads
+are discarded from both live and saved ancestry, matching task persistence.
+Source values, wiring, signal declarations and task identity remain checked.
+Cache reads expand the same executable graph as Run and use its canonical leaf
+IDs for ordinary, visual-stage and expanded Blocks. A persisted snapshot may
+omit rendered children; those leaves are resolved only from the validated
+execution projection, never by guessing presentation aliases.
+A genuine encoding
+cache hit may retain its earlier producer identity; the client does not relabel
+it as a fresh computation. Image Encode can publish a new summary independently
+of a Prompt that correctly refuses stale source IDs; re-encode that source branch,
+read its summary and explicitly rebind the saved region. The compatible Prompt
+summary remains available, but the widget reads the actual incoming supplier.
+The summary describes up to ten ordered references,
+their content identities and original/processed dimensions. It is local display
+context, not an opaque execution receipt. Source/owner/graph changes mark it
+stale, and each saved source region requires explicit rebind to a current ID.
+An explicit region edit may retain identical already-stale siblings so several
+regions can be rebound, removed or reordered one at a time. Every changed or new
+region must satisfy the current verified source context; the complete layout
+retains its error until all saved sources agree. Whole-layout validation and
+backend execution never use this authoring-only exception.
+The backend independently verifies the same process-local receipt in Prompt and
+Denoise against actual images, processed tensors, owner and tensor versions.
+Imported counts or summary strings cannot grant execution authority. A declared
+editor does not grant model support, resource fit or runtime readiness.
+
+Generic workflow model descriptors can also carry optional immutable artifact
+inventories. Model Manager keeps the existing native selection as its default;
+`weightFormatSelections` adds up to two exact FP8R/NVFP4 repository, revision and
+file selections through the existing Install/Repair action. These rows require
+the existing public execution-profile and selected pipeline-support joins.
+Private or unavailable profiles are excluded even if raw capabilities contain
+download metadata. Installed files are labeled **Installed**, separately from
+execution support, qualification and required-runtime status. This discovery
+path does not extend the legacy Studio model union or infer Auto/template grants.
+
+The same generic inventory may declare `defaultWeightFormat` as `native`,
+`fp8r` or `nvfp4` for new drafts. A non-native default must match exactly one
+declared format selection for the capability's own repository and sole immutable
+revision. The ordinary backend starter supplies the resolved field value together
+with its selected profile's size and compute dtype. The client validates the
+declaration and copies that starter through the existing node factory. Discovery,
+opening saved graphs and Run never apply these creation defaults over authored
+values. Defaults do not establish installed files, resource fit or qualification.
 
 Backend-resolved operation schemas suppress mount-time selector initialization
 and automatic signal actions that would replace exact-profile metadata with
@@ -203,6 +320,16 @@ write occurs. Task/model replacement keeps fresh runtime IDs where required;
 collapse/expand does not invalidate execution identity. Shared input edits and
 export resolve the same connected loader scope across group boundaries.
 
+The same projection supports direct audio Model Setup and native audio
+decode/export output groups. Audio Output derives its wording and preview from
+the contained media contracts and uses the existing `UIAudioField`. The ordinary
+node shell reserves the shared audio minimum width for declared Block previews
+as well as ordinary `ui_audio` parameters. Whole-pipeline audio generation stays
+integrated, and transcription retains text output. Backend-published selected
+adapter policies use the same strict profile/artifact/task join for image and
+audio; authoring permission does not enable Automatic memory planning or qualify
+model execution. See [audio workflow stages](audio-workflows.md).
+
 New eligible starters opt into grouping; saved workflows require an explicit
 group action. Complex manually nested/mirrored interfaces fail closed during
 automatic adaptation, with an explicit editing instruction instead of data loss.
@@ -212,6 +339,84 @@ the ordinary node shell, not the expandable Block frame. Their canonical V2 data
 still owns values, interfaces and execution. Inspection is read-only; Separate
 stages is an explicit undoable structural edit. The interface inspector includes
 visible optional encoding sockets and labels their deferred stage preparation.
+
+Fresh eligible native image drafts present **Model Setup → Encode Inputs →
+Denoise → Image Output**. Encode Inputs contains its actual encoding and Guidance
+leaves. Its Guidance disclosure hides controls only; the backend-declared Enabled
+setting changes execution. A route without Guidance has no empty Guidance section.
+Combined input groups use presentation provenance `modiff.visual-stages.v2/inputs`
+so switching to a route without Guidance and back retains this layout. The graph
+and executor still use the existing Block V2 contract. Historical v1 groups retain
+their separate layout until the user selects **Combine encoding and Guidance**.
+Combine and Separate each commit one history transaction. Combine creates a new
+workflow-local definition from the current leaves; it never writes saved library
+definitions. Current values, control labels, seals and explicitly removed controls
+survive the conversion. Unsupported integrated or whole-pipeline tasks retain their
+actual operations; required media and additional branches remain visible separately.
+
+Image Model Setup, Prepare Mask and Image Output use that same ordinary
+node shell and `BlockInstanceV2` contract. `visualOperationGroups` selects only
+existing eligible leaves: a loader with connected built-in descriptor/configuration
+utilities, an exact Load Image/Outpaint Canvas pair feeding both image and mask
+to the same masked consumer, or a declared image decoder plus its direct previews.
+Fresh native image drafts wrap a single eligible loader as Model Setup and its
+decoder/preview as Image Output. Whole-pipeline previews and unrelated/shared
+modifiers remain external. Prepare Mask remains an explicit optional grouping.
+Explicit stage actions leave other instances untouched and commit one history
+transaction; opening saved documents does not opt into new groups. Output preview bindings use the existing V2
+preview inventory and backend output-slot authority. Model Setup's projected
+loader resolves back to its unpacked runtime owner for the complete ordinary
+workflow planner, rather than adapting only the wrapper's implementation. Values,
+configured interfaces, immutable reusable snapshots and explicit save/separate
+behavior keep their existing authority.
+Model Setup's Adapters controls follow the real ordered adapter wires. The Add
+dialog keeps a local draft until a populated local selection or immutable Hub
+selection is accepted; blank rows never enter the executable graph. Hub adapters
+require an exact commit, contained Safetensors weight filename and expected SHA-256.
+Add, Remove and Move use the same graph transaction and Undo path. Native
+`previous_loras` chains and whole-pipeline `pipeline`/`output` chains keep their
+declared sockets and backend validation. Shared descriptor/configuration suppliers
+stay outside the wrapper; connected scalar suppliers and unrelated branches remain
+intact. Sealed controls cannot be changed or removed by these actions. A later
+whole-pipeline adapter cannot replace and unload earlier adapters silently.
+Current selected-profile `adapterAuthoring` metadata can grant image adapter
+edits for an exact task, immutable base pair and registered adapter transport,
+independently of aggregate capability and qualification flags. The execution
+profile parser validates its bounded schema; the permission resolver rechecks
+the current operation, profile, selectors, pins and registry before each edit.
+Absent policy retains canonical capability restrictions; malformed or mismatched
+policy does not fall back. Add checks the declared owned-row limit separately
+from permission to edit or reorder existing rows. Structural inspection and safe
+Remove can handle an existing bounded chain without granting new authoring.
+Other ordered-chain callers retain their legacy limit. This policy does not
+change the effective graph, runtime adapter validation, Auto admission or
+installation consent.
+Optional groups retain ordinary type-inferred scalar editors even when registry
+fields omit `display`. An empty or suppressed field label uses its field name
+in the explicit interface; the original leaf field and value remain unchanged.
+`visualOperationGroupProjection` contains the ordinary renderer/store's
+read-only projection and shared-value planning. Structural grouping stays in
+the deferred `visualOperationGroups` planner; Guidance's asynchronous schema
+edit loads regrouping only when requested. Public graph helper exports and
+the same graph transaction remain unchanged.
+
+`operationComponentBundle` adds explicit **Use component bundle** / **Expose
+components** actions through those same workflow stage controls. It consumes
+parsed `semantics.suppliedBy` declarations and exact scoped component members;
+it does not dispatch on model names. The first backend declaration is native
+Qwen text to image. Existing loader-to-stage component fanout is replaced only
+where the aggregate provides those exact inputs, preserving loader and stage
+IDs, creative controls, the separate Guider, and unrelated branches. Independent
+suppliers, modifier paths, literal overrides and alternate aggregate sources
+leave the entire consumer's raw path unchanged because static type compatibility
+cannot prove the backend's sealed component identity. Breakout restores raw
+connections without replacing explicit inputs. Required-input/fix projection uses
+`componentBundleInputs`; backend object/role/owner/generation checks remain the
+execution authority. Each action commits the existing full-graph transaction,
+including visual-stage unwrapping/restoration and Undo. This prototype reduces
+Qwen T2I's four loader component edges to three, and leaves template defaults and
+previous documents unchanged. No alternate executor or hidden implementation
+collapse is introduced.
 
 Guidance interface edits record explicitly removed field bindings in optional
 `presentation.removedControlBindings` on the instance. The bounded, unique
@@ -229,6 +434,39 @@ loaders for typed required media inputs before grouping. It reuses sources only
 for equal media roles, keeps masks separate from alpha-mask outputs, and reports
 missing/incompatible loader definitions. It does not touch existing documents,
 invent media for text-only routes, or infer a tensor from a path-only field.
+The declared `mask_composite` task belongs to the Image category, so its fresh
+draft includes separate ordinary image and mask loaders and a Preview. Its image
+loader accepts the ordered background and foreground inputs; the mask loader
+supplies the explicit mask pixels. Task categorization grants no runtime authority.
+Execution-spec bindings distinguish empty text (`empty`) from an empty component
+selection (`emptyList`). Multiple-choice component fields retain arrays in fresh
+drafts and canonical exports, including when quantization is disabled. Backend
+validation remains authoritative for every selected component.
+Server-reported runtime cache IDs remain transient view metadata. Block layout,
+control, child measurement and internal wiring reprojection must derive cache
+flags again from those IDs and the current exact graph, including the first
+collapsed minimum-height measurement after refresh. A restored tab
+reprojects them against its current exact owner graph, so reconnect cache state
+survives durable snapshot restoration. Native execution records the actual leaf
+ID; cache release retires the IDs acknowledged by the backend. These IDs are
+never saved as workflow authority and do not establish resource fit or reuse.
+
+Service and CLI tasks do not need a Studio run context to refresh this transient
+cache view. Their successful execution and terminal events request the backend's
+bounded `GET /cache` roster, matched by exact runtime IDs. The response must still
+belong to the current connection and backend identity; newer cache writes,
+release requests and acknowledgements retire older reads. This reconciliation
+does not grant progress, parameter, preview or document ownership. Those updates
+retain the existing task, attempt and workflow checks.
+
+The media attachment source picker retains the exact node/port values and graph
+ordering. Friendly node/field labels add the nearest upstream declared model
+repository or local-source context; remaining identical labels use visible branch
+ordinals. Read-only Block projections resolve effective controls and exact output
+bindings, with immutable instances cached. Unresolved retained crossings add no
+display context and remain available for ordinary repair. This context is
+presentation only: all existing source choices, stale-selection checks, task
+planning, ownership and cycle validation remain unchanged.
 
 Readiness also checks required file pickers in the selected executable closure.
 A connected loader output does not satisfy an empty required source file. Current
@@ -256,6 +494,13 @@ inferred to be missing. A compatible enabled incoming connection satisfies this
 presence check; file existence and actual runtime objects still belong to backend
 validation.
 
+The ordinary Process Image palette facade resolves Image/Mask requirements from
+the cached backend operation contract for its current pipeline and operation.
+Graph Fix and required-input readiness share that read-only resolution: adjustment,
+tiling and stitching do not demand a mask; Mask Composite still does. Inspection
+preserves saved fields and wires. Unknown, computed or ambiguous task selections
+retain the existing inspection behavior rather than being declared optional.
+
 `blockControlConnectionsV2` resolves root and nested control aliases against the
 owning effective graph and external public-input wires. Connected body controls
 show their saved fallback read-only, with the source node/port and an explicit
@@ -273,9 +518,10 @@ then stays mounted so focus changes do not discard open dialog state.
 
 Running from a V2 Block root or internal Block selects all enabled terminal
 branches in that semantic scope and their contained upstream dependencies.
-Outside suppliers are removed before validation and lowering, including public-input
-suppliers; stored internal fallbacks remain available. Whole-workflow execution keeps
-the crossing wires. Missing
+Wired outside suppliers and their upstream owners remain in the dependency closure
+before validation and lowering, including public-input suppliers. Disconnected
+unrelated owners remain outside selected execution. Stored internal fallbacks
+remain available. Missing
 previews never mean "run the whole workflow". Disabled descendants are excluded;
 an entirely disabled/non-executable selection produces an actionable error.
 The representative node used for run metadata still prefers a terminal media
@@ -605,7 +851,14 @@ readers reject new declarations rather than silently dropping them.
 `BlockInstanceV2.presentation.internalLayout` stores each node's compact own
 box relative to its immediate semantic parent. It must not store a recursively
 expanded subtree size. At render time the projector measures visible children
-bottom-up, derives expanded ancestor bounds with header/right/bottom padding,
+bottom-up. An explicit nested-card resize sets that layout entry's optional
+`sizeMode: 'compact'`; subsequent moves and DOM minimum-size measurements retain
+it, but measurements never create it. Both client and backend reject any other
+present value. Moving an expanded frame retains its marked compact dimensions
+rather than persisting the derived child envelope. Unmarked entries keep the legacy expanded-footprint migration,
+so manual sizes are not confused with historical recursive bounds. This marker
+is presentation-only and cannot change graph hashes or execution authority.
+The projector derives expanded ancestor bounds with header/right/bottom padding,
 and shifts colliding siblings without rewriting the saved preferred positions.
 The same collision solver applies to root-relative (non-hierarchical) Blocks,
 including standard-pipeline catalog routes. Root-relative coordinates are
@@ -721,6 +974,12 @@ entries in a disposable temporary directory and is required by the main
 validation gates. The hidden dynamic-field compiler is retained only for
 explicit, receipt-bound legacy V1 migration.
 
+Sealed admission-declared signal identities retain only their exact options-map
+branch in compiled definitions; unrelated installed pipeline choices cannot change
+the immutable selected contract. Ordinary node descriptors and mutable selectors
+retain their full maps, and a missing selected branch or mismatched signal refuses
+compilation.
+
 Values stored in a reviewed compiled catalog entry establish the initial
 `BlockInstanceV2` baseline and MUST start with customization state
 `unchanged`; they are not user edits merely because the compiler emits them
@@ -750,6 +1009,16 @@ executable. It is never an automatic definition update or silent graph reset.
 - `/runtime/status` runtime/package/device information
 - `/model_capabilities` Studio profile compatibility
 - `/hf_download` install/repair tasks
+
+The shared model cache-status helper matches exact repository IDs. For an exact
+revision/file selection, additive backend `observed_selections` metadata takes
+precedence over historical `planned_revision`/`planned_files` download receipts.
+A complete selected snapshot can be ready even when an unrelated native receipt
+is stale or incomplete; a negative or malformed observation cannot fall back to
+that receipt. Older backends and artifact layouts without observations keep the
+receipt compatibility path. Observations describe bounded file presence, sizes
+and managed-cache containment, not content verification or execution permission.
+Studio and ordinary graph requirements consume this same result.
 
 The additive `operationContracts` catalog on `/model_capabilities` describes the
 existing generic Modular stages and task-scoped standard image/video/audio/3D
@@ -836,6 +1105,22 @@ is the single policy selector.
 
 Both storage keys and legacy normalizers remain unchanged. A restored workflow
 keeps its own resource settings while tabs share the global editing preference.
+Explicit graph imports preserve the document's normalized memory policy while
+inferring their image recipe summary. Raw graph imports also retain each node's
+authored device value and default, including mixed CPU/accelerator placement;
+the current form device does not rebase them. Summary defaults do not repair
+missing or malformed graph fields. Explicit device rebasing remains separate.
+Passive tab switching, closing, backend hydration and browser reload retain a
+recognized saved ordinary image form;
+Save As, Duplicate and output Restore retain that form too. These paths do not
+replace authored captions, model/task summaries or resource settings from graph
+inference, and an unchanged checkpoint does not trigger an autosave. The saved
+selected mode remains the existing mirror of the normalized form mode. Managed
+and template recovery keep their existing separate rules. Graph inference must
+not replace an explicit Custom policy with Automatic.
+Missing or unrecognized legacy forms still infer a graph summary, including
+output restores before default-value coercion could hide the missing form.
+Missing or invalid legacy choices and fresh raw-graph inference still default to Automatic.
 Graph Fix and Run Issues may open Expert tools without changing execution policy.
 Older clients can read the same workflow fields but still couple their controls;
 independent behavior requires the matching updated client bundle.
@@ -900,7 +1185,31 @@ account action and install recovery uses the backend's structured error code.
 
 ## Websocket And Task State
 
+Node execution `memoryUsage` records carry finite byte measurements or `null`
+when a measurement is unavailable (including CPU-only runs). The parser accepts
+those null values without dropping the execution event; the cache store preserves
+them and the node memory footer/popover displays a dash, not an invented zero.
+Measured zero remains `0 B`. Execution timing and phase timing records still
+require finite numbers, and numeric strings or malformed memory records are rejected.
+
+Every welcome refreshes authoritative runtime readiness, including after worker
+replacement or package repair. The existing discovery request gate discards older
+responses so they cannot restore stale Setup errors after the replacement is ready.
+During HTTP recovery, a validated new backend instance also triggers one runtime
+read while health is unready. Setup can therefore show repair requirements before
+the readiness gate permits reconnecting. Repeated probes for the same instance
+do not repeatedly inspect the runtime, and stale connection probes cannot refresh it.
+
+Fresh executable attention bindings use the authored automatic policy unless a
+reviewed candidate explicitly supplies another backend. The disabled registered
+compiler skeleton retains its existing metadata identity; qualification replaces
+its provisional attention values before enabling children. A CUDA device does
+not by itself authorize forced native flash attention.
+
 - `src/stores/useWebsocketStore.ts` owns connection/session identity, reconnect state, and loop timers.
+- Retiring a pending socket detaches application callbacks immediately and closes
+  it after its handshake. Open sockets close immediately; retired sockets cannot
+  update a replacement connection or start recovery work.
 - `src/components/WebsocketProvider.tsx` connects the store to React lifecycle.
 - `src/stores/websocketMessageHandler.ts` validates/routes runtime messages.
 - `src/stores/useTaskStore.ts` owns the queue snapshot, current task, count, and progress presentation.
@@ -935,6 +1244,12 @@ an empty request or changing controls in the incoming custom workflow.
 
 ## Studio Domain
 
+Registered Block planning projects declared speech controls, including audio,
+language, timestamps, chunk length and stride, into the corresponding task
+form fields. Single-file media controls project a native one-file upload list
+to its exact path without changing the instance. Multiple or substituted files
+remain subject to backend authority equality and filesystem validation.
+
 The `src/studio` directory contains domain logic rather than one monolithic component:
 
 - `types.ts`: forms, modes, model profiles, graph bindings, tabs, outputs, templates, and run context
@@ -962,8 +1277,36 @@ Tab arrangement is browser-local presentation. `moveWorkflowTab` resolves source
 and destination IDs against current state and changes only the array order.
 Pointer previews stay outside the store until drop; structural tab changes cancel
 an in-flight gesture. Backend document-sync signatures are order-independent.
-The bounded local checkpoint selects active/dirty/recent tabs but preserves their
-original relative order, both when writing and restoring older checkpoints.
+The local checkpoint selects at most twelve active/recent saved tabs and retains
+every dirty tab, preserving their original relative order both when writing and
+restoring older checkpoints. Unsaved edits must not disappear merely because
+more tabs are open. A failed browser storage write leaves editing usable and
+shows a persistent warning to Save or export before refreshing. Flow, settings,
+and Studio use the shared `checkpointStorage.ts` adapter so failed writes cannot
+abort canvas edits or panel actions. The warning clears only after every failed
+storage key has recovered; a successful unrelated write cannot clear it.
+Background sync durably saves
+recovery drafts on the backend; explicit Save places the current document in
+the named workflow library. Neither can be assumed to have succeeded while
+its persistence request is failing.
+
+An unchanged canvas checkpoint preserves the document's dirty marker and edit
+timestamp. Autosave rechecks the exact backend-owned document signature when its
+shared write chain reaches dispatch, so an acknowledged explicit Save is not
+followed by a duplicate PUT. Newer edits and a rejected save still require their
+normal persistence request; acknowledgement and hydration guards remain intact.
+
+Startup hydration captures each originally clean document before its backend
+read. A delayed canvas checkpoint may add passive connection flags and an empty
+preview declared by the current registry; these alone must not turn the older
+browser checkpoint into an authored update over the newer backend document.
+The startup merge compares that clean baseline within the same canvas and
+revision context. It recognizes only absent/false connection flags and exact
+registry-declared empty image previews; every other value, form, intent, layout,
+wire and definition stays exact. This comparison does not rewrite persisted
+snapshots or apply to own-save acknowledgements. Restored dirty documents,
+edits made during the read and active runs retain their existing protections,
+and a tab closed during the read is not reopened by its response.
 
 `src/components/StudioPanel.tsx` is a UI composition layer over those modules. It must not become the owner of graph execution, network parsing, or long-lived domain state.
 
@@ -1166,6 +1509,12 @@ being filled from the current filesystem or a later backend response.
 
 Fields must preserve `data-key`, `modiff-field`, `nodrag`, `nowheel`, hidden, disabled, and backend-action contracts. Backend-provided styles are sanitized to safe layout properties by `src/theme/modiffStyle.ts`; visual styling from dynamic payloads is not trusted.
 
+Ordinary numeric controls keep incomplete typing in a local text draft. Blur,
+Enter, step buttons and completed drags commit the bounded finite value as a JSON
+number, including zero and precise floats. Arrow keys adjust the draft until
+commit; Escape restores the prior value. Historical imported numeric strings
+remain readable; merely opening a field does not rewrite the saved document.
+
 The backend isolates reviewed nonqueued generic Modular loader/schema callbacks
 from live model owners. Their existing `/fields/action` and WebSocket messages
 are unchanged; no client model-family dispatch or extra execution path is needed.
@@ -1246,6 +1595,16 @@ Encoded video measurements are retained per media item as `mediaMetadata` with `
 
 Gallery restore creates a workflow tab from the snapshot. Rerun recomputes current readiness and Auto state before submitting; persisted output metadata is not blindly trusted as current runtime proof.
 
+Gallery and Previous previews preserve declared text and JSON output types. Strings
+display literally; other captured values use formatted JSON, including `0`, `false`
+and `null`. React text rendering keeps markup inert in cards and the shared text
+viewer. History parsing preserves explicit captured null; only absent values keep
+the legacy URL fallback. Gallery's text/JSON download fetches the original backend file without
+reserializing it; Previous and viewer downloads export the displayed text. PNG
+packages, image overlays and Send to edit are unavailable for text/JSON outputs.
+Metadata packages, favorites, history identity, workflow restore and rerun retain
+their existing contracts.
+
 For images, Gallery uses decoded media dimensions for the output-size label and
 reports captured input dimensions separately. Reference-driven edit geometry may
 have no explicit width/height call arguments. Do not infer those missing inputs
@@ -1258,6 +1617,11 @@ The lightbox retains the image URL sanitizer; raw base64 node-field values use
 their separate encoded-image input contract.
 
 Workflow packages are JSON. Image packages can also embed the `modiff.workflow` metadata key in PNG text chunks. Imported packages must be parsed/coerced at the boundary before they affect stores.
+
+Gallery's PNG package export preserves existing PNG image bytes and converts
+other decodable image formats, including JPEG and WebP, to PNG before embedding
+workflow metadata. Conversion uses the browser image codec and rejects images
+larger than 64 megapixels. Decode or encode failures remain visible export errors.
 
 Expert's **Export → Service package** lazily loads `ServiceExportDialog`. It reuses
 TopBar's existing Block/Modular lowering, checks the captured workflow context,
@@ -1413,11 +1777,19 @@ without changing graph values or execution ownership.
 ### Recognized graph tasks in output history
 
 `resolvedExecutionInputs` can carry backend `graphTasks` alongside captured call
-arguments. The client validates each owner against the receipt's captured Modular
-loader and model identity. A unique supported task updates the output label while
-leaving its saved form untouched. Legacy receipts remain readable; incomplete or
-ambiguous graph recognition does not invent a task. This metadata grants no
+arguments. The client validates each owner against its captured execution class:
+Modular loaders, whole image pipelines, Transformers depth/caption loaders and
+built-in image processors retain their existing node contracts. A unique supported task updates the output label while
+leaving its saved form untouched. Gallery labels a receipt with absent, null or
+conflicting task recognition as **Task not uniquely captured**, rather than using
+the saved form's task. Only outputs without a consumed-input receipt retain their
+historical task label. This metadata grants no
 execution or resource authority and adds no frontend model-family dispatch.
+
+Legacy whole-image imports with presentation roles and no explicit managed receipt
+retain ordinary graph authority. Import preserves their executable values and
+wires instead of synthesizing a managed execution specification. Explicit or
+invalid managed receipts continue through their existing validation.
 
 History model labels and Gallery filters also use the validated captured model
 identity. Registered identities reuse existing display labels; custom pipeline
@@ -1431,3 +1803,162 @@ Block preview projections retain source-field artifact metadata only when its
 URL and available task identity match the current instance media reference.
 Older cached artifacts stay in the immutable source snapshot but cannot override
 a newer rendered output, including after save/reload or explicit legacy conversion.
+
+V2 preview fields resolve their declared, owner-bound source to the canonical
+execution node and output field before reading the active workflow's current
+preview slot. A ready slot supplies the complete ordered media collection;
+pending or failed slots retain their current-run status. The exact-task scalar
+reference remains the saved fallback when no current slot exists. This applies
+to collapsed and nested previews and older definitions that expose a declared
+output preview as a control, without changing their saved graph or interface.
+
+Durable Block text previews display the text value from the exact task and
+field, rather than the retained `.txt` download URL. Only an explicit current
+preview slot for the active workflow can advance the preview to a different
+task. New Block creation excludes output preview fields from editable controls;
+existing saved definitions remain intact. Legacy preview controls also project
+the matching instance preview and cannot display stale source artifacts.
+
+Queue rows and tooltips give completed/cancelled/failed states priority over
+retained progress messages. Failure diagnostics remain visible, including for
+older backend receipts.
+
+Runtime Auto resource updates are applied only after the websocket handler
+checks the active run's ownership. Their current-value comparison uses the pure
+expanded-leaf export with seed randomization disabled; it never requests fresh
+ancillary execution authority or submits that snapshot. Connected resource fields,
+newer literal edits and conflicting shared Block controls continue to reject the
+update. Successful patches retain one Undo transaction. Actual Run and Preview
+still require their exact current ancillary execution scope before export and
+submission.
+
+Ancillary graph readiness resolves the current declaration asynchronously before
+the synchronous collector inspects its execution scope. While metadata is pending
+the graph shows Preparing; failed verification blocks Run with reload/reopen
+guidance. Consumers share a display-only witness tied to the complete durable
+graph, active workflow epochs and current registry/operation metadata. Stale
+requests are aborted and cannot replace the current tab's result. Ordinary graphs
+remain synchronous and request no ancillary metadata. Run and Preview still
+resolve fresh declarations, and an unprepared synchronous export still refuses.
+
+Durable node snapshots treat absent UI state and UI state containing only live
+validation/status fields as the same authoring state. This keeps normal run
+status updates from invalidating an unchanged Preview. Explicit authored UI
+settings, including `false` and zero values, remain part of the source identity;
+input, wire, worker and proposal receipt changes still invalidate Apply.
+
+Reviewed graph transactions clear selection by default, including full model/task
+replacement. An in-place action can explicitly preserve selection for same-ID
+nodes when its plan declares no selection intent. PUP uses that option to keep
+its inspector mounted through request refresh, verification and Apply. A plan
+that explicitly selects or deselects nodes still controls selection. Selection
+remains transient: it is absent from durable snapshots and does not relax
+workflow epochs, graph signatures or Apply guards.
+
+The additive `append-details-preserve-layout-v1` declaration selects the generic
+`enhance_prompt_append_details` operation and one plain PUP generation. Its
+version-three `caption-append-preserve-layout-v1` proposal appends the exact native
+wording to the exact authored caption with two newlines; the entire authored
+layout, including descriptions, remains unchanged. The client independently
+checks that composition against the current declared policy, operation, request
+hashes and producer before enabling Apply. Native wording cannot contain region
+tags, Markdown fences or a table. The UI labels this as appended wording, never
+native layout generation or semantic-fidelity proof. Apply stays one ordinary
+history transaction; Regenerate recaptures the original request after an
+untouched Apply, so appended text does not accumulate. Existing plain and native
+structured proposal schemas remain strict and retain their own declarations.
+
+Public append has separate FP32 and BF16/NF4 identities. The FP32 default and all
+older parent DTOs retain their hashes; selecting the NF4 layout choice binds its
+fixed provider controls without changing append composition or layout validation.
+When a saved enhancement's current metadata is unavailable, Disable has a local
+removal-only path: bounded matching parent/child role maps, the two exact built-in
+provider/proposal types, their complete expected edges, and exclusive ownership
+must all agree. It preserves the current authored pair instead of restoring an
+unverifiable original request. Workflow context/signature guards and one normal
+Undo transaction still apply. It neither refreshes execution authority nor
+rebinds a profile; the ordinary reviewed model-change planner must select the
+current public model before a current enhancement can be enabled.
+
+A source-declared `required_diffusers_provider` binds an execution profile to
+one of its declared optional overlays and to an explicit required-now runtime
+requirement. Its specification repeats the exact identity as the hash-covered
+`requiredDiffusersProvider`. Both legacy specification key sets remain valid
+without that extension; omission, a different provider, base delivery or a stale
+hash refuses a new provider-bound specification. This declarative dependency
+does not hide model choices or grant installation, activation, fit or Auto
+qualification. Observed runtime readiness remains a separate backend decision.
+
+An explicit public execution profile may declare bounded per-task
+`authoringRecipes`, including a distinct raw default and labelled raw choices.
+Public descriptors and the private evaluation namespace share the same strict
+offer parser: every row must belong to its exact profile, pipeline and supported
+task, with unique choices and the declared default included. Known Studio model
+identities retain those offers through the ordinary workflow picker rather than
+discarding them at the legacy presentation boundary. The existing prompt editing
+controls consume the same descriptor maps for both sources; public offers do not
+receive `evaluationOnly` or inherit private authority. Payloads without explicit
+offers preserve their earlier behavior, and public/private collisions still
+refuse. This editing metadata grants neither model fit nor execution readiness.
+
+The optional `layoutAuthoringRecipeChoices` offer adds explicit modes for authored
+regions. It includes the normal append default and is disjoint from raw choices.
+The descriptor carries these as `layoutPromptAuthoringChoices`; Enable selects
+only an exact currently declared identity. A saved explicit mode survives Disable
+and reload, while null layout, conflicting raw/layout selections and withdrawn
+metadata refuse without editing the graph. Selecting a mode and enabling its
+nodes remain one Undo transaction. No model name selects this policy.
+
+The `constrained-authored-table-v1` mode uses a separate hash-covered
+`authoredLayoutConstraint` and the generic `enhance_prompt_constrained_authored_v1`
+operation. The client validates the closed source/tokenizer/limit contract and
+matches it to the consumed request, exact original row projection, token input
+fingerprint and sealed completion. A complete EOS may end at the token limit only
+for this explicit mode. Existing plain/append completion rules and key sets stay
+unchanged. The raw output hash is part of the existing sealed producer record;
+it is not reconstructed from parsed JSON, whose escapes may differ. Apply still
+requires the current producer, atomic authored-pair checks and human wording
+review. Fixed coordinates, a valid table and `contract_only` metadata establish
+neither generated geometry nor semantic quality, Auto or hardware qualification.
+
+### Template weight storage format
+
+Optional form and locked-template `weightFormat` selects immutable storage,
+independently of compute dtype and diffusion quantization. Missing or native
+values preserve historical native recipe hashes. A present unsupported or null
+saved/imported value becomes a blocked `null` sentinel: the workflow and its
+authored graph remain recoverable, hashes distinguish it from Native, and an
+explicit supported selection is required before planning, installation or Run.
+Execution and field-edit parsing stays strict. Explicit non-native values
+participate in recipe locks, Modified detection, persistence and resource-plan
+identity. Managed controls synchronize only inside their existing binding;
+ordinary graphs remain authoritative over their own node values.
+
+A non-native selection needs the current backend's exact profile, pipeline, Hub
+repository, immutable revision and format-specific file manifest. Model Manager
+uses that manifest, so a native-only installation cannot satisfy the selected
+format. This metadata grants no runtime, Auto, model or Gallery qualification
+and does not install packages or files during discovery. The legacy managed
+Studio form planner still requires Expert for non-native formats. Ordinary
+workflow graphs carry the exact `weight_format` field into the complete backend
+workflow Auto plan; only that plan can admit a declared format and workload.
+Native-only plans cannot be reused as format-specific readiness or hardware-fit
+evidence.
+
+## Browser page workspace checkpoints
+
+Studio workflow tabs, the active document/form and the Flow canvas checkpoint use
+`sessionStorage`, so another app page's welcome/output refresh cannot overwrite
+the workspace restored on reload. Settings continue using shared `localStorage`.
+When a page has no checkpoint, it recovers exact bytes once from the current
+`modiff.studio`/`modiff.flow` shared keys before trying `studio`/`reactflow` aliases.
+The page keeps a per-key recovery marker; clearing its checkpoint does not revive
+an old shared document on reload. Shared recovery bytes are never overwritten or
+removed. Existing document normalization and dirty-workflow retention still apply.
+A blocked/full session store keeps live editing usable and shows the existing
+Save/export warning; it never falls back to shared workspace writes. Session
+checkpoints survive page reload. Saved workflows and server-backed drafts remain
+available after app/server restart; closed-page or browser-session recovery uses
+saved workflows/exports, with no promise to restore a closed page's unsaved tab
+roster. Legacy import can recover only the retained historical shared snapshot,
+not values that an older page already overwrote.

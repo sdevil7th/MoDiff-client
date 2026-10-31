@@ -6,6 +6,7 @@ import type { TemplateBrowserCategoryId } from '../studio/templateBrowser';
 import type { FocusedModelManagerTarget, WorkspacePanelTab } from '../studio/types';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { migrateLocalStorageKey } from '../utils/persistMigration';
+import { createResilientCheckpointStorage } from '../utils/checkpointStorage';
 import type { MediaKind } from '../studio/mediaCapabilities';
 import { unifiedWorkspaceSettings } from '../studio/workspaceMode';
 
@@ -284,7 +285,7 @@ export const useSettingsStore = create<SettingsState & SettingsStateVolatile & S
     }),
     {
       name: SETTINGS_STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(createResilientCheckpointStorage),
       merge: (persisted, current) => {
         const value = unifiedWorkspaceSettings(persisted) as Partial<SettingsState>;
         return {

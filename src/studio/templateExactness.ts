@@ -11,6 +11,7 @@ import type {
   TemplateMediaType,
 } from './types';
 import { hashString, stableStringify } from './stableHash';
+import { explicitStudioWeightFormat, persistedStudioWeightFormat } from './weightFormat';
 export { hashString, stableStringify } from './stableHash';
 
 export const TEMPLATE_GALLERY_MANIFEST_PATH = resolveTemplateAssetUrl('/template-gallery/manifest.json') as string;
@@ -206,7 +207,7 @@ export function parseTemplateGalleryManifest(value: unknown): TemplateGalleryMan
 }
 
 export type TemplateExampleUiState = {
-  status: 'reviewed' | 'exact' | 'modified' | 'blocked' | 'unverified' | 'non_exact';
+  status: 'reviewed' | 'exact' | 'historical' | 'modified' | 'blocked' | 'unverified' | 'non_exact';
   label: string;
   tone: 'success' | 'warning' | 'error' | 'neutral';
   modifiedFields: Array<keyof StudioTemplateLockedSettings>;
@@ -226,6 +227,7 @@ const LOCKED_FIELDS = [
   'guidanceScale',
   'resourceMode',
   'dtype',
+  'weightFormat',
   'quantizationMode',
   'autoOffload',
   'offloadMode',
@@ -297,10 +299,15 @@ export function getTemplateLockedSettings(template: StudioTemplate): StudioTempl
   };
 
   return LOCKED_FIELDS.reduce(
-    (settings, field) => ({
-      ...settings,
-      [field]: merged[field],
-    }),
+    (settings, field) =>
+      field === 'weightFormat'
+        ? {
+            ...settings,
+            ...(explicitStudioWeightFormat(merged) !== undefined
+              ? { weightFormat: explicitStudioWeightFormat(merged) }
+              : {}),
+          }
+        : { ...settings, [field]: merged[field] },
     {} as StudioTemplateLockedSettings,
   );
 }
@@ -321,6 +328,7 @@ export function getTemplateLockHash(
       lockedSettings: getTemplateLockedSettings(template),
       modelRevision,
       mediaType: template.example?.mediaType ?? 'image',
+      ...(template.executionSelection ? { executionSelection: template.executionSelection } : {}),
       ...(workflowLock ? { workflow: workflowLock } : {}),
     }),
   )}`;
@@ -328,10 +336,15 @@ export function getTemplateLockHash(
 
 export function getPromptSettingsHash(settings: StudioTemplateLockedSettings | StudioFormState) {
   const promptSettings = LOCKED_FIELDS.reduce(
-    (locked, field) => ({
-      ...locked,
-      [field]: settings[field],
-    }),
+    (locked, field) =>
+      field === 'weightFormat'
+        ? {
+            ...locked,
+            ...(explicitStudioWeightFormat(settings) !== undefined
+              ? { weightFormat: explicitStudioWeightFormat(settings) }
+              : {}),
+          }
+        : { ...locked, [field]: settings[field] },
     {} as StudioTemplateLockedSettings,
   );
 
@@ -341,8 +354,9 @@ export function getPromptSettingsHash(settings: StudioTemplateLockedSettings | S
 export function getTemplateModifiedFields(template: StudioTemplate, form: StudioFormState) {
   const locked = getTemplateLockedSettings(template);
   return LOCKED_FIELDS.filter((field) => {
-    const lockedValue = locked[field];
-    const formValue = form[field];
+    const lockedValue = field === 'weightFormat' ? persistedStudioWeightFormat(locked[field]) : locked[field];
+    const formValue = field === 'weightFormat' ? persistedStudioWeightFormat(form[field]) : form[field];
+    if (field === 'weightFormat' && (lockedValue === null || formValue === null)) return true;
     return String(lockedValue) !== String(formValue);
   });
 }
@@ -424,6 +438,17 @@ export function findManifestEntry(
   );
 }
 
+/** Approved media from the unchanged creator recipe before its execution
+ * selection changed. It is display provenance, never proof of the new graph. */
+export function findHistoricalTemplateManifestEntry(
+  template: StudioTemplate,
+  manifest: TemplateGalleryManifest | null | undefined,
+  options: { requireCardPreview?: boolean } = {},
+) {
+  if (!template.executionSelection) return undefined;
+  return findManifestEntry({ ...template, executionSelection: undefined }, manifest, options);
+}
+
 export function getTemplateExampleUiState(
   template: StudioTemplate,
   form: StudioFormState,
@@ -448,6 +473,15 @@ export function getTemplateExampleUiState(
       manifestEntry,
     };
   }
+  const historical = findHistoricalTemplateManifestEntry(template, manifest);
+  if (historical)
+    return {
+      status: 'historical',
+      label: 'Previous recipe example',
+      tone: 'neutral',
+      modifiedFields,
+      manifestEntry: historical,
+    };
 
   if (template.example?.status === 'blocked') {
     return { status: 'blocked', label: 'Blocked', tone: 'error', modifiedFields };
@@ -484,7 +518,8 @@ export function getTemplateCardMedia(
   template: StudioTemplate,
   manifest: TemplateGalleryManifest | null | undefined,
 ): TemplateCardMedia {
-  const manifestEntry = findManifestEntry(template, manifest);
+  const manifestEntry =
+    findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
   const bundledSourcePreview =
     template.outputKinds?.[0] === 'audio'
       ? template.inputBindings

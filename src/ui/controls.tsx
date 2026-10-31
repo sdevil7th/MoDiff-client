@@ -8,6 +8,8 @@ import {
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
+  Field,
+  Label,
   Listbox,
   ListboxButton,
   ListboxOption,
@@ -992,7 +994,8 @@ export function ModiffCheckbox({
   });
 
   return (
-    <label
+    <Field
+      disabled={field.disabled}
       className={cx(
         'inline-flex min-w-0 items-center gap-2 text-modiff-control text-modiff-text',
         field.disabled ? 'cursor-not-allowed' : field.readOnly ? 'cursor-default' : 'cursor-pointer',
@@ -1032,10 +1035,10 @@ export function ModiffCheckbox({
           aria-hidden="true"
         />
       </Checkbox>
-      <span id={labelId} className="min-w-0">
+      <Label id={labelId} htmlFor={field.id} aria-label={ariaLabel} className="min-w-0">
         {label}
-      </span>
-    </label>
+      </Label>
+    </Field>
   );
 }
 

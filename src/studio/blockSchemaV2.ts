@@ -377,7 +377,17 @@ export type BlockInstanceV2 = {
     collapsedContainerNodeIds?: string[];
     /** Explicitly removed dynamic control rows; not an execution disable flag. */
     removedControlBindings?: Array<{ nodeId: string; fieldId: string }>;
-    internalLayout: Record<string, { x: number; y: number; width?: number; height?: number }>;
+    internalLayout: Record<
+      string,
+      {
+        x: number;
+        y: number;
+        width?: number;
+        height?: number;
+        /** Explicit compact-card size from a manual resize; absent entries retain legacy footprint migration. */
+        sizeMode?: 'compact';
+      }
+    >;
   };
   previewStates: BlockPreviewStateV2[];
   authorities: BlockAuthorityReceiptV2[];
@@ -1484,7 +1494,14 @@ export function normalizeBlockInstanceV2(value: unknown): BlockInstanceV2 {
     if (!effectiveNodeIds.has(nodeId))
       invalid('Block Instance V2.presentation.internalLayout', `references unknown node ${nodeId}.`);
     const layout = objectAt(rawLayout, `Block Instance V2.presentation.internalLayout.${nodeId}`);
-    keysAt(layout, `Block Instance V2.presentation.internalLayout.${nodeId}`, ['x', 'y'], ['width', 'height']);
+    keysAt(
+      layout,
+      `Block Instance V2.presentation.internalLayout.${nodeId}`,
+      ['x', 'y'],
+      ['width', 'height', 'sizeMode'],
+    );
+    if ('sizeMode' in layout && layout.sizeMode !== 'compact')
+      invalid(`Block Instance V2.presentation.internalLayout.${nodeId}.sizeMode`, 'must be compact.');
     finiteNumberAt(layout.x, `Block Instance V2.presentation.internalLayout.${nodeId}.x`);
     finiteNumberAt(layout.y, `Block Instance V2.presentation.internalLayout.${nodeId}.y`);
     if (layout.width !== undefined)

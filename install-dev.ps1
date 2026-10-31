@@ -4,6 +4,7 @@ param(
   [switch]$AllowExperimental, [switch]$Resume, [switch]$Repair
 )
 $ErrorActionPreference = "Stop"
+$BackendPath = (Resolve-Path -LiteralPath $BackendPath).ProviderPath
 $installer = Join-Path $BackendPath "install.ps1"
 if (!(Test-Path $installer)) { throw "MoDiff backend installer not found at $installer" }
 & $installer -Accelerator $Accelerator -AllowExperimental:$AllowExperimental -Resume:$Resume -Repair:$Repair -BackendOnly
@@ -11,10 +12,14 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $python = Join-Path $BackendPath ".venv\Scripts\python.exe"
 $testRequirements = Join-Path $BackendPath "requirements\test.txt"
-$uvRoot = Join-Path $BackendPath ".modiff\tools\uv"
-$uv = Get-ChildItem $uvRoot -Filter uv.exe -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-if (!$uv) { throw "MoDiff's verified uv executable was not found under $uvRoot" }
-& $uv.FullName pip install --python $python -r $testRequirements
+Push-Location -LiteralPath $BackendPath
+try {
+  $uv = & $python -c "from pathlib import Path; from modiff.tool_locks import resolve_uv; print(resolve_uv(Path('.modiff')))"
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} finally {
+  Pop-Location
+}
+& $uv pip install --python $python -r $testRequirements
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Location $PSScriptRoot

@@ -29,6 +29,7 @@ import type { StudioFormState, StudioMode, StudioModelType } from './types';
 import { createCatalogOnlyModularBlockRootV2 } from './catalogOnlyModularBlockV2';
 import { fetchRegisteredBlockV2CompiledCatalogEntry } from './registeredBlockV2CompiledCatalog';
 import { compositeChildNodeId } from './compositeNodes';
+import { runtimeOptionValues } from './runtimeOptions';
 
 export { HUGGING_FACE_CLUSTER_DRAG_PREFIX } from './huggingFaceClusterDrag';
 
@@ -626,12 +627,33 @@ export async function createHuggingFaceClusterForGraph(
       ...compiled.definition.controls.map(({ controlId }) => controlId),
       ...compiled.definition.boundary.inputs.map(({ portId }) => portId),
     ]);
+    // Legacy form defaults can be broader than this exact task's choices.
+    // Preserve the compiled catalog default when an inferred seed is invalid
+    // for any field driven by its public control or boundary input.
+    const seededValues = Object.fromEntries(
+      Object.entries({ ...seededParameterOverrides, ...executionParameterOverrides }).filter(([valueId, value]) => {
+        const control = compiled.definition.controls.find(({ controlId }) => controlId === valueId);
+        const input = compiled.definition.boundary.inputs.find(({ portId }) => portId === valueId);
+        const bindings = control
+          ? [control.binding, ...(control.mirrorBindings ?? [])]
+          : input
+            ? [input.binding, ...(input.mirrorBindings ?? [])].map(({ nodeId, fieldOrPortId }) => ({
+                nodeId,
+                fieldId: fieldOrPortId,
+              }))
+            : [];
+        return bindings.every(({ nodeId, fieldId }) => {
+          const node = compiled.definition.graph.nodes.find((item) => item.nodeId === nodeId);
+          const param = record(record(node?.data.params)?.[fieldId]);
+          return !param || param.options === undefined || runtimeOptionValues(param.options).includes(String(value));
+        });
+      }),
+    );
     const values = Object.fromEntries(
       Object.entries({
         ...compiled.values,
         ...suggestedValues,
-        ...seededParameterOverrides,
-        ...executionParameterOverrides,
+        ...seededValues,
       }).filter(([valueId]) => acceptedValueIds.has(valueId)),
     ) as Record<string, BlockJsonValue>;
     const instance = createBlockInstanceV2(compiled.definition, {

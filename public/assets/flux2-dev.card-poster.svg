@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="864" viewBox="0 0 1536 864" role="img" aria-labelledby="title desc">
+  <title id="title">FLUX.2-dev editorial workflow illustration</title>
+  <desc id="desc">An original vector teapot and a four-stage workflow diagram. This is editorial artwork; a generated image example is pending.</desc>
+  <!-- Original MoDiff editorial artwork. Apache-2.0. No model-generated media. -->
+  <defs>
+    <linearGradient id="background" x2="1" y2="1"><stop stop-color="#172436"/><stop offset="1" stop-color="#10131b"/></linearGradient>
+    <linearGradient id="ceramic" x2="1" y2="1"><stop stop-color="#61b9e8"/><stop offset="1" stop-color="#236ba8"/></linearGradient>
+  </defs>
+  <rect width="1536" height="864" fill="url(#background)"/>
+  <g fill="none" stroke="#263b51" stroke-width="2" opacity=".6"><path d="M896 0v640M1056 0v640M1216 0v640M1376 0v640M816 160h720M816 320h720M816 480h720"/></g>
+  <g font-family="DejaVu Sans, sans-serif">
+    <rect x="80" y="72" width="524" height="52" rx="26" fill="#ffd21e"/>
+    <text x="108" y="107" font-size="23" font-weight="700" fill="#15151b">EDITORIAL WORKFLOW ILLUSTRATION</text>
+    <text x="80" y="224" font-size="84" font-weight="700" fill="#f5f7fc">FLUX.2-dev</text>
+    <text x="84" y="282" font-size="32" fill="#b8c8dc">A prompt. Four simple stages.</text>
+    <text x="84" y="362" font-size="26" fill="#f5f7fc">Morning light teapot</text>
+    <text x="84" y="404" font-size="23" fill="#91a8c5">Original vector artwork for browsing.</text>
+    <text x="84" y="445" font-size="23" fill="#91a8c5">Generated image example pending.</text>
+  </g>
+  <g transform="translate(914 156)">
+    <ellipse cx="208" cy="352" rx="215" ry="28" fill="#09101a"/>
+    <path d="M346 167c116-14 133 151 29 155" fill="none" stroke="#4a9bc8" stroke-width="39"/>
+    <path d="M81 166 2 117c-20-11-36 7-28 23l77 127" fill="url(#ceramic)" stroke="#85ccec" stroke-width="5"/>
+    <path d="M79 135c-50 30-70 92-42 154 25 53 93 65 167 65s146-11 169-65c26-61 7-124-43-154Z" fill="url(#ceramic)" stroke="#85ccec" stroke-width="5"/>
+    <ellipse cx="205" cy="136" rx="123" ry="22" fill="#235f91" stroke="#85ccec" stroke-width="5"/>
+    <path d="M105 128c12-54 183-54 200 0Z" fill="#62b9e8" stroke="#85ccec" stroke-width="5"/>
+    <rect x="184" y="66" width="43" height="34" rx="13" fill="#62b9e8" stroke="#85ccec" stroke-width="5"/>
+    <path d="M137 181c-20 26-23 61-9 92" fill="none" stroke="#bce5f6" stroke-width="9" opacity=".6"/>
+    <text x="204" y="229" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="700" fill="#e6f5ff">MORNING</text>
+    <text x="204" y="259" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="700" fill="#e6f5ff">LIGHT</text>
+  </g>
+  <g font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="700" text-anchor="middle">
+    <path d="M332 680h60m272 0h60m272 0h60" stroke="#718ba9" stroke-width="5"/>
+    <g fill="#1c3047" stroke="#4b6c91" stroke-width="2"><rect x="80" y="625" width="252" height="110" rx="22"/><rect x="392" y="625" width="272" height="110" rx="22"/><rect x="724" y="625" width="272" height="110" rx="22"/><rect x="1056" y="625" width="400" height="110" rx="22"/></g>
+    <g fill="#e4edf8"><text x="206" y="689">Prompt</text><text x="528" y="689">Encode inputs</text><text x="860" y="689">Denoise</text><text x="1256" y="689">Decode image</text></g>
+  </g>
+  <text x="80" y="805" font-family="DejaVu Sans, sans-serif" font-size="21" fill="#91a8c5">Illustration only · Full-model template · Image output not yet published</text>
+</svg>

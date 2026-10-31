@@ -19,19 +19,29 @@ sudo apt update
 sudo apt install -y git curl build-essential ffmpeg libgl1 libglib2.0-0
 ```
 
-The backend installer bootstraps a hash-verified local uv and Python 3.12 when
-needed. Install Node 24.12.0 with your normal system tooling. CUDA toolkit/NVCC
+Install uv with its official instructions or your package manager; the backend
+does not require an exact uv version. uv can provision Python 3.12. Install Node 24.12.0 with your normal system tooling. CUDA toolkit/NVCC
 is only required for optional packages that compile native CUDA extensions.
 
 ## Backend Setup
 
-Developers can use the backend's
-[uv setup commands](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md)
-to plan, install, check and run the managed environment without shell launchers.
-Start the client with `npm ci` followed by `npm run dev` in a second terminal.
-Stop each process with `Ctrl+C`. Use a separate checkout for a clean CPU test;
-`modiff.dev setup` preserves an existing `.venv` unless `--repair` is explicit.
-The guided launcher path is also available:
+Use native uv commands for NVIDIA setup:
+
+```bash
+uv sync --extra cuda
+uv run --extra cuda python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --extra cuda python main.py
+```
+
+Choose `--extra cpu` for CPU or `--extra xpu` for Intel, and keep the same extra
+on sync and run. Transformers and PEFT are mandatory base packages. Start the
+client with `npm ci` and `npm run dev` in another terminal. Ctrl+C stops each
+process. `uv sync` reconciles the selected environment; test a different profile
+in another checkout. The [developer guide](https://github.com/sdevil7th/MoDiff/blob/develop/docs/developer-setup.md)
+explains explicit `uv pip`, repair, and upgrades.
+
+Specialized AMD vendor wheels retain the guided installation path below;
+do not reconcile a reviewed ROCm environment with a CPU/CUDA extra.
 
 From the backend checkout:
 

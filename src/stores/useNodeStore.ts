@@ -9,6 +9,7 @@ import {
 
 import { create } from 'zustand';
 import type { RuntimeResourceSnapshot } from '../studio/runtimeResources';
+import type { NodeMemoryUsage } from '../types/api';
 import config from '../../app.config';
 import {
   classifyHfDownloadFailure,
@@ -20,9 +21,16 @@ import {
   isHfDownloadComplete,
 } from '../studio/modelInstall';
 import { parseRuntimeEnvironment, type RuntimeEnvironment } from '../studio/runtimeEnvironment';
+import {
+  beginWorkerControlRead,
+  parseWorkerControl,
+  updateWorkerControl,
+  type WorkerControl,
+} from '../utils/supervisorControl';
 import { isStudioMode, isStudioModelType } from '../studio/modelCapabilities';
 import { parseStudioExecutionSpecs } from '../studio/executionSpecs';
 import type { OperationAuthoring } from '../workflow/operationAuthoring';
+import { isConnectionRoleSelector, type ConnectionRoleSelector } from '../workflow/connectionRoleSelector';
 import type { OperationContract } from '../workflow/operationContracts';
 import type { PipelineSupport } from '../workflow/operationCatalog';
 import type { WorkflowModelDescriptor } from '../workflow/workflowChoices';
@@ -72,7 +80,7 @@ export type NodeData = {
   resizable?: boolean;
   skipParamsCheck?: boolean;
   executionTime?: Record<string, number>;
-  memoryUsage?: Record<string, number>;
+  memoryUsage?: NodeMemoryUsage;
   isCached?: boolean;
   progress?: number;
   activeTaskId?: string | null;
@@ -202,6 +210,7 @@ export type NodeParams = {
   onChange?: unknown;
   onSignal?: unknown;
   connectionRole?: string;
+  connectionRoleSelector?: ConnectionRoleSelector;
   signalCompatibility?: {
     required?: boolean;
     values?: Record<string, unknown>;
@@ -392,6 +401,7 @@ export type RuntimePackageStatus = {
 
 export type RuntimeStatus = {
   ready?: boolean;
+  workerControl?: WorkerControl;
   runtime_fingerprint?: string;
   runtimeEnvironment: RuntimeEnvironment;
   server?: {
@@ -464,7 +474,7 @@ type NodesStore = {
   addCustomModule: (source: ExtensionImport) => Promise<CustomModuleActionResult>;
   updateCustomModule: (name: string) => Promise<CustomModuleActionResult>;
   setCustomModuleEnabled: (name: string, enabled: boolean, codeHash?: string) => Promise<CustomModuleActionResult>;
-  fetchRuntimeStatus: () => Promise<void>;
+  fetchRuntimeStatus: (address?: string) => Promise<void>;
   fetchOptionalRuntimes: () => Promise<void>;
   setRuntimeResources: (snapshot: RuntimeResourceSnapshot | null) => void;
   fetchNodes: () => Promise<void>;
@@ -640,6 +650,14 @@ export function parseNodesResponse(value: unknown) {
     ) {
       throw new Error(`Node definition ${key} is invalid.`);
     }
+    for (const [field, param] of Object.entries(definition.params)) {
+      if (
+        isRecord(param) &&
+        'connectionRoleSelector' in param &&
+        !isConnectionRoleSelector(param.connectionRoleSelector)
+      )
+        throw new Error(`Node definition ${key} has an invalid connection role selector for ${field}.`);
+    }
   });
   return {
     nodes: payload.nodes as unknown as Record<string, NodeData>,
@@ -652,11 +670,12 @@ function parseArrayResponse(value: unknown, label: string) {
   return value;
 }
 
-function parseRuntimeStatus(value: unknown) {
+function parseRuntimeStatus(value: unknown, backendAddress: string) {
   const payload = payloadRecord(value, 'The runtime status response is invalid.');
   return {
     ...payload,
     runtimeEnvironment: parseRuntimeEnvironment(payload),
+    workerControl: parseWorkerControl(payload.workerControl, payload.server, backendAddress),
   } as RuntimeStatus;
 }
 
@@ -841,10 +860,28 @@ export function parseStudioModelCapabilities(value: unknown) {
   const modelTypes = new Set();
   const capabilities = payload.capabilities.flatMap((item) => {
     if (!isRecord(item) || typeof item.modelType !== 'string') invalidModelCapabilities();
-    // A newer backend can advertise models this client does not have a Studio
-    // presentation for yet. Ignore those records instead of casting them into
-    // the closed client model union. Experimental capabilities are likewise a
-    // separate response field and are never promoted into runnable Studio data.
+    // Presentation typing never promotes contract-only identities into runnable
+    // Studio capabilities. Their exact private routes are parsed separately by
+    // evaluationAuthoring, including older display-only records without modes.
+    if (
+      item.executionStatus === 'contract_only' ||
+      (item.modes === undefined && Array.isArray(item.executionProfiles) && item.executionProfiles.length === 0)
+    ) {
+      if (
+        payload.schemaVersion !== 2 ||
+        [item.autoEligible, item.templateEligible, item.galleryEligible, item.liveProof].some(
+          (flag) => flag !== false,
+        ) ||
+        !Array.isArray(item.executionProfiles) ||
+        item.executionProfiles.length !== 0 ||
+        (item.runnableModes !== undefined && (!Array.isArray(item.runnableModes) || item.runnableModes.length !== 0)) ||
+        (item.qualifiedModes !== undefined && (!Array.isArray(item.qualifiedModes) || item.qualifiedModes.length !== 0))
+      )
+        invalidModelCapabilities();
+      return [];
+    }
+    // A newer backend can advertise public models without a legacy Studio
+    // presentation. Their generic workflow descriptors remain independently parsed.
     if (!isStudioModelType(item.modelType)) return [];
     if (
       payload.schemaVersion !== 2 &&
@@ -1344,18 +1381,21 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
       `Could not ${action} ${name}.`,
     );
   },
-  fetchRuntimeStatus: async () => {
+  fetchRuntimeStatus: async (address = config.serverAddress) => {
+    const controlRead = beginWorkerControlRead();
+    const backendAddress = address === config.serverAddress ? config.backendAddress : address;
     const previousFingerprint = get().runtimeStatus?.runtime_fingerprint;
     await runDiscoveryRequest(
       'runtime',
       set,
       (signal) =>
-        requestJson(`${config.serverAddress}/runtime/status`, {
+        requestJson(`${address}/runtime/status`, {
           signal,
           timeoutMs: 120_000,
-          parse: parseRuntimeStatus,
+          parse: (value) => parseRuntimeStatus(value, backendAddress),
         }),
       (runtimeStatus) => {
+        updateWorkerControl(runtimeStatus.workerControl, controlRead);
         const nextFingerprint = runtimeStatus.runtime_fingerprint;
         if (
           previousFingerprint !== undefined &&
@@ -1483,11 +1523,13 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           { parseOperationContracts },
           { parsePipelineSupport },
           { parseWorkflowModelDescriptors },
+          { parseEvaluationAuthoring },
           { optionalEncodingRoute },
         ] = await Promise.all([
           import('../workflow/operationContracts'),
           import('../workflow/operationCatalog'),
           import('../workflow/workflowChoices'),
+          import('../workflow/evaluationAuthoring'),
           import('../workflow/encodingImageRoute'),
         ]);
         bindEncodingRouteResolver(optionalEncodingRoute);
@@ -1507,15 +1549,15 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
               payload.pipelineSupportSchemaVersion,
               operationContracts,
             );
+            const evaluation = parseEvaluationAuthoring(payload, pipelineSupport, operationContracts);
             return {
               ...capabilities,
               operationContracts,
-              pipelineSupport,
-              workflowModelDescriptors: parseWorkflowModelDescriptors(
-                payload,
-                pipelineSupport,
-                capabilities.capabilities,
-              ),
+              pipelineSupport: evaluation.support,
+              workflowModelDescriptors: [
+                ...parseWorkflowModelDescriptors(payload, pipelineSupport, capabilities.capabilities),
+                ...evaluation.descriptors,
+              ],
             };
           },
         });

@@ -9,6 +9,7 @@ import {
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { syncStudioGraphValues } from '../studio/graphBridge';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
@@ -238,16 +239,25 @@ export default function AppModePanel() {
     const context = captureWorkflowOperationContext();
     const managedGraph = Boolean(useStudioStore.getState().graphBinding);
     try {
-      if (managedGraph) {
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      if (managedGraph && !executionScope) {
         const autoReady = await ensureStudioAutoPlanReadyForRun(context);
         if (!autoReady) return;
       }
-      const validation = validateCurrentRun({ sid, isConnected, includeStudio: managedGraph, showDialog: true });
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: managedGraph && !executionScope,
+        showDialog: true,
+        executionScope,
+      });
       if (!validation.canRun) return;
       await coordinateGraphRun({
         sid,
         studioContext: { applyRuntimeMetadata: managedGraph },
         workflowContext: context,
+        executionScope,
       });
       enqueueSnackbar('Run as app queued', { variant: 'success', autoHideDuration: 2200 });
     } catch (error) {

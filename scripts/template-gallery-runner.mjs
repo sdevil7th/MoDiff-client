@@ -394,8 +394,9 @@ Use --allow-non-exact only to capture a currently non-exact template after all o
 its model and input locks have been supplied. The resulting evidence must still
 pass the normal two-run comparison and manual quality review before publishing.
 
-Use --allow-blocked-probe only for bounded qualification evidence. It never
-permits direct publishing of a blocked template.
+Use --allow-blocked-probe only for bounded qualification evidence. Combine it
+with --record-qualification to retain a successful locked proof while the card
+remains blocked. It never permits direct publishing of a blocked template.
 
 Options:
   --server <url>             Backend URL. Default: ${DEFAULT_SERVER}
@@ -655,6 +656,9 @@ export async function installEphemeralGalleryStorage(page) {
 
     for (const key of persistentKeys) {
       localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+      // Keep legacy recovery bytes intact without hydrating foreign graphs in this owned test page.
+      originalSetItem.call(sessionStorage, `${key}.legacy-recovered.v1`, '1');
     }
   });
 }
@@ -1388,6 +1392,13 @@ async function findRunOutputByStudioRole(page, { templateId, taskId, startedAt, 
   );
 }
 
+export function templateQualificationArgs(args) {
+  return [
+    join(ROOT, 'scripts', 'template-qualification.mjs'),
+    ...(args.allowBlockedProbe === true ? ['--allow-blocked-probe'] : []),
+  ];
+}
+
 export function formOverridesForTemplate(template, args) {
   if (template.exampleStatus === 'blocked' && !args.allowBlockedProbe) {
     return { skipReason: `Template is ${template.exampleStatus}.` };
@@ -1494,6 +1505,7 @@ export function preferredOutputRoleForTemplate(template) {
   }
   if (template.mediaType === 'video') return 'videoExport';
   if (template.workflowBlocks?.includes('upscaler')) return 'upscalePreview';
+  if (template.workflowBlocks?.includes('masked_composite')) return 'compositeOutput';
   if (template.modelType === 'AceStepAudioPipeline') return 'audioExport';
   return '';
 }
@@ -2494,7 +2506,7 @@ async function main() {
           if (!provenancePath) {
             throw new Error(`Template ${template.id} completed without a provenance file to record.`);
           }
-          const qualification = spawnSync(process.execPath, [join(ROOT, 'scripts', 'template-qualification.mjs')], {
+          const qualification = spawnSync(process.execPath, templateQualificationArgs(args), {
             cwd: ROOT,
             encoding: 'utf8',
             env: {

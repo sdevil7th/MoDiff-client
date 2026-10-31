@@ -3,6 +3,11 @@
 import { create } from 'zustand';
 import config from '../../app.config';
 import { createLatestRequestGate, formatRequestError, requestJson } from '../utils/requestJson';
+import {
+  supervisorControlAddress,
+  supervisorControlFailed,
+  supervisorControlSucceeded,
+} from '../utils/supervisorControl';
 import { useFlowStore } from './useFlowStore';
 import { useRunIssueStore } from './useRunIssueStore';
 import { useStudioStore } from './useStudioStore';
@@ -199,6 +204,7 @@ interface TaskActions {
   setTasks: (current: Task | undefined, queued: Record<string, Task>, recent?: Task[]) => void;
   fetchTasks: () => Promise<void>;
   fetchSupervisorTasks: () => Promise<void>;
+  supervisorControlError: string | null;
   updateProgress: (task_id: string, progress: number, message?: string, details?: Partial<Task>) => void;
   markTaskFailed: (task: Task) => void;
   markTaskCompleted: (task: Task) => void;
@@ -349,6 +355,7 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
   taskCount: 0,
   queueRevision: 0,
   fetchState: { status: 'idle', error: null, requestId: null },
+  supervisorControlError: null,
   focusedTaskId: null,
   setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
@@ -380,24 +387,39 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
 
   fetchSupervisorTasks: () => {
     if (supervisorQueueRequest) return supervisorQueueRequest;
+    let address: string | null;
+    try {
+      address = supervisorControlAddress();
+    } catch (error) {
+      supervisorControlFailed();
+      set({ supervisorControlError: formatRequestError(error, 'Could not read supervisor task status.') });
+      return Promise.resolve();
+    }
+    if (!address) return Promise.resolve();
     const ticket = supervisorQueueRequestGate.begin('supervisorQueue');
     const queueRevision = get().queueRevision;
     const request = (async () => {
       try {
-        const payload = await requestJson(`${config.supervisorAddress}/queue`, {
+        const payload = await requestJson(`${address}/queue`, {
           signal: ticket.signal,
           timeoutMs: 2_000,
           parse: parseQueueResponse,
         });
         if (!ticket.isLatest()) return;
+        supervisorControlSucceeded();
+        set({ supervisorControlError: null });
         // A websocket queue snapshot that arrived while this emergency request
         // was in flight is newer and must remain authoritative.
         if (get().queueRevision === queueRevision) {
           get().setTasks(payload.current, payload.queued, payload.recent);
         }
-      } catch {
-        // The control plane is an emergency fallback. Normal websocket/HTTP
-        // connectivity owns visible connection errors.
+      } catch (error) {
+        if (!ticket.isLatest()) return;
+        supervisorControlFailed();
+        set({ supervisorControlError: formatRequestError(error, 'Could not read supervisor task status.') });
+        // Keep the failure available for diagnostics; normal worker HTTP/WS
+        // connectivity owns the visible connection state. Failed legacy probes
+        // back off instead of repeatedly hitting an absent control listener.
       } finally {
         ticket.finish();
         supervisorQueueRequest = null;

@@ -29,6 +29,7 @@ let modelProfiles;
 let modularConditionalModule;
 let reviewedModularGraphModule;
 let routeModule;
+let nodeLibraryModule;
 let server;
 let snapshot;
 let storage;
@@ -90,6 +91,7 @@ web._runtime_choice_capabilities_cache = build_runtime_capabilities(
     torch_module=SimpleNamespace(
         version=SimpleNamespace(hip="reviewed-contract", cuda=None),
         cuda=SimpleNamespace(is_bf16_supported=lambda: True),
+        backends=SimpleNamespace(cuda=SimpleNamespace(is_flash_attention_available=lambda: True)),
         nn=SimpleNamespace(attention=object()),
     ),
     package_available=lambda _name: False,
@@ -157,8 +159,12 @@ reviewed_step_registry = {
     "cache": False,
 }
 base_registry[reviewed_step_key] = deepcopy(reviewed_step_registry)
+# This common DTO is byte-identical for every spec. Serialize it once;
+# the client creates an independent copy only for the selected compiler input.
 for registry in registries.values():
-    registry[reviewed_step_key] = deepcopy(reviewed_step_registry)
+    if reviewed_step_key in registry:
+        assert registry[reviewed_step_key] == reviewed_step_registry
+        del registry[reviewed_step_key]
 
 
 def _source_values(definition, admission):
@@ -852,20 +858,20 @@ const REVIEWED_TERMINAL_OUTPUTS = new Map([
     ['Flux2KleinPipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
     ['Flux2Pipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
     ['FluxCannyPipeline', 'control_edit_image', 'diffusersImageControlEdit'],
-    ['FluxCannyPipeline', 'control_image', 'diffusersImageControl'],
+    ['FluxCannyPipeline', 'control_image', 'decode'],
     ['FluxCannyPipeline', 'control_inpaint', 'diffusersImageControlInpaint'],
     ['FluxDepthPipeline', 'control_edit_image', 'diffusersImageControlEdit'],
-    ['FluxDepthPipeline', 'control_image', 'diffusersImageControl'],
+    ['FluxDepthPipeline', 'control_image', 'decode'],
     ['FluxDepthPipeline', 'control_inpaint', 'diffusersImageControlInpaint'],
     ['FluxDevPipeline', 'inpaint', 'diffusersImageInpaint'],
-    ['FluxFillPipeline', 'inpaint', 'diffusersImageInpaint'],
-    ['FluxFillPipeline', 'outpaint', 'diffusersImageInpaint'],
+    ['FluxFillPipeline', 'inpaint', 'decode'],
+    ['FluxFillPipeline', 'outpaint', 'decode'],
     ['FluxKontextInpaintPipeline', 'inpaint', 'diffusersImageInpaint'],
     ['FluxKontextInpaintPipeline', 'outpaint', 'diffusersImageInpaint'],
     ['FluxKontextPipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
     ['FluxKreaPipeline', 'text_to_image', 'diffusersImageGenerate'],
-    ['FluxReduxPipeline', 'edit_image', 'diffusersImageEdit'],
-    ['FluxReduxPipeline', 'multi_image_reference_edit', 'diffusersImageEdit'],
+    ['FluxReduxPipeline', 'edit_image', 'decode'],
+    ['FluxReduxPipeline', 'multi_image_reference_edit', 'decode'],
     ['FluxSchnellPipeline', 'text_to_image', 'diffusersImageGenerate'],
   ].map(([pipeline, mode, role]) => [
     `diffusers.composite:${pipeline}:${mode}`,
@@ -1010,6 +1016,7 @@ before(async () => {
   modularConditionalModule = await server.ssrLoadModule('/src/studio/huggingFaceModularConditionals.ts');
   reviewedModularGraphModule = await server.ssrLoadModule('/src/studio/reviewedModularGraphV2.ts');
   routeModule = await server.ssrLoadModule('/src/studio/registeredBlockV2Routes.ts');
+  nodeLibraryModule = await server.ssrLoadModule('/src/studio/huggingFaceNodeLibrary.ts');
 });
 
 after(async () => {
@@ -1018,7 +1025,89 @@ after(async () => {
   delete globalThis.localStorage;
 });
 
+function selectedCompilerRegistry(specId) {
+  const source = snapshot.registries[specId];
+  const shared = snapshot.baseRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'];
+  assert.ok(source && shared, 'the actual selected backend registry is unavailable');
+  assert.equal(Object.hasOwn(source, 'modules.ModularDiffusers.ReviewedModularWorkflowStep'), false);
+  return {
+    ...structuredClone(source),
+    'modules.ModularDiffusers.ReviewedModularWorkflowStep': structuredClone(shared),
+  };
+}
+
+test('the shared backend Step schema supplies independent exact compiler registries', () => {
+  const specId = snapshot.specs[0].id;
+  const key = 'modules.ModularDiffusers.ReviewedModularWorkflowStep';
+  const first = selectedCompilerRegistry(specId);
+  const second = selectedCompilerRegistry(specId);
+  assert.deepEqual(first[key], snapshot.baseRegistry[key]);
+  assert.deepEqual(second[key], snapshot.baseRegistry[key]);
+  first[key].params.width.label = 'changed only in one scenario';
+  assert.notEqual(first[key].params.width.label, second[key].params.width.label);
+  assert.deepEqual(second[key], snapshot.baseRegistry[key]);
+});
+
+test('the real public library preserves the sealed text-Control placement and rejects unsealed or altered values', () => {
+  const parsed = nodeLibraryModule.parseHuggingFaceNodeLibrary(snapshot.library);
+  const definition = parsed.definitions.find(
+    (item) => item.id === 'diffusers.modular:QwenImageModularPipeline:controlnet_text2image',
+  );
+  const admission = definition.executionAdmissions.find((item) => item.studioMode === 'control_image');
+  assert.equal(admission.sealedBindingValues.controlnetOffloadMode, 'none');
+  assert.equal(admission.executionParameterSources.includes('controlnetOffloadMode'), false);
+  for (const value of ['model_cpu', false, null]) {
+    const invalid = structuredClone(snapshot.library);
+    invalid.definitions
+      .find((item) => item.id === definition.id)
+      .executionAdmissions.find((item) => item.id === admission.id).sealedBindingValues.controlnetOffloadMode = value;
+    assert.throws(() => nodeLibraryModule.parseHuggingFaceNodeLibrary(invalid), /node-library contract/);
+  }
+  const missing = structuredClone(snapshot.library);
+  delete missing.definitions
+    .find((item) => item.id === definition.id)
+    .executionAdmissions.find((item) => item.id === admission.id).sealedBindingValues.controlnetOffloadMode;
+  assert.throws(() => nodeLibraryModule.parseHuggingFaceNodeLibrary(missing), /node-library contract/);
+  const editable = structuredClone(snapshot.library);
+  editable.definitions
+    .find((item) => item.id === definition.id)
+    .executionAdmissions.find((item) => item.id === admission.id)
+    .executionParameterSources.push('controlnetOffloadMode');
+  assert.throws(() => nodeLibraryModule.parseHuggingFaceNodeLibrary(editable), /node-library contract/);
+});
+
+test('actual registered materialization rejects a changed sealed ControlNet offload value before node preparation', () => {
+  const definition = snapshot.library.definitions.find(
+    (item) => item.id === 'diffusers.modular:QwenImageModularPipeline:controlnet_text2image',
+  );
+  const admission = definition.executionAdmissions.find((item) => item.studioMode === 'control_image');
+  const executionSpec = snapshot.specs.find((item) => item.id === admission.studioExecutionSpec.id);
+  let instance = clusterInstance.createHuggingFaceClusterInstance(definition, 'sealed-control-placement-rejection');
+  instance = clusterInstance.setHuggingFaceClusterExecution(instance, definition, admission.id);
+  const bindingValues = clusterRuntime.huggingFaceClusterExecutionParameterValues(
+    admission,
+    modelProfiles.getFormDefaultsForRegisteredRoute(admission.studioMode, definition.pipelineClass),
+  );
+  const altered = structuredClone(admission);
+  altered.sealedBindingValues.controlnetOffloadMode = 'model_cpu';
+  assert.throws(
+    () =>
+      clusterMaterializer.materializeHuggingFaceClusterExecutionSkeleton({
+        definition,
+        instance,
+        admission: altered,
+        executionSpec,
+        nodesRegistry: selectedCompilerRegistry(executionSpec.id),
+        bindingValues,
+        expanded: false,
+      }),
+    /sealed or planner binding values/,
+  );
+});
+
 test('every explicitly routed admission is an exact backend schema-v6 compiler success with fixed runtime probes', () => {
+  const parsedLibrary = nodeLibraryModule.parseHuggingFaceNodeLibrary(snapshot.library);
+  assert.equal(parsedLibrary.definitions.length, snapshot.library.definitions.length);
   const specs = new Map(snapshot.specs.map((spec) => [spec.id, spec]));
   const eligibleAdmissions = snapshot.library.definitions.flatMap((definition) =>
     definition.executionAdmissions.filter(eligibleAdmission).map((admission) => ({ definition, admission })),
@@ -1037,6 +1126,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
     for (const admission of definition.executionAdmissions.filter(eligibleAdmission)) {
       try {
         const executionSpec = specs.get(admission.studioExecutionSpec.id);
+        const nodesRegistry = selectedCompilerRegistry(executionSpec.id);
         assert.ok(executionSpec, 'the exact Studio execution specification is absent');
         assert.deepEqual(
           {
@@ -1060,7 +1150,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           instance,
           admission,
           executionSpec,
-          nodesRegistry: snapshot.registries[executionSpec.id],
+          nodesRegistry: nodesRegistry,
           bindingValues,
           expanded: false,
         });
@@ -1073,6 +1163,48 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           bindingValues,
         });
         assert.equal(skeleton.bindingsComplete, true);
+        if (
+          admission.id ===
+          'diffusers.cluster-admission:QwenImageModularPipeline:controlnet_text2image:mode:control_image'
+        ) {
+          const autoBindingValues = clusterRuntime.huggingFaceClusterExecutionParameterValues(admission, {
+            ...form,
+            resourceMode: 'auto',
+            autoOffload: true,
+            offloadMode: 'model_cpu',
+            device: 'cuda:0',
+            dtype: 'bfloat16',
+          });
+          const autoMaterialized = clusterMaterializer.materializeHuggingFaceClusterExecutionSkeleton({
+            definition,
+            instance,
+            admission,
+            executionSpec,
+            nodesRegistry: nodesRegistry,
+            bindingValues: autoBindingValues,
+            expanded: false,
+          });
+          const autoSkeleton = finalizedRegisteredAuditSkeleton({
+            definition,
+            instance,
+            admission,
+            executionSpec,
+            skeleton: autoMaterialized,
+            bindingValues: autoBindingValues,
+          }).skeleton;
+          const base = autoSkeleton.nodes.find((node) => node.data.huggingFaceClusterExecutionRole === 'models');
+          const auxiliary = autoSkeleton.nodes.find(
+            (node) => node.data.huggingFaceClusterExecutionRole === 'controlnetModel',
+          );
+          assert.ok(base && auxiliary, 'the actual registered Control graph must retain both model owners');
+          assert.equal(base.data.params.auto_offload.value, true);
+          assert.equal(base.data.params.offload_mode.value, 'model_cpu');
+          assert.equal(auxiliary.data.params.auto_offload.value, false);
+          assert.equal(auxiliary.data.params.offload_mode.value, 'none');
+          for (const field of ['device', 'dtype']) {
+            assert.equal(auxiliary.data.params[field].value, base.data.params[field].value);
+          }
+        }
         const registeredRoute = routeModule.registeredBlockV2Route(definition, admission);
         const previousRoute = routeModule.REGISTERED_BLOCK_V2_ROUTES.find(
           (candidate) => candidate.definitionId === definition.id && candidate.admissionId === admission.id,
@@ -1108,7 +1240,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
             skeleton,
             route,
             snapshot.library.blockDefinitions,
-            snapshot.registries[executionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
+            nodesRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
             modularConditionalModule.parseHuggingFaceModularConditionalSnapshot(snapshot.modularConditionalSnapshot),
             snapshot.library.blockRoleAdapters,
           );
@@ -1120,8 +1252,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           ...(route ? { route } : {}),
           blockDefinitions: snapshot.library.blockDefinitions,
           blockRoleAdapters: snapshot.library.blockRoleAdapters,
-          reviewedModularStepNodeData:
-            snapshot.registries[executionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
+          reviewedModularStepNodeData: nodesRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
           modularConditionalSnapshot: modularConditionalModule.parseHuggingFaceModularConditionalSnapshot(
             snapshot.modularConditionalSnapshot,
           ),
@@ -1182,6 +1313,19 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           `the exact graph leaves required runtime sockets unbound: ${unboundRequiredInputs.join(', ')}`,
         );
         assert.equal(compiled.definition.source.executionAdmissionId, admission.id);
+        if (definition.id === 'diffusers.modular:QwenImageEditModularPipeline:image_conditioned') {
+          for (const dimension of ['width', 'height']) {
+            const input = compiled.definition.boundary.inputs.find(({ portId }) => portId === `${dimension}_input`);
+            const output = compiled.definition.boundary.outputs.find(({ portId }) => portId === dimension);
+            assert.ok(input, `the authored ${dimension} has its own public input alias`);
+            assert.deepEqual(input.binding, {
+              nodeId: 'upstream:denoise.input.additional_inputs',
+              fieldOrPortId: dimension,
+            });
+            assert.ok(output, `the original source-image ${dimension} output remains public`);
+            assert.deepEqual(output.binding, { nodeId: 'loadImage', fieldOrPortId: dimension });
+          }
+        }
         if (route && process.env.MODIFF_GENERATE_ROUTE_CANDIDATES !== '1') {
           assert.equal(compiled.definition.contentHash, route.compiledDefinitionContentHash);
           assert.equal(
@@ -1202,8 +1346,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
                 route: tamperedBoundary,
                 blockDefinitions: snapshot.library.blockDefinitions,
                 blockRoleAdapters: snapshot.library.blockRoleAdapters,
-                reviewedModularStepNodeData:
-                  snapshot.registries[executionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
+                reviewedModularStepNodeData: nodesRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
               }),
             /reviewed registered output projection/u,
           );
@@ -1227,6 +1370,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           let candidateSkeleton;
           try {
             const executionSpec = specs.get(admission.studioExecutionSpec.id);
+            const nodesRegistry = selectedCompilerRegistry(executionSpec.id);
             const parameterOverrides = Object.fromEntries(
               definition.inputs.map((field) => [field.name, field.default]),
             );
@@ -1246,7 +1390,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
               instance,
               admission,
               executionSpec,
-              nodesRegistry: snapshot.registries[executionSpec.id],
+              nodesRegistry: nodesRegistry,
               bindingValues,
               expanded: false,
             });
@@ -1270,8 +1414,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
                     route: discoveryRoute,
                     blockDefinitions: snapshot.library.blockDefinitions,
                     blockRoleAdapters: snapshot.library.blockRoleAdapters,
-                    reviewedModularStepNodeData:
-                      snapshot.registries[executionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
+                    reviewedModularStepNodeData: nodesRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
                   });
                   assert.ok(
                     discovery.definition.boundary.outputs.length > 0,
@@ -1317,8 +1460,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
               route: exactRoute,
               blockDefinitions: snapshot.library.blockDefinitions,
               blockRoleAdapters: snapshot.library.blockRoleAdapters,
-              reviewedModularStepNodeData:
-                snapshot.registries[executionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
+              reviewedModularStepNodeData: nodesRegistry['modules.ModularDiffusers.ReviewedModularWorkflowStep'],
             });
             routeCandidates.push({
               ...exactRoute,
@@ -1564,8 +1706,9 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
   if (process.env.MODIFF_GENERATE_ROUTE_CANDIDATES !== '1') assert.ok(qwenRoute);
   if (process.env.MODIFF_GENERATE_ROUTE_CANDIDATES !== '1') {
     const qwenExecutionSpec = specs.get(qwen.admission.studioExecutionSpec.id);
-    const qwenReviewedStep =
-      snapshot.registries[qwenExecutionSpec.id]['modules.ModularDiffusers.ReviewedModularWorkflowStep'];
+    const qwenReviewedStep = selectedCompilerRegistry(qwenExecutionSpec.id)[
+      'modules.ModularDiffusers.ReviewedModularWorkflowStep'
+    ];
     const exactOnce = reviewedModularGraphModule.reviewedModularGraphV2(
       qwen.definition,
       qwen.skeleton,
@@ -1763,6 +1906,42 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
   }
 });
 
+test('fresh Cosmos image authoring selects its new exact catalog route and rejects the historical receipt as a fallback', () => {
+  const definition = snapshot.library.definitions.find(
+    ({ id }) => id === 'diffusers.modular:Cosmos3OmniModularPipeline:text2image',
+  );
+  const admission = definition.executionAdmissions.find(eligibleAdmission);
+  const executionSpec = snapshot.specs.find(({ id }) => id === admission.studioExecutionSpec.id);
+  assert.equal(
+    executionSpec.roles.some(([role]) => role === 'afterDecode'),
+    false,
+  );
+  assert.notEqual(admission.studioExecutionSpec.contentHash, 'studio-spec-v1-91ed105d');
+  const route = routeModule.registeredBlockV2Route(definition, admission);
+  assert.ok(route, 'the fresh authoritative receipt must have an exact registered route');
+  assert.deepEqual(route.studioExecutionSpec, admission.studioExecutionSpec);
+  assert.deepEqual(
+    route.boundary.outputs,
+    [
+      {
+        portId: 'images',
+        outputName: 'videos',
+        role: 'decode',
+        fieldId: 'image',
+        adaptation: 'direct_media',
+        mediaType: 'image',
+      },
+    ],
+    'the reviewed upstream frame output and backend image boundary retain their existing adaptation',
+  );
+  const historicalAdmission = structuredClone(admission);
+  historicalAdmission.studioExecutionSpec.contentHash = 'studio-spec-v1-91ed105d';
+  assert.equal(routeModule.registeredBlockV2Route(definition, historicalAdmission), null);
+  const malformedAdmission = structuredClone(admission);
+  malformedAdmission.studioExecutionSpec.contentHash = 'studio-spec-v1-00000000';
+  assert.equal(routeModule.registeredBlockV2Route(definition, malformedAdmission), null);
+});
+
 test('registered route identity fails closed on catalog, artifact, spec, admission, and action drift', () => {
   if (process.env.MODIFF_POST_PROMOTION_ADMISSION_ID) {
     assert.equal(process.env.MODIFF_GENERATE_ROUTE_CANDIDATES, '1');
@@ -1807,4 +1986,26 @@ test('registered route identity fails closed on catalog, artifact, spec, admissi
     const changedAdmission = changed.executionAdmissions.find(({ id }) => id === admission.id);
     assert.equal(routeModule.registeredBlockV2Route(changed, changedAdmission), null);
   });
+});
+
+test('ordinary composite routes retain exact current contracts and refuse artifact pin drift', async (t) => {
+  const pairs = snapshot.library.definitions
+    .filter(
+      (definition) => definition.provider === 'diffusers' && definition.definitionKind === 'studio_execution_composite',
+    )
+    .flatMap((definition) =>
+      definition.executionAdmissions.filter(eligibleAdmission).map((admission) => ({ definition, admission })),
+    );
+  assert.equal(pairs.length, 33, 'the existing ordinary composite admission set changed');
+  for (const { definition, admission } of pairs) {
+    await t.test(admission.id, () => {
+      const route = routeModule.registeredBlockV2Route(definition, admission);
+      assert.ok(route, 'the current source declaration must have one exact reviewed route');
+      assert.deepEqual(route.studioExecutionSpec, admission.studioExecutionSpec);
+      assert.deepEqual(route.artifact, admission.artifact);
+      const foreignPin = structuredClone(admission);
+      foreignPin.artifact.revision = '0'.repeat(40);
+      assert.equal(routeModule.registeredBlockV2Route(definition, foreignPin), null);
+    });
+  }
 });

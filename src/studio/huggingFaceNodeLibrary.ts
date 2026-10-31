@@ -328,6 +328,7 @@ const SEALED_EXECUTION_BINDING_SOURCES = new Set([
   'controlnetLoadClass',
   'controlnetRepo',
   'controlnetRevision',
+  'controlnetOffloadMode',
   'controlnetRouteVariant',
   'controlnetWeightVariant',
   'ipAdapterRepo',
@@ -983,6 +984,7 @@ function executionAdmissions(
         if (
           !bindingSourceSet.has(source) ||
           !SEALED_EXECUTION_BINDING_SOURCES.has(source) ||
+          (source === 'controlnetOffloadMode' && value !== 'none') ||
           (typeof value !== 'boolean' &&
             (typeof value === 'number'
               ? !(Number.isSafeInteger(value) || (source === 'boundaryFade001' && value === 0.01))

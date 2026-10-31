@@ -8300,7 +8300,8 @@ test('a live recent-run notification restores its exact backend workflow without
     .toBe(recent!.workflowTabId);
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().settings.rightPanelTab)).toBe('studio');
 
-  const checkpointBytes = await page.evaluate(() => localStorage.getItem('modiff.studio')?.length ?? 0);
+  const checkpointBytes = await page.evaluate(() => window.sessionStorage.getItem('modiff.studio')?.length ?? 0);
+  expect(checkpointBytes).toBeGreaterThan(0);
   expect(checkpointBytes).toBeLessThan(2_000_000);
   expect(pageErrors.filter((message) => /QuotaExceededError|Could not open run/i.test(message))).toEqual([]);
 });

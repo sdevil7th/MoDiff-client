@@ -2,6 +2,43 @@ import { expect, test } from '@playwright/test';
 
 const frontendPort = Number(process.env.MODIFF_MOCK_FRONTEND_PORT || 5191);
 
+test('checkbox visible labels activate once and preserve protected states', async ({ page }) => {
+  await page.goto(`http://127.0.0.1:${frontendPort}/control-state-matrix.html`);
+  const checkbox = page.locator('#matrix-checkbox');
+  const events = page.getByTestId('checkbox-interactions');
+
+  await page.getByText('Checkbox', { exact: true }).click();
+  await expect(checkbox).toBeChecked();
+  await expect(checkbox).toHaveAccessibleName('Checkbox');
+  await expect(checkbox).toBeFocused();
+  await expect(events).toHaveAttribute('data-events', 'checkbox:true');
+
+  await checkbox.click();
+  await expect(checkbox).not.toBeChecked();
+  await expect(events).toHaveAttribute('data-events', 'checkbox:true,checkbox:false');
+  await checkbox.press('Space');
+  await expect(checkbox).toBeChecked();
+  await expect(events).toHaveAttribute('data-events', 'checkbox:true,checkbox:false,checkbox:true');
+  await page.getByText('Checkbox', { exact: true }).click();
+  await expect(checkbox).not.toBeChecked();
+  const normalEvents = 'checkbox:true,checkbox:false,checkbox:true,checkbox:false';
+  await expect(events).toHaveAttribute('data-events', normalEvents);
+
+  await page.getByText('Indeterminate checkbox', { exact: true }).click();
+  await expect(page.getByTestId('checkbox-indeterminate')).toHaveAccessibleName('Mixed checkbox selection');
+  await expect(page.getByTestId('checkbox-indeterminate')).toHaveAttribute('aria-checked', 'mixed');
+  await expect(events).toHaveAttribute('data-events', `${normalEvents},indeterminate:true`);
+
+  await page.getByText('Disabled checkbox', { exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Disabled checkbox', exact: true })).toBeChecked();
+  await page.getByText('Invalid read-only checkbox', { exact: true }).click();
+  const readOnly = page.getByRole('checkbox', { name: 'Invalid read-only checkbox', exact: true });
+  await expect(readOnly).toBeChecked();
+  await readOnly.press('Space');
+  await expect(readOnly).toBeChecked();
+  await expect(events).toHaveAttribute('data-events', `${normalEvents},indeterminate:true`);
+});
+
 test('shared controls expose consistent states and keyboard behavior', async ({ page }) => {
   await page.goto(`http://127.0.0.1:${frontendPort}/control-state-matrix.html`);
 

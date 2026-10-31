@@ -156,7 +156,7 @@ export default function WorkflowResourcePanelV2() {
           </p>
           <p>{autoPlan.message}</p>
           <p>
-            {autoPlan.requiresPreparation ? 'Resolved so far: ' : 'Peak planned resources: '}
+            {autoPlan.requiresPreparation ? 'Resolved so far: ' : 'Planned resources: '}
             {autoPlan.loaders.length} model owners · RAM{' '}
             {formatResourceBytes(autoPlan.requirements.systemRamBytes ?? null)} · GPU{' '}
             {formatResourceBytes(autoPlan.requirements.vramBytes ?? null)}

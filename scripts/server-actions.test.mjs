@@ -10,6 +10,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let actionsModule;
 let originalFetch;
 let server;
+let controlModule;
+let cleanupFeedbackModule;
 
 before(async () => {
   globalThis.window = {
@@ -25,11 +27,14 @@ before(async () => {
     appType: 'custom',
   });
   actionsModule = await server.ssrLoadModule('/src/utils/serverActions.ts');
+  cleanupFeedbackModule = await server.ssrLoadModule('/src/utils/runtimeCleanupFeedback.ts');
+  controlModule = await server.ssrLoadModule('/src/utils/supervisorControl.ts');
   originalFetch = globalThis.fetch;
 });
 
 beforeEach(() => {
   globalThis.fetch = originalFetch;
+  controlModule.resetSupervisorControl();
 });
 
 after(async () => {
@@ -43,6 +48,286 @@ function jsonResponse(value, status = 200) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+test('advertised unsupervised workers stop directly without probing a missing control port', async () => {
+  controlModule.updateWorkerControl(controlModule.parseWorkerControl({ available: false, address: null }));
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ error: false });
+  };
+  await actionsModule.requestExecutionStop();
+  assert.deepEqual(requests, ['http://127.0.0.1:5191/stop']);
+});
+
+test('invalid legacy control configuration still permits the ordinary worker Stop fallback', async () => {
+  const config = (await server.ssrLoadModule('/app.config.ts')).default;
+  const previous = config.supervisorAddress;
+  const requests = [];
+  config.supervisorAddress = 'http://remote.example:8089';
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ error: false });
+  };
+  try {
+    await actionsModule.requestExecutionStop();
+    assert.deepEqual(requests, ['http://127.0.0.1:5191/stop']);
+  } finally {
+    config.supervisorAddress = previous;
+  }
+});
+
+test('explicit Stop retains a verified custom control address through metadata failure and polling backoff', async () => {
+  controlModule.updateWorkerControl(
+    controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:43001' }),
+  );
+  controlModule.updateWorkerControl(undefined);
+  controlModule.supervisorControlFailed();
+  assert.equal(controlModule.supervisorControlAddress(), null);
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return jsonResponse({ error: false });
+  };
+  await actionsModule.requestExecutionStop();
+  assert.deepEqual(requests, ['http://127.0.0.1:43001/stop']);
+});
+
+test('worker control metadata rejects malformed, remote, credentialed and non-origin destinations', () => {
+  assert.equal(controlModule.parseWorkerControl(undefined), undefined);
+  for (const value of [
+    null,
+    [],
+    {},
+    { available: 'true', address: null },
+    { available: false, address: 'http://127.0.0.1:8089' },
+    { available: true, address: null },
+    { available: false, address: null, arbitrary: true },
+    ...[
+      'http://example.com:9001',
+      'http://127.0.0.2:9001',
+      'https://127.0.0.1:9001',
+      'http://user@127.0.0.1:9001',
+      'http://127.0.0.1:9001/queue',
+      'http://127.0.0.1:0',
+      'http://127.0.0.1:65536',
+      'http://127.0.0.1:9001?x=1',
+      'http://2130706433:9001',
+    ].map((address) => ({ available: true, address })),
+  ]) {
+    assert.throws(() => controlModule.parseWorkerControl(value));
+  }
+  assert.deepEqual(controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:43001/' }), {
+    available: true,
+    address: 'http://127.0.0.1:43001',
+  });
+  assert.deepEqual(controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:80' }), {
+    available: true,
+    address: 'http://127.0.0.1',
+  });
+});
+
+test('older health metadata cannot replace a newer verified supervisor destination', () => {
+  const older = controlModule.beginWorkerControlRead();
+  const newer = controlModule.beginWorkerControlRead();
+  controlModule.updateWorkerControl({ available: true, address: 'http://127.0.0.1:43001' }, newer);
+  controlModule.updateWorkerControl({ available: false, address: null }, older);
+  assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:43001');
+});
+
+async function withControlConfiguration(overrides, run) {
+  const config = (await server.ssrLoadModule('/app.config.ts')).default;
+  const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, config[key]]));
+  Object.assign(config, overrides);
+  try {
+    return await run(config);
+  } finally {
+    Object.assign(config, previous);
+  }
+}
+
+const advertisedBackend = { host: '127.0.0.1', port: 8088, scheme: 'http' };
+const adjacentControl = { available: true, address: 'http://127.0.0.1:8089' };
+
+test('production tunnel Stop uses the configured adjacent supervisor and never the remote-local port', async () => {
+  await withControlConfiguration(
+    {
+      serverAddress: 'http://127.0.0.1:18088',
+      backendAddress: 'http://127.0.0.1:18088',
+      supervisorAddress: 'http://127.0.0.1:18089',
+      supervisorAddressExplicit: false,
+    },
+    async () => {
+      controlModule.updateWorkerControl(controlModule.parseWorkerControl(adjacentControl, advertisedBackend));
+      const requests = [];
+      globalThis.fetch = async (url) => {
+        requests.push(String(url));
+        return jsonResponse({ error: false });
+      };
+      await actionsModule.requestExecutionStop();
+      assert.deepEqual(requests, ['http://127.0.0.1:18089/stop']);
+      requests.length = 0;
+      globalThis.fetch = async (url) => {
+        requests.push(String(url));
+        if (requests.length === 1) throw new TypeError('Owned supervisor tunnel unavailable.');
+        return jsonResponse({ error: false });
+      };
+      await actionsModule.requestExecutionStop();
+      assert.deepEqual(requests, ['http://127.0.0.1:18089/stop', 'http://127.0.0.1:18088/stop']);
+    },
+  );
+});
+
+test('direct and DEV-proxied backend metadata preserve the actual custom supervisor port', async () => {
+  await withControlConfiguration(
+    {
+      serverAddress: 'http://127.0.0.1:5191',
+      backendAddress: 'http://127.0.0.1:8088',
+      supervisorAddress: 'http://127.0.0.1:8089',
+      supervisorAddressExplicit: false,
+    },
+    () => {
+      assert.equal(
+        controlModule.parseWorkerControl(adjacentControl, advertisedBackend).address,
+        'http://127.0.0.1:8089',
+      );
+      assert.equal(
+        controlModule.parseWorkerControl({ available: true, address: 'http://127.0.0.1:43001' }, advertisedBackend)
+          .address,
+        'http://127.0.0.1:43001',
+      );
+    },
+  );
+});
+
+test('a nonadjacent tunneled supervisor requires a trusted explicit override and otherwise Stop uses only the worker', async () => {
+  await withControlConfiguration(
+    {
+      serverAddress: 'http://127.0.0.1:18088',
+      backendAddress: 'http://127.0.0.1:18088',
+      supervisorAddress: 'http://127.0.0.1:18089',
+      supervisorAddressExplicit: false,
+    },
+    async (config) => {
+      const custom = { available: true, address: 'http://127.0.0.1:43001' };
+      const unresolved = controlModule.parseWorkerControl(custom, advertisedBackend);
+      assert.deepEqual(unresolved, { available: true, address: null });
+      controlModule.updateWorkerControl(unresolved);
+      assert.throws(() => controlModule.supervisorControlAddress(), /supervisor.*configured backend/i);
+      const requests = [];
+      globalThis.fetch = async (url) => {
+        requests.push(String(url));
+        return jsonResponse({ error: false });
+      };
+      await actionsModule.requestExecutionStop();
+      assert.deepEqual(requests, ['http://127.0.0.1:18088/stop']);
+      config.supervisorAddressExplicit = true;
+      config.supervisorAddress = 'http://127.0.0.1:19001';
+      controlModule.updateWorkerControl(controlModule.parseWorkerControl(custom, advertisedBackend));
+      assert.equal(controlModule.supervisorControlAddress(), 'http://127.0.0.1:19001');
+      config.supervisorAddress = 'http://remote.example:19001';
+      assert.throws(
+        () => controlModule.parseWorkerControl(custom, advertisedBackend),
+        /Invalid supervisor control address/,
+      );
+    },
+  );
+});
+
+test('control translation rejects metadata authority outside a matching loopback adjacent pair', async () => {
+  await withControlConfiguration(
+    {
+      backendAddress: 'http://127.0.0.1:18088',
+      supervisorAddress: 'http://127.0.0.1:18089',
+      supervisorAddressExplicit: false,
+    },
+    (config) => {
+      for (const metadata of [
+        null,
+        [],
+        {},
+        { ...advertisedBackend, host: 'example.com' },
+        { ...advertisedBackend, host: '127.0.0.2' },
+        { ...advertisedBackend, host: 'user@127.0.0.1' },
+        { ...advertisedBackend, port: '8088' },
+        { ...advertisedBackend, port: 0 },
+        { ...advertisedBackend, port: 65536 },
+        { ...advertisedBackend, scheme: 'file' },
+        { ...advertisedBackend, host: '::1' },
+      ]) {
+        assert.deepEqual(controlModule.parseWorkerControl(adjacentControl, metadata), {
+          available: true,
+          address: null,
+        });
+      }
+      for (const address of [
+        'http://example.com:18088',
+        'http://user@127.0.0.1:18088',
+        'http://2130706433:18088',
+        'http://127.0.0.1:65536',
+      ]) {
+        config.backendAddress = address;
+        assert.deepEqual(controlModule.parseWorkerControl(adjacentControl, advertisedBackend), {
+          available: true,
+          address: null,
+        });
+      }
+      config.backendAddress = 'http://127.0.0.1:65535';
+      assert.deepEqual(controlModule.parseWorkerControl(adjacentControl, advertisedBackend), {
+        available: true,
+        address: null,
+      });
+      config.backendAddress = 'http://backend.example:18088';
+      config.supervisorAddress = 'http://127.0.0.1:19001';
+      config.supervisorAddressExplicit = true;
+      assert.equal(
+        controlModule.parseWorkerControl(adjacentControl, advertisedBackend).address,
+        'http://127.0.0.1:19001',
+      );
+    },
+  );
+});
+
+test('loopback IPv6, default ports and a custom health transport retain bounded control resolution', async () => {
+  await withControlConfiguration(
+    {
+      backendAddress: 'http://127.0.0.1:8088',
+      supervisorAddress: 'http://127.0.0.1:8089',
+      supervisorAddressExplicit: false,
+    },
+    (config) => {
+      assert.equal(
+        controlModule.parseWorkerControl(adjacentControl, advertisedBackend, 'http://127.0.0.1:28088').address,
+        'http://127.0.0.1:28089',
+      );
+      config.backendAddress = 'http://[::1]:18088';
+      config.supervisorAddress = 'http://[::1]:18089';
+      assert.equal(
+        controlModule.parseWorkerControl(
+          { available: true, address: 'http://[::1]:8089' },
+          { host: '::1', port: 8088, scheme: 'http' },
+        ).address,
+        'http://[::1]:18089',
+      );
+      config.backendAddress = 'http://localhost';
+      config.supervisorAddress = 'http://localhost:81';
+      assert.equal(
+        controlModule.parseWorkerControl(
+          { available: true, address: 'http://127.0.0.1:43001' },
+          { ...advertisedBackend, port: 80 },
+        ).address,
+        'http://127.0.0.1:43001',
+      );
+      assert.equal(
+        controlModule.parseWorkerControl(
+          { available: false, address: null },
+          { ...advertisedBackend, host: 'example.com' },
+        ).address,
+        null,
+      );
+    },
+  );
+});
 
 test('execution stop uses the process-external supervisor before the backend worker', async () => {
   let request;
@@ -79,7 +364,66 @@ test('the real Vite config derives the supervisor from the backend rather than t
       loaded.config.define['import.meta.env.VITE_SUPERVISOR_CONTROL_ADDRESS'],
       JSON.stringify('http://127.0.0.1:65531'),
     );
+    assert.equal(loaded.config.define['import.meta.env.MODIFF_SUPERVISOR_CONTROL_EXPLICIT'], 'false');
     assert.equal(loaded.config.server.proxy['/huggingface'].target, 'http://127.0.0.1:65530');
+  } finally {
+    if (priorBackend === undefined) delete process.env.VITE_BACKEND_PROXY_TARGET;
+    else process.env.VITE_BACKEND_PROXY_TARGET = priorBackend;
+    if (priorSupervisor === undefined) delete process.env.VITE_SUPERVISOR_CONTROL_ADDRESS;
+    else process.env.VITE_SUPERVISOR_CONTROL_ADDRESS = priorSupervisor;
+  }
+});
+
+test('development configuration distinguishes proxy transport, direct backend and explicit supervisor overrides', async () => {
+  const priorBackend = process.env.VITE_BACKEND_PROXY_TARGET;
+  const priorSupervisor = process.env.VITE_SUPERVISOR_CONTROL_ADDRESS;
+  process.env.VITE_BACKEND_PROXY_TARGET = 'http://127.0.0.1:9000';
+  try {
+    for (const [directBackend, supervisorOverride, expectedBackend, expectedSupervisor] of [
+      [undefined, undefined, 'http://127.0.0.1:9000', 'http://127.0.0.1:9001'],
+      ['http://127.0.0.1:19000', undefined, 'http://127.0.0.1:19000', 'http://127.0.0.1:19001'],
+      [undefined, 'http://127.0.0.1:29001', 'http://127.0.0.1:9000', 'http://127.0.0.1:29001'],
+    ]) {
+      if (supervisorOverride) process.env.VITE_SUPERVISOR_CONTROL_ADDRESS = supervisorOverride;
+      else delete process.env.VITE_SUPERVISOR_CONTROL_ADDRESS;
+      const loaded = await loadConfigFromFile(
+        { command: 'serve', mode: 'test' },
+        path.join(ROOT, 'vite.config.ts'),
+        ROOT,
+        'silent',
+      );
+      assert.ok(loaded);
+      assert.equal(
+        loaded.config.define['import.meta.env.MODIFF_SUPERVISOR_CONTROL_EXPLICIT'],
+        String(Boolean(supervisorOverride)),
+      );
+      const bundle = await build({
+        configFile: false,
+        root: ROOT,
+        logLevel: 'silent',
+        build: {
+          write: false,
+          minify: false,
+          lib: { entry: path.join(ROOT, 'app.config.ts'), formats: ['cjs'] },
+          rollupOptions: { output: { exports: 'named' } },
+        },
+        define: {
+          'import.meta.env.DEV': 'true',
+          'import.meta.env.VITE_SERVER_ADDRESS': directBackend ? JSON.stringify(directBackend) : 'undefined',
+          ...loaded.config.define,
+        },
+      });
+      const module = { exports: {} };
+      runInNewContext(bundle[0].output[0].code, {
+        module,
+        exports: module.exports,
+        window: { location: { origin: 'http://127.0.0.1:5191' } },
+        URL,
+      });
+      assert.equal(module.exports.default.backendAddress, expectedBackend);
+      assert.equal(module.exports.default.supervisorAddress, expectedSupervisor);
+      assert.equal(module.exports.default.supervisorAddressExplicit, Boolean(supervisorOverride));
+    }
   } finally {
     if (priorBackend === undefined) delete process.env.VITE_BACKEND_PROXY_TARGET;
     else process.env.VITE_BACKEND_PROXY_TARGET = priorBackend;
@@ -121,6 +465,7 @@ test('production recovery follows the serving backend port instead of the develo
     for (const [origin, override, expected] of [
       ['http://127.0.0.1:8096', undefined, 'http://127.0.0.1:8097'],
       ['http://127.0.0.1:8088', undefined, 'http://127.0.0.1:8089'],
+      ['http://127.0.0.1:18088', undefined, 'http://127.0.0.1:18089'],
       ['http://127.0.0.1:8096', 'http://127.0.0.1:18000', 'http://127.0.0.1:18000'],
     ]) {
       const bundle = await build({
@@ -149,7 +494,9 @@ test('production recovery follows the serving backend port instead of the develo
         URL,
       });
       assert.equal(module.exports.default.serverAddress, origin);
+      assert.equal(module.exports.default.backendAddress, origin);
       assert.equal(module.exports.default.supervisorAddress, expected);
+      assert.equal(module.exports.default.supervisorAddressExplicit, Boolean(override));
     }
   } finally {
     if (priorBackend === undefined) delete process.env.VITE_BACKEND_PROXY_TARGET;
@@ -199,6 +546,56 @@ test('node cache deletion deduplicates ids and validates the echoed node list', 
   assert.deepEqual(result.nodes, ['node-a', 'node-b']);
 });
 
+test('full cache release survives the old deadline but retains a finite operation-specific timeout', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let signal, complete;
+  globalThis.fetch = (_url, init) =>
+    new Promise((resolve, reject) => {
+      signal = init.signal;
+      complete = () => resolve(jsonResponse({ error: false, nodes: ['setup', 'loader'] }));
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+  const pending = actionsModule.deleteNodeCache(['setup']).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  try {
+    t.mock.timers.tick(15_001);
+    assert.equal(signal.aborted, false, 'Actual component teardown can finish after the old generic deadline.');
+    complete();
+    assert.deepEqual((await pending).value, { error: false, nodes: ['setup', 'loader'] });
+    const stalled = actionsModule.deleteNodeCache(['setup']).catch((error) => error);
+    t.mock.timers.tick(119_999);
+    assert.equal(signal.aborted, false);
+    t.mock.timers.tick(1);
+    const error = await stalled;
+    assert.equal(error.kind, 'timeout');
+    assert.match(error.message, /120000ms/);
+  } finally {
+    complete();
+    await pending;
+  }
+});
+
+test('cache release timeout does not alter recompute or generic requests and invalid acknowledgements reject', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  globalThis.fetch = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+    });
+  for (const action of [() => actionsModule.recomputeNodeOutputs(['setup']), () => actionsModule.cleanupGpuMemory()]) {
+    const pending = action().catch((error) => error);
+    t.mock.timers.tick(15_000);
+    const error = await pending;
+    assert.equal(error.kind, 'timeout');
+    assert.match(error.message, /15000ms/);
+  }
+  for (const payload of [{ error: false }, { error: false, nodes: null }, { error: false, nodes: [1] }]) {
+    globalThis.fetch = async () => jsonResponse(payload);
+    await assert.rejects(actionsModule.deleteNodeCache(['setup']), /invalid node list/);
+  }
+});
+
 test('empty cache deletion is a no-op and does not contact the backend', async () => {
   let calls = 0;
   globalThis.fetch = async () => {
@@ -209,6 +606,67 @@ test('empty cache deletion is a no-op and does not contact the backend', async (
   const result = await actionsModule.deleteNodeCache([]);
   assert.equal(calls, 0);
   assert.deepEqual(result.nodes, []);
+});
+
+test('accelerator cleanup preserves partial-cleanup reasons and permits zero released files', async () => {
+  const clean = {
+    error: false,
+    message: 'Accelerator cleanup complete.',
+    released_node_count: 1,
+    released_model_count: 0,
+    released_diffusers_component_count: 0,
+    released_diffusers_offload_file_count: 0,
+    allocator_trimmed: false,
+    cleanup_errors: [],
+    before: null,
+    after: null,
+  };
+  const partial = {
+    ...clean,
+    cleanup_errors: ['Diffusers disk offload cache: live hook storage was preserved.'],
+  };
+  for (const receipt of [clean, partial, { error: false, message: 'Legacy cleanup complete.' }]) {
+    globalThis.fetch = async () => jsonResponse(receipt);
+    assert.deepEqual(await actionsModule.cleanupGpuMemory(), receipt);
+  }
+  assert.deepEqual(cleanupFeedbackModule.runtimeCleanupFeedback(clean), {
+    state: 'success',
+    message: clean.message,
+  });
+  assert.deepEqual(cleanupFeedbackModule.runtimeCleanupFeedback(partial), {
+    state: 'warning',
+    message: `${partial.message}\n${partial.cleanup_errors[0]}`,
+  });
+  assert.equal(cleanupFeedbackModule.runtimeCleanupFeedback({ ...clean, cleanup_errors: [' ', ''] }).state, 'success');
+  assert.equal(cleanupFeedbackModule.runtimeCleanupFeedback({ error: false }).state, 'success');
+});
+
+test('accelerator cleanup rejects invalid or unbounded cleanup details without treating them as success', () => {
+  for (const cleanup_errors of [
+    null,
+    'preserved',
+    [false],
+    [{}],
+    Array.from({ length: 65 }, () => 'warning'),
+    ['x'.repeat(8193)],
+  ]) {
+    assert.throws(
+      () => cleanupFeedbackModule.runtimeCleanupFeedback({ error: false, cleanup_errors }),
+      /cleanup details/,
+    );
+  }
+});
+
+test('accelerator cleanup retains actual application and HTTP failures', async () => {
+  const message = 'Accelerator cleanup cannot run while model work or cache cleanup is active.';
+  for (const status of [200, 409]) {
+    globalThis.fetch = async () => jsonResponse({ error: true, message, cleanup_errors: [] }, status);
+    await assert.rejects(actionsModule.cleanupGpuMemory(), (error) => {
+      assert.equal(error.kind, status === 200 ? 'application' : 'http');
+      assert.equal(error.message, message);
+      return true;
+    });
+  }
 });
 
 test('GPU cleanup and Hugging Face deletion use hash-bound planning and mutation methods', async () => {

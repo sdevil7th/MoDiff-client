@@ -20,7 +20,7 @@ for (const label of [
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto('http://127.0.0.1:8088/', { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 90_000 });
-    const advanced = page.getByRole('button', { name: /Advanced workflow/u });
+    const advanced = page.getByTestId('launcher-mode-advanced_workflow');
     // Active server runs restore their workflow into a fresh browser; that is
     // not the empty-session chooser. Never modify the restored running graph.
     await expect(advanced.or(page.locator('.react-flow__node').first()).first()).toBeVisible({ timeout: 90_000 });

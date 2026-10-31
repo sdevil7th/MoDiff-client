@@ -1011,8 +1011,10 @@ def provisional_dataset_card(held_paths: list[str]) -> str:
         DATASET_CARD_PATH.read_text(encoding="utf-8").rstrip()
         + "\n\n## Provisional publication\n\n"
         + "This revision contains only the rights-approved subset and is intentionally "
-        + "incomplete. It must not be activated as MoDiff's runtime Dataset. The complete "
-        + "local asset set remains authoritative until the pending permissions are resolved.\n\n"
+        + "incomplete. Do not use the complete-set `activate` command for this revision. "
+        + "Runtime use requires a separately reviewed source-descriptor update and full "
+        + "anonymous verification of the exact approved subset. The complete authoring "
+        + "manifest and all held-file decisions remain authoritative.\n\n"
         + "Files withheld from this revision:\n\n"
         + held_list
         + "\n"
@@ -1034,8 +1036,17 @@ def stage_provisional_upload(
         if record["path"] not in approved_paths:
             continue
         repository_path = manifest_record_relative_path(record)
+        source = GALLERY_ROOT / repository_path
+        # Withheld files may already have been pruned. Approved files must
+        # still be regular, exact local bytes, with no redirected ancestor.
+        assert_safe_destination_tree(GALLERY_ROOT, source)
+        metadata, digest = inspect_regular_file(source, context="Approved Gallery asset")
+        if metadata.st_size != record["size"] or digest != record["sha256"]:
+            raise AssetPipelineError(
+                f"Approved Gallery asset does not match its manifest: {record['path']}"
+            )
         copy_asset_bytes(
-            GALLERY_ROOT / repository_path,
+            source,
             destination / "template-gallery" / repository_path,
         )
     write_json(
@@ -1194,6 +1205,11 @@ def assert_remote_manifest_matches(repo_id: str, revision: str) -> dict[str, Any
     local_rights_by_path = {
         record["path"]: record for record in local_rights["records"]
     }
+    if any(local_rights_by_path[path].get("publishDecision") != "approved"
+           for path in expected_paths):
+        raise AssetPipelineError(
+            "The approved-subset Dataset includes a held rights record."
+        )
     expected_remote_rights = {
         "schemaVersion": 1,
         "assetSetId": remote["assetSetId"],
@@ -1608,18 +1624,16 @@ def command_upload_provisional(args: argparse.Namespace) -> int:
             "Provisional upload requires --confirm-redistribution-rights for the approved subset."
         )
     validate_repo_id(args.repo_id)
-    manifest = verify_checked_manifest(require_ready=True)
+    # Validate the entire declared inventory and rights ledger without requiring
+    # local bodies for explicitly held files or re-guessing platform MIME types.
+    # The exact approved payload is materialized and verified before Hub access.
+    manifest = validate_checked_manifest_contract()
     # All local licensing and rights checks happen before authentication or
     # any other external Hub mutation.
     validate_dataset_licensing()
     ledger = validate_asset_rights(manifest, allow_held=True)
     provisional_manifest, provisional_ledger, held_paths = (
         build_provisional_publication(manifest, ledger)
-    )
-    HfApi, _, _ = require_hub()
-    api = HfApi()
-    ensure_public_repo(
-        api, args.repo_id, create=args.create, make_public=args.make_public
     )
     with tempfile.TemporaryDirectory(
         prefix="modiff-template-assets-provisional-"
@@ -1638,6 +1652,11 @@ def command_upload_provisional(args: argparse.Namespace) -> int:
             raise AssetPipelineError(
                 "The provisional publication changed during staging."
             )
+        HfApi, _, _ = require_hub()
+        api = HfApi()
+        ensure_public_repo(
+            api, args.repo_id, create=args.create, make_public=args.make_public
+        )
         result = api.upload_folder(
             repo_id=args.repo_id,
             repo_type="dataset",
@@ -1661,7 +1680,10 @@ def command_upload_provisional(args: argparse.Namespace) -> int:
     print(f"Withheld assets: {len(held_paths)}")
     for path in held_paths:
         print(f"  WITHHELD {path}")
-    print("MoDiff remains in local asset mode; this provisional revision cannot be activated.")
+    print(
+        "The application source is unchanged. Runtime use of this approved subset "
+        "requires a separately reviewed source-descriptor update and full anonymous verification."
+    )
     return 0
 
 
@@ -1679,7 +1701,8 @@ def command_verify_remote(args: argparse.Namespace) -> int:
             "No activated Dataset source exists; pass --repo-id and --revision."
         )
     if args.full:
-        manifest = validate_checked_manifest_contract()
+        # The reviewed source may select the exact rights-approved subset.
+        manifest = assert_remote_manifest_matches(repo_id, revision)
         verify_public_remote_snapshot(repo_id, revision, manifest)
     else:
         manifest = assert_remote_manifest_matches(repo_id, revision)
