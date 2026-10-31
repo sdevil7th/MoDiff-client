@@ -391,7 +391,13 @@ original task/attempt, output snapshot and executed ancestor owner.
 `validateAppliedAdapterProof(provenance, {required: true})` additionally requires
 complete evidence matched to the ordered native Lora chain and model pins for
 explicit adapter-order acceptance. Its initial strict scope
-is pinned Hub adapters with explicit names and no scheduler override. Ordinary
+is pinned Hub adapters with explicit names and no scheduler override. Submitted
+LoRA scale controls may be numeric or bounded decimal text accepted by the
+backend's finite float conversion, including decimal exponents. Only that scale
+comparison uses numeric normalization; original graph/export bytes and hashes
+remain unchanged. Empty or padded strings, non-decimal syntax, non-finite or
+out-of-range values, and coercible booleans/objects are rejected. Native observed
+scales must still be numbers, and mismatched applied scales remain failures. Ordinary
 template recording does not acquire this new requirement: historical absent-field
 proofs retain their original submitted-graph proof level. This extension grants
 no style, quality, hardware, rights or publication approval.

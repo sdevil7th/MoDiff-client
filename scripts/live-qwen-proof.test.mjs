@@ -1,5 +1,6 @@
 import { appliedOrderCase, canonicalHookCase, legacyCreatorFactoryCases } from './canonical-provenance-fixtures.mjs';
 import { canonicalJsonHash } from './canonical-json.mjs';
+import { validateAppliedAdapterSection } from './applied-adapter-provenance.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -81,6 +82,69 @@ test('optional native applied adapter proof locks exact order and distinguishes 
   const incomplete = createRunProvenance(unavailable);
   assert.deepEqual(incomplete.blockers, []);
   assert.throws(() => validateAppliedAdapterProof(incomplete, { required: true }), /unavailable/);
+});
+
+test('strict applied adapter proof compares legacy decimal scale literals without rewriting original evidence', () => {
+  for (const [submitted, observed] of [
+    ['1.5', 1.5],
+    ['0', 0],
+    ['-0.75', -0.75],
+    ['1e0', 1],
+  ]) {
+    const args = appliedOrderCase();
+    args.apiGraph.nodes['adapter-0'].params.scale.value = submitted;
+    args.executedOutput.apiGraphSnapshot = structuredClone(args.apiGraph);
+    const application = args.executedOutput.resolvedExecutionInputs.nodes[0].appliedAdapters;
+    application.adapters[0].scale = observed;
+    application.stateSha256 = `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: application.adapters })}`;
+    const before = JSON.stringify(args);
+    const proof = createRunProvenance(args);
+    assert.deepEqual(proof.blockers, []);
+    assert.equal(
+      validateAppliedAdapterProof(proof, { required: true }).owners[0].application.adapters[0].scale,
+      observed,
+    );
+    assert.equal(JSON.stringify(args), before);
+    assert.equal(args.apiGraph.nodes['adapter-0'].params.scale.value, submitted);
+    application.adapters[0].scale = observed + 0.25;
+    application.stateSha256 = `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: application.adapters })}`;
+    assert.throws(() => validateAppliedAdapterProof(createRunProvenance(args), { required: true }), /scale differs/);
+  }
+});
+
+test('strict applied adapter proof rejects ambiguous, nonfinite and coercible non-decimal scale controls', () => {
+  for (const submitted of [
+    '',
+    ' ',
+    ' 0',
+    '0 ',
+    '0x0',
+    '0b0',
+    'NaN',
+    'Infinity',
+    '1e999',
+    '20.1',
+    '-20.1',
+    '0'.repeat(65),
+    false,
+    null,
+    [],
+    {},
+  ]) {
+    const args = appliedOrderCase();
+    args.apiGraph.nodes['adapter-0'].params.scale.value = submitted;
+    args.executedOutput.apiGraphSnapshot = structuredClone(args.apiGraph);
+    assert.throws(
+      () => validateAppliedAdapterProof(createRunProvenance(args), { required: true }),
+      undefined,
+      JSON.stringify(submitted),
+    );
+  }
+  const args = appliedOrderCase();
+  const application = args.executedOutput.resolvedExecutionInputs.nodes[0].appliedAdapters;
+  application.adapters[0].scale = '0';
+  application.stateSha256 = `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: application.adapters })}`;
+  assert.throws(() => validateAppliedAdapterSection(application));
 });
 
 test('applied adapter proof rejects valid-digest order, scale, artifact and owner forgeries', () => {

@@ -99,6 +99,18 @@ const literal = (node, name) => {
   return parameter.value;
 };
 
+function scaleLiteral(node) {
+  const value = literal(node, 'scale');
+  // Historical numeric controls submit decimal text. Match the backend's
+  // finite float semantics only here; keep the graph and its identity unchanged.
+  const decimal =
+    typeof value === 'string' && value.length <= 64 && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/u.test(value);
+  assert.ok(typeof value === 'number' || decimal, 'Adapter scale must be numeric or bounded decimal text.');
+  const number = Number(value);
+  assert.ok(Number.isFinite(number) && number >= -20 && number <= 20, 'Adapter scale is outside its finite bounds.');
+  return number;
+}
+
 function orderedChain(graph, owner) {
   const byId = new Map(graph.nodes.map((node) => [node.key, node]));
   const executed = new Set(graph.paths.flat());
@@ -160,7 +172,7 @@ function verifyOwnerOrder(graph, owner, application, models, strict) {
     const name = literal(node, 'adapter_name');
     assert.ok(text(name, 128), 'Generated adapter names need a separate original-name join.');
     assert.equal(applied.adapterName, name, 'Applied adapter order/name differs.');
-    assert.equal(applied.scale, literal(node, 'scale'), 'Applied adapter scale differs.');
+    assert.equal(applied.scale, scaleLiteral(node), 'Applied adapter scale differs.');
     const selected = literal(node, 'model');
     assert.ok(selected?.source === 'hub', 'Applied artifact proof currently requires a pinned Hub adapter.');
     same(
