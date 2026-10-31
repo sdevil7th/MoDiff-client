@@ -11267,7 +11267,7 @@ test('Experimental planning cards create the exact FLUX3 Ceramic Radio graph thr
     width: 512,
     height: 512,
     num_inference_steps: 16,
-    seed: { value: 481001, isRandom: false },
+    seed: { value: 481402, isRandom: false },
   });
   expect(values('EncodePrompt')).toMatchObject({
     prompt: template.prompt,
