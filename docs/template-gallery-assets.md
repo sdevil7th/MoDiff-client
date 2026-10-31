@@ -142,7 +142,16 @@ does not delete `README.md`, `.gitattributes`, or unrelated Dataset files.
 While upstream permissions are pending, `upload-provisional` may publish only
 the ledger's approved records. It writes a blocked manifest, lists every
 withheld path in the Dataset card, verifies the public bytes anonymously, and
-has no activation option:
+has no activation option.
+
+The provisional command validates the complete checked-in inventory and rights
+ledger, then stages only approved files. Withheld local files may be absent;
+their descriptors and holds remain unchanged. Every approved file must still
+have exact local bytes and a safe regular-file path. Staging and byte verification
+finish before credential access or a Hub mutation. Complete-set verification,
+upload, activation and pruning retain their stricter complete-set requirements.
+
+For example:
 
 ```bash
 ../MoDiff/.venv/bin/python scripts/template-gallery-assets.py upload-provisional \

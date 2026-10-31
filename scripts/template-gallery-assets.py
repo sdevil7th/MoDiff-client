@@ -1036,8 +1036,17 @@ def stage_provisional_upload(
         if record["path"] not in approved_paths:
             continue
         repository_path = manifest_record_relative_path(record)
+        source = GALLERY_ROOT / repository_path
+        # Withheld files may already have been pruned. Approved files must
+        # still be regular, exact local bytes, with no redirected ancestor.
+        assert_safe_destination_tree(GALLERY_ROOT, source)
+        metadata, digest = inspect_regular_file(source, context="Approved Gallery asset")
+        if metadata.st_size != record["size"] or digest != record["sha256"]:
+            raise AssetPipelineError(
+                f"Approved Gallery asset does not match its manifest: {record['path']}"
+            )
         copy_asset_bytes(
-            GALLERY_ROOT / repository_path,
+            source,
             destination / "template-gallery" / repository_path,
         )
     write_json(
@@ -1615,18 +1624,16 @@ def command_upload_provisional(args: argparse.Namespace) -> int:
             "Provisional upload requires --confirm-redistribution-rights for the approved subset."
         )
     validate_repo_id(args.repo_id)
-    manifest = verify_checked_manifest(require_ready=True)
+    # Validate the entire declared inventory and rights ledger without requiring
+    # local bodies for explicitly held files or re-guessing platform MIME types.
+    # The exact approved payload is materialized and verified before Hub access.
+    manifest = validate_checked_manifest_contract()
     # All local licensing and rights checks happen before authentication or
     # any other external Hub mutation.
     validate_dataset_licensing()
     ledger = validate_asset_rights(manifest, allow_held=True)
     provisional_manifest, provisional_ledger, held_paths = (
         build_provisional_publication(manifest, ledger)
-    )
-    HfApi, _, _ = require_hub()
-    api = HfApi()
-    ensure_public_repo(
-        api, args.repo_id, create=args.create, make_public=args.make_public
     )
     with tempfile.TemporaryDirectory(
         prefix="modiff-template-assets-provisional-"
@@ -1645,6 +1652,11 @@ def command_upload_provisional(args: argparse.Namespace) -> int:
             raise AssetPipelineError(
                 "The provisional publication changed during staging."
             )
+        HfApi, _, _ = require_hub()
+        api = HfApi()
+        ensure_public_repo(
+            api, args.repo_id, create=args.create, make_public=args.make_public
+        )
         result = api.upload_folder(
             repo_id=args.repo_id,
             repo_type="dataset",

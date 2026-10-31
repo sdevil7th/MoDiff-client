@@ -578,6 +578,103 @@ class TemplateGalleryAssetTests(unittest.TestCase):
         self.assertIs(parsed.handler, assets.command_upload_provisional)
         self.assertFalse(hasattr(parsed, "activate"))
 
+    def test_provisional_command_stages_approved_bytes_before_hub_access(self) -> None:
+        for fault in (None, "missing", "changed", "link", "parent-link", "rights", "unsafe-held"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                gallery = root / "gallery"
+                gallery.mkdir()
+                payload = b"approved original bytes"
+                relative = "nested/approved.bin"
+                source = gallery / relative
+                source.parent.mkdir()
+                source.write_bytes(payload)
+                manifest = ready_manifest([
+                    asset_record("template-gallery/held.bin", b"withheld and absent"),
+                    asset_record("template-gallery/" + relative, payload),
+                ])
+                ledger = assets.build_rights_template(manifest)
+                ledger["records"][1].update({
+                    "publishDecision": "approved",
+                    "creatorOrRightsholder": "Unit fixture author",
+                    "creationMethod": "Original deterministic unit fixture",
+                    "sourceLicense": "not-applicable",
+                    "modelTerms": ["not-applicable"],
+                    "aiGenerated": False,
+                    "humanLikenessConsent": "not-applicable",
+                    "marks": [], "requiredAttribution": [],
+                    "assetLicense": "CC0-1.0",
+                    "reviewedBy": "Unit fixture reviewer", "reviewedAt": "2026-10-31",
+                })
+                if fault == "missing":
+                    source.unlink()
+                elif fault == "changed":
+                    source.write_bytes(b"unapproved replacement")
+                elif fault == "link":
+                    target = root / "external.bin"
+                    target.write_bytes(payload)
+                    source.unlink()
+                    self.create_symlink_or_skip(source, target)
+                elif fault == "parent-link":
+                    target = root / "external"
+                    target.mkdir()
+                    (target / "approved.bin").write_bytes(payload)
+                    source.unlink()
+                    source.parent.rmdir()
+                    self.create_symlink_or_skip(source.parent, target, target_is_directory=True)
+                elif fault == "rights":
+                    ledger["records"][0]["sha256"] = "sha256:bytes:" + "a" * 64
+                elif fault == "unsafe-held":
+                    manifest["assets"][0]["path"] = "template-gallery/../held.bin"
+                checked_manifest, checked_rights = root / "manifest.json", root / "rights.json"
+                assets.write_json(checked_manifest, manifest)
+                assets.write_json(checked_rights, ledger)
+                card = root / "README.md"
+                card.write_text("---\nlicense: apache-2.0\n---\nFixture\n", encoding="utf-8")
+                calls = []
+
+                class FakeApi:
+                    def upload_folder(self, **kwargs: object) -> SimpleNamespace:
+                        staging = Path(kwargs["folder_path"])
+                        self_path = staging / "template-gallery" / relative
+                        assert self_path.read_bytes() == payload
+                        assert not (staging / "template-gallery/held.bin").exists()
+                        calls.append(kwargs)
+                        return SimpleNamespace(oid="0123456789abcdef0123456789abcdef01234567")
+
+                def hub_after_staging():
+                    # The source must have been checked before authentication,
+                    # even when the materialized approved set is rejected.
+                    return FakeApi, None, None
+
+                with (
+                    patch.object(assets, "GALLERY_ROOT", gallery),
+                    patch.object(assets, "ASSET_MANIFEST_PATH", checked_manifest),
+                    patch.object(assets, "ASSET_RIGHTS_PATH", checked_rights),
+                    patch.object(assets, "DATASET_CARD_PATH", card),
+                    patch.object(assets, "DATASET_LICENSE_PATH", root / "absent-license"),
+                    patch.object(assets, "required_asset_paths", return_value={"held.bin", relative}),
+                    patch.object(assets, "required_assets_by_purpose",
+                                 return_value={"held.bin": {"runtime"}, relative: {"runtime"}}),
+                    patch.object(assets, "require_hub", side_effect=hub_after_staging) as hub,
+                    patch.object(assets, "ensure_public_repo"),
+                    patch.object(assets, "verify_public_provisional_snapshot"),
+                    redirect_stdout(io.StringIO()),
+                ):
+                    args = SimpleNamespace(public=True, confirm_redistribution_rights=True,
+                                           repo_id="unit-fixture/gallery", create=False, make_public=False)
+                    if fault is None:
+                        self.assertEqual(assets.command_upload_provisional(args), 0)
+                        self.assertEqual(len(calls), 1)
+                        with self.assertRaises(assets.AssetPipelineError):
+                            assets.verify_checked_manifest(require_ready=True)
+                    else:
+                        with self.assertRaises(assets.AssetPipelineError):
+                            assets.command_upload_provisional(args)
+                        hub.assert_not_called()
+                self.assertEqual(json.loads(checked_manifest.read_text(encoding="utf-8")), manifest)
+                self.assertEqual(json.loads(checked_rights.read_text(encoding="utf-8")), ledger)
+
     def test_upload_replaces_only_managed_dataset_prefixes(self) -> None:
         calls: list[dict[str, object]] = []
         remote_verification = Mock()
