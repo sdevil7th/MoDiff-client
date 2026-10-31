@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:ec61fbc1b76da02110e4a0cddc4e222026e911a6e00451f85678f66d2b32ec85",
+  "assetSetId": "sha256:canonical-json:b859b8cb1720f8fcca245726686e2d3e4c2a93e74a9be3d9d90567d93c277700",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -1234,6 +1234,25 @@
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux2_klein_multi_reference",
       "consumingTemplateIds": ["flux2_klein_multi_reference"]
+    },
+    {
+      "path": "template-gallery/inputs/flux3-packaging-protected-photo-mask-v1.png",
+      "sha256": "sha256:bytes:d36162153e2009e0b2f3a711825d39e67c02ba3577971a444bd92eebe81169ac",
+      "publishDecision": "hold",
+      "holdReason": "Complete and independently review the redistribution-rights record for these exact bytes.",
+      "creatorOrRightsholder": null,
+      "creationMethod": null,
+      "sourceUrl": null,
+      "sourceRevision": null,
+      "sourceLicense": null,
+      "modelTerms": [],
+      "aiGenerated": null,
+      "humanLikenessConsent": null,
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": null,
+      "reviewedBy": null,
+      "reviewedAt": null
     },
     {
       "path": "template-gallery/inputs/flux_control_canny.before.png",

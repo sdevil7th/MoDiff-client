@@ -128,7 +128,7 @@ test('approved named source images bind ordinary one- and ordered two-reference 
       const resolution = inputs.resolveTemplateInputs(value);
       assert.deepEqual(resolution.missingLabels, []);
       assert.deepEqual(resolution.downstreamBindings, []);
-      const binding = resolution.templateDefaultBindings[0];
+      const binding = resolution.templateDefaultBindings.find((item) => item.field === 'referenceImages');
       assert.equal(binding.origin, 'template');
       assert.equal(binding.field, 'referenceImages');
       assert.equal(binding.defaultAssets.length, count);
@@ -145,7 +145,16 @@ test('approved named source images bind ordinary one- and ordered two-reference 
       );
       assert.equal(new Set(binding.defaultAssets.map((asset) => asset.runtimeSha256)).size, count);
       assert.match(value.prompt, /reference image 1/i);
-      if (count === 2) assert.match(value.example.notes, /not ControlNet/);
+      if (count === 2) {
+        assert.match(value.example.notes, /no native Fill claim/);
+        const mask = resolution.templateDefaultBindings.find((item) => item.field === 'maskImage');
+        assert.equal(mask.defaultAssets.length, 1);
+        assert.equal(
+          mask.defaultAssets[0].runtimeSha256,
+          'sha256:bytes:d36162153e2009e0b2f3a711825d39e67c02ba3577971a444bd92eebe81169ac',
+        );
+        assert.deepEqual(value.example.galleryExpectedOutput, { width: 1024, height: 1024 });
+      }
     }
   }
 });
@@ -222,8 +231,9 @@ test('selected NASA and Monet candidates bind exact adapters and prompts without
       weightName: 'nsc7-style-lora.safetensors',
       adapterName: 'nsc7',
       scale: 0.75,
+      seed: 481205,
       prompt:
-        'An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style',
+        'One complete rotating ring habitat above Earth, seen from outside in three-quarter view. A single continuous white torus surrounds a plain central hub. Warm sunlight falls across the curved structure against deep blue space, with a small view of Earth below. Every hardware surface is blank and unmarked. One habitat fills a balanced square composition, without people, other spacecraft, plants, flowers, grass or stems. No writing, letters, numbers, labels, logos, emblems, watermarks, signatures, border or frame. nsc7 style',
     },
     {
       id: 'flux3_klein_base_fp8r512_lora_style',
@@ -233,9 +243,10 @@ test('selected NASA and Monet candidates bind exact adapters and prompts without
       byteSize: 80381072,
       weightName: 'mnt_oil_klein3.safetensors',
       adapterName: 'mnt_oil',
-      scale: 1,
+      scale: 0.65,
+      seed: 481405,
       prompt:
-        'mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.',
+        'mnt_oil, a full-bleed impressionist oil painting of a single red fox walking through sunlit meadow grass beside a quiet woodland pond. The fox has a clear natural silhouette, one head, one bushy tail and coherent legs. Loose broken brushstrokes and luminous green and gold reflections contrast with soft blue shadows. Grass, reeds, water and dappled foliage fill the entire square canvas from edge to edge. The lower corners are softly painted meadow grass and pond reflections, continuous with the rest of the scene. A simple peaceful composition, natural morning light, no people, no lettering, no frame.',
     },
   ];
   for (const expected of candidates) {
@@ -261,12 +272,18 @@ test('selected NASA and Monet candidates bind exact adapters and prompts without
     assert.equal(value.prompt, expected.prompt);
     assert.equal(value.description, expected.prompt);
     assert.equal(value.negativePrompt, '');
+    assert.equal(value.example.lockedSeed, expected.seed);
     assert.match(value.label, /Test Candidate/);
     assert.match(value.example.blockReason, /output publication approval/);
     assert.match(value.example.notes, /model_cpu.*autoOffload=true/);
     assert.match(value.example.notes, /none.*autoOffload=false/);
     assert.match(value.promptGuide.modelHints.join(' '), /FLUX Kommunity License/);
   }
+});
+
+test('revised plain-radio recipes retain distinct tested seeds', () => {
+  assert.equal(card('flux3_klein_fp8r512_text_to_image').example.lockedSeed, 481402);
+  assert.equal(card('flux3_klein_base_fp8r512_text_to_image').example.lockedSeed, 481401);
 });
 
 // Complete source inputs are not native output, fit or publication proof.
@@ -335,6 +352,10 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
   );
   const descriptors = choices.parseWorkflowModelDescriptors(payload, support);
   const registry = structuredClone(captured.registry);
+  const utilities = JSON.parse(
+    await readFile(path.join(ROOT, 'tests/fixtures/template-image-composite-utilities.v1.json'), 'utf8'),
+  );
+  Object.assign(registry, structuredClone(utilities.registry));
   const registryBefore = structuredClone(registry);
   for (const id of ids) {
     const value = card(id);
@@ -371,9 +392,11 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
     assert.equal(device, 'cpu:0', 'use the actual captured CPU fixture device, not a GPU claim');
     for (const [, key] of starter.authoring.roles)
       assert.ok(value.requiredBackendCapabilities.includes(key), `${id}: declared creator role ${key}`);
-    const assets = inputs
-      .resolveTemplateInputs(value)
-      .templateDefaultBindings.flatMap((binding) => binding.defaultAssets);
+    const defaultBindings = inputs.resolveTemplateInputs(value).templateDefaultBindings;
+    const assets = defaultBindings
+      .filter((binding) => binding.field === 'referenceImages')
+      .flatMap((binding) => binding.defaultAssets);
+    const maskAsset = defaultBindings.find((binding) => binding.field === 'maskImage')?.defaultAssets[0];
     // These do not resolve or copy public assets: the real upload service would
     // supply managed input paths after normal hash verification.
     const references = assets.map((asset, index) => `unit-managed-inputs/${id}/${index}-${asset.fileName}`);
@@ -384,6 +407,7 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
       modelType: value.modelType,
       device,
       referenceImages: references,
+      maskImage: maskAsset ? `unit-managed-inputs/${id}/${maskAsset.fileName}` : '',
     };
     assert.equal(Object.hasOwn(form, 'modelRepo'), false, 'Normal creator form does not store the loader repository.');
     assert.deepEqual(
@@ -473,8 +497,11 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
       );
     }
     if (value.mode === 'edit_image') {
-      const image = nodeFor('modules.Image', 'Load');
       const encoder = nodeFor('modules.ModularDiffusers', 'ImageEncode');
+      const imageWire = graph.edges.find((item) => item.target === encoder.id && item.targetHandle === 'image');
+      const image = graph.nodes.find((item) => item.id === imageWire.source);
+      assert.equal(image.data.module, 'modules.Image');
+      assert.equal(image.data.action, 'Load');
       assert.deepEqual(image.data.params.file.value, references, `${id}: preserve ordered references`);
       assert.equal(references.length, value.inputRequirements.referenceImages);
       edge(owner, 'vae_out', encoder, 'vae');
@@ -500,6 +527,120 @@ test('all ten fixed-input planning cards create exact ordinary FP8r task graphs'
       const guider = nodeFor('modules.ModularDiffusers', 'Guider');
       assert.equal(guider.data.params.guidance_scale.value, 3.5);
       edge(guider, 'guider_out', denoise, 'guider');
+    }
+    if (id.endsWith('_multi_reference_edit')) {
+      const settings = {
+        backgroundReferenceIndex: 1,
+        foregroundSize: { width: 768, height: 768 },
+        verticalPad: { width: 768, height: 1280 },
+        horizontalPad: { width: 1024, height: 1280 },
+        crop: { x: 0, y: value.modelType === 'Flux3ModularPipeline' ? 165 : 205, width: 1024, height: 1024 },
+        maskChannel: 'luminance',
+        invertMask: false,
+      };
+      const composedTemplate = {
+        ...value,
+        workflowBlocks: ['masked_composite'],
+        workflowBlockSettings: { maskedComposite: settings },
+      };
+      const composedForm = { ...form, maskImage: 'unit-managed-inputs/protected-photo-mask.png' };
+      const compose = (template = composedTemplate, currentForm = composedForm, nodes = registry) =>
+        creator.createTemplateOperationGraph(template, currentForm, starter, nodes, spec, capability, {
+          workflowModelDescriptors: descriptors,
+        });
+      const groupedComposite = compose();
+      const composed = flow.expandFlowExecutionGraph(groupedComposite.nodes, groupedComposite.edges);
+      const byAction = (module, action) =>
+        composed.nodes.filter((node) => node.data.module === module && node.data.action === action);
+      assert.equal(byAction('modules.ModularDiffusers', 'ModelsLoader').length, 1);
+      const exported = flow.useFlowStore.getState().exportGraph('composite-source-unit', undefined, {
+        sourceGraph: groupedComposite,
+        randomizeSeeds: false,
+      });
+      const baseline = flow.useFlowStore.getState().exportGraph('composite-baseline-unit', undefined, {
+        sourceGraph: grouped,
+        randomizeSeeds: false,
+      });
+      const loaderCall = (api) => Object.values(api.nodes).find((node) => node.action === 'ModelsLoader').params;
+      assert.deepEqual(
+        loaderCall(exported),
+        loaderCall(baseline),
+        'composition never changes the executable model recipe',
+      );
+      assert.equal(byAction('modules.Image', 'Load').length, 3);
+      const masks = byAction('modules.Image', 'Load').filter(
+        (node) => JSON.stringify(node.data.params.file.value) === JSON.stringify([composedForm.maskImage]),
+      );
+      assert.equal(masks.length, 1);
+      const backgrounds = byAction('modules.Image', 'Load').filter(
+        (node) => JSON.stringify(node.data.params.file.value) === JSON.stringify([references[1]]),
+      );
+      assert.equal(backgrounds.length, 1, 'background is the second reference, preserving the generation input order');
+      const resizes = byAction('modules.Image', 'Resize');
+      assert.deepEqual(
+        resizes.map((node) =>
+          ['width', 'height', 'method', 'interpolation', 'multiple_of'].map((k) => node.data.params[k].value),
+        ),
+        [
+          [768, 768, 'stretch', 'lanczos', 1],
+          [768, 1280, 'pad', 'lanczos', 1],
+          [1024, 1280, 'pad', 'lanczos', 1],
+        ],
+      );
+      const crops = byAction('modules.ImageOperations', 'CropImage');
+      assert.equal(crops.length, 1);
+      assert.equal(crops[0].data.params.y.value, settings.crop.y);
+      const composites = byAction('modules.ImageOperations', 'MaskComposite');
+      const saves = byAction('modules.Image', 'Save');
+      assert.equal(composites.length, 1);
+      assert.equal(saves.length, 1);
+      assert.equal(saves[0].data.params.saved_images.fieldOptions.format, 'PNG');
+      assert.match(saves[0].data.params.filename.value, /\.png$/u);
+      for (const [source, output, target, input] of [
+        [backgrounds[0], 'image', composites[0], 'background'],
+        [masks[0], 'image', composites[0], 'mask'],
+        [crops[0], 'output', composites[0], 'foreground'],
+        [composites[0], 'output', saves[0], 'image'],
+      ])
+        assert.equal(
+          composed.edges.filter(
+            (e) =>
+              e.source === source.id && e.sourceHandle === output && e.target === target.id && e.targetHandle === input,
+          ).length,
+          1,
+        );
+      assert.equal(Object.values(exported.nodes).filter((node) => node.action === 'MaskComposite').length, 1);
+      assert.equal(Object.values(exported.nodes).filter((node) => node.action === 'Save').length, 1);
+      assert.throws(() => compose(composedTemplate, { ...composedForm, maskImage: '' }), /protection mask/);
+      assert.throws(() => compose(composedTemplate, { ...composedForm, batchSize: 2 }), /one image per prompt/);
+      assert.throws(
+        () =>
+          compose({
+            ...composedTemplate,
+            workflowBlockSettings: {
+              maskedComposite: { ...settings, backgroundReferenceIndex: 2 },
+            },
+          }),
+        /existing ordered reference/,
+      );
+      assert.throws(
+        () =>
+          compose({
+            ...composedTemplate,
+            workflowBlockSettings: {
+              maskedComposite: { ...settings, crop: { ...settings.crop, y: -1 } },
+            },
+          }),
+        /crop origin/,
+      );
+      const lossyRegistry = structuredClone(registry);
+      delete lossyRegistry['modules.Image.Save'].params.saved_images.fieldOptions;
+      assert.throws(() => compose(composedTemplate, composedForm, lossyRegistry), /lossless Save Image/);
+      for (const key of Object.keys(utilities.registry)) {
+        const missing = structuredClone(registry);
+        delete missing[key];
+        assert.throws(() => compose(composedTemplate, composedForm, missing), /backend registry is missing/);
+      }
     }
     assert.equal(
       graph.nodes.some((node) => node.data.module === 'modules.HuggingFaceTransformers'),

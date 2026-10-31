@@ -563,6 +563,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/flux3-packaging-protected-photo-mask-v1.png",
+      "size": 1524,
+      "sha256": "sha256:bytes:d36162153e2009e0b2f3a711825d39e67c02ba3577971a444bd92eebe81169ac",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/flux_control_canny.before.png",
       "size": 22013,
       "sha256": "sha256:bytes:3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339",
@@ -3603,9 +3614,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:ec61fbc1b76da02110e4a0cddc4e222026e911a6e00451f85678f66d2b32ec85",
+  "assetSetId": "sha256:canonical-json:b859b8cb1720f8fcca245726686e2d3e4c2a93e74a9be3d9d90567d93c277700",
   "status": "ready",
-  "assetCount": 360,
-  "totalBytes": 488731153,
+  "assetCount": 361,
+  "totalBytes": 488732677,
   "missingAssets": []
 }

@@ -156,14 +156,17 @@ comparison and the Windows validation procedure.
 The two FLUX 3 style planning candidates now name the selected immutable
 adapters: [NASA concept art](https://huggingface.co/kocabiyik/nsc7-style-lora/blob/9b998d3bdc3b4aeb2113ab4e8cbd9fe2ebfa1cae/README.md)
 for Distilled at scale `0.75`, and [Monet oil painting](https://huggingface.co/pjecuacion/flux3-klein-mnt-oil-monet-lora/blob/0d94b6a4601892499defd8c5d89c24f78e78043b/README.md)
-for Base at scale `1`. Both cards declare the
+for Base at scale `0.65`. Both cards declare the
 [FLUX Kommunity License v1.0](https://huggingface.co/black-forest-labs/flux-3-image-klein-base/blob/1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4/LICENSE.md).
 Their training-data provenance is the authors' statement, not independent rights
 verification. The Base planning candidate explicitly replaces Tarot; saved Tarot
 workflows and historical evidence keep their original identities.
 
-These candidates retain the exact radio and fox prompts, seeds `481005` and
-`481105`, 512-square FP8r/BF16 recipes, 16/50 steps and guidance 1/3.5. PUP remains
+The revised candidates use the ring-habitat and meadow-fox prompts, seeds
+`481205` and `481405`, 512-square FP8r/BF16 recipes, 16/50 steps and guidance 1/3.5.
+The original radio/fox recipes and their failed outputs retain their historical
+identities. The two plain-radio candidates use revised two-front-control prompts
+and seeds `481402` (Distilled) and `481401` (Base). PUP remains
 disabled. The locked public settings are Expert with no offload and
 `autoOffload=false`. Successful local `model_cpu` / `autoOffload=true` trials
 are a separate recipe and cannot qualify these locks. NASA's advertised style
@@ -173,6 +176,18 @@ signatures. Both candidates remain blocked planning entries without public media
 template qualification, Gallery eligibility, hardware-fit proof or output
 publication approval. Adapter terms and local test consent do not approve an
 output's publication.
+
+The two packaging planning recipes preserve the ordered model references, then
+compose the generated photograph onto the second reference using ordinary image
+nodes. The declared mask protects all pixels outside the photo panel. Three
+explicit Lanczos resize/pad operations precede a 1024-square crop at `y=205`
+(Distilled) or `y=165` (Base), followed by Mask Composite and Save Image. The
+generation remains 512-square; the composited Gallery image is 1024-square PNG.
+This is generated plus composited media, without a native Fill claim. Creation
+requires the declared mask, a single-image batch and the paired backend's PNG
+Save Image preview contract. The authored mask and selected output media must be
+published and verified through the normal asset contract before Gallery admission.
+Existing saved graphs retain their own nodes, settings and outputs.
 
 A complete recipe may remain a blocked planning template while its exact output
 and visual quality are unqualified. The Gallery runner's explicit

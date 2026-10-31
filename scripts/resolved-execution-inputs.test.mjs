@@ -219,6 +219,75 @@ test('actual mocked DDIM native accounting survives history without changing leg
   assert.equal(JSON.stringify(inputs.coerceResolvedExecutionInputs(legacy, identity)), before);
 });
 
+test('the actual Python image utility producer retains scoped controls and ordered hashes in history', () => {
+  const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    `${backend}.venv/${process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'}`;
+  const produced = spawnSync(
+    python,
+    [
+      '-B',
+      '-c',
+      String.raw`
+import json
+from modiff.execution_input_provenance import capture_generation_inputs, build_resolved_execution_inputs
+cases = [
+ ('Image','Load',{'alpha_channel':'ignore','source_hashes':['a'*64,'b'*64], 'source_widths':[512,1024], 'source_heights':[512,1024], 'source_modes':['RGB','L']}),
+ ('Image','Resize',{'width':768,'height':1280,'method':'pad','multiple_of':1,'interpolation':'lanczos'}),
+ ('ImageOperations','ResizeImage',{'fit_mode':'contain','resampling':'bicubic'}),
+ ('ImageOperations','CropImage',{'x':0,'y':165,'width':1024,'height':1024}),
+ ('ImageOperations','MaskComposite',{'mask_channel':'luminance','invert_mask':False}),
+ ('Image','Save',{'filename':'studio/outputs/composite_{HASH:12}.png','quality':100}),
+]
+nodes, records = {}, {}
+for i,(module,action,values) in enumerate(cases):
+ key='node-'+str(i)
+ node={'module':'modules.'+module,'action':action,'params':({'image':{'sourceId':'node-'+str(i-1),'sourceKey':'output'}} if i else {})}
+ nodes[key]=node
+ records[key]=capture_generation_inputs(key,node,{**values,'token':'not-evidence'})
+receipt=build_resolved_execution_inputs({'nodes':nodes},records,task_id='protocol-only',attempt_index=0,node_id='node-5')
+print(json.dumps(receipt))
+`,
+    ],
+    { cwd: backend, encoding: 'utf8', maxBuffer: 300_000 },
+  );
+  assert.equal(produced.status, 0, produced.stderr);
+  const capture = JSON.parse(produced.stdout);
+  const original = JSON.stringify(capture);
+  const identity = { taskId: capture.taskId, attemptIndex: 0, nodeId: capture.nodeId };
+  const parsed = inputs.coerceResolvedExecutionInputs(capture, identity);
+  assert.ok(parsed, 'the compatible client must retain the genuine producer contract');
+  const load = parsed.nodes.find((node) => node.action === 'Load');
+  assert.deepEqual(load.fields.source_hashes.value, ['a'.repeat(64), 'b'.repeat(64)]);
+  assert.deepEqual(load.fields.source_modes.value, ['RGB', 'L']);
+  assert.equal(parsed.nodes.find((node) => node.action === 'CropImage').fields.y.value, 165);
+  assert.equal(parsed.nodes.find((node) => node.action === 'MaskComposite').fields.invert_mask.value, false);
+  assert.equal(JSON.stringify(capture), original, 'no receipt rewrites');
+  assert.equal(original.includes('not-evidence'), false);
+  const restored = contracts.coerceStudioOutput({
+    id: 'image-utility-protocol',
+    url: '/fixture.png',
+    ...identity,
+    resolvedExecutionInputs: capture,
+  });
+  assert.deepEqual(restored.resolvedExecutionInputs, parsed);
+  const moved = structuredClone(capture);
+  moved.nodes[0].action = 'UnreviewedAction';
+  assert.equal(
+    inputs.coerceResolvedExecutionInputs(moved, identity),
+    undefined,
+    'scoped fields cannot move to another action',
+  );
+  const reordered = structuredClone(capture);
+  reordered.nodes.find((node) => node.action === 'Load').fields.source_hashes.value.reverse();
+  assert.equal(
+    inputs.coerceResolvedExecutionInputs(reordered, identity),
+    undefined,
+    'a summary cannot borrow reordered input evidence',
+  );
+});
+
 test('optional accounting rejects unknown scopes, objects, origins, projections and incomplete claims', () => {
   const { receipt: original } = actualDdimAccountingFixture();
   const identity = { taskId: original.taskId, attemptIndex: original.attemptIndex, nodeId: original.nodeId };

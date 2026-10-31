@@ -1,0 +1,368 @@
+{
+  "schemaVersion": 1,
+  "proofScope": "Isolated actual registry metadata for ordinary image utility authoring; no executable node construction, weights, native output or hardware qualification.",
+  "producer": "scripts/template-operation-fixtures.py with empty selections; only four complete utility leaves retained.",
+  "sourceHashes": {
+    "modules/Image/main.py": "957efd1312a290d7250fe2d5a9d858b0f98808552c197f5ba9a5642bc4b18ed2",
+    "modules/ImageOperations/main.py": "9e39d703ad9638e2fdc147dba56246b3fa0fcbb5f67f582a5428b0c6353fc777",
+    "modiff/server.py": "9a4999e7168c21f83f1d9af6ee89525c7d3803ff72c311533933d6e342998f72",
+    "scripts/template-operation-fixtures.py": "e335a21e22cfd4eb0e17301c1d4e2d2f380792b6e03da77f017aa5c15e8cd84b"
+  },
+  "registry": {
+    "modules.Image.Resize": {
+      "module": "modules.Image",
+      "action": "Resize",
+      "type": "custom",
+      "label": "Resize",
+      "category": "image",
+      "description": "Resize an image or a list of images",
+      "resizable": false,
+      "skipParamsCheck": false,
+      "style": {},
+      "params": {
+        "image": {
+          "type": "image",
+          "display": "input"
+        },
+        "method": {
+          "type": "string",
+          "default": "stretch",
+          "options": [
+            {
+              "schemaVersion": 1,
+              "value": "stretch",
+              "label": "stretch",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "cover",
+              "label": "cover",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "contain",
+              "label": "contain",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "fit",
+              "label": "fit",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "pad",
+              "label": "pad",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            }
+          ],
+          "description": "\n                   The method to use to resize the image.\n                   `Stretch` will stretch the image to the given width and height.\n                   `Cover` will resize to the maximum dimension that fits the given size keeping the aspect ratio.\n                   `Contain` will resize to the minimum dimension that fits the given size keeping the aspect ratio.\n                   `Fit` will resize to the given size and crop the excess.\n                   `Pad` will resize to the given size and pad the excess space with black.\n                    "
+        },
+        "width": {
+          "type": "int",
+          "default": 1024
+        },
+        "height": {
+          "type": "int",
+          "default": 1024
+        },
+        "multiple_of": {
+          "label": "Multiple of",
+          "type": "int",
+          "default": 1,
+          "min": 1,
+          "description": "Ensure the resulting width and height are multiples of this value."
+        },
+        "interpolation": {
+          "default": "bicubic",
+          "options": [
+            {
+              "schemaVersion": 1,
+              "value": "nearest",
+              "label": "nearest",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "box",
+              "label": "box",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "bilinear",
+              "label": "bilinear",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "hamming",
+              "label": "hamming",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "bicubic",
+              "label": "bicubic",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "lanczos",
+              "label": "lanczos",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            }
+          ]
+        },
+        "output": {
+          "label": "Image",
+          "type": "image",
+          "display": "output"
+        }
+      },
+      "time": [0, 0, 0],
+      "memory": [0, 0, 0],
+      "cache": false
+    },
+    "modules.Image.Save": {
+      "module": "modules.Image",
+      "action": "Save",
+      "type": "custom",
+      "label": "Save Image",
+      "category": "image",
+      "description": "Save an image to a file",
+      "resizable": true,
+      "skipParamsCheck": false,
+      "style": {
+        "minWidth": 360
+      },
+      "params": {
+        "image": {
+          "label": "Image",
+          "display": "input",
+          "type": "image"
+        },
+        "filename": {
+          "label": "File",
+          "type": "str",
+          "default": "{PATH:images}/MoDiff_{HASH:6}.webp"
+        },
+        "quality": {
+          "label": "Quality",
+          "type": "int",
+          "display": "slider",
+          "default": 100,
+          "min": 1,
+          "max": 100
+        },
+        "metadata": {
+          "label": "PNG Metadata",
+          "display": "textarea",
+          "type": "text",
+          "default": "",
+          "description": "Optional JSON metadata to embed into PNG outputs."
+        },
+        "output": {
+          "label": "Filename",
+          "display": "output",
+          "type": "str"
+        },
+        "saved_image_data": {
+          "label": "Saved Images",
+          "display": "output",
+          "type": "image",
+          "hidden": true
+        },
+        "saved_images": {
+          "label": "Saved Images",
+          "display": "ui_image",
+          "type": "url",
+          "dataSource": "saved_image_data",
+          "fieldOptions": {
+            "format": "PNG"
+          }
+        }
+      },
+      "time": [0, 0, 0],
+      "memory": [0, 0, 0],
+      "cache": false
+    },
+    "modules.ImageOperations.CropImage": {
+      "module": "modules.ImageOperations",
+      "action": "CropImage",
+      "type": "custom",
+      "label": "Crop Image",
+      "category": "Image Operations",
+      "description": "Crop images to one explicit bounded rectangle.",
+      "resizable": false,
+      "skipParamsCheck": false,
+      "style": {},
+      "params": {
+        "image": {
+          "label": "Image",
+          "display": "input",
+          "type": "image"
+        },
+        "x": {
+          "label": "Left",
+          "type": "int",
+          "default": 0,
+          "min": 0,
+          "max": 32767
+        },
+        "y": {
+          "label": "Top",
+          "type": "int",
+          "default": 0,
+          "min": 0,
+          "max": 32767
+        },
+        "width": {
+          "label": "Width (0 = remaining)",
+          "type": "int",
+          "default": 0,
+          "min": 0,
+          "max": 32768
+        },
+        "height": {
+          "label": "Height (0 = remaining)",
+          "type": "int",
+          "default": 0,
+          "min": 0,
+          "max": 32768
+        },
+        "output": {
+          "label": "Cropped Image",
+          "display": "output",
+          "type": "image"
+        },
+        "output_width": {
+          "label": "Width",
+          "display": "output",
+          "type": "int"
+        },
+        "output_height": {
+          "label": "Height",
+          "display": "output",
+          "type": "int"
+        }
+      },
+      "time": [0, 0, 0],
+      "memory": [0, 0, 0],
+      "cache": false
+    },
+    "modules.ImageOperations.MaskComposite": {
+      "module": "modules.ImageOperations",
+      "action": "MaskComposite",
+      "type": "custom",
+      "label": "Composite Images with Mask",
+      "category": "Image Operations",
+      "description": "Composite one foreground over one background through a bounded mask.",
+      "resizable": false,
+      "skipParamsCheck": false,
+      "style": {},
+      "params": {
+        "background": {
+          "label": "Background",
+          "display": "input",
+          "type": "image"
+        },
+        "foreground": {
+          "label": "Foreground",
+          "display": "input",
+          "type": "image"
+        },
+        "mask": {
+          "label": "Mask",
+          "display": "input",
+          "type": "image"
+        },
+        "mask_channel": {
+          "label": "Mask Channel",
+          "type": "string",
+          "options": [
+            {
+              "schemaVersion": 1,
+              "value": "luminance",
+              "label": "luminance",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "alpha",
+              "label": "alpha",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "red",
+              "label": "red",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "green",
+              "label": "green",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            },
+            {
+              "schemaVersion": 1,
+              "value": "blue",
+              "label": "blue",
+              "compatibility": "compatible",
+              "availability": "installed",
+              "installationState": "installed"
+            }
+          ],
+          "default": "luminance"
+        },
+        "invert_mask": {
+          "label": "Invert Mask",
+          "type": "bool",
+          "default": false
+        },
+        "output": {
+          "label": "Composite",
+          "display": "output",
+          "type": "image"
+        }
+      },
+      "time": [0, 0, 0],
+      "memory": [0, 0, 0],
+      "cache": false
+    }
+  }
+}

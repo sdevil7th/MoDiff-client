@@ -101,7 +101,8 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
             for key in ("modules.ImageOperations.ProcessImage", "modules.ModularDiffusers.Lora",
                         "modules.ModularDiffusers.QuantizationConfigNode",
                         "modules.DiffusersImage.LoadAdapter",
-                        "modules.Spandrel.Upscaler", "modules.Image.Preview",
+                        "modules.Spandrel.Upscaler", "modules.Image.Preview", "modules.Image.Resize",
+                        "modules.Image.Save", "modules.ImageOperations.CropImage", "modules.ImageOperations.MaskComposite",
                         "modules.DiffusersImage.OutpaintCanvas", "modules.Audio.Export", "modules.Audio.Load", "modules.Image.Load",
                         "modules.DiffusersAudio.LoadAdapter"):
                 describe(key)

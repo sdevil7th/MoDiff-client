@@ -1293,7 +1293,7 @@ export type StudioTemplateIntentGroup =
   | 'planning';
 
 export type StudioTemplateWorkflowBlock =
-  'lora' | 'upscaler' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack' | 'lyric_video';
+  'lora' | 'upscaler' | 'masked_composite' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack' | 'lyric_video';
 
 export type StudioTemplateModelArtifact = {
   source: 'hub' | 'local';
@@ -1328,6 +1328,15 @@ export type StudioTemplateLoraSettings = {
 };
 
 export type StudioTemplateWorkflowBlockSettings = {
+  maskedComposite?: {
+    backgroundReferenceIndex: number;
+    foregroundSize: { width: number; height: number };
+    verticalPad: { width: number; height: number };
+    horizontalPad: { width: number; height: number };
+    crop: { x: number; y: number; width: number; height: number };
+    maskChannel: 'luminance' | 'alpha' | 'red' | 'green' | 'blue';
+    invertMask: boolean;
+  };
   lora?: StudioTemplateLoraSettings;
   upscaler?: {
     model: StudioTemplateModelArtifact;

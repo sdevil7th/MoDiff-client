@@ -1,4 +1,5 @@
 import { attachPromptEnhancementParents } from './promptEnhancementAuthoring';
+import { attachTemplateImageComposite } from './templateImageComposite';
 import { selectedAudioAdapterPolicy } from '../workflow/selectedAudioAdapterAuthority';
 import {
   validateModelSetupAdapterSelection,
@@ -496,6 +497,16 @@ export function createTemplateOperationGraph(
             link.targetHandles,
           );
       }
+    } else if (block === 'masked_composite') {
+      attachTemplateImageComposite({
+        graph,
+        form,
+        settings: template.workflowBlockSettings?.maskedComposite,
+        preview: roles.get('preview'),
+        utility,
+        set,
+        connect,
+      });
     } else if (block === 'upscaler') {
       const preview = roles.get('preview');
       const input = graph.edges.find((edge) => edge.target === preview?.id && edge.targetHandle === 'image');

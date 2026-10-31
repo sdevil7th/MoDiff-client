@@ -3,6 +3,7 @@ import type {
   StudioTemplate,
   StudioTemplateExample,
   StudioTemplateId,
+  StudioTemplateInputBinding,
   StudioTemplateIntentGroup,
   StudioTemplateLockedSettings,
   StudioTemplateMediaSlot,
@@ -3966,13 +3967,55 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
   };
 }
 
+const TWO_CONTROL_RADIO_PROMPT =
+  'An original studio product photograph of one compact ceramic field radio on a pale limestone plinth. Its warm ivory glazed body has a flat top and smooth sides. All user controls are on the front: exactly two circular brass knobs arranged vertically in a narrow strip at the far left, beside one dark woven speaker grille. No controls on the top or sides, and no other knobs, buttons, switches, gauges or badges. Show the radio in front three-quarter view with generous negative space, soft daylight from the left, realistic grounded contact shadows and fine ceramic, brass, woven fabric and limestone texture. Unbranded, quiet neutral background and restrained colors. No people, logos or readable text.';
+const RING_HABITAT_PROMPT =
+  'One complete rotating ring habitat above Earth, seen from outside in three-quarter view. A single continuous white torus surrounds a plain central hub. Warm sunlight falls across the curved structure against deep blue space, with a small view of Earth below. Every hardware surface is blank and unmarked. One habitat fills a balanced square composition, without people, other spacecraft, plants, flowers, grass or stems. No writing, letters, numbers, labels, logos, emblems, watermarks, signatures, border or frame. nsc7 style';
+const MEADOW_FOX_PROMPT =
+  'mnt_oil, a full-bleed impressionist oil painting of a single red fox walking through sunlit meadow grass beside a quiet woodland pond. The fox has a clear natural silhouette, one head, one bushy tail and coherent legs. Loose broken brushstrokes and luminous green and gold reflections contrast with soft blue shadows. Grass, reeds, water and dappled foliage fill the entire square canvas from edge to edge. The lower corners are softly painted meadow grass and pond reflections, continuous with the rest of the scene. A simple peaceful composition, natural morning light, no people, no lettering, no frame.';
+
+function protectedPhotoMaskBinding(id: StudioTemplateId): StudioTemplateInputBinding {
+  return {
+    id: `${id}-protection-mask`,
+    label: 'Authored photo-panel protection mask',
+    mediaType: 'image',
+    origin: 'template',
+    requiredAt: 'workflow_start',
+    field: 'maskImage',
+    defaultAssets: [
+      {
+        id: 'packaging-photo-protection-mask-v1',
+        label: 'Photo-panel edit area; all other guide pixels protected',
+        mediaType: 'image',
+        runtimePath: '/template-gallery/inputs/flux3-packaging-protected-photo-mask-v1.png',
+        runtimeSha256: 'sha256:bytes:d36162153e2009e0b2f3a711825d39e67c02ba3577971a444bd92eebe81169ac',
+        fileName: 'flux3-packaging-protected-photo-mask-v1.png',
+      },
+    ],
+  };
+}
+
+function protectedPhotoSettings(cropTop: number): StudioTemplateWorkflowBlockSettings {
+  return {
+    maskedComposite: {
+      backgroundReferenceIndex: 1,
+      foregroundSize: { width: 768, height: 768 },
+      verticalPad: { width: 768, height: 1280 },
+      horizontalPad: { width: 1024, height: 1280 },
+      crop: { x: 0, y: cropTop, width: 1024, height: 1024 },
+      maskChannel: 'luminance',
+      invertMask: false,
+    },
+  };
+}
+
 const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   ...BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow),
   // Kept in PLANNING_STUDIO_TEMPLATES until exact runtime/media/rights review.
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_text_to_image',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - Text to Image: Ceramic Radio',
+      label: 'FLUX 3 Distilled Quick 512 FP8r - Text to Image: Ceramic Radio v2',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'text_to_image',
       modelType: 'Flux3DistilledModularPipeline',
@@ -3995,15 +4038,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       vramEstimate:
         'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
-      description:
-        'Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.',
+      description: TWO_CONTROL_RADIO_PROMPT,
       userGoal:
         'Inspect the ordinary editable graph and select only the declared runtime and prompt enhancement choices.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
         status: 'blocked',
-        lockedSeed: 481001,
+        lockedSeed: 481402,
         modelRevision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
         lockedSettings: {
           width: 512,
@@ -4039,10 +4081,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         ],
       },
     },
-    [
-      'Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.',
-      '',
-    ],
+    [TWO_CONTROL_RADIO_PROMPT, ''],
     -1,
   ),
   withTemplateRecipeDefaults(
@@ -4149,7 +4188,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_multi_reference_edit',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - Two-Reference Edit: Glass Packaging',
+      label: 'FLUX 3 Distilled Quick 512 FP8r - Two-Reference Edit + Protected Packaging v2',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'edit_image',
       modelType: 'Flux3DistilledModularPipeline',
@@ -4163,6 +4202,10 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         revision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
       },
       requiredBackendCapabilities: [
+        'modules.Image.Save',
+        'modules.ImageOperations.MaskComposite',
+        'modules.ImageOperations.CropImage',
+        'modules.Image.Resize',
         'modules.ModularDiffusers.ModelsLoader',
         'modules.ModularDiffusers.EncodePrompt',
         'modules.ModularDiffusers.Denoise',
@@ -4176,7 +4219,8 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
       description:
         'Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.',
-      userGoal: 'Use the two included approved inputs in order: glass subject first, flat packaging layout second.',
+      userGoal:
+        'Use the ordered glass and layout references plus the authored photo-panel mask. Generation is followed by visible deterministic compositing that protects the guide.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
@@ -4201,16 +4245,21 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
+        galleryExpectedOutput: { width: 1024, height: 1024 },
         runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
         blockReason:
           'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. The second reference is normal edit-image conditioning, not ControlNet or source-owned structured geometry.',
+          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. Generation keeps the two original references in order. The separate ordinary compositor uses the second reference and the authored mask to preserve guide pixels; this is generated plus composited, with no native Fill claim. Original failed recipes remain historical. The new mask and public outputs still require publication and technical acceptance.',
       },
       inputRequirements: {
         referenceImages: 2,
+        maskImage: true,
       },
+      workflowBlocks: ['masked_composite'],
+      workflowBlockSettings: protectedPhotoSettings(205),
       inputBindings: [
+        protectedPhotoMaskBinding('flux3_klein_fp8r512_multi_reference_edit'),
         {
           id: 'flux3_klein_fp8r512_multi_reference_edit-references',
           label: 'Ordered glass subject and packaging layout references',
@@ -4342,7 +4391,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_fp8r512_lora_style',
-      label: 'FLUX 3 Distilled Quick 512 FP8r - NASA Concept-Art LoRA (Test Candidate)',
+      label: 'FLUX 3 Distilled Quick 512 FP8r - NASA Concept-Art LoRA v2 (Test Candidate)',
       modelDisplayName: 'FLUX 3 Image Klein Distilled',
       mode: 'text_to_image',
       modelType: 'Flux3DistilledModularPipeline',
@@ -4366,15 +4415,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       vramEstimate:
         'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
-      description:
-        'An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style',
+      description: RING_HABITAT_PROMPT,
       userGoal:
         'Inspect the pinned NASA concept-art adapter and exact public recipe; style quality and publication remain pending.',
       presetId: 'flux_fast',
       example: {
         mediaType: 'image',
         status: 'blocked',
-        lockedSeed: 481005,
+        lockedSeed: 481205,
         modelRevision: '8454017f9ebaada30c998fccd9f67a80c7580f68',
         lockedSettings: {
           width: 512,
@@ -4433,16 +4481,13 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         ],
       },
     },
-    [
-      'An unbranded ceramic field radio, a folded linen cloth and a single dried grass stem form a balanced three-quarter tabletop still life. Warm side lighting defines the radio silhouette and contact shadows. The radio, linen and stem remain clearly separated against an uncluttered background. No people, logos, readable text, signatures, watermarks or unrelated objects. nsc7 style',
-      '',
-    ],
+    [RING_HABITAT_PROMPT, ''],
     -1,
   ),
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_text_to_image',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Text to Image: Ceramic Radio',
+      label: 'FLUX 3 Base 512 FP8r (50 steps) - Text to Image: Ceramic Radio v2',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'text_to_image',
       modelType: 'Flux3ModularPipeline',
@@ -4466,15 +4511,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       vramEstimate:
         'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
-      description:
-        'Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.',
+      description: TWO_CONTROL_RADIO_PROMPT,
       userGoal:
         'Inspect the ordinary editable graph and select only the declared runtime and prompt enhancement choices.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
         status: 'blocked',
-        lockedSeed: 481101,
+        lockedSeed: 481401,
         modelRevision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
         lockedSettings: {
           width: 512,
@@ -4510,10 +4554,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         ],
       },
     },
-    [
-      'Create an original studio product photograph of a compact ceramic field radio on a pale limestone plinth. The body has a warm ivory glaze, two circular brass controls and a dark woven speaker grille. Compose a front three-quarter view with generous negative space, soft daylight from the left, grounded contact shadows and fine believable material texture. Keep the object unbranded, the background quiet and the color palette restrained. No people, logos or readable text.',
-      '',
-    ],
+    [TWO_CONTROL_RADIO_PROMPT, ''],
     -1,
   ),
   withTemplateRecipeDefaults(
@@ -4621,7 +4662,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_multi_reference_edit',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Two-Reference Edit: Glass Packaging',
+      label: 'FLUX 3 Base 512 FP8r (50 steps) - Two-Reference Edit + Protected Packaging v3',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'edit_image',
       modelType: 'Flux3ModularPipeline',
@@ -4635,6 +4676,10 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
         revision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
       },
       requiredBackendCapabilities: [
+        'modules.Image.Save',
+        'modules.ImageOperations.MaskComposite',
+        'modules.ImageOperations.CropImage',
+        'modules.Image.Resize',
         'modules.ModularDiffusers.ModelsLoader',
         'modules.ModularDiffusers.EncodePrompt',
         'modules.ModularDiffusers.Denoise',
@@ -4649,7 +4694,8 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
       description:
         'Use reference image 1 as the cobalt-blue glass product subject. Use reference image 2 as the flat packaging dieline: preserve the cream background, black panel outlines, fold guides, rounded placeholder panels and yellow accent bands. Place a small coherent product photograph of the blue glass cube in the large central panel, leaving the structural lines and other panels intact. Keep the result a flat unfolded packaging design. Do not duplicate the product, add people, invent a brand or add readable text.',
-      userGoal: 'Use the two included approved inputs in order: glass subject first, flat packaging layout second.',
+      userGoal:
+        'Use the ordered glass and layout references plus the authored photo-panel mask. Generation is followed by visible deterministic compositing that protects the guide.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
@@ -4674,16 +4720,21 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           width: 512,
           height: 512,
         },
+        galleryExpectedOutput: { width: 1024, height: 1024 },
         runtimeEstimate: 'Pending measured exact 512 FP8r recipe',
         blockReason:
           'Native output and template qualification, approved new output media and rights review are pending; this distinct 512 FP8r recipe grants no Gallery, Auto or hardware qualification.',
         notes:
-          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. The second reference is normal edit-image conditioning, not ControlNet or source-owned structured geometry.',
+          'No generated output, public output media, template receipt or fit measurement is attached. Diffusion uses FP8r storage, BF16 compute and no added quantization. PUP starts disabled; its explicit FP32/NF4 choices are separate. Generation keeps the two original references in order. The separate ordinary compositor uses the second reference and the authored mask to preserve guide pixels; this is generated plus composited, with no native Fill claim. Original failed recipes remain historical. The new mask and public outputs still require publication and technical acceptance.',
       },
       inputRequirements: {
         referenceImages: 2,
+        maskImage: true,
       },
+      workflowBlocks: ['masked_composite'],
+      workflowBlockSettings: protectedPhotoSettings(165),
       inputBindings: [
+        protectedPhotoMaskBinding('flux3_klein_base_fp8r512_multi_reference_edit'),
         {
           id: 'flux3_klein_base_fp8r512_multi_reference_edit-references',
           label: 'Ordered glass subject and packaging layout references',
@@ -4816,7 +4867,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   withTemplateRecipeDefaults(
     {
       id: 'flux3_klein_base_fp8r512_lora_style',
-      label: 'FLUX 3 Base 512 FP8r (50 steps) - Monet Oil-Painting LoRA (Test Candidate)',
+      label: 'FLUX 3 Base 512 FP8r (50 steps) - Monet Oil-Painting LoRA v3 (Test Candidate)',
       modelDisplayName: 'FLUX 3 Image Klein Base',
       mode: 'text_to_image',
       modelType: 'Flux3ModularPipeline',
@@ -4841,15 +4892,14 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
       vramEstimate:
         'Unmeasured for this exact 512 FP8r recipe. FP8r storage does not guarantee native FP8 GEMM or device fit.',
       runtimeEstimate: 'Unmeasured distinct 512 x 512 FP8r recipe; original 1024 receipts are not reused.',
-      description:
-        'mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.',
+      description: MEADOW_FOX_PROMPT,
       userGoal:
         'Inspect the pinned Base Monet replacement and exact public recipe; output qualification and publication remain pending.',
       presetId: 'flux_quality',
       example: {
         mediaType: 'image',
         status: 'blocked',
-        lockedSeed: 481105,
+        lockedSeed: 481405,
         modelRevision: '1469d27cfb9bb1bd81d3a93f5a023b39dbf136e4',
         lockedSettings: {
           width: 512,
@@ -4889,7 +4939,7 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           },
           weightName: 'mnt_oil_klein3.safetensors',
           adapterName: 'mnt_oil',
-          scale: 1,
+          scale: 0.65,
         },
       },
       executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.flux3_klein_base_fp8r512_lora_style,
@@ -4899,14 +4949,11 @@ const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
           'The exact public source profile is required; package qualification alone is not a template image proof.',
           'PUP is advisory and starts disabled. No authored regions: ordinary Enable selects declared raw FP32. Select BF16 + NF4 explicitly if desired; this never changes diffusion FP8r storage selection.',
           'With authored regions, append wording preserves them. Constrained table generation is a separate explicit Expert choice; do not enable it on a null layout.',
-          "The pinned Monet adapter declares FLUX Kommunity License v1.0. Keep mnt_oil at the start of the prompt and scale 1 for this Base candidate. The author warns about invented corner signatures; inspect the actual output. Its training-data provenance is the author's statement, and output publication remains unapproved.",
+          "The pinned Monet adapter declares FLUX Kommunity License v1.0. Keep mnt_oil at the start of the prompt and scale 0.65 for this versioned Base candidate. The author warns about invented corner signatures; inspect the actual output. Its training-data provenance is the author's statement, and output publication remains unapproved.",
         ],
       },
     },
-    [
-      'mnt_oil, an oil painting of a single red fox standing on a moss-covered rock in an ancient forest. The fox is clearly separated from the trees and foliage, with soft morning light filtering through the canopy. Preserve one coherent fox, a readable rock silhouette and a balanced square composition. No ornamental card frame, lettering, logos, signatures or watermarks.',
-      '',
-    ],
+    [MEADOW_FOX_PROMPT, ''],
     -1,
   ),
   // Experimental Custom recipes use explicit full-model contracts; their

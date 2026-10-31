@@ -146,6 +146,28 @@ const inputNames: Record<string, string> = {
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
 const nodeInputNames: Record<string, Record<string, string>> = {
+  'Image.Load': {
+    ...inputNames,
+    alpha_channel: 'imageAlphaChannel',
+    source_hashes: 'imageSourceHashes',
+    source_widths: 'imageSourceWidths',
+    source_heights: 'imageSourceHeights',
+    source_modes: 'imageSourceModes',
+  },
+  'Image.Resize': {
+    ...inputNames,
+    method: 'imageResizeMethod',
+    interpolation: 'imageInterpolation',
+    multiple_of: 'imageSizeMultiple',
+  },
+  'ImageOperations.ResizeImage': { ...inputNames, fit_mode: 'imageFitMode', resampling: 'imageResampling' },
+  'ImageOperations.CropImage': { ...inputNames, x: 'imageCropLeft', y: 'imageCropTop' },
+  'ImageOperations.MaskComposite': {
+    ...inputNames,
+    mask_channel: 'imageMaskChannel',
+    invert_mask: 'imageMaskInverted',
+  },
+  'Image.Save': { ...inputNames, filename: 'imageSaveFilename', quality: 'imageSaveQuality' },
   'ModularDiffusers.ModelsLoader': { ...inputNames, weight_format: 'weightFormat' },
   'DiffusersImage.LoadPipeline': { ...inputNames, mode: 'executionMode' },
   ...Object.fromEntries(
