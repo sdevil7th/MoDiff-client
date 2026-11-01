@@ -28,10 +28,10 @@ application source pair is:
 
 | Repository    | Application source before final packaging  |
 | ------------- | ------------------------------------------ |
-| MoDiff        | `058462aaeacd3279092562d4a97128409069f9e0` |
-| MoDiff-client | `88dfc8a137291e5fda511b874d5e82f8a0d0cb49` |
+| MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
+| MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `058462aaeacd3279092562d4a97128409069f9e0`.
+CI backend contract: `1239d1cecd12a7318eb263ca17c34d4fc0445d14`.
 
 Both CI jobs use this exact immutable backend pin. It can include documentation
 descendants of the reviewed application source above.
