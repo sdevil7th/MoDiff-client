@@ -252,6 +252,12 @@ definition hashes. Source metadata is for authoring and does not activate a
 runtime, approve custom code or establish model/hardware qualification. The
 client renders these declarations without model-specific parameter branches.
 
+The unpruned hierarchy API uses collection schema 2 with separate schema 1 source
+snapshots. Select the definition's exact revision before showing or compiling its
+tree; an unavailable source remains unavailable. Standalone historical schema 1
+snapshots stay readable. Source grouping does not grant edited-tree execution or
+change an existing graph's source identity.
+
 Focused source/lifecycle, graph transactions, saved-Block boundaries, registry
 and search tests precede real browser journeys. The model-free Local/Hub/Git
 journeys import, insert, connect, Run and refresh using a real backend. The Hub

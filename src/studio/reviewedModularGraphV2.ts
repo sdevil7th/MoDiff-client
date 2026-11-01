@@ -12,6 +12,7 @@ import type {
 import type { RegisteredBlockV2ControlFanOut, RegisteredBlockV2Route } from './registeredBlockV2Routes';
 import { reviewedCallerInputOwnersV2 } from './reviewedControlOwnershipV2';
 import {
+  modularConditionalSnapshotForSource,
   reviewedConditionalParameterPlacement,
   type HuggingFaceModularConditionalPlacement,
   type HuggingFaceModularConditionalSnapshot,
@@ -144,7 +145,9 @@ export function reviewedWorkflowHierarchyV2(
   snapshot: HuggingFaceModularConditionalSnapshot | undefined,
   definition: HuggingFaceNodeLibraryDefinition,
 ): ReviewedWorkflowHierarchy | null {
-  if (!snapshot || snapshot.diffusersRevision !== definition.libraryRevision) return null;
+  const source = modularConditionalSnapshotForSource(snapshot, definition.libraryRevision);
+  if (!source) return null;
+  snapshot = source;
   const pipeline = snapshot.pipelines.find(({ pipelineClass }) => pipelineClass === definition.pipelineClass);
   const workflow = pipeline?.workflows.find(({ id }) => id === definition.workflowId);
   if (!pipeline || !workflow) return null;

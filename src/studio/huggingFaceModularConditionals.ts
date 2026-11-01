@@ -62,10 +62,11 @@ export type HuggingFaceModularConditionalPipeline = {
 };
 
 export type HuggingFaceModularConditionalSnapshot = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   diffusersRevision: string;
   blockDefinitions: HuggingFaceNodeLibraryBlockDefinition[];
   pipelines: HuggingFaceModularConditionalPipeline[];
+  sourceSupplements?: HuggingFaceModularConditionalSnapshot[];
 };
 
 export type HuggingFaceModularBranchProjection = {
@@ -433,10 +434,20 @@ function pipeline(
 }
 
 export function parseHuggingFaceModularConditionalSnapshot(value: unknown): HuggingFaceModularConditionalSnapshot {
+  return parseConditionalSnapshot(value, true);
+}
+
+function parseConditionalSnapshot(value: unknown, allowSupplements: boolean): HuggingFaceModularConditionalSnapshot {
   if (
     !record(value) ||
-    !exactKeys(value, ['schemaVersion', 'diffusersRevision', 'blockDefinitions', 'pipelines']) ||
-    value.schemaVersion !== 1 ||
+    !exactKeys(value, [
+      'schemaVersion',
+      'diffusersRevision',
+      'blockDefinitions',
+      'pipelines',
+      ...(value.schemaVersion === 2 ? ['sourceSupplements'] : []),
+    ]) ||
+    (value.schemaVersion !== 1 && (value.schemaVersion !== 2 || !allowSupplements)) ||
     !Array.isArray(value.blockDefinitions) ||
     !value.blockDefinitions.length ||
     value.blockDefinitions.length > MAX_BLOCK_DEFINITIONS ||
@@ -457,7 +468,47 @@ export function parseHuggingFaceModularConditionalSnapshot(value: unknown): Hugg
   if (definitionsById.size !== blockDefinitions.length) invalid();
   const pipelines = value.pipelines.map((item) => pipeline(item, definitionsById));
   if (new Set(pipelines.map((item) => item.pipelineClass)).size !== pipelines.length) invalid();
-  return { schemaVersion: 1, diffusersRevision, blockDefinitions, pipelines };
+  const sourceSupplements =
+    value.schemaVersion === 2
+      ? (() => {
+          if (
+            !Array.isArray(value.sourceSupplements) ||
+            !value.sourceSupplements.length ||
+            value.sourceSupplements.length > 16
+          )
+            invalid();
+          return value.sourceSupplements.map((source) => parseConditionalSnapshot(source, false));
+        })()
+      : [];
+  const revisions = new Set([diffusersRevision]);
+  const pipelineClasses = new Set(pipelines.map((item) => item.pipelineClass));
+  for (const source of sourceSupplements) {
+    if (revisions.has(source.diffusersRevision)) invalid();
+    revisions.add(source.diffusersRevision);
+    for (const item of source.pipelines) {
+      if (pipelineClasses.has(item.pipelineClass)) invalid();
+      pipelineClasses.add(item.pipelineClass);
+    }
+  }
+  return {
+    schemaVersion: value.schemaVersion,
+    diffusersRevision,
+    blockDefinitions,
+    pipelines,
+    ...(value.schemaVersion === 2 ? { sourceSupplements } : {}),
+  };
+}
+
+/** Select one exact source; a missing revision never falls back to another tree. */
+export function modularConditionalSnapshotForSource(
+  snapshot: HuggingFaceModularConditionalSnapshot | null | undefined,
+  revision: string,
+): HuggingFaceModularConditionalSnapshot | null {
+  if (!snapshot) return null;
+  const matches = [snapshot, ...(snapshot.sourceSupplements ?? [])].filter(
+    (item) => item.diffusersRevision === revision,
+  );
+  return matches.length === 1 ? matches[0]! : null;
 }
 
 function hasValue(value: unknown) {
@@ -474,6 +525,11 @@ export function projectHuggingFaceModularBranches(
   pipelineClass: string,
   effectiveInputs: Readonly<Record<string, unknown>>,
 ): HuggingFaceModularBranchProjection | null {
+  const sources = [snapshot, ...(snapshot.sourceSupplements ?? [])].filter((source) =>
+    source.pipelines.some((item) => item.pipelineClass === pipelineClass),
+  );
+  if (sources.length !== 1) return null;
+  snapshot = sources[0]!;
   const pipeline = snapshot.pipelines.find((item) => item.pipelineClass === pipelineClass);
   if (!pipeline) return null;
   const definitions = new Map(snapshot.blockDefinitions.map((item) => [item.id, item]));
@@ -552,7 +608,9 @@ export function huggingFaceModularConditionalHierarchy(
   definition: HuggingFaceNodeLibraryDefinition,
   additionalInputs: Readonly<Record<string, unknown>> = {},
 ): HuggingFaceClusterHierarchyNode[] | null {
-  if (definition.provider !== 'diffusers' || definition.libraryRevision !== snapshot.diffusersRevision) return null;
+  const source = modularConditionalSnapshotForSource(snapshot, definition.libraryRevision);
+  if (definition.provider !== 'diffusers' || !source) return null;
+  snapshot = source;
   const normalized = validateHuggingFaceClusterInstance(instance, definition);
   const effectiveInputs = Object.fromEntries(
     huggingFaceClusterParameterProjection(normalized, definition).map((field) => [field.name, field.value]),

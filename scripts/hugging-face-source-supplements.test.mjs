@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { createServer } from 'vite';
 
-let server, parser, fixture;
+let server, parser, conditionals, catalog, fixture;
 before(async () => {
   const backend = process.env.MODIFF_BACKEND_DIR || path.resolve('../MoDiff');
   const python =
@@ -19,14 +19,15 @@ before(async () => {
         `
 import json
 from modiff.huggingface_node_library import build_huggingface_node_library
-print(json.dumps({'mixed': build_huggingface_node_library(), 'legacy': build_huggingface_node_library(include_source_supplements=False)}))
+from modiff.modular_conditional_contracts import reviewed_modular_conditional_collection, reviewed_modular_conditional_snapshot
+print(json.dumps({'mixed': build_huggingface_node_library(), 'legacy': build_huggingface_node_library(include_source_supplements=False), 'conditionals': reviewed_modular_conditional_collection(), 'legacyConditionals': reviewed_modular_conditional_snapshot()}))
 `,
       ],
       {
         cwd: backend,
         encoding: 'utf8',
         timeout: 60_000,
-        maxBuffer: 24 * 1024 ** 2,
+        maxBuffer: 48 * 1024 ** 2,
         env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', HF_HUB_OFFLINE: '1' },
       },
     ),
@@ -39,6 +40,8 @@ print(json.dumps({'mixed': build_huggingface_node_library(), 'legacy': build_hug
     server: { middlewareMode: true, watch: null },
   });
   parser = await server.ssrLoadModule('/src/studio/huggingFaceNodeLibrary.ts');
+  conditionals = await server.ssrLoadModule('/src/studio/huggingFaceModularConditionals.ts');
+  catalog = await server.ssrLoadModule('/src/studio/huggingFaceNodeCatalog.ts');
 });
 after(async () => {
   await server?.close();
@@ -92,5 +95,45 @@ for (const mutation of [
       delete value.sourceSupplements;
     }
     assert.throws(() => parser.parseHuggingFaceNodeLibrary(value));
+  });
+}
+
+test('mixed hierarchy selects the exact source while preserving every historical tree', () => {
+  const mixed = conditionals.parseHuggingFaceModularConditionalSnapshot(fixture.conditionals);
+  const legacy = conditionals.parseHuggingFaceModularConditionalSnapshot(fixture.legacyConditionals);
+  const { sourceSupplements, ...base } = mixed;
+  assert.deepEqual({ ...base, schemaVersion: 1 }, legacy);
+  const pika = fixture.mixed.sourceSupplements[0];
+  const selected = conditionals.modularConditionalSnapshotForSource(mixed, pika.libraryRevision);
+  assert.equal(selected, sourceSupplements[0]);
+  assert.deepEqual(
+    selected.pipelines.map((item) => item.pipelineClass),
+    ['PikaH3FlexModularPipeline'],
+  );
+  assert.equal(conditionals.modularConditionalSnapshotForSource(mixed, 'f'.repeat(40)), null);
+  assert.equal(conditionals.modularConditionalSnapshotForSource(legacy, pika.libraryRevision), null);
+  assert.equal(conditionals.modularConditionalSnapshotForSource(mixed, legacy.diffusersRevision), mixed);
+  const library = parser.parseHuggingFaceNodeLibrary(fixture.mixed);
+  const entries = catalog
+    .buildHuggingFaceCatalogSections(library, mixed)
+    .find((section) => section.id === 'modular_diffusers_block_nodes').entries;
+  const contexts = entries
+    .flatMap((entry) => entry.modularBlockContexts ?? [entry.modularBlockPlacement])
+    .filter((context) => context.pipelineClass === selected.pipelines[0].pipelineClass);
+  assert.equal(contexts.length, 43);
+  assert.ok(contexts.every((context) => pika.definitionIds.includes(context.definitionId)));
+});
+
+for (const mutation of ['missing', 'duplicate', 'base-revision', 'nested', 'unknown', 'pipeline-conflict', 'boolean']) {
+  test(`mixed hierarchy rejects ${mutation} source metadata`, () => {
+    const value = structuredClone(fixture.conditionals);
+    if (mutation === 'missing') delete value.sourceSupplements;
+    else if (mutation === 'duplicate') value.sourceSupplements.push(structuredClone(value.sourceSupplements[0]));
+    else if (mutation === 'base-revision') value.sourceSupplements[0].diffusersRevision = value.diffusersRevision;
+    else if (mutation === 'nested') value.sourceSupplements[0] = structuredClone(fixture.conditionals);
+    else if (mutation === 'unknown') value.sourceSupplements[0].execute = true;
+    else if (mutation === 'pipeline-conflict') value.sourceSupplements[0].pipelines = structuredClone(value.pipelines);
+    else value.schemaVersion = true;
+    assert.throws(() => conditionals.parseHuggingFaceModularConditionalSnapshot(value));
   });
 }

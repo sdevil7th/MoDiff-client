@@ -327,60 +327,76 @@ function unprunedBlockEntries(
   library: HuggingFaceNodeLibrary,
   snapshot: HuggingFaceModularConditionalSnapshot,
 ): HuggingFaceCatalogEntry[] {
-  if (snapshot.diffusersRevision !== library.diffusersRevision) return selectedWorkflowBlockEntries(library);
+  if (
+    snapshot.diffusersRevision !== library.diffusersRevision &&
+    !library.sourceSupplements?.some((source) => source.libraryRevision === snapshot.diffusersRevision)
+  )
+    return selectedWorkflowBlockEntries(library);
+  return deduplicateBlockEntries(
+    [snapshot, ...(snapshot.sourceSupplements ?? [])].flatMap((source) => unprunedBlockSourceEntries(library, source)),
+    library,
+  );
+}
+
+function unprunedBlockSourceEntries(
+  library: HuggingFaceNodeLibrary,
+  snapshot: HuggingFaceModularConditionalSnapshot,
+): HuggingFaceCatalogEntry[] {
   const blocks = new Map(snapshot.blockDefinitions.map((block) => [block.id, block]));
   const definitionsByPipeline = new Map<string, HuggingFaceNodeLibraryDefinition[]>();
   library.definitions.forEach((definition) => {
-    if (definition.provider !== 'diffusers' || !definition.blocksClass) return;
+    if (
+      definition.provider !== 'diffusers' ||
+      !definition.blocksClass ||
+      definition.libraryRevision !== snapshot.diffusersRevision
+    )
+      return;
     definitionsByPipeline.set(definition.pipelineClass, [
       ...(definitionsByPipeline.get(definition.pipelineClass) ?? []),
       definition,
     ]);
   });
-  return deduplicateBlockEntries(
-    snapshot.pipelines.flatMap((pipeline) => {
-      const definitions = (definitionsByPipeline.get(pipeline.pipelineClass) ?? []).sort((left, right) =>
-        left.workflowId.localeCompare(right.workflowId),
-      );
-      const context = definitions[0];
-      if (!context) return [];
-      return pipeline.placements.map((placement): HuggingFaceCatalogEntry => {
-        const block = blocks.get(placement.blockDefinitionId)!;
-        const description = block.description || `Reviewed Modular Diffusers block class ${block.className}.`;
-        return {
-          id: `modular-placement:${pipeline.pipelineClass}:unpruned:${placement.path.join('/')}`,
-          kind: 'block',
-          label: words(block.className),
-          description,
-          detail: `${words(pipeline.pipelineClass)} · ${block.kind} · ${placement.legacyPath}`,
-          searchText: [
-            block.className,
-            block.kind,
-            placement.legacyPath,
-            pipeline.pipelineClass,
-            context.blocksClass,
-            ...definitions.map(({ id, workflowId }) => `${id} ${workflowId}`),
-          ]
-            .join(' ')
-            .toLowerCase(),
-          groupPath: [words(pipeline.pipelineClass), modularBlockRole(block.className, block.kind)],
-          readiness: 'composable',
-          readinessLabel: 'Composable',
-          insertable: true,
-          definitionIds: definitions.map(({ id }) => id),
-          modularBlockPlacement: {
-            definitionId: context.id,
-            pipelineClass: pipeline.pipelineClass,
-            blocksClass: context.blocksClass,
-            workflowId: '__unpruned__',
-            placement,
-            executionScope: 'unpruned_pipeline',
-          },
-        };
-      });
-    }),
-    library,
-  );
+  return snapshot.pipelines.flatMap((pipeline) => {
+    const definitions = (definitionsByPipeline.get(pipeline.pipelineClass) ?? []).sort((left, right) =>
+      left.workflowId.localeCompare(right.workflowId),
+    );
+    const context = definitions[0];
+    if (!context) return [];
+    return pipeline.placements.map((placement): HuggingFaceCatalogEntry => {
+      const block = blocks.get(placement.blockDefinitionId)!;
+      const description = block.description || `Reviewed Modular Diffusers block class ${block.className}.`;
+      return {
+        id: `modular-placement:${pipeline.pipelineClass}:unpruned:${placement.path.join('/')}`,
+        kind: 'block',
+        label: words(block.className),
+        description,
+        detail: `${words(pipeline.pipelineClass)} · ${block.kind} · ${placement.legacyPath}`,
+        searchText: [
+          block.className,
+          block.kind,
+          placement.legacyPath,
+          pipeline.pipelineClass,
+          context.blocksClass,
+          ...definitions.map(({ id, workflowId }) => `${id} ${workflowId}`),
+        ]
+          .join(' ')
+          .toLowerCase(),
+        groupPath: [words(pipeline.pipelineClass), modularBlockRole(block.className, block.kind)],
+        readiness: 'composable',
+        readinessLabel: 'Composable',
+        insertable: true,
+        definitionIds: definitions.map(({ id }) => id),
+        modularBlockPlacement: {
+          definitionId: context.id,
+          pipelineClass: pipeline.pipelineClass,
+          blocksClass: context.blocksClass,
+          workflowId: '__unpruned__',
+          placement,
+          executionScope: 'unpruned_pipeline',
+        },
+      };
+    });
+  });
 }
 
 function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEntry[] {

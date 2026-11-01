@@ -4,7 +4,10 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import type { HuggingFaceCatalogEntry } from './huggingFaceNodeCatalog';
 import type { HuggingFaceNodeLibrary } from './huggingFaceNodeLibrary';
-import type { HuggingFaceModularConditionalSnapshot } from './huggingFaceModularConditionals';
+import {
+  modularConditionalSnapshotForSource,
+  type HuggingFaceModularConditionalSnapshot,
+} from './huggingFaceModularConditionals';
 import {
   blockDefinitionContentHashV2,
   blockGraphHashV2,
@@ -62,6 +65,9 @@ export function createModularDiffusersCatalogNode(
   const context = entry.modularBlockPlacement;
   if (entry.kind !== 'block' || !context) throw new Error('This catalog row is not a Modular Diffusers block.');
   const definition = library.definitions.find(({ id }) => id === context.definitionId);
+  modularSnapshot = definition
+    ? modularConditionalSnapshotForSource(modularSnapshot, definition.libraryRevision)
+    : null;
   const block = [...library.blockDefinitions, ...(modularSnapshot?.blockDefinitions ?? [])].find(
     ({ id }) => id === context.placement.blockDefinitionId,
   );

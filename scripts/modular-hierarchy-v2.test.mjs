@@ -26,6 +26,7 @@ let blockContainerInterfaceModule;
 let graphLayoutModule;
 let nodeLibraryModule;
 let reviewedLibrary;
+let reviewedConditionals;
 let server;
 
 function executionContract(graph) {
@@ -55,7 +56,7 @@ before(async () => {
     [
       ...(process.platform === 'win32' ? [] : [BACKEND_PYTHON]),
       '-c',
-      'import json; from modiff.huggingface_node_library import build_huggingface_node_library; print(json.dumps(build_huggingface_node_library(), separators=(",", ":")))',
+      'import json; from modiff.huggingface_node_library import build_huggingface_node_library; from modiff.modular_conditional_contracts import reviewed_modular_conditional_collection; print(json.dumps({"library": build_huggingface_node_library(), "conditionals": reviewed_modular_conditional_collection()}, separators=(",", ":")))',
     ],
     {
       cwd: BACKEND_ROOT,
@@ -84,7 +85,9 @@ before(async () => {
   blockContainerInterfaceModule = await server.ssrLoadModule('/src/studio/blockContainerInterfaceV1.ts');
   graphLayoutModule = await server.ssrLoadModule('/src/workflow/graphLayout.ts');
   nodeLibraryModule = await server.ssrLoadModule('/src/studio/huggingFaceNodeLibrary.ts');
-  reviewedLibrary = nodeLibraryModule.parseHuggingFaceNodeLibrary(JSON.parse(libraryResult.stdout));
+  const published = JSON.parse(libraryResult.stdout);
+  reviewedLibrary = nodeLibraryModule.parseHuggingFaceNodeLibrary(published.library);
+  reviewedConditionals = conditionalModule.parseHuggingFaceModularConditionalSnapshot(published.conditionals);
 });
 
 test('the Modular Diffusers catalog exposes every exact block once and retains all placement contexts', () => {
@@ -98,6 +101,7 @@ test('the Modular Diffusers catalog exposes every exact block once and retains a
     return {
       id: `diffusers.modular:${workflow.pipelineClass}:${workflow.workflowId}`,
       provider: 'diffusers',
+      libraryRevision: conditional.diffusersRevision,
       pipelineClass: workflow.pipelineClass,
       blocksClass: blockById.get(pipeline.rootBlockDefinitionId).className,
       workflowId: workflow.workflowId,
@@ -280,13 +284,15 @@ test('all 98 reviewed workflows map every selected step into the exact unpruned 
   assert.ok(structuralPlacements > 400, 'the audit unexpectedly flattened away reviewed containers');
 });
 
-test('all 98 reviewed workflows compile to one V2 graph with progressively projected nested containers', () => {
-  const conditional = conditionalModule.parseHuggingFaceModularConditionalSnapshot(
-    JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-conditional-contracts.json'), 'utf8')),
-  );
+test('all 101 reviewed workflows compile to one V2 graph with progressively projected nested containers', () => {
+  const conditional = reviewedConditionals;
   const selected = JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-block-contracts.json'), 'utf8'));
   const allBlocks = new Map(
-    [...conditional.blockDefinitions, ...selected.blockDefinitions].map((block) => [block.id, block]),
+    [
+      ...conditional.blockDefinitions,
+      ...(conditional.sourceSupplements ?? []).flatMap((source) => source.blockDefinitions),
+      ...selected.blockDefinitions,
+    ].map((block) => [block.id, block]),
   );
   const params = {
     pipeline_components: { type: 'diffusers_modular_pipeline_components', display: 'input' },
@@ -753,10 +759,10 @@ test('all 98 reviewed workflows compile to one V2 graph with progressively proje
       ordinaryNodeNestedParent: utilityParent ?? null,
     });
   }
-  assert.equal(definitions.length, 98);
-  assert.equal(nodeCount, 1860);
+  assert.equal(definitions.length, 101);
+  assert.equal(nodeCount, 1918);
   assert.equal(maximumDepth, 5);
-  assert.equal(parameterLocalityChecks, 98);
+  assert.equal(parameterLocalityChecks, 101);
   assert.ok(subtreeSaveChecks > 1400);
   if (process.env.MODIFF_HIERARCHY_AUDIT_OUTPUT) {
     writeFileSync(
