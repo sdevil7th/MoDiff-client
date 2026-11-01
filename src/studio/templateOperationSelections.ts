@@ -520,3 +520,33 @@ export const AUDIO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
       note: 'The real semantic generation and denoising stages feed Audio Output; no prompt encoder or Guider is invented.',
     },
   };
+
+/** Fresh ordinary video stages retain the historical creative recipes. Older
+ * saved whole-pipeline graphs keep their original executable structure. */
+export const VIDEO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateId, StudioTemplateExecutionSelection>> =
+  Object.fromEntries(
+    (
+      [
+        ['ltx_video_text_to_video', 'text_to_video'],
+        ['ltx_video_image_to_video', 'image_to_video'],
+        ['ltx_video_video_to_video', 'video_to_video'],
+        ['ltx_video_multi_reference', 'reference_to_video'],
+        ['wan_22_ti2v_5b_seed_vault', 'text_to_video'],
+      ] as const satisfies readonly (readonly [StudioTemplateId, StudioMode])[]
+    ).map(([id, mode]) => {
+      const wan = id === 'wan_22_ti2v_5b_seed_vault';
+      return [
+        id,
+        {
+          schemaVersion: 1,
+          pipelineClass: wan ? 'WanTI2VPipeline' : 'LTXConditionPipeline',
+          executionProfileId: wan ? 'wan-22-ti2v-5b:direct' : 'ltx-video:direct',
+          task: mode,
+          bindingSpec: { modelType: wan ? 'WanTI2VPipeline' : 'LTXVideoPipeline', mode },
+          implementation: 'pipeline_stages',
+          authoringRecipeId: 'generic-video-stages:v1',
+          note: 'Encode Inputs reuses official text encoding and owns source media; the official Denoise call prepares media latents and Video Output decodes and exports the matching result.',
+        } satisfies StudioTemplateExecutionSelection,
+      ];
+    }),
+  );

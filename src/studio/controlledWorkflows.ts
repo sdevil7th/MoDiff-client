@@ -23,7 +23,12 @@ import {
   type ControlledNodeRole,
 } from './controlledWorkflowContracts';
 import { resolveStudioResourceForm } from './resourcePlanner';
-import { loraWorkflowFieldValues, upscaleWorkflowFieldValues } from './controlledWorkflowValues';
+import {
+  audioFitWorkflowFieldValues,
+  loraWorkflowFieldValues,
+  soundtrackWorkflowFieldValues,
+  upscaleWorkflowFieldValues,
+} from './controlledWorkflowValues';
 import { MAX_ORDERED_ADAPTERS, orderedAdapterChainLinks } from './adapterChainLinks';
 import type {
   StudioAudioFitSettings,
@@ -91,13 +96,7 @@ function setParamIfPresent(
 }
 
 function applyAudioFitValues(nodeId: string, settings: StudioAudioFitSettings) {
-  setParamIfPresent(nodeId, ['source_start_seconds'], settings.sourceStartSeconds);
-  setParamIfPresent(nodeId, ['source_duration_seconds'], settings.sourceDurationSeconds);
-  setParamIfPresent(nodeId, ['target_duration_seconds'], settings.targetDurationSeconds);
-  setParamIfPresent(nodeId, ['delay_seconds'], settings.delaySeconds ?? 0);
-  setParamIfPresent(nodeId, ['target_sample_rate'], settings.targetSampleRate ?? 48000);
-  setParamIfPresent(nodeId, ['fade_in_seconds'], settings.fadeInSeconds ?? 0);
-  setParamIfPresent(nodeId, ['fade_out_seconds'], settings.fadeOutSeconds ?? 0);
+  for (const { fields, value } of audioFitWorkflowFieldValues(settings)) setParamIfPresent(nodeId, fields, value);
 }
 
 async function ensureRegistryKeys(keys: string[]) {
@@ -887,43 +886,10 @@ export async function addSoundtrackWorkflowBlock(
       y: 140,
     });
 
-    setParamIfPresent(quantization, ['backend'], 'none');
-    setParamIfPresent(quantization, ['components'], []);
-    setParamIfPresent(quantization, ['dtype'], executionForm.dtype);
-    setParamIfPresent(recipe, ['device_map'], 'none');
-    setParamIfPresent(recipe, ['offload_mode'], executionForm.offloadMode);
-    setParamIfPresent(recipe, ['device'], executionForm.device);
-    // ACE-Step supplies an attention mask. On the qualified ROCm stack both
-    // AITER and the native-flash dispatch can reject masked attention, so use
-    // the portable PyTorch math SDPA path for this small eight-step branch.
-    setParamIfPresent(recipe, ['attention_backend'], '_native_math');
-    setParamIfPresent(recipe, ['attention_components'], '');
-    setParamIfPresent(recipe, ['vae_slicing'], true);
-    setParamIfPresent(recipe, ['vae_tiling'], true);
-    setParamIfPresent(pipeline, ['model_id'], settings.model);
-    if (settings.model.revision) setParamIfPresent(pipeline, ['revision'], settings.model.revision);
-    setParamIfPresent(pipeline, ['pipeline_class'], settings.pipelineClass);
-    setParamIfPresent(pipeline, ['mode'], 'text_to_audio');
-    setParamIfPresent(pipeline, ['dtype'], executionForm.dtype);
-    setParamIfPresent(pipeline, ['device'], executionForm.device);
-    setParamIfPresent(pipeline, ['auto_offload'], executionForm.autoOffload);
-    setParamIfPresent(pipeline, ['offload_mode'], executionForm.offloadMode);
-    setParamIfPresent(generate, ['task_type'], 'text2music');
-    setParamIfPresent(generate, ['prompt'], settings.prompt);
-    setParamIfPresent(generate, ['negative_prompt'], settings.negativePrompt ?? '');
-    setParamIfPresent(generate, ['lyrics'], '');
-    setParamIfPresent(generate, ['audio_duration'], settings.durationSeconds);
-    setParamIfPresent(generate, ['num_inference_steps'], settings.steps);
-    setParamIfPresent(generate, ['guidance_scale'], settings.guidanceScale);
-    setParamIfPresent(generate, ['stable_audio_steps'], settings.steps);
-    setParamIfPresent(generate, ['stable_audio_guidance'], settings.guidanceScale);
-    setParamIfPresent(generate, ['seed'], settings.seed);
-    setParamIfPresent(generate, ['bpm'], settings.bpm ?? 0);
-    setParamIfPresent(generate, ['keyscale'], settings.keyscale ?? '');
-    setParamIfPresent(generate, ['timesignature'], settings.timesignature ?? '4/4');
-    applyAudioFitValues(audioFit, settings.audioFit);
-    setParamIfPresent(exporter, ['fps'], form.fps);
-    setParamIfPresent(exporter, ['quality'], 10);
+    const fieldValues = soundtrackWorkflowFieldValues(settings, executionForm);
+    for (const [role, nodeId] of Object.entries({ quantization, recipe, pipeline, generate, audioFit, exporter }))
+      for (const { fields, value } of fieldValues[role as keyof typeof fieldValues])
+        setParamIfPresent(nodeId, fields, value);
 
     // Keep the core exporter identity stable and make the controlled receipt
     // own the explicit sink replacement. This lets restore validate the base

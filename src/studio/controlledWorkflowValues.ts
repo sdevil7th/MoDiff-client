@@ -1,4 +1,9 @@
-import type { StudioTemplateLoraSettings, StudioTemplateWorkflowBlockSettings } from './types';
+import type {
+  StudioAudioFitSettings,
+  StudioFormState,
+  StudioTemplateLoraSettings,
+  StudioTemplateWorkflowBlockSettings,
+} from './types';
 
 export type ControlledFieldValue = { fields: string[]; value: unknown };
 
@@ -35,4 +40,65 @@ export function upscaleWorkflowFieldValues(
     ...(settings?.model ? [{ fields: ['model_id'], value: settings.model }] : []),
     ...(settings?.downscale !== undefined ? [{ fields: ['downscale'], value: settings.downscale }] : []),
   ];
+}
+
+export function audioFitWorkflowFieldValues(settings: StudioAudioFitSettings): ControlledFieldValue[] {
+  return [
+    { fields: ['source_start_seconds'], value: settings.sourceStartSeconds },
+    { fields: ['source_duration_seconds'], value: settings.sourceDurationSeconds },
+    { fields: ['target_duration_seconds'], value: settings.targetDurationSeconds },
+    { fields: ['delay_seconds'], value: settings.delaySeconds ?? 0 },
+    { fields: ['target_sample_rate'], value: settings.targetSampleRate ?? 48000 },
+    { fields: ['fade_in_seconds'], value: settings.fadeInSeconds ?? 0 },
+    { fields: ['fade_out_seconds'], value: settings.fadeOutSeconds ?? 0 },
+  ];
+}
+
+/** A soundtrack remains a separate, visible audio pipeline and timeline fit. */
+export function soundtrackWorkflowFieldValues(
+  settings: NonNullable<StudioTemplateWorkflowBlockSettings['soundtrack']>,
+  executionForm: StudioFormState,
+): Record<'quantization' | 'recipe' | 'pipeline' | 'generate' | 'audioFit' | 'exporter', ControlledFieldValue[]> {
+  const fields = (values: Record<string, unknown>) =>
+    Object.entries(values).map(([field, value]) => ({ fields: [field], value }));
+  return {
+    quantization: fields({ backend: 'none', components: [], dtype: executionForm.dtype }),
+    // ACE-Step's mask needs portable math SDPA on the reviewed ROCm runtime.
+    recipe: fields({
+      device_map: 'none',
+      offload_mode: executionForm.offloadMode,
+      device: executionForm.device,
+      attention_backend: '_native_math',
+      attention_components: '',
+      vae_slicing: true,
+      vae_tiling: true,
+    }),
+    pipeline: fields({
+      model_id: { source: settings.model.source, value: settings.model.value },
+      ...(settings.model.revision ? { revision: settings.model.revision } : {}),
+      pipeline_class: settings.pipelineClass,
+      mode: 'text_to_audio',
+      dtype: executionForm.dtype,
+      device: executionForm.device,
+      auto_offload: executionForm.autoOffload,
+      offload_mode: executionForm.offloadMode,
+    }),
+    generate: fields({
+      task_type: 'text2music',
+      prompt: settings.prompt,
+      negative_prompt: settings.negativePrompt ?? '',
+      lyrics: '',
+      audio_duration: settings.durationSeconds,
+      num_inference_steps: settings.steps,
+      guidance_scale: settings.guidanceScale,
+      stable_audio_steps: settings.steps,
+      stable_audio_guidance: settings.guidanceScale,
+      seed: settings.seed,
+      bpm: settings.bpm ?? 0,
+      keyscale: settings.keyscale ?? '',
+      timesignature: settings.timesignature ?? '4/4',
+    }),
+    audioFit: audioFitWorkflowFieldValues(settings.audioFit),
+    exporter: fields({ fps: executionForm.fps, quality: 10 }),
+  };
 }

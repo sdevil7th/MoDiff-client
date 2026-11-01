@@ -21,7 +21,12 @@ import { acceptsOperationValue } from '../workflow/operationFieldValue';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import { groupNewOperationGraph } from '../workflow/visualOperationGroups';
 import { CONTROLLED_WORKFLOW_NODE_KEYS } from './controlledWorkflowContracts';
-import { loraWorkflowFieldValues, upscaleWorkflowFieldValues } from './controlledWorkflowValues';
+import {
+  loraWorkflowFieldValues,
+  soundtrackWorkflowFieldValues,
+  upscaleWorkflowFieldValues,
+} from './controlledWorkflowValues';
+import { resolveStudioResourceForm } from './resourcePlanner';
 import { orderedAdapterChainLinks } from './adapterChainLinks';
 import { resolveStudioExecutionSpecValues } from './executionSpecValues';
 import { selectedNodeWeightFormatArtifact } from './weightFormat';
@@ -508,6 +513,25 @@ export function createTemplateOperationGraph(
         connect,
       });
     } else if (block === 'upscaler') {
+      const videoExport = roles.get('videoExport');
+      const videoInput = graph.edges.find((edge) => edge.target === videoExport?.id && edge.targetHandle === 'video');
+      if (videoExport && videoInput) {
+        const upscaler = utility(CONTROLLED_WORKFLOW_NODE_KEYS.upscaler, 0);
+        for (const { fields, value } of upscaleWorkflowFieldValues(
+          template.workflowBlockSettings?.upscaler,
+          form.device,
+        ))
+          set(upscaler, fields, value);
+        graph.edges = graph.edges.filter((edge) => edge.id !== videoInput.id);
+        connect(
+          graph.nodes.find((node) => node.id === videoInput.source)!,
+          [videoInput.sourceHandle!],
+          upscaler,
+          ['image'],
+        );
+        connect(upscaler, ['output'], videoExport, ['video']);
+        continue;
+      }
       const preview = roles.get('preview');
       const input = graph.edges.find((edge) => edge.target === preview?.id && edge.targetHandle === 'image');
       if (!preview || !input) throw new Error('The template has no image output to upscale.');
@@ -523,6 +547,38 @@ export function createTemplateOperationGraph(
         ['image', 'images'],
       );
       connect(upscaler, ['images', 'output', 'image'], upscalePreview, ['image']);
+    } else if (block === 'soundtrack') {
+      const settings = template.workflowBlockSettings?.soundtrack;
+      const videoExport = roles.get('videoExport');
+      const videoInput = graph.edges.find((edge) => edge.target === videoExport?.id && edge.targetHandle === 'video');
+      if (!settings || !videoExport || videoExport.data.action !== 'Export' || !videoInput)
+        throw new Error('The template soundtrack needs one ordinary video export.');
+      const soundtrack = {
+        quantization: utility(CONTROLLED_WORKFLOW_NODE_KEYS.soundtrackQuantization, 0),
+        recipe: utility(CONTROLLED_WORKFLOW_NODE_KEYS.soundtrackRecipe, 1),
+        pipeline: utility(CONTROLLED_WORKFLOW_NODE_KEYS.soundtrackPipeline, 2),
+        generate: utility(CONTROLLED_WORKFLOW_NODE_KEYS.soundtrackGenerate, 3),
+        audioFit: utility(CONTROLLED_WORKFLOW_NODE_KEYS.audioFit, 4),
+        exporter: utility(CONTROLLED_WORKFLOW_NODE_KEYS.exportWithAudio, 5),
+      };
+      const fieldValues = soundtrackWorkflowFieldValues(settings, resolveStudioResourceForm(form));
+      for (const role of Object.keys(soundtrack) as (keyof typeof soundtrack)[])
+        for (const { fields, value } of fieldValues[role]) set(soundtrack[role], fields, value);
+      // Replace the owned terminal explicitly. The ordinary graph contains
+      // the actual audio branch and mux; no managed recipe is executed.
+      graph.nodes = graph.nodes.filter((node) => node.id !== videoExport.id);
+      graph.edges = graph.edges.filter((edge) => edge.target !== videoExport.id && edge.source !== videoExport.id);
+      connect(soundtrack.quantization, ['quantization_config'], soundtrack.recipe, ['quantization_config']);
+      connect(soundtrack.recipe, ['execution_recipe'], soundtrack.pipeline, ['execution_recipe']);
+      connect(soundtrack.pipeline, ['pipeline'], soundtrack.generate, ['pipeline']);
+      connect(soundtrack.generate, ['audio'], soundtrack.audioFit, ['audio']);
+      connect(soundtrack.audioFit, ['output'], soundtrack.exporter, ['audio']);
+      connect(
+        graph.nodes.find((node) => node.id === videoInput.source)!,
+        [videoInput.sourceHandle!],
+        soundtrack.exporter,
+        ['video'],
+      );
     } else throw new Error(`The template does not declare support for ${block}.`);
   }
   return groupNewOperationGraph(attachPromptEnhancementParents(graph, recipe));

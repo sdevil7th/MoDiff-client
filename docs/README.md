@@ -10,6 +10,8 @@ The [image template workflow guide](image-template-workflows.md) covers fresh
 template graphs, preserved settings and the distinction from historical examples.
 The [audio workflow guide](audio-workflows.md) explains real generation stages,
 source audio, selected adapter ownership, playback and validation boundaries.
+The [video workflow guide](video-workflows.md) covers shared stages, source media,
+retained upscaling and soundtrack branches, and validation boundaries.
 
 | Guide                                           | Audience            | What it covers                                                                                |
 | ----------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------- |

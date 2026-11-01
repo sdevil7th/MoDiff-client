@@ -89,7 +89,7 @@ export function parseOperationStarter(
     targets.add(key);
     return { source, sourceHandle, target, targetHandle };
   });
-  const stageKinds = new Set(['image_encoder', 'denoise', 'decoder']);
+  const stageKinds = new Set(['image_encoder', 'video_encoder', 'denoise', 'decoder']);
   const owners = expected.filter(operationOwnsModel);
   const stages = expected.filter(
     (operation) => operation.decomposition === 'bundle' && stageKinds.has(operation.nodeType),
@@ -105,6 +105,7 @@ export function parseOperationStarter(
     new Set(expected.map((operation) => operation.operationId)).size === 5 &&
     new Set(stages.map((operation) => operation.nodeType)).size === 3;
   if (alternateImageRoutes) {
+    const media = stages.some((operation) => operation.nodeType === 'video_encoder') ? 'video' : 'image';
     const owner = owners[0]!;
     const sameRoute = (route: OperationContract[]) =>
       route.length === nodes.length && route.every((operation) => byId.has(operation.operationId));
@@ -121,7 +122,7 @@ export function parseOperationStarter(
       (port) =>
         port.direction === 'output' &&
         port.types.length === 1 &&
-        port.types[0] === 'image_diffusion_pipeline' &&
+        port.types[0] === `${media}_diffusion_pipeline` &&
         port.semantics?.kind === 'pipeline' &&
         port.semantics.owner === 'same_loader' &&
         port.semantics.scope === scope,
@@ -134,6 +135,7 @@ export function parseOperationStarter(
           owner.operationId,
           edges,
           pipelineEdges,
+          media,
         )
       )
         invalid();
@@ -143,7 +145,7 @@ export function parseOperationStarter(
         (port) =>
           port.direction === 'input' &&
           port.types.length === 1 &&
-          port.types[0] === 'image_diffusion_pipeline' &&
+          port.types[0] === `${media}_diffusion_pipeline` &&
           port.semantics?.kind === 'pipeline' &&
           port.semantics.owner === 'same_loader' &&
           port.semantics.scope === scope,
@@ -157,7 +159,7 @@ export function parseOperationStarter(
         edges[0]!.target !== consumer.operationId ||
         edges[0]!.targetHandle !== incoming[0]!.name ||
         !consumer.ports.some(
-          (port) => port.direction === 'output' && port.types.includes('image') && port.semantics?.kind === 'media',
+          (port) => port.direction === 'output' && port.types.includes(media) && port.semantics?.kind === 'media',
         )
       )
         invalid();

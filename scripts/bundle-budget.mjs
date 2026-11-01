@@ -1,3 +1,9 @@
+// Generic video stages, strict ownership metadata and retained template finishing
+// measure largest/startup/deferred gzip 494742/673228/329130 against the accepted
+// 494455/672941/328233. Add only measured growth 287/287/897, preserving 8/11/79
+// bytes of headroom. The same four startup and 90 deferred assets retain their
+// loading membership. Dependencies, chunk rules, minifier, identity validation
+// and the independent 65536-byte deferred chunk cap remain unchanged.
 // Recorded-pin historical examples and the explicit portrait-v3 recipe measure
 // largest/startup/deferred gzip 494455/672941/328233 versus the accepted
 // 494259/672742/328069. Add measured startup growth 196/199, retaining 8/11
@@ -270,6 +276,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Allow only measured startup growth (+1649/+1651), retaining 8/11 bytes headroom.
 // Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  287 +
   196 +
   1051 +
   38 +
@@ -394,6 +401,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  287 +
   199 +
   1047 +
   36 +
@@ -602,6 +610,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  897 +
   1043 +
   334 +
   178 +

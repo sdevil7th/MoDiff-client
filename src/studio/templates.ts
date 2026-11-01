@@ -14,6 +14,7 @@ import type {
 import {
   IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
   AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
+  VIDEO_TEMPLATE_EXECUTION_SELECTIONS,
 } from './templateOperationSelections';
 import {
   DEFAULT_STUDIO_FORM,
@@ -3930,7 +3931,9 @@ function withVideoDeliveryWorkflow(template: StudioTemplateSource, index: number
     {
       ...template,
       executionSelection:
-        IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id] ?? AUDIO_TEMPLATE_EXECUTION_SELECTIONS[template.id],
+        IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id] ??
+        AUDIO_TEMPLATE_EXECUTION_SELECTIONS[template.id] ??
+        VIDEO_TEMPLATE_EXECUTION_SELECTIONS[template.id],
       inputBindings: [
         ...(template.inputBindings ?? []).filter((binding) => binding.origin !== 'template'),
         ...generatedInputBindings.filter(

@@ -50,17 +50,27 @@ function stageKind(node: CustomNodeType): VisualOperationGroup | null {
     Object.values(node.data.params).some((param) => param.display === 'output' && param.type === 'custom_guider')
   )
     return 'guidance';
-  if (!operation || !['block', 'bundle'].includes(operation.decomposition) || operation.task?.includes('video'))
-    return null;
+  if (!operation || !['block', 'bundle'].includes(operation.decomposition)) return null;
   if (['text_encoder', 'vae_encoder', 'image_encoder'].includes(operation.nodeType)) return 'inputs';
+  if (
+    workflowTaskCategory(operation.task ?? '') === 'Video' &&
+    ['before_encode', 'video_encoder', 'condition_encoder', 'reference_encoder'].includes(operation.nodeType)
+  )
+    return 'inputs';
   if (['guidance', 'guidance_layers'].includes(operation.nodeType)) return 'guidance';
   if (
-    ['Image', 'Audio'].includes(workflowTaskCategory(operation.task ?? '')) &&
+    ['Image', 'Audio', 'Video'].includes(workflowTaskCategory(operation.task ?? '')) &&
     (operation.nodeType === 'decoder' || operation.operationId === 'diffusion.decode_latents') &&
     operation.ports.some(
       (port) =>
         port.direction === 'output' &&
-        port.types.includes(workflowTaskCategory(operation.task ?? '') === 'Audio' ? 'audio' : 'image'),
+        port.types.includes(
+          workflowTaskCategory(operation.task ?? '') === 'Video'
+            ? 'video'
+            : workflowTaskCategory(operation.task ?? '') === 'Audio'
+              ? 'audio'
+              : 'image',
+        ),
     )
   )
     return 'output';
@@ -134,7 +144,7 @@ function operationStageMembers(
   const scopeIds = new Set(scope.map((node) => node.id));
   const owner = scope.find((node) => node.id === ownerId)!;
   const category = workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '');
-  if (!['Image', 'Audio'].includes(category)) return [];
+  if (!['Image', 'Audio', 'Video'].includes(category)) return [];
   if (
     category === 'Audio' &&
     kind !== 'output' &&
@@ -204,18 +214,32 @@ function operationStageMembers(
     const decoders = scope.filter((node) => stageKind(node) === 'output');
     const members = new Set<string>();
     for (const decoder of decoders) {
-      const media = category === 'Audio' ? 'audio' : 'image';
+      const media = category === 'Video' ? 'video' : category === 'Audio' ? 'audio' : 'image';
       const outputs = operationAuthoring(decoder)!.operation.ports.filter(
         (port) => port.direction === 'output' && port.types.includes(media),
       );
       const previews = ordinary.filter(
         (node) =>
-          nodeKey(node) === (media === 'audio' ? 'modules.Audio.Export' : 'modules.Image.Preview') &&
+          (media === 'video'
+            ? ['modules.Video.Export', 'modules.Video.ExportWithAudio'].includes(nodeKey(node))
+            : nodeKey(node) === (media === 'audio' ? 'modules.Audio.Export' : 'modules.Image.Preview')) &&
           node.data.params.preview?.display === `ui_${media}` &&
-          (media !== 'audio' ||
+          (media === 'image' ||
             (node.data.params.preview.dataSource === 'file' &&
               node.data.params.file?.display === 'output' &&
-              node.data.params.file.type === 'audio')) &&
+              node.data.params.file.type === media)) &&
+          (nodeKey(node) !== 'modules.Video.ExportWithAudio' ||
+            (graph.edges.filter((edge) => edge.target === node.id && edge.targetHandle === 'audio').length === 1 &&
+              graph.edges.some(
+                (edge) =>
+                  edge.target === node.id &&
+                  edge.targetHandle === 'audio' &&
+                  edge.source === decoder.id &&
+                  operationAuthoring(decoder)!.operation.ports.some(
+                    (port) =>
+                      port.direction === 'output' && port.types.includes('audio') && port.name === edge.sourceHandle,
+                  ),
+              ))) &&
           graph.edges.filter((edge) => edge.target === node.id && edge.targetHandle === media).length === 1 &&
           graph.edges.some(
             (edge) =>
@@ -338,11 +362,11 @@ export function groupVisualStages(
           (edge.source === node.id && edge.sourceHandle === field && !selected.has(edge.target)) ||
           (edge.target === node.id && edge.targetHandle === field && !selected.has(edge.source)),
       );
-      if (['ui_image', 'ui_audio'].includes(param.display ?? '') && kind === 'output')
+      if (['ui_image', 'ui_audio', 'ui_video'].includes(param.display ?? '') && kind === 'output')
         previews.push({
           nodeId: remap(node.id),
           outputPortId: field,
-          mediaType: param.display === 'ui_audio' ? 'audio' : 'image',
+          mediaType: param.display === 'ui_video' ? 'video' : param.display === 'ui_audio' ? 'audio' : 'image',
           ...(previews.length ? {} : { primary: true }),
         });
       if ((param.hidden && !connected) || param.display?.startsWith('ui_')) continue;
@@ -403,7 +427,11 @@ export function groupVisualStages(
             stageKind(node) === 'inputs'
               ? operationAuthoring(node)?.operation.nodeType === 'text_encoder'
                 ? 'Text'
-                : 'Image'
+                : workflowTaskCategory(operationAuthoring(node)?.operation.task ?? '') === 'Video'
+                  ? operationAuthoring(node)?.operation.nodeType === 'video_encoder'
+                    ? 'Video'
+                    : 'Media'
+                  : 'Image'
               : stageKind(node) === 'guidance'
                 ? 'Guidance'
                 : node.data.label?.trim() || VISUAL_STAGE_LABELS[kind],
@@ -469,7 +497,11 @@ export function groupVisualStages(
       old?.definitionSnapshot.displayName ??
       visualStagePresentation(
         kind,
-        previews.length && previews.every((preview) => preview.mediaType === 'audio') ? 'audio' : null,
+        previews.some((preview) => preview.mediaType === 'video')
+          ? 'video'
+          : previews.length && previews.every((preview) => preview.mediaType === 'audio')
+            ? 'audio'
+            : null,
       ).label,
     source: {
       kind: 'user',
@@ -632,7 +664,7 @@ export function groupNewOperationGraph(graph: OperationGraph) {
     next =
       workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Image'
         ? groupOperationStages(next, owner.id, ['inputs', 'setup', 'output'], true)
-        : workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Audio'
+        : ['Audio', 'Video'].includes(workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? ''))
           ? groupOperationStages(next, owner.id, ['inputs', 'guidance', 'setup', 'output'])
           : groupOperationStages(next, owner.id);
   // Fresh groups have no saved reusable baseline yet. Bind that baseline to the

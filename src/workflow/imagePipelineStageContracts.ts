@@ -19,6 +19,7 @@ export function declaredImagePipelineStageContracts(
   ownerId: string,
   allEdges: readonly ImagePipelineStageContractEdge[],
   edges: readonly ImagePipelineStageContractEdge[],
+  media: 'image' | 'video' = 'image',
 ): string[] | null {
   const owner = nodes.find((node) => node.id === ownerId);
   const owning = owner && owner.operation;
@@ -28,7 +29,7 @@ export function declaredImagePipelineStageContracts(
   const output = nodes.find((node) => node.id === source.source)?.params[source.sourceHandle ?? ''];
   if (
     output?.display !== 'output' ||
-    output.type !== 'image_diffusion_pipeline' ||
+    output.type !== `${media}_diffusion_pipeline` ||
     edges.some((edge) => edge.source !== source.source || edge.sourceHandle !== source.sourceHandle)
   )
     return null;
@@ -46,16 +47,16 @@ export function declaredImagePipelineStageContracts(
       operation.decomposition !== 'bundle' ||
       operation.pipelineClass !== owning.pipelineClass ||
       operation.task !== owning.task ||
-      !['image_encoder', 'denoise', 'decoder'].includes(operation.nodeType) ||
+      ![`${media}_encoder`, 'denoise', 'decoder'].includes(operation.nodeType) ||
       ports?.length !== 1 ||
       port?.types.length !== 1 ||
-      port.types[0] !== 'image_diffusion_pipeline' ||
+      port.types[0] !== `${media}_diffusion_pipeline` ||
       port.roles.length !== 1 ||
       !['component', 'pipeline'].includes(port.roles[0]!) ||
       port.semantics?.kind !== 'pipeline' ||
       port.semantics.owner !== 'same_loader' ||
       port.semantics.scope !== scope ||
-      input?.type !== 'image_diffusion_pipeline' ||
+      input?.type !== `${media}_diffusion_pipeline` ||
       !(input.display === 'input' || input.isInput) ||
       allEdges.filter((candidate) => candidate.target === node.id && candidate.targetHandle === edge.targetHandle)
         .length !== 1
@@ -70,7 +71,7 @@ export function declaredImagePipelineStageContracts(
   )
     return null;
   const stage = (kind: string) => stages.find((node) => node.operation!.nodeType === kind)!;
-  const encoder = stage('image_encoder'),
+  const encoder = stage(`${media}_encoder`),
     denoiser = stage('denoise'),
     decoder = stage('decoder');
   const bound = (
@@ -120,13 +121,14 @@ export function declaredImagePipelineStageContracts(
     );
   };
   if (
-    !bound(encoder, denoiser, 'conditioning', 'image_conditioning') ||
+    !bound(encoder, denoiser, 'conditioning', `${media}_conditioning`) ||
     !bound(denoiser, decoder, 'latents', 'tensor') ||
-    !bound(denoiser, decoder, 'state', 'image_latent_binding') ||
-    !bound(denoiser, decoder, 'value', 'int', 'width_out', 'width') ||
-    !bound(denoiser, decoder, 'value', 'int', 'height_out', 'height') ||
+    !bound(denoiser, decoder, 'state', `${media}_latent_binding`) ||
+    (media === 'image' &&
+      (!bound(denoiser, decoder, 'value', 'int', 'width_out', 'width') ||
+        !bound(denoiser, decoder, 'value', 'int', 'height_out', 'height'))) ||
     !decoder.operation!.ports.some(
-      (port) => port.direction === 'output' && port.types.includes('image') && port.semantics?.kind === 'media',
+      (port) => port.direction === 'output' && port.types.includes(media) && port.semantics?.kind === 'media',
     )
   )
     return null;

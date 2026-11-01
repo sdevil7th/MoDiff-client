@@ -121,7 +121,9 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
                       'output',
                       workflowTaskCategory(node.data.operationAuthoring?.operation.task ?? '') === 'Audio'
                         ? 'audio'
-                        : null,
+                        : workflowTaskCategory(node.data.operationAuthoring?.operation.task ?? '') === 'Video'
+                          ? 'video'
+                          : null,
                     ).name
                   }`,
                 }[group]

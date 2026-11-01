@@ -254,6 +254,13 @@ hash with the tested build.
 
 ## Copy The Build Into The Backend
 
+The selected LTX/Wan video stages and retained finishing branches measure
+494742/673228/329130 gzip bytes for largest startup/startup total/deferred total,
+against the preceding 494455/672941/328233. The measured allowance is 287/287/897
+bytes, retaining 8/11/79 bytes of headroom. The four startup and 90 deferred asset
+members, dependencies, loading boundaries, minifier and independent 65536-byte
+deferred chunk ceiling remain fixed.
+
 The MoDiff backend serves the integrated application from its `web/` directory. Replace generated client content, but preserve backend/user-owned content that is not produced by this client checkout.
 
 PowerShell example from `MoDiff-client`. `robocopy` exit codes below 8 are

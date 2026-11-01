@@ -59,7 +59,7 @@ instead of silently discarding authored settings.
 | Upscale / refinement                 | Retain named downstream image operations, connect ordinary image outputs                           |
 | ACE variation/repaint/continuation   | Attach Load Audio to declared source_audio; keep prompt/lyrics controls                            |
 | Transcription / processing           | Connect existing typed audio sources to declared consumers; no automatic model-family substitution |
-| Video                                | Existing functionality unchanged; simplification deferred                                          |
+| Video                                | Shared stages for selected LTX/Wan routes; existing native video stages use the same grouping      |
 
 This audit does not claim fewer backend classes: existing generic modular stages
 already share their execution implementations, and the remaining Generate/Edit

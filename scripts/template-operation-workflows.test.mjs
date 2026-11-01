@@ -2039,7 +2039,10 @@ test('six pipeline-stage image selections describe real encoding and latent outp
     'flux_redux_edit',
     'flux_redux_multi_reference',
   ];
-  const selected = templates.filter((template) => template.executionSelection?.implementation === 'pipeline_stages');
+  const selected = templates.filter(
+    (template) =>
+      template.example?.mediaType === 'image' && template.executionSelection?.implementation === 'pipeline_stages',
+  );
   assert.deepEqual(selected.map((template) => template.id).sort(), [...expected].sort());
   for (const template of selected) {
     const row = fixture.recipes.find((item) => item.id === template.id);

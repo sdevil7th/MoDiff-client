@@ -28,17 +28,19 @@ export const VISUAL_STAGE_NAMES = {
 };
 
 /** Media changes presentation wording only; it never grants execution. */
-export function visualStagePresentation(kind: VisualOperationGroup, media?: 'image' | 'audio' | null) {
-  return kind === 'output' && media === 'audio'
-    ? { label: 'Audio Output', name: 'audio output' }
+export function visualStagePresentation(kind: VisualOperationGroup, media?: 'image' | 'audio' | 'video' | null) {
+  return kind === 'output' && (media === 'audio' || media === 'video')
+    ? media === 'video'
+      ? { label: 'Video Output', name: 'video output' }
+      : { label: 'Audio Output', name: 'audio output' }
     : { label: VISUAL_STAGE_LABELS[kind], name: VISUAL_STAGE_NAMES[kind] };
 }
 
-export function visualOperationGroupMedia(node: Pick<CustomNodeType, 'data'>): 'image' | 'audio' | null {
+export function visualOperationGroupMedia(node: Pick<CustomNodeType, 'data'>): 'image' | 'audio' | 'video' | null {
   const instance = node.data.blockInstanceV2;
   const object = (value: unknown): value is Record<string, unknown> =>
     Boolean(value && typeof value === 'object' && !Array.isArray(value));
-  const declaredMedia = new Set<'image' | 'audio'>();
+  const declaredMedia = new Set<'image' | 'audio' | 'video'>();
   for (const node of instance?.effectiveGraph.nodes ?? []) {
     const hint = node.data.operationAuthoring;
     const operation = object(hint) && hint.operation;
@@ -54,13 +56,18 @@ export function visualOperationGroupMedia(node: Pick<CustomNodeType, 'data'>): '
       continue;
     for (const port of operation.ports) {
       if (!object(port) || port.direction !== 'output' || !Array.isArray(port.types)) continue;
-      for (const media of ['image', 'audio'] as const) if (port.types.includes(media)) declaredMedia.add(media);
+      for (const media of ['image', 'audio', 'video'] as const)
+        if (port.types.includes(media)) declaredMedia.add(media);
     }
   }
   // Removing or adding a player does not change the real output stage's media.
+  // A joint video/audio decoder still delivers a video stage after its player
+  // is removed. The soundtrack must not make its presentation ambiguous.
+  if (declaredMedia.has('video')) return 'video';
   if (declaredMedia.size === 1) return declaredMedia.has('audio') ? 'audio' : 'image';
   const previews = instance ? blockInstancePreviewBindingsV2(instance.definitionSnapshot, instance.effectiveGraph) : [];
   const media = new Set(previews.map((preview) => preview.mediaType));
+  if (media.has('video')) return 'video';
   return media.size === 1 && (media.has('image') || media.has('audio'))
     ? media.has('audio')
       ? 'audio'
