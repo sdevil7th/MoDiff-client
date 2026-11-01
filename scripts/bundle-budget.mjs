@@ -1,3 +1,8 @@
+// Versioned video task observations measure largest/startup/deferred gzip
+// 494806/673290/329066 versus 494749/673238/329380. Add measured startup
+// growth 57/52, retaining 8/11 bytes of headroom and both deferred caps.
+// All 94 JavaScript asset names retain membership; only studio-templates.js
+// changes after URL-version normalization. Dependency and build rules stay fixed.
 // Generic video stages, strict ownership metadata and retained template finishing
 // measure largest/startup/deferred gzip 494749/673238/329380 against the accepted
 // 494455/672941/328233. Add only measured growth 294/297/1147, preserving 8/11/79
@@ -276,6 +281,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Allow only measured startup growth (+1649/+1651), retaining 8/11 bytes headroom.
 // Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  57 +
   294 +
   196 +
   1051 +
@@ -401,6 +407,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  52 +
   297 +
   199 +
   1047 +

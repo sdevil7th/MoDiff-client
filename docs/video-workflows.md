@@ -33,3 +33,9 @@ The implementation and proof boundaries are described in the paired backend's
 `docs/video-pipeline-stages.md`. Schema tests and mocked workflows establish
 authoring behavior, not successful video generation. A testable release needs
 native task completion and playback on the deployed source pair.
+
+New successful stage runs capture the actual video task, encoded prompt and final
+frame format in output history. The optional `graphTasksVersion: 2` distinguishes
+the added video-owner vocabulary from older receipts. Existing receipts and saved
+forms remain unchanged; missing or conflicting observations do not become support
+or publication qualification.

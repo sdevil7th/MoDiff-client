@@ -1490,6 +1490,71 @@ test('ordinary image task receipts survive history reload with strict owner iden
 
 const taskOwner = { loaderId: 'loader', pipelineClass: 'QwenImageEditPlusModularPipeline' };
 
+test('versioned video task receipts override stale image history and preserve legacy owner vocabulary', () => {
+  const evidence = receipt();
+  evidence.nodes = [
+    {
+      nodeId: 'owner',
+      module: 'modules.DiffusersVideo',
+      action: 'LoadPipeline',
+      fields: { pipeline_class: { value: 'LTXConditionPipeline', source: 'literal' } },
+      omittedFields: {},
+    },
+  ];
+  evidence.summary = { modelType: 'LTXConditionPipeline' };
+  evidence.ambiguousFields = [];
+  evidence.unavailableFields = [];
+  evidence.graphTasks = [{ loaderId: 'owner', pipelineClass: 'LTXConditionPipeline', task: 'text_to_video' }];
+  evidence.graphTasksVersion = 2;
+  const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
+  let output = contracts.coerceStudioOutput({
+    id: 'video',
+    url: '/video.mp4',
+    ...identity,
+    mode: 'text_to_image',
+    formSnapshot: { mode: 'text_to_image' },
+    resolvedExecutionInputs: evidence,
+  });
+  for (let reload = 0; reload < 2; reload++) {
+    assert.equal(output.mode, 'text_to_video');
+    assert.equal(output.formSnapshot.mode, 'text_to_image');
+    assert.deepEqual(output.resolvedExecutionInputs, evidence);
+    output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+  }
+  for (const mutate of [
+    (e) => {
+      delete e.graphTasksVersion;
+    },
+    (e) => {
+      e.graphTasksVersion = 3;
+    },
+    (e) => {
+      delete e.graphTasks;
+    },
+    (e) => {
+      e.graphTasks = [];
+    },
+    (e) => {
+      e.graphTasks.push(e.graphTasks[0]);
+    },
+    (e) => {
+      e.graphTasks[0].pipelineClass = 'ForeignPipeline';
+    },
+    (e) => {
+      e.nodes.push({ ...e.nodes[0], nodeId: 'missing-owner' });
+    },
+  ]) {
+    const bad = structuredClone(evidence);
+    mutate(bad);
+    assert.equal(inputs.coerceResolvedExecutionInputs(bad, identity), undefined);
+  }
+  // Pre-versioned mixed outputs may contain video nodes but only image task owners.
+  const legacy = receipt();
+  legacy.nodes.push(evidence.nodes[0]);
+  legacy.summary.modelType = 'LTXConditionPipeline';
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(legacy, identity), legacy);
+});
+
 test('ambiguous consumed task stays explicitly uncaptured across history reload without borrowing the form', () => {
   let output = taskHistoryOutput([{ ...taskOwner, task: null }]);
   for (let reload = 0; reload < 2; reload++) {

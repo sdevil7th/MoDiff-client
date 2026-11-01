@@ -89,6 +89,8 @@ export type ResolvedExecutionInputs = {
   truncated: boolean;
   /** Backend recognition of concrete graph contracts, separate from consumed values. */
   graphTasks?: { loaderId: string; pipelineClass: string; task: string | null }[];
+  /** Version two includes observed ordinary video owners; absence is legacy. */
+  graphTasksVersion?: 2;
   /** Optional accounting never changes the legacy consumed-input summary. */
   fieldAccountingStatus?: { schemaVersion: 1; truncated: boolean };
   appliedAdaptersStatus?: { schemaVersion: 1; truncated: boolean };
@@ -171,6 +173,12 @@ const nodeInputNames: Record<string, Record<string, string>> = {
   'ModularDiffusers.ModelsLoader': { ...inputNames, weight_format: 'weightFormat' },
   'DiffusersImage.LoadPipeline': { ...inputNames, mode: 'executionMode' },
   ...Object.fromEntries(
+    ['EncodeInputs', 'Denoise', 'DecodeLatents'].map((action) => [
+      `DiffusersVideo.${action}`,
+      { ...inputNames, executed_task: 'executedTask' },
+    ]),
+  ),
+  ...Object.fromEntries(
     [
       'Generate',
       'Edit',
@@ -231,12 +239,16 @@ const nodeInputNames: Record<string, Record<string, string>> = {
     layer_scales: 'ipAdapterLayerScales',
   },
 };
-const taskOwnerFields: Record<string, string> = {
+const legacyTaskOwnerFields: Record<string, string> = {
   'modules.ModularDiffusers.ModelsLoader': 'model_type',
   'modules.DiffusersImage.LoadPipeline': 'pipeline_class',
   'modules.HuggingFaceTransformers.LoadDepthEstimationModel': 'pipeline_class',
   'modules.HuggingFaceTransformers.LoadImageTextToTextModel': 'pipeline_class',
   'modules.ImageOperations.ProcessImage': 'pipeline_class',
+};
+const taskOwnerFields: Record<string, string> = {
+  ...legacyTaskOwnerFields,
+  'modules.DiffusersVideo.LoadPipeline': 'pipeline_class',
 };
 const summaryNames = new Set([
   ...Object.values(inputNames),
@@ -668,6 +680,9 @@ export function coerceResolvedExecutionInputs(
   )
     return undefined;
   let graphTasks: ResolvedExecutionInputs['graphTasks'];
+  if (value.graphTasksVersion !== undefined && value.graphTasksVersion !== 2) return undefined;
+  if (value.graphTasksVersion === 2 && value.graphTasks === undefined) return undefined;
+  const taskOwners = value.graphTasksVersion === 2 ? taskOwnerFields : legacyTaskOwnerFields;
   if (value.graphTasks !== undefined) {
     if (
       !Array.isArray(value.graphTasks) ||
@@ -688,7 +703,7 @@ export function coerceResolvedExecutionInputs(
       )
         return undefined;
       const owner: unknown = value.nodes.find((node) => record(node) && node.nodeId === item.loaderId);
-      const field = record(owner) ? taskOwnerFields[`${owner.module}.${owner.action}`] : undefined;
+      const field = record(owner) ? taskOwners[`${owner.module}.${owner.action}`] : undefined;
       if (
         !record(owner) ||
         !field ||
@@ -702,9 +717,7 @@ export function coerceResolvedExecutionInputs(
     }
   }
   if (graphTasks) {
-    const loaders = value.nodes.filter(
-      (node) => record(node) && hasOwn(taskOwnerFields, `${node.module}.${node.action}`),
-    );
+    const loaders = value.nodes.filter((node) => record(node) && hasOwn(taskOwners, `${node.module}.${node.action}`));
     if (loaders.length !== graphTasks.length) return undefined;
   }
   let fieldAccountingStatus: ResolvedExecutionInputs['fieldAccountingStatus'];
@@ -739,6 +752,7 @@ export function coerceResolvedExecutionInputs(
   return JSON.parse(
     JSON.stringify({
       ...(graphTasks ? { graphTasks } : {}),
+      ...(value.graphTasksVersion === 2 ? { graphTasksVersion: 2 } : {}),
       schemaVersion: 1,
       source: 'backend-execution',
       taskId: value.taskId,

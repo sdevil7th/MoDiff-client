@@ -134,6 +134,14 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+Versioned video task observations measure 673290 gzip bytes of startup
+JavaScript, with a 494806-byte largest startup chunk and 329066 deferred bytes.
+The measured startup growth is 52/57 bytes over the preceding video build;
+ceilings become 673301/494814, retaining 11/8 bytes of headroom. Both deferred
+caps remain unchanged. The same 94 JavaScript asset names retain membership;
+only `studio-templates.js` changes after URL-version normalization. Dependencies,
+chunk rules, minifier and identity checks remain unchanged.
+
 The versioned FLUX3 prompts, scoped image receipts and protected-PNG template
 authoring measure 672742 gzip bytes of startup JavaScript, with a 494259-byte
 largest startup chunk and 328069 deferred bytes. Compared with the accepted
