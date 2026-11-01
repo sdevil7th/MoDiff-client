@@ -125,7 +125,10 @@ export default function MediaAttachmentControls({
           aria-label="Media input source"
           value={sources.some((item) => item.value === sourceKey) ? sourceKey : ''}
           disabled={busy}
-          options={[{ value: '', label: `Add Load ${choice.kind === 'image' ? 'Image' : 'Audio'}` }, ...sources]}
+          options={[
+            { value: '', label: `Add Load ${{ image: 'Image', audio: 'Audio', video: 'Video' }[choice.kind]}` },
+            ...sources,
+          ]}
           onValueChange={setSourceKey}
         />
       </ModiffFieldShell>

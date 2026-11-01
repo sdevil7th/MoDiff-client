@@ -1703,13 +1703,30 @@ test('a newly attached mask uses mask pixels, not an unrelated alpha channel', (
   assert.ok(!result.edges.some((edge) => edge.source === source.id && edge.sourceHandle === 'mask'));
 });
 
-test('attachment choices reject undeclared roles and do not advertise video transport', () => {
+test('attachment choices advertise only declared visible media roles', () => {
   for (const starter of starters) {
     const choices = attachment.mediaAttachmentChoices(
       starter.nodes.map((item) => item.operation),
       starter.pipelineClass,
     );
-    assert.ok(choices.every((choice) => ['image', 'audio'].includes(choice.kind)));
+    assert.ok(choices.every((choice) => ['image', 'audio', 'video'].includes(choice.kind)));
+    for (const choice of choices)
+      assert.ok(
+        starter.nodes.some(
+          ({ operation }) =>
+            operation.pipelineClass === starter.pipelineClass &&
+            operation.task === choice.task &&
+            operation.ports.some(
+              (port) =>
+                port.direction === 'input' &&
+                !port.hidden &&
+                !port.roles.includes('component') &&
+                port.semantics?.owner !== 'same_loader' &&
+                port.semanticName === choice.role &&
+                port.types.includes(choice.kind),
+            ),
+        ),
+      );
   }
   assert.deepEqual(attachment.mediaAttachmentChoices([], 'UnknownPipeline'), []);
 });

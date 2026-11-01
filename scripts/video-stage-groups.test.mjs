@@ -492,3 +492,69 @@ test('fresh video drafts connect declared image and video sources without changi
     );
   }
 });
+
+test('existing video stages offer declared media attachment and lower a video loader to the same graph', async () => {
+  const attachment = await server.ssrLoadModule('/src/workflow/mediaAttachment.ts');
+  const sources = await server.ssrLoadModule('/src/workflow/mediaAttachmentSources.ts');
+  const row = fixture.recipes.find((item) => item.id === 'ltx_video_video_to_video');
+  const operations = row.starter.nodes.map((item) => item.operation);
+  const choices = attachment.mediaAttachmentChoices(operations, row.starter.pipelineClass);
+  const choice = choices.find((item) => item.kind === 'video' && item.role === 'video');
+  assert.ok(choice, 'a declared video task must not disappear from Add media');
+  const graph = graphFor(row);
+  const owner = graph.nodes.find((node) => contracts.operationOwnsModel(node.data.operationAuthoring?.operation));
+  const original = structuredClone(graph);
+  const next = attachment.planMediaAttachment(graph, owner.id, row.starter, choice, fixture.registry);
+  assert.deepEqual(graph, original, 'planning never mutates the retained workflow');
+  const input = next.nodes.find((node) => node.data.module === 'modules.Video' && node.data.action === 'Load');
+  assert.ok(input);
+  const encode = next.nodes.find((node) => node.data.action === 'EncodeInputs');
+  assert.ok(
+    next.edges.some(
+      (edge) =>
+        edge.source === input.id &&
+        edge.sourceHandle === 'video' &&
+        edge.target === encode.id &&
+        edge.targetHandle === 'video',
+    ),
+  );
+  assert.ok(
+    sources
+      .mediaAttachmentSources(next.nodes, next.edges, 'video')
+      .some((source) => source.value === JSON.stringify([input.id, 'video'])),
+  );
+  const repeated = attachment.planMediaAttachment(next, owner.id, row.starter, choice, fixture.registry, {
+    nodeId: input.id,
+    handleId: 'video',
+  });
+  assert.deepEqual(repeated, next, 'choosing the already-connected source is idempotent');
+  assert.throws(
+    () =>
+      attachment.planMediaAttachment(next, owner.id, row.starter, choice, fixture.registry, {
+        nodeId: 'video-export',
+        handleId: 'file',
+      }),
+    /already connected/u,
+  );
+  assert.throws(
+    () =>
+      attachment.planMediaAttachment(graph, owner.id, row.starter, choice, fixture.registry, {
+        nodeId: 'video-export',
+        handleId: 'file',
+      }),
+    /cycle/u,
+  );
+  assert.deepEqual(graph, original, 'failed attachment leaves all values and wires intact');
+});
+
+test('video task media discovery includes real image roles but excludes components and hidden ports', async () => {
+  const attachment = await server.ssrLoadModule('/src/workflow/mediaAttachment.ts');
+  const row = fixture.recipes.find((item) => item.id === 'ltx_video_image_to_video');
+  const operations = row.starter.nodes.map((item) => item.operation);
+  const original = structuredClone(operations);
+  const choices = attachment.mediaAttachmentChoices(operations, row.starter.pipelineClass);
+  assert.ok(choices.some((item) => item.kind === 'image'));
+  assert.ok(!choices.some((item) => /pipeline|latent|encoded/u.test(item.role)));
+  assert.deepEqual(operations, original);
+  assert.deepEqual(attachment.mediaAttachmentChoices(operations, 'foreign'), []);
+});

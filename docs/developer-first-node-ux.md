@@ -143,7 +143,13 @@ Whole-pipeline operations remain whole-pipeline operations; no fake encoder is
 inserted. A group with manually nested containers or mirrored custom interfaces
 requires explicit structural editing/ungrouping before automatic task adaptation.
 Audio supports the applicable Model Setup and Audio Output groups described
-below. Video simplification remains separate.
+below. Selected LTX/Wan video routes use the shared stage presentation too;
+other video routes retain their existing native Modular or whole-pipeline nodes.
+Add media reads declared image, audio and video input roles for the selected
+model. It can add an ordinary media loader or use a compatible existing source.
+The attachment stays in the same graph and is one Undo/Redo transaction;
+unsupported task changes still require review. Existing saved graphs are not
+rewritten on open, and missing source files continue to block Run.
 
 ## Audio stages
 

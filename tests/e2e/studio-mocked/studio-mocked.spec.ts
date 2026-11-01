@@ -24,6 +24,140 @@ import type { OperationContract } from '../../../src/workflow/operationContracts
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 
+for (const [task, kind] of [
+  ['video_to_video', 'video'],
+  ['image_to_video', 'image'],
+] as const) {
+  test(`existing video stage attaches a declared ${kind} input through the visible picker and Undo`, async ({
+    page,
+  }) => {
+    await ensureFrontend();
+    const python =
+      process.env.MODIFF_BACKEND_PYTHON ||
+      path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    const selection = [
+      {
+        id: 'video-media-browser',
+        selection: {
+          pipelineClass: 'LTXConditionPipeline',
+          task,
+          executionProfileId: 'ltx-video:direct',
+        },
+      },
+    ];
+    const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+      const child = execFile(
+        python,
+        [path.join(CLIENT_ROOT, 'scripts/template-operation-fixtures.py')],
+        {
+          cwd: BACKEND_ROOT,
+          env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', HF_HUB_OFFLINE: '1' },
+          timeout: 90_000,
+          maxBuffer: 32 * 1024 ** 2,
+          encoding: 'utf8',
+        },
+        (error, stdout) => (error ? reject(error) : resolve({ stdout })),
+      );
+      child.stdin!.end(JSON.stringify(selection));
+    });
+    const fixture = JSON.parse(stdout) as {
+      recipes: { starter: OperationStarter }[];
+      registry: Record<string, NodeData>;
+    };
+    const starter = fixture.recipes[0]!.starter;
+    await page.route('**/operations/starter', (route) => route.fulfill({ json: starter }));
+    await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+    const before = await page.evaluate(
+      async ({ starter, registry }) => {
+        const [{ useFlowStore }, { useNodesStore }, { createOperationStarter }, { mountMediaAttachmentProbe }] =
+          await Promise.all([
+            import('/src/stores/useFlowStore.ts'),
+            import('/src/stores/useNodeStore.ts'),
+            import('/src/workflow/operationAuthoring.ts'),
+            import('/tests/e2e/studio-mocked/mediaAttachmentFixture.tsx'),
+          ]);
+        const graph = createOperationStarter(starter, { x: 80, y: 120 });
+        // This is a CPU schema/control fixture, so retain the real export guard
+        // and select a valid explicit CPU policy before the first snapshot.
+        for (const node of graph.nodes) {
+          if (node.data.params.offload_mode) node.data.params.offload_mode.value = 'none';
+          if (node.data.params.auto_offload) node.data.params.auto_offload.value = false;
+        }
+        const owner = graph.nodes.find((node) => node.data.action === 'LoadPipeline')!;
+        useNodesStore.setState({
+          nodesRegistry: registry,
+          operationContracts: starter.nodes.map((row) => row.operation),
+          pipelineSupport: [
+            {
+              pipelineClass: starter.pipelineClass,
+              coverage: 'declared',
+              reason: 'Exact backend fixture',
+              equivalentTo: [],
+              upstreamTasks: [],
+              tasks: [
+                {
+                  task: starter.task,
+                  execution: 'adapter',
+                  decomposition: 'stages',
+                  operationIds: starter.nodes.map((row) => row.operation.operationId),
+                  executionProfileIds: ['ltx-video:direct'],
+                  dependencies: 'ready',
+                  runtimeRequirements: [],
+                },
+              ],
+            },
+          ],
+        });
+        useFlowStore.getState().replaceGraph(graph, { clearRemovedCache: false });
+        useFlowStore.getState().resetHistory();
+        mountMediaAttachmentProbe(owner.id, owner.id, 'unused-source');
+        return useFlowStore.getState().toObject();
+      },
+      { starter, registry: fixture.registry },
+    );
+    const probe = page.getByTestId('mounted-media-attachment');
+    const readApi = () =>
+      page.evaluate(async () => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return useFlowStore.getState().exportGraph('video-media-browser', undefined, { randomizeSeeds: false });
+      });
+    const beforeApi = await readApi();
+    await expect(probe.getByRole('button', { name: 'Media input source', exact: true })).toHaveText(
+      `Add Load ${kind === 'video' ? 'Video' : 'Image'}`,
+    );
+    await probe.getByRole('button', { name: 'Attach input', exact: true }).click();
+    const read = () =>
+      page.evaluate(async () => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        // History intentionally invalidates derived signal values. Compare the
+        // public saved document plus execution export, not cached runtime hints.
+        return useFlowStore.getState().toObject();
+      });
+    await expect.poll(async () => (await read()).nodes.filter((node) => node.data.action === 'Load').length).toBe(1);
+    const after = await read();
+    const afterApi = await readApi();
+    const loader = after.nodes.find((node) => node.data.action === 'Load')!;
+    expect(loader.data.module).toBe(kind === 'video' ? 'modules.Video' : 'modules.Image');
+    const encoder = after.nodes.find((node) => node.data.action === 'EncodeInputs')!;
+    expect(after.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: loader.id,
+          sourceHandle: kind,
+          target: encoder.id,
+          targetHandle: kind === 'video' ? 'video' : 'reference_images',
+        }),
+      ]),
+    );
+    await probe.getByRole('button', { name: 'Undo source edit', exact: true }).click();
+    expect(await read()).toEqual(before);
+    expect(await readApi()).toEqual(beforeApi);
+    await probe.getByRole('button', { name: 'Redo source edit', exact: true }).click();
+    expect(await read()).toEqual(after);
+    expect(await readApi()).toEqual(afterApi);
+  });
+}
+
 function restorationSnapshot(text: string, preview: string, x: number): WorkflowTabSnapshot {
   return {
     nodes: [

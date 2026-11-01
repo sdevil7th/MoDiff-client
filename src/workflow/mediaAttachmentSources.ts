@@ -4,6 +4,7 @@ import { nodeConnectorParam, nodeConnectorParams } from '../studio/nodeConnector
 import { blockOperationGraphV2, blockProjectionNodeIdV2 } from '../studio/blockRuntimeV2';
 import { blockConnectionTargetsV2 } from '../studio/blockCrossingConnectionsV2';
 import { operationOwnsModel } from './operationContracts';
+import type { MediaAttachmentKind } from './mediaAttachment';
 import { nodeDisplayLabel } from './nodePresentation';
 
 const blockViews = new WeakMap<object, ReturnType<typeof blockOperationGraphV2>>();
@@ -72,7 +73,7 @@ function sourceContexts(nodes: CustomNodeType[], edges: Edge[]) {
 export function mediaAttachmentSources(
   nodes: CustomNodeType[],
   edges: Edge[],
-  kind: 'image' | 'audio',
+  kind: MediaAttachmentKind,
   initialSource?: { nodeId: string; handleId: string },
 ) {
   const context = sourceContexts(nodes, edges);
