@@ -151,6 +151,10 @@ The attachment stays in the same graph and is one Undo/Redo transaction;
 unsupported task changes still require review. Existing saved graphs are not
 rewritten on open, and missing source files continue to block Run.
 
+Model Setup reports when its inline LoRA editor does not support the selected
+pipeline type. This is separate from a graph with shared or missing consumers;
+viewing the limitation does not alter the graph or grant adapter support.
+
 ## Audio stages
 
 The same stage actions offer **Group model setup** for eligible direct audio

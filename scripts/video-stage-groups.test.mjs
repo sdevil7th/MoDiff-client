@@ -17,7 +17,8 @@ let fixture,
   nodes,
   contracts,
   starterParser,
-  drafts;
+  drafts,
+  setupAdapters;
 before(async () => {
   const backend = process.env.MODIFF_BACKEND_DIR || path.resolve('../MoDiff');
   const python =
@@ -85,6 +86,7 @@ before(async () => {
   contracts = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   starterParser = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
   drafts = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
+  setupAdapters = await server.ssrLoadModule('/src/workflow/modelSetupAdapters.ts');
   ({ STUDIO_TEMPLATES: templates } = await server.ssrLoadModule('/src/studio/templates.ts'));
   builder = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
@@ -202,6 +204,22 @@ test('actual video workflows group real encoders and decoder/export without chan
       const restored = JSON.parse(JSON.stringify(grouped));
       assert.deepEqual(api(restored), api(original), 'ordinary saved graph reopens with exact values and connections');
     });
+});
+
+test('direct video Model Setup explains unavailable inline adapters without blaming valid consumers', () => {
+  for (const id of ['ltx_video_text_to_video', 'wan_22_ti2v_5b_seed_vault']) {
+    const row = fixture.recipes.find((item) => item.id === id);
+    assert.ok(row, id);
+    const graph = groups.groupNewOperationGraph(graphFor(row));
+    const setup = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+    assert.ok(setup, id);
+    const before = api(graph);
+    assert.throws(
+      () => setupAdapters.modelSetupAdapterChain(graph, setup.id),
+      /LoRA editing is not available for this pipeline type/,
+    );
+    assert.deepEqual(api(graph), before, 'read-only limitation leaves the complete video graph intact');
+  }
 });
 
 test('five retained video template factories preserve creative settings on their exact staged starters', () => {

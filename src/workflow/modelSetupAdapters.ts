@@ -31,6 +31,15 @@ export function isModelSetupAdapter(node: CustomNodeType) {
   return [NATIVE, DIRECT, AUDIO].includes(key(node));
 }
 
+function adapterTransportUnavailable(owner: CustomNodeType, adapterKey: string): string | null {
+  if (adapterKey === NATIVE) return null;
+  const pipeline = owner.data.params.pipeline;
+  const expected = adapterKey === AUDIO ? 'audio_diffusion_pipeline' : 'image_diffusion_pipeline';
+  return pipeline && connectionTypesAreCompatible(pipeline.type, expected)
+    ? null
+    : 'LoRA editing is not available for this pipeline type in Model Setup.';
+}
+
 /** Follow the actual ordered adapter wires, not labels or canvas positions. */
 export function modelSetupAdapterChain(graph: OperationGraph, rootId: string) {
   const root = graph.nodes.find((node) => node.id === rootId);
@@ -82,7 +91,10 @@ export function modelSetupAdapterChain(graph: OperationGraph, rootId: string) {
       const outgoing = flat.edges.filter((edge) => edge.source === source && edge.sourceHandle === handle);
       if (outgoing.length !== 1) {
         if (!declaredImagePipelineStageTail(flat, owner.id, outgoing))
-          throw new Error('This pipeline has shared or missing consumers. Separate stages before adding adapters.');
+          throw new Error(
+            adapterTransportUnavailable(owner, adapterKey) ??
+              'This pipeline has shared or missing consumers. Separate stages before adding adapters.',
+          );
         tail = outgoing.map((edge) => ({ target: edge.target, targetHandle: edge.targetHandle! }));
         chainEdges.push(...outgoing);
         break;
@@ -297,6 +309,8 @@ function modelSetupAdapterAuthoringLimit(
   )
     return refresh;
   const { owner, native, adapterKey, unpacked } = chain;
+  const unsupported = adapterTransportUnavailable(owner, adapterKey);
+  if (unsupported) return unsupported;
   if (adapterKey === AUDIO) {
     const policy = selectedAudioAdapterPolicy(owner, unpacked.graph, chain.tail, authority);
     if (typeof policy === 'string') return policy;

@@ -216,6 +216,91 @@ for (const [task, kind] of [
   });
 }
 
+for (const [pipelineClass, executionProfileId] of [
+  ['LTXConditionPipeline', 'ltx-video:direct'],
+  ['WanTI2VPipeline', 'wan-22-ti2v-5b:direct'],
+] as const) {
+  test(`${pipelineClass} Model Setup explains its inline adapter limitation without changing the graph`, async ({
+    page,
+  }) => {
+    await ensureFrontend();
+    const python =
+      process.env.MODIFF_BACKEND_PYTHON ||
+      path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+      const child = execFile(
+        python,
+        [path.join(CLIENT_ROOT, 'scripts/template-operation-fixtures.py')],
+        {
+          cwd: BACKEND_ROOT,
+          env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', HF_HUB_OFFLINE: '1' },
+          timeout: 90_000,
+          maxBuffer: 32 * 1024 ** 2,
+          encoding: 'utf8',
+        },
+        (error, stdout) => (error ? reject(error) : resolve({ stdout })),
+      );
+      child.stdin!.end(
+        JSON.stringify([
+          { id: 'video-setup-browser', selection: { pipelineClass, executionProfileId, task: 'text_to_video' } },
+        ]),
+      );
+    });
+    const fixture = JSON.parse(stdout) as {
+      recipes: { starter: OperationStarter }[];
+      registry: Record<string, NodeData>;
+    };
+    await page.goto(`${FRONTEND_URL}/control-state-matrix.html`, { waitUntil: 'domcontentloaded' });
+    const before = await page.evaluate(
+      async ({ starter, registry }) => {
+        const [
+          { useFlowStore },
+          { useNodesStore },
+          { createOperationStarter },
+          groups,
+          { mountModelSetupAdapterProbe },
+        ] = await Promise.all([
+          import('/src/stores/useFlowStore.ts'),
+          import('/src/stores/useNodeStore.ts'),
+          import('/src/workflow/operationAuthoring.ts'),
+          import('/src/workflow/visualOperationGroups.ts'),
+          import('/tests/e2e/studio-mocked/modelSetupAdapterFixture.tsx'),
+        ]);
+        const source = createOperationStarter(starter, { x: 80, y: 120 });
+        for (const node of source.nodes) {
+          if (node.data.params.offload_mode) node.data.params.offload_mode.value = 'none';
+          if (node.data.params.auto_offload) node.data.params.auto_offload.value = false;
+        }
+        const graph = groups.groupNewOperationGraph(source);
+        const setup = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'setup')!;
+        useNodesStore.setState({
+          nodesRegistry: registry,
+          operationContracts: starter.nodes.map((row) => row.operation),
+        });
+        useFlowStore.getState().replaceGraph(graph, { clearRemovedCache: false });
+        useFlowStore.getState().resetHistory();
+        const saved = useFlowStore.getState().toObject();
+        const api = useFlowStore.getState().exportGraph('video-setup-browser', undefined, { randomizeSeeds: false });
+        mountModelSetupAdapterProbe(setup.id);
+        return { saved, api };
+      },
+      { starter: fixture.recipes[0]!.starter, registry: fixture.registry },
+    );
+    const probe = page.getByTestId('mounted-model-setup-adapters');
+    await expect(probe).toContainText('LoRA editing is not available for this pipeline type in Model Setup.');
+    await expect(probe).not.toContainText('shared or missing consumers');
+    await expect(probe.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
+    const after = await page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return {
+        saved: useFlowStore.getState().toObject(),
+        api: useFlowStore.getState().exportGraph('video-setup-browser', undefined, { randomizeSeeds: false }),
+      };
+    });
+    expect(after).toEqual(before);
+  });
+}
+
 function restorationSnapshot(text: string, preview: string, x: number): WorkflowTabSnapshot {
   return {
     nodes: [
