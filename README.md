@@ -28,15 +28,15 @@ application source pair is:
 
 | Repository    | Application source before final packaging  |
 | ------------- | ------------------------------------------ |
-| MoDiff        | `be4d8de439558e5929a2ff3c8941341d13f10f6e` |
-| MoDiff-client | `1c2af2b181f736af7c8baced345a7582a1018532` |
+| MoDiff        | `da44556740b09a65ce0b7c59f79e2ed3f3067fcf` |
+| MoDiff-client | `ef37863c4a5ab2c3736090a6f4fad81b849578d9` |
 
-CI backend contract: `b4cc3a03f6250d42b940da89a6551750103e5a79`.
+CI backend contract: `da44556740b09a65ce0b7c59f79e2ed3f3067fcf`.
 
 Both CI jobs use this exact immutable backend pin. It can include documentation
 descendants of the reviewed application source above.
 
-These application source revisions were reviewed on 31 October 2026. Final
+These application source revisions were reviewed on 1 November 2026. Final
 documentation, CI pairing and bundled-client packaging commits can be later
 descendants; they do not expand model or hardware qualification. Record
 `git rev-parse HEAD` in each checkout and use the final paired handoff when the
