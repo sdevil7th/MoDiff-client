@@ -33,12 +33,11 @@ export function isModelSetupAdapter(node: CustomNodeType) {
 
 function adapterTransportUnavailable(owner: CustomNodeType, adapterKey: string): string | null {
   if (adapterKey === NATIVE) return null;
-  const pipeline = owner.data.params.pipeline;
+  const type = owner.data.params.pipeline?.type;
   const expected = adapterKey === AUDIO ? 'audio_diffusion_pipeline' : 'image_diffusion_pipeline';
   // Legacy generic transports still use the existing backend authoring and
   // actual adapter-port checks. Diagnose incompatible typed transports here.
-  const types = pipeline && (Array.isArray(pipeline.type) ? pipeline.type : [pipeline.type]);
-  return pipeline && (types?.includes('pipeline') || connectionTypesAreCompatible(pipeline.type, expected))
+  return type && (connectionTypesAreCompatible(type, expected) || connectionTypesAreCompatible(type, 'pipeline'))
     ? null
     : 'LoRA editing is not available for this pipeline type in Model Setup.';
 }
