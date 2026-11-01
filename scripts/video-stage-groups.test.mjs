@@ -274,6 +274,10 @@ test('five retained video template factories preserve creative settings on their
       const settings = template.workflowBlockSettings.soundtrack;
       assert.equal(soundtrack.data.params.prompt.value, settings.prompt);
       assert.equal(soundtrack.data.params.seed.value, settings.seed);
+      assert.deepEqual(audioOwner.data.params.model_id.value, {
+        source: settings.model.source,
+        value: settings.model.value,
+      });
       assert.equal(audioOwner.data.params.revision.value, settings.model.revision);
       assert.equal(fit.data.params.target_duration_seconds.value, settings.audioFit.targetDurationSeconds);
       assert.ok(
@@ -293,6 +297,19 @@ test('five retained video template factories preserve creative settings on their
       );
     }
   }
+});
+
+test('soundtrack field projection preserves managed selector metadata and exact fresh-field revision', async () => {
+  const values = await server.ssrLoadModule('/src/studio/controlledWorkflowValues.ts');
+  const settings = templates.find((item) => item.id === 'wan_22_ti2v_5b_seed_vault').workflowBlockSettings.soundtrack;
+  const fresh = values.soundtrackWorkflowFieldValues(settings, defaults);
+  const managed = values.soundtrackWorkflowFieldValues(settings, defaults, { retainSelectorMetadata: true });
+  const value = (set, field) => set.pipeline.find((row) => row.fields.includes(field)).value;
+  assert.deepEqual(value(managed, 'model_id'), settings.model);
+  assert.equal(value(managed, 'model_id').revision, '200ba991ae448051e14b0183157e35c2d27c9fb0');
+  assert.deepEqual(value(fresh, 'model_id'), { source: settings.model.source, value: settings.model.value });
+  assert.equal(value(fresh, 'revision'), settings.model.revision);
+  assert.equal(value(managed, 'revision'), settings.model.revision);
 });
 
 test('joint video output keeps audio connected and refuses an independently supplied soundtrack', () => {
@@ -442,6 +459,17 @@ test('fresh video drafts connect declared image and video sources without changi
     assert.deepEqual(starter, original);
     assert.deepEqual(notices, [], row.id);
     const flat = groups.unpackVisualOperationGroups(graph).graph;
+    for (const node of flat.nodes)
+      for (const [field, expected] of [
+        ['guidance_scale', 1],
+        ['num_inference_steps', 8],
+      ])
+        if (node.data.params[field])
+          assert.equal(
+            node.data.params[field].value ?? node.data.params[field].default,
+            expected,
+            `${row.id}/${node.data.action}/${field}`,
+          );
     const kind = row.starter.task === 'video_to_video' ? 'video' : 'image';
     const source = flat.nodes.filter(
       (node) =>

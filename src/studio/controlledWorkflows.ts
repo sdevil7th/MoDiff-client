@@ -886,7 +886,7 @@ export async function addSoundtrackWorkflowBlock(
       y: 140,
     });
 
-    const fieldValues = soundtrackWorkflowFieldValues(settings, executionForm);
+    const fieldValues = soundtrackWorkflowFieldValues(settings, executionForm, { retainSelectorMetadata: true });
     for (const [role, nodeId] of Object.entries({ quantization, recipe, pipeline, generate, audioFit, exporter }))
       for (const { fields, value } of fieldValues[role as keyof typeof fieldValues])
         setParamIfPresent(nodeId, fields, value);

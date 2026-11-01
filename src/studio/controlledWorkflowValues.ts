@@ -58,6 +58,7 @@ export function audioFitWorkflowFieldValues(settings: StudioAudioFitSettings): C
 export function soundtrackWorkflowFieldValues(
   settings: NonNullable<StudioTemplateWorkflowBlockSettings['soundtrack']>,
   executionForm: StudioFormState,
+  options: { retainSelectorMetadata?: boolean } = {},
 ): Record<'quantization' | 'recipe' | 'pipeline' | 'generate' | 'audioFit' | 'exporter', ControlledFieldValue[]> {
   const fields = (values: Record<string, unknown>) =>
     Object.entries(values).map(([field, value]) => ({ fields: [field], value }));
@@ -74,7 +75,11 @@ export function soundtrackWorkflowFieldValues(
       vae_tiling: true,
     }),
     pipeline: fields({
-      model_id: { source: settings.model.source, value: settings.model.value },
+      // Managed documents retain their full recorded selector. Fresh registry
+      // fields use its transport value plus the separately declared revision.
+      model_id: options.retainSelectorMetadata
+        ? settings.model
+        : { source: settings.model.source, value: settings.model.value },
       ...(settings.model.revision ? { revision: settings.model.revision } : {}),
       pipeline_class: settings.pipelineClass,
       mode: 'text_to_audio',
