@@ -24,6 +24,64 @@ import type { OperationContract } from '../../../src/workflow/operationContracts
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 
+test('latest output download uses the backend captured model name', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await dismissTaskLauncher(page);
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const current = useStudioStore.getState();
+    // The legacy form keeps its previous model; the executed graph's receipt
+    // records the actual generic model. Download naming must use that receipt.
+    useStudioStore.setState({
+      outputs: [
+        {
+          ...current.form,
+          id: 'filename-probe',
+          nodeId: 'video-output',
+          fieldKey: 'preview',
+          value: null,
+          url: '/file?file=filename-probe.mp4',
+          displayType: 'video',
+          modelType: current.form.modelType,
+          modelLabel: 'Captured video model',
+          repo: 'Pika-Labs/Pika-H3-Flex',
+          formSnapshot: current.form,
+          createdAt: 1,
+          favorite: false,
+          workflowTabId: current.activeWorkflowTabId,
+          resolvedExecutionInputs: {
+            schemaVersion: 1,
+            source: 'backend-execution',
+            taskId: 'filename-task',
+            attemptIndex: 0,
+            nodeId: 'video-output',
+            nodes: [],
+            summary: { modelType: 'PikaH3FlexModularPipeline' },
+            ambiguousFields: [],
+            unavailableFields: [],
+            uncapturedNodeIds: [],
+            truncated: false,
+          },
+        },
+      ],
+    });
+  });
+  await page.getByTestId('topbar-export').click();
+  await expect(page.getByTestId('topbar-export-latest-output')).toBeEnabled();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('topbar-export-latest-output').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('modiff-PikaH3FlexModularPipeline-filename-probe-workflow.json');
+  const exported = JSON.parse(await fs.readFile((await download.path())!, 'utf8'));
+  expect(exported.latestOutput.resolvedExecutionInputs.summary.modelType).toBe('PikaH3FlexModularPipeline');
+});
+
 for (const [task, kind] of [
   ['video_to_video', 'video'],
   ['image_to_video', 'image'],

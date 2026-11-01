@@ -60,6 +60,7 @@ import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { getDownloadPercent, hasHfDownloadFailed, isHfDownloadActive } from '../studio/modelInstall';
 import { buildOutputWorkflowPackage, buildWorkflowPackage } from '../studio/workflowPackage';
+import { outputModelKey } from '../studio/resolvedExecutionInputs';
 import { cx } from '../utils/classNames';
 import type { StudioResourceMode } from '../studio/types';
 import { formatRequestError } from '../utils/requestJson';
@@ -482,7 +483,7 @@ function TopBar() {
   const handleLatestOutputPackageExportClick = useCallback(() => {
     if (!latestWorkflowOutput) return;
     downloadJson(
-      `modiff-${latestWorkflowOutput.modelType}-${latestWorkflowOutput.id}-workflow.json`,
+      `modiff-${outputModelKey(latestWorkflowOutput)}-${latestWorkflowOutput.id}-workflow.json`,
       buildOutputWorkflowPackage(latestWorkflowOutput),
     );
   }, [latestWorkflowOutput]);
