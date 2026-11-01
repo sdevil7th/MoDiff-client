@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Paired native contracts and lossless Save Image history previews.
-          ref: da44556740b09a65ce0b7c59f79e2ed3f3067fcf
+          # Paired generic LTX/Wan stages and retained video template finishing.
+          ref: 270a2289574e9a2cd5df676726252d5076cb9faf
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: da44556740b09a65ce0b7c59f79e2ed3f3067fcf
+          ref: 270a2289574e9a2cd5df676726252d5076cb9faf
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
