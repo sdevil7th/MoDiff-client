@@ -410,7 +410,24 @@ Keep Add custom node, the strict response parser and backend hash-bound imports 
 
 Run the complete local CI-equivalent gate before requesting review:
 
+The schema fixtures need the ordinary backend interpreter from the setup above.
+Set both interpreter variables explicitly; do not point them at a managed
+optional-runtime overlay. The fixtures do not download model weights.
+
+On Linux/macOS:
+
 ```bash
+export MODIFF_BACKEND_PYTHON="$PWD/../MoDiff/.venv/bin/python"
+export MODIFF_PYTHON="$MODIFF_BACKEND_PYTHON"
+npx playwright install chromium
+npm run check
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:MODIFF_BACKEND_PYTHON = (Resolve-Path ..\MoDiff\.venv\Scripts\python.exe).Path
+$env:MODIFF_PYTHON = $env:MODIFF_BACKEND_PYTHON
 npx playwright install chromium
 npm run check
 ```
