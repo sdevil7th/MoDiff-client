@@ -245,6 +245,13 @@ explicit Custom settings and are not silently admitted by attachment.
 
 ## Verification trail
 
+The library parser accepts collection schema 7 with explicit immutable source
+supplements, while preserving schema 5/6 collections. Member definitions keep
+their own schema and source revision; adding a source does not rewrite existing
+definition hashes. Source metadata is for authoring and does not activate a
+runtime, approve custom code or establish model/hardware qualification. The
+client renders these declarations without model-specific parameter branches.
+
 Focused source/lifecycle, graph transactions, saved-Block boundaries, registry
 and search tests precede real browser journeys. The model-free Local/Hub/Git
 journeys import, insert, connect, Run and refresh using a real backend. The Hub
