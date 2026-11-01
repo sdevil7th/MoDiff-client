@@ -288,6 +288,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Explicit mixed-source collection validation: 494870 -> 495136 gzip bytes.
+  // Add its measured aggregate cost; retain 18 bytes of headroom and all deferred caps.
+  266 +
   64 +
   10 +
   57 +
@@ -418,6 +421,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // Same feature: 673359 -> 673622 gzip bytes, retaining 19 bytes of headroom.
+  // No dependency, minifier, startup membership or lazy-boundary change.
+  263 +
   64 +
   13 +
   52 +
