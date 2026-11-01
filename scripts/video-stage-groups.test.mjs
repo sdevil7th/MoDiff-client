@@ -16,7 +16,8 @@ let fixture,
   defaults,
   nodes,
   contracts,
-  starterParser;
+  starterParser,
+  drafts;
 before(async () => {
   const backend = process.env.MODIFF_BACKEND_DIR || path.resolve('../MoDiff');
   const python =
@@ -83,6 +84,7 @@ before(async () => {
   nodes = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   contracts = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
   starterParser = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+  drafts = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
   ({ STUDIO_TEMPLATES: templates } = await server.ssrLoadModule('/src/studio/templates.ts'));
   builder = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
@@ -405,4 +407,23 @@ test('video output wording follows the declared decoder after removing the previ
     label: 'Video Output',
     name: 'video output',
   });
+});
+
+test('fresh task drafts group the real retained-video exporter with their decoder', () => {
+  for (const row of fixture.recipes.filter((item) => item.spec && item.starter.task === 'text_to_video')) {
+    const starter = structuredClone(row.starter);
+    for (const { node } of starter.nodes)
+      if (String(node.params.device?.value ?? node.params.device?.default).startsWith('cpu')) {
+        if (node.params.offload_mode) node.params.offload_mode.value = 'none';
+        if (node.params.auto_offload) node.params.auto_offload.value = false;
+      }
+    const { graph } = drafts.createWorkflowDraft(starter, fixture.registry);
+    const output = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'output');
+    assert.ok(output, row.id);
+    const leaves = output.data.blockInstanceV2.effectiveGraph.nodes;
+    assert.ok(leaves.some((node) => node.data.action === 'DecodeLatents'));
+    assert.ok(leaves.some((node) => node.data.module === 'modules.Video' && node.data.action === 'ExportAsset'));
+    assert.equal(output.data.blockInstanceV2.previewStates[0].binding.mediaType, 'video');
+    assert.deepEqual(api(graph), api(groups.unpackVisualOperationGroups(graph).graph));
+  }
 });

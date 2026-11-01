@@ -221,7 +221,9 @@ function operationStageMembers(
       const previews = ordinary.filter(
         (node) =>
           (media === 'video'
-            ? ['modules.Video.Export', 'modules.Video.ExportWithAudio'].includes(nodeKey(node))
+            ? ['modules.Video.Export', 'modules.Video.ExportWithAudio', 'modules.Video.ExportAsset'].includes(
+                nodeKey(node),
+              )
             : nodeKey(node) === (media === 'audio' ? 'modules.Audio.Export' : 'modules.Image.Preview')) &&
           node.data.params.preview?.display === `ui_${media}` &&
           (media === 'image' ||
