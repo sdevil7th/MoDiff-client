@@ -27,6 +27,15 @@ recipe, graph, task receipts, model/input identities and source/runtime provenan
 Historical examples keep their original recipe authority when templates change.
 Updating a template hash alone does not establish equivalent execution.
 
+The template browser labels retained approved media **Previous recipe example**
+when the earlier creator lock matches without the new execution selection.
+It also recognizes an added explicit Hub artifact revision only when the
+published record's model revision and model commit both already contain that
+exact immutable repository/revision pair. The previous lock must still match
+all other settings, weight hashes, input bindings and review requirements.
+This read-only display lookup never rewrites the current template or published
+record, and never satisfies current-graph exactness or the release Gallery gate.
+
 The maintainer-only `gallery:repair-evidence` command repairs one retained example
 from its original evidence. It requires the original per-run provenance and
 matching creator settings, admission locks, consumed form, canonical graph,

@@ -1129,7 +1129,7 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
     '',
   ],
   [
-    'cinematic_octane, 3D Portrait, 3d render. One adult female deep-sea engineer in a centered chest-up portrait, with her complete head, both shoulders, and the full broad pressure collar visible inside the frame. Sharp focus on both symmetrical eyes. Damp short black hair with individual strands, natural skin pores, and one thin healed scar crossing only her right eyebrow; intact skin, no blood, bruise, swelling, or open wound. Plain graphite diving suit with crisp woven fabric and one broad oxidized-brass pressure collar with fine brushed-metal microtexture. Controlled cinematic CG depth, cool cyan key light, restrained warm amber rim light, realistic material response, no text, logo, watermark, or extra person.',
+    'cinematic_octane, 3D Portrait, 3d render. A sharp, high-detail cinematic CG portrait of one adult female deep-sea engineer. Centered chest-up composition, full head, both shoulders and the complete wide pressure collar comfortably inside the frame. Smooth healthy unmarked face, relaxed neutral expression, clear symmetrical eyes with sharply resolved irises and eyelashes. Short damp black hair separated into individual strands. Graphite woven diving suit and a single broad oxidized-brass pressure collar with finely brushed metal texture. Cool cyan key light and restrained warm amber rim light. Both eyes, facial features and the collar share a sharp focus plane; readable material texture, controlled depth of field and a softly blurred plain dark teal background. One person, realistic anatomy, clean studio-quality render.',
     '',
   ],
   [
@@ -2966,7 +2966,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
   },
   {
     id: 'flux_lora_cinematic_octane_3d',
-    label: 'FLUX.1-dev — LoRA Mix: Cinematic Octane 3D',
+    label: 'FLUX.1-dev — LoRA Mix: Cinematic Octane 3D (Recipe v3)',
     mode: 'text_to_image',
     modelType: 'FluxDevPipeline',
     category: 'lora',
@@ -2975,18 +2975,25 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     requiredBackendCapabilities: ['Diffusers image direct pipeline', 'pinned LoRA adapter verification'],
     workflowBlocks: ['lora'],
     workflowBlockSettings: { lora: FLUX_THEME_LORAS.cinematicOctane3d },
-    vramEstimate: '24 GB native or quantized/offloaded',
+    vramEstimate: 'High-memory host with group offload; Windows fit unverified',
     runtimeEstimate: '2-6 min after the base and both adapters are resident',
     description:
       'Cinematic-Octane character rendering with the documented trigger and a low-strength 3D-render adapter for controlled CG depth.',
     presetId: 'flux_quality',
-    example: example(9371, '2-6 min after the base and both adapters are resident', {
-      width: 768,
-      height: 1024,
-      steps: 24,
-      guidanceScale: 3,
-      resourceMode: 'auto',
-    }),
+    example: {
+      ...example(9371, '2-6 min after the base and both adapters are resident', {
+        width: 768,
+        height: 1024,
+        steps: 24,
+        guidanceScale: 1,
+        resourceMode: 'expert',
+        dtype: 'bfloat16',
+        autoOffload: true,
+        offloadMode: 'group_cpu',
+      }),
+      notes:
+        'Recipe v3 uses an injury-free portrait prompt, true CFG 1 and retained distilled guidance 3.5. Custom group offload was tested on Linux. Auto, Windows fit and public Gallery qualification remain unverified.',
+    },
   },
   {
     id: 'flux_lora_ghibli_story',

@@ -1,3 +1,8 @@
+// Recorded-pin historical examples and the explicit portrait-v3 recipe measure
+// largest/startup/deferred gzip 494455/672941/328233 versus the accepted
+// 494259/672742/328069. Add measured startup growth 196/199, retaining 8/11
+// bytes of headroom. The same four startup and 90 deferred assets retain their
+// loading membership. Both deferred caps, dependencies and identity gates stay fixed.
 // Versioned FLUX3 prompts, scoped image receipts and ordinary protected-PNG
 // authoring measure largest/startup/deferred gzip 494259/672742/328069 versus
 // accepted 493208/671695/327026. Add only measured growth 1051/1047/1043,
@@ -265,6 +270,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Allow only measured startup growth (+1649/+1651), retaining 8/11 bytes headroom.
 // Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  196 +
   1051 +
   38 +
   1649 +
@@ -388,6 +394,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  199 +
   1047 +
   36 +
   1651 +

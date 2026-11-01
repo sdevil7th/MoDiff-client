@@ -141,6 +141,16 @@ explicitly named adapters retain their authored names.
 
 ## Historical Gallery examples
 
+The Cinematic Octane portrait's **recipe v3** removes injury references and uses
+true CFG 1 with the retained distilled guidance 3.5. The previous true-CFG-3
+recipe produced soft detail even in an adapter-free control. The v3 recipe keeps
+the two immutable adapters and their strengths, seed, dimensions, steps and
+group offload, and explicitly selects Custom memory. Its original v1 creator
+fixture and comparison remain unchanged; the separate creative-revision fixture
+permits only the new prompt, true CFG and memory-policy selection. This is a new
+creative recipe, not pixel parity with v1, Auto/Windows qualification or public
+media approval.
+
 An existing approved image generated with the previous recipe can remain visible
 as **Previous recipe example** when its original prompt, settings, inputs and
 model revision still match. It is historical output, not visual qualification of

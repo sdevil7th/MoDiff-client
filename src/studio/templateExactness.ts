@@ -438,15 +438,53 @@ export function findManifestEntry(
   );
 }
 
-/** Approved media from the unchanged creator recipe before its execution
- * selection changed. It is display provenance, never proof of the new graph. */
+function historicalWorkflowSettings(value: unknown, recordedModels: readonly string[]): unknown {
+  if (Array.isArray(value)) return value.map((item) => historicalWorkflowSettings(item, recordedModels));
+  if (!value || typeof value !== 'object') return value;
+  const artifact = value as Record<string, unknown>;
+  // Some old creator locks predate an explicit authoring revision even though
+  // the actual published run already records that exact immutable artifact.
+  // Keep all other artifact metadata in the lock, including its weight hash.
+  const recordedRevision =
+    artifact.source === 'hub' &&
+    typeof artifact.revision === 'string' &&
+    /^[a-f0-9]{40}$/u.test(artifact.revision) &&
+    recordedModels.includes(`${artifact.value}@${artifact.revision}`);
+  return Object.fromEntries(
+    Object.entries(artifact).flatMap(([key, item]) =>
+      key === 'revision' && recordedRevision ? [] : [[key, historicalWorkflowSettings(item, recordedModels)]],
+    ),
+  );
+}
+
+/** Approved media from an earlier creator lock. It is display provenance,
+ * never proof of the current graph or execution selection. */
 export function findHistoricalTemplateManifestEntry(
   template: StudioTemplate,
   manifest: TemplateGalleryManifest | null | undefined,
   options: { requireCardPreview?: boolean } = {},
 ) {
-  if (!template.executionSelection) return undefined;
-  return findManifestEntry({ ...template, executionSelection: undefined }, manifest, options);
+  if (!template.executionSelection || !manifest || manifest.schemaVersion !== 2) return undefined;
+  const previous = { ...template, executionSelection: undefined };
+  const historical = findManifestEntry(previous, manifest, options);
+  if (historical || !template.workflowBlockSettings) return historical;
+  return manifest.examples.find(
+    (entry) =>
+      coerceStudioTemplateId(entry.templateId) === template.id &&
+      typeof entry.modelCommit === 'string' &&
+      entry.modelRevision === entry.modelCommit &&
+      findManifestEntry(
+        {
+          ...previous,
+          workflowBlockSettings: historicalWorkflowSettings(
+            template.workflowBlockSettings,
+            entry.modelCommit.split(' | '),
+          ) as StudioTemplate['workflowBlockSettings'],
+        },
+        { ...manifest, examples: [entry] },
+        options,
+      ),
+  );
 }
 
 export function getTemplateExampleUiState(

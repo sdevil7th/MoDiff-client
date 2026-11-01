@@ -4,7 +4,12 @@ import { createServer } from 'vite';
 
 let server, add;
 before(async () => {
-  server = await createServer({ configFile: false, logLevel: 'silent', server: { middlewareMode: true, watch: null } });
+  server = await createServer({
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+  });
   ({ addReviewedValuePortsV2: add } = await server.ssrLoadModule('/src/studio/reviewedValuePortsV2.ts'));
 });
 after(async () => {

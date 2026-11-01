@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -349,13 +350,33 @@ test('the real public capability and every selected starter response pass produc
   }
 });
 
-test('the historical 54 image templates select exact developer operations without changing creator settings', async () => {
+test('the 54 image templates preserve creator contracts except explicit versioned creative revisions', async () => {
   const baseline = JSON.parse(await readFile('tests/fixtures/image-template-creator-contracts.v1.json', 'utf8'));
+  const revisions = JSON.parse(await readFile('tests/fixtures/image-template-creative-revisions.v1.json', 'utf8'));
+  assert.equal(revisions.schemaVersion, 1);
+  assert.deepEqual(
+    revisions.revisions.map((row) => row.templateId),
+    ['flux_lora_cinematic_octane_3d'],
+  );
   const images = templates.filter((template) => template.example?.mediaType === 'image');
   assert.equal(images.length, 54);
   for (const expected of baseline.templates) {
     const template = images.find((item) => item.id === expected.templateId);
     assert.ok(template, expected.templateId);
+    const expectedContract = structuredClone(expected.contract);
+    const revision = revisions.revisions.find((row) => row.templateId === template.id);
+    if (revision) {
+      const digest = (text) => createHash('sha256').update(text).digest('hex');
+      assert.equal(revision.recipeVersion, 3);
+      assert.equal(digest(expected.contract.lockedSettings.prompt), revision.previousPromptSha256);
+      assert.equal(digest(template.prompt), revision.promptSha256);
+      assert.deepEqual(revision.lockedSettings, { guidanceScale: 1, resourceMode: 'expert' });
+      assert.doesNotMatch(template.prompt, /\b(?:scar|wound|blood|bruise)\b/iu);
+      assert.match(template.prompt, /healthy unmarked face/u);
+      assert.equal(template.example.status, 'unverified', 'creative review never grants public qualification');
+      expectedContract.lockedSettings.prompt = template.prompt;
+      Object.assign(expectedContract.lockedSettings, revision.lockedSettings);
+    }
     assert.deepEqual(
       {
         lockedSettings: exactness.getTemplateLockedSettings(template),
@@ -363,8 +384,8 @@ test('the historical 54 image templates select exact developer operations withou
         workflowBlocks: template.workflowBlocks ?? [],
         workflowBlockSettings: template.workflowBlockSettings ?? {},
       },
-      expected.contract,
-      `${template.id} retains the complete creator contract`,
+      expectedContract,
+      `${template.id} retains every setting outside its declared creative revision`,
     );
     assert.equal(template.executionSelection?.schemaVersion, 1, `${template.id} selects a reviewed operation recipe`);
     assert.ok(template.executionSelection.executionProfileId);
@@ -419,6 +440,52 @@ test('historical approved image remains visible without becoming proof of the cu
   assert.ok(exactness.getTemplateCardMedia(template, manifest).mediaPath);
   const changedPrompt = { ...template, prompt: `${template.prompt} different scene` };
   assert.equal(exactness.findHistoricalTemplateManifestEntry(changedPrompt, manifest), undefined);
+});
+
+test('historical adapter examples retain their recorded immutable pin when authoring adds that revision', async () => {
+  const manifest = JSON.parse(await readFile('public/template-gallery/manifest.json', 'utf8'));
+  for (const id of [
+    'qwen_product_ad_composite',
+    'qwen_product_relight',
+    'qwen_logo_texture',
+    'character_edit',
+    'reference_fusion',
+    'qwen_multi_reference_product',
+  ]) {
+    const template = templates.find((item) => item.id === id);
+    const before = structuredClone(template);
+    assert.equal(exactness.findManifestEntry(template, manifest), undefined);
+    const previous = exactness.findHistoricalTemplateManifestEntry(template, manifest);
+    assert.ok(previous, id);
+    assert.equal(previous.templateLockHash, manifest.examples.find((item) => item.templateId === id).templateLockHash);
+    assert.equal(
+      exactness.getTemplateExampleUiState(template, selectedForm(template), null, manifest).status,
+      'historical',
+    );
+    assert.deepEqual(template, before, 'historical lookup never rewrites the current template');
+    for (const change of [
+      { revision: 'a'.repeat(40) },
+      { revision: 'main' },
+      { value: 'another/adapter' },
+      { sha256: 'b'.repeat(64) },
+      { byteSize: 1 },
+      { source: 'local' },
+    ]) {
+      const changed = structuredClone(template);
+      Object.assign(changed.workflowBlockSettings.lora.model, change);
+      assert.equal(exactness.findHistoricalTemplateManifestEntry(changed, manifest), undefined, JSON.stringify(change));
+    }
+    const changedScale = structuredClone(template);
+    changedScale.workflowBlockSettings.lora.scale = 0.5;
+    assert.equal(exactness.findHistoricalTemplateManifestEntry(changedScale, manifest), undefined);
+    const changedPrompt = { ...template, prompt: template.prompt + ' changed scene' };
+    assert.equal(exactness.findHistoricalTemplateManifestEntry(changedPrompt, manifest), undefined);
+    for (const field of ['modelCommit', 'modelRevision']) {
+      const unbound = structuredClone(manifest);
+      unbound.examples.find((item) => item.templateId === id)[field] = 'another/adapter@' + 'a'.repeat(40);
+      assert.equal(exactness.findHistoricalTemplateManifestEntry(template, unbound), undefined, field);
+    }
+  }
 });
 
 function selectedForm(template) {
