@@ -172,12 +172,19 @@ const nodeInputNames: Record<string, Record<string, string>> = {
   'Image.Save': { ...inputNames, filename: 'imageSaveFilename', quality: 'imageSaveQuality' },
   'ModularDiffusers.ModelsLoader': { ...inputNames, weight_format: 'weightFormat' },
   'DiffusersImage.LoadPipeline': { ...inputNames, mode: 'executionMode' },
-  ...Object.fromEntries(
-    ['EncodeInputs', 'Denoise', 'DecodeLatents'].map((action) => [
-      `DiffusersVideo.${action}`,
-      { ...inputNames, executed_task: 'executedTask' },
-    ]),
-  ),
+  'DiffusersVideo.EncodeInputs': {
+    ...inputNames,
+    executed_task: 'executedTask',
+    video_source_sha256: 'videoSourceSha256',
+    video_source_frames: 'videoSourceFrames',
+  },
+  'DiffusersVideo.Denoise': {
+    ...inputNames,
+    executed_task: 'executedTask',
+    conditioning_strength: 'conditioningStrength',
+    denoise_strength: 'denoiseStrength',
+  },
+  'DiffusersVideo.DecodeLatents': { ...inputNames, executed_task: 'executedTask' },
   ...Object.fromEntries(
     [
       'Generate',

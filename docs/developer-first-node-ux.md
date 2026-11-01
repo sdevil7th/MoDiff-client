@@ -155,6 +155,12 @@ Model Setup reports when its inline LoRA editor does not support the selected
 pipeline type. This is separate from a graph with shared or missing consumers;
 viewing the limitation does not alter the graph or grant adapter support.
 
+Recorded ordinary video stage inputs keep condition strength and denoise
+strength separate. A source-video pixel digest identifies the ordered frozen
+PIL frames used by Encode Inputs, alongside their count; it is not a source-file
+hash. Other frame types report an unavailable digest. Saved receipts survive
+history reload without borrowing values from the current form.
+
 ## Audio stages
 
 The same stage actions offer **Group model setup** for eligible direct audio

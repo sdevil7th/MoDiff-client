@@ -376,6 +376,63 @@ test('optional accounting rejects unknown scopes, objects, origins, projections 
   assert.equal(JSON.stringify(inputs.coerceResolvedExecutionInputs(old, legacyIdentity)), JSON.stringify(old));
 });
 
+test('video source and distinct condition strengths survive the actual backend receipt boundary', () => {
+  const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    `${backend}.venv/${process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'}`;
+  const generated = spawnSync(
+    python,
+    [
+      '-B',
+      '-c',
+      String.raw`
+import json
+from modiff.execution_input_provenance import capture_generation_inputs, build_resolved_execution_inputs
+nodes = {
+    'encode': {'module': 'modules.DiffusersVideo', 'action': 'EncodeInputs', 'params': {}},
+    'sample': {'module': 'modules.DiffusersVideo', 'action': 'Denoise', 'params': {
+        'encoded_inputs': {'sourceId': 'encode', 'sourceKey': 'encoded_inputs'}}},
+}
+records = {
+    'encode': capture_generation_inputs('encode', nodes['encode'], {'video_source_sha256': 'a' * 64, 'video_source_frames': 121}),
+    'sample': capture_generation_inputs('sample', nodes['sample'], {'conditioning_strength': .65, 'denoise_strength': .8}),
+}
+print(json.dumps(build_resolved_execution_inputs({'nodes': nodes}, records, task_id='video-input-contract', attempt_index=0, node_id='sample')))
+`,
+    ],
+    { cwd: backend, encoding: 'utf8', maxBuffer: 1_000_000 },
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  const capture = JSON.parse(generated.stdout);
+  assert.deepEqual(capture.summary, {
+    videoSourceSha256: 'a'.repeat(64),
+    videoSourceFrames: 121,
+    conditioningStrength: 0.65,
+    denoiseStrength: 0.8,
+  });
+  const parsed = inputs.coerceResolvedExecutionInputs(capture, capture);
+  assert.deepEqual(parsed, capture);
+  const output = contracts.coerceStudioOutput({
+    id: 'video-input-contract-output',
+    url: '/clip.mp4',
+    displayType: 'video',
+    taskId: capture.taskId,
+    nodeId: capture.nodeId,
+    attemptIndex: capture.attemptIndex,
+    resolvedExecutionInputs: capture,
+  });
+  assert.deepEqual(output.resolvedExecutionInputs, capture);
+  assert.deepEqual(contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output))).resolvedExecutionInputs, capture);
+  const unrelated = structuredClone(capture);
+  unrelated.nodes[0].module = 'modules.DiffusersImage';
+  assert.equal(
+    inputs.coerceResolvedExecutionInputs(unrelated, unrelated),
+    undefined,
+    'Source-video fields remain scoped to video encoding',
+  );
+});
+
 test('SSR receipt imports and explicit watch requests allocate no filesystem watchers', () => {
   assert.equal(server.config.server.watch, null);
   assert.deepEqual(server.watcher.getWatched(), {});
