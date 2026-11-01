@@ -449,7 +449,9 @@ platform smoke jobs remain client-only.
 For a coordinated change, commit and review the backend first, then replace the
 backend `ref` in both jobs in `.github/workflows/ci.yml` with that actual compatible
 40-character commit SHA and run the paired gates. Keep both refs immutable and
-equal. The selected backend must contain its reviewed native setup contract and
+equal, and update README's `CI backend contract` declaration with them. Keep the
+reviewed application-source table independent from that CI selection. The
+selected backend must contain its reviewed native setup contract and
 `uv.lock`; the workflow
 checks these before setup. Do not substitute a mutable branch or an invented
 future SHA for the paired commit.

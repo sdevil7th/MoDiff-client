@@ -31,10 +31,12 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `1239d1cecd12a7318eb263ca17c34d4fc0445d14`.
+CI backend contract: `5a8cc1a4f31c73741c2c0fb9f916153b27a4ade2`.
 
-Both CI jobs use this exact immutable backend pin. It can include documentation
-descendants of the reviewed application source above.
+Both CI jobs use this exact immutable backend pin. The application table above
+is the earlier reviewed testing baseline. Current CI also covers the pending
+video-stage changes; a CI pin alone does not establish a new deployed pair or
+expand model/hardware qualification.
 
 These application source revisions were reviewed on 1 November 2026. Final
 documentation, CI pairing and bundled-client packaging commits can be later
