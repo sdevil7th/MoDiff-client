@@ -427,3 +427,40 @@ test('fresh task drafts group the real retained-video exporter with their decode
     assert.deepEqual(api(graph), api(groups.unpackVisualOperationGroups(graph).graph));
   }
 });
+
+test('fresh video drafts connect declared image and video sources without changing the starter', () => {
+  for (const row of fixture.recipes.filter((item) => item.spec && item.starter.task !== 'text_to_video')) {
+    const starter = structuredClone(row.starter);
+    // The no-weight fixture is CPU-only; retain the ordinary export boundary.
+    for (const { node } of starter.nodes)
+      if (String(node.params.device?.value ?? node.params.device?.default).startsWith('cpu')) {
+        if (node.params.offload_mode) node.params.offload_mode.value = 'none';
+        if (node.params.auto_offload) node.params.auto_offload.value = false;
+      }
+    const original = structuredClone(starter);
+    const { graph, notices } = drafts.createWorkflowDraft(starter, fixture.registry);
+    assert.deepEqual(starter, original);
+    assert.deepEqual(notices, [], row.id);
+    const flat = groups.unpackVisualOperationGroups(graph).graph;
+    const kind = row.starter.task === 'video_to_video' ? 'video' : 'image';
+    const source = flat.nodes.filter(
+      (node) =>
+        node.data.module === (kind === 'video' ? 'modules.Video' : 'modules.Image') && node.data.action === 'Load',
+    );
+    assert.equal(source.length, 1, row.id);
+    const connections = flat.edges.filter((edge) => edge.source === source[0].id && edge.sourceHandle === kind);
+    assert.equal(connections.length, 1, row.id);
+    const target = flat.nodes.find((node) => node.id === connections[0].target);
+    assert.equal(target.data.action, 'EncodeInputs');
+    assert.equal(connections[0].targetHandle, kind === 'video' ? 'video' : 'reference_images');
+    assert.deepEqual(api(graph), api(flat));
+    const unavailable = { ...fixture.registry };
+    delete unavailable[kind === 'video' ? 'modules.Video.Load' : 'modules.Image.Load'];
+    const missing = drafts.createWorkflowDraft(starter, unavailable);
+    assert.ok(missing.notices.some((message) => message.includes('loader is unavailable or incompatible')));
+    assert.equal(
+      groups.unpackVisualOperationGroups(missing.graph).graph.nodes.some((node) => node.data.action === 'Load'),
+      false,
+    );
+  }
+});

@@ -1,3 +1,8 @@
+// Required media loaders in fresh video drafts measure largest/startup/deferred
+// gzip 494816/673303/329249 versus 494806/673290/329066. Add only measured
+// startup growth 10/13, retaining 8/11 bytes of headroom. Both deferred caps
+// remain fixed; only DeveloperWorkflowLauncher.js changes after URL-version
+// normalization. The same 94 asset names and build rules retain membership.
 // Versioned video task observations measure largest/startup/deferred gzip
 // 494806/673290/329066 versus 494749/673238/329380. Add measured startup
 // growth 57/52, retaining 8/11 bytes of headroom and both deferred caps.
@@ -281,6 +286,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Allow only measured startup growth (+1649/+1651), retaining 8/11 bytes headroom.
 // Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  10 +
   57 +
   294 +
   196 +
@@ -407,6 +413,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // Preserve the separately measured 64-byte shared loading-policy allowance above.
 // Preserve the measured 384-byte selected-image authoring allowance above.
 const MAX_STARTUP_GZIP_BYTES =
+  13 +
   52 +
   297 +
   199 +

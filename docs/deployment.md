@@ -134,6 +134,13 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+Required media loaders in fresh video drafts measure 673303 gzip bytes of startup
+JavaScript, with a 494816-byte largest chunk and 329249 deferred bytes. Startup
+growth is 13/10 bytes; ceilings become 673314/494824 with the same 11/8 bytes
+of headroom. Deferred caps, dependencies and build rules remain unchanged. Only
+`DeveloperWorkflowLauncher.js` changes after URL-version normalization; the same
+94 JavaScript asset names retain their loading membership.
+
 Versioned video task observations measure 673290 gzip bytes of startup
 JavaScript, with a 494806-byte largest startup chunk and 329066 deferred bytes.
 The measured startup growth is 52/57 bytes over the preceding video build;

@@ -19,6 +19,12 @@ from whether a template can be created. Large video model acceptance is performe
 on Linux; this interface does not promise that those weights fit every Windows
 machine.
 
+New video drafts also connect ordinary file loaders for their declared required
+image, video or audio inputs. Select the files on those loader nodes. Inputs with
+different roles, such as first and last frames, keep separate loaders. An absent
+or incompatible loader produces a connection notice instead of a guessed wire.
+Existing saved graphs are not rewritten.
+
 Encode Inputs can reuse unchanged prompt data. Denoise consumes encoding from the
 same model owner, and Video Output decodes that owner's current latents. Changing
 the owner or relevant recipe requires fresh runtime data. Saved values and wires

@@ -104,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                         "modules.Spandrel.Upscaler", "modules.Image.Preview", "modules.Image.Resize",
                         "modules.Image.Save", "modules.ImageOperations.CropImage", "modules.ImageOperations.MaskComposite",
                         "modules.DiffusersImage.OutpaintCanvas", "modules.Audio.Export", "modules.Audio.Load", "modules.Image.Load",
-                        "modules.DiffusersAudio.LoadAdapter", "modules.Video.Export", "modules.Video.ExportWithAudio", "modules.Video.ExportAsset",
+                        "modules.DiffusersAudio.LoadAdapter", "modules.Video.Load", "modules.Video.Export", "modules.Video.ExportWithAudio", "modules.Video.ExportAsset",
                         "modules.Audio.FitDuration", "modules.DiffusersAudio.LoadPipeline", "modules.DiffusersAudio.Generate",
                         "modules.DiffusersRuntime.PipelineQuantizationConfigV2", "modules.DiffusersRuntime.DiffusersExecutionRecipe"):
                 describe(key)
