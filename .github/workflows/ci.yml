@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired generic LTX/Wan stages and retained video template finishing.
-          ref: 5a8cc1a4f31c73741c2c0fb9f916153b27a4ade2
+          ref: 87be7bf3c8a43adb8ee2f9402ca6ce95f148f57d
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 5a8cc1a4f31c73741c2c0fb9f916153b27a4ade2
+          ref: 87be7bf3c8a43adb8ee2f9402ca6ce95f148f57d
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
