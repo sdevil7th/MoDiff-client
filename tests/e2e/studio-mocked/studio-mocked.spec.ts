@@ -16745,7 +16745,9 @@ test('mocked audio template stays managed after a page reload', async ({ page })
   await expect(page.locator('.react-flow__node[data-id^="managed-stage:"]')).toHaveCount(0);
 });
 
-test('LTX workflow keeps its model identity and renders numeric Export Video FPS across reload', async ({ page }) => {
+test('legacy LTX workflow keeps its model identity and renders numeric Export Video FPS across reload', async ({
+  page,
+}) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Lightricks/LTX-Video-0.9.8-13B-distilled');
   mockDownloadCalls = 0;
@@ -16761,7 +16763,9 @@ test('LTX workflow keeps its model identity and renders numeric Export Video FPS
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('ltx_video_image_to_video', {
+    // This exercises retained managed documents. New cards use real stages and
+    // are covered separately through the ordinary card/creator regressions.
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('ltx_video_image_to_video', {
       resourceMode: 'expert',
       autoOffload: false,
       offloadMode: 'none',
