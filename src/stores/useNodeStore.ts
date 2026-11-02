@@ -1,3 +1,4 @@
+import { parseTaskArtifactSelections } from '../workflow/workflowModelInventory';
 import { bindEncodingInputCapabilities, bindEncodingRouteResolver } from '../workflow/encodingOptionalInput';
 import {
   parseExtensionInfo,
@@ -795,34 +796,15 @@ function validCapabilityRepository(value: unknown, artifactKind: unknown) {
 }
 
 function parseArtifactSelections(value: unknown, capabilityModes: StudioMode[]) {
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.length < 1 || value.length > 32) invalidModelCapabilities();
-  const seenModes = new Set<StudioMode>();
-  const selections = value.map((raw) => {
-    if (!isRecord(raw)) invalidModelCapabilities();
-    const modes = parseRuntimeModes(raw.modes, isStudioMode);
-    const files = parseDownloadFiles(raw.downloadFiles);
-    if (
-      modes.length < 1 ||
-      modes.some((mode) => !capabilityModes.includes(mode) || seenModes.has(mode)) ||
-      typeof raw.repo !== 'string' ||
-      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(raw.repo) ||
-      typeof raw.revision !== 'string' ||
-      !/^[0-9a-f]{40}$/.test(raw.revision) ||
-      !files?.length ||
-      (raw.label !== undefined && (typeof raw.label !== 'string' || raw.label.length < 1 || raw.label.length > 256))
-    )
-      invalidModelCapabilities();
-    modes.forEach((mode) => seenModes.add(mode));
-    return {
-      modes,
-      repo: raw.repo,
-      revision: raw.revision,
-      downloadFiles: files,
-      ...(raw.label === undefined ? {} : { label: raw.label }),
-    };
-  });
-  return selections as NonNullable<StudioModelProfile['artifactSelections']>;
+  try {
+    return parseTaskArtifactSelections(
+      value,
+      capabilityModes,
+      parseDownloadFiles,
+    ) as StudioModelProfile['artifactSelections'];
+  } catch {
+    invalidModelCapabilities();
+  }
 }
 
 function parseModeDefaults(value: unknown, capabilityModes: StudioMode[]) {

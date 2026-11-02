@@ -9,19 +9,21 @@ export type WeightFormatSelection = {
   downloadFiles: string[];
 };
 
+export type TaskArtifactSelection = {
+  modes: string[];
+  repo: string;
+  revision: string;
+  downloadFiles: string[];
+  label?: string;
+};
+
 export type WorkflowModelInventory = {
   executionStatus?: 'expert_only' | 'supported' | 'supported_with_model';
   qualificationStatus?: string;
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   nativeSelection?: Omit<WeightFormatSelection, 'weightFormat'>;
   weightFormatSelections?: WeightFormatSelection[];
-  taskSelections?: {
-    modes: string[];
-    repo: string;
-    revision: string;
-    downloadFiles: string[];
-    label: string;
-  }[];
+  taskSelections?: TaskArtifactSelection[];
   /** Fresh authoring only; installed files and Auto admission remain independent. */
   defaultWeightFormat?: 'native' | 'fp8r' | 'nvfp4';
 };
@@ -83,6 +85,51 @@ function files(value: unknown, allowEmpty = false): string[] {
   )
     invalid();
   return [...value] as string[];
+}
+
+/** Shared task inventory envelope; callers retain their own file-path policy. */
+export function parseTaskArtifactSelections(
+  value: unknown,
+  capabilityModes: readonly unknown[],
+  parseFiles: (value: unknown) => string[] | undefined = files,
+): TaskArtifactSelection[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.length || value.length > 32) invalid();
+  const seen = new Set<string>();
+  return value.map((raw) => {
+    const item = ownRecord(raw);
+    if (
+      Object.keys(item).some((key) => !['modes', 'repo', 'revision', 'downloadFiles', 'label'].includes(key)) ||
+      !Array.isArray(item.modes) ||
+      !item.modes.length ||
+      item.modes.length > 64 ||
+      item.modes.some(
+        (mode) =>
+          typeof mode !== 'string' ||
+          !/^[a-z][a-z0-9_]{0,127}$/u.test(mode) ||
+          !capabilityModes.includes(mode) ||
+          seen.has(mode),
+      ) ||
+      new Set(item.modes).size !== item.modes.length ||
+      (item.label !== undefined &&
+        (typeof item.label !== 'string' ||
+          !item.label.length ||
+          item.label.length > 256 ||
+          hasControlCharacters(item.label)))
+    )
+      invalid();
+    const selectedFiles = parseFiles(item.downloadFiles);
+    if (!selectedFiles?.length) invalid();
+    const modes = [...item.modes] as string[];
+    modes.forEach((mode) => seen.add(mode));
+    return {
+      modes,
+      repo: repository(item.repo),
+      revision: revision(item.revision),
+      downloadFiles: selectedFiles,
+      ...(item.label === undefined ? {} : { label: item.label as string }),
+    };
+  });
 }
 
 /** Exact additional inventories; absence preserves the existing native selection. */
@@ -161,49 +208,9 @@ export function parseWorkflowModelInventory(
   const selections = parseWeightFormatSelections(value.weightFormatSelections);
   if (selections && value.defaultRepo === repo) result.weightFormatSelections = selections;
   if (value.artifactSelections !== undefined) {
-    if (
-      !Array.isArray(value.artifactSelections) ||
-      !value.artifactSelections.length ||
-      value.artifactSelections.length > 32 ||
-      !Array.isArray(value.modes) ||
-      selections
-    )
-      invalid();
-    const declaredModes = value.modes as unknown[];
-    const seen = new Set<string>();
-    const taskSelections = value.artifactSelections.map((raw) => {
-      const item = ownRecord(raw);
-      if (
-        Object.keys(item).some((key) => !['modes', 'repo', 'revision', 'downloadFiles', 'label'].includes(key)) ||
-        !Array.isArray(item.modes) ||
-        !item.modes.length ||
-        item.modes.length > 64 ||
-        item.modes.some(
-          (mode) =>
-            typeof mode !== 'string' ||
-            !/^[a-z][a-z0-9_]{0,127}$/u.test(mode) ||
-            !declaredModes.includes(mode) ||
-            seen.has(mode),
-        ) ||
-        new Set(item.modes).size !== item.modes.length ||
-        (item.label !== undefined &&
-          (typeof item.label !== 'string' ||
-            !item.label.length ||
-            item.label.length > 256 ||
-            hasControlCharacters(item.label)))
-      )
-        invalid();
-      const modes = [...item.modes] as string[];
-      modes.forEach((mode) => seen.add(mode));
-      return {
-        modes,
-        repo: repository(item.repo),
-        revision: revision(item.revision),
-        downloadFiles: files(item.downloadFiles),
-        label: (item.label as string | undefined) ?? modes.join(', '),
-      };
-    });
-    if (value.defaultRepo === repo) result.taskSelections = taskSelections;
+    if (!Array.isArray(value.modes) || selections) invalid();
+    const tasks = parseTaskArtifactSelections(value.artifactSelections, value.modes);
+    if (value.defaultRepo === repo) result.taskSelections = tasks;
   }
   if (value.defaultWeightFormat !== undefined) {
     const format = value.defaultWeightFormat;
@@ -235,7 +242,7 @@ export function workflowModelArtifactRows(descriptor: {
     return tasks.map((selection) => ({
       id: `${descriptor.profileId}:task:${selection.modes.join(',')}`,
       weightFormat: 'native' as const,
-      label: selection.label,
+      label: selection.label ?? selection.modes.join(', '),
       selection,
     }));
   const native = descriptor.inventory?.nativeSelection;
@@ -289,7 +296,7 @@ export function workflowModelArtifactStatus(
       allowed && !status.runnable && selection
         ? {
             repo: selection.repo,
-            label: `${descriptor.label} · ${row.label}`,
+            label: `${descriptor.label} Â· ${row.label}`,
             revision: selection.revision,
             files: [...selection.downloadFiles],
             repair: status.repairRequired,

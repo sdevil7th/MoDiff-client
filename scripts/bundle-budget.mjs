@@ -1,3 +1,9 @@
+// Finite task artifact inventories share parsing across legacy and generic
+// model surfaces. Compared with client 9bc8fa7, largest/startup/deferred gzip
+// measures 495646/674134/329538 versus 495384/673867/329241. Add only measured
+// feature growth 262/267/297, preserving 18/19/218 bytes of prior headroom.
+// Four startup and 90 deferred asset names retain membership. Dependencies,
+// chunk rules, minification and module identity checks remain unchanged.
 // Required media loaders in fresh video drafts measure largest/startup/deferred
 // gzip 494816/673303/329249 versus 494806/673290/329066. Add only measured
 // startup growth 10/13, retaining 8/11 bytes of headroom. Both deferred caps
@@ -288,6 +294,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  262 +
   // Source-specific hierarchy selection: 495136 -> 495384 gzip bytes.
   // Retain 18 bytes of headroom, four startup assets and both deferred caps.
   248 +
@@ -424,6 +431,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  267 +
   // Same hierarchy feature: 673622 -> 673867 bytes; retain 19 bytes of headroom.
   245 +
   // Same feature: 673359 -> 673622 gzip bytes, retaining 19 bytes of headroom.
@@ -641,6 +649,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  297 +
   1147 +
   1043 +
   334 +
