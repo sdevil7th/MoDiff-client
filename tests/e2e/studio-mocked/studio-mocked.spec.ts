@@ -11,6 +11,7 @@ import { attachResizeObserverDiagnostics, installResizeObserverDiagnostics } fro
 import {
   IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
   AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
+  VIDEO_TEMPLATE_EXECUTION_SELECTIONS,
 } from '../../../src/studio/templateOperationSelections';
 import { STUDIO_TEMPLATES } from '../../../src/studio/templates';
 import { hashString, stableStringify } from '../../../src/studio/stableHash';
@@ -23,6 +24,73 @@ import type { OperationStarter } from '../../../src/workflow/operationAuthoring'
 import type { OperationContract } from '../../../src/workflow/operationContracts';
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
+
+test('normal video template card creates real stages and preserves them after reload', async ({ page }) => {
+  const templateId = 'ltx_video_text_to_video';
+  const selection = VIDEO_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;
+  const fixture = await generateTemplateSchemas([{ id: templateId, selection }]);
+  const starter = fixture.recipes[0]!.starter;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({
+      json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } },
+    }),
+  );
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.route('**/runtime/status**', (route) =>
+    route.fulfill({
+      json: {
+        ready: true,
+        config: { hf_token_configured: false },
+        packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+      },
+    }),
+  );
+  const selections: unknown[] = [];
+  await page.route('**/operations/starter', (route) => {
+    selections.push(route.request().postDataJSON());
+    return route.fulfill({ json: starter });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-search').fill('Rainy Rail Approach');
+  await page.getByTestId('template-browser-create-card-ltx_video_text_to_video').click();
+  const readGraph = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore
+        .getState()
+        .exportGraph('video-template-card-regression', undefined, { randomizeSeeds: false });
+    });
+  await expect
+    .poll(async () => {
+      const graph = await readGraph();
+      return Object.values(graph.nodes)
+        .filter((node) => node.module === 'modules.DiffusersVideo')
+        .map((node) => node.action)
+        .sort();
+    })
+    .toEqual(['DecodeLatents', 'Denoise', 'EncodeInputs', 'LoadPipeline']);
+  expect(selections).toContainEqual(
+    expect.objectContaining({
+      pipelineClass: selection.pipelineClass,
+      task: selection.task,
+      executionProfileId: selection.executionProfileId,
+      authoringRecipeId: selection.authoringRecipeId,
+    }),
+  );
+  const before = await readGraph();
+  const template = STUDIO_TEMPLATES.find((item) => item.id === templateId)!;
+  const encoder = Object.values(before.nodes).find((node) => node.action === 'EncodeInputs')!;
+  expect(encoder.params.prompt!.value).toBe(template.prompt);
+  expect(Object.values(before.nodes).some((node) => node.module === 'modules.Spandrel')).toBe(true);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await expect.poll(readGraph).toEqual(before);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
+});
 
 test('latest output download uses the backend captured model name', async ({ page }) => {
   await ensureFrontend();
@@ -16363,7 +16431,9 @@ test('controlled workflow transactions are idempotent across supported reverse c
   );
   await assertContracts(['upscale.video.v1', 'video-sequence.v1']);
 
-  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('wan_22_ti2v_5b_seed_vault'));
+  // This case exercises retained managed-workflow block replacement. Fresh
+  // selected video templates are ordinary operation graphs with their own stages.
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('wan_22_ti2v_5b_seed_vault'));
   await page.evaluate(() =>
     window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('upscaler', 'wan_vace_cinematic_text_to_video'),
   );

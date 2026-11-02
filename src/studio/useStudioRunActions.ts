@@ -31,6 +31,7 @@ import { coordinateGraphRun } from './runCoordinator';
 import { prepareHuggingFaceClustersForRun } from './huggingFaceClusterPreparation';
 import { materializeTemplateDefaultInputs } from './templateInputs';
 import { STUDIO_TEMPLATES } from './templates';
+import { hasTemplateOperationRecipe } from './templateOperationSelections';
 import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
 import { assertFormWeightFormatSelection, hasNonNativeStudioWeightFormat } from './weightFormat';
 import { DEFAULT_STUDIO_FORM, STUDIO_MODEL_PROFILES } from './modelProfiles';
@@ -362,7 +363,7 @@ export function useStudioRunActions({
     async (templateId: string) => {
       const template = STUDIO_TEMPLATES.find((item) => item.id === templateId);
       if (!template) return;
-      if (template.executionSelection && template.example?.mediaType === 'image') {
+      if (hasTemplateOperationRecipe(template)) {
         const context = captureWorkflowOperationContext();
         setIsWorking(true);
         try {

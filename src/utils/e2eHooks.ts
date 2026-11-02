@@ -29,6 +29,7 @@ import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { applyHuggingFaceClusterRuntimeHints } from '../studio/huggingFaceClusterRuntime';
 import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
+import { hasTemplateOperationRecipe } from '../studio/templateOperationSelections';
 import { getFormDefaultsForMode } from '../studio/modelProfiles';
 import type { StudioTaskTemplateSkeleton } from '../studio/taskTemplateContracts';
 import { materializeTemplateDefaultInputs } from '../studio/templateInputs';
@@ -255,7 +256,7 @@ async function applyTemplate(
   });
   try {
     const context = captureWorkflowOperationContext();
-    if (template.executionSelection && ['image', 'audio'].includes(template.example?.mediaType ?? '')) {
+    if (hasTemplateOperationRecipe(template)) {
       normalizeTemplateRuntimeDevice(context);
       await createTemplateOperationWorkflow(template, useStudioStore.getState().form, context);
       await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);

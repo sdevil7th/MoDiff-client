@@ -576,3 +576,75 @@ test('video task media discovery includes real image roles but excludes componen
   assert.deepEqual(operations, original);
   assert.deepEqual(attachment.mediaAttachmentChoices(operations, 'foreign'), []);
 });
+
+test('ordinary video template creation reaches real stages and checkpoints their exact saved graph', async (t) => {
+  const lifecycle = await server.ssrLoadModule('/src/studio/templateWorkflow.ts');
+  const studioModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const studio = studioModule.useStudioStore;
+  const flow = exporter.useFlowStore;
+  const registry = nodes.useNodesStore;
+  const parsed = nodes.parseStudioModelCapabilities(fixture.publicPayload);
+  const operations = contracts.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  for (const row of fixture.recipes.filter((item) => item.spec))
+    await t.test(row.id, async () => {
+      const previous = [studio.getState(), flow.getState(), registry.getState()];
+      const originalFetch = globalThis.fetch;
+      try {
+        const template = templates.find((item) => item.id === row.id);
+        studio.setState({ workflowCanvasHydrated: true });
+        const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
+        studio.getState().applyTemplate(template);
+        studio.getState().updateForm({
+          device: 'cpu:0',
+          offloadMode: 'none',
+          autoOffload: false,
+          referenceImages: ['images/reference.webp'],
+          sourceVideo: 'videos/source.mp4',
+        });
+        registry.setState({
+          nodesRegistry: fixture.registry,
+          operationContracts: operations,
+          studioModelCapabilities: parsed.capabilities,
+          studioExecutionSpecInvalid: false,
+        });
+        globalThis.fetch = async () => Response.json(row.starter);
+        const form = structuredClone(studio.getState().form);
+        await lifecycle.createTemplateOperationWorkflow(template, form, studioModule.captureWorkflowOperationContext());
+        const graph = flow.getState().toObject();
+        const flat = groups.unpackVisualOperationGroups(graph).graph;
+        for (const action of ['LoadPipeline', 'EncodeInputs', 'Denoise', 'DecodeLatents'])
+          assert.equal(
+            flat.nodes.filter((node) => node.data.module === 'modules.DiffusersVideo' && node.data.action === action)
+              .length,
+            1,
+          );
+        assert.ok(
+          !flat.nodes.some((node) => node.data.module === 'modules.DiffusersVideo' && node.data.action === 'Generate'),
+        );
+        const encoder = flat.nodes.find((node) => node.data.action === 'EncodeInputs');
+        assert.equal(encoder.data.params.prompt.value, form.prompt);
+        assert.equal(studio.getState().graphBinding, null);
+        const saved = structuredClone(studio.getState().workflowTabs.find((tab) => tab.id === tabId));
+        assert.equal(saved.source, 'template');
+        assert.equal(saved.snapshot.activeTemplateId, template.id);
+        assert.equal(saved.snapshot.studioGraphBinding, null);
+        const before = flow.getState().exportGraph('saved-video-template', undefined, { randomizeSeeds: false });
+        studio.setState({ workflowTabs: [], activeWorkflowTabId: tabId });
+        studio.getState().mergeBackendWorkflow({ ...saved, revision: 1 });
+        studio.getState().hydrateActiveWorkflowCanvas();
+        assert.deepEqual(
+          flow.getState().exportGraph('saved-video-template', undefined, { randomizeSeeds: false }),
+          before,
+        );
+        assert.equal(studio.getState().form.prompt, form.prompt);
+      } finally {
+        globalThis.fetch = originalFetch;
+        studio.setState(previous[0], true);
+        flow.setState(previous[1], true);
+        registry.setState(previous[2], true);
+      }
+    });
+});

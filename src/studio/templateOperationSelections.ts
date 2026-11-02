@@ -1,4 +1,11 @@
-import type { StudioMode, StudioTemplateExecutionSelection, StudioTemplateId } from './types';
+import type { StudioMode, StudioTemplate, StudioTemplateExecutionSelection, StudioTemplateId } from './types';
+
+/** Route fresh media templates through their exact backend-owned recipe. */
+export function hasTemplateOperationRecipe(template: Pick<StudioTemplate, 'executionSelection' | 'example'>) {
+  return Boolean(
+    template.executionSelection && ['image', 'audio', 'video'].includes(template.example?.mediaType ?? ''),
+  );
+}
 
 const STANDARD_Z_TEMPLATE_IDS: StudioTemplateId[] = [
   'z_image_quick_concept',

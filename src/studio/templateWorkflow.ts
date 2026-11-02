@@ -1,4 +1,5 @@
 import { resolveTemplateModelSelection } from './templateModelSelection';
+import { hasTemplateOperationRecipe } from './templateOperationSelections';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -173,10 +174,10 @@ export async function createTemplateOperationWorkflow(
   const selection = template.executionSelection;
   if (
     !selection ||
-    !['image', 'audio'].includes(template.example?.mediaType ?? '') ||
-    template.outputKinds?.includes('video')
+    !hasTemplateOperationRecipe(template) ||
+    (template.example?.mediaType !== 'video' && template.outputKinds?.includes('video'))
   )
-    throw new Error('Select an image or audio template operation recipe.');
+    throw new Error('Select a media template with a declared execution recipe.');
   // Preserve the pre-loading graph so edits during lazy module loading remain
   // protected by the ordinary transaction's exact signature check.
   const previousGraph = structuredClone(useFlowStore.getState().toObject());
@@ -288,7 +289,7 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
     after = useStudioStore.getState().form;
     await waitForTemplateCanvasPaint();
     assertWorkflowOperationContext(context);
-    if (template.executionSelection && ['image', 'audio'].includes(template.example?.mediaType ?? '')) {
+    if (hasTemplateOperationRecipe(template)) {
       const result = await createTemplateOperationWorkflow(template, after, context);
       warnings = result.warnings;
       graphCreated = true;

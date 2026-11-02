@@ -1,3 +1,8 @@
+// Shared normal template routing adds video to the exact selected creator.
+// Largest/startup/deferred gzip measure 495666/674155/329445 against the accepted
+// 495646/674134/329538. Add measured startup growth of 20/21 bytes, retaining 18/19 bytes
+// of headroom and both deferred caps. Four startup and 90 deferred assets retain
+// membership; dependencies, chunk rules, minification and identity checks stay fixed.
 // Finite task artifact inventories share parsing across legacy and generic
 // model surfaces. Compared with client 9bc8fa7, largest/startup/deferred gzip
 // measures 495646/674134/329538 versus 495384/673867/329241. Add only measured
@@ -294,6 +299,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  20 +
   262 +
   // Source-specific hierarchy selection: 495136 -> 495384 gzip bytes.
   // Retain 18 bytes of headroom, four startup assets and both deferred caps.
@@ -431,6 +437,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  21 +
   267 +
   // Same hierarchy feature: 673622 -> 673867 bytes; retain 19 bytes of headroom.
   245 +

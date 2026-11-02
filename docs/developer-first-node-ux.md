@@ -145,6 +145,12 @@ requires explicit structural editing/ungrouping before automatic task adaptation
 Audio supports the applicable Model Setup and Audio Output groups described
 below. Selected LTX/Wan video routes use the shared stage presentation too;
 other video routes retain their existing native Modular or whole-pipeline nodes.
+Fresh image, audio and video template cards with an explicit execution recipe
+use that same backend-owned starter through the normal creation path. Selected
+video templates retain their creative settings, source nodes, upscaler and
+soundtrack branches. Their ordinary stage graph is checkpointed and restored
+without a managed receipt for a different topology. This fresh-template routing
+does not convert previously saved whole-pipeline workflows.
 Add media reads declared image, audio and video input roles for the selected
 model. It can add an ordinary media loader or use a compatible existing source.
 The attachment stays in the same graph and is one Undo/Redo transaction;
