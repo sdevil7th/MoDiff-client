@@ -16313,6 +16313,14 @@ test('controlled LoRA labels base-only Auto history until its exact artifacts ar
   await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('flux_lora_cinematic_octane_3d'));
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('studio'));
 
+  // Recipe v3 deliberately uses Expert group offload. Its readiness must not
+  // imply Auto-history coverage; explicitly select Auto for the notice below.
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.resourceMode)).toBe('expert');
+  await expect(page.getByTestId('studio-run-readiness')).not.toContainText('Base recipe ran here');
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.applyLegacyTemplateForTest('flux_lora_cinematic_octane_3d', { resourceMode: 'auto' }),
+  );
+
   await expect(page.getByTestId('studio-run-readiness')).toContainText('Base recipe ran here');
   await expect(page.getByTestId('studio-run-readiness')).toContainText('1 warning');
   await page.evaluate(() => window.__MODIFF_E2E__!.openWorkspacePanelForTest('compatibility'));
