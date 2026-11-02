@@ -73,7 +73,9 @@ from modiff.huggingface_cluster_promotions import build_post_promotion_node_libr
 from modiff.huggingface_node_library import build_huggingface_node_library
 from modiff.modular_conditional_contracts import reviewed_modular_conditional_snapshot
 from modiff.server import WebServer
-from modiff.studio_execution_specs import _execution_spec_role_params, validate_studio_execution_specs
+from modiff.studio_execution_specs import (
+    _execution_spec_role_params, studio_execution_spec_for_pair, validate_studio_execution_specs,
+)
 
 promotion_candidate_admission = os.environ.get("MODIFF_POST_PROMOTION_ADMISSION_ID", "")
 library = (
@@ -82,6 +84,23 @@ library = (
     else build_huggingface_node_library()
 )
 specs = validate_studio_execution_specs(MODULE_MAP)
+# Frozen library admissions can retain a saved specification after fresh
+# authoring moves to a provider-bound version. Join only their exact declared
+# id/hash/profile; this static witness grants no executable/private publication.
+spec_ids = {spec["id"] for spec in specs}
+for definition in library["definitions"]:
+    for admission in definition.get("executionAdmissions", ()):
+        receipt = admission.get("studioExecutionSpec")
+        if admission.get("status") != "admitted" or not receipt or receipt["id"] in spec_ids:
+            continue
+        saved = studio_execution_spec_for_pair(
+            definition["pipelineClass"], admission["studioMode"],
+            content_hash=receipt["contentHash"], execution_profile_id=receipt["executionProfileId"],
+        )
+        if saved is None or saved["id"] != receipt["id"] or saved["contentHash"] != receipt["contentHash"]:
+            raise ValueError("The frozen library admission has no exact retained Studio specification.")
+        specs.append(saved)
+        spec_ids.add(saved["id"])
 web = WebServer(modules=MODULE_MAP)
 from modules.DiffusersRuntime.main import build_runtime_capabilities
 
