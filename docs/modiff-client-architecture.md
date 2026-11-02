@@ -25,6 +25,16 @@ MoDiff Python backend
 
 The frontend treats backend responses, websocket messages, local storage, dynamic node definitions, and imported packages as untrusted data at their boundaries. Use parsers/type guards before storing or rendering them.
 
+Backend field metadata may declare `requiredWhen: { field, equals }` alongside
+an optional static `required` value. Graph Fix and Run readiness evaluate the
+same read-only string-selector condition against the current registry. They
+retain saved values and wires, including older nodes without that metadata.
+An unknown, malformed or connected selector keeps the static requirement;
+inspection never executes a supplier or guesses its computed value. Runtime
+validation remains authoritative. Ordered media references use this for the
+selected image/video/audio input; the initial list and video soundtrack remain
+optional. This contract is generic and adds no model-specific frontend branch.
+
 The backend may use official model libraries maintained and published by Hugging Face, but the client remains runtime-agnostic. It renders backend-declared task inputs, parameters, outputs, missing optional runtimes, and readiness instead of selecting library classes or maintaining model-specific execution branches. The browser never loads a model runtime or invokes a hosted inference provider.
 
 ## Technology

@@ -18,6 +18,7 @@ import type { RunReadinessIssue } from './types';
 import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
 import type { OperationContract } from '../workflow/operationContracts';
 import { processImageInputRequirements } from '../workflow/processImageInputRequirements';
+import { conditionalInputRequired } from '../workflow/conditionalInputRequirements';
 
 export type GraphFixConfidence = 'safe' | 'choice';
 export type GraphFixExternalAction = 'open_model_manager' | 'open_assets' | 'open_setup' | 'inspect_node';
@@ -148,7 +149,8 @@ function nodesWithLiveContracts(context: GraphFixContext) {
           {
             ...stored,
             type: live?.type ?? stored.type,
-            required: requirements?.[key]?.required ?? live?.required ?? stored.required,
+            required:
+              requirements?.[key]?.required ?? conditionalInputRequired(node, live ?? stored, registry, context.edges),
             hidden: requirements?.[key]?.hidden ?? stored.hidden,
           },
         ];

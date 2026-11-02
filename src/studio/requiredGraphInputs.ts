@@ -8,6 +8,7 @@ import { connectionTypesAreCompatible } from '../theme/connectionTypes';
 import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
 import type { OperationContract } from '../workflow/operationContracts';
 import { processImageInputRequirements } from '../workflow/processImageInputRequirements';
+import { conditionalInputRequired } from '../workflow/conditionalInputRequirements';
 
 /** Inspect current declarations on the same lowered graph used by Run. */
 export function inspectRequiredGraphInputs(
@@ -33,7 +34,7 @@ export function inspectRequiredGraphInputs(
       const saved = node.data.params[field] ?? declared![field]!;
       const param = declared?.[field] ?? saved;
       if (
-        !(requirements?.[field]?.required ?? param.required) ||
+        !(requirements?.[field]?.required ?? conditionalInputRequired(node, param, registry, graph.edges)) ||
         param.disabled ||
         param.display === 'output' ||
         !(param.isInput || param.display === 'input' || param.display === 'modelselect')

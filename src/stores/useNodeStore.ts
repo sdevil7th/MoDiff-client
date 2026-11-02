@@ -200,6 +200,7 @@ export type NodeParams = {
   disabled?: boolean;
   hidden?: boolean;
   required?: boolean;
+  requiredWhen?: { field: string; equals: string };
   isInput?: boolean;
   isConnected?: boolean;
   spawn?: boolean;

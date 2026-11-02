@@ -1,3 +1,8 @@
+// Generic conditional input requirements measure largest/startup/deferred gzip
+// 495984/674470/329666 versus accepted 495868/674357/329734. Add only measured
+// startup growth 116/113 bytes, retaining 18/19 bytes of headroom. The same four
+// startup and 90 deferred asset names, dependencies and loading boundaries stay
+// fixed. Both deferred caps and module-identity checks remain unchanged.
 // Pika saved-model preservation and joined video/audio drafts measure largest/
 // startup/deferred gzip 495868/674357/329734 against 495666/674155/329445.
 // Add only measured startup growth of 202/202 bytes, retaining 18/19 bytes of
@@ -305,6 +310,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  116 +
   202 +
   20 +
   262 +
@@ -444,6 +450,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  113 +
   202 +
   21 +
   267 +
