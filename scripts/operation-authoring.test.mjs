@@ -6,6 +6,127 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 let server, authoring, requests, drafts, choices;
+
+test('task-specific artifact inventories preserve finite partitions and install the selected one', async () => {
+  const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
+  const repo = 'owner/future-video';
+  const pin = 'b'.repeat(40);
+  const model = {
+    defaultRepo: repo,
+    modes: ['text_to_video_with_audio', 'reference_to_video_with_audio'],
+    executionStatus: 'expert_only',
+    revisionCandidates: [pin],
+    downloadFiles: [],
+    artifactSelections: [
+      {
+        modes: ['text_to_video_with_audio'],
+        repo,
+        revision: pin,
+        label: 'Text video',
+        downloadFiles: ['model_index.json', 'transformer/model.safetensors'],
+      },
+      {
+        modes: ['reference_to_video_with_audio'],
+        repo,
+        revision: pin,
+        label: 'Reference video',
+        downloadFiles: ['model_index.json', 'transformer_ref/model.safetensors'],
+      },
+    ],
+  };
+  const descriptor = {
+    profileId: 'future-video',
+    repo,
+    label: 'Future video',
+    inventory: inventory.parseWorkflowModelInventory(model, repo),
+  };
+  const rows = inventory.workflowModelArtifactRows(descriptor);
+  assert.deepEqual(
+    rows.map((row) => row.label),
+    ['Text video', 'Reference video'],
+  );
+  assert.equal(new Set(rows.map((row) => row.id)).size, 2);
+  for (const [index, row] of rows.entries()) {
+    const state = inventory.workflowModelArtifactStatus(row, descriptor, [], [], null);
+    assert.equal(state.installTarget.revision, pin);
+    assert.deepEqual(state.installTarget.files, model.artifactSelections[index].downloadFiles);
+    assert.equal(
+      state.installTarget.files.includes('transformer/model.safetensors') &&
+        state.installTarget.files.includes('transformer_ref/model.safetensors'),
+      false,
+    );
+  }
+  const cache = [
+    {
+      id: repo,
+      complete: true,
+      installed: true,
+      planned_revision: pin,
+      planned_files: model.artifactSelections[0].downloadFiles,
+    },
+  ];
+  assert.equal(inventory.workflowModelArtifactStatus(rows[0], descriptor, cache, [], null).status.runnable, true);
+  assert.equal(inventory.workflowModelArtifactStatus(rows[1], descriptor, cache, [], null).status.runnable, false);
+  const taskChoices = choices.workflowChoices(
+    [
+      {
+        pipelineClass: 'FutureVideoPipeline',
+        tasks: model.modes.map((task) => ({ task, operationIds: ['load'], executionProfileIds: ['future-video'] })),
+      },
+    ],
+    [],
+    cache,
+    [],
+    null,
+    [{ ...descriptor, pipeline: 'FutureVideoPipeline' }],
+  );
+  assert.equal(taskChoices.find((choice) => choice.task === model.modes[0]).cache.runnable, true);
+  assert.equal(taskChoices.find((choice) => choice.task === model.modes[1]).cache.runnable, false);
+  for (const mutate of [
+    (row) => {
+      row.revision = 'main';
+    },
+    (row) => {
+      row.downloadFiles = ['*'];
+    },
+    (row) => {
+      row.downloadFiles = ['../outside'];
+    },
+    (row) => {
+      row.modes = ['undeclared'];
+    },
+    (row) => {
+      row.repo = 'https://outside/model';
+    },
+  ]) {
+    const changed = structuredClone(model);
+    mutate(changed.artifactSelections[0]);
+    assert.throws(() => inventory.parseWorkflowModelInventory(changed, repo));
+  }
+  const duplicate = structuredClone(model);
+  duplicate.artifactSelections[1].modes = ['text_to_video_with_audio'];
+  assert.throws(() => inventory.parseWorkflowModelInventory(duplicate, repo));
+  const component = await server.ssrLoadModule('/src/components/WorkflowModelInventoryRow.tsx');
+  const markup = renderToStaticMarkup(
+    React.createElement(component.default, {
+      descriptor,
+      cache: [],
+      local: [],
+      diagnostics: null,
+      installProgress: {},
+      activeInstallCount: 0,
+      hfTokenConfigured: true,
+      onConfigureHfToken() {},
+      async onInstall() {},
+    }),
+  );
+  assert.match(markup, /Workflow task for Future video/);
+  const policies = await server.ssrLoadModule('/src/studio/modelUsagePolicies.ts');
+  const policy = policies.usagePolicyForRepository('Pika-Labs/Pika-H3-Flex');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.reviewedRevision, '3ff166447d5edb1406107ab8370c42000ce173e4');
+  assert.match(policy.termsUrl, /\/3ff166447d5edb1406107ab8370c42000ce173e4\/LICENSE$/u);
+});
 const evaluationImageFixture = JSON.parse(
   fs.readFileSync(new URL('../tests/fixtures/evaluation-image-authoring.v1.json', import.meta.url), 'utf8'),
 );

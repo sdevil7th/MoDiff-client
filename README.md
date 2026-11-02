@@ -31,7 +31,7 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `2b5f13535d4d9782e6541411dfb7c338fff9838c`.
+CI backend contract: `73b4fe8bdedc002530b4e018dd11b82eefb995e8`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
 is the earlier reviewed testing baseline. Current CI also covers the pending
@@ -46,7 +46,7 @@ branch advances. To reproduce the application source before packaging, check out
 the two commits above in separate checkouts. This candidate is not an all-platform
 release.
 
-**Terminal 1 — backend:** clone both repositories into the same parent directory,
+**Terminal 1 â€” backend:** clone both repositories into the same parent directory,
 then start the backend. These commands work in Linux shells and Windows PowerShell.
 
 ```text
@@ -67,7 +67,7 @@ with the selected profile: use a separate checkout when testing a different
 accelerator. See the [full setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for specialized AMD profiles,
 explicit `uv pip` commands, repair, and upgrades.
 
-**Terminal 2 — frontend:** from the same parent directory, run:
+**Terminal 2 â€” frontend:** from the same parent directory, run:
 
 ```text
 cd MoDiff-client
@@ -135,7 +135,7 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 - Export a workflow package, an output package, or raw graph JSON where available.
 - Add backend-defined nodes and custom React fields without creating a separate execution system.
 
-In the editor, **Export → Service package** exposes named scalar inputs and
+In the editor, **Export â†’ Service package** exposes named scalar inputs and
 persisted preview outputs for the same lowered API graph. See the backend's
 [service guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/service-prototyping.md)
 for the CLI, environment manifest and model-free example.
@@ -300,7 +300,7 @@ MiniMax's real stages, Audio Output and selected adapter ownership.
 
 ## Workspace And Memory
 
-**Memory → Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
+**Memory â†’ Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
 
 The backend planner is the compatibility authority. Template cards, Setup,
 Models, and Run readiness render the same structured assessment and do not
@@ -315,7 +315,7 @@ policy; choose Custom explicitly to use your configured settings.
 The Run menu's **Auto** item separately repeats execution after parameter changes;
 keep it off when you want a single generation.
 
-**Memory → Custom** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Custom memory is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
+**Memory â†’ Custom** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Custom memory is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
 
 Important model-support rules:
 
@@ -384,7 +384,7 @@ browsing them does not install or enable anything.
 A **Block** is an editable graph composition. Expand it to work on its nodes;
 **Saved Blocks** are reusable definitions. An upstream Python block can be an
 ordinary implementation node or a container represented by a graph Block.
-Use **Inspect node / Inspect Block → Implementation** to see its source.
+Use **Inspect node / Inspect Block â†’ Implementation** to see its source.
 Use **Configure Block interface** to expose inputs, outputs and editable controls.
 A nested Block's interface editor also selects its collapsed previews. These edits
 belong to the workflow instance; **Save block changes** is the explicit action for
@@ -400,7 +400,7 @@ For the current task browser, picker behavior and qualification limits, see
 
 ## Custom nodes
 
-**Nodes → Add custom node** opens Local, Hugging Face and Git. Intentional Add/Load
+**Nodes â†’ Add custom node** opens Local, Hugging Face and Git. Intentional Add/Load
 validates and enables trusted code in one action; revisions are pinned internally.
 Drop a structured Python node file on the canvas to import and insert it. Files
 and packages in backend `custom/` appear automatically without executing; use
@@ -411,11 +411,11 @@ declared data nodes and connected supported components; unmanaged custom models
 require Custom memory. See the backend custom-node guide for contracts and examples.
 
 Approved Modular blocks that omit model ports receive a **Models** input when
-their Python contract requires components. Connect **Load Models → Pipeline
+their Python contract requires components. Connect **Load Models â†’ Pipeline
 Components** to reuse compatible loaded weights. This does not download missing
-block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/custom-nodes.md)
+block-specific models. See the backendâ€™s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/custom-nodes.md)
 for the VAE reconstruction example and component requirements.
-Blocks with official component types also expose **Load Models — [block name]**
+Blocks with official component types also expose **Load Models â€” [block name]**
 after approval. Select pinned, downloaded sources for its components, use **Custom**
 memory policy, and connect its Pipeline Components output to the custom block.
 
@@ -606,8 +606,8 @@ inspect its ordinary nodes, required inputs and upstream implementation, then ad
 it to the canvas. You can also insert nodes individually by click, drag or canvas
 search and connect their ports. Connect the final result to a Preview, Save or Export node before running.
 
-To change a graph of generic nodes, select its loader and open **Inspect node →
-Parameters → Change model / task**. Choose the replacement pipeline/task, then
+To change a graph of generic nodes, select its loader and open **Inspect node â†’
+Parameters â†’ Change model / task**. Choose the replacement pipeline/task, then
 **Preview model / task change**. The same controls are available in the Studio
 inspector. Review retained settings and connections before applying. The Nodes
 library also retains its existing **Graph to change** entry point. Compatible prompt and parameter overrides survive;

@@ -175,6 +175,7 @@ export function workflowChoices(
           repo: string;
           evaluationOnly?: true;
           authoringRecipes?: Readonly<Record<string, string>>;
+          inventory?: WorkflowModelInventory;
         }>((id) => {
           const entry = profiles.get(id);
           const descriptor = descriptors.find((d) => d.profileId === id && d.pipeline === pipeline.pipelineClass);
@@ -207,21 +208,31 @@ export function workflowChoices(
               cache: null,
             },
           ];
-        return matches.map(({ model, profileId, label, repo, evaluationOnly, authoringRecipes }) => ({
-          id: `${pipeline.pipelineClass}:${task.task}:${profileId}`,
-          pipeline: pipeline.pipelineClass,
-          task: task.task,
-          label,
-          repo,
-          profileId,
-          ...(evaluationOnly ? { evaluationOnly } : {}),
-          ...(authoringRecipes?.[task.task] ? { authoringRecipeId: authoringRecipes[task.task] } : {}),
-          support: task,
-          cache:
-            model && model.defaultRepo === repo
-              ? getStudioModelCacheStatus(model, cache, local, diagnostics)
-              : getRepoCacheStatus(repo, cache, local, diagnostics),
-        }));
+        return matches.map(({ model, profileId, label, repo, evaluationOnly, authoringRecipes, inventory }) => {
+          const selections = inventory?.taskSelections ?? model?.artifactSelections;
+          const selection = selections?.find((item) => item.modes.some((mode) => mode === task.task));
+          return {
+            id: `${pipeline.pipelineClass}:${task.task}:${profileId}`,
+            pipeline: pipeline.pipelineClass,
+            task: task.task,
+            label,
+            repo,
+            profileId,
+            ...(evaluationOnly ? { evaluationOnly } : {}),
+            ...(authoringRecipes?.[task.task] ? { authoringRecipeId: authoringRecipes[task.task] } : {}),
+            support: task,
+            cache: selection
+              ? getRepoCacheStatus(selection.repo, cache, local, diagnostics, {
+                  revision: selection.revision,
+                  files: selection.downloadFiles,
+                })
+              : selections?.length
+                ? null
+                : model && model.defaultRepo === repo
+                  ? getStudioModelCacheStatus(model, cache, local, diagnostics)
+                  : getRepoCacheStatus(repo, cache, local, diagnostics),
+          };
+        });
       }),
     )
     .sort(

@@ -265,6 +265,19 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     policyVersion: '2026-09-02',
     reviewedAt: '2026-09-02',
   },
+  'Pika-Labs/Pika-H3-Flex': {
+    id: 'minimax-h3-community-license-agreement',
+    repository: 'Pika-Labs/Pika-H3-Flex',
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'This derivative uses the MiniMax-H3 Community License. Review its territory, attribution, acceptable-use and commercial-authorization requirements before install or Run.',
+    termsUrl: 'https://huggingface.co/Pika-Labs/Pika-H3-Flex/blob/3ff166447d5edb1406107ab8370c42000ce173e4/LICENSE',
+    access: 'public',
+    reviewedRevision: '3ff166447d5edb1406107ab8370c42000ce173e4',
+    policyVersion: '2026-11-02',
+    reviewedAt: '2026-11-02',
+  },
   [LTX2_REPO]: {
     id: 'ltx-2-community-license-agreement',
     repository: LTX2_REPO,

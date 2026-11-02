@@ -15,6 +15,13 @@ export type WorkflowModelInventory = {
   optionalRuntimeRequirement?: OptionalRuntimeRequirement;
   nativeSelection?: Omit<WeightFormatSelection, 'weightFormat'>;
   weightFormatSelections?: WeightFormatSelection[];
+  taskSelections?: {
+    modes: string[];
+    repo: string;
+    revision: string;
+    downloadFiles: string[];
+    label: string;
+  }[];
   /** Fresh authoring only; installed files and Auto admission remain independent. */
   defaultWeightFormat?: 'native' | 'fp8r' | 'nvfp4';
 };
@@ -114,6 +121,7 @@ export function parseWorkflowModelInventory(
     'downloadFiles',
     'weightFormatSelections',
     'defaultWeightFormat',
+    'artifactSelections',
   ];
   if (!keys.some((key) => value[key] !== undefined)) return undefined;
   const result: WorkflowModelInventory = {};
@@ -152,6 +160,51 @@ export function parseWorkflowModelInventory(
     result.nativeSelection = { repo: repository(repo), revision: revisions[0]!, downloadFiles: nativeFiles };
   const selections = parseWeightFormatSelections(value.weightFormatSelections);
   if (selections && value.defaultRepo === repo) result.weightFormatSelections = selections;
+  if (value.artifactSelections !== undefined) {
+    if (
+      !Array.isArray(value.artifactSelections) ||
+      !value.artifactSelections.length ||
+      value.artifactSelections.length > 32 ||
+      !Array.isArray(value.modes) ||
+      selections
+    )
+      invalid();
+    const declaredModes = value.modes as unknown[];
+    const seen = new Set<string>();
+    const taskSelections = value.artifactSelections.map((raw) => {
+      const item = ownRecord(raw);
+      if (
+        Object.keys(item).some((key) => !['modes', 'repo', 'revision', 'downloadFiles', 'label'].includes(key)) ||
+        !Array.isArray(item.modes) ||
+        !item.modes.length ||
+        item.modes.length > 64 ||
+        item.modes.some(
+          (mode) =>
+            typeof mode !== 'string' ||
+            !/^[a-z][a-z0-9_]{0,127}$/u.test(mode) ||
+            !declaredModes.includes(mode) ||
+            seen.has(mode),
+        ) ||
+        new Set(item.modes).size !== item.modes.length ||
+        (item.label !== undefined &&
+          (typeof item.label !== 'string' ||
+            !item.label.length ||
+            item.label.length > 256 ||
+            hasControlCharacters(item.label)))
+      )
+        invalid();
+      const modes = [...item.modes] as string[];
+      modes.forEach((mode) => seen.add(mode));
+      return {
+        modes,
+        repo: repository(item.repo),
+        revision: revision(item.revision),
+        downloadFiles: files(item.downloadFiles),
+        label: (item.label as string | undefined) ?? modes.join(', '),
+      };
+    });
+    if (value.defaultRepo === repo) result.taskSelections = taskSelections;
+  }
   if (value.defaultWeightFormat !== undefined) {
     const format = value.defaultWeightFormat;
     if (format !== 'native' && format !== 'fp8r' && format !== 'nvfp4') invalid();
@@ -177,6 +230,14 @@ export function workflowModelArtifactRows(descriptor: {
   repo: string;
   inventory?: WorkflowModelInventory;
 }) {
+  const tasks = descriptor.inventory?.taskSelections;
+  if (tasks?.length)
+    return tasks.map((selection) => ({
+      id: `${descriptor.profileId}:task:${selection.modes.join(',')}`,
+      weightFormat: 'native' as const,
+      label: selection.label,
+      selection,
+    }));
   const native = descriptor.inventory?.nativeSelection;
   return [
     { id: `${descriptor.profileId}:native`, weightFormat: 'native' as const, label: 'Native', selection: native },

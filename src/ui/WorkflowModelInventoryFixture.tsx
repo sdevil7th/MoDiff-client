@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { parseWorkflowModelInventory } from '../workflow/workflowModelInventory';
 import selections from '../../tests/fixtures/weight-format-selections.v1.json';
 import WorkflowModelInventoryRow from '../components/WorkflowModelInventoryRow';
 import type { StudioAutoResourceInstallTarget } from '../studio/autoResource';
@@ -63,19 +64,54 @@ const descriptors = parseWorkflowModelDescriptors(
 
 export function WorkflowModelInventoryFixture() {
   const [target, setTarget] = useState<StudioAutoResourceInstallTarget | null>(null);
+  const taskCase = new URLSearchParams(window.location.search).has('task-selections');
+  const taskModel = {
+    defaultRepo: 'owner/future-video',
+    executionStatus: 'expert_only',
+    modes: ['text_to_video_with_audio', 'reference_to_video_with_audio'],
+    revisionCandidates: ['b'.repeat(40)],
+    downloadFiles: [],
+    artifactSelections: [
+      {
+        modes: ['text_to_video_with_audio'],
+        repo: 'owner/future-video',
+        revision: 'b'.repeat(40),
+        downloadFiles: ['model_index.json', 'transformer/model.safetensors'],
+        label: 'Text video',
+      },
+      {
+        modes: ['reference_to_video_with_audio'],
+        repo: 'owner/future-video',
+        revision: 'b'.repeat(40),
+        downloadFiles: ['model_index.json', 'transformer_ref/model.safetensors'],
+        label: 'Reference video',
+      },
+    ],
+  };
+  const visible = taskCase
+    ? [
+        {
+          profileId: 'future-task',
+          pipeline: 'FutureVideoPipeline',
+          label: 'Future video',
+          repo: taskModel.defaultRepo,
+          inventory: parseWorkflowModelInventory(taskModel, taskModel.defaultRepo),
+        },
+      ]
+    : descriptors;
   return (
     <main className="m-4 grid w-[368px] min-w-0 gap-3" data-testid="inventory-fixture">
-      {descriptors.map((descriptor) => (
+      {visible.map((descriptor) => (
         <WorkflowModelInventoryRow
           key={descriptor.profileId}
           descriptor={descriptor}
           cache={[
             {
-              id: source.repo,
+              id: taskCase ? taskModel.defaultRepo : source.repo,
               complete: true,
               installed: true,
-              planned_revision: source.revision,
-              planned_files: capability.downloadFiles,
+              planned_revision: taskCase ? taskModel.revisionCandidates[0] : source.revision,
+              planned_files: taskCase ? taskModel.artifactSelections[0]!.downloadFiles : capability.downloadFiles,
             },
           ]}
           local={[]}

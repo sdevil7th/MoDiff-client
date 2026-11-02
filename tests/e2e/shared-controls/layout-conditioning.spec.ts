@@ -8,6 +8,28 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterEach(async ({ page }) => expect(pageErrors.get(page)).toEqual([]));
 
+test('generic task inventory selects the reference partition without offering the whole repository', async ({
+  page,
+}) => {
+  await page.goto('/control-state-matrix.html?model-inventory&task-selections');
+  const fixture = page.getByTestId('inventory-fixture');
+  const install = fixture.getByTestId('model-manager-workflow-install-future-task');
+  await expect(install).toHaveText('Installed');
+  const task = fixture.getByRole('button', { name: 'Workflow task for Future video', exact: true });
+  await expect(task).toHaveText('Text video');
+  await task.click();
+  await page.getByRole('option', { name: 'Reference video', exact: true }).click();
+  await expect(install).toHaveText('Repair');
+  await install.click();
+  const target = JSON.parse(await page.getByTestId('inventory-target').innerText());
+  expect(target.repo).toBe('owner/future-video');
+  expect(target.revision).toBe('b'.repeat(40));
+  expect(target.files).toEqual(['model_index.json', 'transformer_ref/model.safetensors']);
+  await task.click();
+  await page.getByRole('option', { name: 'Text video', exact: true }).click();
+  await expect(install).toHaveText('Installed');
+});
+
 test('generic public inventory defaults to native and submits only the selected immutable format repair', async ({
   page,
 }) => {

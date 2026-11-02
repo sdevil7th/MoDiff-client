@@ -45,3 +45,15 @@ frame format in output history. The optional `graphTasksVersion: 2` distinguishe
 the added video-owner vocabulary from older receipts. Existing receipts and saved
 forms remain unchanged; missing or conflicting observations do not become support
 or publication qualification.
+
+The model manager can show backend-declared task artifact selections. Choose the
+task before Install or Repair; text/keyframe and reference workflows can need
+different transformer partitions from the same repository. Installed status is
+checked against that selection's exact revision and files. Downloading one
+partition does not mark the others installed. This uses the existing model
+download and terms acknowledgement flow, without a second installer.
+
+First/last-frame starters show their separate image inputs. Reference starters
+show their ordered reference inputs and assembler. Switching tasks must preserve
+compatible data and archive incompatible controls; it must not insert an empty
+reference helper into a keyframe workflow.

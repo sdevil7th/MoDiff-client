@@ -30,9 +30,9 @@ export default function WorkflowModelInventoryRow({
   onConfigureHfToken: (repo: string) => void;
   onInstall: (target: StudioAutoResourceInstallTarget) => Promise<void>;
 }) {
-  const [format, setFormat] = useState('native');
+  const [selectionId, setSelectionId] = useState('');
   const rows = workflowModelArtifactRows(descriptor);
-  const row = rows.find((item) => item.weightFormat === format) ?? rows[0]!;
+  const row = rows.find((item) => item.id === selectionId) ?? rows[0]!;
   const { status, installTarget, reason } = workflowModelArtifactStatus(row, descriptor, cache, local, diagnostics);
   const repo = row.selection?.repo ?? descriptor.repo;
   const progress = installProgress[repo];
@@ -91,10 +91,10 @@ export default function WorkflowModelInventoryRow({
       </div>
       {rows.length > 1 ? (
         <ModiffSelect
-          aria-label={`Weight format for ${descriptor.label}`}
-          value={row.weightFormat}
-          options={rows.map((item) => ({ value: item.weightFormat, label: item.label }))}
-          onValueChange={setFormat}
+          aria-label={`${descriptor.inventory?.taskSelections?.length ? 'Workflow task' : 'Weight format'} for ${descriptor.label}`}
+          value={row.id}
+          options={rows.map((item) => ({ value: item.id, label: item.label }))}
+          onValueChange={setSelectionId}
         />
       ) : null}
       <p className="text-xs text-modiff-subtle-text">
