@@ -315,9 +315,7 @@ test('campaign refuses generic two-second audio fixtures for showcase workflows'
     /reviewed workflow-specific sourceAudio fixture/,
   );
   const reviewedFixture = resolve(
-    ROOT,
-    '..',
-    'MoDiff',
+    process.env.MODIFF_BACKEND_DIR || resolve(ROOT, '..', 'MoDiff'),
     'web',
     'template-gallery',
     'ace_step_text_to_audio.current.wav',
