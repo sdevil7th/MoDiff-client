@@ -152,3 +152,26 @@ test('fresh optional-reference metadata still requires the selected medium despi
     ['audio'],
   );
 });
+
+test('a live schema without requiredness retains a saved explicit optional declaration', () => {
+  const context = fixture('image');
+  context.nodes[0].data.params.audio.required = false;
+  delete context.registry['modules.Test.Assemble'].params.audio.required;
+  delete context.registry['modules.Test.Assemble'].params.audio.requiredWhen;
+  assert.deepEqual(
+    fixer.buildGraphFixPlan(context).issues.map((i) => i.targetHandle),
+    ['image'],
+  );
+});
+
+test('a live schema without requiredness retains a saved explicit required declaration on a dynamic node', () => {
+  const context = fixture('image');
+  context.nodes[0].data.skipParamsCheck = true;
+  context.nodes[0].data.params.video.required = true;
+  delete context.registry['modules.Test.Assemble'].params.video.required;
+  delete context.registry['modules.Test.Assemble'].params.video.requiredWhen;
+  assert.deepEqual(
+    fixer.buildGraphFixPlan(context).issues.map((i) => i.targetHandle),
+    ['image', 'video'],
+  );
+});

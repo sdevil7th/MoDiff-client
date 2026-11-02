@@ -150,7 +150,9 @@ function nodesWithLiveContracts(context: GraphFixContext) {
             ...stored,
             type: live?.type ?? stored.type,
             required:
-              requirements?.[key]?.required ?? conditionalInputRequired(node, live ?? stored, registry, context.edges),
+              requirements?.[key]?.required ??
+              conditionalInputRequired(node, live ?? stored, registry, context.edges) ??
+              stored.required,
             hidden: requirements?.[key]?.hidden ?? stored.hidden,
           },
         ];
