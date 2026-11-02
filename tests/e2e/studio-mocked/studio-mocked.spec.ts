@@ -92,6 +92,59 @@ test('normal video template card creates real stages and preserves them after re
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
 });
 
+test('normal Pika task creation joins video and audio and preserves the workflow after reload', async ({ page }) => {
+  const pipelineClass = 'PikaH3FlexModularPipeline';
+  const task = 'text_to_video_with_audio';
+  // Transport-only GPU schema: the default upstream offload choice is invalid
+  // on a CPU fixture. This browser test never dispatches or loads a model.
+  const fixture = await generateTemplateSchemas([{ id: 'pika-joint-draft', selection: { pipelineClass, task } }], true);
+  const starter = fixture.recipes[0]!.starter;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.route('**/operations/task-starter', (route) =>
+    route.fulfill({ json: { schemaVersion: 1, starter, profileId: null, unbound: false, message: '' } }),
+  );
+  const dispatches: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') dispatches.push(request.url());
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  const launcher = page.getByRole('dialog', { name: 'Workflows', exact: true });
+  await launcher.getByRole('button', { name: 'Video', exact: true }).click();
+  await launcher.getByTestId(`workflow-task-${task}`).click();
+  await expect(launcher).toHaveCount(0);
+  const read = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().exportGraph('pika-joint-draft-regression', undefined, { randomizeSeeds: false });
+    });
+  await expect
+    .poll(async () => Object.values((await read()).nodes).filter((node) => node.action === 'ExportWithAudio').length)
+    .toBe(1);
+  const before = await read();
+  const output = Object.values(before.nodes).find((node) => node.action === 'ExportWithAudio')!;
+  expect(output.params.video!.sourceId).toBe(output.params.audio!.sourceId);
+  expect(output.params.video!.sourceId).toBeTruthy();
+  expect(Object.values(before.nodes).find((node) => node.action === 'ModelsLoader')!.params.model_type!.value).toBe(
+    pipelineClass,
+  );
+  expect(Object.values(before.nodes).some((node) => node.module === 'modules.Audio' && node.action === 'Preview')).toBe(
+    false,
+  );
+  await page.keyboard.press('Control+Shift+s');
+  await page.getByTestId('save-workflow-name').fill('Pika joined output');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect.poll(read).toEqual(before);
+  expect(dispatches).toEqual([]);
+});
+
 test('latest output download uses the backend captured model name', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);

@@ -90,6 +90,52 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
   }
   let outputCount = 0;
   for (const node of sources) {
+    const available = node.data.operationAuthoring!.operation.ports.filter(
+      (port) =>
+        port.direction === 'output' &&
+        !port.hidden &&
+        port.semantics?.kind === 'media' &&
+        !graph.edges.some((edge) => edge.source === node.id && edge.sourceHandle === port.name),
+    );
+    const video = available.filter((port) => connectionTypes(port.types).includes('video'));
+    const audio = available.filter((port) => connectionTypes(port.types).includes('audio'));
+    if (video.length === 1 && audio.length === 1 && video[0]!.name !== audio[0]!.name) {
+      const key = 'modules.Video.ExportWithAudio';
+      const definition = registry[key];
+      const pair = [
+        [video[0]!, 'video'],
+        [audio[0]!, 'audio'],
+      ] as const;
+      if (
+        definition &&
+        pair.every(([port, input]) => {
+          const field = definition.params[input];
+          return (
+            field &&
+            !field.hidden &&
+            (field.display === 'input' || field.isInput) &&
+            connectionTypesAreCompatible(port.types, field.type)
+          );
+        })
+      ) {
+        const target = createNodeFromRegistry(key, registry, {
+          x: 80 + sources.length * 420,
+          y: 120 + outputCount * 340,
+        })!;
+        graph.nodes.push(target);
+        for (const [port, input] of pair)
+          graph.edges.push({
+            id: `edge-${nanoid()}`,
+            source: node.id,
+            sourceHandle: port.name,
+            target: target.id,
+            targetHandle: input,
+            type: 'default',
+          });
+        outputCount++;
+      } else
+        notices.push('A compatible joined video/audio exporter is unavailable. Connect both streams before export.');
+    }
     for (const port of node.data.operationAuthoring!.operation.ports) {
       if (
         port.direction !== 'output' ||

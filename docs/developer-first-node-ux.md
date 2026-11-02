@@ -67,6 +67,12 @@ for text, keyframe and reference tasks. The backend still owns its provider,
 task-selected weights, required adapter and fixed sampler. This presentation
 registration grants no Auto, template, Gallery or live-output qualification.
 
+When one declared producer publishes both video frames and audio, a fresh
+workflow attaches the existing joined exporter and presents Video Output. Both
+typed streams stay connected to that same producer. Independently generated
+soundtracks retain their separate stages; missing or incompatible joined
+exporters produce a connection notice. Existing saved graphs are unchanged.
+
 This audit does not claim fewer backend classes: existing generic modular stages
 already share their execution implementations, and the remaining Generate/Edit
 adapters have different required inputs/preflight. The reduction is in duplicate

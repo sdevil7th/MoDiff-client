@@ -114,6 +114,57 @@ test('joint video/audio presentation retains both declared families without gran
   }
 });
 
+test('fresh joint video/audio drafts attach one typed joined exporter and Video Output stage', async (t) => {
+  for (const row of fixture.recipes.filter((item) => item.starter.task.endsWith('_with_audio')))
+    await t.test(row.id, () => {
+      const result = drafts.createWorkflowDraft(row.starter, fixture.registry);
+      const flat = groups.unpackVisualOperationGroups(result.graph).graph;
+      const outputs = flat.nodes.filter(
+        (node) => node.data.module === 'modules.Video' && node.data.action === 'ExportWithAudio',
+      );
+      assert.equal(outputs.length, 1, 'the ordinary creation path must retain the joint soundtrack');
+      const wires = flat.edges.filter((edge) => edge.target === outputs[0].id);
+      assert.deepEqual(wires.map((edge) => edge.targetHandle).sort(), ['audio', 'video']);
+      assert.equal(new Set(wires.map((edge) => edge.source)).size, 1, 'both streams come from the same producer');
+      assert.equal(result.graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'output').length, 1);
+      assert.ok(!flat.nodes.some((node) => node.data.module === 'modules.Audio' && node.data.action === 'Preview'));
+    });
+});
+
+test('a missing or incompatible joined exporter never creates a partial audio/video connection', () => {
+  const row = fixture.recipes.find((item) => item.id === 'MiniMaxH3ModularPipeline:text_to_video_with_audio');
+  const original = structuredClone(fixture.registry);
+  for (const incompatible of [false, true]) {
+    const registry = structuredClone(fixture.registry);
+    if (incompatible) registry['modules.Video.ExportWithAudio'].params.audio.type = 'image';
+    else delete registry['modules.Video.ExportWithAudio'];
+    const result = drafts.createWorkflowDraft(row.starter, registry);
+    const flat = groups.unpackVisualOperationGroups(result.graph).graph;
+    assert.ok(!flat.nodes.some((node) => node.data.action === 'ExportWithAudio'));
+    assert.ok(result.notices.some((notice) => notice.includes('joined video/audio')));
+  }
+  assert.deepEqual(fixture.registry, original);
+});
+
+test('one ambiguous union output is not treated as two simultaneous media streams', () => {
+  const starter = structuredClone(
+    fixture.recipes.find((item) => item.id === 'MiniMaxH3ModularPipeline:text_to_video_with_audio').starter,
+  );
+  const producer = starter.nodes.find((node) =>
+    node.operation.ports.some((port) => port.direction === 'output' && port.types.includes('audio')),
+  );
+  producer.operation.ports = producer.operation.ports.filter(
+    (port) => port.direction !== 'output' || !port.types.includes('audio'),
+  );
+  producer.operation.ports.find((port) => port.direction === 'output' && port.types.includes('video')).types = [
+    'video',
+    'audio',
+  ];
+  const result = drafts.createWorkflowDraft(starter, fixture.registry);
+  const flat = groups.unpackVisualOperationGroups(result.graph).graph;
+  assert.ok(!flat.nodes.some((node) => node.data.action === 'ExportWithAudio'));
+});
+
 function graphFor(row) {
   const graph = authoring.createOperationStarter(structuredClone(row.starter), { x: 0, y: 0 });
   for (const node of graph.nodes)
