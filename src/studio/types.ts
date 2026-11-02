@@ -94,6 +94,7 @@ export type StudioModelType =
   | 'Cosmos3DistilledModularPipeline'
   | 'Cosmos3OmniModularPipeline'
   | 'MiniMaxH3ModularPipeline'
+  | 'PikaH3FlexModularPipeline'
   | 'WanAnimate2ModularPipeline'
   | 'WanAnimate2DistilledModularPipeline'
   | 'DDPMPipeline'

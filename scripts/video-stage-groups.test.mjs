@@ -29,6 +29,9 @@ before(async () => {
     ['MiniMaxH3ModularPipeline', 'text_to_video_with_audio'],
     ['MiniMaxH3ModularPipeline', 'first_last_frame_to_video_with_audio'],
     ['MiniMaxH3ModularPipeline', 'reference_to_video_with_audio'],
+    ['PikaH3FlexModularPipeline', 'text_to_video_with_audio'],
+    ['PikaH3FlexModularPipeline', 'first_last_frame_to_video_with_audio'],
+    ['PikaH3FlexModularPipeline', 'reference_to_video_with_audio'],
   ].map(([pipelineClass, task]) => ({ id: `${pipelineClass}:${task}`, selection: { pipelineClass, task } }));
   for (const [id, modelType, pipelineClass, profile, task] of [
     ['ltx_video_text_to_video', 'LTXVideoPipeline', 'LTXConditionPipeline', 'ltx-video:direct', 'text_to_video'],
@@ -93,6 +96,23 @@ before(async () => {
   ({ DEFAULT_STUDIO_FORM: defaults } = await server.ssrLoadModule('/src/studio/modelProfiles.ts'));
 });
 after(async () => server?.close());
+
+test('joint video/audio presentation retains both declared families without granting qualification', () => {
+  const parsed = nodes.parseStudioModelCapabilities(fixture.publicPayload);
+  for (const model of ['MiniMaxH3ModularPipeline', 'PikaH3FlexModularPipeline']) {
+    const capability = parsed.capabilities.find((item) => item.modelType === model);
+    assert.ok(capability, `${model} must survive presentation parsing`);
+    assert.deepEqual(capability.modes, [
+      'text_to_video_with_audio',
+      'first_last_frame_to_video_with_audio',
+      'reference_to_video_with_audio',
+    ]);
+    assert.equal(capability.autoEligible, false);
+    assert.equal(capability.templateEligible, false);
+    assert.equal(capability.galleryEligible, false);
+    assert.equal(capability.liveProof, false);
+  }
+});
 
 function graphFor(row) {
   const graph = authoring.createOperationStarter(structuredClone(row.starter), { x: 0, y: 0 });

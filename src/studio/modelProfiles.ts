@@ -333,6 +333,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Cosmos3-Super 4-Step (Modular Cluster)',
   'Cosmos3-Nano (Modular Cluster)',
   'MiniMax H3 (Modular Cluster)',
+  'Pika H3 Flex (Modular Cluster)',
   'Wan Animate 2 (Modular Cluster)',
   'Wan Animate 2 Distilled (Modular Cluster)',
   'Z-Image Turbo',
@@ -575,6 +576,8 @@ export const COSMOS3_GUARDRAIL_REPO = 'nvidia/Cosmos-Guardrail1';
 export const COSMOS3_GUARDRAIL_REVISION = 'd6d4bfa899a71454a700907664f3e88f503950cf';
 export const MINIMAX_H3_REPO = 'MiniMaxAI/MiniMax-H3';
 export const MINIMAX_H3_REVISION = '42ed227ee7df40d41602854ae760620d6eb651fe';
+export const PIKA_H3_FLEX_REPO = 'Pika-Labs/Pika-H3-Flex';
+export const PIKA_H3_FLEX_REVISION = '3ff166447d5edb1406107ab8370c42000ce173e4';
 export const COSMOS3_NANO_FILES = [
   'README.md',
   'SAFETY.md',
@@ -1538,6 +1541,34 @@ function miniMaxH3Profile(): StudioModelProfileSource {
   };
 }
 
+/** Presentation fallback only. The backend owns the exact provider, selected
+ * artifacts, mandatory adapter and fixed sampler; this grants no qualification. */
+function pikaH3FlexProfile(): StudioModelProfileSource {
+  const base = miniMaxH3Profile();
+  return {
+    ...base,
+    displayName: 'Pika-H3-Flex',
+    defaultRepo: PIKA_H3_FLEX_REPO,
+    artifactLabel: 'Pinned task-selected transformer and required scale-one model adapter',
+    defaultSize: { width: 832, height: 480, aspectRatio: 'custom' },
+    recommendedSteps: 6,
+    guidanceLabel: 'Package-owned sampler; no guidance control',
+    modeRequirements: {
+      ...base.modeRequirements,
+      reference_to_video_with_audio: {
+        note: 'Requires ordered references with official structured subject labels; audio-only lists are invalid.',
+      },
+    },
+    lowVram: {
+      ...base.lowVram!,
+      steps: 6,
+      width: 832,
+      height: 480,
+    },
+    revisionCandidates: [PIKA_H3_FLEX_REVISION],
+  };
+}
+
 function wanAnimate2Profile(
   defaultRepo: string,
   revision: string,
@@ -1624,6 +1655,7 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   Cosmos3DistilledModularPipeline: cosmos3DistilledProfile(),
   Cosmos3OmniModularPipeline: cosmos3NanoProfile(),
   MiniMaxH3ModularPipeline: miniMaxH3Profile(),
+  PikaH3FlexModularPipeline: pikaH3FlexProfile(),
   WanAnimate2ModularPipeline: wanAnimate2Profile(WAN_ANIMATE_2_REPO, WAN_ANIMATE_2_REVISION, 'Wan Animate 2', 40, 3),
   WanAnimate2DistilledModularPipeline: wanAnimate2Profile(
     WAN_ANIMATE_2_DISTILLED_REPO,
@@ -3859,6 +3891,7 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   Cosmos3DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Cosmos3DistilledModularPipeline'),
   Cosmos3OmniModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Cosmos3OmniModularPipeline'),
   MiniMaxH3ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('MiniMaxH3ModularPipeline'),
+  PikaH3FlexModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('PikaH3FlexModularPipeline'),
   WanAnimate2ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('WanAnimate2ModularPipeline'),
   WanAnimate2DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement(
     'WanAnimate2DistilledModularPipeline',

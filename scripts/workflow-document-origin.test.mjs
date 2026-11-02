@@ -60,6 +60,50 @@ function record(t) {
   return { ...t, revision: 1 };
 }
 
+for (const mode of [
+  'text_to_video_with_audio',
+  'first_last_frame_to_video_with_audio',
+  'reference_to_video_with_audio',
+])
+  test(`Pika saved forms retain model and authored values through ${mode} restore`, () => {
+    const form = {
+      ...defaultForm,
+      modelType: 'PikaH3FlexModularPipeline',
+      mode,
+      prompt: 'Keep this authored reference and sound description.',
+      seed: 713,
+      width: 832,
+      height: 480,
+      numFrames: 124,
+      fps: 24,
+      resourceMode: 'expert',
+      autoOffload: true,
+      offloadMode: 'group_disk',
+    };
+    const id = studio.getState().createWorkflowTab(
+      'Saved Pika candidate',
+      {
+        nodes: [],
+        edges: [],
+        viewport: { x: 0, y: 0, zoom: 1 },
+        studioForm: form,
+        selectedMode: mode,
+        activeTemplateId: null,
+        studioGraphBinding: null,
+      },
+      'manual',
+      undefined,
+      'restore',
+    );
+    const saved = structuredClone(tab(id));
+    assert.equal(saved.snapshot.studioForm.modelType, form.modelType);
+    studio.setState({ workflowTabs: [], activeWorkflowTabId: id });
+    studio.getState().mergeBackendWorkflow(record(saved));
+    studio.getState().hydrateActiveWorkflowCanvas();
+    for (const field of ['modelType', 'mode', 'prompt', 'seed', 'width', 'height', 'numFrames', 'fps', 'offloadMode'])
+      assert.deepEqual(studio.getState().form[field], form[field], field);
+  });
+
 function ordinaryImageSnapshot(module, action, resourceMode) {
   const node = (id, module, action, params) => ({
     id,

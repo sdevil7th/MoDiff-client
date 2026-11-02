@@ -61,6 +61,12 @@ instead of silently discarding authored settings.
 | Transcription / processing           | Connect existing typed audio sources to declared consumers; no automatic model-family substitution |
 | Video                                | Shared stages for selected LTX/Wan routes; existing native video stages use the same grouping      |
 
+Pika H3 Flex has a conservative presentation profile alongside MiniMax H3, so
+capability parsing and saved-form restoration retain its exact model identity
+for text, keyframe and reference tasks. The backend still owns its provider,
+task-selected weights, required adapter and fixed sampler. This presentation
+registration grants no Auto, template, Gallery or live-output qualification.
+
 This audit does not claim fewer backend classes: existing generic modular stages
 already share their execution implementations, and the remaining Generate/Edit
 adapters have different required inputs/preflight. The reduction is in duplicate
