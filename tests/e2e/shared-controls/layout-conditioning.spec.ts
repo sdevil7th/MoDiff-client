@@ -110,6 +110,10 @@ for (const grouped of [false, true]) {
   }) => {
     await page.goto(`/control-state-matrix.html?layout-conditioning${grouped ? '&block' : ''}`);
     const node = widget(page);
+    // Cold Vite compilation of the lazy editor is fixture readiness, separate
+    // from the 15-second value/interaction assertions below. Production serves
+    // the already-built chunk. Retain a finite bound without sleeps or retries.
+    await expect(node.getByRole('radio', { name: 'Raw prompt', exact: true })).toBeVisible({ timeout: 60_000 });
     await expect(node.getByRole('radio', { name: 'Raw prompt', exact: true })).toBeChecked();
     const prompt = (await exported(page)).params.prompt!.value;
     await node.getByRole('radio', { name: 'Structured layout', exact: true }).click();
