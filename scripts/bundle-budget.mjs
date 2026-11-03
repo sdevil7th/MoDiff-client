@@ -1,3 +1,9 @@
+// Shared managed input previews measure largest/startup/deferred gzip
+// 496215/674704/329829 versus 496087/674572/329587. Only studio-templates.js
+// changes after cache-version normalization; all 90 deferred assets differ
+// only in their versioned imports. Add the measured 128/132/242 bytes, keeping
+// prior 18/19/169-byte headroom, four startup assets and the 64 KiB chunk cap.
+// No dependency, loading-boundary, minifier or model/runtime change.
 // Required literal media-file readiness adds 103/102 startup gzip bytes over
 // 495984/674470; deferred gzip falls from 329666 to 329587. Retain 18/19 bytes
 // headroom, the same 4 startup/90 deferred assets and both deferred caps. No new
@@ -314,6 +320,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  128 +
   103 +
   116 +
   202 +
@@ -455,6 +462,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  132 +
   102 +
   113 +
   202 +
@@ -677,6 +685,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  242 +
   297 +
   1147 +
   1043 +
