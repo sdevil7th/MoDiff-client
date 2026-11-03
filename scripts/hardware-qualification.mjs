@@ -3,7 +3,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { captureQualificationStatus } from './release-qualification-policy.mjs';
+import { captureQualificationStatus, hardwareExecutionDevice } from './release-qualification-policy.mjs';
+import { assertHardwareRuntimeMatches } from './hardware-qualification-runtime.mjs';
+import { validateRunProvenance } from './live-proof-provenance.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -52,31 +54,13 @@ async function readGalleryEvidence(path) {
   const response = await fetch(`${backendUrl}/health`, { signal: AbortSignal.timeout(5_000) });
   if (!response.ok) throw new Error(`Backend health returned HTTP ${response.status}.`);
   const health = await response.json();
-  // Current task receipts retain the full runtime observation. Compare its
-  // reported identity without replacing that object or the provenance lock.
-  // Older Gallery reports stored this same reported identity as a string.
-  const observedRuntime = output.terminalTask.runtimeFingerprint;
-  const reportedFingerprint =
-    typeof observedRuntime === 'string'
-      ? observedRuntime
-      : observedRuntime && typeof observedRuntime === 'object' && !Array.isArray(observedRuntime)
-        ? observedRuntime.fingerprint
-        : null;
-  if (
-    typeof reportedFingerprint !== 'string' ||
-    !reportedFingerprint.trim() ||
-    typeof health.runtime_fingerprint !== 'string' ||
-    !health.runtime_fingerprint.trim()
-  ) {
-    throw new Error('Gallery run or current backend is missing a runtime fingerprint.');
-  }
-  if (health.runtime_fingerprint !== reportedFingerprint) {
-    throw new Error('Current backend runtime does not match the completed gallery run.');
-  }
+  const provenance = readJson(provenancePath);
+  if (output.terminalTask.task_id !== provenance.taskId) throw new Error('Hardware task and provenance IDs differ.');
+  assertHardwareRuntimeMatches(output.terminalTask.runtimeFingerprint, health, provenance);
   return {
     status: { step: 'success' },
     health,
-    provenance: readJson(provenancePath),
+    provenance,
     provenancePath,
     websocketEventsPath: output.evidence?.websocketEvents
       ? required(resolve(output.evidence.websocketEvents), 'Gallery websocket evidence')
@@ -96,10 +80,18 @@ async function readQualificationEvidence() {
   const statusPath = required(join(ARTIFACT_ROOT, 'status.json'), 'Proof status');
   const healthPath = required(join(ARTIFACT_ROOT, 'backend-health.json'), 'Backend health');
   const provenancePath = required(join(ARTIFACT_ROOT, 'run-provenance.json'), 'Run provenance');
+  const health = readJson(healthPath);
+  const provenance = readJson(provenancePath);
+  const original = readJson(required(join(ARTIFACT_ROOT, 'run-terminal.json'), 'Original completed task receipt'));
+  const task = original.task ?? original;
+  if (task.status !== 'completed' || task.task_id !== provenance.taskId) {
+    throw new Error('Retained hardware task is not the completed provenance owner.');
+  }
+  assertHardwareRuntimeMatches(task.runtimeFingerprint, health, provenance);
   return {
     status: readJson(statusPath),
-    health: readJson(healthPath),
-    provenance: readJson(provenancePath),
+    health,
+    provenance,
     provenancePath,
     websocketEventsPath: existsSync(join(ARTIFACT_ROOT, 'websocket-events.json'))
       ? join(ARTIFACT_ROOT, 'websocket-events.json')
@@ -139,18 +131,17 @@ if (status.step !== 'success') throw new Error(`Live proof is not complete; curr
 if (health.ready !== true || health.runtime_profile?.execution_ready !== true) {
   throw new Error('Live proof backend did not report an execution-ready managed profile.');
 }
-if (Number(provenance.schemaVersion) < 2 || (provenance.blockers ?? []).length > 0) {
+if (
+  Number(provenance.schemaVersion) < 2 ||
+  (provenance.blockers ?? []).length > 0 ||
+  validateRunProvenance(provenance).length > 0
+) {
   throw new Error('Live proof does not contain a complete v2 qualification receipt.');
 }
 
 const profileId = health.runtime_profile.installed;
 const torch = health.packages?.torch ?? {};
-const measuredDevice = String(provenance.execution?.measurement?.device ?? '');
-const device = measuredDevice.startsWith('xpu')
-  ? (torch.xpu_devices?.[0] ?? {})
-  : measuredDevice.startsWith('mps')
-    ? (torch.mps_devices?.[0] ?? {})
-    : (torch.cuda_devices?.[0] ?? {});
+const device = hardwareExecutionDevice(health, provenance);
 const executionPlan = provenance.graph?.executionPlan ?? {};
 const recipeHash =
   provenance.graph?.executionPlanHash ??

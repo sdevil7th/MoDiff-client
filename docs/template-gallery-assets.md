@@ -56,6 +56,25 @@ the residual `__pycache__` directory. Other missing initializers, Python sources
 or unresolved registry declarations remain errors; cached bytecode is never
 imported to reconstruct a missing module.
 
+Hardware registration uses the run's measured execution device and backend,
+not the first accelerator listed by its host. CPU execution cannot qualify a
+CUDA, ROCm, XPU or MPS profile. GPU evidence must identify the actual device
+index in captured physical device metadata, with a matching backend. Missing
+or contradictory measurements remain blocked; old receipts are not rewritten
+to supply them. A conditional/preview profile still records an observation,
+not supported-profile qualification. Runtime installation tiers and CI checks
+alone do not establish physical model qualification.
+
+Current health reports use a resource fingerprint, while completed tasks retain
+a separate execution fingerprint. Hardware registration compares the resource
+domain to health, then binds the unchanged execution identity and normalized
+runtime to original provenance and the worker's exact source inventory. It does
+not replace an execution hash with a resource hash. Retained live-proof artifact
+directories must include the original `run-terminal.json`, `backend-health.json`
+and `run-provenance.json` alongside `status.json`; the completed task must own
+that provenance. The full provenance validator still applies. A status marker
+or an old output file alone cannot establish qualification.
+
 Choose a user or organization namespace where you have write permission. The
 recommended repository name is `<namespace>/modiff-template-gallery`. The
 repository must remain public for unauthenticated open-source use.
