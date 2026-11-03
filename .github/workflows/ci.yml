@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Paired conditional reference requirements and current video stages.
-          ref: e6eaffb397ca55ae015f6767794fc0039891250b
+          # Paired scoped audio creative-input receipts and current video stages.
+          ref: cd7fb74c116ae611a1e6cb0dbe95950d129fa84e
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: e6eaffb397ca55ae015f6767794fc0039891250b
+          ref: cd7fb74c116ae611a1e6cb0dbe95950d129fa84e
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
