@@ -10959,16 +10959,14 @@ test('required media file editors block Run before upload and after clearing or 
   const run = page.getByTestId('studio-run');
   await expect(run).toBeDisabled();
   await expect(page.getByTestId('studio-run-readiness')).toContainText('needs file');
-  await node
-    .locator('[data-key="file"] input[type="file"]')
-    .setInputFiles({
-      name: 'presence.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
-        'base64',
-      ),
-    });
+  await node.locator('[data-key="file"] input[type="file"]').setInputFiles({
+    name: 'presence.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
   await expect(run).toBeEnabled();
   await node.getByRole('button', { name: 'Remove media', exact: true }).click();
   await expect(run).toBeDisabled();
