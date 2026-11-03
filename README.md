@@ -31,7 +31,7 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `e6eaffb397ca55ae015f6767794fc0039891250b`.
+CI backend contract: `cd7fb74c116ae611a1e6cb0dbe95950d129fa84e`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
 is the earlier reviewed testing baseline. Current CI covers the shared video
@@ -39,8 +39,8 @@ stages and conditional reference requirements; a CI pin alone does not establish
 expand model/hardware qualification.
 
 The 3 November Linux video testing deployment uses backend
-`e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d` and client product
-`9bac9ac007aeee7ae5de47f55646260736a7b48f`. Later CI/documentation-only
+`496f3aed56ce1c6a868549df310c68e765712ce3` and client product
+`75080b73fb22bc0ef197f17a119cf507b3352695`. Later CI/documentation-only
 descendants retain that tested client product. Native large-model evidence on
 Linux does not expand Windows or other hardware qualification; see the backend's
 [video progress and handoff](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/video-stages-20261101/MILESTONE2-PROGRESS.md).
