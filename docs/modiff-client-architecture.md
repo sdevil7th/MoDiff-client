@@ -35,8 +35,9 @@ validation remains authoritative. Ordered media references use this for the
 selected image/video/audio input; the initial list and video soundtrack remain
 optional. This contract is generic and adds no model-specific frontend branch.
 
-Run readiness also checks explicitly required literal `filebrowser` fields,
-including older saved media Load nodes inspected against the current registry.
+Run readiness also checks literal `filebrowser` fields. Unannotated editors on
+normally validated nodes are mandatory; explicit optionality and dynamic
+skip-validation remain respected. Raw, immutable and saved definitions stay intact.
 Empty paths/collections and blank collection members block submission without
 inventing another node or changing the graph. Optional selectors remain optional.
 This checks input presence, not filesystem access or decoding; backend boundaries

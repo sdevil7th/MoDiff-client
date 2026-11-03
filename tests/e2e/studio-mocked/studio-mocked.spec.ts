@@ -10929,7 +10929,7 @@ test('required media file editors block Run before upload and after clearing or 
   await ensureFrontend();
   await installMockRoutes(page);
   const source = structuredClone(mockRegistry['modules.Image.Load']!);
-  source.params.file!.required = true;
+  delete source.params.file!.required; // existing raw loader schema stays immutable
   await page.route('**/nodes**', (route) =>
     route.fulfill({ json: { nodes: { ...mockRegistry, 'modules.Image.Load': source } } }),
   );
@@ -10956,6 +10956,27 @@ test('required media file editors block Run before upload and after clearing or 
   await page.getByTestId('node-row-modules-Image-Load').click();
   const node = page.locator('.react-flow__node').filter({ has: page.locator('[data-key="file"] input[type="file"]') });
   await expect(node).toHaveCount(1);
+  await page.getByLabel('Search nodes', { exact: true }).fill('Preview');
+  await page.getByTestId('node-row-modules-Image-Preview').click();
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const previewId = await page.evaluate(
+    () =>
+      window.__MODIFF_E2E__!.getState().flow.nodes.find((n) => n.module === 'modules.Image' && n.action === 'Preview')!
+        .id,
+  );
+  const from = node.locator('.react-flow__handle.source[data-handleid="image"]');
+  const to = page.locator(
+    `.react-flow__node[data-id="${previewId}"] .react-flow__handle.target[data-handleid="image"]`,
+  );
+  await from.click({ trial: true });
+  await to.click({ trial: true });
+  const a = (await from.boundingBox())!,
+    b = (await to.boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 16 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
   const run = page.getByTestId('studio-run');
   await expect(run).toBeDisabled();
   await expect(page.getByTestId('studio-run-readiness')).toContainText('needs file');
@@ -10975,6 +10996,9 @@ test('required media file editors block Run before upload and after clearing or 
   await page.evaluate(() =>
     window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'media-presence-reopen', isConnected: true }),
   );
+  await expect(
+    page.locator('.react-flow__node').filter({ has: page.locator('[data-key="file"] input[type="file"]') }),
+  ).toHaveCount(1);
   await expect(page.getByTestId('studio-run')).toBeDisabled();
   expect(graphPosts).toBe(0);
 });

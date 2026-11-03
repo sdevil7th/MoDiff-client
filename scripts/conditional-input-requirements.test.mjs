@@ -210,6 +210,14 @@ for (const medium of ['image', 'video', 'audio'])
     node.data.params.file.value = '';
     definition.params.file.required = false;
     assert.deepEqual(readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry), []);
+    delete definition.params.file.required;
+    assert.deepEqual(
+      readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry).map((i) => i.fieldId),
+      ['file'],
+    );
+    definition.skipParamsCheck = true;
+    assert.deepEqual(readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry), []);
+    definition.skipParamsCheck = false;
     definition.params.file.required = true;
     node.data.uiState = { disabled: true };
     assert.deepEqual(readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry), []);

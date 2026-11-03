@@ -28,13 +28,22 @@ export function inspectRequiredGraphInputs(
     ),
   );
   for (const node of enabled.values()) {
-    const declared = registry[`${node.data.module}.${node.data.action}`]?.params;
+    const definition = registry[`${node.data.module}.${node.data.action}`];
+    const declared = definition?.params;
     const requirements = processImageInputRequirements(node, registry, operations, graph.edges);
     for (const field of new Set([...Object.keys(declared ?? {}), ...Object.keys(node.data.params)])) {
       const saved = node.data.params[field] ?? declared![field]!;
       const param = declared?.[field] ?? saved;
+      // Like ordinary required sockets, an unannotated literal file editor is
+      // mandatory on a normally validated node. Keep raw/immutable definitions
+      // intact and respect explicit optionality and dynamic skip validation.
+      const required =
+        requirements?.[field]?.required ??
+        conditionalInputRequired(node, param, registry, graph.edges) ??
+        (param.display === 'filebrowser' &&
+          (saved.required ?? !(definition?.skipParamsCheck ?? node.data.skipParamsCheck)));
       if (
-        !(requirements?.[field]?.required ?? conditionalInputRequired(node, param, registry, graph.edges)) ||
+        !required ||
         param.disabled ||
         param.display === 'output' ||
         !(
