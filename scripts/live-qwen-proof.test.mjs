@@ -448,6 +448,80 @@ test('ordinary direct audio locks the actual connected recipe without a legacy b
   }
 });
 
+test('ordinary direct audio retains its recipe across native input and output preview restoration', () => {
+  for (const finishingChain of [false, true]) {
+    const graph = directAudioExpertGraph(true);
+    if (!finishingChain) {
+      delete graph.nodes.match;
+      delete graph.nodes.join;
+      graph.nodes.export.params.audio = { sourceId: 'generate', sourceKey: 'audio' };
+      graph.paths[0] = ['load', 'quant', 'recipe', 'loader', 'generate', 'export'];
+    }
+    const originalPlan = executionPlanIdentity(graph).plan;
+    graph.nodes.load.params.preview = { display: 'ui_audio', sourceKey: 'filename' };
+    const beforeGraph = canonicalGraphIdentity(graph).hash;
+    for (const value of [
+      undefined,
+      null,
+      '',
+      '/file?file=%40data/audio/source.wav&t=42',
+      [],
+      ['/file?file=%40data/audio/source.wav&t=42'],
+    ]) {
+      const restored = structuredClone(graph);
+      if (value !== undefined) {
+        restored.nodes.load.params.preview.value = value;
+        restored.nodes.export.params.preview.value = value;
+      }
+      const original = JSON.stringify(restored);
+      const plan = executionPlanIdentity(restored).plan;
+      assert.deepEqual(plan, originalPlan);
+      assert.equal(plan.source, 'executed-expert-direct-audio-graph-v1');
+      assert.equal(plan.modelRepo, originalPlan.modelRepo);
+      assert.equal(plan.task, 'audio_continuation');
+      assert.equal(canonicalGraphIdentity(restored).hash, beforeGraph);
+      assert.equal(JSON.stringify(restored), original, 'retained presentation and source evidence are never rewritten');
+    }
+  }
+});
+
+test('ordinary audio preview metadata cannot hide extra input wiring or malformed values', () => {
+  const changes = [
+    (p) => {
+      p.sourceId = 'loader';
+    },
+    (p) => {
+      p.sourceKey = 'pipeline';
+    },
+    (p) => {
+      p.display = 'input';
+    },
+    (p) => {
+      p.other = true;
+    },
+    (p) => {
+      p.value = { sourceId: 'loader', sourceKey: 'pipeline' };
+    },
+    (p) => {
+      p.value = [false];
+    },
+    (p) => {
+      p.value = Array(17).fill('/file?file=source.wav');
+    },
+    (p) => {
+      p.value = 'x'.repeat(16_385);
+    },
+  ];
+  for (const owner of ['load', 'export']) {
+    for (const change of changes) {
+      const graph = directAudioExpertGraph(true);
+      graph.nodes.load.params.preview = { display: 'ui_audio', sourceKey: 'filename' };
+      change(graph.nodes[owner].params.preview);
+      assert.deepEqual(executionPlanIdentity(graph).plan, {});
+    }
+  }
+});
+
 test('ordinary audio recipe recovery rejects ambiguous, disconnected and contradictory authority', () => {
   const mutations = {
     'malformed owner': (g) => {

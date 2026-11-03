@@ -91,6 +91,14 @@ Automatic memory, listening or publication qualification. Unsupported or
 ambiguous compositions remain held; canonical field-accounting coverage is a
 separate contract.
 
+The ordinary Audio Load and Export nodes can retain `ui_audio` preview values
+after execution and reopening. Their declared `filename`/`file` preview sources
+are presentation metadata, with bounded literal media references. The proof
+reader preserves those references and retains the same resource identity;
+connected preview suppliers, unknown keys, structured values and unsupported
+preview sources remain rejected. This does not supply missing input-byte or
+consumed-control evidence, and never rewrites the original submitted graph.
+
 Choose a user or organization namespace where you have write permission. The
 recommended repository name is `<namespace>/modiff-template-gallery`. The
 repository must remain public for unauthenticated open-source use.

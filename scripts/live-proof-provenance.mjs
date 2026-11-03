@@ -718,14 +718,24 @@ function executedDirectAudioExpertPlanFromGraph(apiGraph) {
         ]
       : []),
   ]);
+  const mediaValue = (value) => typeof value === 'string' && value.length <= 16_384;
   for (const [id, node] of entries) {
     const expected = wires.get(id);
     if (!expected) return null;
+    const previewPort = id === output[0] ? 'file' : source && id === source[0] ? 'filename' : null;
     for (const [key, param] of Object.entries(node.params ?? {})) {
+      const previewValue = param?.value;
+      // These native preview references survive Save/reopen; sourceKey names
+      // an output field here, not an additional graph connection.
       const presentation =
-        id === output[0] &&
         key === 'preview' &&
-        stableStringify(param) === stableStringify({ display: 'ui_audio', sourceKey: 'file' });
+        previewPort !== null &&
+        param?.display === 'ui_audio' &&
+        param.sourceKey === previewPort &&
+        Object.keys(param).every((field) => ['display', 'sourceKey', 'value'].includes(field)) &&
+        (previewValue == null ||
+          mediaValue(previewValue) ||
+          (Array.isArray(previewValue) && previewValue.length <= 16 && previewValue.every(mediaValue)));
       if ((param?.sourceId || param?.sourceKey) && !Object.hasOwn(expected, key) && !presentation) return null;
     }
     for (const [field, [producer, port]] of Object.entries(expected)) {
