@@ -148,6 +148,15 @@ const inputNames: Record<string, string> = {
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
 const nodeInputNames: Record<string, Record<string, string>> = {
+  'DiffusersAudio.Generate': {
+    ...inputNames,
+    lyrics: 'lyrics',
+    vocal_language: 'vocalLanguage',
+    shift: 'shift',
+    bpm: 'bpm',
+    keyscale: 'keyscale',
+    timesignature: 'timesignature',
+  },
   'Image.Load': {
     ...inputNames,
     alpha_channel: 'imageAlphaChannel',

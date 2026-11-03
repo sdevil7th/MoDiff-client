@@ -1196,6 +1196,67 @@ test('captured weight loading mode preserves its cpu/cuda value through output h
   assert.deepEqual(inputs.coerceResolvedExecutionInputs(omitted, identity), omitted);
 });
 
+test('audio creative inputs survive history with exact Unicode and reject other node scopes', () => {
+  const identity = { taskId: 'audio-creative', attemptIndex: 0, nodeId: 'generate' };
+  const values = {
+    lyrics: 'MoDiff—三拍',
+    vocal_language: 'en',
+    shift: 3,
+    bpm: 170,
+    keyscale: 'C# minor',
+    timesignature: '3',
+  };
+  const capture = {
+    schemaVersion: 1,
+    source: 'backend-execution',
+    ...identity,
+    nodes: [
+      {
+        nodeId: 'generate',
+        module: 'modules.DiffusersAudio',
+        action: 'Generate',
+        fields: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value, source: 'literal' }])),
+        omittedFields: {},
+      },
+    ],
+    summary: {
+      lyrics: values.lyrics,
+      vocalLanguage: 'en',
+      shift: 3,
+      bpm: 170,
+      keyscale: 'C# minor',
+      timesignature: '3',
+    },
+    ambiguousFields: [],
+    unavailableFields: [],
+    uncapturedNodeIds: [],
+    truncated: false,
+  };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture);
+  const restored = contracts.coerceStudioOutput({
+    id: 'audio-creative',
+    url: '/song.wav',
+    ...identity,
+    resolvedExecutionInputs: capture,
+  });
+  assert.deepEqual(restored.resolvedExecutionInputs, capture);
+  const wrongScope = structuredClone(capture);
+  wrongScope.nodes[0].module = 'modules.Image';
+  wrongScope.nodes[0].action = 'Preview';
+  assert.equal(inputs.coerceResolvedExecutionInputs(wrongScope, identity), undefined);
+  const forged = structuredClone(capture);
+  forged.summary.lyrics = 'invented';
+  assert.equal(inputs.coerceResolvedExecutionInputs(forged, identity), undefined);
+  const legacy = structuredClone(capture);
+  legacy.nodes[0].fields = {};
+  legacy.summary = {};
+  assert.deepEqual(
+    inputs.coerceResolvedExecutionInputs(legacy, identity),
+    legacy,
+    'never backfill older audio evidence',
+  );
+});
+
 test('every backend capture field survives client history parsing with node-scoped adapter identity', () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
   const python =
