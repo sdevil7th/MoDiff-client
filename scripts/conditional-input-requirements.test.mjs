@@ -175,3 +175,42 @@ test('a live schema without requiredness retains a saved explicit required decla
     ['image', 'video'],
   );
 });
+
+for (const medium of ['image', 'video', 'audio'])
+  test(`required ${medium} file editors block empty saved inputs without inventing a connection repair`, () => {
+    const definition = {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'LoadFile',
+      label: `Load ${medium}`,
+      params: {
+        file: { display: 'filebrowser', type: 'str', required: true },
+        result: { display: 'output', type: medium },
+      },
+    };
+    const node = { id: 'load', type: 'custom', position: { x: 0, y: 0 }, data: structuredClone(definition) };
+    delete node.data.params.file.required; // old saved metadata must use the current declaration
+    const graph = { nodes: [node], edges: [] },
+      registry = { 'modules.Test.LoadFile': definition };
+    for (const value of [undefined, '', '  ', [], [''], ['a.png', '  '], false, 42, {}]) {
+      node.data.params.file.value = value;
+      const before = JSON.stringify(node);
+      const issues = readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry);
+      assert.deepEqual(
+        issues.map((i) => i.fieldId),
+        ['file'],
+      );
+      assert.match(issues[0].details, /Select/);
+      assert.equal(JSON.stringify(node), before);
+    }
+    for (const value of ['@data/inputs/source.png', ['a.png', 'b.png']]) {
+      node.data.params.file.value = value;
+      assert.deepEqual(readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry), []);
+    }
+    node.data.params.file.value = '';
+    definition.params.file.required = false;
+    assert.deepEqual(readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry), []);
+    definition.params.file.required = true;
+    node.data.uiState = { disabled: true };
+    assert.deepEqual(readiness.inspectRequiredGraphInputs(graph.nodes, graph, registry), []);
+  });

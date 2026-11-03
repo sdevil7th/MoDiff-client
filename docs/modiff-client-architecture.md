@@ -35,6 +35,13 @@ validation remains authoritative. Ordered media references use this for the
 selected image/video/audio input; the initial list and video soundtrack remain
 optional. This contract is generic and adds no model-specific frontend branch.
 
+Run readiness also checks explicitly required literal `filebrowser` fields,
+including older saved media Load nodes inspected against the current registry.
+Empty paths/collections and blank collection members block submission without
+inventing another node or changing the graph. Optional selectors remain optional.
+This checks input presence, not filesystem access or decoding; backend boundaries
+remain authoritative.
+
 The backend may use official model libraries maintained and published by Hugging Face, but the client remains runtime-agnostic. It renders backend-declared task inputs, parameters, outputs, missing optional runtimes, and readiness instead of selecting library classes or maintaining model-specific execution branches. The browser never loads a model runtime or invokes a hosted inference provider.
 
 ## Technology

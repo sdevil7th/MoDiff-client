@@ -1,3 +1,7 @@
+// Required literal media-file readiness adds 71/71 startup gzip bytes over
+// 495984/674470; deferred gzip falls from329666 to329631. Retain18/19 bytes
+// headroom, the same4startup/90deferred assets and bothdeferred caps. No new
+// dependency, module-loading rule or minifier change.
 // Generic conditional input requirements measure largest/startup/deferred gzip
 // 495984/674470/329666 versus accepted 495868/674357/329734. Add only measured
 // startup growth 116/113 bytes, retaining 18/19 bytes of headroom. The same four
@@ -310,6 +314,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  71 +
   116 +
   202 +
   20 +
@@ -450,6 +455,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  71 +
   113 +
   202 +
   21 +

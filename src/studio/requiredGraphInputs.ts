@@ -37,7 +37,12 @@ export function inspectRequiredGraphInputs(
         !(requirements?.[field]?.required ?? conditionalInputRequired(node, param, registry, graph.edges)) ||
         param.disabled ||
         param.display === 'output' ||
-        !(param.isInput || param.display === 'input' || param.display === 'modelselect')
+        !(
+          param.isInput ||
+          param.display === 'input' ||
+          param.display === 'modelselect' ||
+          param.display === 'filebrowser'
+        )
       )
         continue;
       const selected = saved.value ?? saved.default ?? param.default;
@@ -47,7 +52,17 @@ export function inspectRequiredGraphInputs(
             ? selected.value
             : undefined
           : selected;
-      const present = param.display === 'modelselect' && typeof value === 'string' ? value.trim() : value;
+      let present: unknown = value;
+      if (param.display === 'filebrowser') {
+        present =
+          typeof value === 'string'
+            ? value.trim()
+            : Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === 'string' && item.trim())
+              ? value
+              : undefined;
+      } else if (param.display === 'modelselect' && typeof value === 'string') {
+        present = value.trim();
+      }
       if (present !== undefined && present !== null && present !== '' && (!Array.isArray(present) || present.length))
         continue;
       const supplied = graph.edges.some((edge) => {
@@ -70,7 +85,10 @@ export function inspectRequiredGraphInputs(
         nodeId: target,
         ...(target === node.id ? { fieldId: field } : {}),
         message: `${node.data.label || node.data.action} needs ${saved.label || field} before running.`,
-        details: `Connect an enabled compatible source to ${field}, or provide its declared value. Expand the Block to inspect the affected node.`,
+        details:
+          param.display === 'filebrowser'
+            ? `Select the required media file in ${saved.label || field}. Expand the Block if the Load node is inside it.`
+            : `Connect an enabled compatible source to ${field}, or provide its declared value. Expand the Block to inspect the affected node.`,
       });
     }
   }

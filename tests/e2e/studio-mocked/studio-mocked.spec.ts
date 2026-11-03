@@ -10925,6 +10925,62 @@ test('image pipeline drag-to-add excludes generation actions outside the selecte
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
 });
 
+test('required media file editors block Run before upload and after clearing or reopening', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const source = structuredClone(mockRegistry['modules.Image.Load']!);
+  source.params.file!.required = true;
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { nodes: { ...mockRegistry, 'modules.Image.Load': source } } }),
+  );
+  let graphPosts = 0;
+  await page.route('**/graph', (route) => {
+    if (route.request().method() === 'POST') graphPosts++;
+    return route.fulfill({ json: { error: true, message: 'Presence test must not execute.' } });
+  });
+  await page.route('**/file', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ json: { path: ['@data/images/presence-test.png'] } })
+      : route.fallback(),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'media-presence', isConnected: true }),
+  );
+  await dismissTaskLauncher(page);
+  await setWorkflowResourceMode(page, 'expert');
+  await openNodesLibrary(page);
+  await page.getByRole('checkbox', { name: 'Show implementation nodes', exact: true }).check();
+  await page.getByLabel('Search nodes', { exact: true }).fill('Load');
+  await page.getByTestId('node-row-modules-Image-Load').click();
+  const node = page.locator('.react-flow__node').filter({ has: page.locator('[data-key="file"] input[type="file"]') });
+  await expect(node).toHaveCount(1);
+  const run = page.getByTestId('studio-run');
+  await expect(run).toBeDisabled();
+  await expect(page.getByTestId('studio-run-readiness')).toContainText('needs file');
+  await node
+    .locator('[data-key="file"] input[type="file"]')
+    .setInputFiles({
+      name: 'presence.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    });
+  await expect(run).toBeEnabled();
+  await node.getByRole('button', { name: 'Remove media', exact: true }).click();
+  await expect(run).toBeDisabled();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await page.evaluate(() =>
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'media-presence-reopen', isConnected: true }),
+  );
+  await expect(page.getByTestId('studio-run')).toBeDisabled();
+  expect(graphPosts).toBe(0);
+});
+
 test('raw Process Image task changes keep Mask repairs and readiness current', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
