@@ -23,6 +23,8 @@ import {
   canonicalJsonHash,
   cardPreviewContractErrors,
   decodedAudiovisualMediaHash,
+  decodedMediaHashMatches,
+  decodedVideoFrameHashCompatibility,
   galleryExpectedOutput,
   loadTemplateRuntime,
   mergeManifestEntries,
@@ -40,6 +42,44 @@ import { repairDuplicateOutputItems } from './live-proof-provenance.mjs';
 import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
 
 let runtime;
+
+test('decoded video identity tolerates only the reviewed FFmpeg software banner difference', () => {
+  const original = Buffer.from(
+    '#format: frame checksums\n#version: 2\n#hash: MD5\n#software: Lavf61.1.100\n' +
+      '#tb 0: 1/24\n#media_type 0: video\n#dimensions 0: 2x2\n' +
+      '#stream#, dts, pts, duration, size, hash\n0, 0, 0, 1, 6, 11111111111111111111111111111111\n',
+  );
+  const expected = `sha256:decoded-video-framemd5:${createHash('sha256').update(original).digest('hex')}`;
+  const current = Buffer.from(original.toString().replace('Lavf61.1.100', 'Lavf61.7.100'));
+  const compatibility = decodedVideoFrameHashCompatibility(current);
+  const decoded = { hash: compatibility.rawHash, frameHashCompatibility: compatibility };
+  assert.notEqual(decoded.hash, expected);
+  assert.equal(decodedMediaHashMatches(decoded, expected), true);
+  assert.equal(compatibility.observedMuxer, 'Lavf61.7.100');
+  assert.equal(decodedMediaHashMatches({ hash: 'decoded:image' }, 'decoded:image'), true);
+  assert.equal(
+    decodedMediaHashMatches({ hash: 'decoded:image', frameHashCompatibility: compatibility }, expected),
+    false,
+  );
+  assert.equal(decodedMediaHashMatches({ ...decoded, hash: 'wrong' }, expected), false);
+  assert.equal(decodedMediaHashMatches(decoded, undefined), false);
+  for (const changed of [
+    current.toString().replace('11111111111111111111111111111111', '21111111111111111111111111111111'),
+    current.toString().replace('0, 0, 0, 1, 6,', '0, 0, 1, 1, 6,'),
+    current.toString().replace('#dimensions 0: 2x2', '#dimensions 0: 4x4'),
+    current.toString().replace('#tb 0: 1/24', '#tb 0: 1/25'),
+    current.toString().replace('#software: Lavf61.7.100', '#software: unknown'),
+    current.toString().replace('#hash: MD5', '#hash: SHA256'),
+    current.toString().replace('#software: Lavf61.7.100', '#software: Lavf61.7.100\n#software: Lavf61.7.100'),
+  ]) {
+    const candidate = decodedVideoFrameHashCompatibility(Buffer.from(changed));
+    assert.equal(
+      decodedMediaHashMatches({ hash: candidate.rawHash, frameHashCompatibility: candidate }, expected),
+      false,
+    );
+  }
+  assert.equal(decodedMediaHashMatches({ hash: compatibility.rawHash }, expected), false);
+});
 
 // Synthetic media and receipts exercise the verifier; they claim no model output or rights approval.
 function subsetVerificationFixture() {

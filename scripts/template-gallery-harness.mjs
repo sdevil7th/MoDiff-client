@@ -307,6 +307,55 @@ export function decodedAudiovisualMediaHash(decodedMediaHash, decodedAudioHash) 
   )}`;
 }
 
+// Published v1 frame hashes include the muxer's software comment. These two
+// reviewed producers emit identical frame records but different banner bytes.
+// Retain the actual digest and reconstruct only this nonsemantic header for
+// compatibility; all stream metadata, timestamps and frame checksums stay exact.
+const REVIEWED_FRAMEMD5_MUXERS = ['Lavf61.1.100', 'Lavf61.7.100'];
+
+export function decodedVideoFrameHashCompatibility(bytes) {
+  const rawHash = `sha256:decoded-video-framemd5:${sha256(bytes)}`;
+  const text = bytes.toString('utf8');
+  const software = [...text.matchAll(/^#software: (Lavf\d+\.\d+\.\d+)(?=\r?$)/gm)];
+  const rows = text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith('#'));
+  const valid =
+    /^#format: frame checksums\r?$/m.test(text) &&
+    /^#version: 2\r?$/m.test(text) &&
+    /^#hash: MD5\r?$/m.test(text) &&
+    software.length === 1 &&
+    rows.length > 0 &&
+    rows.every((line) => {
+      const fields = line.split(',');
+      return fields.length === 6 && /^[a-f0-9]{32}$/i.test(fields[5].trim());
+    });
+  return {
+    scheme: 'framemd5-software-header-v1',
+    rawHash,
+    observedMuxer: software.length === 1 ? software[0][1] : null,
+    variants: valid
+      ? [...new Set([software[0][1], ...REVIEWED_FRAMEMD5_MUXERS])].map((muxer) => ({
+          muxer,
+          hash: `sha256:decoded-video-framemd5:${sha256(
+            Buffer.from(text.replace(software[0][0], `#software: ${muxer}`)),
+          )}`,
+        }))
+      : [],
+  };
+}
+
+export function decodedMediaHashMatches(decoded, expected) {
+  if (typeof expected !== 'string' || !decoded) return false;
+  if (decoded.hash === expected) return true;
+  const compatibility = decoded.frameHashCompatibility;
+  return (
+    /^sha256:decoded-video-framemd5:[a-f0-9]{64}$/.test(decoded.hash ?? '') &&
+    compatibility?.scheme === 'framemd5-software-header-v1' &&
+    compatibility.rawHash === decoded.hash &&
+    Array.isArray(compatibility.variants) &&
+    compatibility.variants.some((variant) => variant.hash === expected)
+  );
+}
+
 function redactLocalPath(value) {
   const isWindowsPath = /^[a-z]:[\\/]/i.test(value);
   const isUserScopedPosixPath = /^\/(?:Users|home|tmp|private\/tmp|var\/tmp)\//.test(value);
@@ -1452,7 +1501,8 @@ function decodedVideoHash(videoPath, args) {
       isolatedLumaFlashes += 1;
     }
   }
-  const decodedMediaHash = `sha256:decoded-video-framemd5:${sha256(frameMd5)}`;
+  const frameHashCompatibility = decodedVideoFrameHashCompatibility(frameMd5);
+  const decodedMediaHash = frameHashCompatibility.rawHash;
   return {
     width: metadata.width,
     height: metadata.height,
@@ -1480,6 +1530,7 @@ function decodedVideoHash(videoPath, args) {
       nearBlackFrameRatios.filter((ratio) => ratio > 0.35).length / nearBlackFrameRatios.length,
     isolatedLumaFlashRatio: frameCount > 2 ? isolatedLumaFlashes / (frameCount - 2) : 0,
     hash: decodedMediaHash,
+    frameHashCompatibility,
     audiovisualMediaHash: decodedAudiovisualMediaHash(decodedMediaHash, embeddedAudio?.hash),
   };
 }
@@ -2270,6 +2321,7 @@ export async function verifyGallery(
   const templatesById = new Map(runtime.templates.map((template) => [template.id, template]));
   const manifest = readManifest(join(root, 'public', 'template-gallery', 'manifest.json'));
   const errors = validateManifestShape(manifest);
+  const decodedHashCompatibilityMatches = [];
   const scope = galleryVerificationScope(root);
   const unavailable = new Set(scope.withheld.map((asset) => asset.path));
   const isWithheld = (path) => typeof path === 'string' && unavailable.has(path.replace(/^\//, ''));
@@ -2358,17 +2410,32 @@ export async function verifyGallery(
     const decoded = isWithheld(entry.outputPath)
       ? null
       : await decodeMedia(outputPath, entry.mediaType ?? 'image', args);
-    if (decoded && decoded.hash !== entry.mediaHash) {
+    const decodedIdentityMatches = decodedMediaHashMatches(decoded, entry.mediaHash);
+    if (decoded && !decodedIdentityMatches) {
       errors.push(`${entry.templateId} decoded hash mismatch: expected ${entry.mediaHash}, got ${decoded.hash}`);
+    }
+    if (decodedIdentityMatches && decoded.hash !== entry.mediaHash) {
+      decodedHashCompatibilityMatches.push({
+        templateId: entry.templateId,
+        expected: entry.mediaHash,
+        actualRawHash: decoded.hash,
+        observedMuxer: decoded.frameHashCompatibility.observedMuxer,
+        matchingHistoricalMuxer: decoded.frameHashCompatibility.variants.find(
+          (variant) => variant.hash === entry.mediaHash,
+        ).muxer,
+      });
     }
     if (decoded && entry.decodedAudioHash && decoded.embeddedAudio?.hash !== entry.decodedAudioHash) {
       errors.push(
         `${entry.templateId} decoded audio hash mismatch: expected ${entry.decodedAudioHash}, got ${decoded.embeddedAudio?.hash ?? 'missing'}`,
       );
     }
-    if (decoded && entry.audiovisualMediaHash && decoded.audiovisualMediaHash !== entry.audiovisualMediaHash) {
+    const audiovisualMediaHash = decodedIdentityMatches
+      ? decodedAudiovisualMediaHash(entry.mediaHash, decoded?.embeddedAudio?.hash)
+      : decoded?.audiovisualMediaHash;
+    if (decoded && entry.audiovisualMediaHash && audiovisualMediaHash !== entry.audiovisualMediaHash) {
       errors.push(
-        `${entry.templateId} audiovisual hash mismatch: expected ${entry.audiovisualMediaHash}, got ${decoded.audiovisualMediaHash ?? 'missing'}`,
+        `${entry.templateId} audiovisual hash mismatch: expected ${entry.audiovisualMediaHash}, got ${audiovisualMediaHash ?? 'missing'}`,
       );
     }
     const template = templatesById.get(entry.templateId);
@@ -2581,6 +2648,7 @@ export async function verifyGallery(
     verifiedExamples: errors.length === 0 ? availableExamples : 0,
     withheldExamples,
     withheldAssets: scope.withheld,
+    decodedHashCompatibilityMatches,
     errors,
     ok: errors.length === 0,
   };

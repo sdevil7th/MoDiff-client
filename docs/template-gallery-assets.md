@@ -546,6 +546,21 @@ requires the complete Gallery. This check does not approve held content,
 replace anonymous `verify-remote --full`, or establish new execution or quality
 evidence.
 
+## Decoded-video identity across reviewed FFmpeg producers
+
+Historical `sha256:decoded-video-framemd5` identities hash FFmpeg's complete
+frame-checksum output, including its software banner. The reviewed Linux
+`Lavf61.1.100` and Windows `Lavf61.7.100` producers can emit identical stream
+metadata, timestamps and per-frame checksums with different software comments.
+The verifier retains the actual raw digest and accepts a historical digest only
+when changing that single banner to a reviewed producer reproduces it exactly.
+It reports each use in `decodedHashCompatibilityMatches`. All remaining checksum
+bytes, published-file SHA-256, audio PCM, provenance and review checks stay strict.
+For AV identity, only a matching historical video identity and the actual decoded
+audio identity can reproduce the recorded AV hash. No media, manifest hash or
+approval record is rewritten. This compatibility does not qualify a changed
+template recipe; stale creator locks and other release failures remain blocking.
+
 ## Live generation batching
 
 The maintainer-only Gallery runner may reuse a loaded pipeline only for consecutive templates with the same normalized Studio `modelType`. The first template, every model boundary, and every failed template resets the reuse chain and invokes accelerator cleanup. Template inputs come from an explicit checked-in input map; the runner never acquires or repairs a model during execution. Use `npm run gallery:run -- --help` for the current options rather than retaining dated host-specific command batches in documentation.
