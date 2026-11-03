@@ -363,6 +363,172 @@ test('retained Expert execution identity is recovered only from agreeing execute
   assert.deepEqual(executionPlanIdentity(ambiguous).plan, {});
 });
 
+function directAudioExpertGraph(continuation = false) {
+  const graph = retainedExpertGraph();
+  const contract = {
+    schemaVersion: 1,
+    library: 'diffusers',
+    mediaKind: 'audio',
+    pipelineClass: 'ExampleAudioPipeline',
+    repository: 'example/audio',
+    mode: continuation ? 'audio_continuation' : 'text_to_audio',
+    sourceAudio: continuation ? 'required' : 'forbidden',
+    referenceAudio: 'forbidden',
+    actions: { Generate: [continuation ? 'audio_continuation' : 'text_to_audio'] },
+  };
+  const loader = graph.nodes.loader;
+  loader.module = 'modules.DiffusersAudio';
+  loader.params.model_id.value.value = contract.repository;
+  loader.params.pipeline_class.value = contract.pipelineClass;
+  loader.params.revision = { value: 'a'.repeat(40) };
+  loader.params.mode = { value: contract.mode };
+  loader.params.audio_contract = { value: structuredClone(contract) };
+  delete loader.params.quantization_mode;
+  delete loader.params.quantized_components;
+  delete loader.params.device_map;
+  graph.runtimeHints.workflowSnapshot.studioGraphBinding = null;
+  graph.runtimeHints.workflowSnapshot.studioForm.modelType = 'DisplayAliasIsNotModelAuthority';
+  graph.nodes.generate = {
+    module: 'modules.DiffusersAudio',
+    action: 'Generate',
+    params: {
+      pipeline: { sourceId: 'loader', sourceKey: 'pipeline' },
+      audio_contract: { value: structuredClone(contract) },
+    },
+  };
+  graph.nodes.export = {
+    module: 'modules.Audio',
+    action: 'Export',
+    params: {
+      audio: { sourceId: 'generate', sourceKey: 'audio' },
+      preview: { display: 'ui_audio', sourceKey: 'file' },
+    },
+  };
+  graph.paths[0].push('generate', 'export');
+  if (continuation) {
+    graph.nodes.load = { module: 'modules.Audio', action: 'Load', params: { file: { value: ['@data/source.wav'] } } };
+    graph.nodes.generate.params.source_audio = { sourceId: 'load', sourceKey: 'audio' };
+    graph.nodes.match = {
+      module: 'modules.Audio',
+      action: 'MatchLoudness',
+      params: {
+        audio: { sourceId: 'generate', sourceKey: 'audio' },
+        reference: { sourceId: 'load', sourceKey: 'audio' },
+      },
+    };
+    graph.nodes.join = {
+      module: 'modules.Audio',
+      action: 'Join',
+      params: {
+        source: { sourceId: 'load', sourceKey: 'audio' },
+        continuation: { sourceId: 'match', sourceKey: 'output' },
+      },
+    };
+    graph.nodes.export.params.audio = { sourceId: 'join', sourceKey: 'output' };
+    graph.paths[0] = ['load', 'quant', 'recipe', 'loader', 'generate', 'match', 'join', 'export'];
+  }
+  return graph;
+}
+
+test('ordinary direct audio locks the actual connected recipe without a legacy binding or model alias', () => {
+  for (const continuation of [false, true]) {
+    const graph = directAudioExpertGraph(continuation);
+    const before = JSON.stringify(graph);
+    const plan = executionPlanIdentity(graph).plan;
+    assert.equal(plan.source, 'executed-expert-direct-audio-graph-v1');
+    assert.equal(plan.modelType, 'ExampleAudioPipeline');
+    assert.equal(plan.modelRepo, 'example/audio');
+    assert.equal(plan.modelRevision, 'a'.repeat(40));
+    assert.equal(plan.task, continuation ? 'audio_continuation' : 'text_to_audio');
+    assert.equal(plan.resourceMode, 'expert');
+    assert.equal(plan.dtype, 'bfloat16');
+    assert.equal(plan.device, 'cuda:0');
+    assert.equal(plan.qualified, undefined);
+    assert.equal(JSON.stringify(graph), before, 'do not manufacture hints or rewrite retained evidence');
+  }
+});
+
+test('ordinary audio recipe recovery rejects ambiguous, disconnected and contradictory authority', () => {
+  const mutations = {
+    'malformed owner': (g) => {
+      g.nodes.quant = null;
+    },
+    'non-Hub artifact': (g) => {
+      g.nodes.loader.params.model_id.value.value = '/tmp/model';
+      g.nodes.loader.params.audio_contract.value.repository = '/tmp/model';
+      g.nodes.generate.params.audio_contract.value.repository = '/tmp/model';
+    },
+    'changed repository': (g) => {
+      g.nodes.loader.params.model_id.value.value = 'other/model';
+    },
+    'mutable revision': (g) => {
+      g.nodes.loader.params.revision.value = 'main';
+    },
+    'changed task': (g) => {
+      g.nodes.loader.params.mode.value = 'audio_repaint';
+    },
+    'changed generate contract': (g) => {
+      g.nodes.generate.params.audio_contract.value.repository = 'other/model';
+    },
+    'quantized branch': (g) => {
+      g.nodes.quant.params.backend.value = 'bitsandbytes_4bit';
+    },
+    'missing recipe': (g) => {
+      g.nodes.loader.params.execution_recipe.sourceId = 'missing';
+    },
+    'wrong producer port': (g) => {
+      g.nodes.generate.params.pipeline.sourceKey = 'other';
+    },
+    'hidden connected control': (g) => {
+      g.nodes.generate.params.seed = { sourceId: 'quant', sourceKey: 'seed' };
+    },
+    'forged preview wire': (g) => {
+      g.nodes.export.params.preview.sourceId = 'loader';
+    },
+    'stale form dtype': (g) => {
+      g.runtimeHints.workflowSnapshot.studioForm.dtype = 'float16';
+    },
+    'Auto request': (g) => {
+      g.runtimeHints.workflowSnapshot.studioForm.resourceMode = 'auto';
+    },
+    'unsupported extra owner': (g) => {
+      g.nodes.other = structuredClone(g.nodes.loader);
+      g.paths[0].push('other');
+    },
+    'unexecuted owner': (g) => {
+      g.paths[0].pop();
+    },
+    'non-topological execution': (g) => {
+      g.paths[0].reverse();
+    },
+    'missing source': (g) => {
+      delete g.nodes.generate.params.source_audio;
+    },
+    'disconnected loudness reference': (g) => {
+      g.nodes.match.params.reference.sourceId = 'generate';
+    },
+    'wrong join ordering': (g) => {
+      g.nodes.join.params.source.sourceId = 'match';
+    },
+  };
+  for (const [label, mutate] of Object.entries(mutations)) {
+    const graph = directAudioExpertGraph(true);
+    mutate(graph);
+    assert.deepEqual(executionPlanIdentity(graph).plan, {}, label);
+  }
+});
+
+test('source-backed direct audio without a finishing chain retains only its actual input dependency', () => {
+  const graph = directAudioExpertGraph(true);
+  delete graph.nodes.match;
+  delete graph.nodes.join;
+  graph.nodes.export.params.audio = { sourceId: 'generate', sourceKey: 'audio' };
+  graph.paths[0] = ['load', 'quant', 'recipe', 'loader', 'generate', 'export'];
+  assert.equal(executionPlanIdentity(graph).plan.modelRepo, 'example/audio');
+  delete graph.nodes.generate.params.source_audio;
+  assert.deepEqual(executionPlanIdentity(graph).plan, {});
+});
+
 test('default live Qwen proof requests the locked template without diagnostic overrides', () => {
   const config = resolveLiveProofConfig({});
 

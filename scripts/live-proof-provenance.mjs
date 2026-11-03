@@ -628,6 +628,170 @@ function executedModularExpertPlanFromGraph(apiGraph) {
   });
 }
 
+// Ordinary direct-audio graphs have no managed Studio binding. Record only
+// their unique connected manual recipe; this grants no execution, Auto or fit
+// qualification. Do not substitute stale form/model aliases for the loader.
+function executedDirectAudioExpertPlanFromGraph(apiGraph) {
+  const form = apiGraph?.runtimeHints?.workflowSnapshot?.studioForm;
+  if (form?.resourceMode !== 'expert' || form.quantizationMode !== 'none') return null;
+  const entries = nodeEntries(apiGraph);
+  const paths = apiGraph?.paths;
+  if (
+    entries.some(
+      ([id, node]) =>
+        !id ||
+        !node ||
+        typeof node !== 'object' ||
+        Array.isArray(node) ||
+        !node.params ||
+        typeof node.params !== 'object' ||
+        Array.isArray(node.params),
+    ) ||
+    ![5, 6, 8].includes(entries.length) ||
+    !Array.isArray(paths) ||
+    paths.length !== 1 ||
+    !Array.isArray(paths[0]) ||
+    paths[0].length !== entries.length ||
+    new Set(paths[0]).size !== entries.length ||
+    entries.some(([id]) => !paths[0].includes(id))
+  )
+    return null;
+  const role = (module, action) => {
+    const matches = entries.filter(([, node]) => node.module === module && node.action === action);
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const loader = role('modules.DiffusersAudio', 'LoadPipeline');
+  const generate = role('modules.DiffusersAudio', 'Generate');
+  const recipe = role('modules.DiffusersRuntime', 'DiffusersExecutionRecipe');
+  const quant = role('modules.DiffusersRuntime', 'PipelineQuantizationConfigV2');
+  const output = role('modules.Audio', 'Export');
+  if (!loader || !generate || !recipe || !quant || !output) return null;
+  const source = role('modules.Audio', 'Load');
+  const match = role('modules.Audio', 'MatchLoudness');
+  const join = role('modules.Audio', 'Join');
+  const roles = [loader, generate, recipe, quant, output, source, match, join].filter(Boolean);
+  if (roles.length !== entries.length || Boolean(match) !== Boolean(join) || (join && !source)) return null;
+  const literal = (entry, field) => {
+    const param = entry?.[1]?.params?.[field];
+    return param && !param.sourceId && !param.sourceKey ? apiParamValue(entry[1], field) : undefined;
+  };
+  const repo = hubRepository(literal(loader, 'model_id'));
+  const revision = literal(loader, 'revision');
+  const pipelineClass = literal(loader, 'pipeline_class');
+  const mode = literal(loader, 'mode');
+  const contract = literal(loader, 'audio_contract');
+  if (
+    !repo ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(repo) ||
+    !/^[a-f0-9]{40}$/u.test(String(revision)) ||
+    typeof pipelineClass !== 'string' ||
+    !pipelineClass ||
+    typeof mode !== 'string' ||
+    !mode ||
+    !contract ||
+    Array.isArray(contract) ||
+    contract.schemaVersion !== 1 ||
+    contract.library !== 'diffusers' ||
+    contract.mediaKind !== 'audio' ||
+    contract.pipelineClass !== pipelineClass ||
+    contract.repository !== repo ||
+    contract.mode !== mode ||
+    contract.referenceAudio !== 'forbidden' ||
+    !Array.isArray(contract.actions?.Generate) ||
+    !contract.actions.Generate.includes(mode) ||
+    !['required', 'forbidden'].includes(contract.sourceAudio) ||
+    (contract.sourceAudio === 'required') !== Boolean(source) ||
+    stableStringify(literal(generate, 'audio_contract')) !== stableStringify(contract)
+  )
+    return null;
+  const wires = new Map([
+    [loader[0], { execution_recipe: [recipe[0], 'execution_recipe'] }],
+    [recipe[0], { quantization_config: [quant[0], 'quantization_config'] }],
+    [quant[0], {}],
+    [generate[0], { pipeline: [loader[0], 'pipeline'], ...(source ? { source_audio: [source[0], 'audio'] } : {}) }],
+    [output[0], { audio: join ? [join[0], 'output'] : [generate[0], 'audio'] }],
+    ...(source ? [[source[0], {}]] : []),
+    ...(match
+      ? [
+          [match[0], { audio: [generate[0], 'audio'], reference: [source[0], 'audio'] }],
+          [join[0], { source: [source[0], 'audio'], continuation: [match[0], 'output'] }],
+        ]
+      : []),
+  ]);
+  for (const [id, node] of entries) {
+    const expected = wires.get(id);
+    if (!expected) return null;
+    for (const [key, param] of Object.entries(node.params ?? {})) {
+      const presentation =
+        id === output[0] &&
+        key === 'preview' &&
+        stableStringify(param) === stableStringify({ display: 'ui_audio', sourceKey: 'file' });
+      if ((param?.sourceId || param?.sourceKey) && !Object.hasOwn(expected, key) && !presentation) return null;
+    }
+    for (const [field, [producer, port]] of Object.entries(expected)) {
+      const wire = connectedParamSource(node, field);
+      if (wire?.nodeId !== producer || wire.field !== port || paths[0].indexOf(producer) >= paths[0].indexOf(id))
+        return null;
+    }
+  }
+  const dtype = literal(loader, 'dtype');
+  const device = literal(loader, 'device');
+  const autoOffload = literal(loader, 'auto_offload');
+  const offloadMode = literal(loader, 'offload_mode');
+  const deviceMap = literal(recipe, 'device_map');
+  if (
+    !['float32', 'float16', 'bfloat16'].includes(dtype) ||
+    typeof device !== 'string' ||
+    !device ||
+    typeof autoOffload !== 'boolean' ||
+    typeof offloadMode !== 'string' ||
+    !offloadMode ||
+    typeof deviceMap !== 'string' ||
+    !deviceMap ||
+    literal(quant, 'backend') !== 'none' ||
+    literal(quant, 'dtype') !== dtype ||
+    literal(recipe, 'device') !== device ||
+    literal(recipe, 'offload_mode') !== offloadMode ||
+    form.dtype !== dtype ||
+    form.device !== device ||
+    form.autoOffload !== autoOffload ||
+    form.offloadMode !== offloadMode
+  )
+    return null;
+  const extras = {};
+  for (const [field, name, type] of [
+    ['attention_backend', 'attentionBackend', 'string'],
+    ['regional_compile', 'regionalCompile', 'boolean'],
+    ['denoiser_cache', 'denoiserCache', 'string'],
+    ['channels_last', 'channelsLast', 'boolean'],
+    ['layerwise_casting', 'layerwiseCasting', 'boolean'],
+  ]) {
+    const value = literal(recipe, field);
+    if (typeof value !== type) return null;
+    extras[name] = value;
+  }
+  return orderedValue({
+    source: 'executed-expert-direct-audio-graph-v1',
+    modelType: pipelineClass,
+    pipelineClass,
+    modelRepo: repo,
+    resolvedModelRepo: repo,
+    resolvedArtifact: repo,
+    modelRevision: revision,
+    task: mode,
+    dtype,
+    device,
+    deviceMap,
+    autoOffload,
+    offloadMode,
+    quantizationMode: 'none',
+    quantizedComponents: [],
+    resourceMode: 'expert',
+    resolvedResourceMode: 'expert',
+    ...extras,
+  });
+}
+
 export function executionPlanIdentity(apiGraph) {
   const runtimeHints = apiGraph?.runtimeHints ?? {};
   const declaredPlan = Object.fromEntries(
@@ -641,7 +805,11 @@ export function executionPlanIdentity(apiGraph) {
     (field) => ['resourceMode', 'resolvedResourceMode'].includes(field) && declaredPlan[field] === 'expert',
   );
   const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph) : null;
-  const plan = modularPlan ?? (fields.length > 0 ? declaredPlan : (executedExpertPlanFromGraph(apiGraph) ?? {}));
+  const plan =
+    modularPlan ??
+    (fields.length > 0
+      ? declaredPlan
+      : (executedExpertPlanFromGraph(apiGraph) ?? executedDirectAudioExpertPlanFromGraph(apiGraph) ?? {}));
   return {
     hash: sha256Value('execution-plan-v1', plan),
     plan: orderedValue(plan),

@@ -75,6 +75,18 @@ and `run-provenance.json` alongside `status.json`; the completed task must own
 that provenance. The full provenance validator still applies. A status marker
 or an old output file alone cannot establish qualification.
 
+For ordinary direct-audio graphs without a legacy Studio binding, the proof
+reader can recover a manual resource identity from one executed loader, its
+connected disabled-quantization recipe and the exact Generate/Export chain.
+Source-backed and loudness-match/join chains must retain their required input
+connections and execution order. The audio contract, immutable model revision,
+resource controls and saved manual policy must agree. This identity names the
+actual backend pipeline, not a display alias from the form. It does not recover
+missing consumed controls, establish input bytes or grant model, hardware,
+Automatic memory, listening or publication qualification. Unsupported or
+ambiguous compositions remain held; canonical field-accounting coverage is a
+separate contract.
+
 Choose a user or organization namespace where you have write permission. The
 recommended repository name is `<namespace>/modiff-template-gallery`. The
 repository must remain public for unauthenticated open-source use.
