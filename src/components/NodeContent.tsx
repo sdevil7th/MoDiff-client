@@ -27,6 +27,7 @@ import { blockControlConnectionNotesV2 } from '../studio/blockControlConnections
 import { FieldFrame } from '../ui/FieldFrame';
 import { PreviewEmptyState } from '../ui/PreviewFrame';
 import { operationOwnsModel } from '../workflow/operationContracts';
+import { fileBackedMediaPreviewUrl } from '../studio/outputUtils';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -229,12 +230,17 @@ const NodeContent = memo(function NodeContent({
       key === 'model_type' && operationOwnsModel(graphNode?.data.operationAuthoring?.operation);
     const hidden = Boolean(data.hidden || derivedPipelineType);
     const configuredValue = data.value ?? data.default;
-    const fileBackedLoaderPreview =
-      (fieldType === 'ui_audio' || fieldType === 'ui_video') &&
-      /(?:^|\.)Load$/i.test(action) &&
-      typeof (params.file?.value ?? params.file?.default) === 'string'
-        ? (params.file?.value ?? params.file?.default)
-        : undefined;
+    const selectedFile = params.file?.value ?? params.file?.default;
+    let fileBackedLoaderPreview: string | string[] | undefined;
+    if ((fieldType === 'ui_audio' || fieldType === 'ui_video') && /(?:^|\.)Load$/i.test(action)) {
+      const kind = fieldType === 'ui_audio' ? 'audio' : 'video';
+      if (typeof selectedFile === 'string') fileBackedLoaderPreview = fileBackedMediaPreviewUrl(selectedFile, kind);
+      else if (Array.isArray(selectedFile)) {
+        fileBackedLoaderPreview = selectedFile
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => fileBackedMediaPreviewUrl(value, kind));
+      }
+    }
     // Older runs stored `/cache/<node>/filename/...` for file-backed previews.
     // That endpoint contains the filename as text, not the media bytes. Loader
     // nodes can render their selected file directly before or after execution.

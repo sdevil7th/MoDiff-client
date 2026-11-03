@@ -297,6 +297,44 @@ test('video field URL compaction removes invalid holes and arrow navigation resp
   assert.equal(mediaViewer.shouldIgnoreMediaViewerArrowTarget(null), false);
 });
 
+test('file-backed media previews encode backend paths and retain browser media URLs', () => {
+  for (const kind of ['audio', 'video']) {
+    for (const file of [
+      '/home/media/clip #1.mp4',
+      String.raw`C:\media\clip #1.mp4`,
+      '@data/videos/clip.mp4',
+      'clips/one.mov',
+    ]) {
+      assert.equal(
+        outputUtils.fileBackedMediaPreviewUrl(file, kind),
+        `http://127.0.0.1:5191/media/preview?file=${encodeURIComponent(file)}&media_kind=${kind}`,
+      );
+    }
+    for (const value of [
+      'https://media.example/clip.mp4',
+      'blob:http://127.0.0.1:5191/media',
+      'data:audio/wav;base64,AAAA',
+    ]) {
+      assert.equal(outputUtils.fileBackedMediaPreviewUrl(value, kind), value);
+    }
+    for (const route of [
+      '/cache/node/file/0',
+      '/file?file=%40data%2Fclip.mp4',
+      '/media/preview?file=one&media_kind=audio',
+    ]) {
+      assert.equal(outputUtils.fileBackedMediaPreviewUrl(route, kind), `http://127.0.0.1:5191${route}`);
+    }
+    assert.equal(outputUtils.fileBackedMediaPreviewUrl('', kind), '');
+    assert.equal(outputUtils.fileBackedMediaPreviewUrl('   ', kind), '');
+    assert.match(
+      outputUtils.fileBackedMediaPreviewUrl('javascript:alert(1)', kind),
+      /\/media\/preview\?file=javascript%3A/,
+    );
+  }
+  const asset = '/template-gallery/runtime-inputs/assets/example.mp4';
+  assert.equal(outputUtils.fileBackedMediaPreviewUrl(asset, 'video'), templateAssets.resolveTemplateAssetUrl(asset));
+});
+
 test('template defaults preview from the configured asset source after upload or refresh', () => {
   const bundledPath = '/workspace/MoDiff-client/public/template-gallery/runtime-inputs/assets/example.webp';
   const imagePath = '/template-gallery/runtime-inputs/assets/example.webp';

@@ -10925,6 +10925,66 @@ test('image pipeline drag-to-add excludes generation actions outside the selecte
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.edges.length)).toBe(1);
 });
 
+for (const [kind, selectedFile] of [
+  ['video', '/workspace/media/clip #1.mp4'],
+  ['audio', String.raw`C:\media\clip #1.mp4`],
+] as const) {
+  test(`file-backed ${kind} loader previews use the media endpoint and preserve selected paths after reload`, async ({
+    page,
+  }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const key = kind === 'video' ? 'modules.Video.Load' : 'modules.Audio.Load';
+    const loader = nodeDef(kind === 'video' ? 'modules.Video' : 'modules.Audio', 'Load', kind, {
+      file: {
+        type: 'str',
+        display: 'filebrowser',
+        value: selectedFile,
+        fieldOptions: { fileTypes: [kind], multiple: false },
+      },
+      filename: { type: 'str', display: 'output' },
+      preview: {
+        type: kind,
+        display: kind === 'video' ? 'ui_video' : 'ui_audio',
+        sourceKey: 'filename',
+        value: '/file?file=previous-media.mp4',
+      },
+    });
+    await page.route('**/nodes**', (route) => route.fulfill({ json: { nodes: { ...mockRegistry, [key]: loader } } }));
+    await page.route('**/media/preview?**', (route) =>
+      route.fulfill({ contentType: kind === 'video' ? 'video/mp4' : 'audio/wav', body: '' }),
+    );
+    let graphPosts = 0;
+    await page.route('**/graph', (route) => {
+      if (route.request().method() === 'POST') graphPosts++;
+      return route.fulfill({ json: { error: true, message: 'Preview test must not execute.' } });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    const id = await page.evaluate((nodeKey) => window.__MODIFF_E2E__!.addCustomNodeForTest(nodeKey), key);
+    const node = page.locator(`.react-flow__node[data-id="${id}"]`);
+    const expected = `${FRONTEND_URL}/media/preview?file=${encodeURIComponent(selectedFile)}&media_kind=${kind}`;
+    const player =
+      kind === 'video'
+        ? page.getByTestId(`node-preview-video-${id}-preview`).locator('video')
+        : page.getByTestId(`node-preview-audio-${id}-preview-0`).locator('audio');
+    await expect(player).toHaveAttribute('src', expected);
+    await expect(node.locator(`[data-key="file"] ${kind}`)).toHaveAttribute('src', expected);
+    const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await expect(player).toHaveAttribute('src', expected);
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes)).toEqual(before);
+    await node.locator('[data-key="file"]').getByRole('button', { name: 'Remove media', exact: true }).click();
+    await expect(player).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await expect(player).toHaveCount(0);
+    expect(graphPosts).toBe(0);
+  });
+}
+
 test('required media file editors block Run before upload and after clearing or reopening', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);

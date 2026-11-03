@@ -1980,3 +1980,13 @@ available after app/server restart; closed-page or browser-session recovery uses
 saved workflows/exports, with no promise to restore a closed page's unsaved tab
 roster. Legacy import can recover only the retained historical shared snapshot,
 not values that an older page already overwrote.
+
+### File-backed audio and video input players
+
+Load-node players and file-picker previews share `fileBackedMediaPreviewUrl`.
+Selected filesystem paths are backend identifiers and go through the managed
+`/media/preview` endpoint, including absolute POSIX paths and Windows paths.
+Existing browser URLs and bundled public assets retain their normal handling.
+Both scalar and picker-array selections project without rewriting saved params;
+clearing the selection also clears stale output-backed input previews on reload.
+Audio references selected from AV files use the backend's soundtrack conversion.
