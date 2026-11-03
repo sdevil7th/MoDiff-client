@@ -75,6 +75,10 @@ and `run-provenance.json` alongside `status.json`; the completed task must own
 that provenance. The full provenance validator still applies. A status marker
 or an old output file alone cannot establish qualification.
 
+The ACE-Step RTX 4080 cold-load check applies to both the catalog display alias
+and the actual backend pipeline class. Changing that identity spelling does
+not remove its required timing evidence or its 120-second limit.
+
 For ordinary direct-audio graphs without a legacy Studio binding, the proof
 reader can recover a manual resource identity from one executed loader, its
 connected disabled-quantization recipe and the exact Generate/Export chain.

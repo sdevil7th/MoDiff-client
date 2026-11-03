@@ -116,7 +116,10 @@ function coldLoaderDurationSeconds(path) {
 }
 
 function coldLoadTarget(modelType, deviceName) {
-  if (modelType === 'AceStepAudioPipeline' && /(?:nvidia\s+geforce\s+)?rtx\s*4080/i.test(String(deviceName ?? ''))) {
+  if (
+    ['AceStepAudioPipeline', 'AceStepPipeline'].includes(modelType) &&
+    /(?:nvidia\s+geforce\s+)?rtx\s*4080/i.test(String(deviceName ?? ''))
+  ) {
     return {
       name: 'ACE-Step RTX 4080 cold pipeline load',
       maxSeconds: 120,

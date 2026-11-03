@@ -42,10 +42,32 @@ for (const {
   retained = false,
   missingTerminal = false,
   terminalId = 'task-1',
+  modelType = 'AceStepAudioPipeline',
+  omitColdTiming = false,
+  coldSeconds = 91.25,
   error,
 } of [
   { name: 'legacy string', fingerprint: 'runtime-1' },
   { name: 'structured current task', fingerprint: structuredFingerprint },
+  {
+    name: 'actual pipeline class retains the ACE cold-load target',
+    fingerprint: structuredFingerprint,
+    modelType: 'AceStepPipeline',
+  },
+  {
+    name: 'actual pipeline class requires cold-load timing',
+    fingerprint: structuredFingerprint,
+    modelType: 'AceStepPipeline',
+    omitColdTiming: true,
+    error: /missing cold loader timing evidence/,
+  },
+  {
+    name: 'actual pipeline class keeps the cold-load limit',
+    fingerprint: structuredFingerprint,
+    modelType: 'AceStepPipeline',
+    coldSeconds: 121,
+    error: /exceeded 120s/,
+  },
   { name: 'retained original completed task', fingerprint: structuredFingerprint, retained: true },
   {
     name: 'retained status cannot replace original task',
@@ -118,7 +140,7 @@ for (const {
       },
       paths: [['loader']],
       runtimeHints: {
-        modelType: 'AceStepAudioPipeline',
+        modelType,
         dtype: 'bfloat16',
         offloadMode: 'none',
         quantizationMode: 'none',
@@ -158,14 +180,16 @@ for (const {
     writeFileSync(
       websocketEventsPath,
       JSON.stringify({
-        events: [
-          {
-            type: 'executed',
-            name: 'modules.DiffusersAudio.LoadPipeline',
-            hasChanged: true,
-            executionTime: { last: 91.25 },
-          },
-        ],
+        events: omitColdTiming
+          ? []
+          : [
+              {
+                type: 'executed',
+                name: 'modules.DiffusersAudio.LoadPipeline',
+                hasChanged: true,
+                executionTime: { last: coldSeconds },
+              },
+            ],
       }),
     );
 
