@@ -50,6 +50,12 @@ private retained evidence; public asset updates still follow the publication
 procedure below. Missing current execution or quality proof requires recovery
 and review of matching receipts or a genuinely accepted new run.
 
+The release-contract generator also inspects the bundled backend node sources.
+It ignores removed module directories only when they are empty or contain solely
+the residual `__pycache__` directory. Other missing initializers, Python sources
+or unresolved registry declarations remain errors; cached bytecode is never
+imported to reconstruct a missing module.
+
 Choose a user or organization namespace where you have write permission. The
 recommended repository name is `<namespace>/modiff-template-gallery`. The
 repository must remain public for unauthenticated open-source use.
