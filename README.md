@@ -31,12 +31,19 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `4329a759e81abf4a01d6882bd108537c9e555db4`.
+CI backend contract: `e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
-is the earlier reviewed testing baseline. Current CI also covers the pending
-video-stage changes; a CI pin alone does not establish a new deployed pair or
+is the earlier reviewed testing baseline. Current CI covers the shared video
+stages and conditional reference requirements; a CI pin alone does not establish a new deployed pair or
 expand model/hardware qualification.
+
+The 3 November Linux video testing deployment uses backend
+`e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d` and client product
+`9bac9ac007aeee7ae5de47f55646260736a7b48f`. Later CI/documentation-only
+descendants retain that tested client product. Native large-model evidence on
+Linux does not expand Windows or other hardware qualification; see the backend's
+[video progress and handoff](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/video-stages-20261101/MILESTONE2-PROGRESS.md).
 
 These application source revisions were reviewed on 1 November 2026. Final
 documentation, CI pairing and bundled-client packaging commits can be later

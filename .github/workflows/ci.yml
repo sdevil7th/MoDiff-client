@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Paired generic LTX/Wan stages and retained video template finishing.
-          ref: 4329a759e81abf4a01d6882bd108537c9e555db4
+          # Paired conditional reference requirements and current video stages.
+          ref: e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 4329a759e81abf4a01d6882bd108537c9e555db4
+          ref: e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
