@@ -30410,6 +30410,177 @@ test('Developer Workflows recovers unavailable capabilities without installing o
   expect(mutations).toEqual([]);
 });
 
+for (const selection of ['node', 'edge'] as const) {
+  test(`selected ${selection} wires keep unrelated node cache controls clickable`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1200 });
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const releases: unknown[] = [];
+    let cached = true;
+    await page.route('**/cache', async (route) => {
+      if (route.request().method() === 'DELETE') {
+        releases.push(route.request().postDataJSON());
+        cached = false;
+        await route.fulfill({ json: { error: false, nodes: ['cache-target'] } });
+      } else await route.fulfill({ json: { error: false, cachedNodes: cached ? ['cache-target'] : [] } });
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await dismissTaskLauncher(page);
+    await page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const { prepareWorkflowForManualInsertion } = await import('/src/studio/manualGraphInsertion.ts');
+      prepareWorkflowForManualInsertion();
+      useFlowStore.getState().replaceGraph({
+        nodes: [
+          {
+            id: 'wire-source',
+            type: 'custom',
+            position: { x: 0, y: 100 },
+            data: {
+              type: 'custom',
+              module: 'modules.Text',
+              action: 'Text',
+              label: 'Wire source',
+              params: { text: { type: 'string', display: 'output' } },
+            },
+          },
+          {
+            id: 'wire-target',
+            type: 'custom',
+            position: { x: 1100, y: 100 },
+            data: {
+              type: 'custom',
+              module: 'custom.Fixture',
+              action: 'Consumer',
+              label: 'Wire target',
+              params: { input: { type: 'string', display: 'input' } },
+            },
+          },
+          {
+            id: 'cache-target',
+            type: 'custom',
+            position: { x: 450, y: 500 },
+            data: {
+              type: 'custom',
+              module: 'custom.Fixture',
+              action: 'CacheTarget',
+              label: 'Unrelated cached node',
+              params: { text: { type: 'string', value: 'Keep this value.' } },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: 'cache-crossing-wire',
+            source: 'wire-source',
+            sourceHandle: 'text',
+            target: 'wire-target',
+            targetHandle: 'input',
+          },
+        ],
+        viewport: { x: 50, y: 70, zoom: 0.8 },
+      });
+      useFlowStore.getState().setNodeCached('cache-target', true);
+    });
+    const edge = page.locator('.react-flow__edge[data-id="cache-crossing-wire"]');
+    const path = edge.locator('.react-flow__edge-interaction');
+    const button = page
+      .locator('.react-flow__node[data-id="cache-target"]')
+      .getByRole('button', { name: 'Release node cache', exact: true });
+    await expect(button).toBeVisible();
+    await expect
+      .poll(() => path.evaluate((element) => (element as SVGPathElement).getTotalLength()))
+      .toBeGreaterThan(500);
+    const delta = await button.evaluate((element) => {
+      const wire = document.querySelector<SVGPathElement>(
+        '.react-flow__edge[data-id="cache-crossing-wire"] .react-flow__edge-interaction',
+      )!;
+      const matrix = wire.getScreenCTM()!;
+      const point = wire.getPointAtLength(wire.getTotalLength() / 2).matrixTransform(matrix);
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: (point.x - (bounds.x + bounds.width / 2)) / matrix.a,
+        y: (point.y - (bounds.y + bounds.height / 2)) / matrix.d,
+      };
+    });
+    await page.evaluate(async (shift) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const state = useFlowStore.getState();
+      const graph = state.toObject();
+      state.replaceGraph({
+        ...graph,
+        nodes: graph.nodes.map((node) =>
+          node.id === 'cache-target'
+            ? {
+                ...node,
+                position: {
+                  x: node.position.x + shift.x,
+                  y: node.position.y + shift.y,
+                },
+              }
+            : node,
+        ),
+      });
+    }, delta);
+    await expect
+      .poll(
+        () =>
+          button.evaluate((element) => {
+            const wire = document.querySelector<SVGPathElement>(
+              '.react-flow__edge[data-id="cache-crossing-wire"] .react-flow__edge-interaction',
+            )!;
+            const point = wire.getPointAtLength(wire.getTotalLength() / 2).matrixTransform(wire.getScreenCTM()!);
+            const box = element.getBoundingClientRect();
+            return Math.hypot(point.x - (box.x + box.width / 2), point.y - (box.y + box.height / 2));
+          }),
+        { message: 'Fixture must place the genuine wire across the button center.' },
+      )
+      .toBeLessThan(2);
+    const selectBareWire = async () => {
+      const point = await path.evaluate((element) => {
+        const wire = element as SVGPathElement;
+        for (const fraction of [0.1, 0.2, 0.3, 0.7, 0.8, 0.9]) {
+          const point = wire.getPointAtLength(wire.getTotalLength() * fraction).matrixTransform(wire.getScreenCTM()!);
+          const hit = document.elementFromPoint(point.x, point.y);
+          if (hit?.closest('.react-flow__edge')?.getAttribute('data-id') === 'cache-crossing-wire')
+            return { x: point.x, y: point.y };
+        }
+        throw new Error('No ordinary selectable wire segment is exposed.');
+      });
+      await page.mouse.click(point.x, point.y);
+      await expect(edge).toHaveClass(/selected/u);
+    };
+    // Graph replacement deliberately clears transient selection. Select through
+    // real gestures after placement so this reproduces actual wire elevation.
+    if (selection === 'node') {
+      const source = page.locator('.react-flow__node[data-id="wire-source"]');
+      await source.locator('header').first().click();
+      await expect(source).toHaveClass(/selected/u);
+    } else await selectBareWire();
+    await expect
+      .poll(
+        () =>
+          button.evaluate((element) => {
+            const box = element.getBoundingClientRect();
+            const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return hit === element || (hit !== null && element.contains(hit));
+          }),
+        { message: 'A crossing wire must not intercept the unrelated cache control.' },
+      )
+      .toBe(true);
+    await button.click();
+    await expect.poll(() => releases).toEqual([{ nodes: ['cache-target'] }]);
+    await expect(
+      page
+        .locator('.react-flow__node[data-id="cache-target"]')
+        .getByRole('button', { name: 'Node is not cached', exact: true }),
+    ).toBeDisabled();
+    await selectBareWire();
+    expect(releases).toEqual([{ nodes: ['cache-target'] }]);
+  });
+}
+
 test('one editor starts in Workflows and offers Templates explicitly', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);

@@ -255,6 +255,11 @@ missing types require **Show unverified matches**. This includes deliberately
 generic utilities such as Data Viewer. Type compatibility is not a guarantee of
 model availability, shape, memory or the behavior of arbitrary Python.
 
+On ordinary nodes and collapsed stages, selecting a node or wire keeps the
+wire's hit area below other node controls. Selection still changes its stroke,
+and exposed wire sections remain selectable. Expanded child edges retain the
+existing hierarchy layering; this changes no saved graph or execution wiring.
+
 New mask inputs use a loaded black/white image's pixels. Use the explicitly named
 Alpha mask output only when you intend transparency to define the mask. A model
 must still support the chosen task. Automatic memory recipes are separate from

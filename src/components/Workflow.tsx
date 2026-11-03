@@ -1233,7 +1233,9 @@ function Workflow() {
         nodesDraggable
         nodesConnectable
         elementsSelectable
-        elevateEdgesOnSelect
+        // Selection keeps its stroke emphasis without lifting a wire's wide
+        // hit path over unrelated node controls. XYFlow still layers child edges.
+        elevateEdgesOnSelect={false}
         className={`${canvasSuspended ? 'pointer-events-none opacity-0' : ''} ${isConnecting ? 'connecting' : ''} ${isConnectionValid !== null ? (isConnectionValid ? 'valid-connection' : 'invalid-connection') : ''}`}
       >
         <style>{reactFlowCss}</style>
