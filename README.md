@@ -31,7 +31,7 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d`.
+CI backend contract: `328d06f8ea6c6860c10b97adfa6855a80516cfad`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
 is the earlier reviewed testing baseline. Current CI covers the shared video
@@ -665,3 +665,7 @@ Node status explains whether inputs changed, results were invalidated, or cached
 results were reused. Automatic resource management retains independent model
 owners when their combined memory estimate fits; otherwise it uses the existing
 release schedule where safe.
+
+The required-file readiness followup pairs backend `328d06f8` with client product
+`ba8f7d52`. Raw node/Block identities and model computation remain unchanged;
+the video plan handoff records deployment and local template acceptance.

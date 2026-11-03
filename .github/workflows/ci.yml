@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired conditional reference requirements and current video stages.
-          ref: e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d
+          ref: 328d06f8ea6c6860c10b97adfa6855a80516cfad
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: e13bd558f2eed0ceeb6ce3c95f6d6056e682d46d
+          ref: 328d06f8ea6c6860c10b97adfa6855a80516cfad
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
