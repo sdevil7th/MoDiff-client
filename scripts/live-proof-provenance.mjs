@@ -8,7 +8,9 @@ import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resou
 import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
 import {
-  OBSERVED_WORKFLOW_AUTO_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_LORA_SOURCE,
+  isObservedWorkflowAutoSource,
+  observedWorkflowAutoLoraProofMatches,
   observedWorkflowAutoPlan,
   observedWorkflowAutoResourceId,
 } from './observed-workflow-auto-resource.mjs';
@@ -807,6 +809,36 @@ function executedDirectAudioExpertPlanFromGraph(apiGraph) {
   });
 }
 
+function observedAdapterProofContext(apiGraph, context) {
+  try {
+    if (
+      !Object.values(apiGraph.nodes).some(
+        (node) => node.module === 'modules.ModularDiffusers' && node.action === 'Lora',
+      )
+    )
+      return null;
+    const canonicalGraph = canonicalizeApiGraph(apiGraph);
+    const taskId = context?.taskId ?? context?.executionReceipt?.task_id;
+    const application = createAppliedAdapterProof({
+      apiGraph,
+      canonicalGraph,
+      executedOutput: context?.executedOutput,
+      executionReceipt: context?.executionReceipt,
+      taskId,
+    });
+    if (!application) return null;
+    return {
+      taskId,
+      graph: { canonicalGraph },
+      models: modelSetIdentity(context?.modelIdentities ?? []),
+      adapterApplications: application.proof,
+      adapterApplicationsHash: application.hash,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function executionPlanIdentity(apiGraph, executionContext) {
   const runtimeHints = apiGraph?.runtimeHints ?? {};
   const declaredPlan = Object.fromEntries(
@@ -822,7 +854,10 @@ export function executionPlanIdentity(apiGraph, executionContext) {
   const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph) : null;
   const observedAutoPlan =
     fields.length === 1 && declaredPlan.resourceMode === 'auto'
-      ? observedWorkflowAutoPlan(apiGraph, executionContext)
+      ? observedWorkflowAutoPlan(apiGraph, {
+          ...executionContext,
+          adapterProofContext: observedAdapterProofContext(apiGraph, executionContext),
+        })
       : null;
   const plan =
     observedAutoPlan ??
@@ -846,7 +881,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
     measurement?.processRssBytes ??
     null;
   const manualResourceCandidateId =
-    executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_SOURCE && executionPlan?.modelType && executionPlan?.dtype
+    !isObservedWorkflowAutoSource(executionPlan?.source) && executionPlan?.modelType && executionPlan?.dtype
       ? `manual-resource-v1:${[
           executionPlan.modelType,
           executionPlan.dtype,
@@ -1403,11 +1438,17 @@ export function validateRunProvenance(provenance) {
       blockers.push('execution.resourceCandidateId is missing.');
     }
     if (
-      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_SOURCE &&
+      isObservedWorkflowAutoSource(provenance?.graph?.executionPlan?.source) &&
       (!observedWorkflowAutoResourceId(provenance.graph.executionPlan) ||
         provenance.execution?.resourceCandidateId !== observedWorkflowAutoResourceId(provenance.graph.executionPlan))
     ) {
       blockers.push('execution.resourceCandidateId does not match the retained workflow Auto observation.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE &&
+      !observedWorkflowAutoLoraProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push('execution LoRA resource observation does not match the original applied adapter proof.');
     }
     if (!Number.isFinite(provenance?.execution?.elapsedSeconds) || provenance.execution.elapsedSeconds < 0) {
       blockers.push('execution.elapsedSeconds is invalid.');
@@ -1956,7 +1997,12 @@ export function createRunProvenance({
   });
   const executionPlan =
     canonicalAccountingProof === undefined
-      ? executionPlanIdentity(apiGraph, { executionReceipt, executedOutput, taskId })
+      ? executionPlanIdentity(apiGraph, {
+          executionReceipt,
+          executedOutput,
+          taskId,
+          modelIdentities: modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean),
+        })
       : canonicalAccountingProofPlan({
           apiGraph,
           executedOutput,

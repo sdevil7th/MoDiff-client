@@ -2,8 +2,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { canonicalJsonHash, stableJsonValue } from './canonical-json.mjs';
+import { validateAppliedAdapterItems, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const OBSERVED_WORKFLOW_AUTO_SOURCE = 'observed-workflow-auto-resource-v1';
+export const OBSERVED_WORKFLOW_AUTO_LORA_SOURCE = 'observed-workflow-auto-lora-resource-v1';
+export const isObservedWorkflowAutoSource = (source) =>
+  source === OBSERVED_WORKFLOW_AUTO_SOURCE || source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE;
 const same = (a, b) => assert.deepEqual(stableJsonValue(a), stableJsonValue(b));
 const value = (node, key) => node.params?.[key]?.value;
 const scope = (node) => `${node.module}.${node.action}`;
@@ -12,6 +16,12 @@ const core = ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents']
   .map((a) => 'modules.ModularDiffusers.' + a)
   .concat('modules.Image.Preview');
 const optional = 'modules.ModularDiffusers.Guider';
+const descriptorScope = 'modules.ModularDiffusers.Lora';
+const descriptorFields = new Set(
+  'model weight_name revision expected_sha256 scale adapter_name previous_loras scheduler_class scheduler_config'.split(
+    ' ',
+  ),
+);
 const ownerFields = new Set(
   'reviewed_variant workflow_id revision repo_id model_type dtype device offload_mode auto_offload weight_loading_mode attention_backend vae_slicing vae_tiling weight_format inpaint_compatibility'.split(
     ' ',
@@ -55,7 +65,7 @@ function workerGraphHash(graph) {
 
 export function observedWorkflowAutoResourceId(plan) {
   try {
-    assert.equal(plan.source, OBSERVED_WORKFLOW_AUTO_SOURCE);
+    assert(isObservedWorkflowAutoSource(plan.source));
     const o = plan.resourceObservation;
     finiteJson(o);
     assert.equal(o.schemaVersion, 1);
@@ -107,7 +117,32 @@ export function observedWorkflowAutoResourceId(plan) {
     assert.equal(plan.resolvedResourceMode, 'auto');
     assert.equal(plan.quantizationMode, 'none');
     same(plan.quantizedComponents, []);
-    const id = OBSERVED_WORKFLOW_AUTO_SOURCE + ':' + canonicalJsonHash(o);
+    if (plan.source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE) {
+      validateAppliedAdapterItems(o.adapters);
+      assert.equal(o.adapters.length, 1);
+      assert.equal(o.adapters[0].artifact.source, 'hub');
+      assert.equal(o.adapters[0].scheduler, null);
+      const primary = controls.get(ownerScope);
+      assert.equal(primary.repo_id?.source, 'hub');
+      same(primary.repo_id.value, o.repo);
+      for (const [key, observed] of Object.entries({
+        model_type: 'modelType',
+        revision: 'revision',
+        dtype: 'dtype',
+        device: 'device',
+        auto_offload: 'autoOffload',
+        offload_mode: 'offloadMode',
+        weight_loading_mode: 'weightLoadingMode',
+        attention_backend: 'attentionBackend',
+        vae_slicing: 'vaeSlicing',
+        vae_tiling: 'vaeTiling',
+      })) {
+        assert(Object.hasOwn(primary, key));
+        same(primary[key], o[observed]);
+      }
+      assert.equal(primary.weight_format, 'native');
+    } else assert(!Object.hasOwn(o, 'adapters'));
+    const id = plan.source + ':' + canonicalJsonHash(o);
     assert.equal(plan.observedResourceCandidateId, id);
     return id;
   } catch {
@@ -115,9 +150,51 @@ export function observedWorkflowAutoResourceId(plan) {
   }
 }
 
+/** A projected adapter identity is useful only with the existing strict native proof. */
+export function observedWorkflowAutoLoraProofMatches(plan, provenance) {
+  try {
+    assert.equal(plan.source, OBSERVED_WORKFLOW_AUTO_LORA_SOURCE);
+    const proof = validateAppliedAdapterProof(provenance, { required: true });
+    assert.equal(proof.owners.length, 1);
+    const application = proof.owners[0].application;
+    assert.equal(application.status, 'complete');
+    assert.equal(application.observation, 'activated');
+    same(plan.resourceObservation.adapters, application.adapters);
+    const graph = provenance.graph.canonicalGraph;
+    const owner = graph.nodes.find((node) => node.key === proof.owners[0].nodeKey);
+    assert.equal(owner.module + '.' + owner.action, ownerScope);
+    same(value(owner, 'repo_id'), { source: 'hub', value: plan.modelRepo });
+    same(value(owner, 'revision'), plan.modelRevision);
+    same(value(owner, 'model_type'), plan.modelType);
+    assert(
+      provenance.models.items.some(
+        (item) =>
+          item.repoId === plan.modelRepo &&
+          item.selectedRevision === plan.modelRevision &&
+          item.modelRevision === `${plan.modelRepo}@${plan.modelRevision}`,
+      ),
+    );
+    for (const control of plan.resourceObservation.controls) {
+      const matching = graph.nodes.filter((node) => scope(node) === control.scope);
+      assert.equal(matching.length, 1);
+      for (const [key, field] of Object.entries(control.fields)) {
+        const param = matching[0].params[key];
+        assert(param && !param.sourceId && !param.sourceKey && Object.hasOwn(param, 'value'));
+        same(field, param.value);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Recover only a fresh, literal, unquantized native image T2I owner. Unknown,
  * connected, composite, deferred, reused and runtime-patched cases stay held. */
-export function observedWorkflowAutoPlan(apiGraph, { executionReceipt: task, executedOutput: output, taskId } = {}) {
+export function observedWorkflowAutoPlan(
+  apiGraph,
+  { executionReceipt: task, executedOutput: output, taskId, adapterProofContext } = {},
+) {
   try {
     const hints = apiGraph.runtimeHints,
       snapshot = hints.workflowSnapshot,
@@ -154,11 +231,11 @@ export function observedWorkflowAutoPlan(apiGraph, { executionReceipt: task, exe
       ids = new Set(entries.map(([id]) => id));
     const order = [...new Set(apiGraph.paths.flat())];
     same([...ids].sort(), [...order].sort());
-    assert(entries.length <= 6);
+    assert(entries.length <= 7);
     const scopes = new Map();
     for (const [id, node] of entries) {
       const key = scope(node);
-      assert(core.includes(key) || key === optional);
+      assert(core.includes(key) || key === optional || key === descriptorScope);
       assert(!scopes.has(key));
       scopes.set(key, { id, node });
       for (const param of Object.values(node.params))
@@ -170,6 +247,7 @@ export function observedWorkflowAutoPlan(apiGraph, { executionReceipt: task, exe
     for (const key of core) assert(scopes.has(key));
     const { id: ownerId, node: owner } = scopes.get(ownerScope),
       { id: previewId } = scopes.get('modules.Image.Preview');
+    const descriptor = scopes.get(descriptorScope);
     assert.equal(output.nodeId, previewId);
     const receipt = output.resolvedExecutionInputs;
     assert.equal(receipt.source, 'backend-execution');
@@ -209,7 +287,6 @@ export function observedWorkflowAutoPlan(apiGraph, { executionReceipt: task, exe
       'unet',
       'vae',
       'controlnet',
-      'lora_list',
       'text_encoders',
       'pipeline_components',
       'image_encoder',
@@ -217,12 +294,57 @@ export function observedWorkflowAutoPlan(apiGraph, { executionReceipt: task, exe
       assert(!owner.params[key]?.sourceId && !owner.params[key]?.sourceKey);
       assert(value(owner, key) == null);
     }
+    let adapters;
+    if (descriptor) {
+      const connection = owner.params.lora_list;
+      assert.equal(connection?.sourceId, descriptor.id);
+      assert.equal(connection.sourceKey, 'lora');
+      assert(!Object.hasOwn(connection, 'value'));
+      const node = descriptor.node;
+      assert(Object.keys(node.params).every((key) => descriptorFields.has(key)));
+      for (const param of Object.values(node.params)) assert(!param.sourceId && !param.sourceKey);
+      assert(value(node, 'previous_loras') == null);
+      assert.equal(value(node, 'scheduler_class'), '');
+      assert.equal(value(node, 'scheduler_config'), '{}');
+      assert.equal(receipt.schemaVersion, 1);
+      assert.equal(receipt.appliedAdaptersStatus?.schemaVersion, 1);
+      assert.equal(receipt.appliedAdaptersStatus.truncated, false);
+      const row = rows.get(descriptor.id);
+      assert.equal(row.fields.revision.source, 'literal');
+      same(row.fields.revision.value, value(node, 'revision'));
+      assert(!Object.hasOwn(row.omittedFields ?? {}, 'revision'));
+      const proof = validateAppliedAdapterProof(adapterProofContext, { required: true });
+      assert.equal(proof.owners.length, 1);
+      const application = rows.get(ownerId).appliedAdapters;
+      same(proof.owners[0].application, application);
+      assert.equal(application.status, 'complete');
+      assert.equal(application.observation, 'activated');
+      assert.equal(application.adapters.length, 1);
+      adapters = structuredClone(application.adapters);
+      for (const [id, other] of entries)
+        for (const [key, param] of Object.entries(other.params)) {
+          if (param.sourceId === descriptor.id)
+            assert(id === ownerId && key === 'lora_list' && param.sourceKey === 'lora');
+        }
+    } else {
+      assert(!owner.params.lora_list?.sourceId && !owner.params.lora_list?.sourceKey);
+      assert(value(owner, 'lora_list') == null);
+    }
     const repo = value(owner, 'repo_id');
     assert.equal(repo.source, 'hub');
     assert.equal(typeof repo.value, 'string');
     assert(repo.value);
     const revision = value(owner, 'revision');
     assert.match(revision, /^[0-9a-f]{40}$/u);
+    if (adapters)
+      assert(
+        adapterProofContext.models.items.some(
+          (item) =>
+            item.repoId === repo.value &&
+            item.selectedRevision === revision &&
+            item.modelRevision === `${repo.value}@${revision}`,
+        ),
+      );
     const trace = rows.get(ownerId).fields;
     for (const key of [
       'repo_id',
@@ -309,7 +431,7 @@ export function observedWorkflowAutoPlan(apiGraph, { executionReceipt: task, exe
       same(value(encoded.node, key), form[formKey]);
     }
     const plan = {
-      source: OBSERVED_WORKFLOW_AUTO_SOURCE,
+      source: adapters ? OBSERVED_WORKFLOW_AUTO_LORA_SOURCE : OBSERVED_WORKFLOW_AUTO_SOURCE,
       modelType: value(owner, 'model_type'),
       pipelineClass: value(owner, 'model_type'),
       modelRepo: repo.value,
@@ -347,11 +469,12 @@ export function observedWorkflowAutoPlan(apiGraph, { executionReceipt: task, exe
       geometry: { width: d.width.value, height: d.height.value },
       strategy: auto.strategy,
       controls,
+      ...(adapters ? { adapters } : {}),
     };
     return {
       ...plan,
       resourceObservation: observation,
-      observedResourceCandidateId: OBSERVED_WORKFLOW_AUTO_SOURCE + ':' + canonicalJsonHash(observation),
+      observedResourceCandidateId: plan.source + ':' + canonicalJsonHash(observation),
     };
   } catch {
     return null;

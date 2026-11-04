@@ -15,29 +15,11 @@ const text = (value, maximum) =>
   !/[\u0000-\u001f]/u.test(value);
 const sha = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 
-export function validateAppliedAdapterSection(section) {
-  assert.equal(section?.schemaVersion, 1);
-  if (section.status !== 'complete') {
-    keys(section, ['schemaVersion', 'status', 'reason']);
-    assert.ok(
-      typeof section.reason === 'string' &&
-        (section.status === 'truncated'
-          ? section.reason === 'record-size-limit'
-          : section.status === 'unavailable' &&
-            ['unobserved-application', 'owner-invalidated', 'unsupported-owner', 'unsupported-projection'].includes(
-              section.reason,
-            )),
-      'Unknown adapter availability state.',
-    );
-    return section;
-  }
-  keys(section, ['schemaVersion', 'status', 'source', 'applicationId', 'observation', 'adapters', 'stateSha256']);
-  assert.equal(section.source, 'backend-adapter-application');
-  assert.match(section.applicationId, /^[a-f0-9]{32}$/u);
-  assert.ok(['activated', 'reused'].includes(section.observation));
-  assert.ok(Array.isArray(section.adapters) && section.adapters.length <= 32);
+/** The stable artifact projection is shared by native state and resource evidence. */
+export function validateAppliedAdapterItems(adapters) {
+  assert.ok(Array.isArray(adapters) && adapters.length <= 32);
   const names = new Set();
-  for (const item of section.adapters) {
+  for (const item of adapters) {
     keys(item, ['adapterName', 'scale', 'descriptorSha256', 'artifact', 'scheduler']);
     assert.ok(
       text(item.adapterName, 128) &&
@@ -81,7 +63,31 @@ export function validateAppliedAdapterSection(section) {
       assert.match(item.scheduler.configSha256, /^sha256:[a-f0-9]{64}$/u);
     }
   }
-  assert.ok(Buffer.byteLength(JSON.stringify({ adapters: section.adapters }), 'utf8') <= 32_768);
+  assert.ok(Buffer.byteLength(JSON.stringify({ adapters }), 'utf8') <= 32_768);
+  return adapters;
+}
+
+export function validateAppliedAdapterSection(section) {
+  assert.equal(section?.schemaVersion, 1);
+  if (section.status !== 'complete') {
+    keys(section, ['schemaVersion', 'status', 'reason']);
+    assert.ok(
+      typeof section.reason === 'string' &&
+        (section.status === 'truncated'
+          ? section.reason === 'record-size-limit'
+          : section.status === 'unavailable' &&
+            ['unobserved-application', 'owner-invalidated', 'unsupported-owner', 'unsupported-projection'].includes(
+              section.reason,
+            )),
+      'Unknown adapter availability state.',
+    );
+    return section;
+  }
+  keys(section, ['schemaVersion', 'status', 'source', 'applicationId', 'observation', 'adapters', 'stateSha256']);
+  assert.equal(section.source, 'backend-adapter-application');
+  assert.match(section.applicationId, /^[a-f0-9]{32}$/u);
+  assert.ok(['activated', 'reused'].includes(section.observation));
+  validateAppliedAdapterItems(section.adapters);
   assert.equal(
     section.stateSha256,
     `sha256:applied-adapters-v1:${canonicalJsonHash({ adapters: section.adapters })}`,

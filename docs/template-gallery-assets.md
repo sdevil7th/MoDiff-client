@@ -633,3 +633,22 @@ Original tasks retain their original candidate fields, source and capture time.
 Do not rerun a model merely to add this maintainer metadata, rewrite a raw task,
 refresh a stale public template lock, or infer missing consumed defaults. The
 existing source/model/input/media validators and human review still apply.
+
+A separate `observed-workflow-auto-lora-resource-v1` vocabulary covers one
+literal pinned Hub `ModularDiffusers.Lora` descriptor connected to the ordinary
+modular text-to-image owner, optionally with the existing Guider. It requires the
+original complete, freshly activated native adapter application and the existing
+strict ordered-adapter proof, including installed base/adapter identities,
+artifact pin/hash, name and numeric scale. The resource projection retains the
+validated adapter material; per-application IDs stay in execution evidence and
+do not manufacture a different resource recipe. The final provenance validator
+joins that projection back to the strict native proof even if someone recomputes
+its hash. Legacy plain-graph identities are unchanged.
+
+Multiple adapters, predecessor chains, scheduler overrides, connected descriptor
+controls, missing/ambiguous pins, unavailable/truncated state and reused owners
+remain outside this observed-reader scope. This reader runs only in maintainer
+evidence tooling: it does not add an Auto recipe, execute a supplier, alter saved
+graphs/receipts, acquire weights or grant hardware, quality or publication
+qualification. A missing original task candidate remains missing; the derived
+observation records the actual retained execution separately.

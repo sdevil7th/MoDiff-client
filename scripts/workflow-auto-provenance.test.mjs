@@ -4,7 +4,14 @@ import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { executionPlanIdentity, executionReceiptIdentity } from './live-proof-provenance.mjs';
+import {
+  canonicalizeApiGraph,
+  executionPlanIdentity,
+  executionReceiptIdentity,
+  validateRunProvenance,
+} from './live-proof-provenance.mjs';
+import { createAppliedAdapterProof } from './applied-adapter-provenance.mjs';
+import { observedWorkflowAutoLoraProofMatches } from './observed-workflow-auto-resource.mjs';
 import { canonicalJsonHash, stableJsonValue } from './canonical-json.mjs';
 
 const literal = (value) => ({ value });
@@ -201,6 +208,258 @@ function witness({ prefix = '', width = 1024, prompt = 'A product photograph', s
   return { apiGraph, executionReceipt, executedOutput, ids };
 }
 const planFor = (w) => executionPlanIdentity(w.apiGraph, w).plan;
+
+function loraWitness(options = {}) {
+  const w = witness({ ...options, guider: options.guider ?? true });
+  const id = (options.prefix ?? '') + 'lora';
+  w.ids.lora = id;
+  const artifact = {
+    source: 'hub',
+    repository: 'example/style-adapter',
+    revision: 'b'.repeat(40),
+    weightName: 'style.safetensors',
+    sha256: 'c'.repeat(64),
+  };
+  const adapter = { adapterName: 'style', scale: 0.65, descriptorSha256: 'd'.repeat(64), artifact, scheduler: null };
+  w.modelIdentities = [
+    {
+      repoId: 'example/native-image',
+      selectedRevision: 'a'.repeat(40),
+      modelRevision: 'example/native-image@' + 'a'.repeat(40),
+    },
+    {
+      repoId: artifact.repository,
+      selectedRevision: artifact.revision,
+      modelRevision: artifact.repository + '@' + artifact.revision,
+    },
+  ];
+  w.apiGraph.nodes[id] = {
+    module: 'modules.ModularDiffusers',
+    action: 'Lora',
+    params: {
+      model: literal({ source: 'hub', value: artifact.repository }),
+      revision: literal(artifact.revision),
+      weight_name: literal(artifact.weightName),
+      expected_sha256: literal(artifact.sha256),
+      scale: literal(adapter.scale),
+      adapter_name: literal(adapter.adapterName),
+      previous_loras: {},
+      scheduler_class: literal(''),
+      scheduler_config: literal('{}'),
+    },
+  };
+  w.apiGraph.paths[0].unshift(id);
+  w.apiGraph.nodes[w.ids.owner].params.lora_list = { sourceId: id, sourceKey: 'lora' };
+  const receipt = w.executedOutput.resolvedExecutionInputs;
+  receipt.schemaVersion = 1;
+  receipt.appliedAdaptersStatus = { schemaVersion: 1, truncated: false };
+  receipt.nodes.push({
+    nodeId: id,
+    module: 'modules.ModularDiffusers',
+    action: 'Lora',
+    fields: { revision: { value: artifact.revision, source: 'literal' } },
+    omittedFields: {},
+  });
+  receipt.nodes.find((row) => row.nodeId === w.ids.owner).appliedAdapters = {
+    schemaVersion: 1,
+    status: 'complete',
+    source: 'backend-adapter-application',
+    applicationId: '1'.repeat(32),
+    observation: 'activated',
+    adapters: [adapter],
+    stateSha256: 'sha256:applied-adapters-v1:' + canonicalJsonHash({ adapters: [adapter] }),
+  };
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  return w;
+}
+
+test('a fresh pinned single-LoRA Auto observation retains its separate resource identity without raw rewrites', () => {
+  const w = loraWitness(),
+    before = structuredClone(w),
+    plan = planFor(w);
+  assert.equal(plan.source, 'observed-workflow-auto-lora-resource-v1');
+  assert.equal(plan.resourceObservation.adapters[0].artifact.revision, 'b'.repeat(40));
+  const execution = executionReceiptIdentity(w.executionReceipt, plan);
+  assert.match(execution.resourceCandidateId, /^observed-workflow-auto-lora-resource-v1:[0-9a-f]{64}$/u);
+  assert.equal(w.executionReceipt.resourceCandidateId, null);
+  assert.deepEqual(w, before);
+  const withoutGuider = loraWitness({ guider: false });
+  assert.equal(planFor(withoutGuider).source, plan.source);
+  assert.notEqual(
+    executionReceiptIdentity(withoutGuider.executionReceipt, planFor(withoutGuider)).resourceCandidateId,
+    execution.resourceCandidateId,
+    'optional guidance remains part of the observed resource controls',
+  );
+  const renamed = loraWitness({ prefix: 'other-', prompt: 'Another photograph', seed: 9 });
+  assert.equal(
+    executionReceiptIdentity(renamed.executionReceipt, planFor(renamed)).resourceCandidateId,
+    execution.resourceCandidateId,
+  );
+  const anotherApplication = loraWitness();
+  anotherApplication.executedOutput.resolvedExecutionInputs.nodes.find(
+    (r) => r.nodeId === anotherApplication.ids.owner,
+  ).appliedAdapters.applicationId = '2'.repeat(32);
+  assert.equal(
+    executionReceiptIdentity(anotherApplication.executionReceipt, planFor(anotherApplication)).resourceCandidateId,
+    execution.resourceCandidateId,
+  );
+});
+
+test('the single-LoRA observation rejects missing native state, mismatched artifacts and unsupported descriptor authority', () => {
+  const application = (w) =>
+    w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).appliedAdapters;
+  const mutations = {
+    absent: (w) => {
+      delete w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).appliedAdapters;
+    },
+    reused: (w) => {
+      application(w).observation = 'reused';
+    },
+    truncated: (w) => {
+      w.executedOutput.resolvedExecutionInputs.appliedAdaptersStatus.truncated = true;
+    },
+    wrongPin: (w) => {
+      application(w).adapters[0].artifact.revision = 'e'.repeat(40);
+    },
+    wrongScale: (w) => {
+      application(w).adapters[0].scale = 0.8;
+    },
+    wrongName: (w) => {
+      application(w).adapters[0].adapterName = 'other';
+    },
+    wrongSha: (w) => {
+      application(w).adapters[0].artifact.sha256 = 'f'.repeat(64);
+    },
+    wrongPort: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.lora_list.sourceKey = 'other';
+    },
+    ambiguousList: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.lora_list.value = [];
+    },
+    unconnected: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.lora_list = literal(null);
+    },
+    opaquePredecessor: (w) => {
+      w.apiGraph.nodes[w.ids.lora].params.previous_loras = literal([]);
+    },
+    scheduler: (w) => {
+      w.apiGraph.nodes[w.ids.lora].params.scheduler_class.value = 'OtherScheduler';
+    },
+    schedulerConfig: (w) => {
+      w.apiGraph.nodes[w.ids.lora].params.scheduler_config.value = '{"shift":2}';
+    },
+    custom: (w) => {
+      w.apiGraph.nodes[w.ids.lora].module = 'custom.ModularDiffusers';
+    },
+    connectedControl: (w) => {
+      w.apiGraph.nodes[w.ids.lora].params.revision.sourceId = w.ids.encode;
+    },
+    omittedPin: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.lora).omittedFields.revision =
+        'unsupported-value';
+    },
+    unknownControl: (w) => {
+      w.apiGraph.nodes[w.ids.lora].params.unknown = literal(true);
+    },
+    missingBaseObservation: (w) => {
+      w.modelIdentities = w.modelIdentities.slice(1);
+    },
+    missingAdapterObservation: (w) => {
+      w.modelIdentities = w.modelIdentities.slice(0, 1);
+    },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const w = loraWitness();
+    mutate(w);
+    const app = application(w);
+    if (app) app.stateSha256 = 'sha256:applied-adapters-v1:' + canonicalJsonHash({ adapters: app.adapters });
+    w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+    assert.notEqual(planFor(w).source, 'observed-workflow-auto-lora-resource-v1', name);
+  }
+});
+
+test('LoRA resource projections bind to the existing strict proof even after a self-hashed forgery', () => {
+  const w = loraWitness(),
+    plan = planFor(w);
+  const canonicalGraph = canonicalizeApiGraph(w.apiGraph);
+  const applied = createAppliedAdapterProof({
+    apiGraph: w.apiGraph,
+    canonicalGraph,
+    executedOutput: w.executedOutput,
+    executionReceipt: w.executionReceipt,
+    taskId: 'task',
+  });
+  const provenance = {
+    schemaVersion: 2,
+    taskId: 'task',
+    models: { items: w.modelIdentities },
+    graph: { canonicalGraph, executionPlan: plan },
+    adapterApplications: applied.proof,
+    adapterApplicationsHash: applied.hash,
+    execution: executionReceiptIdentity(w.executionReceipt, plan),
+  };
+  assert(observedWorkflowAutoLoraProofMatches(plan, provenance));
+  const blockers = validateRunProvenance(provenance);
+  assert(!blockers.includes('execution LoRA resource observation does not match the original applied adapter proof.'));
+  const missingBase = structuredClone(provenance);
+  missingBase.models.items = missingBase.models.items.slice(1);
+  assert.equal(observedWorkflowAutoLoraProofMatches(plan, missingBase), false);
+  const forgedBase = structuredClone(provenance);
+  forgedBase.graph.executionPlan.modelRepo = 'example/forged-base';
+  forgedBase.graph.executionPlan.resourceObservation.repo = 'example/forged-base';
+  forgedBase.graph.executionPlan.resourceObservation.controls.find(
+    (control) => control.scope === 'modules.ModularDiffusers.ModelsLoader',
+  ).fields.repo_id.value = 'example/forged-base';
+  forgedBase.models.items[0] = {
+    ...forgedBase.models.items[0],
+    repoId: 'example/forged-base',
+    modelRevision: 'example/forged-base@' + 'a'.repeat(40),
+  };
+  assert.equal(observedWorkflowAutoLoraProofMatches(forgedBase.graph.executionPlan, forgedBase), false);
+  const forgedPrecision = structuredClone(plan);
+  forgedPrecision.dtype = forgedPrecision.resourceObservation.dtype = 'float32';
+  forgedPrecision.observedResourceCandidateId =
+    forgedPrecision.source + ':' + canonicalJsonHash(forgedPrecision.resourceObservation);
+  assert.equal(executionReceiptIdentity(w.executionReceipt, forgedPrecision).resourceCandidateId, null);
+  forgedPrecision.resourceObservation.controls.find(
+    (control) => control.scope === 'modules.ModularDiffusers.ModelsLoader',
+  ).fields.dtype = 'float32';
+  assert.equal(observedWorkflowAutoLoraProofMatches(forgedPrecision, provenance), false);
+  plan.resourceObservation.adapters[0].artifact.revision = 'f'.repeat(40);
+  plan.observedResourceCandidateId = plan.source + ':' + canonicalJsonHash(plan.resourceObservation);
+  provenance.execution.resourceCandidateId = plan.observedResourceCandidateId;
+  assert.equal(observedWorkflowAutoLoraProofMatches(plan, provenance), false);
+  assert(
+    validateRunProvenance(provenance).includes(
+      'execution LoRA resource observation does not match the original applied adapter proof.',
+    ),
+  );
+});
+
+test('LoRA resource identity uses native numeric scale, preserves decimal source text and rejects a corrupt projection', () => {
+  const first = loraWitness(),
+    changed = loraWitness();
+  const id = (w) => executionReceiptIdentity(w.executionReceipt, planFor(w)).resourceCandidateId;
+  const before = id(first);
+  first.apiGraph.nodes[first.ids.lora].params.scale.value = '6.5e-1';
+  first.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(first.apiGraph);
+  assert.equal(id(first), before);
+  const application = changed.executedOutput.resolvedExecutionInputs.nodes.find(
+    (r) => r.nodeId === changed.ids.owner,
+  ).appliedAdapters;
+  changed.apiGraph.nodes[changed.ids.lora].params.scale.value = application.adapters[0].scale = 0.8;
+  application.stateSha256 = 'sha256:applied-adapters-v1:' + canonicalJsonHash({ adapters: application.adapters });
+  changed.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(changed.apiGraph);
+  assert.notEqual(id(changed), before);
+  const plan = planFor(changed);
+  plan.resourceObservation.adapters[0].scale = '0.8';
+  plan.observedResourceCandidateId = plan.source + ':' + canonicalJsonHash(plan.resourceObservation);
+  assert.equal(
+    executionReceiptIdentity(changed.executionReceipt, plan).resourceCandidateId,
+    null,
+    'no manual fallback for a corrupt observed plan',
+  );
+});
 
 test('a completed whole-workflow Auto trace retains its actual resource identity without rewriting the raw candidate', () => {
   const w = witness(),
