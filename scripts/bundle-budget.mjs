@@ -1,3 +1,9 @@
+// The accepted rear-view contact-sheet prompt and corrected four-panel description
+// measure largest/startup/deferred gzip 496485/674972/329730 versus the packaged
+// D59 build's 496250/674736/329640. Only studio-templates.js changes after immutable
+// import-URL normalization; the other 89 template contracts and all 94 JavaScript
+// asset names are exact. Add only measured startup growth 235/236 bytes, retaining
+// 22/25-byte headroom and both deferred caps. No dependency or loading-rule change.
 // Scoped audio creative receipts measure largest/startup/deferred gzip
 // 496254/674742/329707 versus the accepted 496215/674704/329829.
 // Add the measured 39/38 startup bytes, retaining 18/19-byte headroom and
@@ -325,6 +331,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  235 +
   39 +
   128 +
   103 +
@@ -468,6 +475,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  236 +
   38 +
   132 +
   102 +
