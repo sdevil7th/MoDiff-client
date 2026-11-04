@@ -7,6 +7,11 @@ import path from 'node:path';
 import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
 import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
+import {
+  OBSERVED_WORKFLOW_AUTO_SOURCE,
+  observedWorkflowAutoPlan,
+  observedWorkflowAutoResourceId,
+} from './observed-workflow-auto-resource.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
@@ -802,7 +807,7 @@ function executedDirectAudioExpertPlanFromGraph(apiGraph) {
   });
 }
 
-export function executionPlanIdentity(apiGraph) {
+export function executionPlanIdentity(apiGraph, executionContext) {
   const runtimeHints = apiGraph?.runtimeHints ?? {};
   const declaredPlan = Object.fromEntries(
     EXECUTION_PLAN_FIELDS.filter((field) => runtimeHints[field] !== undefined).map((field) => [
@@ -815,7 +820,12 @@ export function executionPlanIdentity(apiGraph) {
     (field) => ['resourceMode', 'resolvedResourceMode'].includes(field) && declaredPlan[field] === 'expert',
   );
   const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph) : null;
+  const observedAutoPlan =
+    fields.length === 1 && declaredPlan.resourceMode === 'auto'
+      ? observedWorkflowAutoPlan(apiGraph, executionContext)
+      : null;
   const plan =
+    observedAutoPlan ??
     modularPlan ??
     (fields.length > 0
       ? declaredPlan
@@ -836,7 +846,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
     measurement?.processRssBytes ??
     null;
   const manualResourceCandidateId =
-    executionPlan?.modelType && executionPlan?.dtype
+    executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_SOURCE && executionPlan?.modelType && executionPlan?.dtype
       ? `manual-resource-v1:${[
           executionPlan.modelType,
           executionPlan.dtype,
@@ -846,7 +856,10 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       : null;
   return {
     resourceCandidateId:
-      hints?.autoResourceCandidateId ?? executionPlan?.autoResourceCandidateId ?? manualResourceCandidateId,
+      hints?.autoResourceCandidateId ??
+      executionPlan?.autoResourceCandidateId ??
+      observedWorkflowAutoResourceId(executionPlan) ??
+      manualResourceCandidateId,
     elapsedSeconds:
       Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
         ? measurement.elapsedSeconds
@@ -1388,6 +1401,13 @@ export function validateRunProvenance(provenance) {
     }
     if (!provenance?.execution?.resourceCandidateId) {
       blockers.push('execution.resourceCandidateId is missing.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_SOURCE &&
+      (!observedWorkflowAutoResourceId(provenance.graph.executionPlan) ||
+        provenance.execution?.resourceCandidateId !== observedWorkflowAutoResourceId(provenance.graph.executionPlan))
+    ) {
+      blockers.push('execution.resourceCandidateId does not match the retained workflow Auto observation.');
     }
     if (!Number.isFinite(provenance?.execution?.elapsedSeconds) || provenance.execution.elapsedSeconds < 0) {
       blockers.push('execution.elapsedSeconds is invalid.');
@@ -1936,7 +1956,7 @@ export function createRunProvenance({
   });
   const executionPlan =
     canonicalAccountingProof === undefined
-      ? executionPlanIdentity(apiGraph)
+      ? executionPlanIdentity(apiGraph, { executionReceipt, executedOutput, taskId })
       : canonicalAccountingProofPlan({
           apiGraph,
           executedOutput,

@@ -613,3 +613,23 @@ template recipe; stale creator locks and other release failures remain blocking.
 ## Live generation batching
 
 The maintainer-only Gallery runner may reuse a loaded pipeline only for consecutive templates with the same normalized Studio `modelType`. The first template, every model boundary, and every failed template resets the reuse chain and invokes accelerator cleanup. Template inputs come from an explicit checked-in input map; the runner never acquires or repairs a model during execution. Use `npm run gallery:run -- --help` for the current options rather than retaining dated host-specific command batches in documentation.
+
+## Retained whole-workflow Auto observations
+
+A normal graph Run can have a verified whole-workflow Auto receipt without a
+primary Studio candidate ID. For a completed, fresh, unquantized native modular
+text-to-image graph, the provenance reader can recover an observed resource
+identity from the original task's backend-resolved fields and consumed node
+receipts. It checks the exact request/output/task/attempt/session/workflow joins,
+worker graph hash, immutable literal model owner, controls and backend task
+declaration. Missing, conflicting, connected, reused, deferred, patched or
+unsupported evidence stays held. Client form intent alone supplies no identity.
+
+The `observed-workflow-auto-resource-v1` identity records that executed recipe;
+it does not assert a registered primary Auto recipe, hardware qualification or
+publication approval. Node IDs, prompts and seeds do not manufacture distinct
+resource recipes; model pins, effective settings and geometry remain bound.
+Original tasks retain their original candidate fields, source and capture time.
+Do not rerun a model merely to add this maintainer metadata, rewrite a raw task,
+refresh a stale public template lock, or infer missing consumed defaults. The
+existing source/model/input/media validators and human review still apply.
