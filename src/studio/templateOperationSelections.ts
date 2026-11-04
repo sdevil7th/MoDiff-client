@@ -503,6 +503,7 @@ export const AUDIO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
           ['ace_step_audio_repaint', 'audio_repaint'],
           ['ace_step_chinese_new_year_lora', 'text_to_audio'],
           ['ace_step_custom_lora', 'text_to_audio'],
+          ['ace_step_lyric_music_video', 'text_to_audio'],
         ] as const satisfies readonly (readonly [StudioTemplateId, StudioMode])[]
       ).map(([id, task]) => [
         id,

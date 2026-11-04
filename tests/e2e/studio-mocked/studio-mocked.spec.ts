@@ -36865,6 +36865,65 @@ test('MiniMax real Audio Output preserves leaves and supports contained playback
   expect(mutations).toEqual([]);
 });
 
+test('fresh lyric template preserves its full composite branch brief through ordinary Save and reopen', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const { mutations } = await openAudioStageTemplate(page, 'ace_step_lyric_music_video');
+  const original = await audioApiSnapshot(page);
+  const brief = STUDIO_TEMPLATES.find((item) => item.id === 'ace_step_lyric_music_video')!.workflowBlockSettings!
+    .lyricVideo!;
+  expect(Object.keys(original.nodes)).toHaveLength(14);
+  const audio = Object.values(original.nodes).find(
+    (node) => node.module === 'modules.DiffusersAudio' && node.action === 'Generate',
+  )!;
+  expect(audioApiValue(audio, 'prompt')).toBe(brief.audio.prompt);
+  expect(audioApiValue(audio, 'bpm')).toBe(100);
+  expect(audioApiValue(audio, 'lyrics')).toBe(brief.audio.lyrics);
+  expect(audioApiValue(audio, 'audio_duration')).toBe(30);
+  const recipes = Object.values(original.nodes).filter((node) => node.action === 'DiffusersExecutionRecipe');
+  expect(recipes).toHaveLength(2);
+  for (const recipe of recipes) expect(audioApiValue(recipe, 'attention_backend')).toBe('auto');
+  const visual = Object.values(original.nodes).find(
+    (node) => node.module === 'modules.DiffusersVideo' && node.action === 'LoadPipeline',
+  )!;
+  expect(audioApiValue(visual, 'model_id')).toEqual({ source: 'hub', value: brief.visualModel.value });
+  expect(audioApiValue(visual, 'revision')).toBe(brief.visualModel.revision);
+  const sequence = Object.values(original.nodes).find((node) => node.action === 'GenerateSequence')!;
+  expect(audioApiValue(sequence, 'prompts_json')).toBe(brief.promptsJson);
+  expect(audioApiValue(sequence, 'num_frames')).toBe(81);
+  expect(audioApiValue(sequence, 'frame_rate')).toBe(16);
+  expect(
+    audioApiValue(
+      Object.values(original.nodes).find((node) => node.action === 'LyricOverlay')!,
+      'lrc',
+    ),
+  ).toBe(brief.lrc);
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  const title = 'Lyric composite branch preservation';
+  await page.getByTestId('save-workflow-name').fill(title);
+  const savedResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      response.url().includes('/workflows/') &&
+      response.request().postDataJSON().title === title &&
+      response.ok(),
+  );
+  await page.getByTestId('confirm-save-workflow').click();
+  const saved = (await (await savedResponse).json()) as { id: string; intent: string };
+  expect(saved.intent).toBe('saved');
+  await page.getByRole('button', { name: `Close ${title}`, exact: true }).click();
+  await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  await page.getByTestId(`saved-workflow-${saved.id}`).getByRole('button', { name: title, exact: true }).click();
+  await expect.poll(() => audioApiSnapshot(page)).toEqual(original);
+  await page.reload();
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().flow.nodes.length));
+  await expect.poll(() => audioApiSnapshot(page)).toEqual(original);
+  expect(mutations).toEqual([]);
+});
+
 test('ACE selected max-one audio setup keeps its row editable and Remove Undo reload preserves exact API', async ({
   page,
 }) => {

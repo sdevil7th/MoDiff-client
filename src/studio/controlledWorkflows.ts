@@ -24,31 +24,15 @@ import {
 } from './controlledWorkflowContracts';
 import { resolveStudioResourceForm } from './resourcePlanner';
 import {
-  audioFitWorkflowFieldValues,
   loraWorkflowFieldValues,
+  lyricVideoWorkflowFieldValues,
   soundtrackWorkflowFieldValues,
   upscaleWorkflowFieldValues,
 } from './controlledWorkflowValues';
 import { MAX_ORDERED_ADAPTERS, orderedAdapterChainLinks } from './adapterChainLinks';
-import type {
-  StudioAudioFitSettings,
-  StudioFormState,
-  StudioTemplateLoraSettings,
-  StudioTemplateWorkflowBlockSettings,
-} from './types';
+import type { StudioFormState, StudioTemplateLoraSettings, StudioTemplateWorkflowBlockSettings } from './types';
 
 export { CONTROLLED_WORKFLOW_NODE_KEYS } from './controlledWorkflowContracts';
-
-const VIDEO_DELIVERY_UPSCALER = {
-  model: {
-    source: 'hub' as const,
-    value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth',
-    revision: '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094',
-    sha256: '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb',
-    byteSize: 67061725,
-  },
-  downscale: 1,
-};
 
 type ControlledWorkflowOptions = {
   graphPrepared?: boolean;
@@ -93,10 +77,6 @@ function setParamIfPresent(
   if (!nodeId || !fieldKey) return false;
   useFlowStore.getState().setParam(nodeId, fieldKey, value, key);
   return true;
-}
-
-function applyAudioFitValues(nodeId: string, settings: StudioAudioFitSettings) {
-  for (const { fields, value } of audioFitWorkflowFieldValues(settings)) setParamIfPresent(nodeId, fields, value);
 }
 
 async function ensureRegistryKeys(keys: string[]) {
@@ -921,7 +901,6 @@ export async function addLyricVideoWorkflowBlock(
   assertWorkflowOperationContext(context);
   if (!settings) throw new Error('Lyric video settings are required.');
   const executionForm = resolveStudioResourceForm(form);
-  const runtimeQuantizationMode = executionForm.resourceMode === 'expert' ? executionForm.quantizationMode : 'none';
   const requiredKeys: string[] = [
     CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoQuantization,
     CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoRecipe,
@@ -976,51 +955,21 @@ export async function addLyricVideoWorkflowBlock(
       x: 1440,
       y: 180,
     });
-    setParamIfPresent(quantization, ['backend'], runtimeQuantizationMode);
-    setParamIfPresent(quantization, ['components'], ['transformer']);
-    setParamIfPresent(quantization, ['dtype'], executionForm.dtype);
-    setParamIfPresent(recipe, ['device_map'], 'none');
-    setParamIfPresent(recipe, ['offload_mode'], executionForm.offloadMode);
-    setParamIfPresent(recipe, ['device'], executionForm.device);
-    setParamIfPresent(recipe, ['attention_backend'], 'auto');
-    setParamIfPresent(recipe, ['attention_components'], '');
-    setParamIfPresent(recipe, ['vae_slicing'], true);
-    setParamIfPresent(recipe, ['vae_tiling'], true);
-    setParamIfPresent(pipeline, ['model_id'], settings.visualModel);
-    setParamIfPresent(pipeline, ['pipeline_class'], 'LTXConditionPipeline');
-    setParamIfPresent(pipeline, ['dtype'], executionForm.dtype);
-    setParamIfPresent(pipeline, ['device'], executionForm.device);
-    setParamIfPresent(pipeline, ['auto_offload'], executionForm.autoOffload);
-    setParamIfPresent(pipeline, ['offload_mode'], executionForm.offloadMode);
-    applySequenceValues(
+    const nodes = {
+      quantization,
+      recipe,
+      pipeline,
       sequence,
-      { ...form, width: 768, height: 512, numFrames: 81, steps: 8, guidanceScale: 1 },
-      settings.promptsJson,
-    );
-    setParamIfPresent(compose, ['fps'], 16);
-    setParamIfPresent(compose, ['transition_seconds'], settings.transitionSeconds);
-    setParamIfPresent(upscaler, ['model_id'], VIDEO_DELIVERY_UPSCALER.model);
-    setParamIfPresent(upscaler, ['downscale'], VIDEO_DELIVERY_UPSCALER.downscale);
-    setParamIfPresent(overlay, ['lrc'], settings.lrc);
-    setParamIfPresent(overlay, ['fps'], 16);
-    setParamIfPresent(overlay, ['font_size'], settings.fontSize ?? 58);
-    setParamIfPresent(overlay, ['bottom_margin'], settings.bottomMargin ?? 70);
-    setParamIfPresent(audioGenerate, ['task_type'], 'text2music');
-    setParamIfPresent(audioGenerate, ['prompt'], settings.audio.prompt);
-    setParamIfPresent(audioGenerate, ['negative_prompt'], '');
-    setParamIfPresent(audioGenerate, ['lyrics'], settings.audio.lyrics);
-    setParamIfPresent(audioGenerate, ['audio_duration'], settings.audio.durationSeconds);
-    setParamIfPresent(audioGenerate, ['num_inference_steps'], settings.audio.steps);
-    setParamIfPresent(audioGenerate, ['guidance_scale'], settings.audio.guidanceScale);
-    setParamIfPresent(audioGenerate, ['shift'], settings.audio.shift ?? 3);
-    setParamIfPresent(audioGenerate, ['seed'], settings.audio.seed);
-    setParamIfPresent(audioGenerate, ['bpm'], settings.audio.bpm ?? 0);
-    setParamIfPresent(audioGenerate, ['keyscale'], settings.audio.keyscale ?? '');
-    setParamIfPresent(audioGenerate, ['timesignature'], settings.audio.timesignature ?? '4');
-    setParamIfPresent(audioGenerate, ['vocal_language'], settings.audio.vocalLanguage ?? 'en');
-    setParamIfPresent(audioGenerate, ['sample_rate'], settings.audioFit.targetSampleRate ?? 48000);
-    applyAudioFitValues(audioFit, settings.audioFit);
-    setParamIfPresent(exporter, ['fps'], 16);
+      compose,
+      upscaler,
+      overlay,
+      audioGenerate,
+      audioFit,
+      exporter,
+    };
+    const values = lyricVideoWorkflowFieldValues(settings, form);
+    for (const role of Object.keys(nodes) as (keyof typeof nodes)[])
+      for (const { fields, value } of values[role]) setParamIfPresent(nodes[role], fields, value);
     if (
       !ensureConnection(quantization, ['quantization_config'], recipe, ['quantization_config']) ||
       !ensureConnection(recipe, ['execution_recipe'], pipeline, ['execution_recipe']) ||

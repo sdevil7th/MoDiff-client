@@ -80,6 +80,96 @@ before(async () => {
 });
 after(async () => server?.close());
 
+test('fresh lyric composite keeps its branch brief and authored attention through save and reopen', async () => {
+  const lifecycle = await server.ssrLoadModule('/src/studio/templateWorkflow.ts');
+  const studioModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const studio = studioModule.useStudioStore;
+  const flow = exporter.useFlowStore;
+  const registry = nodes.useNodesStore;
+  const previous = [studio.getState(), flow.getState(), registry.getState()];
+  const originalFetch = globalThis.fetch;
+  try {
+    const template = templates.find((item) => item.id === 'ace_step_lyric_music_video');
+    const originalTemplate = structuredClone(template);
+    assert.ok(template.executionSelection, 'fresh composites need the ordinary backend-owned audio recipe');
+    const row = fixture.recipes.find((item) => item.id === 'ace:ACE-Step:text_to_audio');
+    const historicalSpec = structuredClone(row.spec);
+    const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
+    studio.getState().applyTemplate(template);
+    studio.getState().updateForm({ device: 'cpu:0', offloadMode: 'none', autoOffload: false });
+    registry.setState(authority);
+    globalThis.fetch = async (url) => {
+      assert.match(String(url), /operations\/starter/);
+      return Response.json(row.starter);
+    };
+    const form = structuredClone(studio.getState().form);
+    assert.notEqual(form.prompt, template.workflowBlockSettings.lyricVideo.audio.prompt);
+    await lifecycle.createTemplateOperationWorkflow(template, form, studioModule.captureWorkflowOperationContext());
+    const flat = groups.unpackVisualOperationGroups(flow.getState().toObject()).graph;
+    assert.equal(flat.nodes.length, 14);
+    assert.equal(studio.getState().graphBinding, null);
+    const generator = flat.nodes.find(
+      (node) => node.data.module === 'modules.DiffusersAudio' && node.data.action === 'Generate',
+    );
+    const field = (node, name) => node.data.params[name].value ?? node.data.params[name].default;
+    const brief = template.workflowBlockSettings.lyricVideo;
+    assert.equal(field(generator, 'prompt'), brief.audio.prompt);
+    assert.equal(field(generator, 'bpm'), 100);
+    assert.equal(field(generator, 'lyrics'), brief.audio.lyrics);
+    assert.equal(field(generator, 'audio_duration'), 30);
+    assert.deepEqual(field(generator, 'seed'), { value: brief.audio.seed, isRandom: false });
+    for (const recipe of flat.nodes.filter((node) => node.data.action === 'DiffusersExecutionRecipe'))
+      assert.equal(field(recipe, 'attention_backend'), 'auto');
+    const sequence = flat.nodes.find((node) => node.data.action === 'GenerateSequence');
+    assert.equal(field(sequence, 'prompts_json'), brief.promptsJson);
+    assert.equal(field(sequence, 'num_frames'), 81);
+    assert.equal(field(sequence, 'frame_rate'), 16);
+    assert.equal(field(sequence, 'width'), 768);
+    assert.equal(field(sequence, 'height'), 512);
+    assert.equal(
+      field(
+        flat.nodes.find((node) => node.data.action === 'Compose'),
+        'transition_seconds',
+      ),
+      0.35,
+    );
+    assert.equal(
+      field(
+        flat.nodes.find((node) => node.data.action === 'LyricOverlay'),
+        'lrc',
+      ),
+      brief.lrc,
+    );
+    assert.ok(flat.edges.some((edge) => edge.source === generator.id && edge.targetHandle === 'audio'));
+    // Ordinary node edits, rather than the advisory root form, remain authoritative.
+    flow.getState().setParam(generator.id, 'prompt', 'An explicitly edited soundtrack brief');
+    const audioRecipe = flat.nodes.find((node) => node.data.studioRole === 'diffusersRecipe');
+    assert.ok(audioRecipe);
+    flow.getState().setParam(audioRecipe.id, 'attention_backend', '_native_math');
+    studio.getState().saveActiveWorkflowTab(true);
+    const expected = flow.getState().exportGraph('lyric-save', undefined, { randomizeSeeds: false });
+    const saved = structuredClone(studio.getState().workflowTabs.find((tab) => tab.id === tabId));
+    assert.equal(saved.snapshot.studioGraphBinding, null);
+    studio.setState({ workflowTabs: [], activeWorkflowTabId: tabId });
+    studio.getState().mergeBackendWorkflow({ ...saved, revision: 1 });
+    studio.getState().hydrateActiveWorkflowCanvas();
+    assert.deepEqual(flow.getState().exportGraph('lyric-save', undefined, { randomizeSeeds: false }), expected);
+    assert.equal(studio.getState().graphBinding, null);
+    assert.deepEqual(template, originalTemplate);
+    assert.deepEqual(row.spec, historicalSpec, 'historical managed specification is never rewritten');
+    assert.ok(
+      row.spec.bindings.some(
+        ([role, name, source]) => role === 'diffusersRecipe' && name === 'attention_backend' && source === 'nativeMath',
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    studio.setState(previous[0], true);
+    flow.setState(previous[1], true);
+    registry.setState(previous[2], true);
+  }
+});
+
 function actualStarter(row) {
   return starters.parseOperationStarter(
     row.starter,

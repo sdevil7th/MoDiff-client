@@ -1,4 +1,4 @@
-import { resolveTemplateModelSelection } from './templateModelSelection';
+import { resolveTemplateModelSelection, templateHasAudioPrimary } from './templateModelSelection';
 import { hasTemplateOperationRecipe } from './templateOperationSelections';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useFlowStore } from '../stores/useFlowStore';
@@ -203,11 +203,10 @@ export async function createTemplateOperationWorkflow(
   );
   if (!spec || !capability)
     throw new Error('The selected template execution specification is unavailable. Refresh model capabilities.');
-  const selected =
-    template.example?.mediaType === 'audio'
-      ? resolveTemplateModelSelection(template, nodesStore.studioModelCapabilities)
-      : null;
-  if (template.example?.mediaType === 'audio' && !selected)
+  const selected = templateHasAudioPrimary(template)
+    ? resolveTemplateModelSelection(template, nodesStore.studioModelCapabilities)
+    : null;
+  if (templateHasAudioPrimary(template) && !selected)
     throw new Error('The selected audio template needs one reviewed immutable model revision. Refresh capabilities.');
   const starter = await requestOperationStarter(
     selection.pipelineClass,
@@ -225,6 +224,19 @@ export async function createTemplateOperationWorkflow(
       ? ['modules.ModularDiffusers.Lora', 'modules.DiffusersImage.LoadAdapter', 'modules.DiffusersAudio.LoadAdapter']
       : []),
     ...(template.workflowBlocks?.includes('upscaler') ? ['modules.Spandrel.Upscaler'] : []),
+    ...(template.workflowBlocks?.includes('lyric_video')
+      ? [
+          'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
+          'modules.DiffusersRuntime.DiffusersExecutionRecipe',
+          'modules.DiffusersVideo.LoadPipeline',
+          'modules.DiffusersVideo.GenerateSequence',
+          'modules.Video.Compose',
+          'modules.Spandrel.Upscaler',
+          'modules.Video.LyricOverlay',
+          'modules.Audio.FitDuration',
+          'modules.Video.ExportWithAudio',
+        ]
+      : []),
   ];
   if (registryKeys.some((key) => !useNodesStore.getState().nodesRegistry[key])) {
     await useNodesStore.getState().fetchNodes();

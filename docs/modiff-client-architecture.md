@@ -218,6 +218,16 @@ the same stages manually with native typed wires and add an output Preview, Save
 or Export node. Plain scalar aliases such as `text`/`string` and `bool`/`boolean`
 match in native connections; media collections and model objects remain distinct.
 
+Fresh lyric-video templates use the declared audio starter plus their actual
+visual sequence, composition, upscale, lyric overlay, timeline fit and AV export
+nodes. The soundtrack's stored branch prompt overrides the advisory root prompt
+at creation, and the primary audio task selects its immutable model independently
+of the final video media type. The new graph has no managed Studio binding, so
+later finalization and reopening cannot reapply the root prompt or a historical
+forced-math policy. Ordinary node edits remain authoritative. Existing managed
+documents and registered definitions retain their original contracts. This
+authoring behavior grants neither Auto admission nor model/output qualification.
+
 `operationAuthoring` is a versioned, advisory annotation on those ordinary nodes.
 It stores the selected operation, initial visible defaults and retained unsupported
 settings. It does not grant execution permission or replace node params.

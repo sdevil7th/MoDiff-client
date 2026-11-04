@@ -1,5 +1,10 @@
 import type { StudioModelProfile, StudioTemplate } from './types';
 
+/** A composite's final media does not change its declared primary task. */
+export function templateHasAudioPrimary(template: Pick<StudioTemplate, 'mode'>) {
+  return ['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint'].includes(template.mode);
+}
+
 /** Exact backend ownership for a fresh recipe, independent of Auto and media
  * qualification. It grants no package installation or execution permission. */
 export function resolveTemplateModelSelection(template: StudioTemplate, capabilities: StudioModelProfile[]) {
@@ -20,7 +25,7 @@ export function resolveTemplateModelSelection(template: StudioTemplate, capabili
     !/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}\/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/u.test(profile.default_repo)
   )
     return null;
-  const audio = template.example?.mediaType === 'audio';
+  const audio = templateHasAudioPrimary(template);
   const artifact = template.modelArtifact ?? (audio ? template.workflowBlockSettings?.lora?.baseModel : undefined);
   const repository = artifact?.value ?? profile.default_repo;
   const exampleRevision = template.example?.modelRevision;

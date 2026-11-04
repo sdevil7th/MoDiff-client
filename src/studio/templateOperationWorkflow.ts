@@ -1,5 +1,6 @@
 import { attachPromptEnhancementParents } from './promptEnhancementAuthoring';
 import { attachTemplateImageComposite } from './templateImageComposite';
+import { attachTemplateLyricVideo } from './templateLyricVideo';
 import { selectedAudioAdapterPolicy } from '../workflow/selectedAudioAdapterAuthority';
 import {
   validateModelSetupAdapterSelection,
@@ -30,7 +31,7 @@ import { resolveStudioResourceForm } from './resourcePlanner';
 import { orderedAdapterChainLinks } from './adapterChainLinks';
 import { resolveStudioExecutionSpecValues } from './executionSpecValues';
 import { selectedNodeWeightFormatArtifact } from './weightFormat';
-import { resolveTemplateModelSelection } from './templateModelSelection';
+import { resolveTemplateModelSelection, templateHasAudioPrimary } from './templateModelSelection';
 import type {
   StudioExecutionSpec,
   StudioFormState,
@@ -128,7 +129,7 @@ export function createTemplateOperationGraph(
     throw new Error('The backend resolved a different template execution profile.');
   const lockedRevision = template.modelArtifact?.revision ?? template.example?.modelRevision;
   if (
-    template.example?.mediaType === 'audio' ||
+    templateHasAudioPrimary(template) ||
     template.modelArtifact ||
     (lockedRevision && /^[a-f0-9]{40}$/u.test(lockedRevision))
   ) {
@@ -175,7 +176,7 @@ export function createTemplateOperationGraph(
   const revision = revisionField?.value ?? revisionField?.default;
   const values = resolveStudioExecutionSpecValues(form, spec, capability, {
     ...(typeof revision === 'string' ? { defaultModelRevision: revision } : {}),
-    ...(template.example?.mediaType === 'audio'
+    ...(templateHasAudioPrimary(template)
       ? { audioTemplateBaseModel: resolveTemplateModelSelection(template, [capability])?.repository }
       : {}),
   });
@@ -502,6 +503,15 @@ export function createTemplateOperationGraph(
             link.targetHandles,
           );
       }
+    } else if (block === 'lyric_video') {
+      attachTemplateLyricVideo({
+        form,
+        settings: template.workflowBlockSettings?.lyricVideo,
+        audioGenerate: roles.get('audioGenerate'),
+        utility,
+        set,
+        connect,
+      });
     } else if (block === 'masked_composite') {
       attachTemplateImageComposite({
         graph,

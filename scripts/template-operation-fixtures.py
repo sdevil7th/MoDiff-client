@@ -106,6 +106,8 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                         "modules.DiffusersImage.OutpaintCanvas", "modules.Audio.Export", "modules.Audio.Load", "modules.Image.Load",
                         "modules.DiffusersAudio.LoadAdapter", "modules.Video.Load", "modules.Video.Export", "modules.Video.ExportWithAudio", "modules.Video.ExportAsset",
                         "modules.Audio.FitDuration", "modules.DiffusersAudio.LoadPipeline", "modules.DiffusersAudio.Generate",
+                        "modules.DiffusersVideo.LoadPipeline", "modules.DiffusersVideo.GenerateSequence",
+                        "modules.Video.Compose", "modules.Video.LyricOverlay",
                         "modules.DiffusersRuntime.PipelineQuantizationConfigV2", "modules.DiffusersRuntime.DiffusersExecutionRecipe"):
                 describe(key)
             if any(item["selection"]["pipelineClass"] == "Cosmos3OmniModularPipeline" for item in selections):
