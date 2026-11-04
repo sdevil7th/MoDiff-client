@@ -46,6 +46,8 @@ The model list is filtered by task. A model profile being visible means the clie
   already-open Queue, Setup, or Block tool. Refresh preserves your explicit open/collapsed choice.
 - **Save** writes the active snapshot to the backend **My workflows** library. Its menu provides Save as and a JSON
   file copy; `Ctrl+S` saves the current name and `Ctrl+Shift+S` opens Save as.
+  Opening a saved workflow from the library keeps its saved revision and timestamp.
+  Subsequent edits still autosave; opening an unchanged document does not save it again.
 - **Export** provides a workflow package, latest-output package, and Gallery shortcut. Expert also exposes raw workflow/API graph JSON.
 - **Auto view / Expert view** changes editing tools and node discovery. It preserves the graph and execution settings.
 - **Resources → Automatic / Expert overrides** selects this workflow's execution policy in either view.

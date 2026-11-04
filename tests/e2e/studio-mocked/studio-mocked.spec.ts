@@ -1048,6 +1048,74 @@ test('unchanged canvas checkpoints and native tab switches keep a saved document
   });
 });
 
+test('My workflows opens a closed saved document without rewriting its backend revision and still autosaves edits', async ({
+  page,
+}) => {
+  const workflowId = 'library-open-no-echo-regression';
+  const fixture = await prepareRestorationStartup(page, workflowId);
+  await page.route('**/workflows**', async (route) => {
+    if (route.request().method() === 'GET' && new URL(route.request().url()).pathname === '/workflows') {
+      await route.fulfill({ json: { workflows: [fixture.getBackend()] } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await fixture.waitForCanvas();
+  await page.clock.runFor(1200);
+  await page.getByRole('button', { name: 'Close Disposable restoration regression', exact: true }).click();
+  await page.clock.runFor(1200);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await fixture.waitForCanvas();
+  await page.clock.runFor(1200);
+  expect((await fixture.read()).tab?.id).not.toBe(workflowId);
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
+  const before = fixture.getBackend();
+  const start = fixture.events.length;
+  await page.getByRole('button', { name: 'Workflow library', exact: true }).click();
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(500);
+      return page.getByRole('button', { name: 'My workflows', exact: true }).count();
+    })
+    .toBe(1);
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  await page
+    .getByTestId(`saved-workflow-${workflowId}`)
+    .getByRole('button', {
+      name: 'Disposable restoration regression',
+      exact: true,
+    })
+    .click();
+  await expect.poll(async () => (await fixture.read()).tab?.id).toBe(workflowId);
+  await page.clock.runFor(1500);
+  expect(fixture.events.slice(start).filter((event) => event.method === 'PUT')).toEqual([]);
+  expect(fixture.getBackend()).toEqual(before);
+  await fixture.assertCurrentPreview();
+  const text = page.locator('.react-flow__node[data-id="restoration-text"]').getByRole('textbox', {
+    name: 'Text',
+    exact: true,
+  });
+  await text.fill('A real edit after opening from My workflows');
+  await text.blur();
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(600);
+      return fixture.getBackend().revision;
+    })
+    .toBe(before.revision + 1);
+  expect(restorationText(fixture.getBackend().snapshot)).toBe('A real edit after opening from My workflows');
+  await page.clock.runFor(1200);
+  expect(fixture.events.slice(start).filter((event) => event.method === 'PUT')).toHaveLength(1);
+  expect(fixture.graphPosts()).toBe(0);
+  await test.info().attach('library-open-no-echo.json', {
+    body: JSON.stringify({ before, after: fixture.getBackend(), events: fixture.events.slice(start) }, null, 2),
+    contentType: 'application/json',
+  });
+});
+
 test('an explicit Save acknowledgement consumes the same document queued by mounted autosave with exactly one PUT', async ({
   page,
 }) => {

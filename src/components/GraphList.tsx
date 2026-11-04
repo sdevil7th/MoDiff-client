@@ -41,6 +41,7 @@ import type { WorkflowTab } from '../studio/types';
 import {
   backendWorkflowTab,
   deleteWorkflowNow,
+  markBackendWorkflow,
   markWorkflowTabOpen,
   saveDetachedWorkflowNow,
   subscribeBackendWorkflowChanges,
@@ -413,6 +414,8 @@ function GraphList() {
       const complete = await fetchSavedWorkflow(tab);
       markWorkflowTabOpen(complete.id);
       if (!workflowTabs.some((item) => item.id === complete.id)) {
+        // Opening a backend-owned document must not echo it through autosave.
+        markBackendWorkflow(complete);
         mergeBackendWorkflow(complete);
       }
       switchWorkflowTab(complete.id);
