@@ -45,6 +45,21 @@ function sampleTemplate(overrides = {}) {
   };
 }
 
+test('the contact-sheet identity brief permits the rear-view exit and declares four panels', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'z_image_cinematic_contact_sheet');
+  assert.ok(template);
+  assert.match(template.prompt, /first three frames where his face is visible/i);
+  assert.doesNotMatch(template.prompt, /same face[^.]*all four frames/i);
+  const exit = template.prompt.split('Frame four, lower right:')[1]?.split('Each frame')[0];
+  assert.match(exit, /from directly behind/i);
+  assert.match(exit, /back of his head/i);
+  assert.match(exit, /strides away from camera/i);
+  assert.doesNotMatch(template.description, /3x3/i);
+  assert.equal(template.example.lockedSeed, 4301);
+  assert.equal(template.example.expectedOutput.width, 1344);
+  assert.equal(template.example.expectedOutput.height, 768);
+});
+
 test('reviewed FLUX3 blank conditioning is scoped to its exact public profile', () => {
   for (const [id, declaration] of [
     ['flux3_klein_fp8r512_text_to_image', 'flux3-distilled-no-negative-input'],
