@@ -1,3 +1,8 @@
+// Versioned primary-model summaries add 82/83 compressed startup bytes over
+// 496485/674972; deferred gzip falls from 329730 to 329712. Only studio-templates.js
+// changes after immutable import-URL normalization, with all 94 JavaScript names,
+// four startup/90 deferred assets and dependency/loading rules unchanged. Add only
+// the measured cost, retaining 22/25-byte headroom and both deferred caps.
 // The accepted rear-view contact-sheet prompt and corrected four-panel description
 // measure largest/startup/deferred gzip 496485/674972/329730 versus the packaged
 // D59 build's 496250/674736/329640. Only studio-templates.js changes after immutable
@@ -331,6 +336,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  82 +
   235 +
   39 +
   128 +
@@ -475,6 +481,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  83 +
   236 +
   38 +
   132 +
