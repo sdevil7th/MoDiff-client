@@ -356,7 +356,7 @@ test('the 54 image templates preserve creator contracts except explicit versione
   assert.equal(revisions.schemaVersion, 1);
   assert.deepEqual(
     revisions.revisions.map((row) => row.templateId),
-    ['flux_lora_cinematic_octane_3d'],
+    ['flux_lora_cinematic_octane_3d', 'z_image_cinematic_contact_sheet'],
   );
   const images = templates.filter((template) => template.example?.mediaType === 'image');
   assert.equal(images.length, 54);
@@ -367,12 +367,20 @@ test('the 54 image templates preserve creator contracts except explicit versione
     const revision = revisions.revisions.find((row) => row.templateId === template.id);
     if (revision) {
       const digest = (text) => createHash('sha256').update(text).digest('hex');
-      assert.equal(revision.recipeVersion, 3);
       assert.equal(digest(expected.contract.lockedSettings.prompt), revision.previousPromptSha256);
       assert.equal(digest(template.prompt), revision.promptSha256);
-      assert.deepEqual(revision.lockedSettings, { guidanceScale: 1, resourceMode: 'expert' });
-      assert.doesNotMatch(template.prompt, /\b(?:scar|wound|blood|bruise)\b/iu);
-      assert.match(template.prompt, /healthy unmarked face/u);
+      if (template.id === 'flux_lora_cinematic_octane_3d') {
+        assert.equal(revision.recipeVersion, 3);
+        assert.deepEqual(revision.lockedSettings, { guidanceScale: 1, resourceMode: 'expert' });
+        assert.doesNotMatch(template.prompt, /\b(?:scar|wound|blood|bruise)\b/iu);
+        assert.match(template.prompt, /healthy unmarked face/u);
+      } else {
+        assert.equal(template.id, 'z_image_cinematic_contact_sheet');
+        assert.equal(revision.recipeVersion, 2);
+        assert.deepEqual(revision.lockedSettings, {}, 'the exit revision changes no generation control');
+        assert.match(template.prompt, /first three frames where his face is visible/iu);
+        assert.match(template.prompt, /Frame four, lower right: a REAR-VIEW LONG SHOT from directly BEHIND/iu);
+      }
       assert.equal(template.example.status, 'unverified', 'creative review never grants public qualification');
       expectedContract.lockedSettings.prompt = template.prompt;
       Object.assign(expectedContract.lockedSettings, revision.lockedSettings);
