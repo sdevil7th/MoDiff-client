@@ -58,18 +58,20 @@ export function audioFitWorkflowFieldValues(settings: StudioAudioFitSettings): C
 export function soundtrackWorkflowFieldValues(
   settings: NonNullable<StudioTemplateWorkflowBlockSettings['soundtrack']>,
   executionForm: StudioFormState,
-  options: { retainSelectorMetadata?: boolean } = {},
+  options: { retainSelectorMetadata?: boolean; attentionBackend?: StudioFormState['attentionBackend'] } = {},
 ): Record<'quantization' | 'recipe' | 'pipeline' | 'generate' | 'audioFit' | 'exporter', ControlledFieldValue[]> {
   const fields = (values: Record<string, unknown>) =>
     Object.entries(values).map(([field, value]) => ({ fields: [field], value }));
   return {
     quantization: fields({ backend: 'none', components: [], dtype: executionForm.dtype }),
-    // ACE-Step's mask needs portable math SDPA on the reviewed ROCm runtime.
+    // Keep the legacy managed recipe's explicit math policy. Fresh ordinary
+    // graphs pass their authored choice; automatic SDPA can select a supported
+    // kernel without pretending that a CUDA device guarantees flash support.
     recipe: fields({
       device_map: 'none',
       offload_mode: executionForm.offloadMode,
       device: executionForm.device,
-      attention_backend: '_native_math',
+      attention_backend: options.attentionBackend ?? '_native_math',
       attention_components: '',
       vae_slicing: true,
       vae_tiling: true,

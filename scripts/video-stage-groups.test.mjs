@@ -322,6 +322,23 @@ test('five retained video template factories preserve creative settings on their
     };
     const graph = builder.createTemplateOperationGraph(template, form, starter, fixture.registry, spec, capability);
     const flat = groups.unpackVisualOperationGroups(graph).graph;
+    for (const recipe of flat.nodes.filter((node) => node.data.action === 'DiffusersExecutionRecipe'))
+      assert.equal(recipe.data.params.attention_backend.value, 'auto', `${row.id}:fresh attention`);
+    for (const attentionBackend of ['_native_math', '_native_flash']) {
+      const authoredGraph = builder.createTemplateOperationGraph(
+        template,
+        { ...form, attentionBackend },
+        starter,
+        fixture.registry,
+        spec,
+        capability,
+      );
+      const authoredRecipes = groups
+        .unpackVisualOperationGroups(authoredGraph)
+        .graph.nodes.filter((node) => node.data.action === 'DiffusersExecutionRecipe');
+      for (const authoredRecipe of authoredRecipes)
+        assert.equal(authoredRecipe.data.params.attention_backend.value, attentionBackend);
+    }
     assert.ok(
       !flat.nodes.some((node) => node.data.module === 'modules.DiffusersVideo' && node.data.action === 'Generate'),
     );

@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired scoped audio creative-input receipts and current video stages.
-          ref: a877f992bc788f2c403b4814586006635bc5e76f
+          ref: d9610e952d3fa911179bc43acf867df6a9bad328
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: a877f992bc788f2c403b4814586006635bc5e76f
+          ref: d9610e952d3fa911179bc43acf867df6a9bad328
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

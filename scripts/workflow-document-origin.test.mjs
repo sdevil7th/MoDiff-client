@@ -144,6 +144,72 @@ function ordinaryImageSnapshot(module, action, resourceMode) {
   };
 }
 
+test('saved and imported Automatic forms retain authored precision and offload through restore', async (t) => {
+  const previousFlow = flow.getState();
+  const previousStudio = studio.getState();
+  const previousFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => assert.fail('Document restore cannot execute or replan a model.');
+    for (const [modelType, mode, offloadMode, dtype] of [
+      ['Flux2KleinPipeline', 'multi_image_reference_edit', 'group_cpu', 'float16'],
+      ['Flux2KleinPipeline', 'multi_image_reference_edit', 'group_disk', 'bfloat16'],
+      ['LTXVideoPipeline', 'video_to_video', 'group_cpu', 'float32'],
+      ['WanTI2VPipeline', 'text_to_video', 'none', 'bfloat16'],
+    ]) {
+      await t.test(`${modelType}: ${offloadMode}/${dtype}`, async () => {
+        studio.setState({ workflowTabs: [], activeWorkflowTabId: null });
+        const form = {
+          ...defaultForm,
+          modelType,
+          mode,
+          prompt: 'Keep this authored Automatic recipe.',
+          resourceMode: 'auto',
+          dtype,
+          quantizationMode: 'none',
+          device: 'cuda:0',
+          autoOffload: offloadMode !== 'none',
+          offloadMode,
+        };
+        const snapshot = {
+          nodes: [],
+          edges: [],
+          studioForm: form,
+          selectedMode: mode,
+          studioGraphBinding: null,
+          activeTemplateId: null,
+          sourceOutputId: null,
+        };
+        const original = structuredClone(snapshot);
+        const parsed = packages.parseWorkflowPackage(packages.buildWorkflowPackage({ form, graph: snapshot }));
+        assert(parsed);
+        const id = studio.getState().createWorkflowTab('Authored Automatic document', parsed.snapshot, 'import');
+        const assertForm = () => {
+          assert.deepEqual(tab(id).snapshot.studioForm, form);
+          assert.deepEqual(studio.getState().form, form);
+        };
+        assertForm();
+        studio.getState().createWorkflowTab('Unrelated draft');
+        studio.getState().switchWorkflowTab(id);
+        assertForm();
+        const saved = structuredClone({ ...tab(id), dirty: false, intent: 'saved', backendRevision: 1 });
+        studio.setState({ workflowTabs: [], activeWorkflowTabId: id });
+        studio.getState().mergeBackendWorkflow({ ...saved, revision: 1 });
+        studio.getState().hydrateActiveWorkflowCanvas();
+        assertForm();
+        const persisted = studio.persist.getOptions().partialize(studio.getState());
+        storage.setItem('modiff.studio', JSON.stringify({ state: persisted, version: 0 }));
+        await studio.persist.rehydrate();
+        assertForm();
+        assert.deepEqual(snapshot, original);
+      });
+    }
+  } finally {
+    globalThis.fetch = previousFetch;
+    flow.setState(previousFlow);
+    studio.setState(previousStudio);
+  }
+});
+
 test('ordinary image document normalization preserves memory policy through import, switching and hydration', async (t) => {
   const previousFlow = flow.getState();
   const previousStudio = studio.getState();

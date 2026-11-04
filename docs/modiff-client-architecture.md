@@ -1123,6 +1123,12 @@ is the single policy selector.
 
 Both storage keys and legacy normalizers remain unchanged. A restored workflow
 keeps its own resource settings while tabs share the global editing preference.
+Import, backend hydration and local-storage restore coerce persisted form types
+without selecting a new Auto recipe. Authored precision, quantization and offload
+values survive even when today's profile recommends another placement. An
+explicit model/settings edit can request a new plan; Run still validates the
+unchanged document against current backend admission. Restoring values grants
+neither resource fit nor execution qualification.
 Explicit graph imports preserve the document's normalized memory policy while
 inferring their image recipe summary. Raw graph imports also retain each node's
 authored device value and default, including mixed CPU/accelerator placement;

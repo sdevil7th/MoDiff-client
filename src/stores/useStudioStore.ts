@@ -546,17 +546,21 @@ function normalizeWorkflowSnapshot(
   const activeTemplate = activeTemplateId
     ? STUDIO_TEMPLATES.find((template) => template.id === activeTemplateId)
     : undefined;
-  const rawPersistedStudioForm = resolveStudioResourceForm(coerceStudioFormState(value.studioForm));
+  // Restoring an authored document is not a new Auto-plan selection. Replacing
+  // its precision/offload fields with current profile defaults can split the
+  // displayed form from its unchanged executable graph. Run still checks the
+  // current backend plan and reports unsupported settings without rewriting it.
+  const rawPersistedStudioForm = coerceStudioFormState(value.studioForm);
   // Template identity is durable workflow provenance. Older clients could
   // coerce newly added model types (notably LTX and Wan variants) to Z-Image
   // while retaining the original graph and template id. Repair those existing
   // documents from their template contract instead of perpetuating the split.
   const persistedStudioForm = activeTemplate
-    ? resolveStudioResourceForm({
+    ? {
         ...rawPersistedStudioForm,
         mode: activeTemplate.mode,
         modelType: activeTemplate.modelType,
-      })
+      }
     : rawPersistedStudioForm;
   const normalizedFlow = normalizePersistedFlowState({
     nodes: Array.isArray(value.nodes) ? safeCloneJson(value.nodes) : [],
@@ -851,7 +855,7 @@ function normalizePersistedStudioState(
   // live values normally. A legacy canonical graph whose missing binding was
   // recovered during snapshot normalization is the exception: its actual
   // loader node is authoritative and can correct stale top-level model data.
-  const liveForm = resolveStudioResourceForm(coerceStudioFormState(mergedState.form));
+  const liveForm = coerceStudioFormState(mergedState.form);
   const activeBinding = activeSnapshot?.studioGraphBinding;
   const liveIdentityMatchesActiveDocument =
     !activeBinding || (liveForm.mode === activeBinding.mode && liveForm.modelType === activeBinding.modelType);

@@ -561,7 +561,9 @@ export function createTemplateOperationGraph(
         audioFit: utility(CONTROLLED_WORKFLOW_NODE_KEYS.audioFit, 4),
         exporter: utility(CONTROLLED_WORKFLOW_NODE_KEYS.exportWithAudio, 5),
       };
-      const fieldValues = soundtrackWorkflowFieldValues(settings, resolveStudioResourceForm(form));
+      const fieldValues = soundtrackWorkflowFieldValues(settings, resolveStudioResourceForm(form), {
+        attentionBackend: form.attentionBackend ?? 'auto',
+      });
       for (const role of Object.keys(soundtrack) as (keyof typeof soundtrack)[])
         for (const { fields, value } of fieldValues[role]) set(soundtrack[role], fields, value);
       // Replace the owned terminal explicitly. The ordinary graph contains
