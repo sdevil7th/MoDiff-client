@@ -1598,6 +1598,15 @@ model object or credential is captured. Receipt identity cannot be reassigned by
 history enrichment. See the paired backend API reference for
 limits and omissions; receipt presence is not output-quality/publication proof.
 
+Optional `summaryScopeVersion: 2` keeps builtin LoRA/adapter descriptor fields in
+their original node records while excluding them from the primary-model summary.
+The parser recomputes summary, ambiguity and omissions with the same exact builtin
+identities as the backend. Other primary owners and custom lookalikes remain
+subject to ordinary ambiguity checks. Unknown versions are rejected. Without the
+marker, legacy all-node aggregation remains unchanged, including a historical
+adapter/base revision ambiguity. Refresh, output packages and history retain the
+marker; parsing does not rewrite old receipts or prove that an adapter was applied.
+
 `update_value` messages that match recognized output fields are attributed to the active run context. The client stores a bounded output view and synchronizes through `/studio_outputs`. A backend preview slot, scoped by workflow/node/field, is the authority for the main preview: an accepted new run marks the slot pending, a generated output promotes its durable output ID, and tab changes or browser refreshes do not reclassify it. The Previous strip excludes that ID. Saved canvas values and current-run heuristics are compatibility fallbacks only when talking to an older backend that has no preview-slot contract.
 
 An output can carry:

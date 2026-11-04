@@ -91,6 +91,8 @@ export type ResolvedExecutionInputs = {
   graphTasks?: { loaderId: string; pipelineClass: string; task: string | null }[];
   /** Version two includes observed ordinary video owners; absence is legacy. */
   graphTasksVersion?: 2;
+  /** Version two excludes builtin adapter descriptors from the primary summary. Absence is legacy. */
+  summaryScopeVersion?: 2;
   /** Optional accounting never changes the legacy consumed-input summary. */
   fieldAccountingStatus?: { schemaVersion: 1; truncated: boolean };
   appliedAdaptersStatus?: { schemaVersion: 1; truncated: boolean };
@@ -605,6 +607,9 @@ export function coerceResolvedExecutionInputs(
   )
     return undefined;
   if ([...value.ambiguousFields, ...value.unavailableFields].some((key) => !summaryNames.has(key))) return undefined;
+  if (hasOwn(value, 'summaryScopeVersion') && value.summaryScopeVersion !== 2) return undefined;
+  const scopedSummary = value.summaryScopeVersion === 2;
+  let adapterDescriptorSeen = false;
   const seen = new Set<string>();
   const accounting = new Map<string, ExecutionFieldAccounting>();
   const applications = new Map<string, AppliedAdapters>();
@@ -623,6 +628,11 @@ export function coerceResolvedExecutionInputs(
       return undefined;
     seen.add(node.nodeId);
     const scope = `${node.module.replace(/^modules\./u, '')}.${node.action}`;
+    const adapterDescriptor =
+      scope === 'ModularDiffusers.Lora' ||
+      scope === 'DiffusersImage.LoadAdapter' ||
+      scope === 'DiffusersAudio.LoadAdapter';
+    adapterDescriptorSeen ||= adapterDescriptor;
     if (hasOwn(node, 'appliedAdapters')) {
       const parsed = appliedAdapters(node.appliedAdapters, scope);
       if (!parsed) return undefined;
@@ -665,16 +675,19 @@ export function coerceResolvedExecutionInputs(
         (!text(field.sourceNodeId) || !field.sourceNodeId || !text(field.sourcePortId) || !field.sourcePortId)
       )
         return undefined;
-      const values = candidates.get(canonical) ?? new Set<string>();
-      values.add(JSON.stringify(field.value));
-      candidates.set(canonical, values);
+      if (!scopedSummary || !adapterDescriptor) {
+        const values = candidates.get(canonical) ?? new Set<string>();
+        values.add(JSON.stringify(field.value));
+        candidates.set(canonical, values);
+      }
     }
     for (const [key, reason] of Object.entries(node.omittedFields)) {
       const canonical = canonicalName(key);
       if (!canonical || !text(reason)) return undefined;
-      unavailable.add(canonical);
+      if (!scopedSummary || !adapterDescriptor) unavailable.add(canonical);
     }
   }
+  if (scopedSummary && !adapterDescriptorSeen) return undefined;
   const expectedAmbiguous = [...candidates]
     .filter(([, values]) => values.size > 1)
     .map(([key]) => key)
@@ -798,6 +811,7 @@ export function coerceResolvedExecutionInputs(
         ...(applications.has(node.nodeId) ? { appliedAdapters: applications.get(node.nodeId) } : {}),
       })),
       summary: value.summary,
+      ...(scopedSummary ? { summaryScopeVersion: 2 } : {}),
       ambiguousFields: value.ambiguousFields,
       unavailableFields: value.unavailableFields,
       uncapturedNodeIds: value.uncapturedNodeIds,

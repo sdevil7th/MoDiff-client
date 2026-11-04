@@ -625,6 +625,142 @@ function receipt() {
   };
 }
 
+function adapterSummaryReceipt(module, action) {
+  const capture = receipt();
+  capture.nodes = [
+    {
+      nodeId: 'loader',
+      module: 'modules.DiffusersImage',
+      action: 'LoadPipeline',
+      fields: {
+        model_id: { value: 'owner/model', source: 'literal' },
+        revision: { value: 'a'.repeat(40), source: 'literal' },
+      },
+      omittedFields: {},
+    },
+    {
+      nodeId: 'adapter',
+      module,
+      action,
+      fields: { revision: { value: 'b'.repeat(40), source: 'literal' } },
+      omittedFields: {},
+    },
+  ];
+  capture.summary = { repo: 'owner/model', revision: 'a'.repeat(40) };
+  capture.summaryScopeVersion = 2;
+  return capture;
+}
+
+test('scoped adapter summaries retain exact node evidence and legacy receipt semantics', () => {
+  for (const [module, action] of [
+    ['ModularDiffusers', 'Lora'],
+    ['DiffusersImage', 'LoadAdapter'],
+    ['DiffusersAudio', 'LoadAdapter'],
+  ]) {
+    for (const prefix of ['', 'modules.']) {
+      const capture = adapterSummaryReceipt(prefix + module, action);
+      for (const reverse of [false, true]) {
+        const value = structuredClone(capture);
+        if (reverse) value.nodes.reverse();
+        const original = JSON.stringify(value);
+        const parsed = inputs.coerceResolvedExecutionInputs(value, value);
+        assert.ok(parsed, `${module}.${action} reversed=${reverse}`);
+        assert.equal(parsed.summaryScopeVersion, 2);
+        assert.deepEqual(parsed.nodes, value.nodes);
+        assert.deepEqual(parsed.summary, value.summary);
+        assert.equal(JSON.stringify(value), original, 'never rewrite original evidence');
+        assert.deepEqual(inputs.coerceResolvedExecutionInputs(JSON.parse(JSON.stringify(parsed)), parsed), parsed);
+      }
+      const omitted = structuredClone(capture);
+      omitted.nodes[1].fields = {};
+      omitted.nodes[1].omittedFields = { revision: 'unsupported-value' };
+      assert.deepEqual(inputs.coerceResolvedExecutionInputs(omitted, omitted)?.summary, capture.summary);
+      const legacy = structuredClone(capture);
+      delete legacy.summaryScopeVersion;
+      delete legacy.summary.revision;
+      legacy.ambiguousFields = ['revision'];
+      const parsed = inputs.coerceResolvedExecutionInputs(legacy, legacy);
+      assert.ok(parsed);
+      assert.equal(parsed.summaryScopeVersion, undefined);
+      assert.deepEqual(parsed.summary, { repo: 'owner/model' });
+      assert.deepEqual(parsed.ambiguousFields, ['revision']);
+    }
+  }
+});
+
+test('scoped summaries reject forged model identity, unknown scope versions and custom lookalikes', () => {
+  const capture = adapterSummaryReceipt('modules.ModularDiffusers', 'Lora');
+  for (const version of [1, 3, null, true, '2']) {
+    const value = structuredClone(capture);
+    value.summaryScopeVersion = version;
+    assert.equal(inputs.coerceResolvedExecutionInputs(value, value), undefined, String(version));
+  }
+  for (const [module, action] of [
+    ['modules.custom.ModularDiffusers', 'Lora'],
+    ['modules.ModularDiffusers', 'CustomLora'],
+    ['modules.DiffusersImage', 'LoadPipeline'],
+    ['modules.DiffusersAudio', 'LoadPipeline'],
+  ]) {
+    const value = adapterSummaryReceipt(module, action);
+    assert.equal(inputs.coerceResolvedExecutionInputs(value, value), undefined, `${module}.${action}`);
+  }
+  const forged = structuredClone(capture);
+  forged.summary.revision = 'b'.repeat(40);
+  assert.equal(inputs.coerceResolvedExecutionInputs(forged, forged), undefined);
+  const missingMarker = structuredClone(capture);
+  delete missingMarker.summaryScopeVersion;
+  assert.equal(inputs.coerceResolvedExecutionInputs(missingMarker, missingMarker), undefined);
+  const multiple = structuredClone(capture);
+  multiple.nodes.push({ ...structuredClone(capture.nodes[0]), nodeId: 'other-loader' });
+  multiple.nodes[2].fields.revision.value = 'c'.repeat(40);
+  assert.equal(inputs.coerceResolvedExecutionInputs(multiple, multiple), undefined);
+  delete multiple.summary.revision;
+  multiple.ambiguousFields = ['revision'];
+  assert.ok(inputs.coerceResolvedExecutionInputs(multiple, multiple), 'real owner ambiguity remains explicit');
+  const malformed = structuredClone(capture);
+  malformed.nodes[1].fields.revision.value = { opaque: true };
+  assert.equal(inputs.coerceResolvedExecutionInputs(malformed, malformed), undefined, 'excluded fields still validate');
+});
+
+test('actual backend adapter summary projections survive the paired history parser', () => {
+  const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    `${backend}.venv/${process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'}`;
+  const generated = spawnSync(
+    python,
+    [
+      '-B',
+      '-c',
+      String.raw`
+import json
+from modiff.execution_input_provenance import capture_generation_inputs, build_resolved_execution_inputs
+receipts = []
+for module, action in [('ModularDiffusers', 'Lora'), ('DiffusersImage', 'LoadAdapter'), ('DiffusersAudio', 'LoadAdapter')]:
+    for omitted in (False, True):
+        graph = {'nodes': {
+            'loader': {'module': 'modules.DiffusersImage', 'action': 'LoadPipeline', 'params': {}},
+            'adapter': {'module': 'modules.' + module, 'action': action, 'params': {
+                'pipeline': {'sourceId': 'loader', 'sourceKey': 'pipeline'}}}}}
+        records = {
+            'loader': capture_generation_inputs('loader', graph['nodes']['loader'], {'model_id': 'owner/model', 'revision': 'a' * 40}),
+            'adapter': capture_generation_inputs('adapter', graph['nodes']['adapter'], {'revision': object() if omitted else 'b' * 40})}
+        receipts.append(build_resolved_execution_inputs(graph, records, task_id='paired', attempt_index=0, node_id='adapter'))
+print(json.dumps(receipts))
+`,
+    ],
+    { cwd: backend, encoding: 'utf8', maxBuffer: 1_000_000 },
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  const captures = JSON.parse(generated.stdout);
+  assert.equal(captures.length, 6);
+  for (const capture of captures) {
+    assert.equal(capture.summaryScopeVersion, 2);
+    assert.deepEqual(capture.summary, { repo: 'owner/model', revision: 'a'.repeat(40) });
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, capture), capture);
+  }
+});
+
 function appliedAdapterReceipt(observation = 'activated') {
   const capture = receipt();
   const adapters = [0, 1, 0.75].map((scale, index) => ({

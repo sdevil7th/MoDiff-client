@@ -30017,6 +30017,82 @@ test('mocked Gallery separates decoded image geometry from uncaptured input dime
   expect(metadata.resolvedExecutionInputs.summary).toEqual({ steps: 40 });
 });
 
+for (const scoped of [false, true]) {
+  test(`mocked Gallery preserves ${scoped ? 'scoped' : 'legacy'} adapter revisions through refresh`, async ({
+    page,
+  }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const capture = {
+      schemaVersion: 1,
+      source: 'backend-execution',
+      taskId: 'adapter-task',
+      nodeId: 'preview',
+      attemptIndex: 0,
+      ...(scoped ? { summaryScopeVersion: 2 } : {}),
+      nodes: [
+        {
+          nodeId: 'loader',
+          module: 'modules.ModularDiffusers',
+          action: 'ModelsLoader',
+          fields: {
+            repo_id: { value: 'owner/model', source: 'literal' },
+            revision: { value: 'a'.repeat(40), source: 'literal' },
+          },
+          omittedFields: {},
+        },
+        {
+          nodeId: 'adapter',
+          module: 'modules.ModularDiffusers',
+          action: 'Lora',
+          fields: { revision: { value: 'b'.repeat(40), source: 'literal' } },
+          omittedFields: {},
+        },
+      ],
+      summary: { repo: 'owner/model', ...(scoped ? { revision: 'a'.repeat(40) } : {}) },
+      ambiguousFields: scoped ? [] : ['revision'],
+      unavailableFields: [],
+      uncapturedNodeIds: [],
+      truncated: false,
+    };
+    const output = {
+      id: 'adapter-output',
+      url: '/file?file=adapter-output.webp',
+      displayType: 'image',
+      taskId: capture.taskId,
+      nodeId: capture.nodeId,
+      attemptIndex: 0,
+      createdAt: 1,
+      resolvedExecutionInputs: capture,
+    };
+    await page.route('**/studio_outputs**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: false, outputs: [output], revision: 1 }),
+      });
+    });
+    let graphRequests = 0;
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/graph' && request.method() === 'POST') graphRequests += 1;
+    });
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    for (let reload = 0; reload < 2; reload += 1) {
+      await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+      await dismissTaskLauncher(page);
+      await page.getByTestId('topbar-gallery').click();
+      await expect(page.getByTestId('gallery-output-0')).toBeVisible();
+      await page.getByTestId('gallery-view-inspect').click();
+      const inspector = page.getByTestId('gallery-inspect-view');
+      await expect(inspector.getByTestId('resolved-inputs-status')).toContainText('captured by the backend');
+      const metadata = JSON.parse((await inspector.locator('pre').textContent())!);
+      expect(metadata.resolvedExecutionInputs).toEqual(capture);
+      if (reload === 0) await page.reload({ waitUntil: 'domcontentloaded' });
+    }
+    expect(graphRequests).toBe(0);
+  });
+}
+
 test('mocked Gallery keeps effective image overrides and favorite identity after refresh', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
