@@ -25,7 +25,7 @@ import {
 import { resolveStudioResourceForm } from './resourcePlanner';
 import {
   loraWorkflowFieldValues,
-  lyricVideoWorkflowFieldValues,
+  buildLyricVideoWorkflow,
   soundtrackWorkflowFieldValues,
   upscaleWorkflowFieldValues,
 } from './controlledWorkflowValues';
@@ -921,68 +921,18 @@ export async function addLyricVideoWorkflowBlock(
   const audioGenerate = binding?.nodes.audioGenerate;
   if (!audioGenerate) throw new Error('Lyric video requires the ACE-Step audio graph.');
   return runControlledGraphTransaction(context, 'lyric-video.v1', () => {
-    const quantization = ensureControlledNode(
-      CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoQuantization,
-      'lyricVideoQuantization',
-      { x: -1280, y: 340 },
-    );
-    const recipe = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoRecipe, 'lyricVideoRecipe', {
-      x: -900,
-      y: 340,
-    });
-    const pipeline = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.videoPipeline, 'lyricVideoPipeline', {
-      x: -500,
-      y: 340,
-    });
-    const sequence = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.videoSequence, 'videoSequence', {
-      x: -100,
-      y: 340,
-    });
-    const compose = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.videoCompose, 'videoCompose', {
-      x: 300,
-      y: 340,
-    });
-    const upscaler = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.upscaler, 'upscaler', { x: 680, y: 340 });
-    const overlay = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.lyricOverlay, 'lyricOverlay', {
-      x: 1060,
-      y: 340,
-    });
-    const audioFit = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.audioFit, 'lyricAudioFit', {
-      x: 1060,
-      y: 720,
-    });
-    const exporter = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.exportWithAudio, 'exportWithAudio', {
-      x: 1440,
-      y: 180,
-    });
-    const nodes = {
-      quantization,
-      recipe,
-      pipeline,
-      sequence,
-      compose,
-      upscaler,
-      overlay,
+    return buildLyricVideoWorkflow(
+      settings,
+      form,
       audioGenerate,
-      audioFit,
-      exporter,
-    };
-    const values = lyricVideoWorkflowFieldValues(settings, form);
-    for (const role of Object.keys(nodes) as (keyof typeof nodes)[])
-      for (const { fields, value } of values[role]) setParamIfPresent(nodes[role], fields, value);
-    if (
-      !ensureConnection(quantization, ['quantization_config'], recipe, ['quantization_config']) ||
-      !ensureConnection(recipe, ['execution_recipe'], pipeline, ['execution_recipe']) ||
-      !ensureConnection(pipeline, ['pipeline'], sequence, ['pipeline']) ||
-      !ensureConnection(sequence, ['clips'], compose, ['clip_1']) ||
-      !ensureConnection(compose, ['video'], upscaler, ['image']) ||
-      !ensureConnection(upscaler, ['output'], overlay, ['video']) ||
-      !ensureConnection(overlay, ['output'], exporter, ['video']) ||
-      !ensureConnection(audioGenerate, ['audio'], audioFit, ['audio']) ||
-      !ensureConnection(audioFit, ['output'], exporter, ['audio'])
-    ) {
-      throw new Error('Lyric video nodes were created, but their media handles are unavailable.');
-    }
-    return exporter;
+      ensureControlledNode,
+      (node, fields, value) => {
+        setParamIfPresent(node, fields, value);
+      },
+      (from, outputs, to, inputs) => {
+        if (!ensureConnection(from, outputs, to, inputs))
+          throw new Error('Lyric video nodes were created, but their media handles are unavailable.');
+      },
+    );
   });
 }

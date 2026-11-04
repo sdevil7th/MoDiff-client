@@ -2,7 +2,7 @@ import type { StudioModelProfile, StudioTemplate } from './types';
 
 /** A composite's final media does not change its declared primary task. */
 export function templateHasAudioPrimary(template: Pick<StudioTemplate, 'mode'>) {
-  return ['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint'].includes(template.mode);
+  return template.mode === 'text_to_audio' || template.mode.startsWith('audio_');
 }
 
 /** Exact backend ownership for a fresh recipe, independent of Auto and media

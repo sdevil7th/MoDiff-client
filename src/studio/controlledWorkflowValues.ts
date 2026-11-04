@@ -5,6 +5,7 @@ import type {
   StudioTemplateWorkflowBlockSettings,
 } from './types';
 import { resolveStudioResourceForm } from './resourcePlanner';
+import { CONTROLLED_ROLE_NODE_KEYS, type ControlledNodeRole } from './controlledWorkflowContracts';
 
 export type ControlledFieldValue = { fields: string[]; value: unknown };
 
@@ -149,6 +150,49 @@ export function lyricVideoWorkflowFieldValues(
     audioFit: audioFitWorkflowFieldValues(settings.audioFit),
     exporter: fields({ fps: 16 }),
   };
+}
+
+type LyricRole = keyof ReturnType<typeof lyricVideoWorkflowFieldValues>;
+
+/** Shared construction keeps the managed and ordinary composite's real stages
+ * and wires identical without introducing another execution representation. */
+export function buildLyricVideoWorkflow<T>(
+  settings: NonNullable<StudioTemplateWorkflowBlockSettings['lyricVideo']>,
+  form: StudioFormState,
+  audioGenerate: T,
+  create: (key: string, role: ControlledNodeRole, position: { x: number; y: number }) => T,
+  set: (node: T, fields: string[], value: unknown, role: LyricRole) => void,
+  connect: (from: T, outputs: string[], to: T, inputs: string[]) => void,
+) {
+  const layout: [Exclude<LyricRole, 'audioGenerate'>, ControlledNodeRole, number, number][] = [
+    ['quantization', 'lyricVideoQuantization', -1280, 340],
+    ['recipe', 'lyricVideoRecipe', -900, 340],
+    ['pipeline', 'lyricVideoPipeline', -500, 340],
+    ['sequence', 'videoSequence', -100, 340],
+    ['compose', 'videoCompose', 300, 340],
+    ['upscaler', 'upscaler', 680, 340],
+    ['overlay', 'lyricOverlay', 1060, 340],
+    ['audioFit', 'lyricAudioFit', 1060, 720],
+    ['exporter', 'exportWithAudio', 1440, 180],
+  ];
+  const nodes = { audioGenerate } as Record<LyricRole, T>;
+  for (const [name, role, x, y] of layout) nodes[name] = create(CONTROLLED_ROLE_NODE_KEYS[role]!, role, { x, y });
+  const values = lyricVideoWorkflowFieldValues(settings, form);
+  for (const role of Object.keys(nodes) as LyricRole[])
+    for (const { fields, value } of values[role]) set(nodes[role], fields, value, role);
+  const edges: [LyricRole, string, LyricRole, string][] = [
+    ['quantization', 'quantization_config', 'recipe', 'quantization_config'],
+    ['recipe', 'execution_recipe', 'pipeline', 'execution_recipe'],
+    ['pipeline', 'pipeline', 'sequence', 'pipeline'],
+    ['sequence', 'clips', 'compose', 'clip_1'],
+    ['compose', 'video', 'upscaler', 'image'],
+    ['upscaler', 'output', 'overlay', 'video'],
+    ['overlay', 'output', 'exporter', 'video'],
+    ['audioGenerate', 'audio', 'audioFit', 'audio'],
+    ['audioFit', 'output', 'exporter', 'audio'],
+  ];
+  for (const [source, output, target, input] of edges) connect(nodes[source], [output], nodes[target], [input]);
+  return nodes.exporter;
 }
 
 /** A soundtrack remains a separate, visible audio pipeline and timeline fit. */

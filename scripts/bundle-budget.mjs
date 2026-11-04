@@ -1,3 +1,9 @@
+// Fresh lyric composites share their actual node/edge construction with managed
+// recipes. Largest/startup/deferred gzip is 496585/675069/330324 against the
+// accepted D77 496579/675066/329724. Keep both startup limits and the 64 KiB
+// deferred chunk limit unchanged; add only the measured 600 deferred bytes,
+// retaining 274 bytes of deferred headroom. All 94 JavaScript names and their
+// four startup/90 deferred memberships, dependencies and loading rules stay fixed.
 // Versioned primary-model summaries add 82/83 compressed startup bytes over
 // 496485/674972; deferred gzip falls from 329730 to 329712. Only studio-templates.js
 // changes after immutable import-URL normalization, with all 94 JavaScript names,
@@ -749,7 +755,8 @@ const MAX_DEFERRED_GZIP_BYTES =
   1593 +
   864 +
   1561 +
-  194;
+  194 +
+  600;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;
