@@ -18,6 +18,7 @@ export function captureAudioSchemaFixture() {
         repository:
           repository === 'ACE-Step' ? 'ACE-Step/acestep-v15-xl-turbo-diffusers' : 'Runware/acestep-v15-turbo-diffusers',
         bindingSpec: { modelType: 'AceStepAudioPipeline', mode: task },
+        authoringRecipeId: 'generic-audio-recipe:v1',
       },
     })),
   );

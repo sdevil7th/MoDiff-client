@@ -86,7 +86,10 @@ function actualStarter(row) {
     row.starter.pipelineClass,
     row.starter.task,
     authority.operationContracts,
-    { executionProfileId: row.spec?.executionProfileId },
+    {
+      executionProfileId: row.spec?.executionProfileId,
+      ...(row.starter.authoring ? { authoringRecipeId: row.starter.authoring.id } : {}),
+    },
   );
 }
 function setup(row) {
@@ -355,6 +358,8 @@ test('all seven actual curated audio factories preserve original creative settin
     const prompt = generator.data.params.prompt;
     assert.equal(prompt.value, form.prompt, template.id);
     if (selection.pipelineClass === 'AceStepPipeline') {
+      const recipe = flat.nodes.find((node) => node.data.action === 'DiffusersExecutionRecipe');
+      assert.equal(recipe.data.params.attention_backend.value, form.attentionBackend ?? 'auto');
       assert.deepEqual(generator.data.params.seed.value, { value: form.seed, isRandom: false });
       assert.equal(
         flat.nodes.filter((node) => node.data.action === 'LoadAdapter').length,

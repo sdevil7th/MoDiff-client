@@ -513,6 +513,7 @@ export const AUDIO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
           executionProfileId: 'ace-step-audio:direct',
           bindingSpec: { modelType: 'AceStepAudioPipeline', mode: task },
           implementation: 'whole_pipeline',
+          authoringRecipeId: 'generic-audio-recipe:v1',
           note: 'Model Setup owns configuration and the reviewed adapter; Generate Audio remains the real integrated pipeline action.',
         } satisfies StudioTemplateExecutionSelection,
       ]),
