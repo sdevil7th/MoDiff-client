@@ -1,3 +1,9 @@
+// Declared output readiness measures largest/startup/deferred gzip
+// 496790/675278/330510 against 9760's 496684/675171/330491. Only
+// studio-templates.js changes after immutable URL normalization; all119 assets,
+// 94 JavaScript names and four startup/90 deferred memberships remain exact.
+// Add only measured106/107 startup bytes, retaining4/11 bytes of headroom.
+// Deferred caps, dependencies, minifier, loading rules and model guards stay fixed.
 // Generator-first import summaries measure largest/startup/deferred gzip
 // 496684/675171/330491 against E129's 496585/675069/330324. Only
 // studio-templates.js changes after immutable import-URL normalization; all
@@ -348,6 +354,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  106 +
   99 +
   82 +
   235 +
@@ -494,6 +501,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  107 +
   102 +
   83 +
   236 +
