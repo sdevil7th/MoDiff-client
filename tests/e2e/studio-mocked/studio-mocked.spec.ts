@@ -92,127 +92,144 @@ test('normal video template card creates real stages and preserves them after re
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
 });
 
-test('Klein Automatic workflow import and saved reload preserve group offload and the exact graph', async ({
-  page,
-}) => {
-  const templateId = 'flux2_klein_multi_reference';
-  const selection = IMAGE_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;
-  const fixture = await generateTemplateSchemas([{ id: templateId, selection }], true);
-  await ensureFrontend();
-  await installMockRoutes(page);
-  await page.route('**/nodes**', (route) =>
-    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
-  );
-  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
-  let graphPosts = 0;
-  page.on('request', (request) => {
-    if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') graphPosts++;
-  });
-  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-  await dismissTaskLauncher(page);
-  const prepared = await page.evaluate(
-    async ({ fixture, templateId }) => {
-      const [
-        { STUDIO_TEMPLATES },
-        { getFormDefaultsForMode },
-        { getTemplateLockedSettings },
-        builder,
-        packages,
-        contracts,
-        starters,
-      ] = await Promise.all([
-        import('/src/studio/templates.ts'),
-        import('/src/studio/modelProfiles.ts'),
-        import('/src/studio/templateExactness.ts'),
-        import('/src/studio/templateOperationWorkflow.ts'),
-        import('/src/studio/workflowPackage.ts'),
-        import('/src/workflow/operationContracts.ts'),
-        import('/src/workflow/operationStarterRequest.ts'),
-      ]);
-      const template = STUDIO_TEMPLATES.find((entry) => entry.id === templateId)!;
-      const recipe = fixture.recipes[0]!;
-      const parsedContracts = contracts.parseOperationContracts(
-        fixture.publicPayload.operationContracts,
-        fixture.publicPayload.operationContractSchemaVersion,
-      );
-      const starter = starters.parseOperationStarter(
-        recipe.starter,
-        recipe.starter.pipelineClass,
-        recipe.starter.task,
-        parsedContracts,
-        template.executionSelection,
-      );
-      const form = {
-        ...getFormDefaultsForMode(template.mode, template.modelType),
-        ...getTemplateLockedSettings(template),
-        device: 'cuda:0',
-      };
-      const graph = builder.createTemplateOperationGraph(
-        template,
-        form,
-        starter,
-        fixture.registry,
-        recipe.spec,
-        fixture.capabilities.find((entry) => entry.modelType === template.modelType),
-      );
-      const exporter = await import('/src/stores/flowGraphExport.ts');
-      const api = exporter.buildApiGraphExport({
-        nodes: graph.nodes,
-        edges: graph.edges,
-        sid: 'automatic-form-preservation',
-        randomizeSeeds: false,
-        setParam: () => {
-          throw new Error('Export cannot mutate the authored graph.');
-        },
-      });
-      return { form, api, packageData: packages.buildWorkflowPackage({ form, graph }) };
-    },
-    { fixture, templateId },
-  );
-  expect(prepared.form.resourceMode).toBe('auto');
-  expect(prepared.form.offloadMode).toBe('group_cpu');
-  await page.getByTestId('topbar-gallery').click();
-  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
-    name: 'klein-authored-automatic.workflow.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify(prepared.packageData), 'utf8'),
-  });
-  await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
-  const read = () =>
-    page.evaluate(async () => {
-      const state = window.__MODIFF_E2E__!.getState();
-      const exporter = await import('/src/stores/flowGraphExport.ts');
-      const graph = window.__MODIFF_E2E__!.exportWorkflowGraph() as Parameters<typeof exporter.buildApiGraphExport>[0];
-      const api = exporter.buildApiGraphExport({
-        ...graph,
-        sid: 'automatic-form-preservation',
-        randomizeSeeds: false,
-        setParam: () => {
-          throw new Error('Inspection cannot mutate the visible graph.');
-        },
-      });
-      return { form: state.studio.form, api };
+for (const { title, templateId, resourceMode, offloadMode } of [
+  {
+    title: 'Klein Automatic',
+    templateId: 'flux2_klein_multi_reference',
+    resourceMode: 'auto',
+    offloadMode: 'group_cpu',
+  },
+  {
+    title: 'staged LTX with upscaler',
+    templateId: 'ltx_video_image_to_video',
+    resourceMode: 'expert',
+    offloadMode: 'sequential_cpu',
+  },
+] as const)
+  test(`${title} workflow import and saved reload preserve the model, task, memory and exact graph`, async ({
+    page,
+  }) => {
+    const selection = { ...IMAGE_TEMPLATE_EXECUTION_SELECTIONS, ...VIDEO_TEMPLATE_EXECUTION_SELECTIONS }[templateId]!;
+    const fixture = await generateTemplateSchemas([{ id: templateId, selection }], true);
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.route('**/nodes**', (route) =>
+      route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+    );
+    await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+    let graphPosts = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') graphPosts++;
     });
-  await expect.poll(async () => (await read()).form).toEqual(prepared.form);
-  const before = await read();
-  expect(before.api).toEqual(prepared.api);
-  await page.getByTestId('topbar-save-workflow-options').click();
-  await page.getByTestId('topbar-save-workflow-as').click();
-  await page.getByTestId('save-workflow-name').fill('Authored Klein group offload');
-  await page.getByTestId('confirm-save-workflow').click();
-  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-  await expect(page.getByRole('tab', { name: 'Authored Klein group offload', exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-  await expect.poll(async () => (await read()).form).toEqual(prepared.form);
-  const after = await read();
-  expect(after.api).toEqual(before.api);
-  expect(graphPosts).toBe(0);
-});
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await dismissTaskLauncher(page);
+    const prepared = await page.evaluate(
+      async ({ fixture, templateId, resourceMode, offloadMode }) => {
+        const [
+          { STUDIO_TEMPLATES },
+          { getFormDefaultsForMode },
+          { getTemplateLockedSettings },
+          builder,
+          packages,
+          contracts,
+          starters,
+        ] = await Promise.all([
+          import('/src/studio/templates.ts'),
+          import('/src/studio/modelProfiles.ts'),
+          import('/src/studio/templateExactness.ts'),
+          import('/src/studio/templateOperationWorkflow.ts'),
+          import('/src/studio/workflowPackage.ts'),
+          import('/src/workflow/operationContracts.ts'),
+          import('/src/workflow/operationStarterRequest.ts'),
+        ]);
+        const template = STUDIO_TEMPLATES.find((entry) => entry.id === templateId)!;
+        const recipe = fixture.recipes[0]!;
+        const parsedContracts = contracts.parseOperationContracts(
+          fixture.publicPayload.operationContracts,
+          fixture.publicPayload.operationContractSchemaVersion,
+        );
+        const starter = starters.parseOperationStarter(
+          recipe.starter,
+          recipe.starter.pipelineClass,
+          recipe.starter.task,
+          parsedContracts,
+          template.executionSelection,
+        );
+        const form = {
+          ...getFormDefaultsForMode(template.mode, template.modelType),
+          ...getTemplateLockedSettings(template),
+          device: 'cuda:0',
+          resourceMode,
+          offloadMode,
+        };
+        const graph = builder.createTemplateOperationGraph(
+          template,
+          form,
+          starter,
+          fixture.registry,
+          recipe.spec,
+          fixture.capabilities.find((entry) => entry.modelType === template.modelType),
+        );
+        const exporter = await import('/src/stores/flowGraphExport.ts');
+        const api = exporter.buildApiGraphExport({
+          nodes: graph.nodes,
+          edges: graph.edges,
+          sid: 'automatic-form-preservation',
+          randomizeSeeds: false,
+          setParam: () => {
+            throw new Error('Export cannot mutate the authored graph.');
+          },
+        });
+        return { form, api, packageData: packages.buildWorkflowPackage({ form, graph }) };
+      },
+      { fixture, templateId, resourceMode, offloadMode },
+    );
+    expect(prepared.form.resourceMode).toBe(resourceMode);
+    expect(prepared.form.offloadMode).toBe(offloadMode);
+    await page.getByTestId('topbar-gallery').click();
+    await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+      name: `${templateId}.workflow.json`,
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(prepared.packageData), 'utf8'),
+    });
+    await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+    const read = () =>
+      page.evaluate(async () => {
+        const state = window.__MODIFF_E2E__!.getState();
+        const exporter = await import('/src/stores/flowGraphExport.ts');
+        const graph = window.__MODIFF_E2E__!.exportWorkflowGraph() as Parameters<
+          typeof exporter.buildApiGraphExport
+        >[0];
+        const api = exporter.buildApiGraphExport({
+          ...graph,
+          sid: 'automatic-form-preservation',
+          randomizeSeeds: false,
+          setParam: () => {
+            throw new Error('Inspection cannot mutate the visible graph.');
+          },
+        });
+        return { form: state.studio.form, api };
+      });
+    await expect.poll(async () => (await read()).form).toEqual(prepared.form);
+    const before = await read();
+    expect(before.api).toEqual(prepared.api);
+    await page.getByTestId('topbar-save-workflow-options').click();
+    await page.getByTestId('topbar-save-workflow-as').click();
+    await page.getByTestId('save-workflow-name').fill(`Authored ${title}`);
+    await page.getByTestId('confirm-save-workflow').click();
+    await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect(page.getByRole('tab', { name: `Authored ${title}`, exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect.poll(async () => (await read()).form).toEqual(prepared.form);
+    const after = await read();
+    expect(after.api).toEqual(before.api);
+    expect(graphPosts).toBe(0);
+  });
 
 test('normal Pika task creation joins video and audio and preserves the workflow after reload', async ({ page }) => {
   const pipelineClass = 'PikaH3FlexModularPipeline';

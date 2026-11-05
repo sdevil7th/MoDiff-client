@@ -5691,6 +5691,100 @@ test('built-in video operations are locally ready and preserve multi-video infer
   assert.deepEqual(tiled.referenceVideos, ['first.mp4', 'second.mp4']);
 });
 
+test('ordinary generation with postprocessing retains the generator summary in either node order', () => {
+  const node = (id, module, action, params) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      module,
+      action,
+      params: Object.fromEntries(Object.entries(params).map(([key, value]) => [key, { value }])),
+    },
+  });
+  for (const [module, modelType, mode] of [
+    ['modules.DiffusersVideo', 'LTXVideoPipeline', 'image_to_video'],
+    ['modules.DiffusersVideo', 'WanVACEPipeline', 'control_to_video'],
+    ['modules.DiffusersImage', 'StableDiffusionXLPipeline', 'text_to_image'],
+  ]) {
+    for (const processor of [
+      node('upscale', 'modules.Spandrel', 'Upscaler', { device: 'cpu' }),
+      node('process', 'modules.Video', 'ProcessVideo', { operation: 'video_trim' }),
+    ]) {
+      const stages = [
+        node('pipeline', module, 'LoadPipeline', {
+          model_type: modelType,
+          device: 'cuda:0',
+          dtype: 'bfloat16',
+          offload_mode: 'sequential_cpu',
+          auto_offload: true,
+        }),
+        node('encode', module, 'EncodeInputs', { mode, prompt: 'Keep the subject and camera movement.' }),
+        node('denoise', module, 'Denoise', {
+          mode,
+          width: 768,
+          height: 512,
+          num_frames: 81,
+          num_inference_steps: 8,
+          guidance_scale: 1,
+          seed: 8313,
+        }),
+        node('export', 'modules.Video', 'Export', { fps: 16 }),
+      ];
+      for (const nodes of [
+        [processor, ...stages],
+        [...stages, processor],
+      ]) {
+        const original = structuredClone(nodes);
+        const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(nodes);
+        assert.equal(inferred.modelType, modelType);
+        assert.equal(inferred.mode, mode);
+        assert.equal(inferred.device, 'cuda:0');
+        assert.equal(inferred.dtype, 'bfloat16');
+        assert.equal(inferred.offloadMode, 'sequential_cpu');
+        assert.equal(inferred.prompt, 'Keep the subject and camera movement.');
+        assert.equal(inferred.steps, 8);
+        assert.equal(inferred.seed, 8313);
+        assert.equal(inferred.numFrames, 81);
+        assert.equal(inferred.fps, 16);
+        assert.deepEqual(nodes, original, 'Summary inference must not change executable node settings.');
+      }
+    }
+  }
+});
+
+test('ordinary staged video uses the recognized loader repository when its class is not a Studio profile', () => {
+  const inferred = workflowInferenceModule.inferStudioFormFromWorkflow(
+    [
+      { data: { module: 'modules.Spandrel', action: 'Upscaler', params: {} } },
+      {
+        data: {
+          module: 'modules.DiffusersVideo',
+          action: 'LoadPipeline',
+          params: {
+            model_id: {
+              value: { source: 'hub', value: profilesModule.STUDIO_MODEL_PROFILES.LTXVideoPipeline.defaultRepo },
+            },
+            pipeline_class: { value: 'LTXConditionPipeline' },
+            offload_mode: { value: 'sequential_cpu' },
+          },
+        },
+      },
+      {
+        data: {
+          module: 'modules.DiffusersVideo',
+          action: 'Denoise',
+          params: { mode: { value: 'image_to_video' } },
+        },
+      },
+    ],
+    { ...profilesModule.DEFAULT_STUDIO_FORM, modelType: 'LTXVideoPipeline', mode: 'image_to_video' },
+  );
+  assert.equal(inferred.modelType, 'LTXVideoPipeline');
+  assert.equal(inferred.mode, 'image_to_video');
+  assert.equal(inferred.offloadMode, 'sequential_cpu');
+});
+
 test('Real-ESRGAN video upscale stays model-backed and infers the generic source-video contract', () => {
   const profile = profilesModule.STUDIO_MODEL_PROFILES.SpandrelVideoUpscale;
   const requirement = profilesModule.STUDIO_AUTO_MODEL_REQUIREMENTS.SpandrelVideoUpscale;

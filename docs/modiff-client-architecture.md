@@ -1144,6 +1144,14 @@ inferring their image recipe summary. Raw graph imports also retain each node's
 authored device value and default, including mixed CPU/accelerator placement;
 the current form device does not rebase them. Summary defaults do not repair
 missing or malformed graph fields. Explicit device rebasing remains separate.
+Generation graphs with an upscaler or deterministic processing stage infer their
+summary from recognized model-loader declarations before standalone processing
+fallbacks. Staged video retains a compatible authored task, Encode Inputs prompt,
+Denoise frame/settings values and ordinary export frame rate without requiring
+Studio roles. Profiles sharing a repository retain matching authored model
+context. This is a descriptive summary, not graph validation, resource admission
+or permission to rewrite executable nodes; standalone operations retain their
+own task summaries.
 Passive tab switching, closing, backend hydration and browser reload retain a
 recognized saved ordinary image form;
 Save As, Duplicate and output Restore retain that form too. These paths do not
