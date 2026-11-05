@@ -25,6 +25,83 @@ import type { OperationContract } from '../../../src/workflow/operationContracts
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 
+test('renamed declared video output stays runnable after ordinary import Save and reload', async ({ page }) => {
+  const fixture = await generateTemplateSchemas([]);
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/media/preview?**', (route) => route.fulfill({ contentType: 'video/mp4', body: '' }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  let submissions = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') submissions++;
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  const prepared = await page.evaluate(async (registry) => {
+    const [{ createNodeFromRegistry }, { getFormDefaultsForMode }, { buildWorkflowPackage }] = await Promise.all([
+      import('/src/workflow/nodeFactory.ts'),
+      import('/src/studio/modelProfiles.ts'),
+      import('/src/studio/workflowPackage.ts'),
+    ]);
+    const video = createNodeFromRegistry('modules.Video.Load', registry, { x: 0, y: 0 })!;
+    const audio = createNodeFromRegistry('modules.Audio.Load', registry, { x: 0, y: 350 })!;
+    const film = createNodeFromRegistry('modules.Video.ExportWithAudio', registry, { x: 500, y: 0 })!;
+    video.data.params.file!.value = ['@data/videos/scene.mp4'];
+    audio.data.params.file!.value = ['@data/audio/song.wav'];
+    film.data.label = 'Moonflower photographic film';
+    const graph = {
+      nodes: [video, audio, film],
+      edges: [
+        { id: 'video-film', source: video.id, sourceHandle: 'video', target: film.id, targetHandle: 'video' },
+        { id: 'audio-film', source: audio.id, sourceHandle: 'filename', target: film.id, targetHandle: 'audio' },
+      ],
+    };
+    const form = {
+      ...getFormDefaultsForMode('video_stitch', 'BuiltinVideoOperation'),
+      resourceMode: 'expert' as const,
+      device: 'cpu',
+      autoOffload: false,
+      offloadMode: 'none' as const,
+    };
+    return { packageData: buildWorkflowPackage({ form, graph }), videoId: video.id, filmId: film.id };
+  }, fixture.registry);
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'renamed-film.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(prepared.packageData)),
+  });
+  await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+  const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const before = await read();
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Renamed visible output');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect(page.getByRole('tab', { name: 'Renamed visible output', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect.poll(read).toEqual(before);
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+  const summary = await page.evaluate(() => window.__MODIFF_E2E__!.inspectCurrentGraph());
+  expect(summary.connectedOutputNodeIds).toEqual([prepared.filmId]);
+  const input = page.locator(`[data-id="${prepared.videoId}"] [data-key="file"] input[type="text"]`);
+  await input.fill('');
+  await input.blur();
+  await expect(page.getByTestId('studio-run')).toBeDisabled();
+  expect(submissions).toBe(0);
+});
+
 test('normal video template card creates real stages and preserves them after reload', async ({ page }) => {
   const templateId = 'ltx_video_text_to_video';
   const selection = VIDEO_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;

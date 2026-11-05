@@ -1034,8 +1034,20 @@ function enabledExecutableNodes(graph = executableFlowGraph()) {
 }
 
 function isOutputLikeNode(node: ReturnType<typeof enabledExecutableNodes>[number]) {
+  // Labels are editable, and compound actions need not contain a word boundary
+  // after "Export". The declared preview must read an actual output port;
+  // an input player or a label widget alone does not establish an output.
+  const params = node.data.params;
+  const hasDeclaredPreview = Object.values(params).some(
+    (param) =>
+      ['ui_image', 'ui_video', 'ui_audio', 'ui_text', 'ui_imagecompare'].includes(param.display ?? '') &&
+      typeof param.dataSource === 'string' &&
+      Object.prototype.hasOwnProperty.call(params, param.dataSource) &&
+      params[param.dataSource]?.display === 'output',
+  );
   const text = `${node.data.module} ${node.data.action} ${node.data.label} ${node.data.category}`.toLowerCase();
   return (
+    hasDeclaredPreview ||
     /\b(preview|export|save|display|output|gallery)\b|viewer\b/.test(text) ||
     /\.preview\b/i.test(`${node.data.module}.${node.data.action}`) ||
     /\.export\b/i.test(`${node.data.module}.${node.data.action}`)

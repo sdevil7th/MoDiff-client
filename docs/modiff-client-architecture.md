@@ -43,6 +43,12 @@ inventing another node or changing the graph. Optional selectors remain optional
 This checks input presence, not filesystem access or decoding; backend boundaries
 remain authoritative.
 
+For ordinary graphs, a declared media or text preview linked by `dataSource` to
+an output port establishes a visible output even after its node label changes.
+Input-backed players and label widgets do not establish an output. The existing
+connection, required-input, disabled-node and resource checks still apply;
+recognizing a preview does not authorize execution or qualify its result.
+
 The backend may use official model libraries maintained and published by Hugging Face, but the client remains runtime-agnostic. It renders backend-declared task inputs, parameters, outputs, missing optional runtimes, and readiness instead of selecting library classes or maintaining model-specific execution branches. The browser never loads a model runtime or invokes a hosted inference provider.
 
 ## Technology

@@ -77,7 +77,7 @@
     "test:legacy-cluster-recovery-audit": "node --test scripts/legacy-cluster-recovery-audit.test.mjs",
     "test:composite-block-capabilities-v2": "node --test scripts/composite-block-capabilities-v2.test.mjs",
     "test:registered-block-v2-adapter": "node --test scripts/wan-video-boundary.test.mjs scripts/registered-block-v2-adapter.test.mjs scripts/registered-block-v2-insertion.test.mjs scripts/registered-block-v2-route-audit.test.mjs",
-    "test:graph-export": "node --test scripts/flow-graph-export.test.mjs",
+    "test:graph-export": "node --test scripts/flow-graph-export.test.mjs scripts/graph-visible-output-readiness.test.mjs",
     "test:hugging-face-cluster-drag": "node --test scripts/hugging-face-cluster-drag.test.mjs",
     "test:hugging-face-node-library": "node --test scripts/hugging-face-node-library.test.mjs scripts/hugging-face-source-supplements.test.mjs",
     "test:templates": "node --test scripts/modiff-template.test.mjs scripts/template-operation-workflows.test.mjs scripts/image-full-native-template-candidates.test.mjs scripts/image-model-usage-policies.test.mjs scripts/workflow-library-dependency-contracts.test.mjs scripts/workflow-library-canonical-export.test.mjs scripts/workflow-library-image-stages.test.mjs scripts/weight-format-template-binding.test.mjs scripts/flux3-public-template-planning.test.mjs",
