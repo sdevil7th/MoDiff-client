@@ -16449,6 +16449,13 @@ test('mocked workflow artifact requirements are contextual and role grouped', as
   // The intentionally incomplete mock registry cannot materialize this Expert
   // modular graph. Setup still keeps the selected model requirement available so
   // Graph Fix can repair both the empty canvas and a missing model installation.
+  // Whole-workflow Run checks are independent of the selected setup scope and
+  // stay collapsed until explicitly requested.
+  await expect(page.getByText('Add nodes before running.', { exact: true })).toBeHidden();
+  await page
+    .getByTestId('setup-current-issues')
+    .getByRole('button', { name: /^Whole workflow Run checks/ })
+    .click();
   await expect(page.getByText('Add nodes before running.', { exact: true })).toBeVisible();
   await expect(
     page.getByTestId('setup-model-requirement-mode:QwenImageModularPipeline:control_image:qwen-controlnet-union'),
@@ -34821,6 +34828,11 @@ test('standalone startup awaits owned metadata and fresh workflow reload retains
 }) => {
   await ensureFrontend();
   await installMockRoutes(page);
+  // This case covers metadata arriving before the bounded legacy fallback.
+  // Keep that boundary deterministic on a loaded CI runner; the unit contract
+  // separately covers an unknown/busy worker outlasting the fallback deadline.
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00.000Z') });
+  await page.clock.pauseAt(new Date('2026-01-01T00:00:01.000Z'));
   let queueRequests = 0;
   const documents: Array<{ id: string; method: string }> = [];
   const missingDocuments: string[] = [];
@@ -34853,6 +34865,7 @@ test('standalone startup awaits owned metadata and fresh workflow reload retains
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+  await page.clock.runFor(1200);
   const id = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId!);
   await expect.poll(() => documents.filter((x) => x.id === id).length).toBeGreaterThan(0);
   expect(documents.filter((x) => x.id === id)[0]!.method).toBe('PUT');
@@ -34862,6 +34875,7 @@ test('standalone startup awaits owned metadata and fresh workflow reload retains
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('task-launcher')).toBeVisible();
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+  await page.clock.runFor(1200);
   await expect.poll(() => documents.slice(before).filter((x) => x.id === id).length).toBeGreaterThan(0);
   expect(documents.slice(before).find((x) => x.id === id)!.method).toBe('GET');
   expect(missingDocuments).toEqual([]);
