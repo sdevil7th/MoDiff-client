@@ -31,7 +31,7 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `81e22ca3306b6a00f0bba784d1ca90d14e002944`.
+CI backend contract: `09f377f54f975ffbfa8705ac4535905f0481f54f`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
 is the earlier reviewed testing baseline. The selected backend includes the shared video
@@ -97,6 +97,12 @@ Keep the backend running at <http://127.0.0.1:8088> and open the URL printed by
 Vite for the editable frontend. Press `Ctrl+C` in each terminal to stop it.
 See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for accelerator prerequisites,
 optional runtimes, repair, and bundled-app setup.
+
+In the app, Setup → Workflow setup checklist groups the selected Run scope's
+base environment, model artifacts, extra feature packages and system steps.
+Transformers and PEFT are included in ordinary installation. A staged optional
+install is shown separately from activation and verified worker readiness;
+reloading Setup follows the existing job without starting another install.
 
 ## Install and run MoDiff
 

@@ -1175,6 +1175,23 @@ independent behavior requires the matching updated client bundle.
 
 An optional runtime requirement is discovery data, not permission to mutate the Python environment. Template browsing/opening, registry refresh, and Auto planning must remain non-installing. Installation begins only from an explicit user action against a reviewed backend runtime profile, and the client keeps Run blocked until a later backend status confirms the compatible installation.
 
+`WorkflowSetupChecklist` combines base environment, concrete model artifacts,
+extra feature packages and system prerequisites. `workflowSetup.ts` exports the
+same enabled/selected dependency closure and ordinary modular lowering as Run,
+with seed randomization disabled and no graph submission or preparation actions.
+It sends this concrete graph to read-only `POST /runtime/workflow-setup`, binds
+responses to the active document and backend instance, and discards obsolete
+observations. Exact model revisions remain separate; connected model values are
+not filled from registry defaults. Unresolved computed selections remain unknown.
+Runtime actions reuse the existing consent/job lifecycle below, not a second
+installer. Staged installation, restart, verification and active worker status
+are distinct. Every required runtime profile needs an exact active match; an
+explicit composite alias can satisfy that match. Optional profiles outside the
+inspected scope remain available under Show other runtimes, without becoming
+prerequisites. Job file counts do not establish exact download-file identity:
+follow the existing repository job and prevent duplicate mutations when the
+public status cannot prove that row's selection.
+
 The Setup surface renders install or repair only when the exact profile is
 `qualified`, `cutoverReady`, and the backend advertises
 `installActionAvailable`. It sends the profile ID, exact spec digest, and

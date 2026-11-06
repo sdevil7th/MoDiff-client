@@ -1550,8 +1550,8 @@ test('optional runtime catalog parsing is bounded and qualified-active only', ()
   );
   assert.equal(
     optionalRuntimesModule.optionalRuntimeBlockState(mixedPins, mixedCatalog),
-    null,
-    'one active alternative pin must satisfy the optional-runtime requirement',
+    'wrong_version',
+    'every requested profile must match the backend guard; a second pin is not implicitly an alternative',
   );
   for (const [label, activeProfileId, activeDigest] of [
     [

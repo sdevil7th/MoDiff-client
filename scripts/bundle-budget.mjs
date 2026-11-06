@@ -1,3 +1,8 @@
+// Selected workflow setup measures largest/startup/deferred gzip
+// 497978/676464/335501 over 497685/676173/331955: add only 293/291/3546 bytes,
+// retaining 3/12/199 bytes of headroom. All119 assets,94 JS and four startup/
+// 90 deferred memberships stay exact. Shared-export alias churn is not a new
+// dependency or loading boundary; the independent 64 KiB chunk cap is unchanged.
 // Scoped Run recovery adds measured largest/startup/deferred gzip bytes
 // 894/896/1556 over 496791/675277/330399, retaining 3/12/199-byte headroom.
 // Exact setting/runtime focus and semantic document ownership keep the same
@@ -359,6 +364,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  293 +
   894 +
   106 +
   99 +
@@ -507,6 +513,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  291 +
   896 +
   107 +
   102 +
@@ -736,6 +743,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  3546 +
   1556 +
   242 +
   297 +

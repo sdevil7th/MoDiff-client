@@ -7329,6 +7329,43 @@ async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluste
       }),
     });
   });
+  await page.route('**/runtime/workflow-setup', async (route) => {
+    const body = route.request().postDataJSON() as { graph: ApiGraphExport };
+    const required: string[] = [];
+    const base: string[] = [];
+    Object.entries(body.graph.nodes).forEach(([id, node]) => {
+      (mockOptionalRuntimeBaseIncluded || !/LoadPipeline|ModelsLoader|LoadModel/u.test(node.action)
+        ? base
+        : required
+      ).push(id);
+    });
+    const requirement = (optional: boolean) => ({
+      schemaVersion: 1,
+      delivery: optional ? 'optional_overlay' : 'base',
+      requiredNow: optional,
+      profileIds: optional ? ['huggingface-transformers-peft-5.14.1-0.20.0'] : [],
+      executionProfileIds: optional ? ['mock:loader'] : [],
+      state: optional
+        ? mockOptionalRuntimeQualified
+          ? 'active'
+          : mockOptionalRuntimeJobState === 'ready'
+            ? 'staged'
+            : 'unavailable'
+        : 'base_satisfied',
+      reason: optional ? 'optional_runtime_status_required' : 'base_runtime',
+    });
+    await route.fulfill({
+      json: {
+        schemaVersion: 1,
+        instance: 'mock',
+        graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+        requirements: [
+          ...(base.length ? [{ nodeIds: base, requirement: requirement(false) }] : []),
+          ...(required.length ? [{ nodeIds: required, requirement: requirement(true) }] : []),
+        ],
+      },
+    });
+  });
   await page.route('**/runtime/optional-runtimes**', async (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
@@ -9691,6 +9728,134 @@ test('Template Gallery setup plans and installs only after explicit consent', as
   expect(mockDownloadCalls).toBe(0);
 });
 
+test('workflow setup checklist follows selected Run scope and preserves saved work without setup mutations', async ({
+  page,
+}) => {
+  mockInstalledRepos.add('test/required');
+  mockOptionalRuntimeBaseIncluded = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let healthy = true;
+  const inspected: string[][] = [];
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /\/(?:graph|hf_download|runtime\/optional-runtimes\/(?:install|activate))$/u.test(new URL(request.url()).pathname)
+    )
+      mutations.push(request.url());
+  });
+  await page.route('**/runtime/status**', (route) =>
+    route.fulfill({
+      json: {
+        ready: healthy,
+        runtime_fingerprint: 'worker-runtime-identity',
+        config: { hf_online_status: 'Auto' },
+        runtime_profile: {
+          requested: 'cpu',
+          installed: 'cpu',
+          execution_ready: healthy,
+          status: healthy ? 'ready' : 'setup-required',
+          repair_command: 'Use the reviewed installation procedure for the current accelerator.',
+          issues: healthy
+            ? []
+            : [
+                {
+                  code: 'missing_required_package',
+                  severity: 'error',
+                  message: 'PEFT is missing from the base environment.',
+                },
+              ],
+        },
+        packages: {
+          torch: { available: true },
+          transformers: { available: true, version: '5.18.0' },
+          peft: { available: healthy, version: '0.21.2' },
+        },
+      },
+    }),
+  );
+  await page.route('**/runtime/workflow-setup', async (route) => {
+    const body = route.request().postDataJSON() as { graph: ApiGraphExport };
+    inspected.push(Object.keys(body.graph.nodes));
+    await route.fallback();
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const node = (id: string, repo?: string, disabled = false) => ({
+      id,
+      position: { x: id === 'output' ? 400 : 0, y: 0 },
+      type: 'custom',
+      data: {
+        type: 'custom' as const,
+        module: 'modules.Test',
+        action: id === 'output' ? 'Preview' : 'Load',
+        label: id,
+        category: '',
+        uiState: { disabled },
+        params: {
+          ...(repo ? { model_id: { display: 'modelselect', value: { source: 'hub', value: repo } } } : {}),
+          input: { display: 'input', type: 'pipeline' },
+          output: { display: 'output', type: 'pipeline' },
+        },
+      },
+    });
+    useFlowStore.getState().replaceGraph({
+      nodes: [
+        node('required', 'test/required'),
+        node('output'),
+        node('unrelated', 'test/unrelated'),
+        node('disabled', 'test/disabled', true),
+      ],
+      edges: [
+        {
+          id: 'required-output',
+          source: 'required',
+          sourceHandle: 'output',
+          target: 'output',
+          targetHandle: 'input',
+        },
+      ],
+    });
+    useStudioStore.setState({ form: { ...useStudioStore.getState().form, resourceMode: 'expert' } });
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    window.__MODIFF_E2E__!.openWorkspacePanelForTest('setup');
+  });
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const root = page.getByTestId('workflow-setup-checklist');
+  for (const name of ['Base environment', 'Model artifacts', 'Extra feature packages', 'System prerequisites'])
+    await expect(root.getByRole('group', { name, exact: true })).toBeVisible();
+  await expect(root.getByRole('group', { name: 'Base environment', exact: true })).toContainText('Verified');
+  await expect(root).toContainText('PEFT: 0.21.2');
+  await expect(root.getByRole('group', { name: 'Model artifacts', exact: true })).toContainText('unrelated');
+  await root.getByRole('button', { name: 'Workflow setup scope' }).click();
+  await page.getByRole('option', { name: 'Run through: output', exact: true }).click();
+  await expect.poll(() => inspected.at(-1)?.sort()).toEqual(['output', 'required']);
+  const artifacts = root.getByRole('group', { name: 'Model artifacts', exact: true });
+  await expect(artifacts).toContainText('required');
+  await expect(artifacts).toContainText('Ready');
+  await expect(artifacts).not.toContainText('unrelated');
+  await expect(artifacts).not.toContainText('disabled');
+  await expect(root.getByRole('group', { name: 'Extra feature packages', exact: true })).toContainText(
+    'No additional managed runtime',
+  );
+  healthy = false;
+  await root.getByRole('button', { name: 'Refresh checklist status', exact: true }).click();
+  await expect(root.getByRole('group', { name: 'Base environment', exact: true })).toContainText('Needs verification');
+  await expect(root.getByRole('group', { name: 'System prerequisites', exact: true })).toContainText('PEFT is missing');
+  await expect(root.getByRole('button', { name: /^(Install|Activate)$/u })).toHaveCount(0);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  expect(mutations).toEqual([]);
+});
+
 test('optional runtime setup is GET-only and keeps a pending target non-actionable', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
@@ -9822,7 +9987,7 @@ test('qualified optional runtime setup requires consent and supports progress, c
   await expect(disclosure.getByTestId('optional-runtime-progress')).toContainText('MoDiff is ready', {
     timeout: 5_000,
   });
-  await expect(disclosure.getByText(/active\./)).toBeVisible({ timeout: 5_000 });
+  await expect(disclosure.getByText(/active — verified in this worker/)).toBeVisible({ timeout: 5_000 });
   // Runtime activation rehydrates the workspace. On an empty graph its task
   // launcher can reopen, so dismiss it before interacting with Setup again.
   await dismissTaskLauncher(page);

@@ -5,8 +5,8 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import {
   parseOptionalRuntimeJobResponse,
   parseOptionalRuntimeMutation,
+  optionalRuntimeSetupStatus,
   stagedOptionalRuntimeEnvironment,
-  type OptionalRuntimeCatalog,
   type OptionalRuntimeJob,
   type OptionalRuntimeProfileStatus,
 } from '../studio/optionalRuntimes';
@@ -33,38 +33,24 @@ function post<T>(path: string, body: Record<string, unknown>, parse: (value: unk
   });
 }
 
-function optionalRuntimeStatus(
-  profile: OptionalRuntimeProfileStatus,
-  process: OptionalRuntimeCatalog['processLoadStatus'],
-) {
-  const qualified =
-    process === 'active' &&
-    profile.overlayStatus === 'active' &&
-    profile.cutoverReady &&
-    profile.contractState === 'qualified';
-  const state =
-    process !== 'active' && process !== 'base'
-      ? process
-      : qualified
-        ? 'active'
-        : profile.contractState !== 'qualified' || !profile.cutoverReady
-          ? 'unavailable'
-          : profile.overlayStatus;
-  return `${state.replace(/_/g, ' ')}${state === 'unavailable' ? ` (${profile.contractState})` : ''}.`;
-}
-
 function optionalRuntimeTarget(profile: OptionalRuntimeProfileStatus) {
   const platform = profile.platform === 'macos' ? 'macOS' : profile.platform === 'windows' ? 'Windows' : 'Linux';
   const machine = profile.machine === 'arm64' ? 'ARM64' : 'x86-64';
   return `${platform} ${machine}`;
 }
 
-export default function RuntimeOptimizationsCard() {
+export default function RuntimeOptimizationsCard({
+  requiredProfileIds,
+}: { requiredProfileIds?: readonly string[] } = {}) {
   const recoveryFocusRef = useRunRecoveryFocus<HTMLElement>('runtime');
   const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
   const optionalRuntimeRequest = useNodesStore((state) => state.discoveryRequests.optionalRuntimes);
   const fetchOptionalRuntimes = useNodesStore((state) => state.fetchOptionalRuntimes);
   const setAlertOpener = useSettingsStore((state) => state.setAlertOpener);
+  const focusRequest = useSettingsStore((state) => state.runRecoveryFocusRequest);
+  const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
+  const runtimeRequest = useNodesStore((state) => state.discoveryRequests.runtime);
+  const [showOther, setShowOther] = useState(false);
   const [catalog, setCatalog] = useState<OptimizationCatalog | null>(null);
   const [receipts, setReceipts] = useState<OptimizationReceipt[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -279,6 +265,11 @@ export default function RuntimeOptimizationsCard() {
   const resetToBase = optionalRuntimeCatalog?.processLoadStatus === 'repair_required';
   const rollbackAvailable = Boolean(optionalRuntimeCatalog?.previousEnvironmentId || resetToBase);
   const runtimeBusy = runtimeJob !== null && !['ready', 'failed', 'cancelled'].includes(runtimeJob.status);
+  const workerReady =
+    runtimeRequest.status === 'success' &&
+    runtimeStatus?.ready === true &&
+    runtimeStatus.runtimeEnvironment.executionReady;
+  const focusProfiles = focusRequest?.target.kind === 'runtime' ? focusRequest.target.profileIds : [];
 
   return (
     <section
@@ -291,6 +282,13 @@ export default function RuntimeOptimizationsCard() {
     >
       <div className="grid gap-1 pb-2">
         <strong>Optional runtimes</strong>
+        {requiredProfileIds ? (
+          <p className="text-xs text-modiff-subtle-text">
+            Required runtimes appear first. Only one optional environment can be active. Separate installations do not
+            establish a combined environment; use a reviewed combined choice when the backend offers it. Download size
+            is unknown unless reported by the install job.
+          </p>
+        ) : null}
         {optionalRuntimeRequest.status === 'success' &&
         optionalRuntimeCatalog?.profiles.some((profile) => profile.baseIncluded) ? (
           <p className="text-xs text-modiff-subtle-text">
@@ -305,6 +303,15 @@ export default function RuntimeOptimizationsCard() {
             data-testid="optional-runtime-progress"
           >
             <span>{runtimeJob.progress.message}</span>
+            {runtimeJob.status === 'ready' ? (
+              <span>
+                {runtimeJob.operation === 'install'
+                  ? 'Installation finished. Activation is a separate step.'
+                  : 'Activation finished; current worker readiness is reported below.'}
+              </span>
+            ) : ['restarting', 'verifying'].includes(runtimeJob.status) ? (
+              <span>Waiting for the replacement worker to verify the selected runtime.</span>
+            ) : null}
             {runtimeJob.operation === 'install' && ['queued', 'running'].includes(runtimeJob.status) ? (
               <ModiffButton size="compact" disabled={busyId !== null} onClick={cancelRuntime}>
                 Cancel
@@ -327,6 +334,12 @@ export default function RuntimeOptimizationsCard() {
             </ModiffButton>
           </div>
         ) : null}
+        {runtimeJob?.status === 'failed' ? (
+          <p role="alert" className="text-xs text-modiff-warning">
+            Setup failed; this job is not ready. Refresh status and review the current runtime or installation logs
+            before an explicit repair. Status checks never retry installation automatically.
+          </p>
+        ) : null}
         {optionalRuntimeRequest.error ? (
           <p className="text-xs text-modiff-warning">{optionalRuntimeRequest.error}</p>
         ) : optionalRuntimeRequest.status === 'loading' ? (
@@ -334,6 +347,18 @@ export default function RuntimeOptimizationsCard() {
         ) : optionalRuntimeRequest.status === 'success' && optionalRuntimeCatalog ? (
           optionalRuntimeCatalog.profiles
             .filter((profile) => !profile.baseIncluded)
+            .filter(
+              (profile) =>
+                !requiredProfileIds ||
+                showOther ||
+                requiredProfileIds.includes(profile.id) ||
+                focusProfiles.includes(profile.id) ||
+                (runtimeBusy && runtimeJob?.profileId === profile.id),
+            )
+            .sort(
+              (left, right) =>
+                Number(requiredProfileIds?.includes(right.id)) - Number(requiredProfileIds?.includes(left.id)),
+            )
             .map((profile) => {
               const staged = stagedOptionalRuntimeEnvironment(optionalRuntimeCatalog, profile);
               const completedEnvironment =
@@ -368,7 +393,15 @@ export default function RuntimeOptimizationsCard() {
                 >
                   <span>
                     {profile.label} ({optionalRuntimeTarget(profile)}):{' '}
-                    {optionalRuntimeStatus(profile, optionalRuntimeCatalog.processLoadStatus)}
+                    {optionalRuntimeSetupStatus(profile, optionalRuntimeCatalog, workerReady)}
+                    {requiredProfileIds
+                      ? requiredProfileIds.includes(profile.id)
+                        ? ' Required by this scope.'
+                        : ' Other optional runtime; not a requirement of this scope.'
+                      : ''}
+                    {!canAct
+                      ? ' Package actions are unavailable for this target. Use the supported base recipe or a separately qualified runtime/platform; installing arbitrary packages cannot enable it.'
+                      : ''}
                   </span>
                   <div className="flex gap-1.5">
                     {actionable && !runtimeBusy ? (
@@ -388,6 +421,14 @@ export default function RuntimeOptimizationsCard() {
         ) : (
           <p className="text-xs text-modiff-subtle-text">No optional runtimes.</p>
         )}
+        {requiredProfileIds &&
+        optionalRuntimeCatalog?.profiles.some(
+          (profile) => !profile.baseIncluded && !requiredProfileIds.includes(profile.id),
+        ) ? (
+          <ModiffButton size="compact" onClick={() => setShowOther((value) => !value)}>
+            {showOther ? 'Hide other runtimes' : 'Show other runtimes'}
+          </ModiffButton>
+        ) : null}
         {optionalRuntimeCatalog &&
         rollbackAvailable &&
         (resetToBase ||

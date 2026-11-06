@@ -710,6 +710,37 @@ export function stagedOptionalRuntimeEnvironment(
   return catalog.stagedEnvironmentIds[profile.id + profile.specDigest];
 }
 
+export function optionalRuntimeSetupStatus(
+  profile: OptionalRuntimeProfileStatus,
+  catalog: OptionalRuntimeCatalog,
+  workerReady: boolean,
+) {
+  if (!['active', 'base'].includes(catalog.processLoadStatus))
+    return `${catalog.processLoadStatus.replace(/_/g, ' ')}. Follow the existing setup operation or refresh status.`;
+  if (profile.contractState !== 'qualified' || !profile.cutoverReady) return `unavailable (${profile.contractState}).`;
+  if (profile.overlayStatus === 'active') {
+    const exact =
+      catalog.processLoadStatus === 'active' &&
+      catalog.activeOptionalRuntimeSpecs.some(
+        (spec) => spec.profileId === profile.id && spec.specDigest === profile.specDigest,
+      );
+    return !exact
+      ? 'unavailable — the current worker has not verified this exact runtime identity.'
+      : workerReady
+        ? 'active — verified in this worker.'
+        : 'verifying worker readiness; not ready yet.';
+  }
+  if (profile.overlayStatus === 'staged')
+    return 'staged — installed; activation, restart and worker verification are still needed.';
+  if (profile.overlayStatus === 'staged_unchecked')
+    return 'staged unchecked — repair or validation is required before activation.';
+  if (profile.overlayStatus === 'missing' && profile.status === 'wrong_version')
+    return 'wrong version — use the reviewed installation or repair action.';
+  if (profile.overlayStatus === 'missing' && profile.status === 'present_unqualified')
+    return 'present unqualified — visible packages do not establish a verified runtime.';
+  return `${profile.overlayStatus.replace(/_/g, ' ')}.`;
+}
+
 export function optionalRuntimeBlockState(
   requirement: OptionalRuntimeRequirement | undefined,
   catalog: OptionalRuntimeCatalog | null,
@@ -718,12 +749,17 @@ export function optionalRuntimeBlockState(
   if (requirement.state !== 'active') return requirement.state;
   if (!catalog || catalog.processLoadStatus === 'base') return 'unavailable';
   if (catalog.processLoadStatus !== 'active') return catalog.processLoadStatus;
-  // Profile IDs are alternative pins (e.g. transformers 5.14.1 vs reviewed main).
-  // One fully active overlay satisfies the requirement.
+  // Match the backend guard: every requested profile must be supplied by the
+  // one active environment, including its explicitly declared satisfiesProfiles.
+  // An installed or separately staged environment cannot complete the set.
   let fallback: OptionalRuntimeRequirement['state'] = 'unavailable';
+  let missing = false;
   for (const profileId of requirement.profileIds) {
     const profile = catalog.profiles.find(({ id }) => id === profileId);
-    if (!profile) continue;
+    if (!profile) {
+      missing = true;
+      continue;
+    }
     if (
       profile.cutoverReady &&
       profile.contractState === 'qualified' &&
@@ -732,8 +768,9 @@ export function optionalRuntimeBlockState(
         (spec) => spec.profileId === profile.id && spec.specDigest === profile.specDigest,
       )
     ) {
-      return null;
+      continue;
     }
+    missing = true;
     if (profile.overlayStatus === 'active' || !profile.cutoverReady || profile.contractState !== 'qualified') continue;
     if (profile.overlayStatus === 'staged' || profile.overlayStatus === 'repair_required') {
       fallback = profile.overlayStatus;
@@ -741,5 +778,5 @@ export function optionalRuntimeBlockState(
       fallback = profile.status;
     }
   }
-  return fallback;
+  return missing || requirement.profileIds.length === 0 ? fallback : null;
 }

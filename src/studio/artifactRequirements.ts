@@ -43,6 +43,8 @@ export type WorkflowArtifactRequirement = {
   modelPath?: string;
   paramKey?: string;
   details?: string;
+  revision?: string;
+  files?: string[];
 };
 
 type WorkflowArtifactRequirementOptions = {
@@ -324,9 +326,10 @@ export function getGraphWorkflowArtifactRequirements({
   const seen = new Set<string>();
   const exactReferences = selectedReferences.filter((reference) => {
     const label = reference.value.split(/[\\/]/).pop() || reference.value;
-    const selection = reference.downloadFiles
-      ? ':' + JSON.stringify([reference.revision, reference.downloadFiles])
-      : '';
+    const selection =
+      reference.downloadFiles || reference.revision
+        ? ':' + JSON.stringify([reference.revision, reference.downloadFiles])
+        : '';
     const key = `${roleForArtifact(reference.value, label)}:${reference.value}`.toLowerCase() + selection;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -334,9 +337,10 @@ export function getGraphWorkflowArtifactRequirements({
   });
   const requirements = exactReferences.map((reference): WorkflowArtifactRequirement => {
     const label = reference.value.split(/[\\/]/).pop() || reference.value;
-    const selectionId = reference.downloadFiles
-      ? ':selection-' + hashString(JSON.stringify([reference.revision, reference.downloadFiles]))
-      : '';
+    const selectionId =
+      reference.downloadFiles || reference.revision
+        ? ':selection-' + hashString(JSON.stringify([reference.revision, reference.downloadFiles]))
+        : '';
     const id = `graph:${reference.nodeId}:${reference.paramKey}:${reference.value}${selectionId}`;
     if (invalidFormatNodes.has(reference.nodeId)) {
       const status = getStudioModelCacheStatus(null, hfCache, localModels, modelCacheDiagnostics);
@@ -402,6 +406,8 @@ export function getGraphWorkflowArtifactRequirements({
         primaryAction === 'Install' || primaryAction === 'Repair'
           ? { ...effectiveInstallTarget, actionLabel: primaryAction }
           : undefined,
+      revision: reference.revision,
+      files: reference.downloadFiles,
       nodeId: reference.nodeId,
       nodeLabel: reference.nodeLabel,
       paramKey: reference.paramKey,

@@ -53,8 +53,7 @@ import {
 } from '../ui';
 import { cx } from '../utils/classNames';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
-import { RuntimeEnvironmentCard } from './RuntimeEnvironmentCard';
-import RuntimeOptimizationsCard from './RuntimeOptimizationsCard';
+import WorkflowSetupChecklist from './WorkflowSetupChecklist';
 import { captureRunRecoveryOrigin } from '../studio/runRecovery';
 import { TemplateGallerySetupCard } from './TemplateGallerySetupCard';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
@@ -196,7 +195,6 @@ export default function ModelSetupPanel() {
   const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
   const studioExecutionSpecInvalid = useNodesStore((state) => state.studioExecutionSpecInvalid);
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
-  const runtimeError = useNodesStore((state) => state.runtimeError);
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
   const refreshModelIndexes = useNodesStore((state) => state.refreshModelIndexes);
   const fetchRuntimeStatus = useNodesStore((state) => state.fetchRuntimeStatus);
@@ -453,7 +451,7 @@ export default function ModelSetupPanel() {
     <div className="grid gap-3 p-3 text-sm text-modiff-text" data-testid="setup-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-base font-bold text-modiff-text">Model Health</h2>
+          <h2 className="text-base font-bold text-modiff-text">Workflow setup</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           <ModiffButton
@@ -475,18 +473,21 @@ export default function ModelSetupPanel() {
         </div>
       </div>
 
-      <RuntimeEnvironmentCard error={runtimeError} status={runtimeStatus} />
-      <RuntimeOptimizationsCard />
+      <WorkflowSetupChecklist onInstall={handleInstall} />
       <TemplateGallerySetupCard />
 
       {currentIssueGroups.length > 0 && (
-        <section
-          className="grid gap-3 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
+        <ModiffDisclosure
+          className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
           data-testid="setup-current-issues"
+          label={`Whole workflow Run checks (${runReadiness.blockingIssues.length})`}
+          panelClassName="mt-3 grid gap-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-bold text-modiff-text">Current issues</h3>
+              <p className="text-xs text-modiff-subtle-text">
+                These checks cover the whole workflow, independently of the checklist scope selected above.
+              </p>
             </div>
             <ModiffButton icon={<Info size={15} />} onClick={openIssueReview}>
               Review all
@@ -510,7 +511,7 @@ export default function ModelSetupPanel() {
               </div>
             </div>
           ))}
-        </section>
+        </ModiffDisclosure>
       )}
 
       {visibleDownloads.length > 0 && (
