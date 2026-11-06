@@ -67,6 +67,7 @@ import { useHuggingFaceClusterRuntimeStore } from '../stores/useHuggingFaceClust
 import { useUserBlockStore } from '../stores/useUserBlockStore';
 import { expandUserBlockGraph, inspectUserBlockCompositions, runtimeProgressTarget } from './userBlocks';
 import { modularRuntimeFailureIssue } from './modularRuntimeFailureIssue';
+import { captureRunRecoveryOrigin } from './runRecovery';
 import { expandHuggingFaceClusterBoundaryEdges } from './huggingFaceClusterGraph';
 import { blockProjectionNodeIdV2, expandBlockGraphV2ForExecution } from './blockRuntimeV2';
 import { registeredBlockAutoAuthorityIssuesV2 } from './blockExecutionAuthorityV2';
@@ -681,10 +682,12 @@ export function getStudioOffloadCapabilityIssue(
   const offloadMode = normalizeStudioOffloadMode(resolvedForm.offloadMode);
   if (!offloadModeIsSupported(profile, offloadMode)) {
     return {
+      code: 'offload_mode_unsupported',
       category: 'hardware_fit',
       severity: 'error',
       blocking: true,
-      action: 'open_setup',
+      action: 'edit_studio_field',
+      fieldId: 'offloadMode',
       message: `${getStudioModelDisplayName(profile)} does not support ${STUDIO_OFFLOAD_LABELS[offloadMode]}.`,
       details: `Supported modes for this Studio profile: ${profile.offloadSupport.modes.map((mode) => STUDIO_OFFLOAD_LABELS[mode]).join(', ')}.`,
     } satisfies Omit<RunReadinessIssue, 'id'>;
@@ -740,10 +743,12 @@ export function getStudioDeviceOffloadIssue(form: StudioFormState) {
   });
   if (!details) return null;
   return {
+    code: 'device_offload_conflict',
     category: 'hardware_fit',
     severity: 'error',
     blocking: true,
-    action: 'open_setup',
+    action: 'edit_studio_field',
+    fieldId: 'offloadMode',
     message: `${form.device} cannot run with ${STUDIO_OFFLOAD_LABELS[form.offloadMode]}.`,
     details,
   } satisfies Omit<RunReadinessIssue, 'id'>;
@@ -933,6 +938,7 @@ export function collectGraphDeviceOffloadIssues(graph = executableFlowGraph()): 
         blocking: true,
         action: 'inspect_node',
         nodeId: node.id,
+        fieldId: 'offload_mode',
         message: `${node.data.label || node.data.action} has an invalid device/offload plan.`,
         details,
       }),
@@ -1328,11 +1334,13 @@ function blockingOptionalRuntimeState(
   mode: StudioFormState['mode'],
   catalog: ReturnType<typeof useNodesStore.getState>['optionalRuntimeCatalog'],
   stale: boolean,
-) {
+): { state: string; profileIds: string[] } | null {
   if (!profile) return null;
   let matching = profile.executionProfiles?.find((item) => item.modes.includes(mode));
   if (profile.executionProfiles && !matching) {
-    return profile.optionalRuntimeRequirement?.requiredNow ? 'unavailable' : null;
+    return profile.optionalRuntimeRequirement?.requiredNow
+      ? { state: 'unavailable', profileIds: [...profile.optionalRuntimeRequirement.profileIds] }
+      : null;
   }
   let requirement =
     matching?.optionalRuntimeRequirement ??
@@ -1370,16 +1378,39 @@ function blockingOptionalRuntimeState(
                 repo && [item.default_repo, item.fallback_repo, ...(item.compatible_repos ?? [])].includes(repo),
             );
       matching = resolved.length === 1 ? resolved[0] : undefined;
-      if (!matching)
-        return (sameIdentity.length ? sameIdentity : profiles).some(
-          (item) => item.optionalRuntimeRequirement?.requiredNow,
-        )
-          ? 'unavailable'
+      if (!matching) {
+        const requirements = (sameIdentity.length ? sameIdentity : profiles)
+          .flatMap((item) => (item.optionalRuntimeRequirement ? [item.optionalRuntimeRequirement] : []))
+          .filter((item) => item.requiredNow);
+        return requirements.length
+          ? { state: 'unavailable', profileIds: [...new Set(requirements.flatMap((item) => item.profileIds))] }
           : null;
+      }
       requirement = matching?.optionalRuntimeRequirement;
     }
   }
-  return requirement?.requiredNow && stale ? 'unavailable' : optionalRuntimeBlockState(requirement, catalog);
+  const state = requirement?.requiredNow && stale ? 'unavailable' : optionalRuntimeBlockState(requirement, catalog);
+  return state ? { state, profileIds: [...(requirement?.profileIds ?? [])] } : null;
+}
+
+function runtimeRecoveryDetails(state: string) {
+  const descriptions: Record<string, string> = {
+    missing: 'An additional runtime is missing. Open its Setup entry to review platform support and installation.',
+    present_unqualified:
+      'The packages are present, but this runtime has not passed compatibility verification. Review its Setup status before running.',
+    wrong_version:
+      'The installed package version does not match the reviewed runtime. Open its Setup entry for the supported repair.',
+    repair_required:
+      'The runtime needs repair. Open its Setup entry to inspect the failure and available repair action.',
+    staged: 'The runtime is staged but not active. Open its Setup entry to review activation and restart progress.',
+    restart_required:
+      'The worker must restart before this runtime is ready. Open Setup to review the existing operation.',
+    busy_recovery_only:
+      'Runtime recovery is still in progress. Open Setup to follow the existing operation; do not start another installation.',
+    unavailable:
+      'The runtime is unavailable or its compatibility information is not current. Review Setup; installing arbitrary packages does not establish platform support.',
+  };
+  return descriptions[state] ?? 'Open the required runtime in Setup to review its compatibility and readiness.';
 }
 
 function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
@@ -1427,8 +1458,11 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         category: 'backend',
         severity: 'error',
         blocking: true,
+        action: 'edit_studio_field',
+        fieldId: exactCapability.capability ? 'mode' : 'modelType',
         message: exactStudioCapabilityUnsupportedMessage(form.modelType, form.mode, exactCapability),
-        details: 'Choose a backend-advertised model/task pair or an explicit Expert graph.',
+        details:
+          'Choose a task or model supported by the connected backend. Expert does not add unsupported model capabilities.',
       }),
     );
   }
@@ -1451,8 +1485,9 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
         severity: 'error',
         blocking: true,
         action: 'open_setup',
+        runtimeProfileIds: optionalRuntimeBlock.profileIds,
         message: 'Reviewed optional runtime required.',
-        details: `${optionalRuntimeBlock.replace(/_/g, ' ')}.`,
+        details: runtimeRecoveryDetails(optionalRuntimeBlock.state),
       }),
     );
   }
@@ -1460,10 +1495,14 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (autoTarget) {
     issues.push(
       issue({
+        code: 'auto_plan_stale',
         category: 'backend',
         severity: 'error',
         blocking: true,
+        action: 'open_resources',
         message: autoTarget,
+        details:
+          'Review the current workflow resource options and check its Auto execution plan. Inspection does not change settings or start a run.',
       }),
     );
   } else if (auto && (!autoResourcePlan || !autoPlanIsReady(autoResourcePlan, form))) {
@@ -1496,12 +1535,14 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
           : (autoCompatibility.action?.repo ?? autoInstallTarget?.repo ?? profile.defaultRepo),
         blocking: true,
         action: transientPlannerFailure
-          ? undefined
+          ? 'open_resources'
           : autoInstallTarget
             ? 'install_model'
             : autoResourcePlan
-              ? 'open_setup'
-              : undefined,
+              ? runtimeIssue
+                ? 'open_setup'
+                : 'open_resources'
+              : 'open_resources',
         message: autoCompatibility.summary,
         details:
           autoInstallTarget?.reason ??
@@ -1693,9 +1734,12 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   ) {
     issues.push(
       issue({
+        code: 'control_mode_invalid',
         category: 'user_input',
         severity: 'error',
         blocking: true,
+        action: 'edit_studio_field',
+        fieldId: 'controlMode',
         message: 'ControlNet Union mode must be an integer from 0 through 5 for the reviewed basic SDXL artifact.',
       }),
     );
@@ -1703,9 +1747,12 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (profile.layerResolutions && (form.width !== form.height || !profile.layerResolutions.includes(form.width))) {
     issues.push(
       issue({
+        code: 'layer_resolution_invalid',
         category: 'user_input',
         severity: 'error',
         blocking: true,
+        action: 'edit_studio_field',
+        fieldId: 'width',
         message: `Layer resolution must be one of ${profile.layerResolutions.join(', ')} pixels square.`,
       }),
     );
@@ -1713,9 +1760,12 @@ function collectStudioIssues(form: StudioFormState): RunReadinessIssue[] {
   if (profile.layerCount && (form.layers < profile.layerCount.min || form.layers > profile.layerCount.max)) {
     issues.push(
       issue({
+        code: 'layer_count_invalid',
         category: 'user_input',
         severity: 'error',
         blocking: true,
+        action: 'edit_studio_field',
+        fieldId: 'layers',
         message: `Layer count must be between ${profile.layerCount.min} and ${profile.layerCount.max}.`,
       }),
     );
@@ -2142,7 +2192,7 @@ export function validateCurrentRun(options: {
   applyRunReadinessToGraph(issues);
   const decision = buildRunReadinessDecision(issues);
   if (decision.blockingIssues.length > 0 && options.showDialog !== false) {
-    useRunIssueStore.getState().showIssues(issues);
+    useRunIssueStore.getState().showIssues(issues, captureRunRecoveryOrigin());
   }
   return {
     ...decision,

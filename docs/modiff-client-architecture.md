@@ -1513,6 +1513,21 @@ dialog with the backend explanation and a fresh-Run recovery path. This feedback
 stays visible until dismissed; it does not fabricate a task or failed generation.
 Late responses cannot open it after a workflow, graph or memory-policy change.
 
+Run-blocking diagnostics retain their exact Studio field or backend-declared
+optional-runtime alternatives when available. **Edit setting** and **Choose
+supported task/model** reveal the actual Studio control; **Review runtime** opens
+its Setup entry; **Review Auto options** opens the read-only workflow resource
+inspector. Navigation does not install packages, submit a graph, change settings
+or grant Auto authority. Unsupported runtimes remain explicitly unavailable.
+
+`runRecovery.ts` binds each displayed issue list to its workflow/canvas/form
+epochs and durable graph inputs. Recovery checks that origin again at the click,
+rejecting stale actions without treating progress, selection or node positioning
+as edits. `useRunRecoveryFocus.ts` owns bounded, volatile focus requests: it opens
+existing disclosures, waits for the requested control or runtime metadata, and
+cancels on panel departure or changed document. Reload cannot restore a pending
+focus request. Runtime failure history retains its separate task/run ownership.
+
 Session activity merges queue history by execution timestamps before applying
 its 30-entry limit, retaining running work ahead of waiting tasks and finished history. Repeated or
 reordered history snapshots must not evict a new submission or promote old runs.

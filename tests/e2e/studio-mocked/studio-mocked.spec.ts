@@ -12474,17 +12474,21 @@ test('the unified editor inspect a node with the library closed, preserving grap
   // This is diagnostic fixture setup, not proof of model execution.
   await page.evaluate(async (id) => {
     const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
-    useRunIssueStore.getState().showIssues([
-      {
-        id: 'inspection-regression',
-        category: 'graph',
-        severity: 'error',
-        blocking: true,
-        nodeId: id,
-        action: 'inspect_node',
-        message: 'Review this prompt node.',
-      },
-    ]);
+    const { captureRunRecoveryOrigin } = await import('/src/studio/runRecovery.ts');
+    useRunIssueStore.getState().showIssues(
+      [
+        {
+          id: 'inspection-regression',
+          category: 'graph',
+          severity: 'error',
+          blocking: true,
+          nodeId: id,
+          action: 'inspect_node',
+          message: 'Review this prompt node.',
+        },
+      ],
+      captureRunRecoveryOrigin(),
+    );
   }, nodeId);
   await page
     .getByRole('dialog', { name: 'Run blocked', exact: true })
@@ -16400,6 +16404,346 @@ test('mocked custom graph inspector blocks invalid graphs in Auto and Expert', a
       }
     }
   }
+});
+
+test('Run recovery reveals invalid saved settings and focuses their real controls without changing values', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  const mutations: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /\/(graph|hf\/download|optional-runtimes\/(install|activate))$/.test(new URL(request.url()).pathname)
+    )
+      mutations.push(request.url());
+  });
+  // A failed/unfinished template restore can expose invalid saved values before
+  // a graph exists. This fixture supplies that document, never model authority.
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+    const { getFormDefaultsForMode } = await import('/src/studio/modelProfiles.ts');
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    useFlowStore.getState().replaceGraph({ nodes: [], edges: [] });
+    useStudioStore.setState({
+      form: {
+        ...getFormDefaultsForMode('layer_decomposition', 'QwenImageLayeredPipeline'),
+        resourceMode: 'expert',
+        width: 768,
+        height: 768,
+        layers: 11,
+      },
+      activeTemplateId: 'z_image_quick_concept',
+      graphBinding: null,
+      graphFinalization: null,
+      canvasTransition: null,
+      launcherDismissed: true,
+      workflowCanvasHydrated: true,
+    });
+    useSettingsStore.getState().setStudioSectionOpen('advanced-generation', false);
+    useSettingsStore.getState().setRightPanelOpen(true);
+    useSettingsStore.getState().setRightPanelTab('studio');
+  });
+  await expect(page.getByTestId('studio-panel')).toBeVisible();
+  const read = () =>
+    page.evaluate(() => ({
+      form: window.__MODIFF_E2E__!.getState().studio.form,
+      graph: window.__MODIFF_E2E__!.exportWorkflowGraph(),
+    }));
+  const before = await read();
+  await page.getByTestId('studio-run-readiness').click();
+  const dialog = page.getByTestId('run-issues-dialog');
+  const resolution = dialog.locator('[data-testid^="run-issue-layer_resolution_invalid:"]');
+  await expect(resolution).toBeVisible();
+  await resolution.getByRole('button', { name: 'Edit setting', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId('studio-section-toggle-advanced-generation')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('studio-layer-resolution-select')).toBeFocused();
+  expect(await read()).toEqual(before);
+  await page.getByTestId('studio-run-readiness').click();
+  await dialog
+    .locator('[data-testid^="run-issue-layer_count_invalid:"]')
+    .getByRole('button', { name: 'Edit setting', exact: true })
+    .click();
+  await expect(page.locator('input[name="layers"]')).toBeFocused();
+  expect(await read()).toEqual(before);
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+    const { getFormDefaultsForMode } = await import('/src/studio/modelProfiles.ts');
+    useSettingsStore.getState().setStudioSectionOpen('mask-control', false);
+    useStudioStore.setState({
+      form: {
+        ...getFormDefaultsForMode('control_union_image', 'StableDiffusionXLModularPipeline'),
+        resourceMode: 'expert',
+        controlMode: 6,
+      },
+    });
+  });
+  const controlBefore = await read();
+  await page.getByTestId('studio-run-readiness').click();
+  await dialog
+    .locator('[data-testid^="run-issue-control_mode_invalid:"]')
+    .getByRole('button', { name: 'Edit setting', exact: true })
+    .click();
+  await expect(page.getByTestId('studio-section-toggle-mask-control')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('input[name="controlMode"]')).toBeFocused();
+  expect(await read()).toEqual(controlBefore);
+  expect(mutations).toEqual([]);
+});
+
+test('Run recovery focuses a supported task choice without silently replacing an unsupported saved task', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { getFormDefaultsForModel } = await import('/src/studio/modelProfiles.ts');
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    useFlowStore.getState().replaceGraph({ nodes: [], edges: [] });
+    useStudioStore.setState({
+      form: {
+        ...getFormDefaultsForModel('ZImageModularPipeline'),
+        mode: 'speech_transcription',
+        resourceMode: 'expert',
+      },
+      activeTemplateId: 'z_image_quick_concept',
+      graphBinding: null,
+      graphFinalization: null,
+      canvasTransition: null,
+      launcherDismissed: true,
+      workflowCanvasHydrated: true,
+    });
+  });
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form);
+  await page.getByTestId('studio-run-readiness').click();
+  await page
+    .getByTestId('run-issues-dialog')
+    .getByRole('button', { name: 'Choose supported task', exact: true })
+    .click();
+  await expect(page.getByTestId('studio-task-select')).toBeFocused();
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form)).toEqual(before);
+});
+
+test('Run recovery opens the exact required runtime and Auto inspection without installing or submitting', async ({
+  page,
+}) => {
+  mockOptionalRuntimeActions = true;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await page.waitForFunction(
+    () => window.__MODIFF_E2E__!.getState().nodes.discoveryRequests.optionalRuntimes.status === 'success',
+  );
+  let releaseCatalog!: () => void;
+  const catalogReady = new Promise<void>((resolve) => {
+    releaseCatalog = resolve;
+  });
+  await page.route('**/runtime/optional-runtimes', async (route) => {
+    await catalogReady;
+    await route.fallback();
+  });
+  await page.evaluate(async () => {
+    const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
+    const { captureRunRecoveryOrigin } = await import('/src/studio/runRecovery.ts');
+    const { useNodesStore } = await import('/src/stores/useNodeStore.ts');
+    useNodesStore.setState((state) => ({
+      optionalRuntimeCatalog: null,
+      discoveryRequests: {
+        ...state.discoveryRequests,
+        optionalRuntimes: { ...state.discoveryRequests.optionalRuntimes, status: 'idle', error: null },
+      },
+    }));
+    void useNodesStore.getState().fetchOptionalRuntimes();
+    useRunIssueStore.getState().showIssues(
+      [
+        {
+          id: 'required-runtime',
+          category: 'environment',
+          severity: 'error',
+          blocking: true,
+          action: 'open_setup',
+          runtimeProfileIds: ['unavailable-profile', 'huggingface-transformers-peft-5.14.1-0.20.0'],
+          message: 'Review the selected runtime',
+        },
+      ],
+      captureRunRecoveryOrigin(),
+    );
+  });
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const submissions: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/graph$/.test(new URL(request.url()).pathname))
+      submissions.push(request.url());
+  });
+  await page.getByTestId('run-issues-dialog').getByRole('button', { name: 'Review runtime', exact: true }).click();
+  await expect(page.getByTestId('setup-panel')).toBeVisible();
+  const runtimePanel = page.getByRole('region', { name: 'Optional runtimes', exact: true });
+  await expect(runtimePanel).toHaveAttribute('data-run-recovery-ready', 'false');
+  await expect(page.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0')).toHaveCount(0);
+  await page.getByTestId('workspace-tab-studio').click();
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const { useSettingsStore } = await import('/src/stores/useSettingsStore.ts');
+        return useSettingsStore.getState().runRecoveryFocusRequest;
+      }),
+    )
+    .toBeNull();
+  await page.evaluate(async () => {
+    const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
+    const { captureRunRecoveryOrigin } = await import('/src/studio/runRecovery.ts');
+    useRunIssueStore.getState().showIssues(
+      [
+        {
+          id: 'required-runtime-again',
+          category: 'environment',
+          severity: 'error',
+          blocking: true,
+          action: 'open_setup',
+          runtimeProfileIds: ['huggingface-transformers-peft-5.14.1-0.20.0'],
+          message: 'Review the selected runtime',
+        },
+      ],
+      captureRunRecoveryOrigin(),
+    );
+  });
+  await page.getByTestId('run-issues-dialog').getByRole('button', { name: 'Review runtime', exact: true }).click();
+  releaseCatalog();
+  await expect(page.getByTestId('optional-runtime-huggingface-transformers-peft-5.14.1-0.20.0')).toBeFocused();
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  // Seed a plain executable utility graph through the existing fixture. Its
+  // inspection is allowed, while the graph dispatch counter must remain zero.
+  await page.evaluate(() => window.__MODIFF_E2E__!.setGraphScenarioForTest('missing_model'));
+  await page.evaluate(async () => {
+    const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
+    const { captureRunRecoveryOrigin } = await import('/src/studio/runRecovery.ts');
+    useRunIssueStore.getState().showIssues(
+      [
+        {
+          id: 'stale-auto',
+          category: 'backend',
+          severity: 'error',
+          blocking: true,
+          action: 'open_resources',
+          message: 'Review the current Auto plan',
+        },
+      ],
+      captureRunRecoveryOrigin(),
+    );
+  });
+  const graph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  let inspections = 0;
+  await page.route('**/auto_resource/workflow', (route) => {
+    inspections++;
+    return route.fulfill({
+      json: {
+        schemaVersion: 1,
+        graphHash: `sha256:workflow-auto-v1:${'a'.repeat(64)}`,
+        plannedGraphHash: `sha256:workflow-auto-v1:${'b'.repeat(64)}`,
+        canAutoRun: false,
+        issues: ['The current RAM snapshot does not meet the unchanged reserve.'],
+        message: 'Not enough RAM for this workflow.',
+        patches: [],
+        loaders: [],
+        requirements: { systemRamBytes: 8 * 1024 ** 3 },
+        available: { systemRamBytes: 4 * 1024 ** 3 },
+        sharedMemory: false,
+      },
+    });
+  });
+  await page.getByTestId('run-issues-dialog').getByRole('button', { name: 'Review Auto options', exact: true }).click();
+  await expect(page.getByTestId('workflow-resource-assessment')).toBeVisible();
+  await expect(page.getByTestId('plan-workflow-auto')).toBeFocused();
+  await page.getByTestId('plan-workflow-auto').click();
+  await expect(page.getByTestId('workflow-auto-plan')).toContainText('Auto needs attention');
+  await expect(page.getByTestId('workflow-auto-plan')).toContainText('unchanged reserve');
+  expect(inspections).toBe(1);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(graph);
+  expect(mockOptionalRuntimeMutationCalls).toBe(0);
+  expect(submissions).toEqual([]);
+});
+
+test('Run recovery refuses an old action after graph changes or a workflow switch', async ({ page }) => {
+  mockInstalledRepos.clear();
+  mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
+  mockDownloadCalls = 0;
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  await page.evaluate(async () => {
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
+    window.__MODIFF_E2E__!.setGraphScenarioForTest('missing_model');
+    const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
+    const { captureRunRecoveryOrigin } = await import('/src/studio/runRecovery.ts');
+    useRunIssueStore.getState().showIssues(
+      [
+        {
+          id: 'stale-install',
+          category: 'model',
+          severity: 'error',
+          blocking: true,
+          action: 'install_model',
+          repoId: 'missing/GraphModel',
+          message: 'Install original graph model',
+        },
+      ],
+      captureRunRecoveryOrigin(),
+    );
+  });
+  const dialog = page.getByTestId('run-issues-dialog');
+  await expect(dialog).toBeVisible();
+  // A late field response changes the draft while the dialog is open. This is
+  // fixture setup for a race, not a bypass used by the recovery implementation.
+  await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    useFlowStore.setState((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === 'scenario-model'
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                params: { ...node.data.params, repo_id: { ...node.data.params.repo_id, value: 'changed/GraphModel' } },
+              },
+            }
+          : node,
+      ),
+    }));
+  });
+  const changedGraph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await dialog.getByRole('button', { name: 'Install', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'The workflow changed. Close this dialog' })).toBeVisible();
+  expect(mockDownloadCalls).toBe(0);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(changedGraph);
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    useStudioStore.getState().createWorkflowTab('Other document');
+  });
+  await expect(dialog.getByRole('button', { name: 'Install', exact: true })).not.toBeVisible();
+  await dismissTaskLauncher(page);
+  if (await dialog.isVisible()) {
+    await expect(dialog.getByRole('button', { name: 'Install', exact: true })).toBeDisabled();
+    await expect(dialog).toContainText('The workflow changed. Close this dialog');
+  }
+  expect(mockDownloadCalls).toBe(0);
 });
 
 test('mocked custom graph artifact requirements show a compact install action', async ({ page }) => {
@@ -23226,16 +23570,20 @@ test('runtime cleanup displays partial warnings and restores clean success witho
   // Diagnostic setup opens the existing remediation surface, without executing a model.
   await page.evaluate(async () => {
     const { useRunIssueStore } = await import('/src/stores/useRunIssueStore.ts');
-    useRunIssueStore.getState().showIssues([
-      {
-        id: 'cleanup-warning-proof',
-        category: 'hardware_fit',
-        severity: 'warning',
-        blocking: false,
-        action: 'cleanup_gpu',
-        message: 'Release cached model state before retrying.',
-      },
-    ]);
+    const { captureRunRecoveryOrigin } = await import('/src/studio/runRecovery.ts');
+    useRunIssueStore.getState().showIssues(
+      [
+        {
+          id: 'cleanup-warning-proof',
+          category: 'hardware_fit',
+          severity: 'warning',
+          blocking: false,
+          action: 'cleanup_gpu',
+          message: 'Release cached model state before retrying.',
+        },
+      ],
+      captureRunRecoveryOrigin(),
+    );
   });
   const dialog = page.getByTestId('run-issues-dialog');
   const cleanup = dialog.getByRole('button', { name: 'Release accelerator cache', exact: true });

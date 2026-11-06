@@ -13,6 +13,7 @@ import {
 import { optionalRuntimePollingFailure, type OptionalRuntimePollingFailure } from '../studio/optionalRuntimePolling';
 import { formatRequestError, requestJson } from '../utils/requestJson';
 import { enqueueSnackbar, ModiffButton, ModiffDisclosure } from '../ui';
+import { useRunRecoveryFocus } from '../studio/useRunRecoveryFocus';
 import {
   parseOptimizationCatalog,
   parseOptimizationMutationResponse,
@@ -59,6 +60,7 @@ function optionalRuntimeTarget(profile: OptionalRuntimeProfileStatus) {
 }
 
 export default function RuntimeOptimizationsCard() {
+  const recoveryFocusRef = useRunRecoveryFocus<HTMLElement>('runtime');
   const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
   const optionalRuntimeRequest = useNodesStore((state) => state.discoveryRequests.optionalRuntimes);
   const fetchOptionalRuntimes = useNodesStore((state) => state.fetchOptionalRuntimes);
@@ -279,7 +281,13 @@ export default function RuntimeOptimizationsCard() {
   const runtimeBusy = runtimeJob !== null && !['ready', 'failed', 'cancelled'].includes(runtimeJob.status);
 
   return (
-    <section className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3">
+    <section
+      ref={recoveryFocusRef}
+      aria-label="Optional runtimes"
+      data-run-recovery-ready={optionalRuntimeRequest.status === 'success' || optionalRuntimeRequest.status === 'error'}
+      tabIndex={-1}
+      className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
+    >
       <div className="grid gap-1 pb-2">
         <strong>Optional runtimes</strong>
         {optionalRuntimeRequest.status === 'success' &&
@@ -352,6 +360,8 @@ export default function RuntimeOptimizationsCard() {
                   key={profile.id}
                   className="grid gap-1 text-xs text-modiff-text"
                   data-testid={`optional-runtime-${profile.id}`}
+                  data-run-recovery-profile={profile.id}
+                  tabIndex={-1}
                 >
                   <span>
                     {profile.label} ({optionalRuntimeTarget(profile)}):{' '}

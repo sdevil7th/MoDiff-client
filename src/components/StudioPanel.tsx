@@ -19,6 +19,8 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { imageUrlLightboxOpener } from '../utils/mediaViewer';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { useRunRecoveryFocus } from '../studio/useRunRecoveryFocus';
+import { captureRunRecoveryOrigin } from '../studio/runRecovery';
 import {
   createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
@@ -113,6 +115,7 @@ function copyText(value: string, label: string) {
 }
 
 export default function StudioPanel() {
+  const recoveryFocusRef = useRunRecoveryFocus('studio');
   const [isWorking, setIsWorking] = useState(false);
   const modelUsageTerms = useModelUsageTermsGate();
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
@@ -576,7 +579,7 @@ export default function StudioPanel() {
   }, [setLightboxOpener]);
 
   const handleReviewRunIssues = useCallback(() => {
-    showRunIssues(runReadiness.issues);
+    showRunIssues(runReadiness.issues, captureRunRecoveryOrigin());
   }, [runReadiness.issues, showRunIssues]);
 
   const handleRunSweep = useCallback(
@@ -679,7 +682,7 @@ export default function StudioPanel() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-3 p-3" data-testid="studio-panel">
+    <div ref={recoveryFocusRef} className="flex flex-col gap-3 p-3" data-testid="studio-panel">
       <div
         ref={stickyHeaderRef}
         className="sticky top-0 z-20 -mx-3 -mt-3 grid gap-2 border-b border-modiff-border bg-modiff-bg p-3 shadow-modiff-node"
@@ -814,6 +817,7 @@ export default function StudioPanel() {
               <>
                 <StudioSelect
                   aria-label="Task"
+                  data-run-recovery-field="mode"
                   value={form.mode}
                   data-testid="studio-task-select"
                   onValueChange={(value) => {
@@ -826,6 +830,7 @@ export default function StudioPanel() {
                 />
                 <StudioSelect
                   aria-label="Model"
+                  data-run-recovery-field="modelType"
                   value={form.modelType}
                   data-testid="studio-model-select"
                   onValueChange={(value) => {
@@ -1103,6 +1108,7 @@ export default function StudioPanel() {
               ) : capability.layerResolutions?.length ? (
                 <StudioSelect
                   aria-label="Layer resolution"
+                  data-run-recovery-field="width"
                   data-testid="studio-layer-resolution-select"
                   value={String(form.width)}
                   onValueChange={(value) => {
@@ -1384,6 +1390,7 @@ export default function StudioPanel() {
                   )}
                   {capability.supportsLayers && (
                     <StudioInput
+                      name="layers"
                       label={
                         capability.layerCount
                           ? `Layers (${capability.layerCount.min}–${capability.layerCount.max})`
@@ -1689,6 +1696,7 @@ export default function StudioPanel() {
                   )}
                   <StudioSelect
                     aria-label="Offload mode"
+                    data-run-recovery-field="offloadMode"
                     data-testid="studio-offload-mode-select"
                     value={form.offloadMode}
                     onValueChange={(value) => updateAndSync({ offloadMode: value as StudioFormState['offloadMode'] })}
@@ -1774,6 +1782,7 @@ export default function StudioPanel() {
                   </p>
                   {form.mode.includes('control_union') && (
                     <StudioInput
+                      name="controlMode"
                       label="ControlNet Union mode (0–5)"
                       value={form.controlMode}
                       onChange={(value) => updateAndSync({ controlMode: numberValue(value, form.controlMode) })}

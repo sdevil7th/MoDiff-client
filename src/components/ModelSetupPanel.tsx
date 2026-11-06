@@ -55,6 +55,7 @@ import { cx } from '../utils/classNames';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import { RuntimeEnvironmentCard } from './RuntimeEnvironmentCard';
 import RuntimeOptimizationsCard from './RuntimeOptimizationsCard';
+import { captureRunRecoveryOrigin } from '../studio/runRecovery';
 import { TemplateGallerySetupCard } from './TemplateGallerySetupCard';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
 
@@ -328,7 +329,7 @@ export default function ModelSetupPanel() {
   };
 
   const openIssueReview = () => {
-    showRunIssues(runReadiness.issues);
+    showRunIssues(runReadiness.issues, captureRunRecoveryOrigin());
   };
 
   const handleIssueInstall = async (repoId: string) => {

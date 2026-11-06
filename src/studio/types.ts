@@ -381,6 +381,8 @@ export type RunReadinessIssueAction =
   | 'cleanup_gpu'
   | 'open_model_manager'
   | 'detach_graph'
+  | 'edit_studio_field'
+  | 'open_resources'
   | 'inspect_node';
 
 export type RunReadinessIssue = {
@@ -391,6 +393,8 @@ export type RunReadinessIssue = {
   nodeId?: string;
   /** Visible field/socket to highlight when a diagnostic has an exact target. */
   fieldId?: string;
+  /** Backend-declared alternatives for the selected execution profile, not install consent. */
+  runtimeProfileIds?: string[];
   repoId?: string;
   /** Exact Hugging Face Hub snapshot request; never a direct file URL. */
   installOptions?: {

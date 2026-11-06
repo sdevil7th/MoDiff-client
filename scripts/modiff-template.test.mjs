@@ -1184,6 +1184,13 @@ test('direct layers and dual-video workflows infer generic fields and block inco
       layerMessages.some((message) => /layer count/i.test(message)),
       true,
     );
+    const layerIssues = runReadinessModule.collectRunReadinessIssues({ sid: 'contract-test', isConnected: true });
+    const resolutionIssue = layerIssues.find((item) => /layer resolution/i.test(item.message));
+    assert.equal(resolutionIssue?.action, 'edit_studio_field');
+    assert.equal(resolutionIssue?.fieldId, 'width');
+    const countIssue = layerIssues.find((item) => /layer count/i.test(item.message));
+    assert.equal(countIssue?.action, 'edit_studio_field');
+    assert.equal(countIssue?.fieldId, 'layers');
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: previousNodes.studioModelCapabilities,
@@ -1649,6 +1656,8 @@ test('run readiness blocks unsupported backend modes in Auto and warns in Expert
       .find((item) => item.code === 'backend_mode_unsupported');
     assert.equal(autoIssue?.blocking, true);
     assert.equal(autoIssue?.severity, 'error');
+    assert.equal(autoIssue?.action, 'edit_studio_field');
+    assert.equal(autoIssue?.fieldId, 'mode');
   } finally {
     nodesStoreModule.useNodesStore.setState({
       studioModelCapabilities: previousCapabilities,
@@ -1790,6 +1799,7 @@ test('optional runtime readiness is exact-mode scoped and base delivery stays ne
     assert.equal(issue?.blocking, false);
     assert.equal(issue?.severity, 'warning');
     assert.equal(issue?.action, 'open_setup');
+    assert.deepEqual(issue?.runtimeProfileIds, required.profileIds);
     assert.match(issue?.message ?? '', /reviewed optional runtime/i);
   } finally {
     nodesStoreModule.useNodesStore.setState({
@@ -1799,6 +1809,53 @@ test('optional runtime readiness is exact-mode scoped and base delivery stays ne
     });
     studioStoreModule.useStudioStore.setState({ form: previousForm });
     flowStoreModule.useFlowStore.setState({ nodes: previousNodes, edges: previousEdges });
+  }
+});
+
+test('Run recovery points temporary planning and invalid control values to their real review surfaces', () => {
+  const beforeStudio = studioStoreModule.useStudioStore.getState();
+  const beforeNodes = nodesStoreModule.useNodesStore.getState();
+  const beforeFlow = flowStoreModule.useFlowStore.getState();
+  try {
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: [],
+      studioModelCapabilitiesAuthoritative: false,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: [], edges: [] });
+    const form = {
+      ...profilesModule.getFormDefaultsForMode('control_union_image', 'StableDiffusionXLModularPipeline'),
+      resourceMode: 'auto',
+      controlMode: 6,
+    };
+    studioStoreModule.useStudioStore.setState({
+      form,
+      graphBinding: null,
+      autoResourcePlan: { error: true, status: 'needs_setup', message: 'Planner unavailable' },
+    });
+    const issues = runReadinessModule.collectRunReadinessIssues({ sid: 'test-session', isConnected: true });
+    const control = issues.find((item) => item.code === 'control_mode_invalid');
+    assert.equal(control?.blocking, true);
+    assert.equal(control?.action, 'edit_studio_field');
+    assert.equal(control?.fieldId, 'controlMode');
+    const planning = issues.find((item) => item.code === 'auto_plan_not_ready');
+    assert.equal(planning?.blocking, true);
+    assert.equal(planning?.action, 'open_resources');
+    assert.deepEqual(studioStoreModule.useStudioStore.getState().form, form);
+    const offload = runReadinessModule.getStudioDeviceOffloadIssue({
+      ...form,
+      device: 'cpu:0',
+      autoOffload: true,
+      offloadMode: 'model_cpu',
+    });
+    assert.equal(offload?.action, 'edit_studio_field');
+    assert.equal(offload?.fieldId, 'offloadMode');
+  } finally {
+    studioStoreModule.useStudioStore.setState(beforeStudio);
+    nodesStoreModule.useNodesStore.setState({
+      studioModelCapabilities: beforeNodes.studioModelCapabilities,
+      studioModelCapabilitiesAuthoritative: beforeNodes.studioModelCapabilitiesAuthoritative,
+    });
+    flowStoreModule.useFlowStore.setState({ nodes: beforeFlow.nodes, edges: beforeFlow.edges });
   }
 });
 

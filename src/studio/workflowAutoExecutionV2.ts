@@ -11,6 +11,7 @@ import config from '../../app.config';
 import { useFlowStore, type APIGraphExport, type CustomNodeType } from '../stores/useFlowStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { captureRunRecoveryOrigin } from './runRecovery';
 import { formatRequestError, requestJson } from '../utils/requestJson';
 import { isWorkflowResourceValue, type WorkflowResourcePatch, type WorkflowResourceUpdate } from '../types/api';
 import { canonicalBlockStringifyV2, type BlockInstanceV2 } from './blockSchemaV2';
@@ -179,17 +180,21 @@ export async function prepareWorkflowAutoExecutionV2(
     // Preparation has no task or captured run context. Keep the explanation in
     // the existing blocking dialog without inventing a failed model execution.
     if (isCurrent())
-      useRunIssueStore.getState().showIssues([
-        {
-          id: 'workflow-auto-planning',
-          category: 'hardware_fit',
-          severity: 'error',
-          blocking: true,
-          message: formatRequestError(error, 'Workflow memory planning failed.'),
-          details:
-            'No run was submitted. Review the requirements and model/memory settings, then Run again for a fresh plan.',
-        },
-      ]);
+      useRunIssueStore.getState().showIssues(
+        [
+          {
+            id: 'workflow-auto-planning',
+            category: 'hardware_fit',
+            severity: 'error',
+            blocking: true,
+            action: 'open_resources',
+            message: formatRequestError(error, 'Workflow memory planning failed.'),
+            details:
+              'No run was submitted. Review the requirements and model/memory settings, then Run again for a fresh plan.',
+          },
+        ],
+        captureRunRecoveryOrigin(),
+      );
     throw error;
   }
   assertCurrentExecutionScope(executionScope);

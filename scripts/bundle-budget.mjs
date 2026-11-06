@@ -1,3 +1,8 @@
+// Scoped Run recovery adds measured largest/startup/deferred gzip bytes
+// 899/902/1616 over 496791/675277/330399, retaining 3/12/199-byte headroom.
+// Exact setting/runtime focus and semantic document ownership keep the same
+// 119 assets and four startup/90 deferred memberships. Dependencies, minifier,
+// loading boundaries, model guards and the independent 64 KiB chunk cap stay fixed.
 // Declared output readiness measures largest/startup/deferred gzip
 // 496790/675278/330510 against 9760's 496684/675171/330491. Only
 // studio-templates.js changes after immutable URL normalization; all119 assets,
@@ -354,6 +359,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  899 +
   106 +
   99 +
   82 +
@@ -501,6 +507,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  902 +
   107 +
   102 +
   83 +
@@ -729,6 +736,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  1616 +
   242 +
   297 +
   1147 +
