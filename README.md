@@ -31,19 +31,23 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `19f003f7662ae8f542202cae2eb08321dd966b06`.
+CI backend contract: `57811fc2ee6aff5b9de7a6b67ca10914d1136fcc`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
-is the earlier reviewed testing baseline. Current CI covers the shared video
-stages and conditional reference requirements; a CI pin alone does not establish a new deployed pair or
-expand model/hardware qualification.
+is the earlier reviewed testing baseline. The selected backend includes the shared video
+stages, conditional reference requirements and scoped Linux shared-memory LTX Auto
+loading fix. A CI pin alone does not establish a new deployed pair or expand
+model/hardware qualification.
 
-The 3 November Linux video testing deployment uses backend
+The historical 3 November Linux video testing deployment used backend
 `496f3aed56ce1c6a868549df310c68e765712ce3` and client product
-`75080b73fb22bc0ef197f17a119cf507b3352695`. Later CI/documentation-only
-descendants retain that tested client product. Native large-model evidence on
-Linux does not expand Windows or other hardware qualification; see the backend's
-[video progress and handoff](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/video-stages-20261101/MILESTONE2-PROGRESS.md).
+`75080b73fb22bc0ef197f17a119cf507b3352695`. The 6 November Linux manual-testing
+baseline is backend `57811fc2ee6aff5b9de7a6b67ca10914d1136fcc` with client product
+`f84e7cdb82025aab85f0fcf71b99478bd21ce3b4`. It includes the bounded input previews
+and native boardwalk/car Auto checks. These are scoped technical proofs; creative
+review, held models, public Gallery evidence and broader hardware qualification
+remain separate. See the backend's
+[release closeout](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/video-stages-20261101/RELEASE-CLOSEOUT-20261103.md).
 
 These application source revisions were reviewed on 1 November 2026. Final
 documentation, CI pairing and bundled-client packaging commits can be later

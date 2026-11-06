@@ -1315,7 +1315,7 @@ The `src/studio` directory contains domain logic rather than one monolithic comp
 - `templateReadiness.ts`, `templateExactness.ts`, and `templateQuality.ts`: publication/readiness rules
 - `workflowInference.ts`: infer Studio context from imported/custom graphs
 
-`src/stores/useStudioStore.ts` persists stable authoring state under `modiff.studio`: form values, prompt/snippet data, imported assets, workflow tabs, app-mode configs, blueprints, and pinned inputs. Output history and preview-slot state are backend-owned, hydrated from `/studio_outputs`, and deliberately excluded from local storage. Live graph binding, graph-finalization status, Auto request state, and active run contexts remain volatile unless restored from a package/output snapshot.
+`src/stores/useStudioStore.ts` checkpoints stable authoring state in page-owned `sessionStorage` under `modiff.studio`: form values, prompt/snippet data, imported assets, workflow tabs, app-mode configs, blueprints, and pinned inputs. Output history and preview-slot state are backend-owned, hydrated from `/studio_outputs`, and deliberately excluded from browser checkpoints. Live graph binding, graph-finalization status, Auto request state, and active run contexts remain volatile unless restored from a package/output snapshot. See [Browser page workspace checkpoints](#browser-page-workspace-checkpoints) for legacy recovery and closed-page limits.
 
 `src/studio/workflowFileSave.ts` and the workflow request helpers persist named snapshots through the backend workflow
 API. Local tabs remain the editing surface; a successful explicit Save creates or replaces a backend library file,
