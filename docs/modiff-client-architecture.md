@@ -1192,6 +1192,12 @@ prerequisites. Job file counts do not establish exact download-file identity:
 follow the existing repository job and prevent duplicate mutations when the
 public status cannot prove that row's selection.
 
+While the current runtime observation is pending, the checklist shows checking
+instead of passing a null profile to the setup card. A failed read is unavailable
+verification, not evidence that installation is missing. Only a successful current
+read supplies profile conclusions. Refresh uses the existing model-index batch
+once; that batch already refreshes the runtime and optional-package catalog.
+
 The Setup surface renders install or repair only when the exact profile is
 `qualified`, `cutoverReady`, and the backend advertises
 `installActionAvailable`. It sends the profile ID, exact spec digest, and

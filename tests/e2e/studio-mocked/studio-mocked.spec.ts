@@ -9736,6 +9736,9 @@ test('workflow setup checklist follows selected Run scope and preserves saved wo
   await ensureFrontend();
   await installMockRoutes(page);
   let healthy = true;
+  let runtimeUnavailable = false;
+  let runtimeWait: Promise<void> | null = null;
+  let runtimeReads = 0;
   const inspected: string[][] = [];
   const mutations: string[] = [];
   page.on('request', (request) => {
@@ -9745,8 +9748,11 @@ test('workflow setup checklist follows selected Run scope and preserves saved wo
     )
       mutations.push(request.url());
   });
-  await page.route('**/runtime/status**', (route) =>
-    route.fulfill({
+  await page.route('**/runtime/status**', async (route) => {
+    runtimeReads++;
+    if (runtimeWait) await runtimeWait;
+    if (runtimeUnavailable) return route.abort('failed');
+    return route.fulfill({
       json: {
         ready: healthy,
         runtime_fingerprint: 'worker-runtime-identity',
@@ -9773,8 +9779,8 @@ test('workflow setup checklist follows selected Run scope and preserves saved wo
           peft: { available: healthy, version: '0.21.2' },
         },
       },
-    }),
-  );
+    });
+  });
   await page.route('**/runtime/workflow-setup', async (route) => {
     const body = route.request().postDataJSON() as { graph: ApiGraphExport };
     inspected.push(Object.keys(body.graph.nodes));
@@ -9843,15 +9849,45 @@ test('workflow setup checklist follows selected Run scope and preserves saved wo
   await expect(root.getByRole('group', { name: 'Extra feature packages', exact: true })).toContainText(
     'No additional managed runtime',
   );
+  const baseEnvironment = root.getByRole('group', { name: 'Base environment', exact: true });
+  const systemPrerequisites = root.getByRole('group', { name: 'System prerequisites', exact: true });
+  let releaseRuntime!: () => void;
+  runtimeWait = new Promise<void>((resolve) => {
+    releaseRuntime = resolve;
+  });
+  const readsBeforeRefresh = runtimeReads;
+  try {
+    await root.getByRole('button', { name: 'Refresh checklist status', exact: true }).click();
+    await expect(baseEnvironment).toContainText('Checking');
+    await expect(systemPrerequisites).toContainText('Checking system prerequisites');
+    await expect(systemPrerequisites).not.toContainText('Needs setup');
+    await expect(systemPrerequisites).not.toContainText('Profile unverified');
+    await expect.poll(() => runtimeReads - readsBeforeRefresh).toBe(1);
+  } finally {
+    runtimeWait = null;
+    releaseRuntime();
+  }
+  await expect(baseEnvironment).toContainText('Verified');
+  await expect(systemPrerequisites.getByTestId('runtime-environment-card')).toContainText('Ready');
+  runtimeUnavailable = true;
+  await root.getByRole('button', { name: 'Refresh checklist status', exact: true }).click();
+  await expect(systemPrerequisites).toContainText('could not be verified');
+  await expect(baseEnvironment.getByRole('alert')).toBeVisible();
+  await expect(systemPrerequisites).not.toContainText('Needs setup');
+  await expect(systemPrerequisites).not.toContainText('Profile unverified');
+  runtimeUnavailable = false;
   healthy = false;
   await root.getByRole('button', { name: 'Refresh checklist status', exact: true }).click();
   await expect(root.getByRole('group', { name: 'Base environment', exact: true })).toContainText('Needs verification');
   await expect(root.getByRole('group', { name: 'System prerequisites', exact: true })).toContainText('PEFT is missing');
   await expect(root.getByRole('button', { name: /^(Install|Activate)$/u })).toHaveCount(0);
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  healthy = true;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
   await dismissTaskLauncher(page);
+  await expect(baseEnvironment).toContainText('Verified');
+  await expect(systemPrerequisites.getByTestId('runtime-environment-card')).toContainText('Ready');
   expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
   expect(mutations).toEqual([]);
 });

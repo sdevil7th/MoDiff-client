@@ -68,6 +68,7 @@ export default function WorkflowSetupChecklist({
   const artifacts = inspection && indexesReady ? workflowSetupArtifacts(inspection.graph) : [];
   const required = inspection?.observation.requirements.filter((row) => row.requirement.requiredNow) ?? [];
   const profileIds = [...new Set(required.flatMap((row) => row.requirement.profileIds))];
+  const runtimeChecking = requests.runtime.status === 'idle' || requests.runtime.status === 'loading';
   const baseReady =
     requests.runtime.status === 'success' &&
     runtime?.ready === true &&
@@ -113,13 +114,15 @@ export default function WorkflowSetupChecklist({
         ]}
       />
       <div className="grid gap-1" role="group" aria-label="Base environment">
-        <h4 className="text-sm font-semibold">1. Base environment — {baseReady ? 'Verified' : 'Needs verification'}</h4>
-        <p className="text-xs">{baseLibraries}</p>
+        <h4 className="text-sm font-semibold">
+          1. Base environment — {runtimeChecking ? 'Checking…' : baseReady ? 'Verified' : 'Needs verification'}
+        </h4>
+        <p className="text-xs">{runtimeChecking ? 'Checking installed libraries and app readiness…' : baseLibraries}</p>
         <p className="text-xs text-modiff-subtle-text">
           These core libraries belong to ordinary installation. They require no optional Activate step. Repair a missing
           or incompatible base with the installation procedure for your accelerator.
         </p>
-        {runtimeError ? (
+        {runtimeError && !runtimeChecking ? (
           <p role="alert" className="text-xs text-modiff-warning">
             {runtimeError}
           </p>
@@ -221,17 +224,23 @@ export default function WorkflowSetupChecklist({
           Drivers, platform support and guided installation steps come from this backend. A package install does not
           establish device or model compatibility.
         </p>
-        <RuntimeEnvironmentCard error={runtimeError} status={requests.runtime.status === 'success' ? runtime : null} />
+        {runtimeChecking ? (
+          <p role="status" className="text-xs">
+            Checking system prerequisites…
+          </p>
+        ) : requests.runtime.status !== 'success' || !runtime ? (
+          <p role="alert" className="text-xs text-modiff-warning">
+            System prerequisites could not be verified. Refresh checklist status to try again.
+          </p>
+        ) : (
+          <RuntimeEnvironmentCard error={runtimeError} status={runtime} />
+        )}
       </div>
       <ModiffButton
         size="compact"
         onClick={() => {
           const store = useNodesStore.getState();
-          void Promise.all([
-            store.fetchRuntimeStatus(),
-            store.fetchOptionalRuntimes(),
-            store.refreshModelIndexes(true, { invalidateAutoPlans: false }),
-          ]);
+          void store.refreshModelIndexes(true, { invalidateAutoPlans: false });
           setRevision((value) => value + 1);
         }}
       >
