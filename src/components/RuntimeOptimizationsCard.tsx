@@ -283,6 +283,7 @@ export default function RuntimeOptimizationsCard() {
   return (
     <section
       ref={recoveryFocusRef}
+      role="region"
       aria-label="Optional runtimes"
       data-run-recovery-ready={optionalRuntimeRequest.status === 'success' || optionalRuntimeRequest.status === 'error'}
       tabIndex={-1}
@@ -361,6 +362,8 @@ export default function RuntimeOptimizationsCard() {
                   className="grid gap-1 text-xs text-modiff-text"
                   data-testid={`optional-runtime-${profile.id}`}
                   data-run-recovery-profile={profile.id}
+                  role="group"
+                  aria-label={profile.label}
                   tabIndex={-1}
                 >
                   <span>
