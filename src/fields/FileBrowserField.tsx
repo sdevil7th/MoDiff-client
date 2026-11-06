@@ -258,7 +258,7 @@ export default function FileBrowserField(props: FieldProps) {
         ) : null}
         {displayValue && displayValue.length > 0 ? (
           displayValue.map((file: string, index: number) => (
-            <div key={index} className="relative">
+            <div key={index} className="relative min-w-0">
               {isImage(file) ? (
                 <img
                   className="mx-auto block h-auto max-h-[1024px] w-full max-w-[360px] object-contain"
@@ -271,7 +271,9 @@ export default function FileBrowserField(props: FieldProps) {
                 />
               ) : isVideo(file) ? (
                 <video
-                  className="pointer-events-auto mx-auto block h-auto max-h-[1080px] w-full max-w-[1920px] object-contain"
+                  // Reserve the same bounded frame before and after metadata arrives.
+                  // Intrinsic video dimensions must not resize an already arranged node.
+                  className="pointer-events-auto mx-auto block aspect-video w-[360px] max-w-full object-contain"
                   src={videoPreviewUrl(file)}
                   //src={`${config.serverAddress}/cache/${props.nodeId}/${props.fieldKey}`}
                   controls

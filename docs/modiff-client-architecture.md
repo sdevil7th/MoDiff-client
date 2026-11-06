@@ -2029,3 +2029,9 @@ Existing browser URLs and bundled public assets retain their normal handling.
 Both scalar and picker-array selections project without rewriting saved params;
 clearing the selection also clears stale output-backed input previews on reload.
 Audio references selected from AV files use the backend's soundtrack conversion.
+
+Video file-picker previews reserve a bounded landscape frame before metadata
+loads. Portrait clips remain fully visible inside that frame through
+`object-contain`; their intrinsic dimensions cannot enlarge an arranged node and
+cover neighbouring controls. This display sizing does not change the source
+file, authored node positions, wires or saved execution parameters.

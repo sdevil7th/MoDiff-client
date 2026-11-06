@@ -24,6 +24,231 @@ import type { OperationStarter } from '../../../src/workflow/operationAuthoring'
 import type { OperationContract } from '../../../src/workflow/operationContracts';
 import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
+import { audioPreviewFixture, videoPreviewFixture } from './mediaInputPreviewFixture';
+
+test('late-loaded media input previews retain arranged geometry and reachable controls after Save reload', async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  const fixture = await generateTemplateSchemas([]);
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const cached = new Set(['layout-landscape', 'layout-portrait', 'layout-audio']);
+  const releases: unknown[] = [];
+  await page.routeWebSocket('**/ws**', (socket) => {
+    socket.send(
+      JSON.stringify({
+        type: 'welcome',
+        sid: new URL(socket.url()).searchParams.get('sid'),
+        instance: 'mock',
+        current: null,
+        queued: {},
+        cachedNodes: [...cached],
+      }),
+    );
+  });
+  await page.route('**/cache', async (route) => {
+    if (route.request().method() === 'DELETE') {
+      const body = route.request().postDataJSON() as { nodes: string[] };
+      expect(body.nodes).toEqual(['layout-landscape']);
+      releases.push(body);
+      body.nodes.forEach((id) => cached.delete(id));
+      return route.fulfill({ json: { error: false, nodes: body.nodes } });
+    }
+    return route.fulfill({ json: { error: false, instance: 'mock', cachedNodes: [...cached] } });
+  });
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/file', (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ json: { path: ['@data/audio/layout-rebound.wav'] } })
+      : route.fallback(),
+  );
+  let graphPosts = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') graphPosts++;
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const landscape = videoPreviewFixture(python, 1536, 1024);
+  const portrait = videoPreviewFixture(python, 1024, 1536);
+  const audio = audioPreviewFixture();
+  let releaseMedia!: () => void;
+  const mediaReady = new Promise<void>((resolve) => {
+    releaseMedia = resolve;
+  });
+  await page.route('**/media/preview?**', async (route) => {
+    await mediaReady;
+    const file = new URL(route.request().url()).searchParams.get('file')!;
+    await route.fulfill({
+      contentType: file.endsWith('.wav') ? 'audio/wav' : 'video/webm',
+      body: file.includes('landscape') ? landscape : file.includes('portrait') ? portrait : audio,
+    });
+  });
+  const packageData = await page.evaluate(async (registry) => {
+    const [{ createNodeFromRegistry }, { getFormDefaultsForMode }, { buildWorkflowPackage }] = await Promise.all([
+      import('/src/workflow/nodeFactory.ts'),
+      import('/src/studio/modelProfiles.ts'),
+      import('/src/studio/workflowPackage.ts'),
+    ]);
+    const make = (key: string, id: string, x: number, y: number) => {
+      const node = createNodeFromRegistry(key, registry, { x, y })!;
+      node.id = id;
+      return node;
+    };
+    const first = make('modules.Video.Load', 'layout-landscape', 0, 0);
+    const second = make('modules.Video.Load', 'layout-portrait', 0, 575);
+    const soundtrack = make('modules.Audio.Load', 'layout-audio', 0, 1150);
+    const output = make('modules.Video.ExportWithAudio', 'layout-output', 500, 200);
+    const portraitOutput = make('modules.Video.ExportWithAudio', 'layout-portrait-output', 500, 700);
+    first.data.params.file!.value = ['@data/videos/layout-landscape.webm'];
+    second.data.params.file!.value = ['@data/videos/layout-portrait.webm'];
+    soundtrack.data.params.file!.value = ['@data/audio/layout.wav'];
+    const edge = (id: string, source: string, sourceHandle: string, target: string, targetHandle: string) => ({
+      id,
+      source,
+      sourceHandle,
+      target,
+      targetHandle,
+    });
+    return buildWorkflowPackage({
+      form: {
+        ...getFormDefaultsForMode('video_stitch', 'BuiltinVideoOperation'),
+        resourceMode: 'expert',
+        device: 'cpu',
+        offloadMode: 'none',
+        autoOffload: false,
+      },
+      graph: {
+        nodes: [first, second, soundtrack, output, portraitOutput],
+        edges: [
+          edge('first-output', first.id, 'video', output.id, 'video'),
+          edge('second-output', second.id, 'video', portraitOutput.id, 'video'),
+          edge('soundtrack-output', soundtrack.id, 'filename', output.id, 'audio'),
+          edge('soundtrack-portrait-output', soundtrack.id, 'filename', portraitOutput.id, 'audio'),
+        ],
+        viewport: { x: 60, y: 70, zoom: 0.7 },
+      },
+    });
+  }, fixture.registry);
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'late-input-media.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(packageData)),
+  });
+  await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const downloadPackage = async (filename: string) => {
+    const pending = page.waitForEvent('download');
+    await page.getByTestId('topbar-export').click();
+    await page.getByRole('menuitem', { name: 'Workflow package', exact: true }).click();
+    const target = testInfo.outputPath(filename);
+    await (await pending).saveAs(target);
+    return JSON.parse(await fs.readFile(target, 'utf8'));
+  };
+  const before = await downloadPackage('before-media.workflow.json');
+  const players = page.locator('[data-key="file"] video');
+  const unloadedFrames = await players.evaluateAll((items) =>
+    items.map((item) => {
+      const { width, height } = item.getBoundingClientRect();
+      return { width, height };
+    }),
+  );
+  releaseMedia();
+  await expect(players).toHaveCount(2);
+  await expect
+    .poll(() => players.evaluateAll((items) => items.map((item) => (item as HTMLVideoElement).videoWidth)))
+    .toEqual([1536, 1024]);
+  const loadedFrames = await players.evaluateAll((items) =>
+    items.map((item) => {
+      const { width, height } = item.getBoundingClientRect();
+      return { width, height };
+    }),
+  );
+  loadedFrames.forEach((frame, index) => {
+    expect(Math.abs(frame.width - unloadedFrames[index]!.width)).toBeLessThan(1);
+    expect(Math.abs(frame.height - unloadedFrames[index]!.height)).toBeLessThan(1);
+  });
+  const geometry = await page.evaluate(() =>
+    ['layout-landscape', 'layout-portrait', 'layout-audio'].map((id) => {
+      const node = document.querySelector<HTMLElement>(`[data-id="${id}"]`)!;
+      const media = node.querySelector<HTMLMediaElement>('[data-key="file"] video, [data-key="file"] audio')!;
+      const body = node.querySelector<HTMLElement>('[data-testid^="node-scroll-body-"]')!;
+      const footer = node.querySelector<HTMLButtonElement>('button[aria-label="Release node cache"]')!;
+      const bounds = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width };
+      };
+      const rect = footer.getBoundingClientRect();
+      return {
+        id,
+        node: bounds(node),
+        media: bounds(media),
+        body: bounds(body),
+        footerOwner: document
+          .elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+          ?.closest('[data-id]')
+          ?.getAttribute('data-id'),
+      };
+    }),
+  );
+  await testInfo.attach('late-media-geometry', {
+    body: JSON.stringify(geometry, null, 2),
+    contentType: 'application/json',
+  });
+  for (const item of geometry) {
+    expect(item.media.left, item.id).toBeGreaterThanOrEqual(item.body.left - 1);
+    expect(item.media.right, item.id).toBeLessThanOrEqual(item.body.right + 1);
+    expect(item.footerOwner, `${item.id} footer must remain reachable after media metadata`).toBe(item.id);
+  }
+  await page
+    .locator('[data-id="layout-landscape"]')
+    .getByRole('button', { name: 'Release node cache', exact: true })
+    .click();
+  expect(releases).toEqual([{ nodes: ['layout-landscape'] }]);
+  const after = await downloadPackage('after-media.workflow.json');
+  expect(after.apiGraph.nodes).toEqual(before.apiGraph.nodes);
+  expect(after.apiGraph.paths).toEqual(before.apiGraph.paths);
+  expect(after.metadata.studio).toEqual(before.metadata.studio);
+  const positions = (value: typeof before) =>
+    value.graph.nodes.map((node: { id: string; position: unknown }) => ({ id: node.id, position: node.position }));
+  expect(positions(after)).toEqual(positions(before));
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Late media preview layout');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  const restored = await downloadPackage('restored.workflow.json');
+  expect(restored.apiGraph.nodes).toEqual(after.apiGraph.nodes);
+  expect(restored.apiGraph.paths).toEqual(after.apiGraph.paths);
+  expect(positions(restored)).toEqual(positions(after));
+  const audioNode = page.locator('[data-id="layout-audio"]');
+  await audioNode.locator('[data-key="file"]').getByRole('button', { name: 'Remove media', exact: true }).click();
+  await expect(audioNode.locator('[data-key="file"] audio')).toHaveCount(0);
+  await expect(page.getByTestId('studio-run')).toBeDisabled();
+  await audioNode.locator('[data-key="file"] input[type="file"]').setInputFiles({
+    name: 'layout-rebound.wav',
+    mimeType: 'audio/wav',
+    buffer: audio,
+  });
+  await expect(audioNode.locator('[data-key="file"] audio')).toHaveAttribute('src', /layout-rebound\.wav/);
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+  const rebound = await downloadPackage('rebound.workflow.json');
+  const expectedNodes = structuredClone(after.apiGraph.nodes);
+  expectedNodes['layout-audio'].params.file.value = ['@data/audio/layout-rebound.wav'];
+  expect(rebound.apiGraph.nodes).toEqual(expectedNodes);
+  expect(rebound.apiGraph.paths).toEqual(after.apiGraph.paths);
+  expect(positions(rebound)).toEqual(positions(after));
+  expect(graphPosts).toBe(0);
+});
 
 test('renamed declared video output stays runnable after ordinary import Save and reload', async ({ page }) => {
   const fixture = await generateTemplateSchemas([]);
