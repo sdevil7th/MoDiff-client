@@ -31,13 +31,20 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `57811fc2ee6aff5b9de7a6b67ca10914d1136fcc`.
+CI backend contract: `81e22ca3306b6a00f0bba784d1ca90d14e002944`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
 is the earlier reviewed testing baseline. The selected backend includes the shared video
 stages, conditional reference requirements and scoped Linux shared-memory LTX Auto
-loading fix. A CI pin alone does not establish a new deployed pair or expand
+loading fix and the precise Run recovery client bundle. A CI pin alone does not establish a new deployed pair or expand
 model/hardware qualification.
+
+When Run is blocked, use **Edit setting**, **Choose supported task/model**,
+**Review runtime** or **Review Auto options** to reach the relevant existing
+control. Navigation preserves saved choices and starts no installation or run.
+An edited or switched workflow requires a fresh readiness check. See
+[Run recovery](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/troubleshooting.md#run-is-blocked)
+for correction paths and retained platform/resource limits.
 
 The historical 3 November Linux video testing deployment used backend
 `496f3aed56ce1c6a868549df310c68e765712ce3` and client product
