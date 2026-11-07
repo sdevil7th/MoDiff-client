@@ -1555,6 +1555,14 @@ Session activity merges queue history by execution timestamps before applying
 its 30-entry limit, retaining running work ahead of waiting tasks and finished history. Repeated or
 reordered history snapshots must not evict a new submission or promote old runs.
 
+The activity shelf can fold into its heading without dismissing notifications.
+Its disclosure is volatile component state, independent of workflow data and
+task ownership. The heading retains active-work status while folded; explicit
+toolbar download navigation opens the list. Clear and per-item dismissal keep
+their existing meanings. Collapsing must preserve graph values, positions,
+viewport and all active, failed and finished records; test actual pointer access
+behind the overlay as well as keyboard disclosure behavior at scaled viewports.
+
 Saved User Nodes retain model/prompt/settings provenance independently of
 registered-route authority. For an unambiguous Modular Diffusers User Node,
 `blockRunFormV2.ts` reads its expanded executable loader and parameter fields

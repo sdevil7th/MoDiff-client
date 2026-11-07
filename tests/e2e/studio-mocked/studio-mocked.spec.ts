@@ -26,6 +26,284 @@ import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 import { audioPreviewFixture, videoPreviewFixture } from './mediaInputPreviewFixture';
 
+for (const [viewport, deviceScaleFactor] of [
+  [{ width: 3840, height: 2160 }, 1],
+  [{ width: 2560, height: 1440 }, 1.5],
+  [{ width: 1920, height: 1080 }, 2],
+  [{ width: 1280, height: 720 }, 1],
+] as const) {
+  test.describe(`canvas pixel ratio ${deviceScaleFactor} at ${viewport.width}x${viewport.height}`, () => {
+    test.use({ deviceScaleFactor });
+    test(`canvas activity can be tucked away without clearing history at ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize(viewport);
+      await ensureFrontend();
+      await installMockRoutes(page);
+      await page.addInitScript(() => {
+        localStorage.clear();
+        sessionStorage.clear();
+      });
+      let submissions = 0;
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') submissions++;
+      });
+      await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+      await dismissTaskLauncher(page);
+      const pkg = await page.evaluate(async (registry) => {
+        const [{ createNodeFromRegistry }, { getFormDefaultsForMode }, { buildWorkflowPackage }] = await Promise.all([
+          import('/src/workflow/nodeFactory.ts'),
+          import('/src/studio/modelProfiles.ts'),
+          import('/src/studio/workflowPackage.ts'),
+        ]);
+        const prompt = createNodeFromRegistry('modules.ModularDiffusers.EncodePrompt', registry, { x: 0, y: 0 })!;
+        prompt.id = 'viewport-prompt';
+        prompt.data.params.prompt!.value = 'Viewport draft';
+        const denoise = createNodeFromRegistry('modules.ModularDiffusers.Denoise', registry, { x: 600, y: 0 })!;
+        denoise.id = 'viewport-denoise';
+        return buildWorkflowPackage({
+          form: getFormDefaultsForMode('text_to_image', 'ZImageModularPipeline'),
+          graph: {
+            nodes: [prompt, denoise],
+            edges: [
+              {
+                id: 'viewport-wire',
+                source: prompt.id,
+                sourceHandle: 'embeddings',
+                target: denoise.id,
+                targetHandle: 'embeddings',
+              },
+            ],
+            viewport: { x: 100, y: 100, zoom: 0.8 },
+          },
+        });
+      }, mockRegistry);
+      await page.getByTestId('topbar-gallery').click();
+      await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+        name: 'viewport.workflow.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(pkg)),
+      });
+      await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+      await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+      const prompt = page.locator('.react-flow__node[data-id="viewport-prompt"] [data-key="prompt"] textarea');
+      await expect(prompt).toHaveValue('Viewport draft');
+      await page.evaluate(() => {
+        const hooks = window.__MODIFF_E2E__!;
+        hooks.setWebsocketConnection({ sid: 'viewport-history', isConnected: true });
+        for (let index = 0; index < 7; index++)
+          hooks.sendWebsocketMessage({
+            type: 'task_completed',
+            sid: 'viewport-history',
+            task_id: `viewport-history-${index}`,
+            name: `Retained history ${index}`,
+            completed_at: Date.now() / 1000 + index,
+            current: null,
+            queued: {},
+          });
+      });
+      const shelf = page.getByTestId('run-session-shelf');
+      const list = page.getByTestId('run-session-scrollport');
+      await expect(list.locator('[data-testid^="session-run-viewport-history-"]')).toHaveCount(7);
+      // Ordinary pan can place an editable control under this fixed overlay even
+      // on an unscaled 4K canvas. Capture the actual hit target before recovering.
+      const listBox = await list.boundingBox();
+      const fieldBox = await prompt.boundingBox();
+      expect(listBox).not.toBeNull();
+      expect(fieldBox).not.toBeNull();
+      const destination = { x: listBox!.x + listBox!.width / 2, y: listBox!.y + listBox!.height / 2 };
+      const delta = {
+        x: destination.x - fieldBox!.x - fieldBox!.width / 2,
+        y: destination.y - fieldBox!.y - fieldBox!.height / 2,
+      };
+      const panStart = await page.locator('.react-flow__pane').evaluate((pane) => {
+        const r = pane.getBoundingClientRect();
+        for (let y = r.top + 50; y < r.top + 200; y += 30)
+          for (let x = r.right - 50; x > r.right - 250; x -= 30)
+            if (document.elementFromPoint(x, y) === pane) return { x, y };
+        return null;
+      });
+      expect(panStart).not.toBeNull();
+      await page.mouse.move(panStart!.x, panStart!.y);
+      await page.mouse.down();
+      await page.mouse.move(panStart!.x + delta.x, panStart!.y + delta.y, { steps: 20 });
+      await page.mouse.up();
+      await expect
+        .poll(() =>
+          prompt.evaluate((field) => {
+            const r = field.getBoundingClientRect();
+            return Boolean(
+              document
+                .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+                ?.closest('[data-testid="run-session-shelf"]'),
+            );
+          }),
+        )
+        .toBe(true);
+      await testInfo.attach('covered-control', {
+        body: JSON.stringify(
+          await prompt.evaluate((field) => {
+            const r = field.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+            return { field: r.toJSON(), hit: hit?.outerHTML, viewport: { width: innerWidth, height: innerHeight } };
+          }),
+        ),
+        contentType: 'application/json',
+      });
+      // React Flow reports the completed pan on move-end; wait for the saved
+      // viewport to match the rendered transform before checking disclosure-only
+      // preservation. Capturing during the gesture would compare two pan states.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const viewport = window.__MODIFF_E2E__!.exportWorkflowGraph().viewport;
+            const matrix = new DOMMatrixReadOnly(
+              getComputedStyle(document.querySelector('.react-flow__viewport')!).transform,
+            );
+            return (
+              Math.abs(viewport.x - matrix.m41) < 0.01 &&
+              Math.abs(viewport.y - matrix.m42) < 0.01 &&
+              Math.abs(viewport.zoom - matrix.m11) < 0.01
+            );
+          }),
+        )
+        .toBe(true);
+      expect(await page.evaluate(() => window.devicePixelRatio)).toBe(deviceScaleFactor);
+      const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+      const hide = shelf.getByRole('button', { name: 'Hide session activity', exact: true });
+      await expect(hide).toHaveAttribute('aria-expanded', 'true');
+      await hide.click();
+      await expect(list).toBeHidden();
+      expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+      await expect
+        .poll(() =>
+          prompt.evaluate((field) => {
+            const r = field.getBoundingClientRect();
+            return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === field;
+          }),
+        )
+        .toBe(true);
+      await prompt.click();
+      await prompt.fill('Edited with history retained');
+      await expect(prompt).toHaveValue('Edited with history retained');
+      const show = shelf.getByRole('button', { name: 'Show session activity', exact: true });
+      await show.focus();
+      await page.keyboard.press('Enter');
+      await expect(hide).toHaveAttribute('aria-expanded', 'true');
+      await expect(list.locator('[data-testid^="session-run-viewport-history-"]')).toHaveCount(7);
+      await hide.focus();
+      await page.keyboard.press('Space');
+      await expect(list).toBeHidden();
+      await page.screenshot({ path: testInfo.outputPath(`canvas-${viewport.width}x${viewport.height}.png`) });
+      expect(submissions).toBe(0);
+    });
+  });
+}
+
+test('collapsed canvas activity retains active work, failures and explicit download navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  let mutations = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(graph|hf_download|install)(?:[/?]|$)/u.test(request.url())) mutations++;
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_completed',
+      task_id: 'activity-done',
+      name: 'Finished work',
+      current: null,
+      queued: {},
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_failed',
+      task_id: 'activity-failed',
+      name: 'Failed work',
+      error: 'Retained failure detail',
+      current: null,
+      queued: {},
+    });
+  });
+  const shelf = page.getByTestId('run-session-shelf');
+  const list = page.getByTestId('run-session-scrollport');
+  await shelf.getByRole('button', { name: 'Hide session activity', exact: true }).click();
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_started',
+      current: { task_id: 'activity-running', name: 'Current work', progress: 25, status: 'running' },
+      queued: {},
+    });
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'hf_download_progress',
+      repo_id: 'example/existing-download',
+      task_id: 'activity-download',
+      download_id: 'activity-download',
+      status: 'downloading',
+      phase: 'downloading',
+      progress: 0.5,
+      downloaded_bytes: 50,
+      total_bytes: 100,
+      updated_at: Date.now() / 1000,
+    });
+  });
+  await expect(list).toBeHidden();
+  await expect(shelf).toContainText('Active now');
+  await expect(page.getByTestId('session-run-activity-failed')).toContainText('Retained failure detail');
+  await page.getByTestId('topbar-download-activity').click();
+  await expect(list).toBeVisible();
+  await expect(page.getByTestId('session-download-example/existing-download')).toBeVisible();
+  await expect(page.getByTestId('session-run-activity-running')).toContainText('Current work');
+  await shelf.getByRole('button', { name: 'Hide session activity', exact: true }).click();
+  await shelf.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(page.getByTestId('session-run-activity-done')).toHaveCount(0);
+  await expect(page.getByTestId('session-run-activity-failed')).toHaveCount(0);
+  await shelf.getByRole('button', { name: 'Show session activity', exact: true }).click();
+  await expect(page.getByTestId('session-run-activity-running')).toBeVisible();
+  await expect(page.getByTestId('session-download-example/existing-download')).toBeVisible();
+  expect(mutations).toBe(0);
+});
+
+test('arranged stage controls remain reachable at 4K, scaled and compact canvas sizes', async ({ page }, testInfo) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+  await page.getByTestId('left-tab-nodes').click();
+  await expect(page.getByTestId('left-panel')).toBeVisible();
+  const before = await optionalStageApi(page);
+  for (const viewport of [
+    { width: 3840, height: 2160 },
+    { width: 2560, height: 1440 },
+    { width: 1920, height: 1080 },
+    { width: 1280, height: 720 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    for (const label of ['Encode Inputs', 'Model Setup', 'Image Output']) {
+      const edit = page.getByRole('button', { name: `Edit stages: ${label}`, exact: true });
+      await edit.click({ trial: true });
+      expect(
+        await edit.evaluate((element) => {
+          const r = element.getBoundingClientRect();
+          return (
+            r.x >= 0 &&
+            r.y >= 0 &&
+            r.right <= innerWidth &&
+            r.bottom <= innerHeight &&
+            element.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+          );
+        }),
+      ).toBe(true);
+    }
+    await page.getByTestId('topbar-save-workflow').click({ trial: true });
+    await page.getByTestId('topbar-export').click();
+    await expect(page.getByRole('menuitem', { name: 'Workflow package', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    expect(await optionalStageApi(page)).toEqual(before);
+    await page.screenshot({ path: testInfo.outputPath(`arranged-${viewport.width}x${viewport.height}.png`) });
+  }
+});
+
 test('late-loaded media input previews retain arranged geometry and reachable controls after Save reload', async ({
   page,
 }, testInfo) => {

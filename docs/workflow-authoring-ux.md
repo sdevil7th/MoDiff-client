@@ -64,6 +64,15 @@ unchanged, unambiguously matched executable nodes, rather than substituting the
 generator host's defaults. Authored device values and fresh field schemas remain
 intact; ambiguous matches or incompatible preserved defaults reject regeneration.
 
+## Keep activity out of the editing area
+
+Click the **Session activity** heading to fold its list away when it covers a
+canvas control. The compact heading retains **Active now** while work is running
+or downloading. Click it again to restore the same notifications; Enter and Space
+also toggle it. This does not clear history, stop work or alter the workflow.
+The toolbar's download activity button opens the list when you need download
+progress. **Clear** remains a separate action for finished notifications.
+
 ## Structured image layout and optional prompt enhancement
 
 An encoding field exposes structured layout only when its current backend schema

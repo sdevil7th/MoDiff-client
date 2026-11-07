@@ -1,3 +1,8 @@
+// Folding Session activity measures largest/startup/deferred gzip
+// 498142/676630/335787 over 498028/676515/335743. Only studio-templates.js
+// changes after import-URL normalization. Add only the measured 114/115 startup
+// bytes, retaining prior headroom; both deferred limits,119 assets/four startup/90
+// deferred memberships, dependencies, minifier and loading boundaries stay fixed.
 // Direct stage editing and Block/Python guidance measure largest/startup/deferred
 // gzip 498028/676515/335743 over 497985/676473/335647. Add only the measured
 // 43/42/96 bytes, retaining prior headroom. The five normalized changes are
@@ -446,7 +451,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
   512 +
   192 +
   288 +
-  288;
+  288 +
+  114;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -595,7 +601,8 @@ const MAX_STARTUP_GZIP_BYTES =
   512 +
   192 +
   288 +
-  288;
+  288 +
+  115;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

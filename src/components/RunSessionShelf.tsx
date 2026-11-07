@@ -1,5 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, DownloadCloud, LoaderCircle, Trash2, X, XCircle } from 'lucide-react';
+import { useEffect, useId, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  DownloadCloud,
+  LoaderCircle,
+  Trash2,
+  X,
+  XCircle,
+} from 'lucide-react';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useTaskStore, type SessionRun } from '../stores/useTaskStore';
 import { hasHfDownloadFailed, isHfDownloadActive, isHfDownloadComplete } from '../studio/modelInstall';
@@ -159,6 +169,8 @@ export default function RunSessionShelf() {
   const hasActiveRun = sessionRuns.some((run) => run.status === 'running' || run.status === 'queued');
   const hasActiveDownload = Object.values(hfDownloadProgress).some(isHfDownloadActive);
   const hasActiveActivity = hasActiveRun || hasActiveDownload;
+  const [expanded, setExpanded] = useState(true);
+  const contentId = useId();
   const [highlightDownloads, setHighlightDownloads] = useState(false);
   const [dismissedActivity, setDismissedActivity] = useState(restoredDismissedActivity);
   const [now, setNow] = useState(() => Date.now());
@@ -171,6 +183,7 @@ export default function RunSessionShelf() {
 
   useEffect(() => {
     const handleShowDownloads = () => {
+      setExpanded(true);
       setHighlightDownloads(true);
       window.setTimeout(() => setHighlightDownloads(false), 1800);
     };
@@ -231,16 +244,29 @@ export default function RunSessionShelf() {
       className="pointer-events-none absolute bottom-4 left-4 z-30 w-[min(360px,calc(100%-32px))] text-modiff-text"
     >
       <div className="pointer-events-auto border border-modiff-border bg-modiff-bg p-2 shadow-modiff-panel">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+        <div className={cx('flex items-center justify-between gap-2', expanded && 'mb-2')}>
+          <ModiffButton
+            tone="ghost"
+            align="left"
+            aria-label={expanded ? 'Hide session activity' : 'Show session activity'}
+            aria-expanded={expanded}
+            aria-controls={contentId}
+            onClick={() => setExpanded((current) => !current)}
+            className="h-auto! min-w-0 flex-1 gap-2 px-1 py-1"
+          >
             <Clock3 size={15} className="text-hf-yellow" />
-            <div>
-              <div className="text-xs font-bold text-modiff-text">Session activity</div>
-              <div className="text-modiff-label text-modiff-subtle-text">
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-bold text-modiff-text">Session activity</span>
+              <span className="block text-modiff-label text-modiff-subtle-text">
                 {hasActiveActivity ? 'Active now' : `${finishedCount + finishedDownloadCount} finished`}
-              </div>
-            </div>
-          </div>
+              </span>
+            </span>
+            <ChevronDown
+              size={14}
+              className={cx('shrink-0 transition-transform', expanded && 'rotate-180')}
+              aria-hidden="true"
+            />
+          </ModiffButton>
           <ModiffButton
             tone="ghost"
             size="compact"
@@ -254,6 +280,8 @@ export default function RunSessionShelf() {
           </ModiffButton>
         </div>
         <div
+          id={contentId}
+          hidden={!expanded}
           className="modiff-scrollbar-thin max-h-[min(45vh,352px)] overflow-y-auto overscroll-contain pr-1"
           data-testid="run-session-scrollport"
         >
