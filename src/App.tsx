@@ -537,7 +537,7 @@ export default function App() {
         {/* Main Content */}
         <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <WorkflowTabsBar />
-          <div className="relative min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1" data-canvas-workspace>
             <Workflow />
             {workflowCanvasHydrated && nodeCount === 0 && !launcherDismissed && (
               <Suspense fallback={null}>

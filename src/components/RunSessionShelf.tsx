@@ -241,6 +241,7 @@ export default function RunSessionShelf() {
     <section
       aria-label="Session activity"
       data-testid="run-session-shelf"
+      data-canvas-overlay="activity"
       className="pointer-events-none absolute bottom-4 left-4 z-30 w-[min(360px,calc(100%-32px))] text-modiff-text"
     >
       <div className="pointer-events-auto border border-modiff-border bg-modiff-bg p-2 shadow-modiff-panel">

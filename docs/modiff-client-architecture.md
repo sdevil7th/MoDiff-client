@@ -550,6 +550,13 @@ This is not an error-suppression mechanism or a claim that all observer loops ar
 resolved. Selection-only toolbar code loads on the first actual selection and
 then stays mounted so focus changes do not discard open dialog state.
 
+The selection toolbar measures the activity overlay within its own canvas
+workspace when positioning its controls. An off-screen selection must not dock
+over the activity disclosure; opening the list must also leave node actions
+reachable. Activity mount/removal and dimensions trigger a scheduled layout
+read. Observer-driven state updates stay outside ResizeObserver delivery and
+are discarded on unmount. These DOM layout markers carry no workflow state.
+
 Running from a V2 Block root or internal Block selects all enabled terminal
 branches in that semantic scope and their contained upstream dependencies.
 Wired outside suppliers and their upstream owners remain in the dependency closure

@@ -72,6 +72,8 @@ or downloading. Click it again to restore the same notifications; Enter and Spac
 also toggle it. This does not clear history, stop work or alter the workflow.
 The toolbar's download activity button opens the list when you need download
 progress. **Clear** remains a separate action for finished notifications.
+When panning or resizing, the selected-node toolbar moves clear of activity so
+its actions and the activity heading remain reachable.
 
 ## Structured image layout and optional prompt enhancement
 

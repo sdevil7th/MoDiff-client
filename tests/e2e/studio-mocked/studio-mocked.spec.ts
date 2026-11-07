@@ -195,6 +195,57 @@ for (const [viewport, deviceScaleFactor] of [
       await page.keyboard.press('Space');
       await expect(list).toBeHidden();
       await page.screenshot({ path: testInfo.outputPath(`canvas-${viewport.width}x${viewport.height}.png`) });
+      if (viewport.width === 3840) {
+        // Keep the real selection while shrinking the viewport. An off-screen
+        // node's clamped toolbar must not cover activity's disclosure, nor may
+        // the opened activity list strand the selected-node actions underneath.
+        await page.setViewportSize({ width: 2560, height: 1440 });
+        const toolbar = page.getByTestId('selection-toolbar');
+        await expect(toolbar).toBeVisible();
+        await testInfo.attach('resized-selection-and-activity', {
+          body: JSON.stringify(
+            await show.evaluate((button) => {
+              const r = button.getBoundingClientRect();
+              return {
+                button: r.toJSON(),
+                toolbar: document.querySelector('[data-testid="selection-toolbar"]')?.getBoundingClientRect().toJSON(),
+                actualHit: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.outerHTML,
+              };
+            }),
+          ),
+          contentType: 'application/json',
+        });
+        const beforeResizeActions = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+        await show.click();
+        await expect(list).toBeVisible();
+        await page.getByTestId('selection-toolbar-inspect-node').click({ trial: true });
+        await hide.click();
+        await expect(list).toBeHidden();
+        await page.getByTestId('selection-toolbar-inspect-node').click({ trial: true });
+        await shelf.getByRole('button', { name: 'Clear', exact: true }).click();
+        await expect(shelf).toHaveCount(0);
+        await page.getByTestId('selection-toolbar-inspect-node').click({ trial: true });
+        await page.evaluate(() => {
+          window.__MODIFF_E2E__!.sendWebsocketMessage({
+            type: 'task_completed',
+            sid: 'viewport-history',
+            task_id: 'viewport-history-after-clear',
+            name: 'New activity after clear',
+            completed_at: Date.now() / 1000,
+            current: null,
+            queued: {},
+          });
+        });
+        await expect(shelf).toBeVisible();
+        await expect(list).toBeHidden();
+        await show.click();
+        await expect(list).toBeVisible();
+        await page.getByTestId('selection-toolbar-inspect-node').click({ trial: true });
+        await hide.click();
+        await show.click();
+        await page.getByTestId('selection-toolbar-inspect-node').click({ trial: true });
+        expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(beforeResizeActions);
+      }
       expect(submissions).toBe(0);
     });
   });
