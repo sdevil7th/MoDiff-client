@@ -219,6 +219,8 @@ export default function OperationModelPicker({
       ) : null}
       {review.plan.review.attention.length ? (
         <ModiffDisclosure
+          key={review.choice.id}
+          defaultOpen
           label={`Needs attention (${review.plan.review.attention.length})`}
           buttonClassName="px-0 py-1 text-sm"
           panelClassName="pt-1"

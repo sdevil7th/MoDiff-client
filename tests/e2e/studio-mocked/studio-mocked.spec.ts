@@ -13960,8 +13960,27 @@ test('ordinary FP8r model changes preserve a compatible Base format and cancelle
   });
   const review = picker.getByTestId('model-selection-review');
   await expect(review).toBeVisible();
-  await review.getByRole('button', { name: /^Needs attention \(/u }).click();
-  await expect(review).toContainText(/Weight Format cannot be applied.*fp8r.*remains available in Implementation/u);
+  const attention = review.getByRole('button', { name: /^Needs attention \(/u });
+  const conflict = review.getByText(/Weight Format cannot be applied.*fp8r.*remains available in Implementation/u);
+  // A model's conflicts must be readable before Apply without discovering a
+  // collapsed disclosure. The operator can still inspect it with the keyboard.
+  await expect(attention).toHaveAttribute('aria-expanded', 'true');
+  await expect(conflict).toBeVisible();
+  await attention.focus();
+  await page.keyboard.press('Space');
+  await expect(conflict).toBeHidden();
+  await page.keyboard.press('Space');
+  await expect(conflict).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const apply = review.getByRole('button', { name: 'Apply model change', exact: true });
+  await expect(apply).toBeInViewport();
+  expect(
+    await apply.evaluate((button) => {
+      const rect = button.getBoundingClientRect();
+      return button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    }),
+  ).toBe(true);
+  await expect(conflict).toBeInViewport();
   expect((await publicFlux3FormatSnapshot(page)).semanticGraph).toEqual(beforeReview.semanticGraph);
   await review.getByRole('button', { name: 'Keep current model', exact: true }).click();
   await expect(review).toHaveCount(0);

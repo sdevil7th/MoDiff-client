@@ -1,3 +1,9 @@
+// Visible model-change conflicts measure largest/startup/deferred gzip
+// 497985/676473/335647 over 497981/676468/335619. Only the deferred
+// OperationModelPicker changes after immutable import-URL normalization; all119
+// assets and four startup/90 deferred memberships stay exact. Allow only the
+// measured four-byte largest-chunk import fingerprint growth. Aggregate startup,
+// deferred, 64 KiB chunk, dependency, minifier and loading limits stay unchanged.
 // Selected workflow setup measures largest/startup/deferred gzip
 // 497978/676464/335501 over 497685/676173/331955: add only 293/291/3546 bytes,
 // retaining 3/12/199 bytes of headroom. All119 assets,94 JS and four startup/
@@ -364,6 +370,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  4 +
   293 +
   894 +
   106 +
