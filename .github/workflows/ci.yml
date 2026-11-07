@@ -68,9 +68,10 @@ jobs:
   browser:
     name: Client browser quality
     runs-on: ubuntu-latest
-    # The full serial suite exceeds one hour on hosted runners. Keep its full
-    # test set and single worker; bound the job without truncating coverage.
-    timeout-minutes: 90
+    # The complete serial suite reached the old 90-minute job limit near its
+    # final cases on two runners. Include setup and retry overhead; retain every
+    # test, the single worker and the existing per-test timeouts/retry policy.
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: MoDiff-client

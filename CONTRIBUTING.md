@@ -446,6 +446,12 @@ browser gate within its own job budget.
 This setup does not download model weights or qualify accelerator execution;
 platform smoke jobs remain client-only.
 
+The full browser job has a finite 120-minute outer budget for setup, the complete
+serial suite and its existing retry policy. Two hosted runs reached the former
+90-minute limit near the final scenarios. Individual test and expectation
+timeouts, retries, coverage and the single worker are unchanged. This CI budget
+is separate from native model admission, memory and task-time safety limits.
+
 For a coordinated change, commit and review the backend first, then replace the
 backend `ref` in both jobs in `.github/workflows/ci.yml` with that actual compatible
 40-character commit SHA and run the paired gates. Keep both refs immutable and

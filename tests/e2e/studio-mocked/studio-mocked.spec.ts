@@ -31581,12 +31581,27 @@ for (const selection of ['node', 'edge'] as const) {
     await installMockRoutes(page);
     const releases: unknown[] = [];
     let cached = true;
+    // Cache membership is process-owned. Keep the fixture's socket and HTTP
+    // snapshots coherent instead of racing a real disconnect against the UI.
+    await page.routeWebSocket('**/ws**', (socket) => {
+      socket.send(
+        JSON.stringify({
+          type: 'welcome',
+          sid: new URL(socket.url()).searchParams.get('sid'),
+          instance: 'mock',
+          current: null,
+          queued: {},
+          cachedNodes: cached ? ['cache-target'] : [],
+        }),
+      );
+    });
     await page.route('**/cache', async (route) => {
       if (route.request().method() === 'DELETE') {
         releases.push(route.request().postDataJSON());
         cached = false;
         await route.fulfill({ json: { error: false, nodes: ['cache-target'] } });
-      } else await route.fulfill({ json: { error: false, cachedNodes: cached ? ['cache-target'] : [] } });
+      } else
+        await route.fulfill({ json: { error: false, instance: 'mock', cachedNodes: cached ? ['cache-target'] : [] } });
     });
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
