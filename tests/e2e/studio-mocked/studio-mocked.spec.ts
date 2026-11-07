@@ -35073,6 +35073,95 @@ async function optionalStageApi(page: Page) {
   });
 }
 
+for (const width of [1920, 1280])
+  test(`stage editing has a visible direct action and preserves controls, connections, Undo and saved work at ${width}px`, async ({
+    page,
+  }) => {
+    await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+    await page.setViewportSize({ width, height: width === 1280 ? 720 : 1200 });
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    await page.screenshot({ path: test.info().outputPath('stage-editing-controls.png') });
+    let submissions = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') submissions++;
+    });
+    const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+    const before = await optionalStageApi(page);
+    for (const label of ['Encode Inputs', 'Model Setup', 'Image Output']) {
+      const group = (await read()).nodes.find((node) => node.data.label === label)!;
+      const root = page.locator(`.react-flow__node[data-id="${group.id}"]`);
+      const edit = root.getByRole('button', { name: `Edit ${label} stages`, exact: true });
+      await expect(edit).toBeVisible();
+      await expect(edit).toHaveText('Edit stages');
+      // No options menu, inspector or hover is needed. Enter uses the same action.
+      if (label === 'Encode Inputs') {
+        await edit.focus();
+        await page.keyboard.press('Enter');
+      } else await edit.click();
+      await expect(root).toHaveCount(0);
+      expect(await optionalStageApi(page)).toEqual(before);
+      await page.locator('.react-flow__pane').click({ position: { x: 40, y: 140 } });
+      await page.keyboard.press('Control+z');
+      await expect(root).toBeVisible();
+      expect(await optionalStageApi(page)).toEqual(before);
+    }
+    const output = (await read()).nodes.find((node) => node.data.label === 'Image Output')!;
+    await page.getByTestId(`output-node-${output.id}`).getByRole('button', { name: 'Image Output options' }).click();
+    await page.getByRole('menuitem', { name: 'Save as reusable Block…', exact: true }).click();
+    const save = page.getByTestId(`save-user-block-choices-${output.id}`);
+    await expect(save).toContainText('A reusable Block stores canvas nodes and their settings.');
+    await save.getByLabel('Block name').fill('Reusable image output stages');
+    await save.getByRole('button', { name: 'Save as new Block', exact: true }).click();
+    await expect(save).toHaveCount(0);
+    expect(await optionalStageApi(page)).toEqual(before);
+    const input = (await read()).nodes.find((node) => node.data.label === 'Encode Inputs')!;
+    await page
+      .locator(`.react-flow__node[data-id="${input.id}"]`)
+      .getByRole('button', { name: 'Edit Encode Inputs stages' })
+      .click();
+    await page.getByTestId('topbar-save-workflow').click();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+    await expect(page.locator(`.react-flow__node[data-id="${input.id}"]`)).toHaveCount(0);
+    expect(await optionalStageApi(page)).toEqual(before);
+    expect(submissions).toBe(0);
+  });
+
+test('reusable canvas Blocks and Python nodes explain their different authoring paths', async ({ page }) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+  await page.getByTestId('left-tab-nodes').click();
+  await expect(
+    page.getByText('Saved Blocks reuse canvas nodes. Custom nodes run your Python code.', { exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Add custom node', exact: true }).click();
+  const custom = page.getByTestId('custom-extensions-dialog');
+  await expect(custom).toContainText('Add a Python node to run your own code. Save a Block to reuse canvas nodes.');
+  await custom.getByRole('button', { name: 'Close', exact: true }).click();
+  const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const before = await optionalStageApi(page);
+  for (const [i, node] of (await read()).nodes.entries())
+    await page
+      .locator(`.react-flow__node[data-id="${node.id}"] header`)
+      .first()
+      .click(i ? { modifiers: ['Control'] } : {});
+  await page.getByTestId('selection-toolbar-create-block').click();
+  const create = page.getByTestId('create-user-block-dialog');
+  await expect(create).toContainText('Group the selected canvas nodes into an editable Block.');
+  await create.getByLabel('Name').fill('Editable canvas stages');
+  await page.getByTestId('confirm-create-user-block').click();
+  await expect(create).toHaveCount(0);
+  const block = (await read()).nodes.find((node) => node.data.blockInstanceV2)!;
+  const root = page.locator(`.react-flow__node[data-id="${block.id}"]`);
+  const expand = root.getByRole('button', { name: 'Expand block', exact: true });
+  await expect(expand).toHaveText('Edit nodes');
+  await expand.click();
+  await expect(root.getByRole('button', { name: 'Collapse block', exact: true })).toBeVisible();
+  expect(await optionalStageApi(page)).toEqual(before);
+  await root.getByRole('button', { name: 'Collapse block', exact: true }).click();
+  await expect(expand).toBeVisible();
+  expect(await optionalStageApi(page)).toEqual(before);
+});
+
 test('optional Model Setup and Image Output preserve native stages, task review, separate, Undo and reusable save', async ({
   page,
 }) => {
@@ -35175,10 +35264,10 @@ test('optional Model Setup and Image Output preserve native stages, task review,
   await page.keyboard.press('Control+z');
   await expect(setupNode).toBeVisible();
   await outputNode.getByRole('button', { name: 'Image Output options', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Save as reusable node…', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Save as reusable Block…', exact: true }).click();
   const save = page.getByTestId(`save-user-block-choices-${output.id}`);
-  await save.getByLabel('Node name').fill('My decoded image output');
-  await save.getByRole('button', { name: 'Save as new node', exact: true }).click();
+  await save.getByLabel('Block name').fill('My decoded image output');
+  await save.getByRole('button', { name: 'Save as new Block', exact: true }).click();
   await expect(save).toHaveCount(0);
   expect(await optionalStageApi(page)).toEqual(before);
   await page.reload({ waitUntil: 'domcontentloaded' });

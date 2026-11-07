@@ -1789,7 +1789,7 @@ test('both composite generations use one shared frame and V2 stays on the block 
     'utf8',
   );
   assert.match(saveDialogSource, /Save as new \{noun\}/);
-  assert.match(saveDialogSource, /isFocusedStageNode\(instance\) \? 'node' : 'Block'/);
+  assert.match(saveDialogSource, /const noun = 'Block'/);
   assert.match(v2Source, /headerRef\.current\?\.offsetHeight/);
   assert.match(v2Source, /connectorRef\.current\?\.offsetHeight/);
   assert.match(v2Source, /headerHeight \+ connectorHeight \+ 96 \+ 4/);

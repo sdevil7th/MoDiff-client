@@ -1,3 +1,9 @@
+// Direct stage editing and Block/Python guidance measure largest/startup/deferred
+// gzip 498039/676527/335816 over 497985/676473/335647. Add only the measured
+// 54/54/169 bytes, retaining prior headroom. The five normalized changes are
+// CustomExtensionsPanel, EncodingNode, NodeList, block-composition-tools and
+// studio-templates. All119 assets, four startup/90 deferred memberships,
+// dependencies, minifier/loading rules and the independent64KiB cap stay fixed.
 // Visible model-change conflicts measure largest/startup/deferred gzip
 // 497985/676473/335647 over 497981/676468/335619. Only the deferred
 // OperationModelPicker changes after immutable import-URL normalization; all119
@@ -370,6 +376,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  54 +
   4 +
   293 +
   894 +
@@ -520,6 +527,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  54 +
   291 +
   896 +
   107 +
@@ -750,6 +758,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  169 +
   3546 +
   1556 +
   242 +

@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Paired scoped Run recovery bundle and unchanged backend runtime.
-          ref: 09f377f54f975ffbfa8705ac4535905f0481f54f
+          ref: 89d0e0e2084818b5f0334df4ea8cc0becc785e07
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -88,7 +88,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 09f377f54f975ffbfa8705ac4535905f0481f54f
+          ref: 89d0e0e2084818b5f0334df4ea8cc0becc785e07
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

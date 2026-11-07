@@ -7,6 +7,17 @@ are retained.
 
 ## Custom nodes
 
+**Saved Blocks** reuse groups of canvas nodes and their settings. Use **Create
+block** for selected nodes or **Save as reusable Block…** on a stage group, then
+insert the saved copy from the library. **Custom nodes** are Python extensions:
+use **Add custom node** when you want to supply new code. Saving a Block does not
+write Python or authorize additional source; existing source approvals still apply.
+
+On a collapsed reusable Block, **Edit nodes** expands its contents for ordinary
+canvas editing. Collapse it again when finished; exposed controls stay directly
+editable without expansion. Saving changes offers workflow-only, new reusable
+Block and applicable existing-definition choices.
+
 The full-width yellow **Add custom node** button opens Local, Hugging Face or Git.
 Selected source cards have a yellow border, tint and checkmark. Advanced contains
 optional name/revision settings; normal remote imports need only a repository.
@@ -126,10 +137,13 @@ are not silently repaired or structurally rewritten when opened.
    Existing ControlNet and custom branches are retained; Image does not mean
    Control Image. Unsupported or ambiguous preparation reports an error rather
    than silently choosing a different operation or discarding existing work.
-4. Use **Inspect implementation** in the options menu for stage details. Use
-   **Separate encoding stages** to edit individual stages/custom connections on
-   the canvas, with one Undo to restore the combined node. Inspection never turns
-   the node into an enclosing Block.
+4. Choose the visible **Edit stages** action to edit individual stages and their
+   connections on the canvas. It uses the existing separation transaction, with
+   one Undo to restore the combined node. Common controls remain directly editable
+   without separation. **Inspect implementation** and the named **Separate…**
+   actions remain in the options menu. Inspection never turns the node into an
+   enclosing Block. Model Setup, Guidance, Prepare Mask and Output groups use the
+   same direct editing action where that compact presentation is supported.
 5. Change model/task through Load Models. Compatible values and external branches
    are retained; incompatible changes still require the normal review. An existing
    image/audio source also supplies newly required inputs with the same declared

@@ -5,6 +5,7 @@ import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { captureWorkflowOperationContext, useStudioStore } from '../stores/useStudioStore';
 import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import {
+  ModiffButton,
   ModiffDialog,
   ModiffIconButton,
   ModiffMenuAction,
@@ -109,6 +110,16 @@ export default function EncodingNodeMenu({
   }
   return (
     <>
+      <ModiffButton
+        size="compact"
+        tone="ghost"
+        className="nodrag nowheel whitespace-nowrap"
+        aria-label={`Edit ${label} stages`}
+        title="Show individual stages on the canvas. Undo restores this group."
+        onClick={separate}
+      >
+        Edit stages
+      </ModiffButton>
       <ModiffMenuRoot className="nodrag nowheel">
         <ModiffMenuTrigger>
           <ModiffIconButton label={`${label} options`} size="compact">
@@ -121,7 +132,7 @@ export default function EncodingNodeMenu({
           {combinationOwner ? (
             <ModiffMenuAction onClick={combine}>Combine encoding and Guidance</ModiffMenuAction>
           ) : null}
-          {canSave ? <ModiffMenuAction onClick={save}>Save as reusable node…</ModiffMenuAction> : null}
+          {canSave ? <ModiffMenuAction onClick={save}>Save as reusable Block…</ModiffMenuAction> : null}
           <ModiffMenuAction onClick={() => requestAnimationFrame(() => setDocsOpen(true))}>
             Documentation
           </ModiffMenuAction>
