@@ -114,7 +114,7 @@ export default function EncodingNodeMenu({
         size="compact"
         tone="ghost"
         className="nodrag nowheel whitespace-nowrap"
-        aria-label={`Edit ${label} stages`}
+        aria-label={`Edit stages: ${label}`}
         title="Show individual stages on the canvas. Undo restores this group."
         onClick={separate}
       >

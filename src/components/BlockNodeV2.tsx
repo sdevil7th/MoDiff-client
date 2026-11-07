@@ -424,7 +424,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
                 onClick={handleToggleExpanded}
                 data-testid={`user-block-toggle-${node.id}`}
               >
-                Edit nodes
+                Expand block
               </ModiffButton>
             )}
           </>

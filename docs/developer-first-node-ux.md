@@ -13,7 +13,7 @@ insert the saved copy from the library. **Custom nodes** are Python extensions:
 use **Add custom node** when you want to supply new code. Saving a Block does not
 write Python or authorize additional source; existing source approvals still apply.
 
-On a collapsed reusable Block, **Edit nodes** expands its contents for ordinary
+On a collapsed reusable Block, **Expand block** shows its contents for ordinary
 canvas editing. Collapse it again when finished; exposed controls stay directly
 editable without expansion. Saving changes offers workflow-only, new reusable
 Block and applicable existing-definition choices.

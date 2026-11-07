@@ -35090,7 +35090,7 @@ for (const width of [1920, 1280])
     for (const label of ['Encode Inputs', 'Model Setup', 'Image Output']) {
       const group = (await read()).nodes.find((node) => node.data.label === label)!;
       const root = page.locator(`.react-flow__node[data-id="${group.id}"]`);
-      const edit = root.getByRole('button', { name: `Edit ${label} stages`, exact: true });
+      const edit = root.getByRole('button', { name: `Edit stages: ${label}`, exact: true });
       await expect(edit).toBeVisible();
       await expect(edit).toHaveText('Edit stages');
       // No options menu, inspector or hover is needed. Enter uses the same action.
@@ -35117,7 +35117,7 @@ for (const width of [1920, 1280])
     const input = (await read()).nodes.find((node) => node.data.label === 'Encode Inputs')!;
     await page
       .locator(`.react-flow__node[data-id="${input.id}"]`)
-      .getByRole('button', { name: 'Edit Encode Inputs stages' })
+      .getByRole('button', { name: 'Edit stages: Encode Inputs' })
       .click();
     await page.getByTestId('topbar-save-workflow').click();
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -35152,8 +35152,9 @@ test('reusable canvas Blocks and Python nodes explain their different authoring 
   await expect(create).toHaveCount(0);
   const block = (await read()).nodes.find((node) => node.data.blockInstanceV2)!;
   const root = page.locator(`.react-flow__node[data-id="${block.id}"]`);
-  const expand = root.getByRole('button', { name: 'Expand block', exact: true });
-  await expect(expand).toHaveText('Edit nodes');
+  const expand = root.getByTestId(`user-block-toggle-${block.id}`);
+  await expect(expand).toHaveText('Expand block');
+  await expect(expand).toHaveAccessibleName(await expand.innerText());
   await expand.click();
   await expect(root.getByRole('button', { name: 'Collapse block', exact: true })).toBeVisible();
   expect(await optionalStageApi(page)).toEqual(before);
