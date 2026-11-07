@@ -11,6 +11,7 @@ const SRC = path.join(ROOT, 'src');
 let fileApiModule;
 let originalFetch;
 let requestModule;
+let optionalRuntimePolling;
 let templateGalleryInstall;
 let server;
 
@@ -40,6 +41,7 @@ before(async () => {
     appType: 'custom',
   });
   requestModule = await server.ssrLoadModule('/src/utils/requestJson.ts');
+  optionalRuntimePolling = await server.ssrLoadModule('/src/studio/optionalRuntimePolling.ts');
   templateGalleryInstall = await server.ssrLoadModule('/src/studio/templateGalleryInstall.ts');
   fileApiModule = await server.ssrLoadModule('/src/utils/backendUpload.ts');
   originalFetch = globalThis.fetch;
@@ -60,6 +62,59 @@ function jsonResponse(value, status = 200) {
     headers: { 'Content-Type': 'application/json' },
   });
 }
+
+test('optional setup status retries transient failures with bounded delay and preserves the error', () => {
+  for (const options of [
+    { kind: 'network' },
+    { kind: 'timeout' },
+    { kind: 'http', status: 408 },
+    { kind: 'http', status: 429 },
+    { kind: 'http', status: 503 },
+  ]) {
+    const error = new requestModule.RequestError('Status temporarily unavailable.', { url: '/job', ...options });
+    const first = optionalRuntimePolling.optionalRuntimePollingFailure(error, 1);
+    assert.equal(first.message, error.message);
+    assert.equal(first.retryDelayMs, 1500);
+    assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 7).retryDelayMs, 5000);
+    assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 8).retryDelayMs, null);
+  }
+});
+
+test('optional setup status uses transient HTTP status when the real transport receives non-JSON errors', async () => {
+  for (const [status, retryDelayMs] of [
+    [503, 1500],
+    [200, null],
+    [404, null],
+  ]) {
+    globalThis.fetch = async () =>
+      new Response('<html>Service Unavailable</html>', {
+        status,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    await assert.rejects(requestModule.requestJson('/runtime/optional-runtimes/jobs/optjob-AbCdEf123456'), (error) => {
+      assert.equal(error.kind, 'invalid_json');
+      assert.equal(error.status, status);
+      assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 1).retryDelayMs, retryDelayMs);
+      assert.equal(optionalRuntimePolling.optionalRuntimePollingFailure(error, 8).retryDelayMs, null);
+      return true;
+    });
+  }
+});
+
+test('missing, invalid and identity-mismatched setup status pause without fabricating a job outcome', () => {
+  for (const error of [
+    new requestModule.RequestError('Job not found.', { kind: 'http', status: 404, url: '/job' }),
+    new requestModule.RequestError('Invalid JSON.', { kind: 'invalid_json', status: 200, url: '/job' }),
+    new requestModule.RequestError('Invalid payload.', { kind: 'invalid_payload', status: 200, url: '/job' }),
+    new Error('The optional-runtime job identity changed.'),
+  ]) {
+    const failure = optionalRuntimePolling.optionalRuntimePollingFailure(error, 1);
+    assert.equal(failure.retryDelayMs, null);
+    assert.equal(failure.message, error.message);
+    assert.equal('status' in failure, false);
+    assert.equal('job' in failure, false);
+  }
+});
 
 test('production source keeps raw fetch calls inside the request transport boundary', async () => {
   const violations = [];
@@ -207,6 +262,50 @@ test('binary request helpers consume blobs and array buffers through the shared 
   assert.equal(blob.type, 'image/png');
   assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), bytes);
   assert.deepEqual(new Uint8Array(await requestModule.requestArrayBuffer('/bytes')), bytes);
+});
+
+test('response readers retain shared cancellation and timeout through streamed body consumption', async (t) => {
+  for (const mode of ['aborted', 'timeout'])
+    await t.test(mode, async () => {
+      const controller = new AbortController();
+      let bodyStarted;
+      const started = new Promise((resolve) => {
+        bodyStarted = resolve;
+      });
+      globalThis.fetch = async (_url, init) => {
+        assert.equal(init.cache, 'no-store');
+        return new Response(
+          new ReadableStream({
+            start(stream) {
+              init.signal.addEventListener('abort', () => stream.error(init.signal.reason), { once: true });
+            },
+            pull() {
+              bodyStarted();
+            },
+          }),
+        );
+      };
+      const pending = requestModule.requestWithResponse(
+        '/streamed',
+        {
+          signal: controller.signal,
+          timeoutMs: mode === 'timeout' ? 20 : 1000,
+          cache: 'no-store',
+        },
+        async (response) => {
+          const reader = response.body.getReader();
+          try {
+            return await reader.read();
+          } finally {
+            reader.releaseLock();
+          }
+        },
+      );
+      const rejected = assert.rejects(pending, (error) => error.kind === mode && error.url === '/streamed');
+      await started;
+      if (mode === 'aborted') controller.abort(new Error('Unit caller cancelled its read.'));
+      await rejected;
+    });
 });
 
 test('binary HTTP failures preserve structured backend messages', async () => {

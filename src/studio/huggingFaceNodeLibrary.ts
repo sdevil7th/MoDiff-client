@@ -247,7 +247,7 @@ export type HuggingFaceNodeLibraryTaskContract = {
 };
 
 export type HuggingFaceNodeLibrary = {
-  schemaVersion: 5 | 6;
+  schemaVersion: 5 | 6 | 7;
   diffusersRevision: string;
   providers: HuggingFaceNodeLibraryProvider[];
   taskContracts: HuggingFaceNodeLibraryTaskContract[];
@@ -255,6 +255,18 @@ export type HuggingFaceNodeLibrary = {
   blockDefinitions: HuggingFaceNodeLibraryBlockDefinition[];
   blockRoleAdapters: HuggingFaceNodeLibraryBlockRoleAdapter[];
   containerStateAdapters: HuggingFaceNodeLibraryContainerStateAdapter[];
+  sourceSupplements?: HuggingFaceNodeLibrarySourceSupplement[];
+};
+
+export type HuggingFaceNodeLibrarySourceSupplement = {
+  schemaVersion: 1;
+  provider: 'diffusers';
+  libraryRevision: string;
+  runtimeProfileId: string;
+  workflowContractHash: string;
+  blockContractHash: string;
+  definitionIds: string[];
+  contentHash: string;
 };
 
 const IMMUTABLE_REVISION = /^[0-9a-f]{40}$/;
@@ -328,6 +340,7 @@ const SEALED_EXECUTION_BINDING_SOURCES = new Set([
   'controlnetLoadClass',
   'controlnetRepo',
   'controlnetRevision',
+  'controlnetOffloadMode',
   'controlnetRouteVariant',
   'controlnetWeightVariant',
   'ipAdapterRepo',
@@ -983,6 +996,7 @@ function executionAdmissions(
         if (
           !bindingSourceSet.has(source) ||
           !SEALED_EXECUTION_BINDING_SOURCES.has(source) ||
+          (source === 'controlnetOffloadMode' && value !== 'none') ||
           (typeof value !== 'boolean' &&
             (typeof value === 'number'
               ? !(Number.isSafeInteger(value) || (source === 'boundaryFade001' && value === 0.01))
@@ -1358,6 +1372,40 @@ function taskContract(value: unknown, schemaVersion: 5 | 6): HuggingFaceNodeLibr
   };
 }
 
+function sourceSupplements(value: unknown): HuggingFaceNodeLibrarySourceSupplement[] {
+  if (!Array.isArray(value) || !value.length || value.length > 16) invalid();
+  return value.map((item) => {
+    if (
+      !record(item) ||
+      !exactKeys(item, [
+        'schemaVersion',
+        'provider',
+        'libraryRevision',
+        'runtimeProfileId',
+        'workflowContractHash',
+        'blockContractHash',
+        'definitionIds',
+        'contentHash',
+      ]) ||
+      item.schemaVersion !== 1 ||
+      item.provider !== 'diffusers'
+    )
+      invalid();
+    const definitionIds = uniqueStrings(item.definitionIds, DEFINITION_ID, MAX_DEFINITIONS);
+    if (!definitionIds.length) invalid();
+    return {
+      schemaVersion: 1,
+      provider: 'diffusers',
+      libraryRevision: boundedText(item.libraryRevision, IMMUTABLE_REVISION, 40),
+      runtimeProfileId: boundedText(item.runtimeProfileId, IDENTIFIER, 256),
+      workflowContractHash: boundedText(item.workflowContractHash, CONTENT_HASH, 71),
+      blockContractHash: boundedText(item.blockContractHash, CONTENT_HASH, 71),
+      definitionIds,
+      contentHash: boundedText(item.contentHash, CONTENT_HASH, 71),
+    };
+  });
+}
+
 export function parseHuggingFaceNodeLibrary(value: unknown): HuggingFaceNodeLibrary {
   if (
     !record(value) ||
@@ -1370,12 +1418,13 @@ export function parseHuggingFaceNodeLibrary(value: unknown): HuggingFaceNodeLibr
       'blockDefinitions',
       'blockRoleAdapters',
       'containerStateAdapters',
+      ...(value.schemaVersion === 7 ? ['sourceSupplements'] : []),
     ])
   )
     invalid();
   const schemaVersion = value.schemaVersion;
   if (
-    (schemaVersion !== 5 && schemaVersion !== 6) ||
+    (schemaVersion !== 5 && schemaVersion !== 6 && schemaVersion !== 7) ||
     !Array.isArray(value.providers) ||
     !(
       (value.providers.length === 1 && value.providers[0] === 'diffusers') ||
@@ -1397,15 +1446,39 @@ export function parseHuggingFaceNodeLibrary(value: unknown): HuggingFaceNodeLibr
   )
     invalid();
   const diffusersRevision = boundedText(value.diffusersRevision, IMMUTABLE_REVISION, 40);
+  const sources = schemaVersion === 7 ? sourceSupplements(value.sourceSupplements) : [];
+  const sourceByDefinition = new Map<string, HuggingFaceNodeLibrarySourceSupplement>();
+  const sourceRevisions = new Set<string>();
+  for (const source of sources) {
+    if (source.libraryRevision === diffusersRevision || sourceRevisions.has(source.libraryRevision)) invalid();
+    sourceRevisions.add(source.libraryRevision);
+    for (const identity of source.definitionIds) {
+      if (sourceByDefinition.has(identity)) invalid();
+      sourceByDefinition.set(identity, source);
+    }
+  }
   const blockDefinitions = value.blockDefinitions.map(parseHuggingFaceNodeLibraryBlockDefinition);
   const blockDefinitionsById = new Map(blockDefinitions.map((item) => [item.id, item]));
   if (blockDefinitionsById.size !== blockDefinitions.length) invalid();
   const parsedBlockRoleAdapters = blockRoleAdapters(value.blockRoleAdapters, blockDefinitionsById);
   const parsedContainerStateAdapters = containerStateAdapters(value.containerStateAdapters, blockDefinitionsById);
-  const definitions = value.definitions.map((item) => definition(item, diffusersRevision, blockDefinitionsById));
+  const definitions = value.definitions.map((item) =>
+    definition(
+      item,
+      record(item) && typeof item.id === 'string'
+        ? (sourceByDefinition.get(item.id)?.libraryRevision ?? diffusersRevision)
+        : diffusersRevision,
+      blockDefinitionsById,
+    ),
+  );
   const definitionIds = new Set(definitions.map((item) => item.id));
   if (definitionIds.size !== definitions.length) invalid();
-  const taskContracts = value.taskContracts.map((item) => taskContract(item, schemaVersion));
+  if (schemaVersion === 7 && definitions.some((item) => item.schemaVersion !== 6)) invalid();
+  for (const identity of sourceByDefinition.keys()) {
+    const item = definitions.find((definition) => definition.id === identity);
+    if (!item || item.provider !== 'diffusers' || item.definitionKind !== 'modular_pipeline_workflow') invalid();
+  }
+  const taskContracts = value.taskContracts.map((item) => taskContract(item, schemaVersion === 7 ? 6 : schemaVersion));
   const taskContractIds = new Set(taskContracts.map((item) => item.id));
   if (taskContractIds.size !== taskContracts.length) invalid();
 
@@ -1446,5 +1519,6 @@ export function parseHuggingFaceNodeLibrary(value: unknown): HuggingFaceNodeLibr
     blockDefinitions,
     blockRoleAdapters: parsedBlockRoleAdapters,
     containerStateAdapters: parsedContainerStateAdapters,
+    ...(schemaVersion === 7 ? { sourceSupplements: sources } : {}),
   });
 }

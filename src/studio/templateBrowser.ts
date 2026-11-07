@@ -6,6 +6,10 @@ import {
   VIDEO_STUDIO_MODES,
 } from './modelProfiles';
 import { resolveTemplateAssetUrl } from './templateAssets';
+import {
+  AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
+  IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
+} from './templateOperationSelections';
 import type {
   StudioFormState,
   StudioMode,
@@ -67,6 +71,10 @@ export const TEMPLATE_BROWSER_CATEGORIES: Array<{ id: TemplateBrowserCategoryId;
 const TEMPLATE_DISPLAY_NAME_OVERRIDES: Partial<Record<StudioTemplate['id'], string>> = {
   low_vram: 'Quick Preview',
 };
+
+export function templateModelDisplayName(template: Pick<StudioTemplate, 'modelType' | 'modelDisplayName'>) {
+  return template.modelDisplayName?.trim() || STUDIO_MODEL_LABELS[template.modelType];
+}
 
 /**
  * The model and operation already have dedicated card metadata. Keep the
@@ -158,7 +166,8 @@ export function templateSearchText(template: StudioTemplate) {
     template.difficulty,
     template.vramEstimate,
     STUDIO_MODE_LABELS[template.mode],
-    STUDIO_MODEL_LABELS[template.modelType],
+    templateModelDisplayName(template),
+    template.modelArtifact?.value,
     ...(template.tags ?? []),
     ...(template.inputRequirements?.sampleAssets ?? []),
     ...(template.requiredBackendCapabilities ?? []),
@@ -179,6 +188,33 @@ function recommendedRank(template: StudioTemplate, form: StudioFormState) {
   return rank;
 }
 
+/** Explicit Experimental discovery only; this grants no model or execution eligibility. */
+export function hasDeclaredExperimentalCreator(template: StudioTemplate) {
+  const selection = template.executionSelection;
+  const declared = IMAGE_TEMPLATE_EXECUTION_SELECTIONS[template.id] ?? AUDIO_TEMPLATE_EXECUTION_SELECTIONS[template.id];
+  const artifact = template.modelArtifact;
+  if (
+    !selection ||
+    !declared ||
+    selection.schemaVersion !== 1 ||
+    selection.memoryPolicy !== 'custom_experimental' ||
+    declared.memoryPolicy !== 'custom_experimental' ||
+    selection.bindingSpec?.modelType !== template.modelType ||
+    selection.bindingSpec?.mode !== template.mode ||
+    declared.bindingSpec.modelType !== template.modelType ||
+    declared.bindingSpec.mode !== template.mode
+  )
+    return false;
+  for (const key of ['pipelineClass', 'task', 'executionProfileId', 'authoringRecipeId', 'implementation'] as const) {
+    const value = selection[key];
+    if (typeof value !== 'string' || !value.trim() || value !== declared[key]) return false;
+  }
+  if (!artifact || typeof artifact.value !== 'string' || !artifact.value.trim()) return false;
+  return artifact.source === 'hub'
+    ? /^[0-9a-f]{40}$/i.test(artifact.revision ?? '')
+    : artifact.source === 'local' && /^[0-9a-f]{64}$/i.test(artifact.sha256 ?? '');
+}
+
 export function filterStudioTemplates(
   templates: StudioTemplate[],
   form: StudioFormState,
@@ -195,12 +231,12 @@ export function filterStudioTemplates(
       !isStudioModelVisibleInCatalog(template.modelType, {
         currentModelType: form.modelType,
         includeWorkflowOnly: true,
-      })
+      }) &&
+      !(selectedCategory === 'experimental' && hasDeclaredExperimentalCreator(template))
     )
       return false;
     if (selectedCategory === 'recommended' && blocked) return false;
-    if (selectedCategory === 'experimental') return false;
-    if (selectedCategory !== 'recommended' && selectedCategory !== 'all') {
+    if (selectedCategory !== 'recommended' && selectedCategory !== 'all' && selectedCategory !== 'experimental') {
       if (!templateCategoryIds(template).includes(selectedCategory)) return false;
     }
     if (filter.modelType !== 'all' && template.modelType !== filter.modelType) return false;
@@ -217,8 +253,7 @@ export function filterStudioTemplates(
         (localRuntimeSeconds?.(right) ?? Number.POSITIVE_INFINITY)
       );
     }
-    if (filter.sort === 'model')
-      return STUDIO_MODEL_LABELS[left.modelType].localeCompare(STUDIO_MODEL_LABELS[right.modelType]);
+    if (filter.sort === 'model') return templateModelDisplayName(left).localeCompare(templateModelDisplayName(right));
     if (filter.sort === 'task') return STUDIO_MODE_LABELS[left.mode].localeCompare(STUDIO_MODE_LABELS[right.mode]);
     return recommendedRank(left, form) - recommendedRank(right, form) || left.label.localeCompare(right.label);
   });

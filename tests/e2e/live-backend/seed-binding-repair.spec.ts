@@ -15,6 +15,7 @@ test('saved FLUX seed warning is nonblocking and explicit Fix preserves values t
   await page.addInitScript(() => {
     if (sessionStorage.getItem('seed-repair-proof')) return;
     localStorage.clear();
+    sessionStorage.clear();
     sessionStorage.setItem('seed-repair-proof', '1');
   });
   await page.goto('/');

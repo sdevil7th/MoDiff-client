@@ -12,7 +12,7 @@ import InputField from './InputField';
 import { FieldFrame, FileDropFrame } from '../ui';
 import { uploadBackendFile } from '../utils/backendUpload';
 import { GraphControlInput, GraphIconButton } from '../ui/GraphControls';
-import { bundledPublicAssetUrl } from '../studio/outputUtils';
+import { bundledPublicAssetUrl, fileBackedMediaPreviewUrl } from '../studio/outputUtils';
 import { inferImportedMediaKind, mediaAcceptString } from '../studio/mediaImport';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { MEDIA_PLACEHOLDER_DATA_URL } from '../utils/mediaViewer';
@@ -64,12 +64,8 @@ export default function FileBrowserField(props: FieldProps) {
   const imagePreviewUrl = (file: string) =>
     bundledPublicAssetUrl(file) ??
     (isUrl(file) ? file : `${config.serverAddress}/preview?file=${encodeURIComponent(file)}`);
-  const videoPreviewUrl = (file: string) =>
-    bundledPublicAssetUrl(file) ??
-    (isUrl(file) ? file : `${config.serverAddress}/media/preview?file=${encodeURIComponent(file)}&media_kind=video`);
-  const audioPreviewUrl = (file: string) =>
-    bundledPublicAssetUrl(file) ??
-    (isUrl(file) ? file : `${config.serverAddress}/media/preview?file=${encodeURIComponent(file)}&media_kind=audio`);
+  const videoPreviewUrl = (file: string) => fileBackedMediaPreviewUrl(file, 'video');
+  const audioPreviewUrl = (file: string) => fileBackedMediaPreviewUrl(file, 'audio');
 
   // if none of the values is empty, add an empty string to allow adding more files
   const baseFieldValue =
@@ -262,7 +258,7 @@ export default function FileBrowserField(props: FieldProps) {
         ) : null}
         {displayValue && displayValue.length > 0 ? (
           displayValue.map((file: string, index: number) => (
-            <div key={index} className="relative">
+            <div key={index} className="relative min-w-0">
               {isImage(file) ? (
                 <img
                   className="mx-auto block h-auto max-h-[1024px] w-full max-w-[360px] object-contain"
@@ -275,7 +271,9 @@ export default function FileBrowserField(props: FieldProps) {
                 />
               ) : isVideo(file) ? (
                 <video
-                  className="pointer-events-auto mx-auto block h-auto max-h-[1080px] w-full max-w-[1920px] object-contain"
+                  // Reserve the same bounded frame before and after metadata arrives.
+                  // Intrinsic video dimensions must not resize an already arranged node.
+                  className="pointer-events-auto mx-auto block aspect-video w-[360px] max-w-full object-contain"
                   src={videoPreviewUrl(file)}
                   //src={`${config.serverAddress}/cache/${props.nodeId}/${props.fieldKey}`}
                   controls

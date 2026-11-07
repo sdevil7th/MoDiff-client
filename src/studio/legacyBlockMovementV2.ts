@@ -320,7 +320,16 @@ export function migrateLegacyHierarchyV2(
       delete updated.mirrorBindings;
       return targets.length > 1 ? { ...updated, mirrorBindings: targets.slice(1) } : updated;
     });
-    base.previews.push(...definition.previews.map((preview) => ({ ...preview, nodeId: map.get(preview.nodeId)! })));
+    // A child's primary remains local to its interface; the outer Block owns
+    // one primary even when several valid child Blocks are composed together.
+    const hasOuterPrimary = base.previews.some((preview) => preview.primary);
+    base.previews.push(
+      ...definition.previews.map((preview) => ({
+        ...preview,
+        nodeId: map.get(preview.nodeId)!,
+        ...(hasOuterPrimary && preview.primary ? { primary: false } : {}),
+      })),
+    );
   }
   // Older ordinary group membership was stored on React Flow nodes.
   for (const node of copy.nodes as CustomNodeType[]) {

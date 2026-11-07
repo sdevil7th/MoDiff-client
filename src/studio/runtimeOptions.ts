@@ -1,4 +1,5 @@
 import type { OptionDescriptor } from './types';
+import type { NodeParamOptions, NodeParams } from '../stores/useNodeStore';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -112,7 +113,8 @@ function normalizedOption(raw: unknown, fallbackValue?: string, fallbackKey?: st
  * declarations. Invalid object values are omitted instead of becoming
  * "[object Object]".
  */
-export function runtimeOptionEntries(options: unknown): RuntimeOptionEntry[] {
+export function runtimeOptionEntries(options: unknown, currentOptions?: unknown): RuntimeOptionEntry[] {
+  if (currentOptions !== undefined) options = runtimeOptionPresentation(options, currentOptions);
   if (Array.isArray(options)) {
     return options
       .map((option, index) => normalizedOption(option, undefined, `option-${index}`))
@@ -132,6 +134,72 @@ export function runtimeOptionEntries(options: unknown): RuntimeOptionEntry[] {
       return normalizedOption(option, key, key);
     })
     .filter((entry): entry is RuntimeOptionEntry => Boolean(entry));
+}
+
+/** Current runtime status is presentation, not part of an imported document. */
+export function runtimeOptionPresentation(options: unknown, currentOptions: unknown): NodeParamOptions {
+  const saved = runtimeOptionEntries(options);
+  const current = runtimeOptionEntries(currentOptions);
+  if (![...saved, ...current].some((row) => row.type === 'option' && row.descriptor)) {
+    return (options ?? []) as NodeParamOptions;
+  }
+  const present = (raw: unknown, key?: string) => {
+    const entry = normalizedOption(raw, key, key);
+    if (!entry || entry.type !== 'option') return raw;
+    const matches = current.filter((row) => row.type === 'option' && row.value === entry.value);
+    const match = matches.length === 1 ? matches[0] : undefined;
+    const live = match?.type === 'option' ? match.descriptor : undefined;
+    return {
+      schemaVersion: 1,
+      value: entry.value,
+      label: entry.label,
+      ...(entry.group ? { group: entry.group } : {}),
+      compatibility: live?.compatibility ?? 'unknown',
+      availability: live?.availability ?? 'unavailable',
+      installationState: live?.installationState ?? 'unavailable',
+      ...(live?.dependencies ? { dependencies: { ...live.dependencies } } : {}),
+      ...(live?.disabledReason
+        ? { disabledReason: live.disabledReason }
+        : !live
+          ? { disabledReason: 'This option is not declared by the current runtime.' }
+          : {}),
+    };
+  };
+  if (Array.isArray(options)) return options.map((raw) => present(raw));
+  if (!isRecord(options)) return [];
+  return Object.fromEntries(
+    Object.entries(options).map(([key, raw]) => [key, key.startsWith('__') ? raw : present(raw, key)]),
+  );
+}
+
+function actionCanSetOptions(action: unknown, fieldKey: string): boolean {
+  if (Array.isArray(action)) return action.some((item) => actionCanSetOptions(item, fieldKey));
+  if (typeof action === 'string') return true;
+  if (!isRecord(action)) return false;
+  return (
+    action.action === 'exec' ||
+    action.action === 'create' ||
+    (action.action === 'value' && action.target === fieldKey && action.prop === 'options')
+  );
+}
+
+/** Dynamic actions/optionsSource keep their existing authority and consent. */
+export function registeredRuntimeOptionPresentation(
+  options: NodeParamOptions,
+  fieldKey: string,
+  currentFields: Record<string, NodeParams> | undefined,
+): NodeParamOptions {
+  const current = currentFields?.[fieldKey];
+  if (
+    !current ||
+    Object.prototype.hasOwnProperty.call(current, 'optionsSource') ||
+    Object.values(currentFields ?? {}).some(
+      (field) => actionCanSetOptions(field.onChange, fieldKey) || actionCanSetOptions(field.onSignal, fieldKey),
+    )
+  ) {
+    return options;
+  }
+  return runtimeOptionPresentation(options, current.options ?? []);
 }
 
 export function runtimeOptionValues(options: unknown, { includeDisabled = false }: { includeDisabled?: boolean } = {}) {

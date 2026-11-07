@@ -167,6 +167,7 @@ export function applyStudioRuntimeHints(apiGraph: APIGraphExport, runIdentity?: 
   const studioExecutionSpec = studioExecutionSpecRuntimeReceipt(
     studio.graphBinding,
     useNodesStore.getState().studioModelCapabilities,
+    apiGraph.nodes,
   );
   const form = committedAutoCandidate
     ? {
@@ -290,6 +291,13 @@ export function getStudioRunInputHash(form: StudioFormState, apiGraph: APIGraphE
       paths: apiGraph.paths,
       deterministicMode: apiGraph.deterministicMode,
       provenance: apiGraph.provenance,
+      ...(apiGraph.runtimeHints?.executionPurpose
+        ? {
+            loopsPresent: Object.prototype.hasOwnProperty.call(apiGraph, 'loops'),
+            loops: apiGraph.loops ?? null,
+            executionPurpose: apiGraph.runtimeHints.executionPurpose,
+          }
+        : {}),
     }),
   )}`;
 }

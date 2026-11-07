@@ -35,6 +35,8 @@ export type TemplateSemanticGroup =
 export type TemplateNegativeCategory = 'artifact' | 'structure' | 'task_fidelity' | 'aesthetic';
 
 export type TemplateQualityIssueCode =
+  | 'unresolved_backend_default'
+  | 'invalid_layout_reference'
   | 'missing_semantic_group'
   | 'blank_negative_not_allowed'
   | 'too_few_negative_constraints'
@@ -61,6 +63,7 @@ export type TemplateNegativeAnalysis = {
 
 export type TemplateQualityAudit = {
   templateId: string;
+  promptResolution: 'template' | 'backend_default' | 'unresolved_backend_default';
   kind: TemplateQualityKind;
   requiredSemanticGroups: TemplateSemanticGroup[];
   matchedSemanticGroups: TemplateSemanticGroup[];
@@ -77,6 +80,7 @@ type SemanticGroupDefinition = {
 type BlankNegativeDeclaration = {
   id: string;
   modelTypes: readonly StudioModelType[];
+  executionProfileId?: string;
   maxGuidanceScale?: number;
   reason: string;
 };
@@ -99,10 +103,11 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
   focal_content: {
     label: 'a concrete subject, scene, or designed artifact',
     patterns: [
+      /\b(habitat|spacecraft|space station|planet|torus)\b/i,
       /\b(subject|scene|product|device|object|character|portrait|person|building|architecture|interior|exterior)\b/i,
       /\b(worker|keeper|operator|courier|engineer|mechanic|artisan|veterinarian|musician|driver|researcher|watchman)\b/i,
       /\b(bottle|can|radio|camera|poster|logo|packag\w*|lamp|helmet|chair|headphone|observatory|greenhouse)\b/i,
-      /\b(train|harbor|gallery|briefcase|coast|orchid|book\w*|speaker|bowl|mascot|carton|mug|cup)\b/i,
+      /\b(train|harbor|gallery|briefcase|coast|orchid|book\w*|speaker|bowl|mascot|carton|mug|cup|teapot)\b/i,
     ],
   },
   spatial_design: {
@@ -229,6 +234,20 @@ const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSem
 
 export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = [
   {
+    id: 'flux3-distilled-no-negative-input',
+    modelTypes: ['Flux3DistilledModularPipeline'],
+    executionProfileId: 'flux3-klein:official-provider:v1',
+    reason: 'The declared Distilled contract has no negative-prompt input; exclusions stay in the positive brief.',
+  },
+  {
+    id: 'flux3-base-empty-negative-recipe',
+    modelTypes: ['Flux3ModularPipeline'],
+    executionProfileId: 'flux3-klein-base:official-provider:v1',
+    maxGuidanceScale: 3.5,
+    reason:
+      'The reviewed Base recipes deliberately retain empty negative conditioning at CFG up to 3.5; the Base negative-prompt input remains supported.',
+  },
+  {
     id: 'z-image-turbo-no-negative-input',
     modelTypes: ['ZImageModularPipeline'],
     reason: 'Z-Image Turbo has no negative-prompt input; exclusions belong in the positive production brief.',
@@ -245,8 +264,16 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
       'FluxCannyPipeline',
       'FluxReduxPipeline',
       'Flux2KleinPipeline',
+      'Flux2ModularPipeline',
     ],
     reason: 'These FLUX recipes may intentionally use native or zeroed negative conditioning.',
+  },
+  {
+    id: 'cosmos3-super-publisher-conditioning',
+    modelTypes: ['Cosmos3OmniModularPipeline'],
+    executionProfileId: 'cosmos3-super-text-to-image:official-modular-workflow',
+    reason:
+      'The original Cosmos 3 Super publisher image recipe uses an empty negative prompt; retain its conditioning unchanged.',
   },
   {
     id: 'explicit-cfg-one-image-recipe',
@@ -325,12 +352,65 @@ export function templatePromptMatchesSemanticGroup(prompt: string, group: Templa
   return SEMANTIC_GROUPS[group].patterns.some((pattern) => pattern.test(prompt));
 }
 
+/** Audit literal prompt text only. This never seeds a layout widget or executes JSON. */
+function rawLayoutSemanticGroups(prompt: string): TemplateSemanticGroup[] | null {
+  if (prompt.length > 16_384) return null;
+  const lines = prompt.split('\n');
+  const [caption, encoded] = lines;
+  if (lines.length !== 2 || typeof caption !== 'string' || typeof encoded !== 'string') return null;
+  if (!caption.trim() || caption.length > 512) return null;
+  let items: unknown;
+  try {
+    items = JSON.parse(encoded);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(items) || items.length < 1 || items.length > 32) return null;
+  const names = new Set<string>();
+  const descriptions: string[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    if (Object.keys(item).sort().join(',') !== 'bbox,desc,id') return null;
+    const { id, bbox, desc } = item as Record<string, unknown>;
+    if (typeof id !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(id) || names.has(id)) return null;
+    if (
+      !Array.isArray(bbox) ||
+      bbox.length !== 4 ||
+      !bbox.every((value) => Number.isSafeInteger(value) && value >= 0 && value <= 1000) ||
+      bbox[0] >= bbox[2] ||
+      bbox[1] >= bbox[3]
+    )
+      return null;
+    if (typeof desc !== 'string' || desc !== desc.trim() || desc.length < 12 || desc.length > 512) return null;
+    names.add(id);
+    descriptions.push(desc);
+  }
+  const placeholders = [...caption.matchAll(/<([A-Za-z][A-Za-z0-9_]{0,63})>/gu)].map((match) => match[1] ?? '');
+  if (
+    placeholders.length !== names.size ||
+    new Set(placeholders).size !== names.size ||
+    placeholders.some((id) => !names.has(id)) ||
+    /[<>]/u.test(caption.replace(/<[A-Za-z][A-Za-z0-9_]{0,63}>/gu, ''))
+  )
+    return null;
+  const groups: TemplateSemanticGroup[] = ['focal_content', 'spatial_design'];
+  const color = /\b(red|orange|yellow|green|blue|purple|pink|brown|black|white|gr[ae]y|gold|silver|cobalt|amber)\b/iu;
+  if (descriptions.every((desc) => color.test(desc) || templatePromptMatchesSemanticGroup(desc, 'visual_treatment')))
+    groups.push('visual_treatment');
+  return groups;
+}
+
 export function getTemplateNegativePolicy(
-  template: Pick<StudioTemplate, 'modelType' | 'example'>,
+  template: Pick<StudioTemplate, 'modelType' | 'example' | 'executionSelection'>,
 ): TemplateNegativePolicy {
   const guidanceScale = template.example?.lockedSettings?.guidanceScale;
   const declaration = BLANK_NEGATIVE_DECLARATIONS.find((candidate) => {
     if (!candidate.modelTypes.includes(template.modelType)) return false;
+    if (
+      candidate.executionProfileId !== undefined &&
+      template.executionSelection?.executionProfileId !== candidate.executionProfileId
+    )
+      return false;
     if (candidate.maxGuidanceScale === undefined) return true;
     return guidanceScale !== undefined && guidanceScale <= candidate.maxGuidanceScale;
   });
@@ -350,7 +430,7 @@ export function getTemplateNegativePolicy(
 }
 
 export function analyzeTemplateNegativePrompt(
-  template: Pick<StudioTemplate, 'modelType' | 'example' | 'negativePrompt'>,
+  template: Pick<StudioTemplate, 'modelType' | 'example' | 'negativePrompt' | 'executionSelection'>,
 ): TemplateNegativeAnalysis {
   const policy = getTemplateNegativePolicy(template);
   const negativePrompt = template.negativePrompt?.trim() ?? '';
@@ -398,27 +478,57 @@ export function analyzeTemplateNegativePrompt(
   return { policy, constraints, categories, issues };
 }
 
-export function auditTemplateQuality(template: StudioTemplate): TemplateQualityAudit {
+export function auditTemplateQuality(
+  template: StudioTemplate,
+  resolvedBackendDefaults?: Pick<StudioTemplate, 'prompt'>,
+): TemplateQualityAudit {
   const kind = classifyTemplateQualityKind(template);
   const requiredSemanticGroups = getRequiredTemplateSemanticGroups(template);
+  const needsBackendPrompt =
+    !template.prompt.trim() && template.executionSelection?.backendDefaultInputs?.includes('prompt');
+  const resolvedPrompt = needsBackendPrompt ? resolvedBackendDefaults?.prompt : template.prompt;
+  const promptResolution = needsBackendPrompt
+    ? resolvedPrompt?.trim()
+      ? 'backend_default'
+      : 'unresolved_backend_default'
+    : 'template';
+  const rawLayout = template.promptQualityPolicy === 'raw_layout_reference';
+  const layoutGroups = rawLayout ? rawLayoutSemanticGroups(resolvedPrompt ?? '') : null;
   const matchedSemanticGroups = requiredSemanticGroups.filter((group) =>
-    templatePromptMatchesSemanticGroup(template.prompt, group),
+    rawLayout ? layoutGroups?.includes(group) : templatePromptMatchesSemanticGroup(resolvedPrompt ?? '', group),
   );
   const semanticIssues: TemplateQualityIssue[] =
-    template.promptQualityPolicy === 'adapter_reference'
-      ? []
-      : requiredSemanticGroups
-          .filter((group) => !matchedSemanticGroups.includes(group))
-          .map((group) => ({
-            code: 'missing_semantic_group',
-            semanticGroup: group,
-            message: `Prompt is missing ${SEMANTIC_GROUPS[group].label}.`,
-          }));
+    promptResolution === 'unresolved_backend_default'
+      ? [
+          {
+            code: 'unresolved_backend_default',
+            message: 'Audit the resolved backend starter prompt before claiming semantic coverage.',
+          },
+        ]
+      : template.promptQualityPolicy === 'adapter_reference'
+        ? []
+        : requiredSemanticGroups
+            .filter((group) => !matchedSemanticGroups.includes(group))
+            .map((group) => ({
+              code: 'missing_semantic_group',
+              semanticGroup: group,
+              message: `Prompt is missing ${SEMANTIC_GROUPS[group].label}.`,
+            }));
   const negative = analyzeTemplateNegativePrompt(template);
-  const issues = [...semanticIssues, ...negative.issues];
+  const layoutIssues: TemplateQualityIssue[] =
+    rawLayout && !layoutGroups
+      ? [
+          {
+            code: 'invalid_layout_reference',
+            message: 'Literal layout prompts require one caption and a bounded, matching id/bbox/desc JSON array.',
+          },
+        ]
+      : [];
+  const issues = [...layoutIssues, ...semanticIssues, ...negative.issues];
 
   return {
     templateId: template.id,
+    promptResolution,
     kind,
     requiredSemanticGroups,
     matchedSemanticGroups,
@@ -429,5 +539,5 @@ export function auditTemplateQuality(template: StudioTemplate): TemplateQualityA
 }
 
 export function auditTemplateCatalog(templates: readonly StudioTemplate[]): TemplateQualityAudit[] {
-  return templates.map(auditTemplateQuality);
+  return templates.map((template) => auditTemplateQuality(template));
 }

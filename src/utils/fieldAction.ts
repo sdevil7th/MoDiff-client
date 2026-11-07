@@ -124,8 +124,10 @@ export function buildFieldActionProps(nodeId: string, fieldKey: string): FieldPr
 }
 
 /** Resolve the live field owner without accepting a stale or unrelated control. */
-export function fieldActionSource(props: Pick<FieldProps, 'nodeId' | 'fieldKey' | 'module' | 'action'>) {
-  const nodes = useFlowStore.getState().nodes;
+export function fieldActionSource(
+  props: Pick<FieldProps, 'nodeId' | 'fieldKey' | 'module' | 'action'>,
+  nodes = useFlowStore.getState().nodes,
+) {
   const direct = nodes.find((candidate) => candidate.id === props.nodeId);
   const directMatches = direct?.data.module === props.module && direct.data.action === props.action;
   const source =

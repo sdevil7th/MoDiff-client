@@ -36,13 +36,20 @@ export function executableMediaOperations(operations: OperationContract[], suppo
   );
 }
 
-export type MediaAttachmentChoice = { key: string; task: string; role: string; kind: 'image' | 'audio'; label: string };
+export type MediaAttachmentKind = 'image' | 'audio' | 'video';
+export type MediaAttachmentChoice = {
+  key: string;
+  task: string;
+  role: string;
+  kind: MediaAttachmentKind;
+  label: string;
+};
 
 export function mediaAttachmentOwners(
   graph: OperationGraph,
   targetId: string,
   operations: OperationContract[],
-  kind: 'image' | 'audio',
+  kind: MediaAttachmentKind,
 ) {
   const target = graph.nodes.find((node) => node.id === targetId);
   if (!target) return [];
@@ -73,7 +80,7 @@ export function mediaAttachmentOwners(
 export function mediaAttachmentChoices(operations: OperationContract[], pipeline: string): MediaAttachmentChoice[] {
   const choices = new Map<string, MediaAttachmentChoice>();
   for (const operation of operations) {
-    if (operation.pipelineClass !== pipeline || !operation.task || operation.task.includes('video')) continue;
+    if (operation.pipelineClass !== pipeline || !operation.task) continue;
     for (const port of operation.ports) {
       if (
         port.direction !== 'input' ||
@@ -82,7 +89,13 @@ export function mediaAttachmentChoices(operations: OperationContract[], pipeline
         port.semantics?.owner === 'same_loader'
       )
         continue;
-      const kind = port.types.includes('image') ? 'image' : port.types.includes('audio') ? 'audio' : null;
+      const kind = port.types.includes('image')
+        ? 'image'
+        : port.types.includes('audio')
+          ? 'audio'
+          : port.types.includes('video')
+            ? 'video'
+            : null;
       if (!kind) continue;
       const key = JSON.stringify([operation.task, port.semanticName, kind]);
       choices.set(key, {
@@ -173,7 +186,7 @@ export function planMediaAttachment(
   let input = source && next.nodes.find((node) => node.id === source.nodeId);
   const handle = source?.handleId ?? choice.kind;
   if (!source) {
-    const key = choice.kind === 'image' ? 'modules.Image.Load' : 'modules.Audio.Load';
+    const key = { image: 'modules.Image.Load', audio: 'modules.Audio.Load', video: 'modules.Video.Load' }[choice.kind];
     input =
       createNodeFromRegistry(key, registry, { x: owner.position.x - 420, y: owner.position.y + 280 }) ?? undefined;
     if (!input) throw new Error('The media loader is unavailable in the node registry.');

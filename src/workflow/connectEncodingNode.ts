@@ -4,6 +4,7 @@ import { useNodesStore } from '../stores/useNodeStore';
 import { captureWorkflowOperationContext, assertWorkflowOperationContext } from '../stores/useStudioStore';
 import { operationGraphSignature, commitOperationGraph } from './operationGraphTransaction';
 import { requestOperationStarter } from './operationStarterRequest';
+import { layoutReferenceContext } from '../studio/layoutReferenceContext';
 import { encodingConnectionRoute, encodingOwnerProfile, planEncodingConnection } from './encodingNodeConnection';
 
 export async function connectEncodingNode(connection: Connection, pendingNode?: CustomNodeType, signal?: AbortSignal) {
@@ -24,6 +25,6 @@ export async function connectEncodingNode(connection: Connection, pendingNode?: 
   assertWorkflowOperationContext(context, { includeForm: false });
   if (operationGraphSignature(useFlowStore.getState().toObject()) !== signature)
     throw new Error('The workflow changed while preparing this connection. Connect again. Nothing changed.');
-  const next = planEncodingConnection(graph, connection, route, starter);
+  const next = planEncodingConnection(graph, connection, route, starter, layoutReferenceContext);
   commitOperationGraph(next, context, signature, 'Connect encoding input/output');
 }

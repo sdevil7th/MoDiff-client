@@ -15,6 +15,7 @@ test('Qwen missing-state Fix reconnects only the affected edge and preserves the
   await page.addInitScript(() => {
     if (sessionStorage.getItem('state-repair-proof')) return;
     localStorage.clear();
+    sessionStorage.clear();
     sessionStorage.setItem('state-repair-proof', '1');
   });
   await page.goto('/');

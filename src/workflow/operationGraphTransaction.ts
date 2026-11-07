@@ -2,9 +2,20 @@ import { useFlowStore } from '../stores/useFlowStore';
 import { assertWorkflowOperationContext, type WorkflowOperationContext } from '../stores/useStudioStore';
 import type { OperationGraph } from './operationAuthoring';
 
-function reviewNode(node: OperationGraph['nodes'][number]) {
-  if (!node.data.operationAuthoring) return node;
+function previewNode(node: OperationGraph['nodes'][number]) {
+  const uiState = node.data.uiState;
+  // A derived facade refresh may materialize the default empty object. Only
+  // that representation equals absence; every nonempty UI setting is an edit.
+  if (!uiState || Object.getPrototypeOf(uiState) !== Object.prototype || Object.keys(uiState).length) return node;
   const copy = structuredClone(node);
+  delete copy.data.uiState;
+  return copy;
+}
+
+function reviewNode(node: OperationGraph['nodes'][number]) {
+  const reviewed = previewNode(node);
+  if (!reviewed.data.operationAuthoring) return reviewed;
+  const copy = structuredClone(reviewed);
   for (const field of Object.values(copy.data.params)) {
     // Connection/field actions recompute availability asynchronously. These
     // flags are not edits to a value, port contract, binding, or layout.
@@ -12,6 +23,10 @@ function reviewNode(node: OperationGraph['nodes'][number]) {
     delete field.hidden;
   }
   return copy;
+}
+
+export function operationGraphPreviewSignature(graph: OperationGraph) {
+  return JSON.stringify({ ...graph, nodes: graph.nodes.map(previewNode) });
 }
 
 export function operationGraphSignature(graph: OperationGraph) {
@@ -24,6 +39,7 @@ export function commitOperationGraph(
   context: WorkflowOperationContext,
   signature: string,
   label: string,
+  options: { preserveSelection?: boolean } = {},
 ) {
   assertWorkflowOperationContext(context, { includeForm: false });
   const flow = useFlowStore.getState();
@@ -36,6 +52,11 @@ export function commitOperationGraph(
   try {
     const previousNodes = new Map(previous.nodes.map((node) => [node.id, node]));
     const currentNodes = new Map(current.nodes.map((node) => [node.id, node]));
+    // Only an explicit in-place refresh retains its mounted inspector. Ordinary
+    // graph replacements keep their established clear-selection behavior.
+    const retainSelection =
+      options.preserveSelection === true && !graph.nodes.some((node) => node.selected !== undefined);
+    const liveSelection = new Map(flow.nodes.map((node) => [node.id, node.selected]));
     flow.replaceGraph(
       {
         ...graph,
@@ -43,9 +64,12 @@ export function commitOperationGraph(
           const original = previousNodes.get(node.id);
           // Keep refreshed availability on untouched siblings, rather than
           // restoring the preview's older presentation metadata over them.
-          return original && JSON.stringify(reviewNode(node)) === JSON.stringify(reviewNode(original))
-            ? (currentNodes.get(node.id) ?? node)
-            : node;
+          const next =
+            original && JSON.stringify(reviewNode(node)) === JSON.stringify(reviewNode(original))
+              ? (currentNodes.get(node.id) ?? node)
+              : node;
+          const selected = liveSelection.get(node.id);
+          return retainSelection && selected !== undefined ? { ...next, selected } : next;
         }),
       },
       { clearRemovedCache: true },

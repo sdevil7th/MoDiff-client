@@ -165,7 +165,6 @@ if (Test-PortInUse -Port $BackendPort) {
   $backendCommand = @"
 `$Host.UI.RawUI.WindowTitle = 'MoDiff Backend'
 Set-Location -LiteralPath '$backendPathEscaped'
-`$env:PYTORCH_CUDA_ALLOC_CONF = if (`$env:PYTORCH_CUDA_ALLOC_CONF) { `$env:PYTORCH_CUDA_ALLOC_CONF } else { 'expandable_segments:True' }
 if (Test-Path -LiteralPath '.\.venv\Scripts\python.exe') {
   & '.\.venv\Scripts\python.exe' main.py
 } else {

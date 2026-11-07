@@ -185,6 +185,16 @@ export function resolveStudioImageUrl(value: string, nodeId?: string, fieldKey?:
   return value;
 }
 
+/** Input paths are backend identifiers, even when they begin with a slash. */
+export function fileBackedMediaPreviewUrl(value: string, kind: 'audio' | 'video'): string {
+  if (!value.trim()) return '';
+  const bundledAssetUrl = bundledPublicAssetUrl(value);
+  if (bundledAssetUrl) return bundledAssetUrl;
+  if (/^(?:https?:|data:|blob:)/i.test(value)) return value;
+  if (/^\/(?:cache\/|file\?|media\/preview\?)/.test(value)) return `${config.serverAddress}${value}`;
+  return `${config.serverAddress}/media/preview?file=${encodeURIComponent(value)}&media_kind=${kind}`;
+}
+
 export function resolveStudioVideoUrl(value: string, nodeId?: string, fieldKey?: string) {
   if (
     value.startsWith('http://') ||

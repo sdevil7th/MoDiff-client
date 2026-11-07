@@ -1,5 +1,5 @@
 import { enqueueSnackbar } from '../ui/snackbar';
-import { useState, type ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Download, Eraser, FolderOpen, Gauge, RefreshCw, Search, Settings } from 'lucide-react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
@@ -10,18 +10,22 @@ import {
   captureWorkflowOperationContext,
   isWorkflowOperationCancelled,
   useStudioStore,
+  workflowOperationContextIsCurrent,
 } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { createOrUpdateStudioGraph } from '../studio/graphBridge';
 import { autoProofIsReady, formPatchForAutoCandidate } from '../studio/autoResource';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { getFormDefaultsForModel, getProfileForForm, STUDIO_OFFLOAD_RUNTIME_LABELS } from '../studio/modelProfiles';
 import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import type { RunReadinessIssue, RuntimeFailure } from '../studio/types';
 import { IssueCard, ModiffButton, ModiffDialog, ProgressBar, Spinner, type IssueCardTone } from '../ui';
 import { cleanupGpuMemory } from '../utils/serverActions';
+import { runtimeCleanupFeedback } from '../utils/runtimeCleanupFeedback';
+import { runRecoveryOriginIsCurrent, type RunRecoveryFocusTarget } from '../studio/runRecovery';
 
-type CleanupState = 'idle' | 'running' | 'success' | 'error';
+type CleanupState = 'idle' | 'running' | 'success' | 'warning' | 'error';
 
 function issueTone(severity: RunReadinessIssue['severity']): IssueCardTone {
   if (severity === 'success') return 'success';
@@ -33,6 +37,7 @@ function issueTone(severity: RunReadinessIssue['severity']): IssueCardTone {
 export default function RunIssuesDialog() {
   const issues = useRunIssueStore((state) => state.issues);
   const issueDialogOpen = useRunIssueStore((state) => state.issueDialogOpen);
+  const issueOrigin = useRunIssueStore((state) => state.issueOrigin);
   const closeIssues = useRunIssueStore((state) => state.closeIssues);
   const failure = useRunIssueStore((state) => state.failure);
   const failureDialogOpen = useRunIssueStore((state) => state.failureDialogOpen);
@@ -43,6 +48,7 @@ export default function RunIssuesDialog() {
   const setRightPanelOpen = useSettingsStore((state) => state.setRightPanelOpen);
   const setRightPanelTab = useSettingsStore((state) => state.setRightPanelTab);
   const setWorkflowFocusRequest = useSettingsStore((state) => state.setWorkflowFocusRequest);
+  const setRunRecoveryFocusRequest = useSettingsStore((state) => state.setRunRecoveryFocusRequest);
   const setModelManagerOpener = useSettingsStore((state) => state.setModelManagerOpener);
   const form = useStudioStore((state) => state.form);
   const updateForm = useStudioStore((state) => state.updateForm);
@@ -50,6 +56,8 @@ export default function RunIssuesDialog() {
   const detachManagedGraph = useStudioStore((state) => state.detachManagedGraph);
   const autoResourcePlan = useStudioStore((state) => state.autoResourcePlan);
   const activeWorkflowTabId = useStudioStore((state) => state.activeWorkflowTabId);
+  const canvasEpoch = useStudioStore((state) => state.workflowCanvasEpoch);
+  const formEpoch = useStudioStore((state) => state.workflowFormEpoch);
   const currentRunContext = useStudioStore((state) => state.currentRunContext);
   const workflowCanvasHydrated = useStudioStore((state) => state.workflowCanvasHydrated);
   const workflowTabs = useStudioStore((state) => state.workflowTabs);
@@ -71,6 +79,29 @@ export default function RunIssuesDialog() {
     workflowCanvasHydrated,
     workflowTabs,
   });
+  const issueScopeCurrent = Boolean(
+    issueOrigin &&
+    issueOrigin.workflow.workflowTabId === activeWorkflowTabId &&
+    issueOrigin.workflow.canvasEpoch === canvasEpoch &&
+    issueOrigin.workflow.formEpoch === formEpoch,
+  );
+
+  const guardIssueAction = (event: MouseEvent) => {
+    const current = useRunIssueStore.getState();
+    if (current.issues === issues && current.issueOrigin === issueOrigin && runRecoveryOriginIsCurrent(issueOrigin))
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    enqueueSnackbar('The workflow changed. Close this dialog and check the current Run issues again.', {
+      variant: 'info',
+    });
+  };
+
+  const focusIssueTarget = (target: RunRecoveryFocusTarget) => {
+    if (issueOrigin && workflowOperationContextIsCurrent(issueOrigin.workflow)) {
+      setRunRecoveryFocusRequest({ origin: issueOrigin, target });
+    }
+  };
 
   const retryWithNextCandidate = async () => {
     if (!nextCandidate || !failureTargetsActiveWorkflow) return;
@@ -99,6 +130,9 @@ export default function RunIssuesDialog() {
     };
     const context = captureWorkflowOperationContext();
     try {
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      if (executionScope) throw new Error('Use the current workflow Auto plan for this declared ancillary graph.');
       applyAutoResourcePlan(nextPlan, patch);
       advanceWorkflowOperationContext(context);
       await createOrUpdateStudioGraph(useStudioStore.getState().form, context);
@@ -111,6 +145,7 @@ export default function RunIssuesDialog() {
   };
 
   const openSetup = () => {
+    setRunRecoveryFocusRequest(null);
     setRightPanelOpen(true);
     setRightPanelTab('setup');
     closeIssues();
@@ -118,6 +153,7 @@ export default function RunIssuesDialog() {
   };
 
   const openStudio = () => {
+    setRunRecoveryFocusRequest(null);
     setRightPanelOpen(true);
     setRightPanelTab('studio');
     closeIssues();
@@ -125,6 +161,7 @@ export default function RunIssuesDialog() {
   };
 
   const inspectNode = (nodeId: string | null | undefined, source: 'issues' | 'failure') => {
+    setRunRecoveryFocusRequest(null);
     setRightPanelOpen(true);
     setRightPanelTab('studio');
     if (nodeId) {
@@ -191,17 +228,10 @@ export default function RunIssuesDialog() {
     setCleanupMessage('Releasing cached models, nodes, and accelerator memory...');
 
     try {
-      const data: unknown = await cleanupGpuMemory();
-      const responseMessage = cleanupResponseMessage(data);
-      if (cleanupResponseHasError(data)) {
-        throw new Error(responseMessage ?? 'Accelerator cleanup failed.');
-      }
-      const message =
-        responseMessage ??
-        'Accelerator cache released. Cached model state was dropped, so rerun the workflow to rebuild outputs; this action does not intentionally stop the backend.';
-      setCleanupState('success');
+      const { state, message } = runtimeCleanupFeedback(await cleanupGpuMemory());
+      setCleanupState(state);
       setCleanupMessage(message);
-      enqueueSnackbar(message, { variant: 'success', autoHideDuration: 5200 });
+      enqueueSnackbar(message, { variant: state, autoHideDuration: 5200 });
     } catch (error) {
       const message = cleanupErrorMessage(error);
       setCleanupState('error');
@@ -278,11 +308,16 @@ export default function RunIssuesDialog() {
         testId="run-issues-dialog"
         footer={
           <RunDialogFooter cleanupMessage={cleanupMessage} cleanupState={cleanupState}>
-            {hasCleanupIssue ? cleanupButton : null}
+            {hasCleanupIssue ? <div onClickCapture={guardIssueAction}>{cleanupButton}</div> : null}
             <ModiffButton onClick={closeIssues}>Close</ModiffButton>
           </RunDialogFooter>
         }
       >
+        {!issueScopeCurrent && (
+          <p role="status" className="text-xs text-modiff-subtle-text">
+            The workflow changed. Close this dialog and check the current Run issues again.
+          </p>
+        )}
         {issues.map((item) => (
           <IssueCard
             key={item.id}
@@ -296,10 +331,41 @@ export default function RunIssuesDialog() {
             <div className="grid min-w-0 gap-2">
               {item.details && <p className="whitespace-pre-wrap break-words">{item.details}</p>}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-2" onClickCapture={guardIssueAction}>
+              {item.action === 'edit_studio_field' && item.fieldId && (
+                <ModiffButton
+                  icon={<Settings size={15} />}
+                  disabled={!issueScopeCurrent}
+                  onClick={() => {
+                    openStudio();
+                    focusIssueTarget({ kind: 'studio', fieldId: item.fieldId! });
+                  }}
+                >
+                  {item.fieldId === 'mode'
+                    ? 'Choose supported task'
+                    : item.fieldId === 'modelType'
+                      ? 'Choose supported model'
+                      : 'Edit setting'}
+                </ModiffButton>
+              )}
+              {item.action === 'open_resources' && (
+                <ModiffButton
+                  icon={<Gauge size={15} />}
+                  disabled={!issueScopeCurrent}
+                  onClick={() => {
+                    setRightPanelOpen(true);
+                    setRightPanelTab('compatibility');
+                    focusIssueTarget({ kind: 'resources' });
+                    closeIssues();
+                  }}
+                >
+                  Review Auto options
+                </ModiffButton>
+              )}
               {item.action === 'install_model' && item.repoId && (
                 <ModiffButton
                   tone="primary"
+                  disabled={!issueScopeCurrent}
                   icon={<Download size={15} />}
                   onClick={() => {
                     void handleInstall(item);
@@ -311,6 +377,7 @@ export default function RunIssuesDialog() {
               {item.action === 'refresh_cache' && (
                 <ModiffButton
                   icon={<RefreshCw size={15} />}
+                  disabled={!issueScopeCurrent}
                   onClick={() => {
                     void handleRefresh();
                   }}
@@ -319,18 +386,26 @@ export default function RunIssuesDialog() {
                 </ModiffButton>
               )}
               {item.action === 'select_image' && (
-                <ModiffButton icon={<FolderOpen size={15} />} onClick={openStudio}>
+                <ModiffButton icon={<FolderOpen size={15} />} disabled={!issueScopeCurrent} onClick={openStudio}>
                   Open Studio inputs
                 </ModiffButton>
               )}
               {item.action === 'inspect_node' && (
-                <ModiffButton icon={<Search size={15} />} onClick={() => inspectNode(item.nodeId, 'issues')}>
+                <ModiffButton
+                  icon={<Search size={15} />}
+                  disabled={!issueScopeCurrent}
+                  onClick={() => {
+                    inspectNode(item.nodeId, 'issues');
+                    if (item.nodeId) focusIssueTarget({ kind: 'node', nodeId: item.nodeId, fieldId: item.fieldId });
+                  }}
+                >
                   {item.nodeId ? 'Inspect node' : 'Inspect graph'}
                 </ModiffButton>
               )}
               {item.action === 'detach_graph' && (
                 <ModiffButton
                   icon={<Eraser size={15} />}
+                  disabled={!issueScopeCurrent}
                   onClick={() => {
                     detachManagedGraph();
                     closeIssues();
@@ -340,23 +415,47 @@ export default function RunIssuesDialog() {
                 </ModiffButton>
               )}
               {item.action === 'open_model_manager' && (
-                <ModiffButton tone="primary" icon={<Settings size={15} />} onClick={openModelManager}>
+                <ModiffButton
+                  tone="primary"
+                  icon={<Settings size={15} />}
+                  disabled={!issueScopeCurrent}
+                  onClick={openModelManager}
+                >
                   Models
                 </ModiffButton>
               )}
               {item.action === 'apply_low_vram_preset' && (
-                <ModiffButton tone="primary" icon={<Gauge size={15} />} onClick={applyLowVramPreset}>
+                <ModiffButton
+                  tone="primary"
+                  icon={<Gauge size={15} />}
+                  disabled={!issueScopeCurrent}
+                  onClick={applyLowVramPreset}
+                >
                   Use low-VRAM preset
                 </ModiffButton>
               )}
               {item.action === 'switch_to_z_image' && (
-                <ModiffButton tone="primary" icon={<Gauge size={15} />} onClick={switchToZImage}>
+                <ModiffButton
+                  tone="primary"
+                  icon={<Gauge size={15} />}
+                  disabled={!issueScopeCurrent}
+                  onClick={switchToZImage}
+                >
                   Use Z-Image Turbo
                 </ModiffButton>
               )}
               {(item.action === 'open_setup' || item.action === 'install_model') && (
-                <ModiffButton tone="ghost" icon={<Settings size={15} />} onClick={openSetup}>
-                  Setup
+                <ModiffButton
+                  tone="ghost"
+                  icon={<Settings size={15} />}
+                  disabled={!issueScopeCurrent}
+                  onClick={() => {
+                    openSetup();
+                    if (item.runtimeProfileIds)
+                      focusIssueTarget({ kind: 'runtime', profileIds: item.runtimeProfileIds });
+                  }}
+                >
+                  {item.runtimeProfileIds ? 'Review runtime' : 'Setup'}
                 </ModiffButton>
               )}
             </div>
@@ -456,29 +555,12 @@ function failureUserMessage(failure: RuntimeFailure) {
   return 'The generation could not finish. Check the highlighted step and try again.';
 }
 
-function cleanupResponseHasError(data: unknown) {
-  return isRecord(data) && Boolean(data.error);
-}
-
-function cleanupResponseMessage(data: unknown) {
-  if (!isRecord(data)) return null;
-  return stringValue(data.message) ?? stringValue(data.error);
-}
-
 function cleanupErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('Failed to fetch')) {
     return 'MoDiff backend did not answer the cleanup request. This button does not intentionally stop the backend; restart the backend if it is no longer running, then rerun the workflow.';
   }
   return message || 'Accelerator cleanup failed.';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function stringValue(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function RunDialogFooter({
@@ -496,13 +578,17 @@ function RunDialogFooter({
       ? 'text-modiff-red'
       : cleanupState === 'success'
         ? 'text-modiff-green'
-        : 'text-modiff-subtle-text';
+        : cleanupState === 'warning'
+          ? 'text-modiff-warning'
+          : 'text-modiff-subtle-text';
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
       {hasCleanupStatus ? (
         <div className="min-w-0 flex-1 text-xs">
-          <p className={statusClass}>{cleanupMessage}</p>
+          <p className={`max-h-40 overflow-auto whitespace-pre-wrap break-words ${statusClass}`} aria-live="polite">
+            {cleanupMessage}
+          </p>
           {cleanupState === 'running' ? (
             <ProgressBar value={null} className="mt-2 max-w-80 rounded-modiff-compact" />
           ) : null}

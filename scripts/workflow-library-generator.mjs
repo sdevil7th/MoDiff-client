@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { createServer } from 'vite';
 import { canonicalJsonHash as hash, stableJsonValue as stable } from './canonical-json.mjs';
 import {
   closeWorkflowBrowser,
@@ -13,11 +15,20 @@ import {
 } from './workflow-library-browser-session.mjs';
 import { installEphemeralWorkflowStorage } from './workflow-library-ephemeral-storage.mjs';
 import {
+  canonicalWorkflowRequiredArtifacts,
   normalizePortableWorkflowDataReference,
   normalizePortableWorkflowFieldState,
   normalizePortableWorkflowNodeOffload,
+  retainExistingCanonicalDeviceDefaults,
 } from './workflow-library-contract.mjs';
-import { retainUnselectedCurrentWorkflowRecords } from './workflow-library-manifest-state.mjs';
+import {
+  compareCanonicalWorkflowRecordIds,
+  retainUnselectedCurrentWorkflowRecords,
+} from './workflow-library-manifest-state.mjs';
+import {
+  attachCanonicalAuxiliaryBinding,
+  parseCanonicalAuxiliarySources,
+} from './workflow-library-auxiliary-sources.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -91,8 +102,10 @@ function sanitize(value, key = '', ancestors = []) {
         key === 'options' ||
         key === 'device' ||
         key === 'device_map' ||
+        key === 'weight_loading_mode' ||
         ancestors.includes('device') ||
-        ancestors.includes('device_map')
+        ancestors.includes('device_map') ||
+        ancestors.includes('weight_loading_mode')
       )
         return value;
       return 'cpu:0';
@@ -147,7 +160,9 @@ function applyPortableContracts(graph, mode) {
   return graph;
 }
 
-function canonicalizeGraphIds(graph) {
+function canonicalizeGraphIds(graph, remapOperationAuthoring) {
+  if (typeof remapOperationAuthoring !== 'function')
+    throw new Error('Canonical export requires the existing operation-authoring remapper.');
   const nodes = [...(graph?.nodes ?? [])].sort((left, right) => {
     const leftKey = `${left?.data?.studioRole ?? ''}|${left?.data?.module ?? ''}|${left?.data?.action ?? ''}|${left?.position?.y ?? 0}|${left?.position?.x ?? 0}`;
     const rightKey = `${right?.data?.studioRole ?? ''}|${right?.data?.module ?? ''}|${right?.data?.action ?? ''}|${right?.position?.y ?? 0}|${right?.position?.x ?? 0}`;
@@ -158,6 +173,14 @@ function canonicalizeGraphIds(graph) {
     ...node,
     id: ids.get(node.id),
     ...(node.parentId ? { parentId: ids.get(node.parentId) } : {}),
+    ...(node.data.operationAuthoring
+      ? {
+          data: {
+            ...node.data,
+            operationAuthoring: remapOperationAuthoring(node.data.operationAuthoring, (id) => ids.get(id) ?? id),
+          },
+        }
+      : {}),
   }));
   graph.edges = [...(graph?.edges ?? [])]
     .map((edge) => ({ ...edge, source: ids.get(edge.source), target: ids.get(edge.target) }))
@@ -274,15 +297,6 @@ function applyCatalogArtifactPins(graph, artifactPins) {
   return graph;
 }
 
-function requiredArtifactsForGraph(graph, defaultRepo) {
-  const artifacts = new Set();
-  for (const node of graph?.nodes ?? []) {
-    for (const repository of hubRepositoriesForNode(node)) artifacts.add(repository);
-  }
-  if (artifacts.size === 0 && defaultRepo) artifacts.add(defaultRepo);
-  return [...artifacts];
-}
-
 async function main() {
   const capabilities = await loadCapabilities();
   const artifactPins = await loadArtifactPins();
@@ -293,6 +307,21 @@ async function main() {
     : capabilities.capabilities;
   if (requestedPair && selectedCapabilities.length !== 1) {
     throw new Error(`The requested workflow pair is not uniquely runnable: ${requestedPair}.`);
+  }
+  const parserServer = await createServer({
+    root: ROOT,
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+    appType: 'custom',
+  });
+  let auxiliarySources, remapOperationAuthoring;
+  try {
+    ({ remapOperationAuthoring } = await parserServer.ssrLoadModule('/src/workflow/operationSharedInputs.ts'));
+    auxiliarySources = await parseCanonicalAuxiliarySources(capabilities, selectedCapabilities, parserServer);
+  } finally {
+    await parserServer.close();
   }
   const installedChrome = join(
     process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), '.cache', 'ms-playwright'),
@@ -465,7 +494,7 @@ async function main() {
 
     const finalizeCanonicalGraph = async (graph) => {
       const arrangedBeforeCanonicalIds = await arrangeSnapshot(graph);
-      const canonical = canonicalizeGraphIds(arrangedBeforeCanonicalIds);
+      const canonical = canonicalizeGraphIds(arrangedBeforeCanonicalIds, remapOperationAuthoring);
       const arranged = await arrangeSnapshot(canonical);
       const repeated = await arrangeSnapshot(arranged);
       if (JSON.stringify(graphLayoutSignature(arranged)) !== JSON.stringify(graphLayoutSignature(repeated))) {
@@ -501,7 +530,7 @@ async function main() {
         );
       }
       const exported = await pageOperation(`exporting ${description}`, (page) =>
-        page.evaluate(() => window.__MODIFF_E2E__?.prepareWorkflowGraphForExport()),
+        page.evaluate(() => window.__MODIFF_E2E__?.prepareWorkflowGraphForExport({ canonicalLibrary: true })),
       );
       if (!exported || !Array.isArray(exported.nodes) || !Array.isArray(exported.edges)) {
         throw new Error(`Could not export a completed graph for ${description}.`);
@@ -552,16 +581,19 @@ async function main() {
         if (requestedPair && pair !== requestedPair) continue;
         const template = browserSession.catalog.byPair.get(pair);
         if (!template) throw new Error(`No Studio template can build ${pair}.`);
+        const isSupported = capability.supportTier === 'supported';
+        const libraryTier = isSupported ? 'studio' : 'experimental';
+        const relativePath = join(libraryTier, slug(capability.modelType), `${slug(mode)}.json`).replaceAll('\\', '/');
+        const outputPath = join(BACKEND_ROOT, 'data', 'graphs', relativePath);
+        const existingGraph =
+          requestedPair && existsSync(outputPath) ? JSON.parse(readFileSync(outputPath, 'utf8')) : null;
         const graph = await buildTemplateGraphWithRecovery(
           (catalog) => catalog.byPair.get(pair),
           mode,
           `canonical workflow ${pair}`,
         );
+        if (existingGraph) retainExistingCanonicalDeviceDefaults(graph, existingGraph);
         const graphHash = hash(graph);
-        const isSupported = capability.supportTier === 'supported';
-        const libraryTier = isSupported ? 'studio' : 'experimental';
-        const relativePath = join(libraryTier, slug(capability.modelType), `${slug(mode)}.json`).replaceAll('\\', '/');
-        const outputPath = join(BACKEND_ROOT, 'data', 'graphs', relativePath);
         mkdirSync(dirname(outputPath), { recursive: true });
         writeFileSync(outputPath, `${JSON.stringify(graph, null, 2)}\n`);
         const qualificationStatus = Array.isArray(capability.qualifiedModes)
@@ -578,7 +610,7 @@ async function main() {
           supportTier: capability.supportTier,
           qualificationStatus,
           ...qualificationDimensions(qualificationStatus),
-          requiredArtifacts: requiredArtifactsForGraph(graph, capability.defaultRepo),
+          requiredArtifacts: canonicalWorkflowRequiredArtifacts(graph, capability, mode),
           requiredInputs: capability.inputContracts?.[mode] ?? [],
           pipelineClasses: capability.pipelineClasses ?? [],
           sourceTemplateId: template.id,
@@ -587,6 +619,7 @@ async function main() {
           graphPath: relativePath,
           graphHash,
         };
+        attachCanonicalAuxiliaryBinding(record, graph, auxiliarySources);
         (isSupported ? records : experimentalRecords).push(record);
       }
     }
@@ -606,12 +639,6 @@ async function main() {
           `LoRA template ${template.id} has no runnable capability for ${template.modelType}|${template.mode}.`,
         );
       }
-      const graph = await buildTemplateGraphWithRecovery(
-        (catalog) => catalog.templates.find((candidate) => candidate.id === template.id),
-        template.mode,
-        `LoRA workflow variant ${template.id}`,
-      );
-      const graphHash = hash(graph);
       const isSupported = capability.supportTier === 'supported';
       const libraryTier = isSupported ? 'studio' : 'experimental';
       const relativePath = join(
@@ -620,6 +647,15 @@ async function main() {
         `${slug(template.mode)}--${slug(template.id)}.json`,
       ).replaceAll('\\', '/');
       const outputPath = join(BACKEND_ROOT, 'data', 'graphs', relativePath);
+      const existingGraph =
+        requestedPair && existsSync(outputPath) ? JSON.parse(readFileSync(outputPath, 'utf8')) : null;
+      const graph = await buildTemplateGraphWithRecovery(
+        (catalog) => catalog.templates.find((candidate) => candidate.id === template.id),
+        template.mode,
+        `LoRA workflow variant ${template.id}`,
+      );
+      if (existingGraph) retainExistingCanonicalDeviceDefaults(graph, existingGraph);
+      const graphHash = hash(graph);
       mkdirSync(dirname(outputPath), { recursive: true });
       writeFileSync(outputPath, `${JSON.stringify(graph, null, 2)}\n`);
       const adapterNode = graph.nodes.find(
@@ -642,7 +678,11 @@ async function main() {
         qualificationStatus,
         ...qualificationDimensions(qualificationStatus),
         variant: 'lora-theme',
-        requiredArtifacts: requiredArtifactsForGraph(graph, capability.defaultRepo || adapterRepo),
+        requiredArtifacts: canonicalWorkflowRequiredArtifacts(
+          graph,
+          { ...capability, defaultRepo: capability.defaultRepo || adapterRepo },
+          template.mode,
+        ),
         requiredInputs: capability.inputContracts?.[template.mode] ?? [],
         pipelineClasses: capability.pipelineClasses ?? [],
         sourceTemplateId: template.id,
@@ -651,11 +691,12 @@ async function main() {
         graphPath: relativePath,
         graphHash,
       };
+      attachCanonicalAuxiliaryBinding(record, graph, auxiliarySources);
       (isSupported ? records : experimentalRecords).push(record);
     }
 
     browserSession?.guard.assertHealthy('publishing the canonical workflow manifest');
-    records.sort((left, right) => left.id.localeCompare(right.id));
+    records.sort(compareCanonicalWorkflowRecordIds);
     const manifest = {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),
@@ -681,23 +722,27 @@ async function main() {
   }
 }
 
-if (process.argv.includes('--help') || process.argv.includes('-h')) {
-  process.stdout.write(
-    [
-      'Generate portable Studio workflows from a running MoDiff capability registry.',
-      '',
-      'Environment:',
-      '  MODIFF_SERVER       Backend URL (default http://127.0.0.1:8088)',
-      '  MODIFF_FRONTEND     Client URL (default http://127.0.0.1:5173)',
-      '  MODIFF_BACKEND_DIR  Backend repository root (default ../MoDiff)',
-      '  MODIFF_WORKFLOW_BROWSER_BATCH_SIZE  Workflows per fresh browser (default 20)',
-      '',
-      'Options:',
-      '  --pair=ModelType|mode  Regenerate one canonical pair and its variants, then merge them into the manifest.',
-      '',
-      'Full generation replaces both graph catalogs and the workflow manifest; --pair updates only that model/mode pair.',
-    ].join('\n') + '\n',
-  );
-} else {
-  await main();
+export { sanitize as sanitizeCanonicalWorkflowGraph, canonicalizeGraphIds };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    process.stdout.write(
+      [
+        'Generate portable Studio workflows from a running MoDiff capability registry.',
+        '',
+        'Environment:',
+        '  MODIFF_SERVER       Backend URL (default http://127.0.0.1:8088)',
+        '  MODIFF_FRONTEND     Client URL (default http://127.0.0.1:5173)',
+        '  MODIFF_BACKEND_DIR  Backend repository root (default ../MoDiff)',
+        '  MODIFF_WORKFLOW_BROWSER_BATCH_SIZE  Workflows per fresh browser (default 20)',
+        '',
+        'Options:',
+        '  --pair=ModelType|mode  Regenerate one canonical pair and its variants, then merge them into the manifest.',
+        '',
+        'Full generation replaces both graph catalogs and the workflow manifest; --pair updates only that model/mode pair.',
+      ].join('\n') + '\n',
+    );
+  } else {
+    await main();
+  }
 }

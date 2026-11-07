@@ -220,6 +220,100 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/flux3_klein_base_fp8r512_lora_style.webp",
+      "size": 152854,
+      "sha256": "sha256:bytes:9f5bc117a70a66bfae603ab5add47f69bd73349b5268f2c7307462232ef2d5c6",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/flux3_klein_base_fp8r512_multi_reference_edit.png",
+      "size": 80336,
+      "sha256": "sha256:bytes:4508e12353cf287912629f28a94854b117902c16f7386512a5f09a00f13478d1",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux3_klein_base_fp8r512_raw_coordinate_prompt.webp",
+      "size": 71556,
+      "sha256": "sha256:bytes:77da62eeb4da139921de0d654816eca643fee85dee2f6c16cbdb23aa3b1633f2",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/flux3_klein_base_fp8r512_single_reference_edit.webp",
+      "size": 44274,
+      "sha256": "sha256:bytes:12abeba15e8b99c5943daa322e0be94947350e0a2598b893a6419cf7cc21d7ef",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/flux3_klein_base_fp8r512_text_to_image.webp",
+      "size": 71624,
+      "sha256": "sha256:bytes:7922c52fa07fee6cc38f0da95b22028996637def32a99aeacc414ce8a39e1fe7",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/flux3_klein_fp8r512_lora_style.webp",
+      "size": 95654,
+      "sha256": "sha256:bytes:59ddede1547b6e0e6958b0327a77c8e253cdd654e61aada584e1619aba7b8c54",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/flux3_klein_fp8r512_multi_reference_edit.png",
+      "size": 79459,
+      "sha256": "sha256:bytes:12f2f2ae8ffcc053d61fb3c409d964f5f0d03b2668d73573c3795e3b5fbd620f",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux3_klein_fp8r512_raw_coordinate_prompt.webp",
+      "size": 108576,
+      "sha256": "sha256:bytes:8544a653656be8cd47d87d7550558fa8487d1b72de56ee21adb27313dc34ba8f",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/flux3_klein_fp8r512_single_reference_edit.webp",
+      "size": 45456,
+      "sha256": "sha256:bytes:2694ee895e5f91c7c68d5b7966e872b08546d6792a3038707260d595eb48b6e6",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/flux3_klein_fp8r512_text_to_image.webp",
+      "size": 94460,
+      "sha256": "sha256:bytes:88783643cab795b94b5bc01e6e28d459ff685278d95fb6bf54461094a6400c90",
+      "contentType": "application/octet-stream",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/flux_control_canny.webp",
       "size": 191804,
       "sha256": "sha256:bytes:a804cb1321c87b86298ebc4697af4d52628c29615ccda38bfa38eb2c7fc566c3",
@@ -561,6 +655,61 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux3-packaging-protected-photo-mask-v1.png",
+      "size": 1524,
+      "sha256": "sha256:bytes:d36162153e2009e0b2f3a711825d39e67c02ba3577971a444bd92eebe81169ac",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux3_klein_base_fp8r512_multi_reference_edit.before.png",
+      "size": 11137,
+      "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux3_klein_base_fp8r512_single_reference_edit.before.png",
+      "size": 266188,
+      "sha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/flux3_klein_fp8r512_multi_reference_edit.before.png",
+      "size": 11137,
+      "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux3_klein_fp8r512_single_reference_edit.before.png",
+      "size": 266188,
+      "sha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/inputs/flux_control_canny.before.png",
@@ -1173,8 +1322,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 180959,
-      "sha256": "sha256:bytes:bcc48de0f85d8a815364b3abfbaf2379b88686ba7e34b4c5d0a568efdf5dbbc4",
+      "size": 206839,
+      "sha256": "sha256:bytes:b6e383c698b7a07c8a37a95629ebace6d0f39d608c006bab8df446920f145cc0",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1610,6 +1759,186 @@
       "path": "template-gallery/reviews/flux2_klein_text_to_image.reviewed-provenance.json",
       "size": 38796,
       "sha256": "sha256:bytes:2ad992337bfa52ad337944508c63e0d7ad97921585f6f28ffb729f39a6d48f24",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_lora_style.quality-review.json",
+      "size": 3156,
+      "sha256": "sha256:bytes:6ecaa3d253c60a36cfa0129575fda00de91b7259d6d5d7aaf7a1eafc1c1539fb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_lora_style.reviewed-provenance.json",
+      "size": 101754,
+      "sha256": "sha256:bytes:bf2a88219068ec3c78bf3ab9f847f2c80d7e78035d574dbccc8d48c9c979bdc6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_multi_reference_edit.quality-review.json",
+      "size": 3132,
+      "sha256": "sha256:bytes:0666e990cc08d4014f2f913674e9637a86e4f62fee681de1287c949a6a7dcb5a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_multi_reference_edit.reviewed-provenance.json",
+      "size": 132386,
+      "sha256": "sha256:bytes:df83c15df43ca7b2739db3032671014c3dea0cb0bd1cd4acb15df5dcccf443bd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_raw_coordinate_prompt.quality-review.json",
+      "size": 3020,
+      "sha256": "sha256:bytes:5a40f1c4b7c13f8678de7fdd41bf090c39071fc884c2e4dfed6c1f03e0ecb09c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_raw_coordinate_prompt.reviewed-provenance.json",
+      "size": 94834,
+      "sha256": "sha256:bytes:e5684e876125a01c342b522b2a0d8350ae978f6543ccdfcaf56ec2011ccebb5f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_single_reference_edit.quality-review.json",
+      "size": 2937,
+      "sha256": "sha256:bytes:f81ca736173a93bb214088dda9879efd933675799244f363506770202ffc80e0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_single_reference_edit.reviewed-provenance.json",
+      "size": 100367,
+      "sha256": "sha256:bytes:145688ff7654e0f2b058caf1e3cdc7f4621cd160bc57967529fbfc6deba3e55f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_text_to_image.quality-review.json",
+      "size": 2950,
+      "sha256": "sha256:bytes:e4db5a6f68664c24496139808737c35843ad013a84ed8c647cb7bda822b3ab55",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_base_fp8r512_text_to_image.reviewed-provenance.json",
+      "size": 97026,
+      "sha256": "sha256:bytes:2db502f5981665759b16abab179f12ae0093312c5bc99fcc33bb346bc6d3ff05",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_lora_style.quality-review.json",
+      "size": 3183,
+      "sha256": "sha256:bytes:563cf20531167d3661cecb5e6897bae7d8a1485eff49e7f16c8cd7fef6486f10",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_lora_style.reviewed-provenance.json",
+      "size": 93938,
+      "sha256": "sha256:bytes:945f99e2d8c924809a4e9d6f91056ec417715b7db5e06b2ec0d51a016bdc219b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_multi_reference_edit.quality-review.json",
+      "size": 3159,
+      "sha256": "sha256:bytes:ba9c380fe4ccea2f731999d6aa7d116e4ebf4078c8ddb29ea88f2fee8d37dec9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_multi_reference_edit.reviewed-provenance.json",
+      "size": 124866,
+      "sha256": "sha256:bytes:d89ef493877766cc1eb753cc6bdfd9e44dd6a71f33c8969287b4e70b33544f31",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_raw_coordinate_prompt.quality-review.json",
+      "size": 3041,
+      "sha256": "sha256:bytes:5b8429b8102aba95b1fc76e8ff0b3ee823a489ae1ae771c5f10b2c92f583ddf5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_raw_coordinate_prompt.reviewed-provenance.json",
+      "size": 87364,
+      "sha256": "sha256:bytes:27ec68baa354642081ee764d33632cafcfeb8477ef05ec6ce1e7ec9d2925d410",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_single_reference_edit.quality-review.json",
+      "size": 2937,
+      "sha256": "sha256:bytes:d3af7d89f63eabfd9313ca12b8ec6b644ae14379265e83ecf75aab453c2df4af",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_single_reference_edit.reviewed-provenance.json",
+      "size": 92880,
+      "sha256": "sha256:bytes:bf0f06495f4d9793ebf0f8bc8c4467e6aead1b935bbb5e319b59b92dac3e1b78",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_text_to_image.quality-review.json",
+      "size": 2953,
+      "sha256": "sha256:bytes:9c42b9b5987079824364e4749eaee7e9846949c8a8f9142092ac716447bbf063",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux3_klein_fp8r512_text_to_image.reviewed-provenance.json",
+      "size": 89559,
+      "sha256": "sha256:bytes:bb4186fd1e2fdb16f03bbda92673cbbad1169c0c20a13987775eac45ffcca1d2",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3603,9 +3932,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:ec61fbc1b76da02110e4a0cddc4e222026e911a6e00451f85678f66d2b32ec85",
+  "assetSetId": "sha256:canonical-json:86c0298bbdb02531cdb3f031d391493bac818b0dd71c103abb1a540da21925f6",
   "status": "ready",
-  "assetCount": 360,
-  "totalBytes": 488731153,
+  "assetCount": 395,
+  "totalBytes": 491202898,
   "missingAssets": []
 }

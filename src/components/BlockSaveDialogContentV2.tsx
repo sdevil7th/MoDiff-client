@@ -11,7 +11,6 @@ import {
 import { resolveCompositeBlockCapabilitiesV2 } from '../studio/compositeBlockCapabilitiesV2';
 import { ModiffButton, ModiffInput, ModiffFieldShell } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
-import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
 /** Mounted on open so the target and workflow context cannot drift behind the dialog. */
 export default function BlockSaveDialogContentV2({
@@ -29,7 +28,7 @@ export default function BlockSaveDialogContentV2({
   const ownerId = selected?.data.blockInstanceV2 ? nodeId : selected?.data.blockProjectionOwnerId;
   const instance = useFlowStore((state) => state.nodes.find((node) => node.id === ownerId)?.data.blockInstanceV2);
   const nested = Boolean(selected && !selected.data.blockInstanceV2);
-  const noun = !nested && isFocusedStageNode(instance) ? 'node' : 'Block';
+  const noun = 'Block';
   const [name, setName] = useState(() => {
     const title =
       useStudioStore.getState().workflowTabs.find((tab) => tab.id === context.workflowTabId)?.title || 'Workflow';
@@ -113,11 +112,7 @@ export default function BlockSaveDialogContentV2({
     >
       <div className="grid gap-2 text-sm text-modiff-subtle-text">
         <p className="font-semibold text-modiff-text">{selected?.data.label || 'Block'}</p>
-        <ModiffFieldShell
-          label={noun === 'node' ? 'Node name' : 'Block name'}
-          required
-          error={invalidName ? 'Enter a name.' : undefined}
-        >
+        <ModiffFieldShell label="Block name" required error={invalidName ? 'Enter a name.' : undefined}>
           <ModiffInput
             value={name}
             onChange={(event) => setName(event.currentTarget.value)}
@@ -127,7 +122,10 @@ export default function BlockSaveDialogContentV2({
             autoFocus
           />
         </ModiffFieldShell>
-        <p>Save a reusable copy with these settings and the inputs and outputs you configured.</p>
+        <p>A reusable Block stores canvas nodes and their settings.</p>
+        <p>
+          It keeps the inputs, outputs and controls you configured. Add a custom Python node when you need new code.
+        </p>
         <p>
           {nested
             ? 'Only this Block and its contents are saved. Outside nodes and their connections stay in this workflow.'

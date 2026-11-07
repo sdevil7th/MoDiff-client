@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
+import { readFileSync } from 'node:fs';
 
 let server, contracts, catalog;
 before(async () => {
@@ -82,6 +83,132 @@ test('v3 accepts scoped state and exact existing bindings without a family union
   assert.equal(catalog.operationPortCompatibility(output, value.ports[0]), 'runtime_validation');
   output.semantics.state = 'denoise';
   assert.equal(catalog.operationPortCompatibility(output, value.ports[0]), 'incompatible');
+});
+
+function cfgControl(pipeline = 'FutureModularPipeline') {
+  return {
+    technique: 'classifier_free',
+    parameter: 'scale',
+    compatibilityScope: 'diffusers.classifier_free.v1',
+    scaleMeaning: 'cfg_prediction_mix',
+    enabled: 'boolean_field',
+    enabledField: 'enabled',
+    formulation: 'boolean_field',
+    formulationField: 'use_original_formulation',
+    selectorField: 'guider',
+    selectorValue: 'ClassifierFreeGuidance',
+    negativeConditioning: 'pipeline_scoped_when_enabled',
+    negativeConditioningScope: pipeline,
+  };
+}
+
+function controlledOperation() {
+  const value = operation();
+  value.ports = [
+    {
+      name: 'guidance_scale',
+      semanticName: 'guidance_scale',
+      direction: 'input',
+      roles: ['value'],
+      types: ['float'],
+      required: false,
+      hidden: false,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [], control: cfgControl() },
+    },
+  ];
+  for (const [name, type] of [
+    ['guider', 'string'],
+    ['enabled', 'boolean'],
+    ['use_original_formulation', 'boolean'],
+  ]) {
+    value.ports.push({
+      name,
+      semanticName: name,
+      direction: 'input',
+      roles: ['value'],
+      types: [type],
+      required: false,
+      hidden: false,
+      semantics: { kind: 'value', scope: null, state: null, owner: 'none', members: [] },
+    });
+  }
+  return value;
+}
+
+test('v3 accepts additive reviewed control semantics without changing legacy contracts', () => {
+  const value = controlledOperation();
+  assert.deepEqual(contracts.parseOperationContracts([value], 3), [value]);
+  const legacy = operation();
+  assert.deepEqual(contracts.parseOperationContracts([legacy], 3), [legacy]);
+});
+
+test('the actual backend guidance fixture round-trips all published family policies', () => {
+  const fixture = JSON.parse(
+    readFileSync(new URL('../tests/fixtures/guidance-control-contract.v1.json', import.meta.url), 'utf8'),
+  );
+  assert.equal(fixture.schemaVersion, 1);
+  assert.equal(fixture.contracts.length, 33);
+  assert.deepEqual(contracts.parseOperationContracts(fixture.contracts, 3), fixture.contracts);
+  const cfg = fixture.contracts.filter((c) => c.operationId === 'diffusion.guidance');
+  assert.equal(cfg.length, 8);
+  for (const c of cfg) {
+    const controls = c.ports.filter((p) => p.semantics.control);
+    assert.equal(controls.length, 7);
+    for (const port of controls) {
+      assert.equal(port.semantics.control.technique, 'classifier_free');
+      assert.equal(port.semantics.control.negativeConditioningScope, c.binding.pipelineClass);
+    }
+  }
+  for (const c of fixture.contracts.filter((c) => c.operationId === 'diffusion.denoise')) {
+    const control = c.ports.find((p) => p.name === 'guidance_scale').semantics.control;
+    assert.equal(control.technique, 'embedded_distilled');
+    assert.equal(control.enabled, 'model_config', 'Discovery cannot infer the connected transformer configuration.');
+    assert.equal(control.negativeConditioningScope, null);
+  }
+  const standard = fixture.contracts.filter((c) => c.decomposition === 'pipeline');
+  assert.equal(standard.length, 22);
+  for (const contract of standard) {
+    for (const port of contract.ports.filter((p) => p.semantics.control?.technique === 'classifier_free')) {
+      assert.equal(port.semantics.control.negativePromptField, 'negative_prompt');
+      assert.equal(port.semantics.control.negativePromptPolicy, 'empty_string_is_condition');
+    }
+  }
+});
+
+test('v3 rejects malformed guidance control declarations instead of trusting labels', () => {
+  for (const mutate of [
+    (c) => {
+      c.technique = 'anything';
+    },
+    (c) => {
+      c.parameter = 'pipeline';
+    },
+    (c) => {
+      c.compatibilityScope = '';
+    },
+    (c) => {
+      c.enabledField = null;
+    },
+    (c) => {
+      c.formulationField = '__proto__';
+    },
+    (c) => {
+      c.selectorValue = null;
+    },
+    (c) => {
+      c.negativeConditioningScope = 'OtherPipeline';
+    },
+    (c) => {
+      c.scaleMeaning = 'distilled_model_embedding';
+    },
+    (c) => {
+      c.extra = true;
+    },
+  ]) {
+    const value = controlledOperation();
+    mutate(value.ports[0].semantics.control);
+    assert.throws(() => contracts.parseOperationContracts([value], 3), /operation contract/i);
+  }
 });
 
 test('v3 rejects ambiguous bindings, unsafe selectors and malformed semantics', () => {
@@ -215,4 +342,68 @@ test('integrated model operations keep whole-call discovery and strict v3 identi
   assert.equal(contracts.operationOwnsModel({ ...value, decomposition: 'pipeline' }), false);
   assert.equal(contracts.operationOwnsModel(undefined), false);
   assert.throws(() => contracts.parseOperationContracts([{ ...value, nodeType: 'loader' }], 3));
+});
+
+// Schema tests only; this fixture is not an
+// authoring permission, runtime route or model qualification.
+function modeOwnerOperation() {
+  return {
+    ...operation(),
+    operationId: 'diffusion.load_models',
+    nodeKey: 'modules.ModularDiffusers.ModelsLoader',
+    nodeType: 'loader',
+    blockName: null,
+    decomposition: 'loader',
+  };
+}
+test('v3 preserves optional bounded backend execution mode while legacy bindings remain unchanged', () => {
+  const legacy = modeOwnerOperation();
+  assert.deepEqual(contracts.parseOperationContracts([legacy], 3), [legacy]);
+  assert.equal(Object.hasOwn(contracts.parseOperationContracts([legacy], 3)[0].binding, 'executionMode'), false);
+  for (const mode of ['text_to_image', 'edit_image', `a${'b'.repeat(63)}`]) {
+    const value = structuredClone(legacy);
+    value.binding.executionMode = mode;
+    assert.deepEqual(contracts.parseOperationContracts([value], 3), [value]);
+    assert.deepEqual(contracts.parseOperationContracts(JSON.parse(JSON.stringify([value])), 3), [value]);
+  }
+});
+test('v3 rejects malformed present execution modes and preserves exact binding keys', () => {
+  for (const mode of [
+    undefined,
+    null,
+    false,
+    1,
+    {},
+    [],
+    '',
+    'Edit_Image',
+    '1edit',
+    'edit-image',
+    'edit.image',
+    'edit_image\n',
+    ' edit_image',
+    'edit_image ',
+    'a'.repeat(65),
+    '__proto__',
+    'constructor',
+    'prototype',
+  ]) {
+    const value = modeOwnerOperation();
+    value.binding.executionMode = mode;
+    assert.throws(() => contracts.parseOperationContracts([value], 3), /Invalid backend operation contract/);
+  }
+  const extra = modeOwnerOperation();
+  extra.binding.executionMode = 'edit_image';
+  extra.binding.unreviewed = true;
+  assert.throws(() => contracts.parseOperationContracts([extra], 3));
+  const inherited = modeOwnerOperation();
+  inherited.binding = Object.assign(Object.create({ executionMode: 'edit_image' }), inherited.binding);
+  const parsed = contracts.parseOperationContracts([inherited], 3)[0];
+  assert.equal(Object.hasOwn(parsed.binding, 'executionMode'), false);
+});
+
+test('v3 rejects execution-mode annotations on non-model-owner contracts', () => {
+  const value = operation();
+  value.binding.executionMode = 'edit_image';
+  assert.throws(() => contracts.parseOperationContracts([value], 3), /Invalid backend operation contract/);
 });

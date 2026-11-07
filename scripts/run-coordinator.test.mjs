@@ -17,10 +17,13 @@ let flowStoreModule;
 let nodesStoreModule;
 let runIssueStoreModule;
 let runPreparationModule;
+let snackbarModule;
 let studioStoreModule;
 let taskStoreModule;
 let websocketModule;
 let websocketStoreModule;
+let memoryFormattingModule;
+let serverActionsModule;
 let server;
 let originalFetch;
 
@@ -62,14 +65,18 @@ before(async () => {
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   runIssueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');
   runPreparationModule = await server.ssrLoadModule('/src/studio/runPreparation.ts');
+  snackbarModule = await server.ssrLoadModule('/src/ui/snackbar.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
   websocketModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   websocketStoreModule = await server.ssrLoadModule('/src/stores/useWebsocketStore.ts');
+  memoryFormattingModule = await server.ssrLoadModule('/src/utils/formatMemory.ts');
+  serverActionsModule = await server.ssrLoadModule('/src/utils/serverActions.ts');
   originalFetch = globalThis.fetch;
 });
 
 beforeEach(() => {
+  snackbarModule.closeSnackbar();
   flowStoreModule.useFlowStore.setState({
     nodes: [
       {
@@ -2512,6 +2519,147 @@ test('a terminal event cannot borrow identity from a different current task', ()
   assert.equal(completed?.client_run_id, undefined);
 });
 
+test('Auto cache preparation updates its running task message without changing progress or errors', () => {
+  const tasks = taskStoreModule.useTaskStore;
+  tasks.setState({
+    currentTask: {
+      task_id: 'cache-preparation-task',
+      name: 'Graph execution',
+      status: 'running',
+      workflow_tab_id: 'workflow-origin',
+      client_run_id: 'cache-preparation-run',
+      progress: 37,
+      node_progress: 12,
+      current_node: 'preview',
+      error: 'Existing diagnostic',
+      message: 'Preparing the workflow',
+    },
+    taskCount: 1,
+  });
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'auto_resource_cleanup',
+      sid: 'session-1',
+      task_id: 'cache-preparation-task',
+      performed: false,
+      message: 'Releasing previous model cache, then checking actual available memory.',
+    },
+    context,
+  );
+  const current = tasks.getState().currentTask;
+  assert.equal(current.message, 'Releasing previous model cache, then checking actual available memory.');
+  assert.equal(current.progress, 37);
+  assert.equal(current.node_progress, 12);
+  assert.equal(current.current_node, 'preview');
+  assert.equal(current.error, 'Existing diagnostic');
+  assert.equal(current.status, 'running');
+  assert.equal(current.client_run_id, 'cache-preparation-run');
+  assert.equal(current.workflow_tab_id, 'workflow-origin');
+  assert.equal(tasks.getState().sessionRuns[0].message, current.message);
+  assert.deepEqual(
+    snackbarModule.getToastItems().map((toast) => toast.message),
+    [current.message],
+  );
+  assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.progress, undefined);
+});
+
+test('Auto preparation cannot change another task or revive a terminal task', () => {
+  const tasks = taskStoreModule.useTaskStore;
+  const current = {
+    task_id: 'different-task',
+    name: 'Graph execution',
+    status: 'running',
+    progress: 42,
+    message: 'Denoising',
+  };
+  tasks.setState({ currentTask: current, taskCount: 1 });
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  const event = {
+    type: 'auto_resource_cleanup',
+    task_id: 'previous-task',
+    performed: false,
+    message: 'Checking memory',
+  };
+  websocketModule.handleWebsocketMessage(event, context);
+  assert.deepEqual(tasks.getState().currentTask, current);
+  assert.deepEqual(snackbarModule.getToastItems(), []);
+  for (const status of ['completed', 'failed', 'cancelled']) {
+    tasks.setState({ currentTask: { ...current, task_id: 'previous-task', status } });
+    websocketModule.handleWebsocketMessage(event, context);
+    assert.equal(tasks.getState().currentTask.message, 'Denoising');
+    assert.equal(tasks.getState().currentTask.status, status);
+  }
+  assert.deepEqual(tasks.getState().sessionRuns, []);
+});
+
+test('background cache preparation belongs to its task without notifying the active canvas', () => {
+  const tasks = taskStoreModule.useTaskStore;
+  tasks.setState({
+    currentTask: {
+      task_id: 'background-task',
+      name: 'Background graph',
+      status: 'running',
+      workflow_tab_id: 'background-workflow',
+      progress: 20,
+      message: 'Preparing',
+    },
+  });
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'auto_resource_cleanup',
+      task_id: 'background-task',
+      performed: false,
+      message: 'Checking actual available memory',
+    },
+    context,
+  );
+  assert.equal(tasks.getState().currentTask.message, 'Checking actual available memory');
+  assert.deepEqual(snackbarModule.getToastItems(), []);
+  assert.equal(flowStoreModule.useFlowStore.getState().nodes[0].data.progress, undefined);
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'auto_resource_cleanup',
+      task_id: 'background-task',
+      performed: true,
+      reasons: ['previous model cache released'],
+    },
+    context,
+  );
+  assert.deepEqual(
+    snackbarModule.getToastItems().map((toast) => toast.message),
+    ['Released stale runtime resources: previous model cache released'],
+  );
+});
+
+test('websocket parsing accepts a pre-node terminal failure without a null optional node name', () => {
+  // Producer contract: an ownership error can occur before execute_node supplies
+  // a node name. This is a serialized schema fixture, not a captured live frame.
+  const terminal = {
+    type: 'task_failed',
+    task_id: 'early-owner-failure',
+    sid: 'session-1',
+    node: null,
+    status: 'failed',
+    message: 'Ancillary owner boundary: foreign cached owner.',
+    exception_type: 'AncillaryOwnerError',
+    category: 'execution',
+    error_code: 'ancillary_owner_boundary',
+    oom: false,
+    current: null,
+    queued: {},
+  };
+  assert.deepEqual(websocketModule.parseWebsocketMessage(JSON.stringify(terminal)), terminal);
+  assert.equal(websocketModule.parseWebsocketMessage(JSON.stringify({ ...terminal, node_name: null })), null);
+  const knownNode = {
+    ...terminal,
+    node: 'provider',
+    node_name: 'modules.HuggingFaceTransformers.LoadImageTextToTextModel',
+  };
+  assert.deepEqual(websocketModule.parseWebsocketMessage(JSON.stringify(knownNode)), knownNode);
+});
+
 test('websocket parsing accepts handled Auto events and rejects malformed typed payloads', () => {
   assert.deepEqual(
     websocketModule.parseWebsocketMessage(
@@ -2614,6 +2762,588 @@ test('websocket parsing accepts handled Auto events and rejects malformed typed 
     progress: -1,
   };
   assert.deepEqual(websocketModule.parseWebsocketMessage(JSON.stringify(exactBackendHeartbeat)), exactBackendHeartbeat);
+});
+
+test('native CPU executed frames retain unavailable memory measurements and node completion', () => {
+  // Exact execution messages captured from a native CPU service run on 2026-10-09.
+  // Prompt at 12:00:54.728Z; preview at 12:00:54.759Z. No model download was involved.
+  const frames = [
+    {
+      type: 'executed',
+      node: 'prompt',
+      name: 'modules.Primitive.TextValue',
+      task_id: 'native-cpu-memory-task',
+      attempt_index: 0,
+      status: 'succeeded',
+      phase: 'unknown',
+      progress: 100,
+      current_node: 'prompt',
+      hasChanged: true,
+      message: 'Recomputed: node inputs changed.',
+      executionTime: { last: 0, min: 0, max: 0.0009989738464355469 },
+      memoryUsage: { last: null, min: null, max: null },
+    },
+    {
+      type: 'executed',
+      node: 'preview',
+      name: 'modules.Primitive.DataViewer',
+      task_id: 'native-cpu-memory-task',
+      attempt_index: 0,
+      status: 'succeeded',
+      phase: 'unknown',
+      progress: 100,
+      current_node: 'preview',
+      hasChanged: true,
+      message: 'Recomputed: output was invalidated by an upstream change or recompute request.',
+      executionTime: { last: 0, min: 0, max: 0 },
+      memoryUsage: { last: null, min: null, max: null },
+    },
+  ];
+  const flow = flowStoreModule.useFlowStore;
+  const preview = flow.getState().nodes[0];
+  flow.setState({ nodes: [{ ...preview, id: 'prompt' }, preview] });
+  studioStoreModule.useStudioStore
+    .getState()
+    .captureRunContext(graph(), undefined, { clientRunId: 'native-memory-run' });
+  studioStoreModule.useStudioStore
+    .getState()
+    .attachRunResponse({ task_id: 'native-cpu-memory-task', sid: 'session-1' }, 'native-memory-run');
+  for (const frame of frames) {
+    const parsed = websocketModule.parseWebsocketMessage(JSON.stringify(frame));
+    assert.deepEqual(parsed, frame);
+    websocketModule.handleWebsocketMessage(parsed, {
+      sid: 'session-1',
+      ws: {},
+      getSid: () => 'session-1',
+      setSid: () => undefined,
+      setLoopTimer: () => undefined,
+    });
+    const node = flow.getState().nodes.find((item) => item.id === frame.node);
+    assert.equal(node.data.isCached, true);
+    assert.equal(node.data.progress, 100);
+    assert.equal(node.data.executionStatus, 'succeeded');
+    assert.deepEqual(node.data.memoryUsage, { last: null, min: null, max: null });
+    assert.deepEqual(node.data.executionTime, frame.executionTime);
+  }
+});
+
+test('service execution reconciles global cache without acquiring the visible workflow', async (testContext) => {
+  const previousFetch = globalThis.fetch;
+  testContext.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+  const flow = flowStoreModule.useFlowStore;
+  const studio = studioStoreModule.useStudioStore;
+  let cacheReads = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/cache')) {
+      cacheReads += 1;
+      return jsonResponse({ error: false, instance: 'service-cache-worker', cachedNodes: ['preview', 'hidden-leaf'] });
+    }
+    return jsonResponse({ instance: 'service-cache-worker', nodes: {}, outputs: [] });
+  };
+  nodesStoreModule.useNodesStore.setState({ instance: 'service-cache-worker' });
+  const context = {
+    sid: 'cache-browser',
+    ws: { url: 'ws://127.0.0.1:5191/ws?sid=cache-browser' },
+    getSid: () => 'cache-browser',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  };
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'welcome',
+      sid: 'cache-browser',
+      instance: 'service-cache-worker',
+      cachedNodes: [],
+      current: { task_id: 'service-cache-task', sid: 'service_private', status: 'running', attempt_index: 0 },
+      queued: {},
+    },
+    context,
+  );
+  const before = structuredClone({
+    params: flow.getState().nodes[0].data.params,
+    form: studio.getState().form,
+    tabs: studio.getState().workflowTabs,
+    past: flow.getState().past,
+    edges: flow.getState().edges,
+    activeTaskId: flow.getState().nodes[0].data.activeTaskId,
+    progress: flow.getState().nodes[0].data.progress,
+  });
+  assert.equal(studio.getState().currentRunContext, null, 'service has no invented Studio ownership');
+  websocketModule.handleWebsocketMessage(
+    { type: 'executed', node: 'preview', task_id: 'service-cache-task', attempt_index: 0, status: 'succeeded' },
+    context,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(cacheReads, 1, 'the successful service frame requests current backend cache membership');
+  assert.deepEqual(flow.getState().runtimeCachedNodeIds, ['preview', 'hidden-leaf']);
+  assert.equal(flow.getState().nodes[0].data.isCached, true);
+  assert.equal(flow.getState().nodes[0].data.activeTaskId, before.activeTaskId);
+  assert.equal(flow.getState().nodes[0].data.progress, before.progress);
+  assert.deepEqual(
+    {
+      params: flow.getState().nodes[0].data.params,
+      form: studio.getState().form,
+      tabs: studio.getState().workflowTabs,
+      past: flow.getState().past,
+      edges: flow.getState().edges,
+      activeTaskId: flow.getState().nodes[0].data.activeTaskId,
+      progress: flow.getState().nodes[0].data.progress,
+    },
+    before,
+  );
+  assert.deepEqual(snackbarModule.getToastItems(), []);
+});
+
+function serviceCacheFixture(testContext, name, cached = []) {
+  const previousFetch = globalThis.fetch;
+  testContext.after(() => {
+    globalThis.fetch = previousFetch;
+  });
+  const flow = flowStoreModule.useFlowStore;
+  const reads = [];
+  let cacheResponse = () => jsonResponse({ error: false, instance: name, cachedNodes: [] });
+  let releaseResponse = () => jsonResponse({ error: false, nodes: ['preview'] });
+  let sid = `${name}-browser`;
+  const context = {
+    sid,
+    ws: { url: `ws://127.0.0.1:5191/ws?sid=${sid}` },
+    getSid: () => sid,
+    setSid: (next) => {
+      sid = next;
+    },
+    setLoopTimer: () => undefined,
+  };
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes('/hf_cache/') && init.method === 'DELETE') return releaseResponse();
+    if (String(url).endsWith('/runtime/gpu_cleanup') && init.method === 'POST') return releaseResponse();
+    if (String(url).endsWith('/cache')) {
+      if (init.method === 'DELETE') return releaseResponse();
+      reads.push(String(url));
+      return cacheResponse();
+    }
+    return jsonResponse({ instance: name, nodes: {}, outputs: [] });
+  };
+  nodesStoreModule.useNodesStore.setState({ instance: name });
+  const welcome = (instance = name, ws = context.ws, nextSid = sid) => {
+    const nextContext = { ...context, ws };
+    websocketModule.handleWebsocketMessage(
+      {
+        type: 'welcome',
+        sid: nextSid,
+        instance,
+        cachedNodes: cached,
+        current: { task_id: name, sid: `service_${name}`, status: 'running', attempt_index: 0 },
+        queued: {},
+      },
+      nextContext,
+    );
+    return nextContext;
+  };
+  welcome();
+  return {
+    flow,
+    reads,
+    context,
+    welcome,
+    respondCache: (callback) => {
+      cacheResponse = callback;
+    },
+    respondRelease: (callback) => {
+      releaseResponse = callback;
+    },
+    execute: (overrides = {}, owner = context) =>
+      websocketModule.handleWebsocketMessage(
+        {
+          type: 'executed',
+          node: 'preview',
+          task_id: name,
+          attempt_index: 0,
+          status: 'succeeded',
+          ...overrides,
+        },
+        owner,
+      ),
+    terminal: (type = 'task_completed') =>
+      websocketModule.handleWebsocketMessage(
+        {
+          type,
+          task_id: name,
+          sid: `service_${name}`,
+          current: null,
+          queued: {},
+        },
+        context,
+      ),
+  };
+}
+
+const flushCacheReads = () => new Promise((resolve) => setImmediate(resolve));
+
+test('service cache reads coalesce and retain hidden runtime IDs without clearing unrelated progress', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-coalesced');
+  const first = deferredResponse();
+  const second = deferredResponse();
+  const replies = [first, second];
+  f.respondCache(() => replies.shift().promise);
+  const root = blockV2Root('service-cache-block');
+  const runtimeId = blockRuntimeModule.blockProjectionNodeIdV2(root.id, 'generate');
+  const node = f.flow.getState().nodes[0];
+  f.flow.setState({ nodes: [{ ...node, data: { ...node.data, progress: 37, activeTaskId: 'another-task' } }] });
+  f.execute({ node: runtimeId });
+  f.execute({ node: 'another-hidden-leaf' });
+  assert.equal(f.reads.length, 1);
+  first.resolve(jsonResponse({ error: false, instance: 'service-cache-coalesced', cachedNodes: [runtimeId] }));
+  await flushCacheReads();
+  assert.equal(f.reads.length, 2, 'one follow-up covers the newer execution notification');
+  assert.equal(f.flow.getState().nodes[0].data.progress, 37);
+  assert.equal(f.flow.getState().nodes[0].data.activeTaskId, 'another-task');
+  second.resolve(jsonResponse({ error: false, instance: 'service-cache-coalesced', cachedNodes: [runtimeId] }));
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, [runtimeId]);
+  f.flow.getState().replaceGraph({ nodes: [root], edges: [], viewport: { x: 0, y: 0, zoom: 1 } });
+  assert.equal(
+    f.flow.getState().nodes[0].data.isCached,
+    true,
+    'exact hidden leaf projects after its Block is restored',
+  );
+  assert.equal(f.flow.getState().toObject().runtimeCachedNodeIds, undefined);
+});
+
+test('service cache reconciliation rejects unrelated, old-attempt and terminal execution frames', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-guards');
+  for (const overrides of [
+    { task_id: 'other-task' },
+    { attempt_index: -1 },
+    { attempt_index: 1 },
+    { attempt_index: undefined },
+    { attempt_index: 0.5 },
+    { status: 'running' },
+    { status: 'failed' },
+  ])
+    f.execute(overrides);
+  assert.equal(f.reads.length, 0);
+  f.terminal();
+  await flushCacheReads();
+  assert.equal(f.reads.length, 1, 'terminal service state reconciles actual membership once');
+  f.execute();
+  await flushCacheReads();
+  assert.equal(f.reads.length, 1, 'a late executed frame cannot revive a terminal task');
+});
+
+for (const releaseKind of ['cache release', 'GPU cleanup', 'model deletion']) {
+  const invokeRelease = () =>
+    releaseKind === 'cache release'
+      ? serverActionsModule.deleteNodeCache(['preview'])
+      : releaseKind === 'GPU cleanup'
+        ? serverActionsModule.cleanupGpuMemory()
+        : serverActionsModule.deleteHfCacheEntry('model', 'plan');
+  test(`service cache snapshots cannot outrun ${releaseKind} dispatch or acknowledgement`, async (t) => {
+    const f = serviceCacheFixture(t, `service-cache-release-${releaseKind}`);
+    const beforeDispatch = deferredResponse();
+    const whileReleasing = deferredResponse();
+    const release = deferredResponse();
+    const replies = [beforeDispatch, whileReleasing];
+    f.respondCache(() =>
+      replies.length
+        ? replies.shift().promise
+        : jsonResponse({
+            error: false,
+            instance: `service-cache-release-${releaseKind}`,
+            cachedNodes: [],
+          }),
+    );
+    f.respondRelease(() => release.promise);
+    f.execute();
+    const deletion = invokeRelease();
+    beforeDispatch.resolve(
+      jsonResponse({ error: false, instance: `service-cache-release-${releaseKind}`, cachedNodes: ['preview'] }),
+    );
+    await flushCacheReads();
+    assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false, 'dispatch retires an older read');
+    f.execute();
+    release.resolve(
+      jsonResponse({
+        error: false,
+        nodes: ['preview'],
+        deleted: true,
+        plan: {},
+        runtimeRelease: {
+          released: { nodes: 1, models: 0, diffusers_components: 0, offload_files: 0 },
+          allocatorTrimmed: true,
+          errors: [],
+        },
+      }),
+    );
+    const result = await deletion;
+    for (const id of result.nodes) f.flow.getState().setNodeCached(id, false);
+    whileReleasing.resolve(
+      jsonResponse({ error: false, instance: `service-cache-release-${releaseKind}`, cachedNodes: ['preview'] }),
+    );
+    await flushCacheReads();
+    assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false, 'ACK retires reads begun during teardown');
+    f.execute();
+    await flushCacheReads();
+    assert.equal(f.reads.length, 3);
+    assert.deepEqual(
+      f.flow.getState().runtimeCachedNodeIds,
+      [],
+      'late frame requests truth rather than asserting cached',
+    );
+  });
+
+  test(`failed ${releaseKind} also retires in-flight reads without optimistic cache clearing`, async (t) => {
+    const f = serviceCacheFixture(t, `service-cache-failed-${releaseKind}`, ['preview']);
+    const reading = deferredResponse();
+    const release = deferredResponse();
+    f.respondRelease(() => release.promise);
+    const deletion = invokeRelease();
+    f.respondCache(() => reading.promise);
+    f.execute();
+    release.resolve(jsonResponse({ error: true, message: 'Release failed.' }, 500));
+    await assert.rejects(deletion, /Release failed/);
+    reading.resolve(jsonResponse({ error: false, instance: `service-cache-failed-${releaseKind}`, cachedNodes: [] }));
+    await flushCacheReads();
+    assert.equal(f.flow.getState().nodes[0].data.isCached, true);
+  });
+}
+
+test('service cache responses require the same socket and welcome worker instance', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-replacement');
+  const oldRead = deferredResponse();
+  f.respondCache(() => oldRead.promise);
+  f.execute();
+  const replacement = f.welcome('replacement-worker', { url: f.context.ws.url });
+  oldRead.resolve(jsonResponse({ error: false, instance: 'service-cache-replacement', cachedNodes: ['preview'] }));
+  await flushCacheReads();
+  assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false);
+  nodesStoreModule.useNodesStore.setState({ instance: 'replacement-worker' });
+  f.execute({}, f.context);
+  assert.equal(f.reads.length, 1, 'retired socket cannot schedule a cache read even with the same SID');
+  f.respondCache(() => jsonResponse({ error: false, instance: 'wrong-worker', cachedNodes: ['preview'] }));
+  f.execute({}, replacement);
+  await flushCacheReads();
+  assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false);
+  f.respondCache(() => jsonResponse({ error: false, instance: 'replacement-worker', cachedNodes: ['preview'] }));
+  f.execute({}, replacement);
+  await flushCacheReads();
+  assert.equal(f.flow.getState().nodes[0].data.isCached, true);
+});
+
+test('service cache snapshots are retired by acknowledged registry changes on the same socket', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-registry', ['preview']);
+  const oldRead = deferredResponse();
+  f.respondCache(() => oldRead.promise);
+  f.execute();
+  nodesStoreModule.useNodesStore.setState({ instance: 'custom-source-acknowledgement' });
+  oldRead.resolve(jsonResponse({ error: false, instance: 'service-cache-registry', cachedNodes: [] }));
+  await flushCacheReads();
+  assert.deepEqual(
+    f.flow.getState().runtimeCachedNodeIds,
+    ['preview'],
+    'pre-ACK response cannot replace current truth',
+  );
+  f.respondCache(() => jsonResponse({ error: false, instance: 'service-cache-registry', cachedNodes: [] }));
+  f.execute();
+  await flushCacheReads();
+  assert.deepEqual(
+    f.flow.getState().runtimeCachedNodeIds,
+    ['preview'],
+    'old worker identity cannot satisfy the new ACK',
+  );
+  f.respondCache(() => jsonResponse({ error: false, instance: 'custom-source-acknowledgement', cachedNodes: [] }));
+  f.execute();
+  await flushCacheReads();
+  assert.deepEqual(
+    f.flow.getState().runtimeCachedNodeIds,
+    [],
+    'a new read can bind to the acknowledged same-socket identity',
+  );
+});
+
+test('service cache snapshots fail closed while initial registry identity lags a new welcome', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-registry-lag', ['preview']);
+  const owner = f.welcome('new-worker');
+  await flushCacheReads();
+  f.respondCache(() => jsonResponse({ error: false, instance: 'new-worker', cachedNodes: [] }));
+  f.execute({}, owner);
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+  nodesStoreModule.useNodesStore.setState({ instance: 'new-worker' });
+  f.execute({}, owner);
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, []);
+});
+
+test('service cache snapshots require a nonempty welcome SID and reject disconnected reads', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-null-sid', ['preview']);
+  const pending = deferredResponse();
+  f.respondCache(() => pending.promise);
+  f.execute();
+  f.context.setSid(null);
+  pending.resolve(jsonResponse({ error: false, instance: 'service-cache-null-sid', cachedNodes: [] }));
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+  for (const invalidSid of [null, '', '   ']) {
+    const owner = f.welcome('service-cache-null-sid', f.context.ws, invalidSid);
+    f.execute({}, owner);
+    await flushCacheReads();
+    assert.equal(f.reads.length, 1, 'null or blank welcome SID never owns a cache read');
+  }
+});
+
+test('service cache snapshots cannot overwrite newer accepted workflow cache writes', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-owned-race');
+  const pending = deferredResponse();
+  f.respondCache(() => pending.promise);
+  f.terminal();
+  const studio = studioStoreModule.useStudioStore;
+  studio.getState().captureRunContext(graph(), undefined, { clientRunId: 'new-owned-cache-run' });
+  studio.getState().attachRunResponse({ task_id: 'new-owned-cache-task', sid: 'session-1' }, 'new-owned-cache-run');
+  taskStoreModule.useTaskStore.setState({
+    currentTask: { task_id: 'new-owned-cache-task', status: 'running', attempt_index: 0 },
+  });
+  f.execute({ task_id: 'new-owned-cache-task', client_run_id: 'new-owned-cache-run' });
+  assert.equal(f.flow.getState().nodes[0].data.isCached, true, 'accepted owned execution records its new cache fact');
+  pending.resolve(jsonResponse({ error: false, instance: 'service-cache-owned-race', cachedNodes: [] }));
+  await flushCacheReads();
+  assert.equal(
+    f.flow.getState().nodes[0].data.isCached,
+    true,
+    'older service snapshot cannot clear the newer owned execution',
+  );
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+});
+
+test('service cache snapshots cannot repopulate owners after a newer task starts and fails before execution', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-start-failure');
+  const pending = deferredResponse();
+  f.respondCache(() => pending.promise);
+  f.terminal();
+  const studio = studioStoreModule.useStudioStore;
+  studio.getState().captureRunContext(graph(), undefined, { clientRunId: 'new-start-failure-run' });
+  studio.getState().attachRunResponse({ task_id: 'new-start-failure-task', sid: 'session-1' }, 'new-start-failure-run');
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'task_started',
+      task_id: 'new-start-failure-task',
+      client_run_id: 'new-start-failure-run',
+      current: { task_id: 'new-start-failure-task', status: 'running', attempt_index: 0 },
+      queued: {},
+    },
+    f.context,
+  );
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'task_failed',
+      task_id: 'new-start-failure-task',
+      client_run_id: 'new-start-failure-run',
+      message: 'Preparation failed before any node executed.',
+      current: null,
+      queued: {},
+    },
+    f.context,
+  );
+  pending.resolve(jsonResponse({ error: false, instance: 'service-cache-start-failure', cachedNodes: ['preview'] }));
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, [], 'the pre-start roster cannot restore removed owners');
+  assert.equal(Boolean(f.flow.getState().nodes[0].data.isCached), false);
+});
+
+test('service cache snapshots reject malformed and unbounded rosters without replacing cache truth', async (t) => {
+  const f = serviceCacheFixture(t, 'service-cache-parser', ['preview']);
+  const invalid = [
+    null,
+    { error: true, instance: 'service-cache-parser', cachedNodes: [] },
+    { error: false, cachedNodes: [] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: 'preview' },
+    { error: false, instance: 'service-cache-parser', cachedNodes: [0] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: [''] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: ['x'.repeat(16_385)] },
+    { error: false, instance: 'service-cache-parser', cachedNodes: Array(30_001).fill('x') },
+    { error: false, instance: 'service-cache-parser', cachedNodes: Array(129).fill('x'.repeat(16_384)) },
+  ];
+  for (const payload of invalid) {
+    f.respondCache(() => jsonResponse(payload));
+    f.execute();
+    await flushCacheReads();
+    assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, ['preview']);
+  }
+  f.respondCache(() => jsonResponse({ error: false, instance: 'service-cache-parser', cachedNodes: [] }));
+  f.execute();
+  await flushCacheReads();
+  assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, [], 'a later valid snapshot remains usable');
+});
+
+for (const terminal of ['task_completed', 'task_cancelled', 'task_failed']) {
+  test(`service ${terminal} reconciles released cache without clearing a newer task's progress`, async (t) => {
+    const f = serviceCacheFixture(t, `cache-${terminal}`, ['preview']);
+    const node = f.flow.getState().nodes[0];
+    f.flow.setState({ nodes: [{ ...node, data: { ...node.data, activeTaskId: 'newer-task', progress: 61 } }] });
+    f.terminal(terminal);
+    await flushCacheReads();
+    assert.deepEqual(f.flow.getState().runtimeCachedNodeIds, []);
+    assert.equal(f.flow.getState().nodes[0].data.progress, 61);
+    assert.equal(f.flow.getState().nodes[0].data.activeTaskId, 'newer-task');
+  });
+}
+
+test('memory measurements permit mixed finite values and null without weakening other telemetry', () => {
+  const message = {
+    type: 'executed',
+    node: 'preview',
+    hasChanged: true,
+    memoryUsage: { last: 0, min: null, max: 1024 },
+    executionTime: { last: 0, min: 0, max: 1 },
+  };
+  const parsed = websocketModule.parseWebsocketMessage(JSON.stringify(message));
+  assert.deepEqual(parsed, message);
+  websocketModule.handleWebsocketMessage(parsed, {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  });
+  assert.deepEqual(flowStoreModule.useFlowStore.getState().nodes[0].data.memoryUsage, message.memoryUsage);
+  for (const memoryUsage of [
+    null,
+    [],
+    'unknown',
+    { last: '0' },
+    { last: false },
+    { last: {} },
+    { last: [] },
+    { last: undefined },
+    { last: Number.NaN },
+    { last: Number.POSITIVE_INFINITY },
+    { last: Number.NEGATIVE_INFINITY },
+  ]) {
+    assert.equal(websocketModule.parseWebsocketMessage({ ...message, memoryUsage }), null);
+  }
+  for (const executionTime of [
+    { last: null },
+    { last: '0' },
+    { last: Number.NaN },
+    { last: Number.POSITIVE_INFINITY },
+  ]) {
+    assert.equal(websocketModule.parseWebsocketMessage({ ...message, executionTime }), null);
+  }
+  assert.equal(websocketModule.parseWebsocketMessage({ ...message, phase_timings: { loading: null } }), null);
+  assert.equal(
+    websocketModule.parseWebsocketMessage({ ...message, phase_timings: { loading: Number.POSITIVE_INFINITY } }),
+    null,
+  );
+});
+
+test('memory formatting distinguishes unavailable readings from measured zero', () => {
+  assert.equal(memoryFormattingModule.formatMemory(null), '-');
+  assert.equal(memoryFormattingModule.formatMemory(undefined), '-');
+  assert.equal(memoryFormattingModule.formatMemory(0), '0 B');
+  assert.equal(memoryFormattingModule.formatMemory(1024), '1.0 KB');
+  assert.equal(memoryFormattingModule.formatMemory(Number.NaN), '-');
+  assert.equal(memoryFormattingModule.formatMemory(Number.POSITIVE_INFINITY), '-');
 });
 
 test('exact backend heartbeats with null telemetry still update the task and node stores', () => {
@@ -3294,6 +4024,69 @@ function workflowPlan(ready) {
   };
 }
 
+test('managed Studio Auto checks the complete execution graph and refuses before submission', async () => {
+  studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+    graphBinding: {
+      mode: 'text_to_image',
+      modelType: 'ZImageModularPipeline',
+      nodes: { preview: 'preview' },
+      managedNodeIds: ['preview'],
+      managedEdgeIds: [],
+      fingerprint: 'managed-auto',
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  });
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), body: JSON.parse(init.body) });
+    return String(url).endsWith('/auto_resource/workflow')
+      ? jsonResponse(workflowPlan(false))
+      : jsonResponse({ task_id: 'must-not-submit', sid: 'session-1', message: 'queued' });
+  };
+  await assert.rejects(
+    coordinatorModule.coordinateGraphRun({
+      sid: 'session-1',
+      preparedGraph: graph(),
+      studioContext: { clearChangedPreviews: false },
+    }),
+    /No reviewed recipe/,
+  );
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].url.endsWith('/auto_resource/workflow'));
+  assert.deepEqual(requests[0].body.graph.nodes, graph().nodes);
+  assert.equal(studioStoreModule.useStudioStore.getState().currentRunContext, null);
+  assert.equal(Object.keys(taskStoreModule.useTaskStore.getState().queuedTasks).length, 0);
+});
+
+test('managed Studio Auto retains the whole graph receipt and correlation through runtime metadata', async () => {
+  studioStoreModule.useStudioStore.setState({
+    form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+  });
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), body: JSON.parse(init.body) });
+    return String(url).endsWith('/auto_resource/workflow')
+      ? jsonResponse(workflowPlan(true))
+      : jsonResponse({ task_id: 'managed-whole-auto', sid: 'session-1', message: 'queued' });
+  };
+  const result = await coordinatorModule.coordinateGraphRun({
+    sid: 'session-1',
+    preparedGraph: graph(),
+    studioContext: { clearChangedPreviews: false },
+  });
+  assert.equal(requests.length, 2);
+  assert.ok(requests[0].url.endsWith('/auto_resource/workflow'));
+  assert.ok(requests[1].url.endsWith('/graph'));
+  assert.equal(result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash, workflowPlan(true).plannedGraphHash);
+  assert.equal(result.submittedGraph.runtimeHints.resourceMode, 'auto');
+  assert.equal(result.submittedGraph.runtimeHints.source, 'studio');
+  assert.equal(result.submittedGraph.runtimeHints.clientRunId, result.context.clientRunId);
+  assert.equal(result.submittedGraph.runtimeHints.runInputHash, result.context.runInputHash);
+  assert.equal(result.response.task_id, 'managed-whole-auto');
+});
+
 test('Auto refuses a stale plan if the workflow changes while planning', async () => {
   studioStoreModule.useStudioStore.setState({
     form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
@@ -3406,7 +4199,8 @@ test('runtime resource-update messages reject non-resource fields and wrong valu
   assert.equal(websocketModule.parseWebsocketMessage(JSON.stringify(message)), null);
 });
 
-function resourceInputBlock(mirrored = false) {
+function resourceInputBlock(mirrored = false, field = 'offload_mode', control = false) {
+  const initialValue = field === 'weight_loading_mode' ? 'cpu' : 'none';
   const nodes = ['loader', ...(mirrored ? ['peer'] : [])].map((nodeId) => ({
     nodeId,
     nodeType: 'custom',
@@ -3415,7 +4209,7 @@ function resourceInputBlock(mirrored = false) {
       module: 'modules.Test',
       action: 'Loader',
       params: {
-        offload_mode: { type: 'string', value: 'none', isInput: true },
+        [field]: { type: 'string', value: initialValue, isInput: true },
         output: { type: 'pipeline', display: 'output' },
       },
     },
@@ -3436,13 +4230,26 @@ function resourceInputBlock(mirrored = false) {
           label: 'Offload',
           valueType: 'string',
           required: false,
-          binding: { nodeId: 'loader', fieldOrPortId: 'offload_mode' },
-          ...(mirrored ? { mirrorBindings: [{ nodeId: 'peer', fieldOrPortId: 'offload_mode' }] } : {}),
+          binding: { nodeId: 'loader', fieldOrPortId: field },
+          ...(mirrored ? { mirrorBindings: [{ nodeId: 'peer', fieldOrPortId: field }] } : {}),
         },
       ],
       outputs: [],
     },
-    controls: [],
+    controls: control
+      ? [
+          {
+            controlId: 'resource',
+            label: 'Resource',
+            valueType: 'string',
+            defaultValue: initialValue,
+            required: false,
+            order: 0,
+            binding: { nodeId: 'loader', fieldId: field },
+            ...(mirrored ? { mirrorBindings: [{ nodeId: 'peer', fieldId: field }] } : {}),
+          },
+        ]
+      : [],
     previews: [],
     ownership: { kind: 'user', definitionMutable: true },
   };
@@ -3452,7 +4259,7 @@ function resourceInputBlock(mirrored = false) {
       instanceId: 'resource-block',
       position: { x: 0, y: 0 },
       size: { width: 400, height: 320 },
-      values: { resource: 'none' },
+      values: { resource: initialValue },
     }),
   );
 }
@@ -3502,6 +4309,160 @@ test('Auto treats mirrored boundary resource inputs as one atomic resource group
   ]);
   flow.getState().undo();
   assert.deepEqual(exported(), before);
+});
+
+test('weight loading Auto plans accept only the declared cpu/cuda patch values', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  for (const value of ['cpu', 'cuda']) {
+    const plan = { ...workflowPlan(true), patches: [{ nodeId: 'loader', field: 'weight_loading_mode', value }] };
+    assert.deepEqual(auto.parseWorkflowAutoPlanV2(plan), plan);
+  }
+  for (const value of ['auto', 'CUDA', '', true, null, 0, { value: 'cuda' }])
+    assert.throws(
+      () =>
+        auto.parseWorkflowAutoPlanV2({
+          ...workflowPlan(true),
+          patches: [{ nodeId: 'loader', field: 'weight_loading_mode', value }],
+        }),
+      /invalid workflow Auto plan/,
+    );
+  assert.throws(
+    () =>
+      auto.parseWorkflowAutoPlanV2({
+        ...workflowPlan(true),
+        patches: [{ nodeId: 'loader', field: 'weight_loading_device', value: 'cuda' }],
+      }),
+    /invalid workflow Auto plan/,
+  );
+});
+
+test('weight loading runtime messages preserve the field-specific current and previous value contracts', () => {
+  const parsed = (update) =>
+    websocketModule.parseWebsocketMessage(
+      JSON.stringify({
+        type: 'auto_resource_plan_applied',
+        resourceUpdates: [{ nodeId: 'loader', ...update }],
+      }),
+    );
+  for (const value of ['cpu', 'cuda'])
+    for (const previousValue of [undefined, null, 'cpu', 'cuda'])
+      assert.ok(parsed({ field: 'weight_loading_mode', value, previousValue }));
+  for (const value of ['auto', 'CUDA', '', true, null, 1])
+    assert.equal(parsed({ field: 'weight_loading_mode', value }), null);
+  for (const previousValue of ['auto', 'CUDA', '', true, 1])
+    assert.equal(parsed({ field: 'weight_loading_mode', value: 'cuda', previousValue }), null);
+  assert.equal(parsed({ field: 'offload_mode', value: 'none', previousValue: false }), null);
+  assert.equal(parsed({ field: 'auto_offload', value: true, previousValue: 'false' }), null);
+  assert.ok(parsed({ field: 'offload_mode', value: 'none', previousValue: 'model_cpu' }));
+  assert.ok(parsed({ field: 'auto_offload', value: true, previousValue: false }));
+});
+
+test('weight loading mirrored inputs and controls carry one runtime group and one Undo', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const flow = flowStoreModule.useFlowStore;
+  for (const control of [false, true]) {
+    flow.getState().replaceGraph({ nodes: [resourceInputBlock(true, 'weight_loading_mode', control)], edges: [] });
+    const exported = () => flow.getState().exportGraph('', undefined, { randomizeSeeds: false });
+    const before = exported();
+    const definition = structuredClone(flow.getState().nodes[0].data.blockInstanceV2.definitionSnapshot);
+    const patches = ['loader', 'peer'].map((nodeId) => ({
+      nodeId: blockRuntimeModule.blockProjectionNodeIdV2('resource-block', nodeId),
+      field: 'weight_loading_mode',
+      value: 'cuda',
+    }));
+    assert.throws(() => auto.applyWorkflowAutoSettingsV2(before, patches.slice(0, 1)), /shared resource control/);
+    assert.deepEqual(exported(), before);
+    assert.throws(
+      () => auto.applyWorkflowAutoSettingsV2(before, [patches[0], { ...patches[1], value: 'cpu' }]),
+      /shared resource control/,
+    );
+    assert.deepEqual(exported(), before);
+    studioStoreModule.useStudioStore.setState({
+      form: { ...studioStoreModule.useStudioStore.getState().form, resourceMode: 'auto' },
+    });
+    globalThis.fetch = async () => jsonResponse({ ...workflowPlan(true), patches });
+    const historyCount = flow.getState().historyPast.length;
+    const submitted = await auto.prepareWorkflowAutoExecutionV2(before);
+    assert.deepEqual(exported().nodes, submitted.nodes);
+    assert.deepEqual(submitted.runtimeHints.workflowAutoPlan.resourceControlGroups, [
+      patches.map(({ nodeId, field }) => ({ nodeId, field })),
+    ]);
+    assert.equal(flow.getState().historyPast.length, historyCount + 1);
+    assert.deepEqual(flow.getState().nodes[0].data.blockInstanceV2.definitionSnapshot, definition);
+    flow.getState().undo();
+    assert.deepEqual(exported(), before);
+    flow.getState().redo();
+    assert.deepEqual(exported().nodes, submitted.nodes);
+    auto.applyRuntimeWorkflowAutoSettingsV2(
+      patches.map((patch) => ({ ...patch, value: 'cpu', previousValue: 'cuda' })),
+    );
+    assert.deepEqual(exported(), before);
+    const unchanged = flow.getState().toObject();
+    assert.throws(
+      () =>
+        auto.applyRuntimeWorkflowAutoSettingsV2(
+          patches.map((patch, index) => ({
+            ...patch,
+            previousValue: index === 0 ? 'cpu' : 'cuda',
+          })),
+        ),
+      /newer workflow edits/,
+    );
+    assert.deepEqual(flow.getState().toObject(), unchanged);
+  }
+});
+
+test('weight loading Auto settings roll back connected, missing and duplicate targets', async () => {
+  const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const node = (id, params) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module: 'modules.Test', action: 'Loader', params },
+  });
+  const field = { type: 'string', value: 'cpu', isInput: true };
+  const source = node('source', { output: { type: 'string', display: 'output', value: 'cpu' } });
+  const loader = node('loader', { weight_loading_mode: field });
+  const peer = node('peer', { weight_loading_mode: field });
+  for (const invalid of ['connected', 'missing', 'duplicate']) {
+    const edges =
+      invalid === 'connected'
+        ? [
+            {
+              id: 'connected-mode',
+              source: 'source',
+              sourceHandle: 'output',
+              target: 'peer',
+              targetHandle: 'weight_loading_mode',
+            },
+          ]
+        : [];
+    flow.getState().replaceGraph({
+      nodes: [
+        structuredClone(loader),
+        node('peer', invalid === 'missing' ? {} : structuredClone(peer.data.params)),
+        source,
+      ],
+      edges,
+    });
+    const before = flow.getState().toObject();
+    const historyCount = flow.getState().historyPast.length;
+    const graph = flow.getState().exportGraph('', undefined, { randomizeSeeds: false });
+    const patch = { nodeId: 'loader', field: 'weight_loading_mode', value: 'cuda' };
+    assert.throws(
+      () =>
+        auto.applyWorkflowAutoSettingsV2(graph, [
+          patch,
+          invalid === 'duplicate' ? patch : { ...patch, nodeId: 'peer' },
+        ]),
+      /missing, connected or repeated/,
+    );
+    assert.deepEqual(flow.getState().toObject(), before);
+    assert.equal(flow.getState().historyPast.length, historyCount);
+    assert.equal(flow.getState().historyTransaction, null);
+    assert.deepEqual(graph.nodes.loader.params.weight_loading_mode.value, 'cpu');
+  }
 });
 
 test('mixed legacy and Modular Auto reaches planning without committing a rejected conversion', async () => {

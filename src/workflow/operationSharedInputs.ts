@@ -1,13 +1,35 @@
+import { promptEnhancementParentFromHint, remapPromptEnhancementParent } from '../studio/promptEnhancementParent';
+import {
+  ancillaryBindingsFromHint,
+  parseAncillaryBindings,
+  type AncillaryInstanceBinding,
+} from '../studio/ancillaryBindings';
 import { operationOwnsModel } from './operationContracts';
 import type { Edge } from '@xyflow/react';
 import type { FlowGraphNode } from '../stores/flowGraphExport';
 import { deepEqual } from '../utils/deepEqual';
 import type { OperationAuthoring } from './operationAuthoring';
 
+function remappedAncillaryBindings(bindings: AncillaryInstanceBinding[], remap: (id: string) => string) {
+  const mapped = (values: Record<string, string>) =>
+    Object.fromEntries(Object.entries(values).map(([role, id]) => [role, remap(id)]));
+  return parseAncillaryBindings(
+    bindings.map((binding) => ({
+      ...binding,
+      parentRoleNodes: mapped(binding.parentRoleNodes),
+      roleNodes: mapped(binding.roleNodes),
+    })),
+  );
+}
+
 /** Remap advisory loader references with the graph, never by pipeline name. */
 export function remapOperationAuthoring(value: unknown, remap: (id: string) => string): OperationAuthoring | undefined {
+  const ancillary = ancillaryBindingsFromHint(value);
+  const parent = promptEnhancementParentFromHint(value);
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const hint = structuredClone(value) as OperationAuthoring;
+  if (ancillary) hint.ancillaryBindings = remappedAncillaryBindings(ancillary, remap);
+  if (parent) hint.ancillaryParent = remapPromptEnhancementParent(parent, remap);
   if (Array.isArray(hint.sharedInputs))
     hint.sharedInputs = hint.sharedInputs.map((binding) =>
       binding && typeof binding.loaderId === 'string' ? { ...binding, loaderId: remap(binding.loaderId) } : binding,
@@ -20,6 +42,10 @@ export function remapOperationAuthoring(value: unknown, remap: (id: string) => s
         node.id = remap(node.id);
         if (node.parentId) node.parentId = remap(node.parentId);
         const saved = node.data.operationAuthoring;
+        const savedAncillary = ancillaryBindingsFromHint(saved);
+        const savedParent = promptEnhancementParentFromHint(saved);
+        if (saved && savedParent) saved.ancillaryParent = remapPromptEnhancementParent(savedParent, remap);
+        if (saved && savedAncillary) saved.ancillaryBindings = remappedAncillaryBindings(savedAncillary, remap);
         if (Array.isArray(saved?.sharedInputs))
           saved.sharedInputs = saved.sharedInputs.map((binding) =>
             typeof binding?.loaderId === 'string' ? { ...binding, loaderId: remap(binding.loaderId) } : binding,

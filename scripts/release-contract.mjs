@@ -9,6 +9,8 @@ import {
   assessHistoricalEvidence,
   canonicalWorkflowContract,
   findCanonicalWorkflowRecord,
+  readCanonicalEvidenceFile,
+  readCanonicalWorkflowEvidence,
 } from './release-contract-core.mjs';
 import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
 
@@ -327,10 +329,48 @@ const workflowRecords = workflowManifest.workflows.map((workflow) => {
   const graph = readJson(graphPath);
   return { manifest: workflow, graph, contract: canonicalWorkflowContract(workflow, graph) };
 });
+const canonicalReceiptsByWorkflow = new Map();
+const canonicalRegistryPath = join(BACKEND_ROOT, 'data/qualification/release/canonical-workflow-run-receipts.v1.json');
+if (existsSync(canonicalRegistryPath)) {
+  const registry = readJson(canonicalRegistryPath);
+  if (
+    registry.schemaVersion !== 1 ||
+    registry.format !== 'modiff.canonical-workflow-run-receipt-registry.v1' ||
+    !Array.isArray(registry.receipts)
+  ) {
+    throw new Error('Canonical workflow receipt registry has an invalid schema.');
+  }
+  for (const stored of registry.receipts) {
+    const descriptor = readCanonicalEvidenceFile(
+      BACKEND_ROOT,
+      { path: stored.evidencePath, bytes: stored.evidenceBytes, sha256: stored.evidenceSha256 },
+      65536,
+    );
+    const derived = await readCanonicalWorkflowEvidence({
+      clientRoot: CLIENT_ROOT,
+      backendRoot: BACKEND_ROOT,
+      workflowId: stored.workflowId,
+      evidencePath: descriptor.file,
+    });
+    const body = { ...stored };
+    delete body.evidencePath;
+    delete body.evidenceSha256;
+    delete body.evidenceBytes;
+    if (JSON.stringify(stable(body)) !== JSON.stringify(stable(derived.receipt))) {
+      throw new Error(`Canonical workflow receipt differs from original task evidence: ${stored.workflowId}`);
+    }
+    const previous = canonicalReceiptsByWorkflow.get(stored.workflowId);
+    if (!previous || String(previous.capturedAt).localeCompare(stored.capturedAt) < 0)
+      canonicalReceiptsByWorkflow.set(stored.workflowId, stored);
+  }
+}
 const vite = await createServer({
   root: CLIENT_ROOT,
+  configFile: false,
+  logLevel: 'silent',
+  optimizeDeps: { entries: [], noDiscovery: true },
   appType: 'custom',
-  server: { middlewareMode: true, watch: null },
+  server: { middlewareMode: true, hmr: false, watch: null },
 });
 
 try {
@@ -475,6 +515,7 @@ try {
     .map(({ manifest, graph }) => {
       const artifact = artifactByModel.get(manifest.modelType);
       const sourceTemplate = templates.find((template) => template.id === manifest.sourceTemplateId);
+      const canonicalReceipt = sourceTemplate ? null : canonicalReceiptsByWorkflow.get(manifest.id);
       const exactModelRevision =
         sourceTemplate?.exactModelRevision ??
         (artifact?.baseRepo && artifact?.baseRevision ? `${artifact.baseRepo}@${artifact.baseRevision}` : null);
@@ -491,7 +532,19 @@ try {
         userInputs: sourceTemplate?.userInputs ?? manifest.requiredInputs ?? {},
         resourceRecipes: sourceTemplate?.resourceRecipes ?? null,
         outputContract: sourceTemplate?.outputContract ?? { mediaKinds: [manifest.mediaKind] },
-        lastSuccessfulRealRun: sourceTemplate?.lastSuccessfulRealRun ?? null,
+        lastSuccessfulRealRun: sourceTemplate?.lastSuccessfulRealRun ?? canonicalReceipt ?? null,
+        ...(!sourceTemplate
+          ? {
+              canonicalExecutionEvidence: {
+                status: manifest.requiredArtifacts?.some((item) => item.startsWith('builtin:'))
+                  ? 'unsupported_builtin_model_not_applicable'
+                  : canonicalReceipt
+                    ? 'verified_execution_only'
+                    : 'missing',
+                releaseApprovalGranted: false,
+              },
+            }
+          : {}),
         releaseEligible: Boolean(exactModelRevision && sourceTemplate?.releaseEligible),
       };
     })

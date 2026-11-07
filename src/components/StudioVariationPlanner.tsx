@@ -13,6 +13,7 @@ export type StudioVariationOption = {
 
 type StudioVariationPlannerProps = {
   form: StudioFormState;
+  supportsStrength: boolean;
   template: StudioTemplate | undefined;
   onChange: (values: Partial<StudioFormState>) => void;
   onRunSweep: (variations: StudioVariationOption[]) => void;
@@ -22,32 +23,27 @@ type StudioVariationPlannerProps = {
 export function StudioVariationPlanner({
   disabled = false,
   form,
+  supportsStrength,
   template,
   onChange,
   onRunSweep,
 }: StudioVariationPlannerProps) {
   const exactEligible = template ? isTemplateExactEligible(template, form) : false;
   const isVideoMode = VIDEO_STUDIO_MODES.includes(form.mode);
-  const strengthVariations: StudioVariationOption[] =
-    form.mode === 'edit_image' ||
-    form.mode === 'multi_image_reference_edit' ||
-    form.mode === 'inpaint' ||
-    form.mode === 'control_edit_image' ||
-    form.mode === 'control_inpaint' ||
-    form.mode === 'layer_decomposition'
-      ? [
-          {
-            label: 'Lower strength',
-            detail: `Strength ${Math.max(0, Number((form.strength - 0.1).toFixed(2)))}`,
-            values: { strength: Math.max(0, Number((form.strength - 0.1).toFixed(2))) },
-          },
-          {
-            label: 'Higher strength',
-            detail: `Strength ${Math.min(1, Number((form.strength + 0.1).toFixed(2)))}`,
-            values: { strength: Math.min(1, Number((form.strength + 0.1).toFixed(2))) },
-          },
-        ]
-      : [];
+  const strengthVariations: StudioVariationOption[] = supportsStrength
+    ? [
+        {
+          label: 'Lower strength',
+          detail: `Strength ${Math.max(0, Number((form.strength - 0.1).toFixed(2)))}`,
+          values: { strength: Math.max(0, Number((form.strength - 0.1).toFixed(2))) },
+        },
+        {
+          label: 'Higher strength',
+          detail: `Strength ${Math.min(1, Number((form.strength + 0.1).toFixed(2)))}`,
+          values: { strength: Math.min(1, Number((form.strength + 0.1).toFixed(2))) },
+        },
+      ]
+    : [];
   const videoVariations: StudioVariationOption[] = isVideoMode
     ? [
         {

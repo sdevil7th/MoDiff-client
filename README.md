@@ -7,10 +7,10 @@ MoDiff Client is the graph-first web interface for the MoDiff generative-media b
 The client is built with React 19, TypeScript, Vite, Tailwind CSS, Headless UI, Zustand, Lucide React, and [`@xyflow/react`](https://reactflow.dev/).
 
 For Qwen-Image 2.1, use the generic image nodes in Workflows. The backend's
-[integration guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/qwen-image-21.md)
+[integration guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/qwen-image-21.md)
 explains attention-context reuse, runtime requirements and current qualification limits.
 
-The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/image-demo.md) lists the tested workflows, settings,
+The [image demo guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/image-demo.md) lists the tested workflows, settings,
 measured reuse behavior and remaining qualification work.
 
 > [!IMPORTANT]
@@ -18,30 +18,74 @@ measured reuse behavior and remaining qualification work.
 
 ## Developer setup with uv and npm
 
-Install Git, [uv `0.11.26`](https://docs.astral.sh/uv/getting-started/installation/),
+Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/),
 Node.js `24.12.0`, and npm `11.6.2`. uv can provision Python 3.12.
 Use two terminals for the backend and the editable frontend.
 
-**Terminal 1 — backend:** clone both repositories into the same parent directory,
+The interim Windows candidate is on `fix-ui-ux-issues` in both
+repositories. These updates are not released on `main`. The reviewed Windows
+application source pair is:
+
+| Repository    | Application source before final packaging  |
+| ------------- | ------------------------------------------ |
+| MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
+| MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
+
+CI backend contract: `72d4773706734796253363cc5a02305826861e2f`.
+
+Both CI jobs use this exact immutable backend pin. The application table above
+is the earlier reviewed testing baseline. The selected backend includes the shared video
+stages, conditional reference requirements and scoped Linux shared-memory LTX Auto
+loading fix and the precise Run recovery client bundle. A CI pin alone does not establish a new deployed pair or expand
+model/hardware qualification.
+
+When Run is blocked, use **Edit setting**, **Choose supported task/model**,
+**Review runtime** or **Review Auto options** to reach the relevant existing
+control. Navigation preserves saved choices and starts no installation or run.
+An edited or switched workflow requires a fresh readiness check. See
+[Run recovery](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/troubleshooting.md#run-is-blocked)
+for correction paths and retained platform/resource limits.
+
+The historical 3 November Linux video testing deployment used backend
+`496f3aed56ce1c6a868549df310c68e765712ce3` and client product
+`75080b73fb22bc0ef197f17a119cf507b3352695`. The 6 November Linux manual-testing
+baseline is backend `57811fc2ee6aff5b9de7a6b67ca10914d1136fcc` with client product
+`f84e7cdb82025aab85f0fcf71b99478bd21ce3b4`. It includes the bounded input previews
+and native boardwalk/car Auto checks. These are scoped technical proofs; creative
+review, held models, public Gallery evidence and broader hardware qualification
+remain separate. See the backend's
+[release closeout](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/video-stages-20261101/RELEASE-CLOSEOUT-20261103.md).
+
+These application source revisions were reviewed on 1 November 2026. Final
+documentation, CI pairing and bundled-client packaging commits can be later
+descendants; they do not expand model or hardware qualification. Record
+`git rev-parse HEAD` in each checkout and use the final paired handoff when the
+branch advances. To reproduce the application source before packaging, check out
+the two commits above in separate checkouts. This candidate is not an all-platform
+release.
+
+**Terminal 1 â€” backend:** clone both repositories into the same parent directory,
 then start the backend. These commands work in Linux shells and Windows PowerShell.
 
 ```text
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
-uv run --no-project --no-sync --python 3.12 -m modiff.dev plan --accelerator cpu --backend-only --json
-uv run --no-project --no-sync --python 3.12 -m modiff.dev setup --accelerator cpu --backend-only --non-interactive
-uv run --no-project --no-sync --python 3.12 -m modiff.dev check --json --check-port 8088 --fail-on-error
-uv run --no-project --no-sync --python 3.12 -m modiff.dev run
+uv sync --extra cpu
+uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --extra cpu python main.py
 ```
 
-The CPU profile is for API/UI development. For NVIDIA inference, replace `cpu`
-with `nvidia` in both `plan` and `setup`; other accelerators are covered in the
-[full setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md). Setup preserves an existing `.venv` and
-does not download model weights. Use the guide for deliberate environment repair;
-ordinary `uv sync` is not supported.
+The CPU profile is for API/UI development. For NVIDIA inference, use `--extra cuda`
+in each command; for Intel, use `--extra xpu`. On Apple Silicon, omit the extra.
+Transformers and PEFT are installed with the base application; ordinary image and
+LoRA workflows need no optional-runtime installation or activation. Setup installs
+Python packages without downloading model weights. `uv sync` reconciles `.venv`
+with the selected profile: use a separate checkout when testing a different
+accelerator. See the [full setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for specialized AMD profiles,
+explicit `uv pip` commands, repair, and upgrades.
 
-**Terminal 2 — frontend:** from the same parent directory, run:
+**Terminal 2 â€” frontend:** from the same parent directory, run:
 
 ```text
 cd MoDiff-client
@@ -51,23 +95,29 @@ npm run dev
 
 Keep the backend running at <http://127.0.0.1:8088> and open the URL printed by
 Vite for the editable frontend. Press `Ctrl+C` in each terminal to stop it.
-See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/developer-setup.md) for accelerator prerequisites,
+See the [full developer setup guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/developer-setup.md) for accelerator prerequisites,
 optional runtimes, repair, and bundled-app setup.
+
+In the app, Setup → Workflow setup checklist groups the selected Run scope's
+base environment, model artifacts, extra feature packages and system steps.
+Transformers and PEFT are included in ordinary installation. A staged optional
+install is shown separately from activation and verified worker readiness;
+reloading Setup follows the existing job without starting another install.
 
 ## Install and run MoDiff
 
 Clone both repositories into the same parent directory. The backend installer
 automatically finds this sibling client, installs its locked Node.js toolchain
 and packages, downloads the verified Gallery assets, and bundles the frontend.
-The backend [installation guide](https://github.com/sdevil7th/MoDiff#install-and-run)
+The backend [installation guide](https://github.com/sdevil7th/MoDiff/tree/fix-ui-ux-issues#install-and-run)
 is the canonical source for installer profiles, prerequisites, repair, and
 platform support.
 
 Linux or macOS:
 
 ```bash
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
 ./install.sh --accelerator auto
 ./run.sh
@@ -76,8 +126,8 @@ cd MoDiff
 Windows PowerShell:
 
 ```powershell
-git clone https://github.com/sdevil7th/MoDiff.git MoDiff
-git clone https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff
+git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client
 cd MoDiff
 .\install.ps1 -Accelerator auto
 .\run.ps1
@@ -109,9 +159,9 @@ Use `run.sh` or `run.ps1` unless you are editing frontend source code.
 - Export a workflow package, an output package, or raw graph JSON where available.
 - Add backend-defined nodes and custom React fields without creating a separate execution system.
 
-In the editor, **Export → Service package** exposes named scalar inputs and
+In the editor, **Export â†’ Service package** exposes named scalar inputs and
 persisted preview outputs for the same lowered API graph. See the backend's
-[service guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/service-prototyping.md)
+[service guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/service-prototyping.md)
 for the CLI, environment manifest and model-free example.
 
 ## Repository Pairing
@@ -138,7 +188,7 @@ Client development requires:
 Integrated development also requires:
 
 - A sibling MoDiff backend checkout, or its path passed to the launcher
-- The backend's managed Python 3.12 environment, installed through the uv commands
+- The backend's Python 3.12 environment, installed through the uv commands
   in the [quick start](#developer-setup-with-uv-and-npm) or its reviewed `install.ps1` / `install.sh` profile
 - Sufficient RAM, accelerator memory, and disk space for the model being used
 - Hugging Face authorization for gated model repositories, when applicable
@@ -262,9 +312,19 @@ The stop scripts deliberately leave unrelated listeners alone. Their `StopAnyLis
 
 See the [Studio user guide](docs/studio-user-flow.md) for tasks, interface areas, workflow tabs, Gallery behavior, setup, failure recovery, and a manual verification checklist.
 
+The [image template workflow guide](docs/image-template-workflows.md) describes
+the current developer nodes, explicit whole-pipeline exceptions, preserved
+creator settings and historical Gallery examples.
+The [developer authoring guide](docs/developer-first-node-ux.md) covers optional
+Model Setup, Prepare Mask and Image Output groups, reversible component bundle
+wiring, and the existing inspection/reuse controls. These explicit actions keep
+saved graphs and template defaults intact.
+The [audio workflow guide](docs/audio-workflows.md) covers audio Model Setup,
+MiniMax's real stages, Audio Output and selected adapter ownership.
+
 ## Workspace And Memory
 
-**Memory → Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
+**Memory â†’ Automatic** asks the backend planner for a known local recipe. The planner evaluates the selected model and task, installed artifacts, backend package versions, accelerator resources, system memory, and offload headroom. Auto enables Run only when the selected candidate reports sufficient compatibility evidence.
 
 The backend planner is the compatibility authority. Template cards, Setup,
 Models, and Run readiness render the same structured assessment and do not
@@ -279,7 +339,7 @@ policy; choose Custom explicitly to use your configured settings.
 The Run menu's **Auto** item separately repeats execution after parameter changes;
 keep it off when you want a single generation.
 
-**Memory → Custom** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Custom memory is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
+**Memory â†’ Custom** exposes artifact, dtype, quantization, offload, device, and lower-level graph controls. Custom memory is useful for development and explicitly experimental paths; it is not a promise that an arbitrary combination will fit the machine or execute successfully.
 
 Important model-support rules:
 
@@ -348,7 +408,7 @@ browsing them does not install or enable anything.
 A **Block** is an editable graph composition. Expand it to work on its nodes;
 **Saved Blocks** are reusable definitions. An upstream Python block can be an
 ordinary implementation node or a container represented by a graph Block.
-Use **Inspect node / Inspect Block → Implementation** to see its source.
+Use **Inspect node / Inspect Block â†’ Implementation** to see its source.
 Use **Configure Block interface** to expose inputs, outputs and editable controls.
 A nested Block's interface editor also selects its collapsed previews. These edits
 belong to the workflow instance; **Save block changes** is the explicit action for
@@ -364,7 +424,7 @@ For the current task browser, picker behavior and qualification limits, see
 
 ## Custom nodes
 
-**Nodes → Add custom node** opens Local, Hugging Face and Git. Intentional Add/Load
+**Nodes â†’ Add custom node** opens Local, Hugging Face and Git. Intentional Add/Load
 validates and enables trusted code in one action; revisions are pinned internally.
 Drop a structured Python node file on the canvas to import and insert it. Files
 and packages in backend `custom/` appear automatically without executing; use
@@ -375,11 +435,11 @@ declared data nodes and connected supported components; unmanaged custom models
 require Custom memory. See the backend custom-node guide for contracts and examples.
 
 Approved Modular blocks that omit model ports receive a **Models** input when
-their Python contract requires components. Connect **Load Models → Pipeline
+their Python contract requires components. Connect **Load Models â†’ Pipeline
 Components** to reuse compatible loaded weights. This does not download missing
-block-specific models. See the backend’s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/feat/generic-diffusers-workbench/docs/custom-nodes.md)
+block-specific models. See the backendâ€™s [custom-node guide](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/docs/custom-nodes.md)
 for the VAE reconstruction example and component requirements.
-Blocks with official component types also expose **Load Models — [block name]**
+Blocks with official component types also expose **Load Models â€” [block name]**
 after approval. Select pinned, downloaded sources for its components, use **Custom**
 memory policy, and connect its Pipeline Components output to the custom block.
 
@@ -467,13 +527,16 @@ in [Template Gallery asset storage](docs/template-gallery-assets.md).
 Run the same complete static/unit/build gate used by CI:
 
 ```bash
+npx playwright install chromium
 npm run check
 ```
+
+The request/proxy regression tests in this gate also use Chromium. On a fresh
+Linux host, install its system dependencies with `npx playwright install-deps chromium`.
 
 Run the mocked Studio browser suite:
 
 ```bash
-npx playwright install chromium
 npm run check:ui
 ```
 
@@ -567,8 +630,8 @@ inspect its ordinary nodes, required inputs and upstream implementation, then ad
 it to the canvas. You can also insert nodes individually by click, drag or canvas
 search and connect their ports. Connect the final result to a Preview, Save or Export node before running.
 
-To change a graph of generic nodes, select its loader and open **Inspect node →
-Parameters → Change model / task**. Choose the replacement pipeline/task, then
+To change a graph of generic nodes, select its loader and open **Inspect node â†’
+Parameters â†’ Change model / task**. Choose the replacement pipeline/task, then
 **Preview model / task change**. The same controls are available in the Studio
 inspector. Review retained settings and connections before applying. The Nodes
 library also retains its existing **Graph to change** entry point. Compatible prompt and parameter overrides survive;
@@ -619,3 +682,7 @@ Node status explains whether inputs changed, results were invalidated, or cached
 results were reused. Automatic resource management retains independent model
 owners when their combined memory estimate fits; otherwise it uses the existing
 release schedule where safe.
+
+The required-file readiness followup pairs backend `328d06f8` with client product
+`ba8f7d52`. Raw node/Block identities and model computation remain unchanged;
+the video plan handoff records deployment and local template acceptance.

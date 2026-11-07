@@ -10,8 +10,10 @@ import { PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from './templates';
 import { CONTROLLED_GRAPH_CONTRACT_IDS, type ControlledGraphContractId } from './controlledWorkflowContracts';
 import { blockOutputRunFormV2 } from './blockRunFormV2';
 import { applyResolvedExecutionInputs } from './resolvedExecutionInputs';
+import { persistedStudioWeightFormat } from './weightFormat';
 import type {
   StudioFormState,
+  LegacyStudioOutputField,
   StudioEncodedVideoMetadata,
   StudioGraphBinding,
   StudioGraphSnapshot,
@@ -161,6 +163,7 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     classLabel: numberValue(form.classLabel, DEFAULT_STUDIO_FORM.classLabel),
     resourceMode: normalizeStudioResourceMode(form.resourceMode),
     dtype: stringUnionValue(form.dtype, STUDIO_DTYPES, DEFAULT_STUDIO_FORM.dtype),
+    ...(form.weightFormat === undefined ? {} : { weightFormat: persistedStudioWeightFormat(form.weightFormat) }),
     quantizationMode: stringUnionValue(
       form.quantizationMode,
       STUDIO_QUANTIZATION_MODES,
@@ -399,6 +402,33 @@ function coerceStudioOutputMediaItems(value: unknown): StudioOutputMediaItem[] |
   return items.length > 0 ? items : undefined;
 }
 
+const LEGACY_OUTPUT_FIELDS: readonly LegacyStudioOutputField[] = [
+  'mode',
+  'modelType',
+  'seed',
+  'width',
+  'height',
+  'steps',
+  'guidanceScale',
+  'numFrames',
+  'fps',
+];
+
+function legacyRecordedFields(value: Record<string, unknown>, form: Record<string, unknown>) {
+  if (Object.prototype.hasOwnProperty.call(value, 'legacyRecordedFields')) {
+    return Array.isArray(value.legacyRecordedFields) && value.legacyRecordedFields.length <= LEGACY_OUTPUT_FIELDS.length
+      ? LEGACY_OUTPUT_FIELDS.filter((field) => (value.legacyRecordedFields as unknown[]).includes(field))
+      : [];
+  }
+  return LEGACY_OUTPUT_FIELDS.filter((field) => {
+    const supplied = value[field] ?? form[field];
+    if (field === 'mode') return typeof supplied === 'string' && STUDIO_MODES.includes(supplied as StudioMode);
+    if (field === 'modelType')
+      return typeof supplied === 'string' && STUDIO_MODEL_TYPES.includes(supplied as StudioModelType);
+    return typeof supplied === 'number' && Number.isFinite(supplied);
+  });
+}
+
 export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
   if (!isRecord(value)) return undefined;
   const id = stringValue(value.id);
@@ -406,10 +436,14 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
   if (!id || !url) return undefined;
 
   const registeredBlockRun = blockOutputRunFormV2(value);
-  const mode = registeredBlockRun?.form.mode ?? stringUnionValue(value.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode);
+  const originalForm = registeredBlockRun?.form ?? (isRecord(value.formSnapshot) ? value.formSnapshot : {});
+  const recordedFields = legacyRecordedFields(value, originalForm);
+  const mode =
+    registeredBlockRun?.form.mode ??
+    stringUnionValue(value.mode ?? originalForm.mode, STUDIO_MODES, DEFAULT_STUDIO_FORM.mode);
   const modelType =
     registeredBlockRun?.form.modelType ??
-    stringUnionValue(value.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType);
+    stringUnionValue(value.modelType ?? originalForm.modelType, STUDIO_MODEL_TYPES, DEFAULT_STUDIO_FORM.modelType);
   const profile = STUDIO_MODEL_PROFILES[modelType];
   const formSnapshot = registeredBlockRun?.form ?? coerceStudioFormState(value.formSnapshot);
   const settings = registeredBlockRun ? formSnapshot : value;
@@ -417,17 +451,20 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
   return applyResolvedExecutionInputs(
     {
       id,
+      legacyRecordedFields: recordedFields,
       clientRunId: optionalString(value.clientRunId),
       runInputHash: optionalString(value.runInputHash),
       workflowTabId: optionalNullableString(value.workflowTabId),
       attemptIndex: optionalNumber(value.attemptIndex),
       nodeId: stringValue(value.nodeId, 'studio-output'),
       fieldKey: stringValue(value.fieldKey, 'output'),
-      value: safeCloneJson(value.value ?? url),
+      value: safeCloneJson(value.value === undefined ? url : value.value),
       url,
       mode,
       modelType,
-      modelLabel: registeredBlockRun ? profile.label : stringValue(value.modelLabel, profile.label),
+      modelLabel: registeredBlockRun
+        ? profile.label
+        : stringValue(value.modelLabel, recordedFields.includes('modelType') ? profile.label : 'Model not captured'),
       repo: registeredBlockRun?.form.modelRepo ?? stringValue(value.repo, profile.defaultRepo),
       templateId: coerceStudioTemplateId(value.templateId),
       templateLabel: optionalString(value.templateLabel),
@@ -458,9 +495,13 @@ export function coerceStudioOutput(value: unknown): StudioOutput | undefined {
       mediaCollectionHash: optionalString(value.mediaCollectionHash),
       mediaItems: coerceStudioOutputMediaItems(value.mediaItems),
       templateLockHash: optionalString(value.templateLockHash),
-      promptSettingsHash: optionalString(value.promptSettingsHash),
+      promptSettingsHash: formSnapshot.weightFormat === null ? undefined : optionalString(value.promptSettingsHash),
       exactTemplateCompatible:
-        typeof value.exactTemplateCompatible === 'boolean' ? value.exactTemplateCompatible : undefined,
+        formSnapshot.weightFormat === null
+          ? false
+          : typeof value.exactTemplateCompatible === 'boolean'
+            ? value.exactTemplateCompatible
+            : undefined,
       variationGroupId: optionalString(value.variationGroupId),
       variationLabel: optionalString(value.variationLabel),
       provenance: safeCloneJson(value.provenance) as StudioOutput['provenance'],

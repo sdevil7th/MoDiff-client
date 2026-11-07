@@ -29,7 +29,7 @@ test('compatibility UI keeps local actions and has no hosted inference path', ()
   assert.doesNotMatch(websocketHandler, /Hugging Face remote inference/);
 });
 
-test('official Hugging Face runtimes remain backend-only and explicitly optional', () => {
+test('core Hugging Face runtimes are installed in the backend and discovery never installs packages', () => {
   const packageManifest = JSON.parse(source('package.json'));
   const browserDependencies = {
     ...(packageManifest.dependencies ?? {}),
@@ -40,8 +40,9 @@ test('official Hugging Face runtimes remain backend-only and explicitly optional
 
   const agentPolicy = source('AGENTS.md');
   assert.match(agentPolicy, /official libraries maintained and published by Hugging Face/);
-  assert.match(agentPolicy, /Transformers is an optional backend runtime/);
-  assert.match(agentPolicy, /Browsing or opening a\s+template[\s\S]*must never install it/);
+  assert.match(agentPolicy, /Transformers and PEFT are required backend dependencies/);
+  assert.match(agentPolicy, /Browsing templates, discovery, and Auto planning must\s+never install packages/);
+  assert.match(agentPolicy, /base runtime without a separate install\/activate flow/);
 });
 
 test('optional runtime actions stay generic, explicit, and backend-qualified', () => {
@@ -64,20 +65,36 @@ test('optional runtime actions stay generic, explicit, and backend-qualified', (
   assert.doesNotMatch(e2eHooks, /e2eOptionalRuntime(?:OverlayIsActive|IsSatisfied)/);
 });
 
-test('frontend workflow generation has no library-specific model driver', () => {
+test('frontend workflow generation has no library-specific model driver', async () => {
   const controlledWorkflows = source('src/studio/controlledWorkflows.ts');
   const controlledContracts = source('src/studio/controlledWorkflowContracts.ts');
+  const operationWorkflows = source('src/studio/templateOperationWorkflow.ts');
   assert.match(controlledContracts, /qualityVideoShots: 'modules\.WorkflowControl\.AuthorShotList'/);
-  assert.match(
-    controlledWorkflows,
-    /setParamIfPresent\(nodeId, \['revision'\], adapter\.model\.revision \?\? ''\)/,
-    'generic adapter graph construction must forward and clear the backend-owned immutable revision field',
-  );
-  assert.match(
-    controlledWorkflows,
-    /setParamIfPresent\(nodeId, \['expected_sha256'\], adapter\.model\.sha256 \?\? ''\)/,
-    'generic adapter graph construction must forward and clear the backend-owned content digest field',
-  );
+  assert.match(controlledWorkflows, /loraWorkflowFieldValues\(adapter, index\)/);
+  assert.match(operationWorkflows, /loraWorkflowFieldValues\(adapter, index\)/);
+
+  const { createServer } = await import('vite');
+  const server = await createServer({
+    configFile: false,
+    logLevel: 'silent',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+    appType: 'custom',
+  });
+  try {
+    const { loraWorkflowFieldValues } = await server.ssrLoadModule('/src/studio/controlledWorkflowValues.ts');
+    const model = { source: 'hub', value: 'owner/adapter', revision: 'a'.repeat(40), sha256: 'b'.repeat(64) };
+    const fields = (adapter) =>
+      Object.fromEntries(loraWorkflowFieldValues({ model: adapter }, 0).map(({ fields, value }) => [fields[0], value]));
+    const pinned = fields(model);
+    assert.equal(pinned.revision, model.revision);
+    assert.equal(pinned.expected_sha256, model.sha256);
+    const unpinned = fields({ source: 'hub', value: 'owner/replacement' });
+    assert.equal(unpinned.revision, '', 'replacement must clear the previous immutable revision');
+    assert.equal(unpinned.expected_sha256, '', 'replacement must clear the previous content digest');
+  } finally {
+    await server.close();
+  }
 
   for (const path of [
     'src/studio/controlledWorkflows.ts',

@@ -1,0 +1,3271 @@
+{
+  "proofScope": "Actual constructor-trapped metadata producer capture only. Private profile selection was overridden only in the fixture harness after normal refusal; this fixture grants no endpoint admission, execution readiness, model or hardware qualification.",
+  "selection": {
+    "pipelineClass": "Flux3DistilledModularPipeline",
+    "task": "text_to_image",
+    "executionProfileId": "flux3-klein:modular",
+    "authoringRecipeId": "flux3-klein:text-to-image:prompt-preview-authoring:v1"
+  },
+  "response": {
+    "schemaVersion": 1,
+    "pipelineClass": "Flux3DistilledModularPipeline",
+    "task": "text_to_image",
+    "workflowId": "text2image",
+    "nodes": [
+      {
+        "operation": {
+          "pipelineClass": "Flux3DistilledModularPipeline",
+          "task": "text_to_image",
+          "operationId": "diffusion.load_models",
+          "nodeKey": "modules.ModularDiffusers.ModelsLoader",
+          "nodeType": "loader",
+          "blockName": null,
+          "decomposition": "loader",
+          "support": "declared",
+          "ports": [
+            {
+              "name": "model_type",
+              "semanticName": "model_type",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "repo_id",
+              "semanticName": "repo_id",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "reviewed_variant",
+              "semanticName": "reviewed_variant",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "device",
+              "semanticName": "device",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "attention_backend",
+              "semanticName": "attention_backend",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "vae_slicing",
+              "semanticName": "vae_slicing",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["boolean"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "vae_tiling",
+              "semanticName": "vae_tiling",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["boolean"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "inpaint_compatibility",
+              "semanticName": "inpaint_compatibility",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "trust_remote_code",
+              "semanticName": "trust_remote_code",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["boolean"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "revision",
+              "semanticName": "revision",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "workflow_id",
+              "semanticName": "workflow_id",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "modiff_pipeline_identity",
+              "semanticName": "modiff_pipeline_identity",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["object"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "opaque",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "auto_offload",
+              "semanticName": "auto_offload",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["boolean"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "offload_mode",
+              "semanticName": "offload_mode",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "weight_loading_mode",
+              "semanticName": "weight_loading_mode",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "weight_format",
+              "semanticName": "weight_format",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "unet",
+              "semanticName": "unet",
+              "direction": "input",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "transformer",
+                    "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "vae",
+              "semanticName": "vae",
+              "direction": "input",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "vae",
+                    "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "controlnet",
+              "semanticName": "controlnet",
+              "direction": "input",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": []
+              }
+            },
+            {
+              "name": "lora_list",
+              "semanticName": "lora_list",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["custom_lora"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "opaque",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "text_encoders",
+              "semanticName": "text_encoders",
+              "direction": "output",
+              "roles": ["component"],
+              "types": ["diffusers_auto_models"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "text_encoder",
+                    "type": "transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLForConditionalGeneration"
+                  },
+                  {
+                    "name": "tokenizer",
+                    "type": "transformers.models.auto.processing_auto.AutoProcessor"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "unet_out",
+              "semanticName": "unet_out",
+              "direction": "output",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "transformer",
+                    "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "vae_out",
+              "semanticName": "vae_out",
+              "direction": "output",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "vae",
+                    "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "scheduler",
+              "semanticName": "scheduler",
+              "direction": "output",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "scheduler",
+                    "type": "diffusers.schedulers.scheduling_flow_match_euler_discrete.FlowMatchEulerDiscreteScheduler"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "image_encoder",
+              "semanticName": "image_encoder",
+              "direction": "output",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": false,
+              "hidden": true,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": []
+              }
+            },
+            {
+              "name": "pipeline_components",
+              "semanticName": "pipeline_components",
+              "direction": "output",
+              "roles": ["component"],
+              "types": ["diffusers_modular_pipeline_components"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "image_processor",
+                    "type": "diffusers.modular_pipelines.flux3.image_processor.Flux3ImageProcessor"
+                  },
+                  {
+                    "name": "scheduler",
+                    "type": "diffusers.schedulers.scheduling_flow_match_euler_discrete.FlowMatchEulerDiscreteScheduler"
+                  },
+                  {
+                    "name": "text_encoder",
+                    "type": "transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLForConditionalGeneration"
+                  },
+                  {
+                    "name": "tokenizer",
+                    "type": "transformers.models.auto.processing_auto.AutoProcessor"
+                  },
+                  {
+                    "name": "transformer",
+                    "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+                  },
+                  {
+                    "name": "vae",
+                    "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "quant_config",
+              "semanticName": "quant_config",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["quant_config"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "opaque",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            }
+          ],
+          "workflowId": "text2image",
+          "binding": {
+            "values": {
+              "model_type": "Flux3DistilledModularPipeline"
+            },
+            "pipelineClass": "Flux3DistilledModularPipeline"
+          }
+        },
+        "node": {
+          "module": "modules.ModularDiffusers",
+          "action": "ModelsLoader",
+          "type": "custom",
+          "label": "Load Models",
+          "category": "loader",
+          "description": "",
+          "resizable": true,
+          "skipParamsCheck": true,
+          "style": {},
+          "params": {
+            "model_type": {
+              "label": "Pipeline Type",
+              "type": "string",
+              "options": {
+                "": {
+                  "schemaVersion": 1,
+                  "value": "",
+                  "label": "",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "DummyCustomPipeline": {
+                  "schemaVersion": 1,
+                  "value": "DummyCustomPipeline",
+                  "label": "Custom",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "StableDiffusionXLModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "StableDiffusionXLModularPipeline",
+                  "label": "Stable Diffusion XL",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "QwenImageModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "QwenImageModularPipeline",
+                  "label": "Qwen-Image-2512",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "QwenImageEditModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "QwenImageEditModularPipeline",
+                  "label": "Qwen-Image-Edit",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "QwenImageEditPlusModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "QwenImageEditPlusModularPipeline",
+                  "label": "Qwen-Image-Edit-2511",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "QwenImageLayeredModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "QwenImageLayeredModularPipeline",
+                  "label": "Qwen-Image-Layered",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "FluxModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "FluxModularPipeline",
+                  "label": "Flux",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "FluxKontextModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "FluxKontextModularPipeline",
+                  "label": "Flux Kontext",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Flux2ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Flux2ModularPipeline",
+                  "label": "Flux 2",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Flux2KleinModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Flux2KleinModularPipeline",
+                  "label": "Flux 2 Klein Distilled",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Flux2KleinBaseModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Flux2KleinBaseModularPipeline",
+                  "label": "Flux 2 Klein Base",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Flux3ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Flux3ModularPipeline",
+                  "label": "FLUX 3 Image Klein Base",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Flux3DistilledModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Flux3DistilledModularPipeline",
+                  "label": "FLUX 3 Image Klein",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "ZImageModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "ZImageModularPipeline",
+                  "label": "Z-Image",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "WanModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "WanModularPipeline",
+                  "label": "WAN2 T2V",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "WanImage2VideoModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "WanImage2VideoModularPipeline",
+                  "label": "WAN2 I2V",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "MiniMaxMusic3ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "MiniMaxMusic3ModularPipeline",
+                  "label": "MiniMax Music 3",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "MiniMaxH3ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "MiniMaxH3ModularPipeline",
+                  "label": "MiniMax H3",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "AnimaModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "AnimaModularPipeline",
+                  "label": "Anima",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "ErnieImageModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "ErnieImageModularPipeline",
+                  "label": "ERNIE Image Turbo",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "HeliosModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "HeliosModularPipeline",
+                  "label": "Helios",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "HeliosPyramidModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "HeliosPyramidModularPipeline",
+                  "label": "Helios Pyramid",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "HeliosPyramidDistilledModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "HeliosPyramidDistilledModularPipeline",
+                  "label": "Helios Pyramid Distilled",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "HunyuanVideo15ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "HunyuanVideo15ModularPipeline",
+                  "label": "HunyuanVideo 1.5",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "WanAnimate2ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "WanAnimate2ModularPipeline",
+                  "label": "Wan Animate 2",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "WanAnimate2DistilledModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "WanAnimate2DistilledModularPipeline",
+                  "label": "Wan Animate 2 Distilled",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Cosmos3OmniModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Cosmos3OmniModularPipeline",
+                  "label": "Cosmos 3 Nano",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Cosmos3DistilledModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Cosmos3DistilledModularPipeline",
+                  "label": "Cosmos 3 Distilled",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Ideogram4ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Ideogram4ModularPipeline",
+                  "label": "Ideogram 4 (Contract only)",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Krea2ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Krea2ModularPipeline",
+                  "label": "Krea 2 (Contract only)",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "Krea2TurboModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "Krea2TurboModularPipeline",
+                  "label": "Krea 2 Turbo (Contract only)",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "StableDiffusion3ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "StableDiffusion3ModularPipeline",
+                  "label": "Stable Diffusion 3 (Contract only)",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "LTX25ModularPipeline": {
+                  "schemaVersion": 1,
+                  "value": "LTX25ModularPipeline",
+                  "label": "LTX-2.5 (Contract only)",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              },
+              "onChange": "set_filters",
+              "description": "Selects the Modular Diffusers pipeline class. This filters compatible checkpoints and publishes the component contract used by connected nodes; it is not the model checkpoint itself.",
+              "value": "Flux3DistilledModularPipeline"
+            },
+            "repo_id": {
+              "label": "Repository ID",
+              "display": "modelselect",
+              "type": "string",
+              "value": {
+                "source": "hub",
+                "value": "black-forest-labs/flux-3-image-klein"
+              },
+              "fieldOptions": {
+                "noValidation": true,
+                "sources": ["hub", "local"],
+                "filter": {
+                  "hub": {
+                    "className": ["Flux3DistilledModularPipeline"]
+                  }
+                }
+              },
+              "onChange": "refresh_pipeline_identity"
+            },
+            "reviewed_variant": {
+              "label": "Model",
+              "type": "string",
+              "value": "black-forest-labs/flux-3-image-klein",
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "black-forest-labs/flux-3-image-klein",
+                  "label": "black-forest-labs/flux-3-image-klein",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "hidden": true,
+              "fieldOptions": {
+                "controlTier": "essential"
+              },
+              "description": "Select an immutable, reviewed checkpoint for this exact Modular Diffusers pipeline family. Changing it does not replace the workflow graph or reset its parameters."
+            },
+            "dtype": {
+              "label": "dtype",
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "float32",
+                  "label": "float32",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "float16",
+                  "label": "float16",
+                  "compatibility": "incompatible",
+                  "availability": "unavailable",
+                  "installationState": "unavailable",
+                  "disabledReason": "float16 is not supported by the active runtime."
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "bfloat16",
+                  "label": "bfloat16",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "value": "bfloat16"
+            },
+            "device": {
+              "label": "Device",
+              "type": "string",
+              "value": "cpu:0",
+              "options": {
+                "cpu:0": {
+                  "schemaVersion": 1,
+                  "value": "cpu:0",
+                  "label": "cpu:0",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                "cpu": {
+                  "schemaVersion": 1,
+                  "value": "cpu",
+                  "label": "cpu",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              }
+            },
+            "attention_backend": {
+              "label": "Attention Backend",
+              "type": "string",
+              "default": "inherit",
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "inherit",
+                  "label": "inherit",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "auto",
+                  "label": "auto",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "native",
+                  "label": "native",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "_native_math",
+                  "label": "_native_math",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "description": "Inherit preserves existing native component defaults; explicit choices use the ordinary Diffusers attention API."
+            },
+            "vae_slicing": {
+              "label": "VAE Slicing",
+              "type": "boolean",
+              "default": null,
+              "hidden": true,
+              "description": "An unset policy preserves the native VAE configuration; templates may bind an explicit boolean."
+            },
+            "vae_tiling": {
+              "label": "VAE Tiling",
+              "type": "boolean",
+              "default": null,
+              "hidden": true,
+              "description": "An unset policy preserves the native VAE configuration; templates may bind an explicit boolean."
+            },
+            "inpaint_compatibility": {
+              "label": "Inpaint Compatibility",
+              "type": "string",
+              "default": "native",
+              "hidden": true,
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "native",
+                  "label": "native",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "whole_v1",
+                  "label": "whole_v1",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "description": "Technical compatibility selection for the reviewed Qwen Edit inpainting candidate; existing nodes retain native policy."
+            },
+            "trust_remote_code": {
+              "label": "Trust Remote Code",
+              "type": "boolean",
+              "value": false,
+              "description": "Repository code execution is disabled; keep this off for contract preview.",
+              "onChange": "refresh_pipeline_identity"
+            },
+            "revision": {
+              "label": "Revision",
+              "type": "string",
+              "value": "8454017f9ebaada30c998fccd9f67a80c7580f68",
+              "description": "Required exact 40-character commit hash for Hub custom contracts.",
+              "onChange": "refresh_pipeline_identity"
+            },
+            "workflow_id": {
+              "label": "Reviewed Workflow",
+              "type": "string",
+              "value": "",
+              "hidden": true,
+              "description": "Exact reviewed component partition selected by a first-party Cluster Node."
+            },
+            "modiff_pipeline_identity": {
+              "label": "Custom Pipeline Identity",
+              "type": "object",
+              "value": null,
+              "hidden": true
+            },
+            "refresh_pipeline_identity_button": {
+              "label": "Review and Refresh Custom Contract",
+              "display": "ui_button",
+              "value": false,
+              "hidden": true,
+              "onChange": "refresh_pipeline_identity"
+            },
+            "auto_offload": {
+              "label": "Enable Auto Offload",
+              "type": "boolean",
+              "value": true
+            },
+            "offload_mode": {
+              "label": "Offload Mode",
+              "type": "string",
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "auto_cpu",
+                  "label": "auto_cpu",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "none",
+                  "label": "none",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "model_cpu",
+                  "label": "model_cpu",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "group_cpu",
+                  "label": "group_cpu",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "group_disk",
+                  "label": "group_disk",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "value": "model_cpu",
+              "default": "model_cpu"
+            },
+            "weight_loading_mode": {
+              "label": "Weight Loading",
+              "type": "string",
+              "default": "cpu",
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "cpu",
+                  "label": "cpu",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "cuda",
+                  "label": "cuda",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "fieldOptions": {
+                "controlTier": "advanced"
+              },
+              "description": "Load weights on CPU or CUDA before disk offload. CUDA loading needs room for a complete component and is available only for supported models."
+            },
+            "weight_format": {
+              "label": "Weight Format",
+              "type": "string",
+              "default": "native",
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "native",
+                  "label": "native",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "hidden": true,
+              "fieldOptions": {
+                "controlTier": "advanced"
+              },
+              "description": "Select a backend-declared immutable component format. Missing reviewed files must be installed through Model Manager."
+            },
+            "unet": {
+              "label": "Denoise Model",
+              "display": "input",
+              "type": "diffusers_auto_model",
+              "hidden": false
+            },
+            "vae": {
+              "label": "VAE",
+              "display": "input",
+              "type": "diffusers_auto_model",
+              "hidden": false
+            },
+            "controlnet": {
+              "label": "ControlNet",
+              "display": "input",
+              "type": "diffusers_auto_model",
+              "hidden": true
+            },
+            "lora_list": {
+              "label": "Lora",
+              "display": "input",
+              "type": "custom_lora"
+            },
+            "text_encoders": {
+              "label": "Text Encoders",
+              "display": "output",
+              "type": "diffusers_auto_models",
+              "signal": {
+                "direction": "output",
+                "origin": "modiff_pipeline_identity",
+                "value": "Flux3DistilledModularPipeline"
+              },
+              "connectionRole": "text_encoders",
+              "hidden": false
+            },
+            "unet_out": {
+              "label": "Denoise Model",
+              "display": "output",
+              "type": "diffusers_auto_model",
+              "signal": {
+                "direction": "output",
+                "origin": "modiff_pipeline_identity",
+                "value": "Flux3DistilledModularPipeline"
+              },
+              "connectionRole": "denoiser",
+              "hidden": false
+            },
+            "vae_out": {
+              "label": "VAE",
+              "display": "output",
+              "type": "diffusers_auto_model",
+              "signal": {
+                "direction": "output",
+                "origin": "modiff_pipeline_identity",
+                "value": "Flux3DistilledModularPipeline"
+              },
+              "connectionRole": "vae",
+              "hidden": false
+            },
+            "scheduler": {
+              "label": "Scheduler",
+              "display": "output",
+              "type": "diffusers_auto_model",
+              "signal": {
+                "direction": "output",
+                "origin": "modiff_pipeline_identity",
+                "value": "Flux3DistilledModularPipeline"
+              },
+              "connectionRole": "scheduler",
+              "hidden": false
+            },
+            "image_encoder": {
+              "label": "Image Encoder",
+              "display": "output",
+              "type": "diffusers_auto_model",
+              "signal": {
+                "direction": "output",
+                "origin": "modiff_pipeline_identity",
+                "value": "Flux3DistilledModularPipeline"
+              },
+              "connectionRole": "image_encoder",
+              "hidden": true
+            },
+            "pipeline_components": {
+              "label": "Pipeline Components",
+              "display": "output",
+              "type": "diffusers_modular_pipeline_components",
+              "signal": {
+                "direction": "output",
+                "origin": "modiff_pipeline_identity",
+                "value": "Flux3DistilledModularPipeline"
+              },
+              "connectionRole": "pipeline_components",
+              "hidden": false
+            },
+            "quant_config": {
+              "label": "Quant Config",
+              "display": "input",
+              "type": "quant_config"
+            }
+          },
+          "time": [0, 0, 0],
+          "memory": [0, 0, 0],
+          "cache": false
+        }
+      },
+      {
+        "operation": {
+          "pipelineClass": "Flux3DistilledModularPipeline",
+          "task": "text_to_image",
+          "operationId": "diffusion.encode_prompt",
+          "nodeKey": "modules.ModularDiffusers.EncodePrompt",
+          "nodeType": "text_encoder",
+          "blockName": "text_encoder",
+          "decomposition": "block",
+          "support": "declared",
+          "ports": [
+            {
+              "name": "prompt",
+              "semanticName": "prompt",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": true,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "max_sequence_length",
+              "semanticName": "max_sequence_length",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["int"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "text_encoder_out_layers",
+              "semanticName": "text_encoder_out_layers",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["int"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "text_encoders",
+              "semanticName": "text_encoders",
+              "direction": "input",
+              "roles": ["component"],
+              "types": ["diffusers_auto_models"],
+              "required": true,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "text_encoder",
+                    "type": "transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLForConditionalGeneration"
+                  },
+                  {
+                    "name": "tokenizer",
+                    "type": "transformers.models.auto.processing_auto.AutoProcessor"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "embeddings",
+              "semanticName": "embeddings",
+              "direction": "output",
+              "roles": ["value"],
+              "types": ["embeddings"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "conditioning",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": []
+              }
+            },
+            {
+              "name": "doc",
+              "semanticName": "doc",
+              "direction": "output",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "prompt_input",
+              "semanticName": "prompt",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            }
+          ],
+          "workflowId": "text2image",
+          "binding": {
+            "values": {},
+            "pipelineClass": "Flux3DistilledModularPipeline"
+          }
+        },
+        "node": {
+          "module": "modules.ModularDiffusers",
+          "action": "EncodePrompt",
+          "type": "custom",
+          "label": "Encode Prompt",
+          "category": "embedding",
+          "description": "",
+          "resizable": true,
+          "skipParamsCheck": true,
+          "style": {},
+          "params": {
+            "text_encoders": {
+              "label": "Text Encoders *",
+              "required": true,
+              "type": "diffusers_auto_models",
+              "display": "input",
+              "onSignal": "update_node",
+              "signalCompatibility": {
+                "role": "text_encoders"
+              }
+            },
+            "prompt_input": {
+              "label": "Prompt Input",
+              "type": "string",
+              "display": "input",
+              "description": "Optional connected prompt. When connected, this replaces the inline Prompt value."
+            },
+            "guider": {
+              "label": "Guider",
+              "type": "custom_guider",
+              "display": "input",
+              "hidden": true,
+              "description": "Shared Diffusers guidance used by prompt encoding and denoising when the selected pipeline supports it."
+            },
+            "layout_reference_summary": {
+              "label": "Bound Reference Summary",
+              "type": "string",
+              "display": "output",
+              "hidden": true,
+              "description": "Display-only ordered reference identities and actual preprocessing sizes from the current encoder cache."
+            },
+            "prompt": {
+              "label": "Prompt *",
+              "type": "string",
+              "display": "textarea",
+              "default": "",
+              "value": "A red ceramic teapot on a wooden table beside a window, soft morning light, detailed photograph.",
+              "fieldOptions": {
+                "exampleAttribution": "MoDiff task example"
+              }
+            },
+            "max_sequence_length": {
+              "label": "Maximum Sequence Length",
+              "type": "int",
+              "default": 8192,
+              "min": 1,
+              "max": 8192,
+              "step": 1
+            },
+            "text_encoder_out_layers": {
+              "label": "Text Encoder Layers",
+              "type": "int",
+              "display": "select",
+              "default": [4, 8, 12, 16, 20, 24, 28, 32],
+              "options": [
+                {
+                  "schemaVersion": 1,
+                  "value": "0",
+                  "label": "0",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "1",
+                  "label": "1",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "2",
+                  "label": "2",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "3",
+                  "label": "3",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "4",
+                  "label": "4",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "5",
+                  "label": "5",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "6",
+                  "label": "6",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "7",
+                  "label": "7",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "8",
+                  "label": "8",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "9",
+                  "label": "9",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "10",
+                  "label": "10",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "11",
+                  "label": "11",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "12",
+                  "label": "12",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "13",
+                  "label": "13",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "14",
+                  "label": "14",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "15",
+                  "label": "15",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "16",
+                  "label": "16",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "17",
+                  "label": "17",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "18",
+                  "label": "18",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "19",
+                  "label": "19",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "20",
+                  "label": "20",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "21",
+                  "label": "21",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "22",
+                  "label": "22",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "23",
+                  "label": "23",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "24",
+                  "label": "24",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "25",
+                  "label": "25",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "26",
+                  "label": "26",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "27",
+                  "label": "27",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "28",
+                  "label": "28",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "29",
+                  "label": "29",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "30",
+                  "label": "30",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "31",
+                  "label": "31",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                },
+                {
+                  "schemaVersion": 1,
+                  "value": "32",
+                  "label": "32",
+                  "compatibility": "compatible",
+                  "availability": "installed",
+                  "installationState": "installed"
+                }
+              ],
+              "fieldOptions": {
+                "multiple": true,
+                "tupleValue": true,
+                "tupleLength": 8
+              }
+            },
+            "embeddings": {
+              "label": "Text Embeddings",
+              "type": "embeddings",
+              "display": "output"
+            },
+            "doc": {
+              "label": "Doc",
+              "type": "string",
+              "display": "output"
+            },
+            "layout_conditioning": {
+              "label": "Layout Conditioning",
+              "type": "layout_conditioning",
+              "display": "layout",
+              "fieldOptions": {
+                "layoutConditioning": {
+                  "schemaVersion": 2,
+                  "sourceRegions": false,
+                  "supportsBoundSourceRegions": true
+                }
+              },
+              "default": null
+            },
+            "reference_binding": {
+              "label": "Reference Binding",
+              "type": "reference_conditioning",
+              "display": "input",
+              "fieldOptions": {
+                "referenceBinding": {
+                  "schemaVersion": 1,
+                  "maxReferences": 10
+                }
+              },
+              "default": null
+            }
+          },
+          "time": [0, 0, 0],
+          "memory": [0, 0, 0],
+          "cache": false
+        }
+      },
+      {
+        "operation": {
+          "pipelineClass": "Flux3DistilledModularPipeline",
+          "task": "text_to_image",
+          "operationId": "diffusion.denoise",
+          "nodeKey": "modules.ModularDiffusers.Denoise",
+          "nodeType": "denoise",
+          "blockName": "denoise",
+          "decomposition": "block",
+          "support": "declared",
+          "ports": [
+            {
+              "name": "embeddings",
+              "semanticName": "embeddings",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["embeddings"],
+              "required": true,
+              "hidden": false,
+              "semantics": {
+                "kind": "conditioning",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": []
+              }
+            },
+            {
+              "name": "width",
+              "semanticName": "width",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["int"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "height",
+              "semanticName": "height",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["int"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "seed",
+              "semanticName": "seed",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["int"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "num_inference_steps",
+              "semanticName": "num_inference_steps",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["int"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "num_images_per_prompt",
+              "semanticName": "num_images_per_prompt",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["int"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "image_cond_latents",
+              "semanticName": "image_cond_latents",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["latents"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "latents",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": []
+              }
+            },
+            {
+              "name": "unet",
+              "semanticName": "unet",
+              "direction": "input",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": true,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "transformer",
+                    "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "scheduler",
+              "semanticName": "scheduler",
+              "direction": "input",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": true,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "scheduler",
+                    "type": "diffusers.schedulers.scheduling_flow_match_euler_discrete.FlowMatchEulerDiscreteScheduler"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "latents",
+              "semanticName": "latents",
+              "direction": "output",
+              "roles": ["value"],
+              "types": ["latents"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "latents",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": []
+              }
+            },
+            {
+              "name": "doc",
+              "semanticName": "doc",
+              "direction": "output",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            }
+          ],
+          "workflowId": "text2image",
+          "binding": {
+            "values": {},
+            "pipelineClass": "Flux3DistilledModularPipeline"
+          }
+        },
+        "node": {
+          "module": "modules.ModularDiffusers",
+          "action": "Denoise",
+          "type": "custom",
+          "label": "Denoise",
+          "category": "sampler",
+          "description": "",
+          "resizable": true,
+          "skipParamsCheck": true,
+          "style": {},
+          "params": {
+            "unet": {
+              "label": "Denoise Model *",
+              "display": "input",
+              "type": "diffusers_auto_model",
+              "required": true,
+              "onSignal": [
+                "update_node",
+                {
+                  "action": "signal",
+                  "target": "guider"
+                },
+                {
+                  "action": "signal",
+                  "target": "controlnet_bundle"
+                }
+              ],
+              "signalCompatibility": {
+                "role": "denoiser"
+              }
+            },
+            "embeddings": {
+              "label": "Text Embeddings *",
+              "type": "embeddings",
+              "display": "input"
+            },
+            "width": {
+              "label": "Width",
+              "type": "int",
+              "default": 1024,
+              "min": 64,
+              "step": 16,
+              "value": 1024
+            },
+            "height": {
+              "label": "Height",
+              "type": "int",
+              "default": 1024,
+              "min": 64,
+              "step": 16,
+              "value": 1024
+            },
+            "seed": {
+              "label": "Seed",
+              "type": "int",
+              "display": "random",
+              "default": 0,
+              "min": 0,
+              "max": 4294967295
+            },
+            "num_inference_steps": {
+              "label": "Steps",
+              "type": "int",
+              "display": "slider",
+              "default": 16,
+              "min": 1,
+              "max": 100,
+              "value": 16
+            },
+            "num_images_per_prompt": {
+              "label": "Images Per Prompt",
+              "type": "int",
+              "default": 1,
+              "min": 1,
+              "max": 8,
+              "step": 1
+            },
+            "image_cond_latents": {
+              "label": "Reference Latents",
+              "type": "latents",
+              "display": "input"
+            },
+            "scheduler": {
+              "label": "Scheduler *",
+              "type": "diffusers_auto_model",
+              "display": "input",
+              "signalCompatibility": {
+                "role": "scheduler"
+              }
+            },
+            "latents": {
+              "label": "Latents",
+              "type": "latents",
+              "display": "output"
+            },
+            "doc": {
+              "label": "Doc",
+              "type": "string",
+              "display": "output"
+            },
+            "reference_binding": {
+              "label": "Reference Binding",
+              "type": "reference_conditioning",
+              "display": "input",
+              "fieldOptions": {
+                "referenceBinding": {
+                  "schemaVersion": 1,
+                  "maxReferences": 10
+                }
+              },
+              "default": null
+            }
+          },
+          "time": [0, 0, 0],
+          "memory": [0, 0, 0],
+          "cache": false
+        }
+      },
+      {
+        "operation": {
+          "pipelineClass": "Flux3DistilledModularPipeline",
+          "task": "text_to_image",
+          "operationId": "diffusion.decode_latents",
+          "nodeKey": "modules.ModularDiffusers.DecodeLatents",
+          "nodeType": "decoder",
+          "blockName": "decode",
+          "decomposition": "block",
+          "support": "declared",
+          "ports": [
+            {
+              "name": "latents",
+              "semanticName": "latents",
+              "direction": "input",
+              "roles": ["value"],
+              "types": ["latents"],
+              "required": true,
+              "hidden": false,
+              "semantics": {
+                "kind": "latents",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": []
+              }
+            },
+            {
+              "name": "vae",
+              "semanticName": "vae",
+              "direction": "input",
+              "roles": ["component"],
+              "types": ["diffusers_auto_model"],
+              "required": true,
+              "hidden": false,
+              "semantics": {
+                "kind": "component",
+                "scope": "Flux3DistilledModularPipeline",
+                "state": null,
+                "owner": "same_loader",
+                "members": [
+                  {
+                    "name": "vae",
+                    "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "images",
+              "semanticName": "images",
+              "direction": "output",
+              "roles": ["value"],
+              "types": ["image"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "media",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            },
+            {
+              "name": "doc",
+              "semanticName": "doc",
+              "direction": "output",
+              "roles": ["value"],
+              "types": ["string"],
+              "required": false,
+              "hidden": false,
+              "semantics": {
+                "kind": "value",
+                "scope": null,
+                "state": null,
+                "owner": "none",
+                "members": []
+              }
+            }
+          ],
+          "workflowId": "text2image",
+          "binding": {
+            "values": {},
+            "pipelineClass": "Flux3DistilledModularPipeline"
+          }
+        },
+        "node": {
+          "module": "modules.ModularDiffusers",
+          "action": "DecodeLatents",
+          "type": "custom",
+          "label": "Decode Latents",
+          "category": "sampler",
+          "description": "",
+          "resizable": true,
+          "skipParamsCheck": true,
+          "style": {},
+          "params": {
+            "vae": {
+              "label": "VAE *",
+              "display": "input",
+              "type": "diffusers_auto_model",
+              "onSignal": "update_node",
+              "signalCompatibility": {
+                "role": "vae"
+              }
+            },
+            "latents": {
+              "label": "Latents *",
+              "type": "latents",
+              "display": "input"
+            },
+            "images": {
+              "label": "Images",
+              "type": "image",
+              "display": "output"
+            },
+            "doc": {
+              "label": "Doc",
+              "type": "string",
+              "display": "output"
+            }
+          },
+          "time": [0, 0, 0],
+          "memory": [0, 0, 0],
+          "cache": false
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "diffusion.load_models",
+        "sourceHandle": "text_encoders",
+        "target": "diffusion.encode_prompt",
+        "targetHandle": "text_encoders"
+      },
+      {
+        "source": "diffusion.load_models",
+        "sourceHandle": "scheduler",
+        "target": "diffusion.denoise",
+        "targetHandle": "scheduler"
+      },
+      {
+        "source": "diffusion.load_models",
+        "sourceHandle": "unet_out",
+        "target": "diffusion.denoise",
+        "targetHandle": "unet"
+      },
+      {
+        "source": "diffusion.load_models",
+        "sourceHandle": "vae_out",
+        "target": "diffusion.decode_latents",
+        "targetHandle": "vae"
+      },
+      {
+        "source": "diffusion.encode_prompt",
+        "sourceHandle": "embeddings",
+        "target": "diffusion.denoise",
+        "targetHandle": "embeddings"
+      },
+      {
+        "source": "diffusion.denoise",
+        "sourceHandle": "latents",
+        "target": "diffusion.decode_latents",
+        "targetHandle": "latents"
+      }
+    ],
+    "requiredInputs": [
+      {
+        "operationId": "diffusion.encode_prompt",
+        "field": "prompt"
+      }
+    ],
+    "sharedInputs": [],
+    "upstreamBlocks": ["text_encoder", "denoise", "decode"],
+    "authoring": {
+      "schemaVersion": 1,
+      "canonicalizationVersion": 1,
+      "id": "flux3-klein:text-to-image:prompt-preview-authoring:v1",
+      "baseSpecId": "flux3-klein:modular:text-to-image:v1",
+      "baseSpecContentHash": "studio-spec-v1-6697a7f5",
+      "executionProfileIds": ["flux3-klein:modular"],
+      "roles": [
+        ["models", "modules.ModularDiffusers.ModelsLoader", -720, -80],
+        ["prompt", "modules.ModularDiffusers.EncodePrompt", -360, -240],
+        ["denoise", "modules.ModularDiffusers.Denoise", 80, -80],
+        ["decode", "modules.ModularDiffusers.DecodeLatents", 440, -80],
+        ["preview", "modules.Image.Preview", 800, -80]
+      ],
+      "edges": [
+        ["models", "text_encoders", "prompt", "text_encoders"],
+        ["models", "unet_out", "denoise", "unet"],
+        ["models", "scheduler", "denoise", "scheduler"],
+        ["models", "vae_out", "decode", "vae"],
+        ["prompt", "embeddings", "denoise", "embeddings"],
+        ["denoise", "latents", "decode", "latents"],
+        ["decode", "images", "preview", "image"]
+      ],
+      "bindings": [
+        ["models", "model_type", "pipelineClass"],
+        ["models", "repo_id", "artifact"],
+        ["models", "revision", "defaultRevision"],
+        ["models", "dtype", "dtype"],
+        ["models", "device", "device"],
+        ["models", "auto_offload", "autoOffload"],
+        ["models", "offload_mode", "offloadMode"],
+        ["models", "trust_remote_code", "false"],
+        ["prompt", "prompt", "prompt"],
+        ["denoise", "width", "width"],
+        ["denoise", "height", "height"],
+        ["denoise", "seed", "seed"],
+        ["denoise", "num_inference_steps", "steps"],
+        ["prompt", "max_sequence_length", "maxSequenceLength"],
+        ["models", "weight_format", "weightFormat"]
+      ],
+      "initialValues": [],
+      "ancillaryOperations": [
+        {
+          "schemaVersion": 1,
+          "id": "flux3-klein:text-to-image:prompt-preview-authoring:v1:preview",
+          "parent": {
+            "authoringRecipeId": "flux3-klein:text-to-image:prompt-preview-authoring:v1",
+            "baseSpecId": "flux3-klein:modular:text-to-image:v1",
+            "baseSpecContentHash": "studio-spec-v1-6697a7f5",
+            "executionProfileId": "flux3-klein:modular",
+            "pipelineClass": "Flux3DistilledModularPipeline",
+            "task": "text_to_image"
+          },
+          "executionPurpose": "explicit_preview",
+          "roles": [
+            ["provider", "modules.HuggingFaceTransformers.LoadImageTextToTextModel", -720, -400],
+            ["proposal", "modules.HuggingFaceTransformers.GenerateImageVideoText", -360, -400]
+          ],
+          "edges": [["provider", "model", "proposal", "model"]],
+          "bindings": {
+            "owner": {
+              "role": "prompt",
+              "promptField": "prompt",
+              "layoutField": "layout_conditioning",
+              "referenceSource": null
+            },
+            "request": {
+              "role": "proposal",
+              "promptField": "prompt",
+              "layoutField": "layout_conditioning",
+              "imagesField": "images"
+            },
+            "output": {
+              "role": "proposal",
+              "field": "proposal_summary"
+            }
+          },
+          "initialValues": [["proposal", "operation", "enhance_prompt"]],
+          "adapter": {
+            "id": "transformers-prompt-enhancement-v1",
+            "declarationSha256": "sha256:18a83a6eddaa2944ae13e80971a068346a72bb07fa0759cd1adbb2ccbb8226fc"
+          },
+          "sourceRegions": false,
+          "contentHash": "studio-ancillary-v1-73928438"
+        }
+      ],
+      "contentHash": "studio-authoring-v1-fc3527f1"
+    }
+  },
+  "operationContracts": [
+    {
+      "pipelineClass": "Flux3DistilledModularPipeline",
+      "task": "text_to_image",
+      "operationId": "diffusion.decode_latents",
+      "nodeKey": "modules.ModularDiffusers.DecodeLatents",
+      "nodeType": "decoder",
+      "blockName": "decode",
+      "decomposition": "block",
+      "support": "declared",
+      "ports": [
+        {
+          "name": "latents",
+          "semanticName": "latents",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["latents"],
+          "required": true,
+          "hidden": false,
+          "semantics": {
+            "kind": "latents",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": []
+          }
+        },
+        {
+          "name": "vae",
+          "semanticName": "vae",
+          "direction": "input",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": true,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "vae",
+                "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "images",
+          "semanticName": "images",
+          "direction": "output",
+          "roles": ["value"],
+          "types": ["image"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "media",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "doc",
+          "semanticName": "doc",
+          "direction": "output",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        }
+      ],
+      "workflowId": "text2image",
+      "binding": {
+        "values": {},
+        "pipelineClass": "Flux3DistilledModularPipeline"
+      }
+    },
+    {
+      "pipelineClass": "Flux3DistilledModularPipeline",
+      "task": "text_to_image",
+      "operationId": "diffusion.denoise",
+      "nodeKey": "modules.ModularDiffusers.Denoise",
+      "nodeType": "denoise",
+      "blockName": "denoise",
+      "decomposition": "block",
+      "support": "declared",
+      "ports": [
+        {
+          "name": "embeddings",
+          "semanticName": "embeddings",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["embeddings"],
+          "required": true,
+          "hidden": false,
+          "semantics": {
+            "kind": "conditioning",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": []
+          }
+        },
+        {
+          "name": "width",
+          "semanticName": "width",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["int"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "height",
+          "semanticName": "height",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["int"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "seed",
+          "semanticName": "seed",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["int"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "num_inference_steps",
+          "semanticName": "num_inference_steps",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["int"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "num_images_per_prompt",
+          "semanticName": "num_images_per_prompt",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["int"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "image_cond_latents",
+          "semanticName": "image_cond_latents",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["latents"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "latents",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": []
+          }
+        },
+        {
+          "name": "unet",
+          "semanticName": "unet",
+          "direction": "input",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": true,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "transformer",
+                "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "scheduler",
+          "semanticName": "scheduler",
+          "direction": "input",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": true,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "scheduler",
+                "type": "diffusers.schedulers.scheduling_flow_match_euler_discrete.FlowMatchEulerDiscreteScheduler"
+              }
+            ]
+          }
+        },
+        {
+          "name": "latents",
+          "semanticName": "latents",
+          "direction": "output",
+          "roles": ["value"],
+          "types": ["latents"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "latents",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": []
+          }
+        },
+        {
+          "name": "doc",
+          "semanticName": "doc",
+          "direction": "output",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        }
+      ],
+      "workflowId": "text2image",
+      "binding": {
+        "values": {},
+        "pipelineClass": "Flux3DistilledModularPipeline"
+      }
+    },
+    {
+      "pipelineClass": "Flux3DistilledModularPipeline",
+      "task": "text_to_image",
+      "operationId": "diffusion.encode_prompt",
+      "nodeKey": "modules.ModularDiffusers.EncodePrompt",
+      "nodeType": "text_encoder",
+      "blockName": "text_encoder",
+      "decomposition": "block",
+      "support": "declared",
+      "ports": [
+        {
+          "name": "prompt",
+          "semanticName": "prompt",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": true,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "max_sequence_length",
+          "semanticName": "max_sequence_length",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["int"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "text_encoder_out_layers",
+          "semanticName": "text_encoder_out_layers",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["int"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "text_encoders",
+          "semanticName": "text_encoders",
+          "direction": "input",
+          "roles": ["component"],
+          "types": ["diffusers_auto_models"],
+          "required": true,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "text_encoder",
+                "type": "transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLForConditionalGeneration"
+              },
+              {
+                "name": "tokenizer",
+                "type": "transformers.models.auto.processing_auto.AutoProcessor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "embeddings",
+          "semanticName": "embeddings",
+          "direction": "output",
+          "roles": ["value"],
+          "types": ["embeddings"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "conditioning",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": []
+          }
+        },
+        {
+          "name": "doc",
+          "semanticName": "doc",
+          "direction": "output",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "prompt_input",
+          "semanticName": "prompt",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        }
+      ],
+      "workflowId": "text2image",
+      "binding": {
+        "values": {},
+        "pipelineClass": "Flux3DistilledModularPipeline"
+      }
+    },
+    {
+      "pipelineClass": "Flux3DistilledModularPipeline",
+      "task": "text_to_image",
+      "operationId": "diffusion.load_models",
+      "nodeKey": "modules.ModularDiffusers.ModelsLoader",
+      "nodeType": "loader",
+      "blockName": null,
+      "decomposition": "loader",
+      "support": "declared",
+      "ports": [
+        {
+          "name": "model_type",
+          "semanticName": "model_type",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "repo_id",
+          "semanticName": "repo_id",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "reviewed_variant",
+          "semanticName": "reviewed_variant",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "device",
+          "semanticName": "device",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "attention_backend",
+          "semanticName": "attention_backend",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "vae_slicing",
+          "semanticName": "vae_slicing",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["boolean"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "vae_tiling",
+          "semanticName": "vae_tiling",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["boolean"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "inpaint_compatibility",
+          "semanticName": "inpaint_compatibility",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "trust_remote_code",
+          "semanticName": "trust_remote_code",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["boolean"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "revision",
+          "semanticName": "revision",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "workflow_id",
+          "semanticName": "workflow_id",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "modiff_pipeline_identity",
+          "semanticName": "modiff_pipeline_identity",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["object"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "opaque",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "auto_offload",
+          "semanticName": "auto_offload",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["boolean"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "offload_mode",
+          "semanticName": "offload_mode",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "weight_loading_mode",
+          "semanticName": "weight_loading_mode",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "weight_format",
+          "semanticName": "weight_format",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["string"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "value",
+            "scope": null,
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "unet",
+          "semanticName": "unet",
+          "direction": "input",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "transformer",
+                "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vae",
+          "semanticName": "vae",
+          "direction": "input",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "vae",
+                "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "controlnet",
+          "semanticName": "controlnet",
+          "direction": "input",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": []
+          }
+        },
+        {
+          "name": "lora_list",
+          "semanticName": "lora_list",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["custom_lora"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "opaque",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        },
+        {
+          "name": "text_encoders",
+          "semanticName": "text_encoders",
+          "direction": "output",
+          "roles": ["component"],
+          "types": ["diffusers_auto_models"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "text_encoder",
+                "type": "transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLForConditionalGeneration"
+              },
+              {
+                "name": "tokenizer",
+                "type": "transformers.models.auto.processing_auto.AutoProcessor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "unet_out",
+          "semanticName": "unet_out",
+          "direction": "output",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "transformer",
+                "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vae_out",
+          "semanticName": "vae_out",
+          "direction": "output",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "vae",
+                "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "scheduler",
+          "semanticName": "scheduler",
+          "direction": "output",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "scheduler",
+                "type": "diffusers.schedulers.scheduling_flow_match_euler_discrete.FlowMatchEulerDiscreteScheduler"
+              }
+            ]
+          }
+        },
+        {
+          "name": "image_encoder",
+          "semanticName": "image_encoder",
+          "direction": "output",
+          "roles": ["component"],
+          "types": ["diffusers_auto_model"],
+          "required": false,
+          "hidden": true,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": []
+          }
+        },
+        {
+          "name": "pipeline_components",
+          "semanticName": "pipeline_components",
+          "direction": "output",
+          "roles": ["component"],
+          "types": ["diffusers_modular_pipeline_components"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "component",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "same_loader",
+            "members": [
+              {
+                "name": "image_processor",
+                "type": "diffusers.modular_pipelines.flux3.image_processor.Flux3ImageProcessor"
+              },
+              {
+                "name": "scheduler",
+                "type": "diffusers.schedulers.scheduling_flow_match_euler_discrete.FlowMatchEulerDiscreteScheduler"
+              },
+              {
+                "name": "text_encoder",
+                "type": "transformers.models.qwen3_vl.modeling_qwen3_vl.Qwen3VLForConditionalGeneration"
+              },
+              {
+                "name": "tokenizer",
+                "type": "transformers.models.auto.processing_auto.AutoProcessor"
+              },
+              {
+                "name": "transformer",
+                "type": "diffusers.models.transformers.transformer_flux3.Flux3Transformer2DModel"
+              },
+              {
+                "name": "vae",
+                "type": "diffusers.models.autoencoders.autoencoder_kl_flux2.AutoencoderKLFlux2"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quant_config",
+          "semanticName": "quant_config",
+          "direction": "input",
+          "roles": ["value"],
+          "types": ["quant_config"],
+          "required": false,
+          "hidden": false,
+          "semantics": {
+            "kind": "opaque",
+            "scope": "Flux3DistilledModularPipeline",
+            "state": null,
+            "owner": "none",
+            "members": []
+          }
+        }
+      ],
+      "workflowId": "text2image",
+      "binding": {
+        "values": {
+          "model_type": "Flux3DistilledModularPipeline"
+        },
+        "pipelineClass": "Flux3DistilledModularPipeline"
+      }
+    }
+  ]
+}

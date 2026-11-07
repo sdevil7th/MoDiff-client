@@ -1,3 +1,4 @@
+import type { AncillaryExecutionPurpose } from '../studio/ancillaryOperations';
 import type { HfDownloadProgress } from '../stores/useNodeStore';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import type { StudioMode, StudioPreviewSlot } from '../studio/types';
@@ -6,6 +7,7 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 export type NodeParamValue = JsonValue | File | Blob | undefined;
+export type NodeMemoryUsage = Record<string, number | null>;
 
 export type ApiGraphParamExport = {
   sourceId?: string;
@@ -39,6 +41,7 @@ export type ApiGraphLoopExport = {
 };
 
 export type ApiGraphRuntimeHints = {
+  executionPurpose?: AncillaryExecutionPurpose;
   /**
    * Correlation and workflow fields are attached to every graph submission.
    * Studio-managed runs additionally provide the resource/model fields below.
@@ -187,7 +190,7 @@ export type NodeWebsocketMessage = BaseWebsocketMessage<
   label?: string;
   style?: { headerColor?: string };
   hasChanged?: boolean;
-  memoryUsage?: Record<string, number>;
+  memoryUsage?: NodeMemoryUsage;
   executionTime?: Record<string, number>;
   message?: string;
   error?: string;
@@ -317,6 +320,30 @@ export type ResourceRetryWebsocketMessage = BaseWebsocketMessage<'resource_retry
   errors?: unknown;
 };
 
+export type WeightLoadingMode = 'cpu' | 'cuda';
+
+type WorkflowResourceValues = {
+  offload_mode: string;
+  auto_offload: boolean;
+  weight_loading_mode: WeightLoadingMode;
+};
+
+export type WorkflowResourceUpdate = {
+  [Field in keyof WorkflowResourceValues]: {
+    nodeId: string;
+    field: Field;
+    value: WorkflowResourceValues[Field];
+    previousValue?: WorkflowResourceValues[Field] | null;
+  };
+}[keyof WorkflowResourceValues];
+
+export type WorkflowResourcePatch = {
+  [Field in WorkflowResourceUpdate['field']]: Pick<
+    Extract<WorkflowResourceUpdate, { field: Field }>,
+    'nodeId' | 'field' | 'value'
+  >;
+}[WorkflowResourceUpdate['field']];
+
 export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
   'auto_resource_plan_applied' | 'auto_resource_cleanup' | 'runtime_resource_cleanup' | 'auto_retry_requires_approval'
 > & {
@@ -332,12 +359,7 @@ export type AutoResourceWebsocketMessage = BaseWebsocketMessage<
   candidateId?: string;
   message?: string;
   updatedNodes?: string[];
-  resourceUpdates?: {
-    nodeId: string;
-    field: 'offload_mode' | 'auto_offload';
-    value: string | boolean;
-    previousValue?: string | boolean | null;
-  }[];
+  resourceUpdates?: WorkflowResourceUpdate[];
   retryPlans?: JsonObject[];
   performed?: boolean;
   reasons?: string[];
@@ -430,6 +452,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+export function isWorkflowResourceValue(field: unknown, value: unknown): boolean {
+  return (
+    (field === 'offload_mode' && typeof value === 'string') ||
+    (field === 'auto_offload' && typeof value === 'boolean') ||
+    (field === 'weight_loading_mode' && (value === 'cpu' || value === 'cuda'))
+  );
+}
+
 function isBoundedRecord(value: unknown, valueIsValid: (item: unknown) => boolean = () => true) {
   if (!isRecord(value)) return false;
   const entries = Object.entries(value);
@@ -486,6 +516,12 @@ function isHfDownloadProgressArray(value: unknown) {
 
 function isNumericRecord(value: unknown) {
   return isRecord(value) && Object.values(value).every(isFiniteNumber);
+}
+
+function isMemoryUsageRecord(value: unknown) {
+  return (
+    isRecord(value) && Object.values(value).every((measurement) => measurement === null || isFiniteNumber(measurement))
+  );
 }
 
 function isNotificationAction(value: unknown) {
@@ -584,7 +620,7 @@ function hasValidCommonWebsocketFields(value: Record<string, unknown>) {
       'style',
       (field) => isRecord(field) && optionalField(field, 'headerColor', (color) => typeof color === 'string'),
     ) &&
-    optionalField(value, 'memoryUsage', isNumericRecord) &&
+    optionalField(value, 'memoryUsage', isMemoryUsageRecord) &&
     optionalField(value, 'resource_snapshot', isRecord, true) &&
     optionalField(value, 'phase_timings', isNumericRecord) &&
     optionalField(
@@ -684,11 +720,8 @@ export function isWebsocketMessage(value: unknown): value is WebsocketMessage {
               (item) =>
                 isRecord(item) &&
                 typeof item.nodeId === 'string' &&
-                ((item.field === 'offload_mode' && typeof item.value === 'string') ||
-                  (item.field === 'auto_offload' && typeof item.value === 'boolean')) &&
-                (item.previousValue == null ||
-                  typeof item.previousValue === 'string' ||
-                  typeof item.previousValue === 'boolean'),
+                isWorkflowResourceValue(item.field, item.value) &&
+                (item.previousValue == null || isWorkflowResourceValue(item.field, item.previousValue)),
             ),
         )
       );

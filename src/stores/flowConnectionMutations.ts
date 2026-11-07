@@ -26,6 +26,7 @@ import { decorateConnectionEdge, decorateConnectionEdges } from '../theme/connec
 import { enqueueSnackbar } from '../ui/snackbar';
 import { nodeConnectionSemanticsAreCompatible } from '../workflow/nodeConnectionMatching';
 import type { CustomConnection, CustomNodeType, FlowStore } from './useFlowStore';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -364,7 +365,8 @@ export function handleEdgesChange(changes: EdgeChange<Edge>[], set: FlowStoreSet
       }
     });
 
-  set(removeBlockInternalGraphEdgesV2(removedEdges, get().nodes, get().edges));
+  const graph = removeBlockInternalGraphEdgesV2(removedEdges, get().nodes, get().edges);
+  set({ ...graph, nodes: projectFlowCacheStatus(graph.nodes, get().runtimeCachedNodeIds) });
 
   const newEdges = decorateConnectionEdges(get().nodes, applyEdgeChanges(changes, get().edges));
   set({ edges: newEdges });
@@ -487,7 +489,7 @@ export function handleConnect(conn: CustomConnection, set: FlowStoreSet, get: Fl
   if (sourceNode.data.blockProjectionOwnerId || targetNode.data.blockProjectionOwnerId) {
     const graph = connectBlockInternalGraphV2(conn, get().nodes, get().edges);
     if (graph) {
-      set(graph);
+      set({ ...graph, nodes: projectFlowCacheStatus(graph.nodes, get().runtimeCachedNodeIds) });
       get().updateHandleConnectionStatus();
     }
     return;
@@ -572,7 +574,7 @@ export function handleReconnect(oldEdge: Edge, conn: Connection, set: FlowStoreS
     const remaining = get().edges.filter((edge) => edge.id !== oldEdge.id);
     const graph = connectBlockInternalGraphV2(conn, get().nodes, remaining);
     if (!graph) throw new Error('Cannot reconnect this internal input.');
-    set(graph);
+    set({ ...graph, nodes: projectFlowCacheStatus(graph.nodes, get().runtimeCachedNodeIds) });
     get().updateHandleConnectionStatus();
     return;
   }
@@ -657,7 +659,7 @@ export function handleReconnect(oldEdge: Edge, conn: Connection, set: FlowStoreS
     });
     const graph = projectUpdatedBlockV2(ownerId, nextInstance, get);
     if (!graph) throw new Error('Cannot reconnect this Block edge because projection failed.');
-    set(graph);
+    set({ ...graph, nodes: projectFlowCacheStatus(graph.nodes, get().runtimeCachedNodeIds) });
     get().updateHandleConnectionStatus();
     return;
   }

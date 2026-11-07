@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "revisions": [
+    {
+      "templateId": "flux_lora_cinematic_octane_3d",
+      "recipeVersion": 3,
+      "previousPromptSha256": "f8a847386a8f87df49167d184c520bb683239fe21a23ae5c855f46914ff40863",
+      "promptSha256": "c692698583d87ddb656c3771568519f03ecf9786715878befd8ecc8513b44296",
+      "lockedSettings": {
+        "guidanceScale": 1,
+        "resourceMode": "expert"
+      },
+      "reason": "Remove injury references and the extra true-CFG pass after the retained portrait and adapter-free control showed soft detail. Keep the original model, adapters, scales, seed, geometry, steps and group offload. The frozen v1 creator contract and its original-source comparison remain unchanged; this revision does not inherit their pixel-parity or publication approval."
+    },
+    {
+      "templateId": "z_image_cinematic_contact_sheet",
+      "recipeVersion": 2,
+      "previousPromptSha256": "e4a436bb655cedadb1a25ae3239ad45b2ac52203fe7e64296601a9a9bf2b3c59",
+      "promptSha256": "705c4fa86a073cd3343989ea75ebd87e04c3483a9ea1e66998fb91c111afdeb4",
+      "lockedSettings": {},
+      "reason": "Resolve the face-in-every-frame instruction that conflicted with the rear-view exit. Limit visible facial continuity to the first three panels and specify a distinct fourth-panel rear view. Keep all model, seed, geometry, steps and resource settings unchanged. Preserve the frozen original creator contract; visual acceptance of the revised result does not grant publication or hardware qualification."
+    }
+  ]
+}

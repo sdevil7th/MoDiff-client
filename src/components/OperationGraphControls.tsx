@@ -2,6 +2,7 @@ import { operationOwnsModel } from '../workflow/operationContracts';
 import { useEffect, useRef, useState } from 'react';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { layoutReferenceContext } from '../studio/layoutReferenceContext';
 import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
@@ -19,9 +20,13 @@ import {
   type OperationStarter,
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
-import { commitOperationGraph } from '../workflow/operationGraphTransaction';
+import { commitOperationGraph, operationGraphPreviewSignature } from '../workflow/operationGraphTransaction';
 import NodeInspectorDialog from './NodeInspectorDialog';
-import { groupNewOperationGraph } from '../workflow/visualOperationGroups';
+import {
+  groupNewOperationGraph,
+  visualOperationOwnerId,
+  visualOperationGroup,
+} from '../workflow/visualOperationGroups';
 
 type Preview = {
   starter: OperationStarter;
@@ -48,6 +53,18 @@ export default function OperationGraphControls({
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
   const canvasEpoch = useStudioStore((s) => s.workflowCanvasEpoch);
   const operations = useNodesStore((s) => s.operationContracts);
+  const descriptors = useNodesStore((s) => s.workflowModelDescriptors);
+  const matchingDescriptors = descriptors.filter(
+    (descriptor) =>
+      descriptor.evaluationOnly &&
+      descriptor.pipeline === pipeline &&
+      (!executionProfileId || descriptor.profileId === executionProfileId),
+  );
+  const evaluationOnly = matchingDescriptors.length > 0;
+  const selectedExecutionProfileId =
+    executionProfileId ?? (matchingDescriptors.length === 1 ? matchingDescriptors[0]!.profileId : undefined);
+  const authoringRecipeId =
+    matchingDescriptors.length === 1 ? matchingDescriptors[0]!.authoringRecipes?.[task] : undefined;
   const [chosenLoader, setLoader] = useState('');
   const loader = ownerId ?? chosenLoader;
   const [busy, setBusy] = useState(false);
@@ -60,6 +77,7 @@ export default function OperationGraphControls({
   );
   const selected = nodes.find((n) => n.selected && n.data.operationAuthoring);
   const selectedHint = selected ? operationAuthoring(selected) : null;
+  const visualBlock = blockId && nodes.find((node) => node.id === blockId && visualOperationGroup(node));
 
   useEffect(() => {
     pending.current?.abort();
@@ -71,7 +89,7 @@ export default function OperationGraphControls({
     return () => {
       pending.current?.abort();
     };
-  }, [pipeline, task, workflow, canvasEpoch, loader, blockId, executionProfileId]);
+  }, [pipeline, task, workflow, canvasEpoch, loader, blockId, selectedExecutionProfileId, authoringRecipeId]);
 
   async function prepare(change: boolean) {
     if (pending.current) return;
@@ -79,29 +97,43 @@ export default function OperationGraphControls({
     pending.current = controller;
     const context = captureWorkflowOperationContext();
     const snapshot = useFlowStore.getState().toObject();
-    const signature = JSON.stringify(snapshot);
+    const signature = operationGraphPreviewSignature(snapshot);
     setBusy(true);
     setError(null);
     try {
-      const starter = await requestOperationStarter(pipeline, task, operations, controller.signal, executionProfileId);
+      if (evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+        throw new Error('Select Custom memory before choosing an evaluation model.');
+      const starter = await requestOperationStarter(
+        pipeline,
+        task,
+        operations,
+        controller.signal,
+        selectedExecutionProfileId,
+        authoringRecipeId,
+      );
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
+      if (operationGraphPreviewSignature(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The graph changed. Request a fresh preview.');
+      const effectiveOwnerId = visualOperationOwnerId(snapshot, loader, blockId);
+      const visualOwner = effectiveOwnerId !== loader;
       const plan = !change
         ? null
-        : blockId
+        : blockId && !visualOwner
           ? (await import('../workflow/operationLegacyBlockChange')).planOwnerBlockOperationChange(
               snapshot,
               blockId,
               loader,
               starter,
-              { replaceModel: Boolean(executionProfileId) },
+              { replaceModel: Boolean(executionProfileId), layoutReferenceContext },
             )
-          : planOperationChange(snapshot, loader, starter, { replaceModel: Boolean(executionProfileId) });
+          : planOperationChange(snapshot, effectiveOwnerId, starter, {
+              replaceModel: Boolean(executionProfileId),
+              layoutReferenceContext,
+            });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      if (JSON.stringify(useFlowStore.getState().toObject()) !== signature)
+      if (operationGraphPreviewSignature(useFlowStore.getState().toObject()) !== signature)
         throw new Error('The graph changed. Request a fresh preview.');
       setPreview({ starter, plan, context, signature });
     } catch (e) {
@@ -117,9 +149,11 @@ export default function OperationGraphControls({
   function apply() {
     if (!preview) return;
     try {
+      if (evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+        throw new Error('Select Custom memory before choosing an evaluation model.');
       assertWorkflowOperationContext(preview.context, { includeForm: false });
       const flow = useFlowStore.getState();
-      if (JSON.stringify(flow.toObject()) !== preview.signature)
+      if (operationGraphPreviewSignature(flow.toObject()) !== preview.signature)
         throw new Error('The graph changed after this preview. Close it and request a fresh preview.');
       if (preview.plan)
         commitOperationGraph(preview.plan.graph, preview.context, preview.signature, 'Change operation model or task');
@@ -203,7 +237,7 @@ export default function OperationGraphControls({
             </p>
             <p>{preview.starter.nodes.map((n) => n.node.label).join(' → ')}</p>
             <p>
-              {blockId
+              {blockId && !visualBlock
                 ? 'The result updates the editable graph inside this Block.'
                 : 'The result is an editable canvas graph.'}{' '}
               Run checks model files, runtime support, required inputs and resources.

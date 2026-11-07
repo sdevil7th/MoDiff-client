@@ -3,6 +3,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import type { StudioOutput } from '../studio/types';
 import { outputMediaSizeLabel, outputNumericInputValue } from '../studio/resolvedExecutionInputs';
+import { outputText, outputTextType, textOutputViewerOpener } from '../studio/outputText';
 import { normalizeImageArtifacts, type ImageArtifact } from '../utils/imageArtifacts';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { GraphControlButton, GraphIconButton } from '../ui/GraphControls';
@@ -10,11 +11,21 @@ import { ModiffMenuAction, ModiffMenuRoot, ModiffMenuSurface, ModiffMenuTrigger 
 import type { PreviewHistoryStripProps } from './PreviewHistoryStrip';
 
 function outputUrl(output: StudioOutput) {
-  return output.mediaItems?.[0]?.url ?? output.url;
+  return outputMediaItems(output)?.[0]?.url ?? output.url;
+}
+
+function outputMediaItems(output: StudioOutput) {
+  const type = outputType(output);
+  return output.mediaItems?.filter(
+    (item) => !item.displayType || item.displayType === 'unknown' || item.displayType === type,
+  );
 }
 
 function outputType(output: StudioOutput) {
-  return output.mediaItems?.[0]?.displayType ?? output.displayType ?? 'unknown';
+  if (output.displayType === 'image_collection') return 'image';
+  return output.displayType && output.displayType !== 'unknown'
+    ? output.displayType
+    : (output.mediaItems?.[0]?.displayType ?? 'unknown');
 }
 
 function outputLabel(output: StudioOutput) {
@@ -26,18 +37,18 @@ function outputLabel(output: StudioOutput) {
   }
   if (type === 'audio') return 'Audio';
   if (type === 'text') return 'Text';
+  if (type === 'json') return 'JSON';
   return 'Output';
 }
 
-function outputText(output: StudioOutput) {
-  return typeof output.value === 'string' ? output.value : JSON.stringify(output.value, null, 2);
-}
-
 function downloadTextOutput(output: StudioOutput) {
-  const blobUrl = URL.createObjectURL(new Blob([outputText(output)], { type: 'text/plain;charset=utf-8' }));
+  const json = outputTextType(output) === 'json';
+  const blobUrl = URL.createObjectURL(
+    new Blob([outputText(output)], { type: json ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' }),
+  );
   const anchor = document.createElement('a');
   anchor.href = blobUrl;
-  anchor.download = `modiff-${output.nodeId}-${output.fieldKey}.txt`;
+  anchor.download = `modiff-${output.nodeId}-${output.fieldKey}.${json ? 'json' : 'txt'}`;
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
@@ -73,10 +84,11 @@ export default function PreviewHistoryStripContent({
 
   const openOutput = (output: StudioOutput) => {
     const type = outputType(output);
+    const capturedItems = outputMediaItems(output);
     if (type === 'image' || output.displayType === 'image_collection') {
       const images = normalizeImageArtifacts({
-        value: output.mediaItems?.map((item) => item.url) ?? [output.url],
-        artifacts: output.mediaItems?.map(
+        value: capturedItems?.length ? capturedItems.map((item) => item.url) : [output.url],
+        artifacts: capturedItems?.map(
           (item) =>
             ({
               url: item.url,
@@ -103,26 +115,20 @@ export default function PreviewHistoryStripContent({
       });
       return;
     }
-    if (type === 'text' || output.displayType === 'text') {
-      setMediaViewerOpener({
-        title: 'Previous text render',
-        currentIndex: 0,
-        items: [
-          {
-            id: output.id,
-            kind: 'text',
-            label: outputLabel(output),
-            text: outputText(output),
-            downloadName: `modiff-${output.nodeId}-${output.fieldKey}.txt`,
-          },
-        ],
-      });
+    if (type === 'text' || type === 'json') {
+      setMediaViewerOpener(
+        textOutputViewerOpener(
+          output,
+          `Previous ${type} render`,
+          `modiff-${output.nodeId}-${output.fieldKey}.${type === 'json' ? 'json' : 'txt'}`,
+        ),
+      );
       return;
     }
     if (type === 'video' || type === 'audio') {
       const mediaItems =
-        output.mediaItems && output.mediaItems.length > 0
-          ? output.mediaItems
+        capturedItems && capturedItems.length > 0
+          ? capturedItems
           : [
               {
                 index: 0,
@@ -199,7 +205,7 @@ export default function PreviewHistoryStripContent({
                     <Music2 size={20} className="text-hf-yellow" />
                     {outputLabel(output)}
                   </span>
-                ) : type === 'text' ? (
+                ) : type === 'text' || type === 'json' ? (
                   <span className="flex h-full w-full items-start gap-1 overflow-hidden bg-modiff-surface p-2 text-left text-xs text-modiff-subtle-text">
                     <FileText size={14} className="mt-0.5 shrink-0 text-hf-yellow" />
                     <span className="line-clamp-3">{outputText(output)}</span>
@@ -228,7 +234,7 @@ export default function PreviewHistoryStripContent({
                     <ModiffMenuAction
                       icon={<Download size={14} />}
                       onClick={() => {
-                        if (type === 'text') {
+                        if (type === 'text' || type === 'json') {
                           downloadTextOutput(output);
                           return;
                         }
@@ -237,7 +243,7 @@ export default function PreviewHistoryStripContent({
                             source: url,
                             kind: type,
                             filename:
-                              output.mediaItems?.[0]?.backendPath?.split('/').pop() ??
+                              outputMediaItems(output)?.[0]?.backendPath?.split('/').pop() ??
                               `modiff-${output.nodeId}-${output.fieldKey}-${output.createdAt}.${
                                 type === 'audio' ? 'wav' : type === 'video' ? 'mp4' : 'webp'
                               }`,
