@@ -8301,7 +8301,10 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   await (await findQwenCatalogRow(page)).click();
   const root = page.locator('.react-flow__node-block').filter({ has: page.locator('[data-block-schema-version="2"]') });
   await expect(root).toHaveCount(1, { timeout: 30_000 });
-  await root.locator('header').first().click();
+  // Select the node title; the header centre can contain a real action button.
+  const rootTitle = root.locator('header').first().locator(':scope > span').first();
+  await rootTitle.click();
+  await expect(page.locator('[data-testid^="save-user-block-choices-"]')).toHaveCount(0);
   const inspector = page.getByTestId('studio-custom-graph-inspector');
   await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue(
     await root.getByLabel('prompt', { exact: true }).inputValue(),
@@ -8327,12 +8330,12 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   await inspector.getByLabel('prompt', { exact: true }).fill('Copper observatory at sunrise');
   await inspector.getByLabel('prompt', { exact: true }).blur();
   await expect(root.getByLabel('prompt', { exact: true })).toHaveValue('Copper observatory at sunrise');
-  await root.locator('header').first().click();
+  await rootTitle.click();
   await page.keyboard.press('Control+z');
-  await root.locator('header').first().click();
+  await rootTitle.click();
   await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue(originalPrompt);
   await page.keyboard.press('Control+Shift+z');
-  await root.locator('header').first().click();
+  await rootTitle.click();
   await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Copper observatory at sunrise');
   const edited = await page.evaluate(async (id) => {
     const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
@@ -8348,11 +8351,11 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   // choices survive canvas selection while the workspace is already open.
   await page.getByTestId('topbar-toggle-workspace').click();
   await expect(page.getByTestId('workspace-panel')).toHaveCount(0);
-  await root.locator('header').first().click();
+  await rootTitle.click();
   await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Copper observatory at sunrise');
   for (const tab of ['queue', 'setup']) {
     await page.getByTestId(`workspace-tab-${tab}`).click();
-    await root.locator('header').first().click();
+    await rootTitle.click();
     await expect(page.getByTestId(`workspace-tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
   }
   await page.getByTestId('workspace-tab-studio').click();
@@ -8394,7 +8397,7 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   await expect(promptNode).toBeVisible();
   await expect(hiddenPin.getByLabel(/^prompt(?: \*)?$/i)).toHaveValue('Nested observatory edit');
   await root.getByRole('button', { name: 'Collapse block', exact: true }).click();
-  await root.locator('header').first().click();
+  await rootTitle.click();
 
   // Save the edited registered cluster as a User Node through the real menu.
   await root.getByRole('button', { name: 'Save block changes', exact: true }).click();
@@ -8443,7 +8446,7 @@ test('custom workspace inspects registered Qwen cluster controls using the canva
   await page.getByTestId('topbar-toggle-workspace').click();
   await savedRow.click();
   await expect(page.getByTestId('workspace-panel')).toBeVisible();
-  await root.locator('header').first().click();
+  await rootTitle.click();
   await expect(inspector.getByLabel('prompt', { exact: true })).toHaveValue('Nested observatory edit');
   await inspector.getByLabel('prompt', { exact: true }).fill('Only the reused User Node changes');
   await inspector.getByLabel('prompt', { exact: true }).blur();
