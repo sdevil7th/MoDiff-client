@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Paired scoped Run recovery bundle and unchanged backend runtime.
-          ref: 72d4773706734796253363cc5a02305826861e2f
+          # Pair R04 damaged-metadata readiness and the existing setup contract.
+          ref: e06a4f1615e2b675834b1dde1ac552054e675095
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -89,7 +89,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 72d4773706734796253363cc5a02305826861e2f
+          ref: e06a4f1615e2b675834b1dde1ac552054e675095
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
