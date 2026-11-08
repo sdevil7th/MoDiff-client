@@ -63,6 +63,29 @@ requiring unredacted source inventories is not interchangeable with that check.
 Do not interpret expected redaction diagnostics as authority to fill missing
 fields, relax current proof requirements or rewrite approved sidecars.
 
+A later private run can supply a current-recipe replacement candidate when an
+original pre-run declaration matches today's locked settings and execution
+selection, and the original task, consumed controls, graph, model, source and
+media independently corroborate it. Keep any absent output template identity
+absent. Preserve the run's source, capture time and original public/private
+status; do not retrospectively label it a public-default execution.
+
+Prepare its proposed entry, public-format provenance and exact media outside the
+active Gallery. A single reviewed run is not an exact duplicate proof. Carry
+private human acceptance separately from the template rubric, per-file rights
+and publication decision. An unfinished review must continue to fail the normal
+publication checks. An isolated local verification fixture is not authority to
+change the real Dataset source or weaken its complete-set checks.
+
+In particular, matching prompts, seed and media do not make Expert execution
+prove a currently selected Auto recipe. Required-input paths are real input
+bindings rather than blank template defaults; retain their original content
+identity and establish current bundled-input authority separately. Missing
+consumed fields cannot be filled from submitted intent or listening approval.
+The [paired recovery checkpoint](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/release-20261028/gallery-evidence-recovery.md)
+records one prepared contact-sheet proposal and the remaining ACE policy/capture
+holds. Public activation remains a separate reviewed asset update.
+
 The release-contract generator also inspects the bundled backend node sources.
 It ignores removed module directories only when they are empty or contain solely
 the residual `__pycache__` directory. Other missing initializers, Python sources
