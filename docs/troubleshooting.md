@@ -118,6 +118,29 @@ browser is still connected, and other errors remain visible. If errors repeat,
 record the terminal and stack excerpt and check `/health` directly and through
 the proxy; a locally served favicon does not prove the backend is ready.
 
+For `Error: write ECONNABORTED`, retain the line immediately before the error and
+the bounded stack. Archived Windows examples came from Vite's `ws proxy error`
+and `ws proxy socket error` loggers. That identifies a development-proxy path;
+the same error text without those prefixes does not establish the same cause.
+Integrated production serving does not use the Vite proxy.
+
+If it recurs, record:
+
+- Which terminal emitted it: Vite/Node, backend/Python, supervisor or a tunnel;
+  include the process/port identity and exact client/backend revisions.
+- The timestamp, startup/refresh/close gesture and whether a task was active.
+- The error prefix and bounded stack, with secrets and private paths redacted.
+- Direct and proxied `/health` status/body, using the actual configured ports.
+  Keep connection refusal and malformed/unready responses visible.
+
+Do not stop or repeat a generation merely to collect this record, attach an
+extra socket to its session, or suppress all abort/reset errors. Existing focused
+checks can run without models or downloads:
+
+```text
+node --test scripts/backend-proxy-lifecycle.test.mjs scripts/websocket-connection.test.mjs
+```
+
 MoDiff uses the backend's verified `workerControl` metadata for the supervisor
 address. A standalone worker advertises no supervisor, so background queue reads
 are skipped. Startup waits up to one second for node/runtime discovery already
