@@ -8,7 +8,7 @@ Face token.
 [Hugging Face's current storage policy](https://huggingface.co/docs/hub/en/storage-limits)
 describes storage for a free user or organization's public repositories as
 **best effort**, and asks that public uploads provide real community value. The
-current Gallery is about 466 MiB and 360 files, well below the Hub's
+checked complete Gallery manifest declares 395 files (about 468 MiB), below the Hub's
 repository-structure recommendations, so a public Dataset is a reasonable
 zero-cost home for this release. It is not a contractual free hosting
 guarantee: monitor the current Hub policy and keep the byte manifest portable
@@ -253,8 +253,8 @@ public visibility and every managed asset byte, and only then updates
 
 ## Current publication state
 
-The checked complete manifest declares 360 files with no missing paths. Its
-rights ledger approves 356 and holds four ACE Chinese New Year / Ghibli media
+The checked complete manifest declares 395 files with no missing paths. Its
+rights ledger marks 391 approved and holds four ACE Chinese New Year / Ghibli media
 files while written permission is pending. The current source descriptor pins
 the public approved subset and names those four unavailable paths. These are
 contract counts, not a claim that every file is materialized in each checkout.
@@ -318,7 +318,7 @@ two gates intentionally hash the local files and are not clean-checkout gates.
 The normal backend installer automatically materializes the exact pinned
 snapshot, forces a local-mode client build, and mirrors the complete payload to
 `web/template-gallery`. If the checked source is still in migration-time local
-mode, it verifies the existing 360 files before building. If it is in
+mode, it verifies the complete expected asset set before building. If it is in
 Hugging Face mode, it downloads anonymously first. Installation fails closed
 on a missing file or hash mismatch.
 
