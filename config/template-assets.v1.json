@@ -4,8 +4,8 @@
   "assets": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
-      "size": 2880044,
-      "sha256": "sha256:bytes:4348daf61934c9e27379efcdabe7891d2a258f2a11d346726f221e35ae954e83",
+      "size": 17280044,
+      "sha256": "sha256:bytes:b9bddd5ca2933c064a1dd0f58b7ab438882adb9d1b0aea1ab640999a0e81322f",
       "contentType": "audio/x-wav",
       "purposes": [
         "runtime"
@@ -145,8 +145,8 @@
     },
     {
       "path": "template-gallery/ace_step_text_to_audio.wav",
-      "size": 5760044,
-      "sha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
+      "size": 14400044,
+      "sha256": "sha256:bytes:6b8fe846fb7b55fca9cfb47814f2e135a61cdcbbbc09dcb44a14a2889abcb801",
       "contentType": "audio/x-wav",
       "purposes": [
         "runtime",
@@ -223,10 +223,12 @@
       "path": "template-gallery/flux3_klein_base_fp8r512_lora_style.webp",
       "size": 152854,
       "sha256": "sha256:bytes:9f5bc117a70a66bfae603ab5add47f69bd73349b5268f2c7307462232ef2d5c6",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux3_klein_base_fp8r512_multi_reference_edit.png",
@@ -243,37 +245,45 @@
       "path": "template-gallery/flux3_klein_base_fp8r512_raw_coordinate_prompt.webp",
       "size": 71556,
       "sha256": "sha256:bytes:77da62eeb4da139921de0d654816eca643fee85dee2f6c16cbdb23aa3b1633f2",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux3_klein_base_fp8r512_single_reference_edit.webp",
       "size": 44274,
       "sha256": "sha256:bytes:12abeba15e8b99c5943daa322e0be94947350e0a2598b893a6419cf7cc21d7ef",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux3_klein_base_fp8r512_text_to_image.webp",
       "size": 71624,
       "sha256": "sha256:bytes:7922c52fa07fee6cc38f0da95b22028996637def32a99aeacc414ce8a39e1fe7",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux3_klein_fp8r512_lora_style.webp",
       "size": 95654,
       "sha256": "sha256:bytes:59ddede1547b6e0e6958b0327a77c8e253cdd654e61aada584e1619aba7b8c54",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux3_klein_fp8r512_multi_reference_edit.png",
@@ -290,28 +300,34 @@
       "path": "template-gallery/flux3_klein_fp8r512_raw_coordinate_prompt.webp",
       "size": 108576,
       "sha256": "sha256:bytes:8544a653656be8cd47d87d7550558fa8487d1b72de56ee21adb27313dc34ba8f",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux3_klein_fp8r512_single_reference_edit.webp",
       "size": 45456,
       "sha256": "sha256:bytes:2694ee895e5f91c7c68d5b7966e872b08546d6792a3038707260d595eb48b6e6",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux3_klein_fp8r512_text_to_image.webp",
       "size": 94460,
       "sha256": "sha256:bytes:88783643cab795b94b5bc01e6e28d459ff685278d95fb6bf54461094a6400c90",
-      "contentType": "application/octet-stream",
+      "contentType": "image/webp",
       "purposes": [
         "runtime"
-      ]
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/flux_control_canny.webp",
@@ -1322,8 +1338,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 206839,
-      "sha256": "sha256:bytes:b6e383c698b7a07c8a37a95629ebace6d0f39d608c006bab8df446920f145cc0",
+      "size": 206825,
+      "sha256": "sha256:bytes:e25a19c6ba4b9c282c0d76a546d43079a8c1f8054ccf834a5f66b8d72c6e15bb",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1586,8 +1602,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_continuation.quality-review.json",
-      "size": 3147,
-      "sha256": "sha256:bytes:e58e802eec1e2fc312f1eddf271416d9617c99c315972c35b99f98441a4b5783",
+      "size": 2439,
+      "sha256": "sha256:bytes:71d0e561ba26674f54c4ee09894578414a39ab55596afa74b847c915bbb09cfb",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1595,8 +1611,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_continuation.reviewed-provenance.json",
-      "size": 44824,
-      "sha256": "sha256:bytes:bda2779dfd6ab8e96bb8ccfaab474f9fe989e3cad14320798132045f3a598d1f",
+      "size": 137849,
+      "sha256": "sha256:bytes:1a6dff893fa8e715bff7c939fa196b6f352fe453d30daa888dbfd3d0d1af3314",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1658,8 +1674,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_text_to_audio.quality-review.json",
-      "size": 3229,
-      "sha256": "sha256:bytes:696f5bffb19a0ccda790e668da102797391c665603354e638ac5d937f65c792e",
+      "size": 2431,
+      "sha256": "sha256:bytes:5e226af4594ba376023fbc2768f6b019cd846e0ac7fd51015d2c54c0dc723b6b",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1667,8 +1683,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_text_to_audio.reviewed-provenance.json",
-      "size": 42808,
-      "sha256": "sha256:bytes:e60169416922a2e516557f9ce5c958412c32472db9592119b4f1ccba6afbba36",
+      "size": 130775,
+      "sha256": "sha256:bytes:4b79e1e6ff29b9d54de6b4e8731e5d9dd268f67b0a5180fa39029cb5cb71826f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2935,18 +2951,18 @@
       ]
     },
     {
-      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.duplicate-provenance.json",
-      "size": 72723,
-      "sha256": "sha256:bytes:1771c206a72c99013f8926742ddf0d95510aa416522d30381d286e4399bee7b4",
+      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.quality-review.json",
+      "size": 2401,
+      "sha256": "sha256:bytes:4a895beb586a81c69f6afeaf387bf2797333d59396023c188920d1913ee86029",
       "contentType": "application/json",
       "purposes": [
         "runtime"
       ]
     },
     {
-      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.quality-review.json",
-      "size": 1784,
-      "sha256": "sha256:bytes:371847c70bebac46cd8012df74ba670cd4a6a2f6d833928ae801db932e3dc69b",
+      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.reviewed-provenance.json",
+      "size": 102371,
+      "sha256": "sha256:bytes:a356fc5d856cf7cb93af1c45a98aa932ae2fc94a2d1b68d8658be0819de5ffa5",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3866,8 +3882,8 @@
     },
     {
       "path": "template-gallery/z_image_cinematic_contact_sheet.webp",
-      "size": 223184,
-      "sha256": "sha256:bytes:6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e",
+      "size": 182632,
+      "sha256": "sha256:bytes:4c2bbf8e5c5fc23984d3cbb7cf716220d6a5a3a628510b0de9bae418b3447723",
       "contentType": "image/webp",
       "purposes": [
         "runtime",
@@ -3932,9 +3948,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:86c0298bbdb02531cdb3f031d391493bac818b0dd71c103abb1a540da21925f6",
+  "assetSetId": "sha256:canonical-json:54c08e5e6d5cdd07000ce5fee06a8aa6d4b3d6ee49b26f9e210f3345010105c8",
   "status": "ready",
   "assetCount": 395,
-  "totalBytes": 491202898,
+  "totalBytes": 514412083,
   "missingAssets": []
 }

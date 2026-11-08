@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:86c0298bbdb02531cdb3f031d391493bac818b0dd71c103abb1a540da21925f6",
+  "assetSetId": "sha256:canonical-json:54c08e5e6d5cdd07000ce5fee06a8aa6d4b3d6ee49b26f9e210f3345010105c8",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
-      "sha256": "sha256:bytes:4348daf61934c9e27379efcdabe7891d2a258f2a11d346726f221e35ae954e83",
+      "sha256": "sha256:bytes:b9bddd5ca2933c064a1dd0f58b7ab438882adb9d1b0aea1ab640999a0e81322f",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, subject to the recorded source and model terms",
@@ -17,12 +17,12 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [],
+      "marks": ["MoDiff project name in the project-authored lyrics"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "ace_step_audio_continuation"
     },
     {
@@ -334,7 +334,7 @@
     },
     {
       "path": "template-gallery/ace_step_text_to_audio.wav",
-      "sha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
+      "sha256": "sha256:bytes:6b8fe846fb7b55fca9cfb47814f2e135a61cdcbbbc09dcb44a14a2889abcb801",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, subject to the recorded source and model terms",
@@ -347,12 +347,12 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [],
+      "marks": ["MoDiff project name in the project-authored lyrics"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "ace_step_text_to_audio"
     },
     {
@@ -3037,7 +3037,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:b6e383c698b7a07c8a37a95629ebace6d0f39d608c006bab8df446920f145cc0",
+      "sha256": "sha256:bytes:e25a19c6ba4b9c282c0d76a546d43079a8c1f8054ccf834a5f66b8d72c6e15bb",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "sourav-das / MoDiff project maintainers",
@@ -3051,9 +3051,9 @@
       "marks": [],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
-      "reviewedBy": "Codex (technical metadata); sourav-das (underlying exact-file rights and publication approval)",
-      "reviewedAt": "2026-10-31",
-      "reviewClass": "technical-derivation-of-human-approved-media",
+      "reviewedBy": "SOURAV DAS",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "humanApprovalPacketSHA256": "a55745498d9c767d581d947b90b12ad4308e5f95b870224ef67107d5894f2499",
       "humanApprovalScope": "Exact source images, authored mask and SHA-bound review packet. Numeric quality scores are the AI assessment, not human-supplied scores. The metadata is project-authored; it introduces no new third-party media rights."
     },
@@ -3596,7 +3596,7 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_continuation.quality-review.json",
-      "sha256": "sha256:bytes:e58e802eec1e2fc312f1eddf271416d9617c99c315972c35b99f98441a4b5783",
+      "sha256": "sha256:bytes:71d0e561ba26674f54c4ee09894578414a39ab55596afa74b847c915bbb09cfb",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
@@ -3611,13 +3611,13 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "ace_step_audio_continuation"
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_continuation.reviewed-provenance.json",
-      "sha256": "sha256:bytes:bda2779dfd6ab8e96bb8ccfaab474f9fe989e3cad14320798132045f3a598d1f",
+      "sha256": "sha256:bytes:1a6dff893fa8e715bff7c939fa196b6f352fe453d30daa888dbfd3d0d1af3314",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
@@ -3632,8 +3632,8 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "ace_step_audio_continuation"
     },
     {
@@ -3764,7 +3764,7 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_text_to_audio.quality-review.json",
-      "sha256": "sha256:bytes:696f5bffb19a0ccda790e668da102797391c665603354e638ac5d937f65c792e",
+      "sha256": "sha256:bytes:5e226af4594ba376023fbc2768f6b019cd846e0ac7fd51015d2c54c0dc723b6b",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
@@ -3779,13 +3779,13 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "ace_step_text_to_audio"
     },
     {
       "path": "template-gallery/reviews/ace_step_text_to_audio.reviewed-provenance.json",
-      "sha256": "sha256:bytes:e60169416922a2e516557f9ce5c958412c32472db9592119b4f1ccba6afbba36",
+      "sha256": "sha256:bytes:4b79e1e6ff29b9d54de6b4e8731e5d9dd268f67b0a5180fa39029cb5cb71826f",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
@@ -3800,8 +3800,8 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "ace_step_text_to_audio"
     },
     {
@@ -6785,8 +6785,8 @@
       "provenanceTemplateId": "wan_vace_video_to_video"
     },
     {
-      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.duplicate-provenance.json",
-      "sha256": "sha256:bytes:1771c206a72c99013f8926742ddf0d95510aa416522d30381d286e4399bee7b4",
+      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.quality-review.json",
+      "sha256": "sha256:bytes:4a895beb586a81c69f6afeaf387bf2797333d59396023c188920d1913ee86029",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
@@ -6801,13 +6801,13 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "z_image_cinematic_contact_sheet"
     },
     {
-      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.quality-review.json",
-      "sha256": "sha256:bytes:371847c70bebac46cd8012df74ba670cd4a6a2f6d833928ae801db932e3dc69b",
+      "path": "template-gallery/reviews/z_image_cinematic_contact_sheet.reviewed-provenance.json",
+      "sha256": "sha256:bytes:a356fc5d856cf7cb93af1c45a98aa932ae2fc94a2d1b68d8658be0819de5ffa5",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
@@ -6822,8 +6822,8 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "z_image_cinematic_contact_sheet"
     },
     {
@@ -8865,7 +8865,7 @@
     },
     {
       "path": "template-gallery/z_image_cinematic_contact_sheet.webp",
-      "sha256": "sha256:bytes:6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e",
+      "sha256": "sha256:bytes:4c2bbf8e5c5fc23984d3cbb7cf716220d6a5a3a628510b0de9bae418b3447723",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, subject to the recorded source and model terms",
@@ -8882,8 +8882,8 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-accepted-registration",
       "provenanceTemplateId": "z_image_cinematic_contact_sheet"
     },
     {

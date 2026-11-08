@@ -106,8 +106,36 @@ bindings rather than blank template defaults; retain their original content
 identity and establish current bundled-input authority separately. Missing
 consumed fields cannot be filled from submitted intent or listening approval.
 The [paired recovery checkpoint](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/release-20261028/gallery-evidence-recovery.md)
-records one prepared contact-sheet proposal and the remaining ACE policy/capture
-holds. Public activation remains a separate reviewed asset update.
+records the recovered current-recipe replacements and their remaining proof
+boundaries. Original Expert observations retain their recorded policy; later
+Auto observations remain separate evidence. Register an accepted retained output
+only after its formal quality review and exact-file redistribution approval.
+
+### Registering an accepted retained output
+
+Bind the original media bytes and creator settings to the actual completed task,
+graph, consumed controls, immutable model set and source/runtime evidence. Carry
+the existing visual or listening verdict separately; never fill missing execution
+fields from that verdict or relabel a single reviewed run as duplicate exactness.
+
+Complete the existing template-quality rubric and record the reviewer and review
+time. A proposed score is not a score previously supplied by the reviewer. Obtain
+explicit approval of the proposed record and the per-file rights terms before
+publishing new or changed bytes. Preserve earlier Gallery entries, media,
+provenance and reviews outside the active set and retain the prior immutable
+Dataset revision for rollback.
+
+Verify the replacement entries with the normal Gallery verifier, then refresh
+the complete byte inventory and SHA-bound rights ledger. Unchanged approved bytes
+keep their original rights reviews; changed metadata and media require their own
+approved records. Publish the approved subset when holds remain, anonymously
+verify the exact returned commit, and update the complete inventory and pinned
+source descriptor together. Do not clear unrelated rights or model holds.
+
+After the source update, rerun Gallery verification and coverage and compare the
+remaining errors with the preserved report. Report repaired entries separately
+from overall release eligibility. Build/package and test the changed source before
+claiming that a running application serves the new registration.
 
 The release-contract generator also inspects the bundled backend node sources.
 It ignores removed module directories only when they are empty or contain solely
