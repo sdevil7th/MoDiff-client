@@ -50,6 +50,19 @@ private retained evidence; public asset updates still follow the publication
 procedure below. Missing current execution or quality proof requires recovery
 and review of matching receipts or a genuinely accepted new run.
 
+For historical reconciliation, preserve the original manifest, provenance and
+quality-review bytes before assembling a candidate. Keep current recipe
+comparison separate from the retained creator and any recorded derivative.
+Media with a previous-recipe match remains historical even when its bytes and
+review are valid. A missing complete model-set record cannot be reconstructed
+from a singular model field or a graph naming one loader.
+
+Public provenance intentionally redacts source/runtime details. Its maintained
+public verification uses the pinned original attestations; a private validator
+requiring unredacted source inventories is not interchangeable with that check.
+Do not interpret expected redaction diagnostics as authority to fill missing
+fields, relax current proof requirements or rewrite approved sidecars.
+
 The release-contract generator also inspects the bundled backend node sources.
 It ignores removed module directories only when they are empty or contain solely
 the residual `__pycache__` directory. Other missing initializers, Python sources
