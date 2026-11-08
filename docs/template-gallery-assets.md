@@ -688,3 +688,23 @@ evidence tooling: it does not add an Auto recipe, execute a supplier, alter save
 graphs/receipts, acquire weights or grant hardware, quality or publication
 qualification. A missing original task candidate remains missing; the derived
 observation records the actual retained execution separately.
+
+The `observed-workflow-auto-audio-resource-v1` vocabulary covers a fresh,
+unquantized direct-audio text-to-audio graph or its ordinary Load → Generate →
+MatchLoudness → Join → Export continuation. It requires a completed first attempt,
+one immutable installed model, the exact five/eight-node graph and typed audio
+contract, matching request/task/output/session/workflow/form snapshots, the worker
+graph hash, complete native consumed controls and backend-resolved Auto fields.
+Automatic attention, the exact loader/recipe/disabled quantization settings and
+every claimed creative input must agree; a form selection alone is insufficient.
+
+The resource projection distinguishes the requested source duration from the
+full generated continuation target and final delivered duration. Prompt, lyrics,
+seed and node labels remain in execution evidence rather than manufacturing new
+resource recipes. Rehashed observations must still match the canonical controls,
+installed model pin, sample rate and output duration. Original tasks keep their
+absent primary candidate ID. Repaint, variation, patched/deferred/reused owners,
+quantization and unsupported graphs stay outside this reader's scope. A valid
+observation closes only this execution-identity gap: source/input/media checks,
+human listening, current-template review and publication decisions remain
+separate. It adds no runtime, Auto admission, hardware qualification or download.

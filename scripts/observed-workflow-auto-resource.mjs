@@ -6,8 +6,11 @@ import { validateAppliedAdapterItems, validateAppliedAdapterProof } from './appl
 
 export const OBSERVED_WORKFLOW_AUTO_SOURCE = 'observed-workflow-auto-resource-v1';
 export const OBSERVED_WORKFLOW_AUTO_LORA_SOURCE = 'observed-workflow-auto-lora-resource-v1';
+export const OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE = 'observed-workflow-auto-audio-resource-v1';
 export const isObservedWorkflowAutoSource = (source) =>
-  source === OBSERVED_WORKFLOW_AUTO_SOURCE || source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE;
+  source === OBSERVED_WORKFLOW_AUTO_SOURCE ||
+  source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE ||
+  source === OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE;
 const same = (a, b) => assert.deepEqual(stableJsonValue(a), stableJsonValue(b));
 const value = (node, key) => node.params?.[key]?.value;
 const scope = (node) => `${node.module}.${node.action}`;
@@ -52,7 +55,7 @@ function finiteJson(value, depth = 0, seen = new Set()) {
 
 // Same compact sorted ASCII-JSON wire domain as the worker. A representation
 // mismatch remains unsupported; it is never repaired by replacing the receipt.
-function workerGraphHash(graph) {
+export function workerGraphHash(graph) {
   const material = { nodes: graph.nodes, paths: graph.paths };
   finiteJson(material);
   const text = JSON.stringify(stableJsonValue(material)).replace(
@@ -66,6 +69,7 @@ function workerGraphHash(graph) {
 export function observedWorkflowAutoResourceId(plan) {
   try {
     assert(isObservedWorkflowAutoSource(plan.source));
+    if (plan.source === OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE) return audioResourceId(plan);
     const o = plan.resourceObservation;
     finiteJson(o);
     assert.equal(o.schemaVersion, 1);
@@ -147,6 +151,174 @@ export function observedWorkflowAutoResourceId(plan) {
     return id;
   } catch {
     return null;
+  }
+}
+
+const audioControlFields = new Map(
+  [
+    [
+      'modules.DiffusersAudio.LoadPipeline',
+      'model_id pipeline_class revision dtype device offload_mode auto_offload mode',
+    ],
+    [
+      'modules.DiffusersRuntime.DiffusersExecutionRecipe',
+      'attention_backend regional_compile layerwise_casting channels_last device_map denoiser_cache max_memory device_map_overrides vae_slicing vae_tiling offload_mode device',
+    ],
+    ['modules.DiffusersRuntime.PipelineQuantizationConfigV2', 'backend component_overrides'],
+    ['modules.DiffusersAudio.Generate', 'num_inference_steps guidance_scale audio_duration'],
+  ].map(([kind, fields]) => [kind, fields.split(' ').sort()]),
+);
+
+// This is an observed recipe identity, never a new Auto admission or fit claim.
+function audioResourceId(plan) {
+  const o = plan.resourceObservation;
+  finiteJson(o);
+  assert.equal(o.schemaVersion, 1);
+  assert.equal(o.strategy, 'dependency_order_retained_owners');
+  assert(['text_to_audio', 'audio_continuation'].includes(o.task));
+  assert.match(o.repo, /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/u);
+  assert.match(o.revision, /^[0-9a-f]{40}$/u);
+  assert.equal(typeof o.modelType, 'string');
+  assert(o.modelType.length > 0);
+  assert(['bfloat16', 'float16', 'float32'].includes(o.dtype));
+  assert.equal(typeof o.device, 'string');
+  assert(o.device.length > 0);
+  assert(['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'].includes(o.offloadMode));
+  assert.equal(typeof o.autoOffload, 'boolean');
+  assert.equal(o.attentionBackend, 'auto');
+  for (const [field, observed] of Object.entries({
+    modelType: 'modelType',
+    pipelineClass: 'modelType',
+    modelRepo: 'repo',
+    resolvedModelRepo: 'repo',
+    resolvedArtifact: 'repo',
+    modelRevision: 'revision',
+    task: 'task',
+    dtype: 'dtype',
+    device: 'device',
+    offloadMode: 'offloadMode',
+    autoOffload: 'autoOffload',
+    deviceMap: 'deviceMap',
+    attentionBackend: 'attentionBackend',
+  }))
+    same(plan[field], o[observed]);
+  assert.equal(plan.resourceMode, 'auto');
+  assert.equal(plan.resolvedResourceMode, 'auto');
+  assert.equal(plan.quantizationMode, 'none');
+  same(plan.quantizedComponents, []);
+  const w = o.workload;
+  for (const field of ['requestedAudioDuration', 'effectiveAudioDuration', 'steps', 'guidanceScale', 'sampleRate'])
+    assert(Number.isFinite(w[field]) && w[field] > 0);
+  assert(Number.isInteger(w.steps) && Number.isInteger(w.sampleRate));
+  if (o.task === 'text_to_audio') {
+    assert.equal(w.extensionDuration, null);
+    assert.equal(w.requestedAudioDuration, w.effectiveAudioDuration);
+  } else {
+    assert(Number.isFinite(w.extensionDuration) && w.extensionDuration > 0);
+    assert.equal(w.effectiveAudioDuration, w.requestedAudioDuration + w.extensionDuration);
+  }
+  assert(Array.isArray(o.controls) && o.controls.length === 4);
+  const controls = new Map(o.controls.map((control) => [control.scope, control.fields]));
+  assert.equal(controls.size, 4);
+  for (const control of o.controls) {
+    assert(audioControlFields.has(control.scope));
+    assert(control.fields && !Array.isArray(control.fields));
+    same(Object.keys(control.fields).sort(), audioControlFields.get(control.scope));
+  }
+  const owner = controls.get('modules.DiffusersAudio.LoadPipeline');
+  for (const [field, observed] of Object.entries({
+    model_id: { source: 'hub', value: o.repo },
+    pipeline_class: o.modelType,
+    revision: o.revision,
+    dtype: o.dtype,
+    device: o.device,
+    offload_mode: o.offloadMode,
+    auto_offload: o.autoOffload,
+    mode: o.task,
+  }))
+    same(owner[field], observed);
+  const recipe = controls.get('modules.DiffusersRuntime.DiffusersExecutionRecipe');
+  for (const [field, observed] of Object.entries({
+    attention_backend: o.attentionBackend,
+    device_map: o.deviceMap,
+    offload_mode: o.offloadMode,
+    device: o.device,
+    regional_compile: false,
+    layerwise_casting: false,
+    channels_last: false,
+    denoiser_cache: 'none',
+    max_memory: '{}',
+    device_map_overrides: '{}',
+  }))
+    same(recipe[field], observed);
+  for (const field of ['vae_slicing', 'vae_tiling']) assert.equal(typeof recipe[field], 'boolean');
+  for (const [field, observed] of Object.entries({
+    regionalCompile: false,
+    layerwiseCasting: false,
+    channelsLast: false,
+    denoiserCache: 'none',
+  }))
+    same(plan[field], observed);
+  same(controls.get('modules.DiffusersRuntime.PipelineQuantizationConfigV2'), {
+    backend: 'none',
+    component_overrides: '{}',
+  });
+  same(controls.get('modules.DiffusersAudio.Generate'), {
+    audio_duration: w.requestedAudioDuration,
+    num_inference_steps: w.steps,
+    guidance_scale: w.guidanceScale,
+  });
+  const id = plan.source + ':' + canonicalJsonHash(o);
+  assert.equal(plan.observedResourceCandidateId, id);
+  return id;
+}
+
+/** Keep a recomputed observed ID bound to the original canonical graph/model/output. */
+export function observedWorkflowAutoAudioProofMatches(plan, provenance) {
+  try {
+    assert.equal(plan.source, OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE);
+    assert(audioResourceId(plan));
+    const nodes = provenance.graph.canonicalGraph.nodes;
+    assert.equal(nodes.length, plan.task === 'text_to_audio' ? 5 : 8);
+    const unique = (kind) => {
+      const matches = nodes.filter((node) => scope(node) === kind);
+      assert.equal(matches.length, 1);
+      return matches[0];
+    };
+    const owner = unique('modules.DiffusersAudio.LoadPipeline');
+    same(value(owner, 'model_id'), { source: 'hub', value: plan.modelRepo });
+    same(value(owner, 'revision'), plan.modelRevision);
+    same(value(owner, 'pipeline_class'), plan.modelType);
+    same(value(owner, 'mode'), plan.task);
+    assert.equal(provenance.models.items.length, 1);
+    const model = provenance.models.items[0];
+    assert.equal(model.repoId, plan.modelRepo);
+    assert.equal(model.selectedRevision, plan.modelRevision);
+    for (const control of plan.resourceObservation.controls) {
+      const node = unique(control.scope);
+      for (const [field, observed] of Object.entries(control.fields)) {
+        assert(!node.params[field]?.sourceId && !node.params[field]?.sourceKey);
+        same(value(node, field), observed);
+      }
+    }
+    const generate = unique('modules.DiffusersAudio.Generate'),
+      w = plan.resourceObservation.workload;
+    assert.equal(provenance.output.items.length, 1);
+    same(value(unique('modules.DiffusersRuntime.PipelineQuantizationConfigV2'), 'dtype'), plan.dtype);
+    same(value(unique('modules.Audio.Export'), 'sample_rate'), w.sampleRate);
+    for (const [field, observed] of Object.entries({
+      audio_duration: w.requestedAudioDuration,
+      num_inference_steps: w.steps,
+      guidance_scale: w.guidanceScale,
+      sample_rate: w.sampleRate,
+    }))
+      same(value(generate, field), observed);
+    if (plan.task === 'audio_continuation') same(value(generate, 'extension_duration'), w.extensionDuration);
+    same(provenance.output.items[0].durationSeconds, w.effectiveAudioDuration);
+    same(provenance.output.items[0].sampleRate, w.sampleRate);
+    return true;
+  } catch {
+    return false;
   }
 }
 

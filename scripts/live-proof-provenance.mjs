@@ -3,16 +3,20 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { canonicalJsonHash as observationJsonHash } from './canonical-json.mjs';
 
 import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
 import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
 import {
   OBSERVED_WORKFLOW_AUTO_LORA_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE,
   isObservedWorkflowAutoSource,
   observedWorkflowAutoLoraProofMatches,
+  observedWorkflowAutoAudioProofMatches,
   observedWorkflowAutoPlan,
   observedWorkflowAutoResourceId,
+  workerGraphHash,
 } from './observed-workflow-auto-resource.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
@@ -636,11 +640,17 @@ function executedModularExpertPlanFromGraph(apiGraph) {
 }
 
 // Ordinary direct-audio graphs have no managed Studio binding. Record only
-// their unique connected manual recipe; this grants no execution, Auto or fit
-// qualification. Do not substitute stale form/model aliases for the loader.
-function executedDirectAudioExpertPlanFromGraph(apiGraph) {
+// their unique connected recipe. Expert records that authored structure; Auto
+// additionally requires the native joins below. Neither grants fit qualification.
+// Do not substitute stale form/model aliases for the loader.
+function executedDirectAudioPlanFromGraph(apiGraph, resourceMode = 'expert') {
   const form = apiGraph?.runtimeHints?.workflowSnapshot?.studioForm;
-  if (form?.resourceMode !== 'expert' || form.quantizationMode !== 'none') return null;
+  if (
+    !['expert', 'auto'].includes(resourceMode) ||
+    form?.resourceMode !== resourceMode ||
+    form.quantizationMode !== 'none'
+  )
+    return null;
   const entries = nodeEntries(apiGraph);
   const paths = apiGraph?.paths;
   if (
@@ -788,7 +798,7 @@ function executedDirectAudioExpertPlanFromGraph(apiGraph) {
     extras[name] = value;
   }
   return orderedValue({
-    source: 'executed-expert-direct-audio-graph-v1',
+    ...(resourceMode === 'expert' ? { source: 'executed-expert-direct-audio-graph-v1' } : {}),
     modelType: pipelineClass,
     pipelineClass,
     modelRepo: repo,
@@ -803,10 +813,215 @@ function executedDirectAudioExpertPlanFromGraph(apiGraph) {
     offloadMode,
     quantizationMode: 'none',
     quantizedComponents: [],
-    resourceMode: 'expert',
-    resolvedResourceMode: 'expert',
+    resourceMode,
+    resolvedResourceMode: resourceMode,
     ...extras,
   });
+}
+
+// A retained whole-workflow audio run needs the same native joins as image Auto.
+// Literal form values alone never supply this identity. Initial scope is one
+// fresh unquantized Generate/Export owner, optionally with the ordinary joined
+// continuation chain. Repaint, adapters, reuse, patches and other scopes stay held.
+function observedWorkflowAutoAudioPlan(
+  apiGraph,
+  { executionReceipt: task, executedOutput: output, taskId, modelIdentities } = {},
+) {
+  try {
+    const base = executedDirectAudioPlanFromGraph(apiGraph, 'auto');
+    assert(base && ['text_to_audio', 'audio_continuation'].includes(base.task));
+    const hints = apiGraph.runtimeHints,
+      form = hints.workflowSnapshot.studioForm;
+    assert.equal(hints.resourceMode, 'auto');
+    assert.equal(form.mode, base.task);
+    assert.equal(form.trustRemoteCode, false);
+    assert.equal(task.status, 'completed');
+    assert.equal(task.attempt_index, 0);
+    assert.equal(task.resourceCandidateId ?? null, null);
+    assert.equal(output.attemptIndex, 0);
+    assert.equal(task.task_id, output.taskId);
+    if (taskId !== undefined) assert.equal(taskId, task.task_id);
+    for (const [key, taskKey, outputKey] of [
+      ['sid', 'sid', 'sid'],
+      ['workflowTabId', 'workflow_tab_id', 'workflowTabId'],
+      ['clientRunId', 'client_run_id', 'clientRunId'],
+      ['runInputHash', 'run_input_hash', 'runInputHash'],
+    ]) {
+      const identity = key === 'sid' ? apiGraph.sid : hints[key];
+      assert.equal(typeof identity, 'string');
+      assert(identity.length > 0);
+      same(task[taskKey], identity, key);
+      same(output[outputKey], identity, key);
+    }
+    same(output.apiGraphSnapshot, apiGraph);
+    same(task.workflow_snapshot, hints.workflowSnapshot);
+    same(output.formSnapshot, form);
+    assert.equal(hints.workflowAutoPlan.schemaVersion, 1);
+    assert.equal(hints.workflowAutoPlan.graphHash, workerGraphHash(apiGraph));
+    assert(!Object.hasOwn(apiGraph, 'loops'));
+    const entries = nodeEntries(apiGraph),
+      byScope = new Map(entries.map(([id, node]) => [node.module + '.' + node.action, { id, node }]));
+    assert.equal(byScope.size, entries.length);
+    assert.equal(entries.length, base.task === 'text_to_audio' ? 5 : 8);
+    const owner = byScope.get('modules.DiffusersAudio.LoadPipeline'),
+      generate = byScope.get('modules.DiffusersAudio.Generate');
+    const recipe = byScope.get('modules.DiffusersRuntime.DiffusersExecutionRecipe'),
+      quant = byScope.get('modules.DiffusersRuntime.PipelineQuantizationConfigV2');
+    const exported = byScope.get('modules.Audio.Export');
+    assert.equal(output.nodeId, exported.id);
+    const captured = output.resolvedExecutionInputs;
+    assert.equal(captured.schemaVersion, 1);
+    assert.equal(captured.source, 'backend-execution');
+    assert.equal(captured.taskId, task.task_id);
+    assert.equal(captured.attemptIndex, 0);
+    assert.equal(captured.nodeId, exported.id);
+    assert.equal(captured.truncated, false);
+    same(captured.uncapturedNodeIds, []);
+    const rows = new Map(captured.nodes.map((row) => [row.nodeId, row]));
+    assert.equal(rows.size, entries.length);
+    assert.equal(captured.nodes.length, entries.length);
+    for (const [id, node] of entries) {
+      assert.equal(rows.get(id).module, node.module);
+      assert.equal(rows.get(id).action, node.action);
+    }
+    assert.equal(modelIdentities?.length, 1);
+    assert.equal(modelIdentities[0].repoId, base.modelRepo);
+    assert.equal(modelIdentities[0].selectedRevision, base.modelRevision);
+    const prep = task.runtimePreparation;
+    assert.equal(prep.resourceMode, 'auto');
+    const auto = prep.workflowAuto;
+    assert.equal(auto.strategy, 'dependency_order_retained_owners');
+    assert.equal(auto.schedule, null);
+    assert.equal(auto.cachePreparation, null);
+    for (const field of ['reusedOwnerIds', 'preparedDataNodes', 'appliedUpdates', 'releases']) same(auto[field], []);
+    const allowed = new Map([
+      [owner.id, new Set('model_id pipeline_class revision dtype device offload_mode auto_offload mode'.split(' '))],
+      [
+        recipe.id,
+        new Set(
+          'attention_backend regional_compile layerwise_casting channels_last device_map denoiser_cache max_memory device_map_overrides vae_slicing vae_tiling offload_mode device'.split(
+            ' ',
+          ),
+        ),
+      ],
+      [quant.id, new Set('backend component_overrides'.split(' '))],
+      [generate.id, new Set('num_inference_steps guidance_scale audio_duration'.split(' '))],
+    ]);
+    same(Object.keys(auto.resolvedFields).sort(), [...allowed.keys()].sort());
+    const controls = [];
+    for (const [id, fields] of Object.entries(auto.resolvedFields)) {
+      same(Object.keys(fields).sort(), [...allowed.get(id)].sort());
+      const node = apiGraph.nodes[id];
+      for (const [key, observed] of Object.entries(fields)) {
+        assert(!node.params[key]?.sourceId && !node.params[key]?.sourceKey);
+        same(apiParamValue(node, key), observed);
+        const field = rows.get(id).fields[key];
+        if (field) {
+          assert.equal(field.source, 'literal');
+          // Continuation resolves the requested source-duration control plus
+          // its extension into the library's full target duration. Check that
+          // actual value below, rather than conflating admission and call data.
+          if (!(id === generate.id && key === 'audio_duration' && base.task === 'audio_continuation'))
+            same(field.value, key === 'model_id' ? base.modelRepo : observed);
+        }
+      }
+      controls.push({ scope: node.module + '.' + node.action, fields: structuredClone(fields) });
+    }
+    controls.sort((a, b) => a.scope.localeCompare(b.scope));
+    const native = (entry, key, expected) => {
+      const field = rows.get(entry.id).fields[key];
+      assert.equal(field.source, 'literal');
+      same(field.value, expected);
+    };
+    if (base.task === 'audio_continuation') {
+      const source = byScope.get('modules.Audio.Load');
+      const file = source.node.params.file;
+      assert(!file?.sourceId && !file?.sourceKey);
+      assert.equal(typeof file?.value, 'string');
+      assert(file.value.length > 0 && file.value.length <= 16_384);
+      same(file.value, form.sourceAudio);
+    }
+    for (const key of [
+      'model_id',
+      'pipeline_class',
+      'revision',
+      'dtype',
+      'device',
+      'auto_offload',
+      'offload_mode',
+      'enable_vae_tiling',
+    ])
+      native(owner, key, key === 'model_id' ? base.modelRepo : apiParamValue(owner.node, key));
+    for (const key of ['device', 'offload_mode', 'attention_backend', 'vae_slicing', 'vae_tiling'])
+      native(recipe, key, apiParamValue(recipe.node, key));
+    native(quant, 'dtype', base.dtype);
+    assert.equal(base.attentionBackend, 'auto');
+    for (const key of ['regional_compile', 'layerwise_casting', 'channels_last'])
+      assert.equal(apiParamValue(recipe.node, key), false);
+    assert.equal(apiParamValue(recipe.node, 'denoiser_cache'), 'none');
+    for (const key of ['max_memory', 'device_map_overrides']) assert.equal(apiParamValue(recipe.node, key), '{}');
+    assert.equal(apiParamValue(quant.node, 'component_overrides'), '{}');
+    const duration = apiParamValue(generate.node, 'audio_duration'),
+      extension = base.task === 'audio_continuation' ? apiParamValue(generate.node, 'extension_duration') : null;
+    assert(Number.isFinite(duration) && duration > 0);
+    same(duration, form.audioDuration);
+    if (extension !== null) {
+      assert(Number.isFinite(extension) && extension > 0);
+      same(extension, form.extensionDuration);
+      assert.equal(apiParamValue(generate.node, 'return_continuation_tail'), true);
+    }
+    const effective = duration + (extension ?? 0);
+    for (const [key, formKey] of [
+      ['prompt', 'prompt'],
+      ['lyrics', 'lyrics'],
+      ['vocal_language', 'vocalLanguage'],
+      ['num_inference_steps', 'steps'],
+      ['guidance_scale', 'guidanceScale'],
+      ['shift', 'shift'],
+      ['seed', 'seed'],
+      ['bpm', 'bpm'],
+      ['keyscale', 'keyscale'],
+      ['timesignature', 'timesignature'],
+    ]) {
+      const value = apiParamValue(generate.node, key);
+      same(value, form[formKey]);
+      native(generate, key, value);
+    }
+    native(generate, 'audio_duration', effective);
+    const sampleRate = apiParamValue(generate.node, 'sample_rate');
+    assert(Number.isInteger(sampleRate) && sampleRate > 0);
+    native(generate, 'sample_rate', sampleRate);
+    native(exported, 'sample_rate', sampleRate);
+    const observation = {
+      schemaVersion: 1,
+      strategy: auto.strategy,
+      modelType: base.modelType,
+      repo: base.modelRepo,
+      revision: base.modelRevision,
+      task: base.task,
+      dtype: base.dtype,
+      device: base.device,
+      offloadMode: base.offloadMode,
+      autoOffload: base.autoOffload,
+      deviceMap: base.deviceMap,
+      attentionBackend: base.attentionBackend,
+      workload: {
+        requestedAudioDuration: duration,
+        effectiveAudioDuration: effective,
+        extensionDuration: extension,
+        steps: apiParamValue(generate.node, 'num_inference_steps'),
+        guidanceScale: apiParamValue(generate.node, 'guidance_scale'),
+        sampleRate,
+      },
+      controls,
+    };
+    const plan = { ...base, source: OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE, resourceObservation: observation };
+    plan.observedResourceCandidateId = plan.source + ':' + observationJsonHash(observation);
+    assert(observedWorkflowAutoResourceId(plan));
+    return plan;
+  } catch {
+    return null;
+  }
 }
 
 function observedAdapterProofContext(apiGraph, context) {
@@ -854,17 +1069,17 @@ export function executionPlanIdentity(apiGraph, executionContext) {
   const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph) : null;
   const observedAutoPlan =
     fields.length === 1 && declaredPlan.resourceMode === 'auto'
-      ? observedWorkflowAutoPlan(apiGraph, {
+      ? (observedWorkflowAutoPlan(apiGraph, {
           ...executionContext,
           adapterProofContext: observedAdapterProofContext(apiGraph, executionContext),
-        })
+        }) ?? observedWorkflowAutoAudioPlan(apiGraph, executionContext))
       : null;
   const plan =
     observedAutoPlan ??
     modularPlan ??
     (fields.length > 0
       ? declaredPlan
-      : (executedExpertPlanFromGraph(apiGraph) ?? executedDirectAudioExpertPlanFromGraph(apiGraph) ?? {}));
+      : (executedExpertPlanFromGraph(apiGraph) ?? executedDirectAudioPlanFromGraph(apiGraph) ?? {}));
   return {
     hash: sha256Value('execution-plan-v1', plan),
     plan: orderedValue(plan),
@@ -1449,6 +1664,12 @@ export function validateRunProvenance(provenance) {
       !observedWorkflowAutoLoraProofMatches(provenance.graph.executionPlan, provenance)
     ) {
       blockers.push('execution LoRA resource observation does not match the original applied adapter proof.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE &&
+      !observedWorkflowAutoAudioProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push('execution audio resource observation does not match the original graph/model/output proof.');
     }
     if (!Number.isFinite(provenance?.execution?.elapsedSeconds) || provenance.execution.elapsedSeconds < 0) {
       blockers.push('execution.elapsedSeconds is invalid.');
