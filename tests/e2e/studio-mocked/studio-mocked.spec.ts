@@ -37772,6 +37772,32 @@ async function audioTemplateSchemas(page: Page) {
   return structuredClone(await audioTemplateSchemaPromise);
 }
 
+const it = test.extend<Record<never, never>, { audioTemplateSchemaReady: boolean }>({
+  audioTemplateSchemaReady: [
+    async ({ browser }, use) => {
+      // Two bounded, offline Python captures and the served authority parser
+      // are shared worker setup. They do not exercise the selected UI route.
+      // Keep their cold startup out of each scenario's unchanged time budget.
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await ensureFrontend();
+        await page.route('**/*', (route) => {
+          const request = route.request();
+          return ['GET', 'HEAD'].includes(request.method()) && new URL(request.url()).origin === FRONTEND_URL
+            ? route.continue()
+            : route.abort('blockedbyclient');
+        });
+        await audioTemplateSchemas(page);
+      } finally {
+        await context.close();
+      }
+      await use(true);
+    },
+    { scope: 'worker', auto: true, timeout: 120_000 },
+  ],
+});
+
 async function openAudioStageTemplate(
   page: Page,
   templateId: (typeof STUDIO_TEMPLATES)[number]['id'],
@@ -38036,7 +38062,7 @@ async function audioWorkflowNodeId(page: Page, label: string): Promise<string> {
   return matches[0].id;
 }
 
-test('MiniMax real Audio Output preserves leaves and supports contained playback, Separate, Undo and reload', async ({
+it('MiniMax real Audio Output preserves leaves and supports contained playback, Separate, Undo and reload', async ({
   page,
 }) => {
   const { mutations } = await openAudioStageTemplate(page, 'minimax_music3_chamber_pop');
@@ -38203,7 +38229,7 @@ test('MiniMax real Audio Output preserves leaves and supports contained playback
   expect(mutations).toEqual([]);
 });
 
-test('fresh lyric template preserves its full composite branch brief through ordinary Save and reopen', async ({
+it('fresh lyric template preserves its full composite branch brief through ordinary Save and reopen', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -38262,7 +38288,7 @@ test('fresh lyric template preserves its full composite branch brief through ord
   expect(mutations).toEqual([]);
 });
 
-test('ACE selected max-one audio setup keeps its row editable and Remove Undo reload preserves exact API', async ({
+it('ACE selected max-one audio setup keeps its row editable and Remove Undo reload preserves exact API', async ({
   page,
 }) => {
   const { fixture, mutations } = await openAudioStageTemplate(page, 'ace_step_chinese_new_year_lora');
@@ -38311,7 +38337,10 @@ test('ACE selected max-one audio setup keeps its row editable and Remove Undo re
     Object.entries((await audioApiSnapshot(page)).nodes).find(
       ([, node]) => node.module === 'modules.DiffusersAudio' && node.action === 'LoadAdapter',
     );
-  expect(audioApiValue((await adapter())![1], 'adapter_path')).toEqual({ source: 'hub', value: specimen.model!.value });
+  expect(audioApiValue((await adapter())![1], 'adapter_path')).toEqual({
+    source: 'hub',
+    value: specimen.model!.value,
+  });
   expect(audioApiValue((await adapter())![1], 'revision')).toBe(specimen.model!.revision);
   expect(audioApiValue((await adapter())![1], 'expected_sha256')).toBe(specimen.model!.sha256);
   await row.getByLabel('Strength', { exact: true }).fill('0.55');
@@ -38350,7 +38379,7 @@ test('ACE selected max-one audio setup keeps its row editable and Remove Undo re
   expect(mutations).toEqual([]);
 });
 
-test('ACE audio variation hook keeps the current selected starter and task instead of legacy Auto authoring', async ({
+it('ACE audio variation hook keeps the current selected starter and task instead of legacy Auto authoring', async ({
   page,
 }) => {
   const { fixture, mutations, starterRequests } = await openAudioStageTemplate(page, 'ace_step_audio_variation', true);
@@ -38374,7 +38403,7 @@ test('ACE audio variation hook keeps the current selected starter and task inste
   expect(mutations).toEqual([]);
 });
 
-test('aliased audio Model Setup renders human offload choices and preserves the selected raw value on reload', async ({
+it('aliased audio Model Setup renders human offload choices and preserves the selected raw value on reload', async ({
   page,
 }) => {
   const { mutations } = await openAudioStageTemplate(page, 'ace_step_text_to_audio');
