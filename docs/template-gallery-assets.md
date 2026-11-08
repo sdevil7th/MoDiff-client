@@ -20,6 +20,29 @@ Hugging Face Dataset by immutable revision and explicitly lists withheld assets.
 `mode: "local"` remains available for a complete verified local copy. Never replace
 the reviewed source with a guessed namespace or a moving `main` revision.
 
+## Deterministic inventory and current-source reports
+
+The inventory uses repository-owned MIME mappings for supported Gallery formats,
+including the existing `audio/x-wav` spelling, rather than the host's registry.
+Unknown extensions remain `application/octet-stream`. PNG/WebP dimensions come
+from their checked headers even when the operating system has no MIME entry;
+an invalid known image is an error, not an opaque-file fallback. Byte hashes,
+sizes, purposes and complete-set checks remain strict.
+
+This does not rewrite an older approved manifest. If identical image bytes have
+older generic MIME metadata or omitted dimensions, preserve that original set
+and prepare a separate metadata proposal for review. Running `inventory --write`
+changes the asset-set identity; it is not a way to dismiss a mismatch without
+reviewing dependent rights/source records and the immutable Dataset update.
+
+The release-candidate report runs the existing `release-contract.mjs --check`
+before claiming `releaseContractCurrent`. A stale contract, verifier failure,
+timeout or inability to start the check makes that gate false and adds
+`release-contract-not-current`. The bounded check never regenerates the contract,
+installs packages or fills missing qualification evidence. Its private diagnostics
+are not copied into the public report. `--check` still verifies the report itself,
+and `--require-ready` still enforces every other release gate.
+
 ## One-time public Dataset setup
 
 Before publishing or refreshing examples, preserve each run's original consumed

@@ -46,6 +46,77 @@ def asset_record(path: str, payload: bytes) -> dict[str, object]:
 
 
 class TemplateGalleryAssetTests(unittest.TestCase):
+    def test_asset_metadata_does_not_depend_on_the_host_mime_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            gallery = Path(temporary)
+            (gallery / "sound.wav").write_bytes(b"fixture audio bytes")
+            (gallery / "data.json").write_bytes(b"{}")
+            (gallery / "download.unknown").write_bytes(b"opaque bytes")
+            with patch.object(assets, "GALLERY_ROOT", gallery):
+                for guessed in (None, "audio/wav", "application/x-host-specific"):
+                    with patch("mimetypes.guess_type", return_value=(guessed, None)):
+                        for name, expected in [
+                            ("sound.wav", "audio/x-wav"),
+                            ("data.json", "application/json"),
+                            ("download.unknown", "application/octet-stream"),
+                        ]:
+                            with self.subTest(registry=guessed, asset=name):
+                                record = assets.asset_record(name, {"runtime"})
+                                self.assertEqual(record["contentType"], expected)
+
+    def test_webp_geometry_is_detected_when_the_os_has_no_webp_registration(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            gallery = Path(temporary)
+            # Bounded header fixture for the existing VP8X metadata reader.
+            chunk = (
+                b"\x00" * 4 + (511).to_bytes(3, "little") + (255).to_bytes(3, "little")
+            )
+            body = b"WEBPVP8X" + len(chunk).to_bytes(4, "little") + chunk
+            raw = b"RIFF" + len(body).to_bytes(4, "little") + body
+            (gallery / "poster.webp").write_bytes(raw)
+            with (
+                patch.object(assets, "GALLERY_ROOT", gallery),
+                patch("mimetypes.guess_type", return_value=(None, None)),
+            ):
+                record = assets.asset_record("poster.webp", {"tooling"})
+            self.assertEqual(record["contentType"], "image/webp")
+            self.assertEqual((record["width"], record["height"]), (512, 256))
+            self.assertEqual(
+                record["sha256"], "sha256:bytes:" + assets.sha256_bytes(raw)
+            )
+
+    def test_invalid_known_image_cannot_hide_behind_a_missing_os_mime_type(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            gallery = Path(temporary)
+            with (
+                patch.object(assets, "GALLERY_ROOT", gallery),
+                patch("mimetypes.guess_type", return_value=(None, None)),
+            ):
+                for name in ("broken.webp", "broken.png"):
+                    (gallery / name).write_bytes(b"not an image header")
+                    with (
+                        self.subTest(asset=name),
+                        self.assertRaises(assets.AssetPipelineError),
+                    ):
+                        assets.asset_record(name, {"runtime"})
+
+    def test_known_mime_selection_is_case_insensitive_and_preserves_payload_bytes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            gallery = Path(temporary)
+            raw = b"opaque deterministic fixture"
+            (gallery / "SOUND.WAV").write_bytes(raw)
+            with patch.object(assets, "GALLERY_ROOT", gallery):
+                record = assets.asset_record("SOUND.WAV", {"runtime"})
+            self.assertEqual(record["contentType"], "audio/x-wav")
+            self.assertEqual(record["size"], len(raw))
+            self.assertEqual((gallery / "SOUND.WAV").read_bytes(), raw)
+
     def create_symlink_or_skip(
         self, link: Path, target: Path, *, target_is_directory: bool = False
     ) -> None:

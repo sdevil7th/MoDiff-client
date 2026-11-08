@@ -13,7 +13,6 @@ import argparse
 import errno
 import hashlib
 import json
-import mimetypes
 import os
 import re
 import shutil
@@ -108,6 +107,27 @@ COMMIT_PATTERN = re.compile(r"^[a-f0-9]{40}$")
 REPO_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
 IGNORED_NAMES = {".DS_Store", "Thumbs.db"}
 BUFFER_SIZE = 1024 * 1024
+# This is serialized release metadata, not an operating-system registry lookup.
+# Keep the existing WAV spelling so unchanged approved byte records stay stable.
+ASSET_CONTENT_TYPES = {
+    ".json": "application/json",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".avif": "image/avif",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".wav": "audio/x-wav",
+    ".mp3": "audio/mpeg",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".m4a": "audio/mp4",
+}
 WINDOWS_RESERVED_BASENAMES = {
     "aux",
     "clock$",
@@ -458,8 +478,9 @@ def local_asset_paths() -> set[str]:
 
 def asset_record(relative_path: str, purposes: set[str]) -> dict[str, Any]:
     path = GALLERY_ROOT / relative_path
-    content_type, _ = mimetypes.guess_type(relative_path)
-    normalized_content_type = content_type or "application/octet-stream"
+    normalized_content_type = ASSET_CONTENT_TYPES.get(
+        path.suffix.lower(), "application/octet-stream"
+    )
     record = {
         "path": f"template-gallery/{relative_path}",
         "size": path.stat().st_size,

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +54,17 @@ function hash(namespace, value) {
 }
 
 const contract = readJson(CONTRACT_PATH);
+// A retained hash cannot attest that today's templates/source still match it.
+// Reuse the existing read-only verifier; never regenerate the contract here.
+const contractVerification = spawnSync(process.execPath, [join(SCRIPT_DIR, 'release-contract.mjs'), '--check'], {
+  cwd: CLIENT_ROOT,
+  env: { ...process.env, MODIFF_BACKEND_DIR: BACKEND_ROOT },
+  encoding: 'utf8',
+  timeout: 120_000,
+  maxBuffer: 1024 * 1024,
+});
+const releaseContractCurrent =
+  contractVerification.status === 0 && !contractVerification.error && !contractVerification.signal;
 const hardwareQualification = existsSync(HARDWARE_QUALIFICATION_PATH)
   ? readJson(HARDWARE_QUALIFICATION_PATH)
   : { receipts: [] };
@@ -89,7 +101,7 @@ const {
 } = hardwareCoverage;
 
 const gates = {
-  releaseContractCurrent: true,
+  releaseContractCurrent,
   templatesEligible: incompleteTemplates.length === 0,
   workflowsEligible: incompleteWorkflows.length === 0,
   qualificationReceiptsComplete:
@@ -99,6 +111,15 @@ const gates = {
   supportedProfilesPhysicallyQualified: hardwareCoverage.allSupportedProfilesQualified,
 };
 const blockers = [
+  ...(gates.releaseContractCurrent
+    ? []
+    : [
+        {
+          id: 'release-contract-not-current',
+          message:
+            'The retained release contract did not pass current-source verification. Run npm run release:contract:verify; preserve and diagnose stale or unavailable evidence before regenerating.',
+        },
+      ]),
   ...(gates.templatesEligible
     ? []
     : [
