@@ -11,9 +11,11 @@ import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } 
 import {
   OBSERVED_WORKFLOW_AUTO_LORA_SOURCE,
   OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE,
   isObservedWorkflowAutoSource,
   observedWorkflowAutoLoraProofMatches,
   observedWorkflowAutoAudioProofMatches,
+  observedWorkflowAutoImageProofMatches,
   observedWorkflowAutoPlan,
   observedWorkflowAutoResourceId,
   workerGraphHash,
@@ -1670,6 +1672,12 @@ export function validateRunProvenance(provenance) {
       !observedWorkflowAutoAudioProofMatches(provenance.graph.executionPlan, provenance)
     ) {
       blockers.push('execution audio resource observation does not match the original graph/model/output proof.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE &&
+      !observedWorkflowAutoImageProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push('execution image resource observation does not match the original graph/model/input/output proof.');
     }
     if (!Number.isFinite(provenance?.execution?.elapsedSeconds) || provenance.execution.elapsedSeconds < 0) {
       blockers.push('execution.elapsedSeconds is invalid.');

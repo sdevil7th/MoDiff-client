@@ -759,3 +759,33 @@ quantization and unsupported graphs stay outside this reader's scope. A valid
 observation closes only this execution-identity gap: source/input/media checks,
 human listening, current-template review and publication decisions remain
 separate. It adds no runtime, Auto admission, hardware qualification or download.
+
+The `observed-workflow-auto-image-resource-v1` vocabulary covers one fresh,
+unquantized two-reference modular image-conditioned graph: one literal pinned
+ModelsLoader, Image.Load, ImageEncode, EncodePrompt, Denoise, DecodeLatents and
+Preview. Both source files must have ordered native hashes and complete RGB
+geometry captures. ImageEncode must use that loader's VAE; its latents and the
+same loader's text, denoiser and decoder components must reach the sole output.
+Task, attempt, session, workflow, form, worker graph hash, resolved Auto controls
+and consumed controls must agree. Reused, deferred, patched, quantized,
+adapter-bearing and unsupported graphs remain held.
+
+Historical image-conditioned captures can explicitly report `graphTasks.task:
+null`. That null remains recorded as `reportedGraphTask`; it is not rewritten as
+a backend task declaration. The observed operation comes from the saved
+multi-reference mode, literal `image_conditioned` workflow and complete connected
+path. A legacy form model label is retained separately from the actual executed
+loader class and immutable installed model. Neither a label nor an Auto hint
+alone establishes execution evidence.
+
+The final validator joins the observed identity back to the original canonical
+controls, single installed model, freshly applied empty adapter state, ordered
+input paths/hashes and measured output. Rehashing a changed observation cannot
+substitute another model, input order, control tuple or output. Source dimensions
+remain native capture evidence; no new pixel identity is inferred from file
+hashes. Existing source, input-byte, media, quality, rights and publication checks
+still apply. The original primary candidate and template identifiers remain
+absent where originally absent. This maintainer-only reader does not execute a
+model, admit a resource recipe, qualify hardware, alter saved graphs or authorize
+publication. Other image, video, repaint and variation routes need their own
+evidence review.

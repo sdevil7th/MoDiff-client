@@ -2,15 +2,21 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { canonicalJsonHash, stableJsonValue } from './canonical-json.mjs';
-import { validateAppliedAdapterItems, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
+import {
+  validateAppliedAdapterItems,
+  validateAppliedAdapterProof,
+  validateAppliedAdapterSection,
+} from './applied-adapter-provenance.mjs';
 
 export const OBSERVED_WORKFLOW_AUTO_SOURCE = 'observed-workflow-auto-resource-v1';
 export const OBSERVED_WORKFLOW_AUTO_LORA_SOURCE = 'observed-workflow-auto-lora-resource-v1';
 export const OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE = 'observed-workflow-auto-audio-resource-v1';
+export const OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE = 'observed-workflow-auto-image-resource-v1';
 export const isObservedWorkflowAutoSource = (source) =>
   source === OBSERVED_WORKFLOW_AUTO_SOURCE ||
   source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE ||
-  source === OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE;
+  source === OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE ||
+  source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE;
 const same = (a, b) => assert.deepEqual(stableJsonValue(a), stableJsonValue(b));
 const value = (node, key) => node.params?.[key]?.value;
 const scope = (node) => `${node.module}.${node.action}`;
@@ -78,7 +84,20 @@ export function observedWorkflowAutoResourceId(plan) {
     assert.equal(typeof o.repo, 'string');
     assert(o.repo.length > 0);
     assert.match(o.revision, /^[0-9a-f]{40}$/u);
-    assert.equal(o.task, 'text_to_image');
+    const imageConditioned = plan.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE;
+    assert.equal(o.task, imageConditioned ? 'multi_image_reference_edit' : 'text_to_image');
+    if (imageConditioned) {
+      assert.equal(o.reportedGraphTask, null);
+      assert.equal(o.workflowId, 'image_conditioned');
+      assert(typeof o.formModelType === 'string' && o.formModelType.length > 0 && o.formModelType.length <= 256);
+      assert(Array.isArray(o.references) && o.references.length === 2);
+      for (const [index, reference] of o.references.entries()) {
+        same(Object.keys(reference).sort(), ['contentHash', 'role']);
+        assert.equal(reference.role, `referenceImages[${index}]`);
+        assert.match(reference.contentHash, /^sha256:bytes:[a-f0-9]{64}$/u);
+      }
+      assert.notEqual(o.references[0].contentHash, o.references[1].contentHash);
+    }
     assert(['bfloat16', 'float16', 'float32'].includes(o.dtype));
     assert.equal(typeof o.device, 'string');
     assert(o.device.length > 0);
@@ -92,6 +111,7 @@ export function observedWorkflowAutoResourceId(plan) {
     const controls = new Map(o.controls.map((c) => [c.scope, c.fields]));
     assert.equal(controls.size, o.controls.length);
     assert(controls.has(ownerScope));
+    if (imageConditioned) assert.equal(controls.get(ownerScope).workflow_id, o.workflowId);
     const denoiseFields = controls.get('modules.ModularDiffusers.Denoise');
     assert(denoiseFields);
     for (const key of ['width', 'height']) same(denoiseFields[key], o.geometry[key]);
@@ -126,6 +146,8 @@ export function observedWorkflowAutoResourceId(plan) {
       assert.equal(o.adapters.length, 1);
       assert.equal(o.adapters[0].artifact.source, 'hub');
       assert.equal(o.adapters[0].scheduler, null);
+    } else assert(!Object.hasOwn(o, 'adapters'));
+    if (plan.source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE || imageConditioned) {
       const primary = controls.get(ownerScope);
       assert.equal(primary.repo_id?.source, 'hub');
       same(primary.repo_id.value, o.repo);
@@ -145,7 +167,7 @@ export function observedWorkflowAutoResourceId(plan) {
         same(primary[key], o[observed]);
       }
       assert.equal(primary.weight_format, 'native');
-    } else assert(!Object.hasOwn(o, 'adapters'));
+    }
     const id = plan.source + ':' + canonicalJsonHash(o);
     assert.equal(plan.observedResourceCandidateId, id);
     return id;
@@ -373,7 +395,9 @@ export function observedWorkflowAutoPlan(
       form = snapshot.studioForm;
     assert.equal(hints.resourceMode, 'auto');
     assert.equal(form.resourceMode, 'auto');
-    assert.equal(form.mode, 'text_to_image');
+    const imageConditioned = form.mode === 'multi_image_reference_edit';
+    assert(form.mode === 'text_to_image' || imageConditioned);
+    if (imageConditioned) assert.equal(task.resourceCandidateId, null);
     assert.equal(task.status, 'completed');
     assert.equal(task.attempt_index, 0);
     assert.equal(output.attemptIndex, 0);
@@ -407,7 +431,12 @@ export function observedWorkflowAutoPlan(
     const scopes = new Map();
     for (const [id, node] of entries) {
       const key = scope(node);
-      assert(core.includes(key) || key === optional || key === descriptorScope);
+      assert(
+        core.includes(key) ||
+          (imageConditioned
+            ? key === 'modules.ModularDiffusers.ImageEncode' || key === 'modules.Image.Load'
+            : key === optional || key === descriptorScope),
+      );
       assert(!scopes.has(key));
       scopes.set(key, { id, node });
       for (const param of Object.values(node.params))
@@ -435,8 +464,11 @@ export function observedWorkflowAutoPlan(
       assert.equal(rows.get(id).module, node.module);
       assert.equal(rows.get(id).action, node.action);
     }
-    same(receipt.graphTasks, [{ loaderId: ownerId, pipelineClass: value(owner, 'model_type'), task: 'text_to_image' }]);
-    assert.equal(form.modelType, value(owner, 'model_type'));
+    same(receipt.graphTasks, [
+      { loaderId: ownerId, pipelineClass: value(owner, 'model_type'), task: imageConditioned ? null : 'text_to_image' },
+    ]);
+    if (!imageConditioned) assert.equal(form.modelType, value(owner, 'model_type'));
+    else assert(typeof form.modelType === 'string' && form.modelType.length > 0 && form.modelType.length <= 256);
     assert.equal(form.quantizationMode, 'none');
     assert.equal(form.trustRemoteCode, false);
     assert.equal(value(owner, 'trust_remote_code'), false);
@@ -594,23 +626,30 @@ export function observedWorkflowAutoPlan(
     for (const key of ['width', 'height'])
       assert(Number.isInteger(d[key].value) && d[key].value > 0 && d[key].value <= 32768);
     const encoded = scopes.get('modules.ModularDiffusers.EncodePrompt');
-    for (const [key, formKey] of [
-      ['prompt', 'prompt'],
-      ['negative_prompt', 'negativePrompt'],
-    ]) {
+    for (const [key, formKey] of imageConditioned
+      ? [['prompt', 'prompt']]
+      : [
+          ['prompt', 'prompt'],
+          ['negative_prompt', 'negativePrompt'],
+        ]) {
       assert.equal(rows.get(encoded.id).fields[key].source, 'literal');
       same(rows.get(encoded.id).fields[key].value, value(encoded.node, key));
       same(value(encoded.node, key), form[formKey]);
     }
+    const references = imageConditioned ? observedImageReferences(apiGraph, receipt, form) : null;
     const plan = {
-      source: adapters ? OBSERVED_WORKFLOW_AUTO_LORA_SOURCE : OBSERVED_WORKFLOW_AUTO_SOURCE,
+      source: imageConditioned
+        ? OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE
+        : adapters
+          ? OBSERVED_WORKFLOW_AUTO_LORA_SOURCE
+          : OBSERVED_WORKFLOW_AUTO_SOURCE,
       modelType: value(owner, 'model_type'),
       pipelineClass: value(owner, 'model_type'),
       modelRepo: repo.value,
       resolvedModelRepo: repo.value,
       resolvedArtifact: repo.value,
       modelRevision: revision,
-      task: 'text_to_image',
+      task: imageConditioned ? 'multi_image_reference_edit' : 'text_to_image',
       resourceMode: 'auto',
       resolvedResourceMode: 'auto',
       dtype: value(owner, 'dtype'),
@@ -641,14 +680,277 @@ export function observedWorkflowAutoPlan(
       geometry: { width: d.width.value, height: d.height.value },
       strategy: auto.strategy,
       controls,
+      ...(imageConditioned
+        ? { references, formModelType: form.modelType, reportedGraphTask: null, workflowId: 'image_conditioned' }
+        : {}),
       ...(adapters ? { adapters } : {}),
     };
-    return {
+    const result = {
       ...plan,
       resourceObservation: observation,
       observedResourceCandidateId: plan.source + ':' + canonicalJsonHash(observation),
     };
+    if (imageConditioned) assert(observedWorkflowAutoResourceId(result));
+    return result;
   } catch {
     return null;
+  }
+}
+
+// A single explicit two-reference path. These are declarations and receipts,
+// never executable suppliers or a fallback task classifier in the application.
+function imageConditionedRoles(entries) {
+  const roles = new Map(entries.map(([id, node]) => [scope(node), { id, node }]));
+  assert.equal(entries.length, 7);
+  assert.equal(roles.size, 7);
+  const get = (kind) => {
+    const role = roles.get(kind);
+    assert(role);
+    return role;
+  };
+  const owner = get(ownerScope),
+    load = get('modules.Image.Load'),
+    image = get('modules.ModularDiffusers.ImageEncode'),
+    encode = get('modules.ModularDiffusers.EncodePrompt'),
+    denoise = get('modules.ModularDiffusers.Denoise'),
+    decode = get('modules.ModularDiffusers.DecodeLatents'),
+    preview = get('modules.Image.Preview');
+  const wires = new Map([
+    [owner.id, {}],
+    [load.id, {}],
+    [image.id, { image: [load.id, 'image'], vae: [owner.id, 'vae_out'] }],
+    [encode.id, { text_encoders: [owner.id, 'text_encoders'] }],
+    [
+      denoise.id,
+      {
+        unet: [owner.id, 'unet_out'],
+        scheduler: [owner.id, 'scheduler'],
+        embeddings: [encode.id, 'embeddings'],
+        image_latents: [image.id, 'image_latents'],
+      },
+    ],
+    [decode.id, { vae: [owner.id, 'vae_out'], latents: [denoise.id, 'latents'] }],
+    [preview.id, { image: [decode.id, 'images'] }],
+  ]);
+  const fields = new Map([
+    [
+      owner.id,
+      new Set([
+        ...ownerFields,
+        'trust_remote_code',
+        'quant_config',
+        'unet',
+        'vae',
+        'controlnet',
+        'lora_list',
+        'text_encoders',
+        'pipeline_components',
+        'image_encoder',
+        'modiff_pipeline_identity',
+        'refresh_pipeline_identity_button',
+      ]),
+    ],
+    [load.id, new Set(['file', 'alpha_channel', 'label'])],
+    [image.id, new Set(['image', 'vae', 'seed', 'encode_summary'])],
+    [encode.id, new Set(['text_encoders', 'prompt', 'prompt_input', 'guider'])],
+    [
+      denoise.id,
+      new Set([
+        'unet',
+        'scheduler',
+        'embeddings',
+        'image_latents',
+        'width',
+        'height',
+        'seed',
+        'num_inference_steps',
+        'guidance_scale',
+      ]),
+    ],
+    [decode.id, new Set(['vae', 'latents'])],
+    [preview.id, new Set(['image', 'vae', 'device', 'preview', 'export'])],
+  ]);
+  for (const [id, node] of entries) {
+    const expected = wires.get(id);
+    for (const [field, param] of Object.entries(node.params)) {
+      assert(fields.get(id).has(field));
+      if (param.sourceId || param.sourceKey) {
+        const presentation =
+          !param.sourceId &&
+          ((id === image.id &&
+            field === 'encode_summary' &&
+            param.display === 'ui_text' &&
+            param.sourceKey === 'encode_summary_data') ||
+            (id === preview.id && field === 'preview' && param.display === 'ui_image' && param.sourceKey === 'output'));
+        assert(Object.hasOwn(expected, field) || presentation);
+      }
+    }
+    for (const [field, [producer, port]] of Object.entries(expected)) {
+      assert.equal(node.params[field]?.sourceId, producer);
+      assert.equal(node.params[field]?.sourceKey, port);
+      assert(!Object.hasOwn(node.params[field], 'value'));
+    }
+  }
+  for (const [role, field] of [
+    [encode, 'prompt_input'],
+    [encode, 'guider'],
+    [preview, 'vae'],
+  ])
+    assert(value(role.node, field) == null);
+  assert.equal(value(owner.node, 'workflow_id'), 'image_conditioned');
+  assert.equal(value(load.node, 'alpha_channel'), 'ignore');
+  const files = value(load.node, 'file');
+  assert(Array.isArray(files) && files.length === 2);
+  assert(files.every((file) => typeof file === 'string' && file.length > 0 && file.length <= 16384));
+  assert.notEqual(files[0], files[1]);
+  return { owner, load, image, encode, denoise, decode, preview, files };
+}
+
+function observedImageReferences(apiGraph, receipt, form) {
+  assert.equal(apiGraph.paths.length, 1);
+  assert.equal(apiGraph.paths[0].length, 7);
+  assert.equal(new Set(apiGraph.paths[0]).size, 7);
+  const roles = imageConditionedRoles(Object.entries(apiGraph.nodes));
+  const { owner, load, image, denoise } = roles;
+  for (const field of ['ambiguousFields', 'unavailableFields'])
+    if (receipt[field] !== undefined) same(receipt[field], []);
+  assert.equal(form.negativePrompt, '');
+  for (const [key, formKey] of [
+    ['dtype', 'dtype'],
+    ['device', 'device'],
+    ['offload_mode', 'offloadMode'],
+    ['auto_offload', 'autoOffload'],
+  ])
+    same(value(owner.node, key), form[formKey]);
+  for (const [key, formKey] of [
+    ['width', 'width'],
+    ['height', 'height'],
+    ['seed', 'seed'],
+    ['num_inference_steps', 'steps'],
+    ['guidance_scale', 'guidanceScale'],
+  ])
+    same(value(denoise.node, key), form[formKey]);
+  same(value(image.node, 'seed'), form.seed);
+  const rows = new Map(receipt.nodes.map((row) => [row.nodeId, row]));
+  const imageRow = rows.get(image.id);
+  assert.equal(imageRow.fields.seed.source, 'literal');
+  same(imageRow.fields.seed.value, form.seed);
+  assert(!Object.hasOwn(imageRow.omittedFields ?? {}, 'seed'));
+  assert.equal(receipt.appliedAdaptersStatus?.schemaVersion, 1);
+  assert.equal(receipt.appliedAdaptersStatus.truncated, false);
+  const application = validateAppliedAdapterSection(rows.get(owner.id).appliedAdapters);
+  assert.equal(application.status, 'complete');
+  assert.equal(application.observation, 'activated');
+  same(application.adapters, []);
+  const read = (key) => {
+    const row = rows.get(load.id);
+    assert.equal(row.fields[key].source, 'literal');
+    assert(!Object.hasOwn(row.omittedFields ?? {}, key));
+    return row.fields[key].value;
+  };
+  assert.equal(read('alpha_channel'), 'ignore');
+  const hashes = read('source_hashes'),
+    widths = read('source_widths'),
+    heights = read('source_heights'),
+    modes = read('source_modes');
+  for (const values of [hashes, widths, heights, modes]) assert(Array.isArray(values) && values.length === 2);
+  if (receipt.summary) {
+    for (const [key, expected] of Object.entries({
+      imageAlphaChannel: 'ignore',
+      imageSourceHashes: hashes,
+      imageSourceWidths: widths,
+      imageSourceHeights: heights,
+      imageSourceModes: modes,
+    }))
+      same(receipt.summary[key], expected);
+  }
+  return hashes.map((hash, index) => {
+    assert.match(hash, /^[a-f0-9]{64}$/u);
+    for (const size of [widths[index], heights[index]]) assert(Number.isInteger(size) && size > 0 && size <= 32768);
+    assert.equal(modes[index], 'RGB');
+    return { role: `referenceImages[${index}]`, contentHash: 'sha256:bytes:' + hash };
+  });
+}
+
+/** Rehashed observations still need the original canonical graph/model/inputs.
+ * The legacy form label and null graph-task classification remain explicit;
+ * neither is substituted for the actual executed model owner. */
+export function observedWorkflowAutoImageProofMatches(plan, provenance) {
+  try {
+    assert.equal(plan.source, OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE);
+    assert(observedWorkflowAutoResourceId(plan));
+    const roles = imageConditionedRoles(provenance.graph.canonicalGraph.nodes.map((node) => [node.key, node]));
+    const observation = plan.resourceObservation;
+    const { owner, denoise } = roles;
+    assert.equal(provenance.models.items.length, 1);
+    const model = provenance.models.items[0];
+    assert.equal(model.repoId, plan.modelRepo);
+    assert.equal(model.selectedRevision, plan.modelRevision);
+    assert.equal(model.modelRevision, `${plan.modelRepo}@${plan.modelRevision}`);
+    same(value(owner.node, 'repo_id'), { source: 'hub', value: plan.modelRepo });
+    same(value(owner.node, 'revision'), plan.modelRevision);
+    same(value(owner.node, 'model_type'), plan.modelType);
+    same(value(owner.node, 'trust_remote_code'), false);
+    same(value(owner.node, 'weight_format'), 'native');
+    for (const key of [
+      'quant_config',
+      'unet',
+      'vae',
+      'controlnet',
+      'lora_list',
+      'text_encoders',
+      'pipeline_components',
+      'image_encoder',
+    ])
+      assert(value(owner.node, key) == null);
+    const applied = validateAppliedAdapterProof(provenance, { required: true });
+    assert.equal(applied.owners.length, 1);
+    assert.equal(applied.owners[0].nodeKey, owner.id);
+    same(applied.owners[0].application.adapters, []);
+    assert.equal(applied.owners[0].application.observation, 'activated');
+    for (const control of observation.controls) {
+      const node = provenance.graph.canonicalGraph.nodes.find((node) => scope(node) === control.scope);
+      assert(node);
+      for (const [field, observed] of Object.entries(control.fields)) {
+        assert(!node.params[field]?.sourceId && !node.params[field]?.sourceKey);
+        same(value(node, field), observed);
+      }
+    }
+    const form = provenance.template.lockedSettings;
+    assert.equal(form.mode, plan.task);
+    assert.equal(form.modelType, observation.formModelType);
+    assert.equal(form.resourceMode, 'auto');
+    assert.equal(form.quantizationMode, 'none');
+    // Device and remote-code safety are bound by the immutable owner above;
+    // they are not part of the portable template's locked-settings projection.
+    for (const [key, formKey] of [
+      ['dtype', 'dtype'],
+      ['offload_mode', 'offloadMode'],
+      ['auto_offload', 'autoOffload'],
+    ])
+      same(value(owner.node, key), form[formKey]);
+    for (const [key, formKey] of [
+      ['width', 'width'],
+      ['height', 'height'],
+      ['seed', 'seed'],
+      ['num_inference_steps', 'steps'],
+      ['guidance_scale', 'guidanceScale'],
+    ])
+      same(value(denoise.node, key), form[formKey]);
+    same(value(roles.image.node, 'seed'), form.seed);
+    same(value(roles.encode.node, 'prompt'), form.prompt);
+    assert.equal(form.negativePrompt, '');
+    assert.equal(provenance.inputs.items.length, 2);
+    for (const [index, input] of provenance.inputs.items.entries()) {
+      assert.equal(input.role, `referenceImages[${index}]`);
+      assert.equal(input.path, roles.files[index]);
+      assert.equal(input.contentHash, observation.references[index].contentHash);
+      assert(Number.isSafeInteger(input.byteSize) && input.byteSize > 0);
+    }
+    assert.equal(provenance.output.items.length, 1);
+    for (const key of ['width', 'height']) same(provenance.output.items[0][key], observation.geometry[key]);
+    return true;
+  } catch {
+    return false;
   }
 }

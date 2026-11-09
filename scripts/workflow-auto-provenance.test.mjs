@@ -11,7 +11,10 @@ import {
   validateRunProvenance,
 } from './live-proof-provenance.mjs';
 import { createAppliedAdapterProof } from './applied-adapter-provenance.mjs';
-import { observedWorkflowAutoLoraProofMatches } from './observed-workflow-auto-resource.mjs';
+import {
+  observedWorkflowAutoLoraProofMatches,
+  observedWorkflowAutoImageProofMatches,
+} from './observed-workflow-auto-resource.mjs';
 import { canonicalJsonHash, stableJsonValue } from './canonical-json.mjs';
 
 const literal = (value) => ({ value });
@@ -208,6 +211,343 @@ function witness({ prefix = '', width = 1024, prompt = 'A product photograph', s
   return { apiGraph, executionReceipt, executedOutput, ids };
 }
 const planFor = (w) => executionPlanIdentity(w.apiGraph, w).plan;
+
+function imageConditionedWitness(options = {}) {
+  const w = witness(options);
+  const { apiGraph: graph, executionReceipt: task, executedOutput: output, ids } = w;
+  ids.images = (options.prefix ?? '') + 'images';
+  ids.imageEncode = (options.prefix ?? '') + 'image-encode';
+  const form = output.formSnapshot;
+  form.mode = 'multi_image_reference_edit';
+  form.modelType = 'LegacyExamplePipeline'; // Presentation label is not loader authority.
+  Object.assign(form, { device: 'cuda:0', offloadMode: 'model_cpu', autoOffload: true, steps: 8, guidanceScale: 1 });
+  graph.nodes[ids.owner].params.workflow_id = literal('image_conditioned');
+  task.runtimePreparation.workflowAuto.resolvedFields[ids.owner].workflow_id = 'image_conditioned';
+  graph.nodes[ids.images] = {
+    module: 'modules.Image',
+    action: 'Load',
+    params: {
+      file: literal(['@data/images/first.webp', '@data/images/second.webp']),
+      alpha_channel: literal('ignore'),
+    },
+  };
+  graph.nodes[ids.imageEncode] = {
+    module: 'modules.ModularDiffusers',
+    action: 'ImageEncode',
+    params: {
+      image: { sourceId: ids.images, sourceKey: 'image' },
+      vae: { sourceId: ids.owner, sourceKey: 'vae_out' },
+      seed: literal(form.seed),
+      encode_summary: { display: 'ui_text', sourceKey: 'encode_summary_data' },
+    },
+  };
+  graph.nodes[ids.denoise].params.image_latents = { sourceId: ids.imageEncode, sourceKey: 'image_latents' };
+  delete graph.nodes[ids.denoise].params.strength;
+  delete task.runtimePreparation.workflowAuto.resolvedFields[ids.denoise].strength;
+  delete graph.nodes[ids.encode].params.negative_prompt;
+  graph.paths[0].unshift(ids.images);
+  graph.paths[0].splice(2, 0, ids.imageEncode);
+  const receipt = output.resolvedExecutionInputs;
+  receipt.schemaVersion = 1;
+  receipt.appliedAdaptersStatus = { schemaVersion: 1, truncated: false };
+  receipt.graphTasks[0].task = null; // Retain the historical capture's missing task classification.
+  delete receipt.nodes.find((row) => row.nodeId === ids.encode).fields.negative_prompt;
+  delete receipt.nodes.find((row) => row.nodeId === ids.denoise).fields.strength;
+  const captured = (value) => ({ value, source: 'literal' });
+  receipt.nodes.push({
+    nodeId: ids.imageEncode,
+    module: 'modules.ModularDiffusers',
+    action: 'ImageEncode',
+    fields: { seed: captured(form.seed) },
+    omittedFields: {},
+  });
+  receipt.nodes.push({
+    nodeId: ids.images,
+    module: 'modules.Image',
+    action: 'Load',
+    fields: {
+      alpha_channel: captured('ignore'),
+      source_hashes: captured(['1'.repeat(64), '2'.repeat(64)]),
+      source_widths: captured([1024, 1024]),
+      source_heights: captured([1024, 1024]),
+      source_modes: captured(['RGB', 'RGB']),
+    },
+    omittedFields: {},
+  });
+  receipt.nodes.find((row) => row.nodeId === ids.owner).appliedAdapters = {
+    schemaVersion: 1,
+    status: 'complete',
+    source: 'backend-adapter-application',
+    applicationId: '1'.repeat(32),
+    observation: 'activated',
+    adapters: [],
+    stateSha256: 'sha256:applied-adapters-v1:' + canonicalJsonHash({ adapters: [] }),
+  };
+  graph.runtimeHints.workflowAutoPlan.graphHash = graphHash(graph);
+  return w;
+}
+
+test('two-image Auto observation retains original null IDs and binds the consumed image-conditioned owner', () => {
+  const w = imageConditionedWitness(),
+    before = structuredClone(w),
+    plan = planFor(w);
+  assert.equal(plan.source, 'observed-workflow-auto-image-resource-v1');
+  assert.equal(plan.modelType, 'ExampleModularPipeline');
+  assert.equal(plan.task, 'multi_image_reference_edit');
+  assert.equal(plan.resourceObservation.reportedGraphTask, null);
+  assert.equal(plan.resourceObservation.references.length, 2);
+  assert.match(
+    executionReceiptIdentity(w.executionReceipt, plan).resourceCandidateId,
+    /^observed-workflow-auto-image-resource-v1:[a-f0-9]{64}$/u,
+  );
+  assert.deepEqual(w, before);
+  assert.equal(w.executionReceipt.resourceCandidateId, null);
+  assert.equal(w.executedOutput.resolvedExecutionInputs.graphTasks[0].task, null);
+});
+
+test('two-image observed recipes retain ordered source hashes without manufacturing IDs from prompts or node labels', () => {
+  const first = imageConditionedWitness(),
+    renamed = imageConditionedWitness({ prefix: 'renamed-', prompt: 'Another material', seed: 15 });
+  const id = (w) => executionReceiptIdentity(w.executionReceipt, planFor(w)).resourceCandidateId;
+  assert.equal(id(first), id(renamed));
+  const swapped = imageConditionedWitness();
+  swapped.executedOutput.resolvedExecutionInputs.nodes
+    .find((row) => row.nodeId === swapped.ids.images)
+    .fields.source_hashes.value.reverse();
+  assert.notEqual(id(first), id(swapped));
+});
+
+test('two-image observations reject incomplete, conflicting, borrowed or nonfresh evidence', () => {
+  const mutations = {
+    candidateClaim: (w) => {
+      w.executionReceipt.resourceCandidateId = 'claimed-primary';
+    },
+    missingCandidate: (w) => {
+      delete w.executionReceipt.resourceCandidateId;
+    },
+    missingTaskClass: (w) => {
+      delete w.executedOutput.resolvedExecutionInputs.graphTasks[0].task;
+    },
+    wrongTaskClass: (w) => {
+      w.executedOutput.resolvedExecutionInputs.graphTasks[0].task = 'text_to_image';
+    },
+    wrongWorkflow: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.workflow_id.value = 'text2image';
+    },
+    wrongOwner: (w) => {
+      w.executedOutput.resolvedExecutionInputs.graphTasks[0].loaderId = w.ids.imageEncode;
+    },
+    wrongAttempt: (w) => {
+      w.executionReceipt.attempt_index = 1;
+    },
+    wrongSession: (w) => {
+      w.executionReceipt.sid = 'other';
+    },
+    wrongOutput: (w) => {
+      w.executedOutput.taskId = 'other';
+    },
+    truncated: (w) => {
+      w.executedOutput.resolvedExecutionInputs.truncated = true;
+    },
+    missingInputCapture: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes = w.executedOutput.resolvedExecutionInputs.nodes.filter(
+        (r) => r.nodeId !== w.ids.images,
+      );
+    },
+    omittedHashes: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find(
+        (r) => r.nodeId === w.ids.images,
+      ).omittedFields.source_hashes = 'unavailable';
+    },
+    badHash: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find(
+        (r) => r.nodeId === w.ids.images,
+      ).fields.source_hashes.value[0] = 'unknown';
+    },
+    duplicateImage: (w) => {
+      const f = w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.images).fields;
+      f.source_hashes.value[1] = f.source_hashes.value[0];
+    },
+    missingImage: (w) => {
+      w.apiGraph.nodes[w.ids.images].params.file.value.pop();
+    },
+    extraImage: (w) => {
+      w.apiGraph.nodes[w.ids.images].params.file.value.push('@data/images/third.webp');
+    },
+    missingGeometry: (w) => {
+      delete w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.images).fields.source_widths;
+    },
+    invalidGeometry: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find(
+        (r) => r.nodeId === w.ids.images,
+      ).fields.source_heights.value[0] = 0;
+    },
+    wrongMode: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find(
+        (r) => r.nodeId === w.ids.images,
+      ).fields.source_modes.value[0] = 'RGBA';
+    },
+    wrongImageSeed: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.imageEncode).fields.seed.value++;
+    },
+    borrowedVae: (w) => {
+      w.apiGraph.nodes[w.ids.imageEncode].params.vae.sourceId = w.ids.decode;
+    },
+    bypassImageEncode: (w) => {
+      w.apiGraph.nodes[w.ids.denoise].params.image_latents.sourceId = w.ids.images;
+    },
+    extraWire: (w) => {
+      w.apiGraph.nodes[w.ids.encode].params.prompt_input = { sourceId: w.ids.images, sourceKey: 'image' };
+    },
+    unknownControl: (w) => {
+      w.apiGraph.nodes[w.ids.imageEncode].params.unreviewed = literal(true);
+    },
+    negativePrompt: (w) => {
+      w.executedOutput.formSnapshot.negativePrompt = 'unsupported';
+    },
+    changedForm: (w) => {
+      w.executedOutput.formSnapshot.steps = 7;
+    },
+    ambiguous: (w) => {
+      w.executedOutput.resolvedExecutionInputs.ambiguousFields = ['width'];
+    },
+    conflictingSummary: (w) => {
+      w.executedOutput.resolvedExecutionInputs.summary = { imageSourceHashes: [] };
+    },
+    staleApplication: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).appliedAdapters.observation =
+        'reused';
+    },
+    badApplicationHash: (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).appliedAdapters.stateSha256 =
+        'sha256:applied-adapters-v1:' + '0'.repeat(64);
+    },
+    reusedOwner: (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.reusedOwnerIds = [w.ids.owner];
+    },
+    deferred: (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.preparedDataNodes = [w.ids.images];
+    },
+    patched: (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.appliedUpdates = [{}];
+    },
+    connectedIdentity: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.repo_id.sourceId = w.ids.images;
+    },
+    quantized: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.quant_config = literal({ backend: 'bnb_4bit' });
+    },
+    remoteCode: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.trust_remote_code.value = true;
+    },
+    mutableRevision: (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.revision.value = 'main';
+    },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const w = imageConditionedWitness();
+    mutate(w);
+    w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+    assert.notEqual(planFor(w).source, 'observed-workflow-auto-image-resource-v1', name);
+  }
+});
+
+function imageProof(w) {
+  const plan = planFor(w),
+    canonicalGraph = canonicalizeApiGraph(w.apiGraph);
+  const applied = createAppliedAdapterProof({
+    apiGraph: w.apiGraph,
+    canonicalGraph,
+    executedOutput: w.executedOutput,
+    executionReceipt: w.executionReceipt,
+    taskId: 'task',
+  });
+  return {
+    schemaVersion: 2,
+    taskId: 'task',
+    graph: { canonicalGraph, executionPlan: plan },
+    execution: executionReceiptIdentity(w.executionReceipt, plan),
+    models: {
+      items: [
+        {
+          repoId: 'example/native-image',
+          selectedRevision: 'a'.repeat(40),
+          modelRevision: 'example/native-image@' + 'a'.repeat(40),
+        },
+      ],
+    },
+    template: { lockedSettings: structuredClone(w.executedOutput.formSnapshot) },
+    inputs: {
+      items: [0, 1].map((index) => ({
+        role: `referenceImages[${index}]`,
+        path: w.apiGraph.nodes[w.ids.images].params.file.value[index],
+        contentHash: 'sha256:bytes:' + String(index + 1).repeat(64),
+        byteSize: 1000 + index,
+      })),
+    },
+    output: { items: [{ width: 1024, height: 1024 }] },
+    adapterApplications: applied.proof,
+    adapterApplicationsHash: applied.hash,
+  };
+}
+
+test('rehashed two-image observations stay bound to original canonical model, controls, ordered inputs and output', () => {
+  const proof = imageProof(imageConditionedWitness()),
+    plan = proof.graph.executionPlan;
+  delete proof.template.lockedSettings.device;
+  delete proof.template.lockedSettings.trustRemoteCode;
+  assert(observedWorkflowAutoImageProofMatches(plan, proof));
+  const message = 'execution image resource observation does not match the original graph/model/input/output proof.';
+  assert(!validateRunProvenance(proof).includes(message));
+  const mutations = {
+    reorderedInputs: (p) => {
+      p.inputs.items.reverse();
+    },
+    changedSource: (p) => {
+      p.inputs.items[0].contentHash = 'sha256:bytes:' + 'f'.repeat(64);
+    },
+    swappedFiles: (p) => {
+      p.graph.canonicalGraph.nodes.find((n) => n.action === 'Load').params.file.value.reverse();
+    },
+    inventedReportedTask: (p) => {
+      p.graph.executionPlan.resourceObservation.reportedGraphTask = 'multi_image_reference_edit';
+    },
+    differentModel: (p) => {
+      p.models.items[0].repoId = 'example/other';
+    },
+    forgedPrecision: (p) => {
+      const plan = p.graph.executionPlan;
+      plan.dtype = plan.resourceObservation.dtype = 'float32';
+    },
+    wrongOutput: (p) => {
+      p.output.items[0].width = 512;
+    },
+    missingInputs: (p) => {
+      p.inputs.items.pop();
+    },
+    missingApplication: (p) => {
+      p.adapterApplications = null;
+    },
+    staleForm: (p) => {
+      p.template.lockedSettings.modelType = 'different-label';
+    },
+    unsafeOwner: (p) => {
+      p.graph.canonicalGraph.nodes.find((node) => node.action === 'ModelsLoader').params.trust_remote_code.value = true;
+    },
+    wrongLockedDtype: (p) => {
+      p.template.lockedSettings.dtype = 'float32';
+    },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const p = structuredClone(proof);
+    mutate(p);
+    const plan = p.graph.executionPlan;
+    plan.observedResourceCandidateId = plan.source + ':' + canonicalJsonHash(plan.resourceObservation);
+    p.execution.resourceCandidateId = plan.observedResourceCandidateId;
+    assert.equal(observedWorkflowAutoImageProofMatches(plan, p), false, name);
+    assert(validateRunProvenance(p).includes(message), name);
+  }
+});
 
 function loraWitness(options = {}) {
   const w = witness({ ...options, guider: options.guider ?? true });
