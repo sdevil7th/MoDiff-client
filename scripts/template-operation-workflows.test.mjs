@@ -438,7 +438,8 @@ test('only the seven converted Z recipes declare their observed CFG formulation 
 
 test('historical approved image remains visible without becoming proof of the current execution selection', async () => {
   const template = templates.find((item) => item.id === 'z_image_quick_concept');
-  const manifest = JSON.parse(await readFile('public/template-gallery/manifest.json', 'utf8'));
+  // Keep the original published previous-recipe record independent of later registrations.
+  const manifest = JSON.parse(await readFile('tests/fixtures/historical-z-gallery-entry.v1.json', 'utf8'));
   assert.equal(exactness.findManifestEntry(template, manifest), undefined);
   const historical = exactness.findHistoricalTemplateManifestEntry(template, manifest);
   assert.ok(historical);
@@ -448,6 +449,40 @@ test('historical approved image remains visible without becoming proof of the cu
   assert.ok(exactness.getTemplateCardMedia(template, manifest).mediaPath);
   const changedPrompt = { ...template, prompt: `${template.prompt} different scene` };
   assert.equal(exactness.findHistoricalTemplateManifestEntry(changedPrompt, manifest), undefined);
+});
+
+test('registered Z examples use their current reviewed recipe without granting duplicate exactness', async () => {
+  const manifest = JSON.parse(await readFile('public/template-gallery/manifest.json', 'utf8'));
+  for (const id of [
+    'z_image_quick_concept',
+    'z_image_product_mockup',
+    'z_image_poster',
+    'low_vram',
+    'fast_lora',
+    'z_image_lora_style',
+  ]) {
+    const template = templates.find((item) => item.id === id);
+    const entry = exactness.findManifestEntry(template, manifest);
+    assert.ok(entry, id);
+    assert.equal(entry.verificationStatus, 'reviewed', id);
+    assert.equal(entry.qualityReviewStatus, 'approved_reviewed', id);
+    assert.equal(exactness.findHistoricalTemplateManifestEntry(template, manifest), undefined, id);
+    assert.equal(
+      exactness.getTemplateExampleUiState(template, selectedForm(template), null, manifest).status,
+      'reviewed',
+      id,
+    );
+    assert.ok(exactness.getTemplateCardMedia(template, manifest).mediaPath, id);
+    assert.equal(
+      exactness.findManifestEntry({ ...template, prompt: `${template.prompt} different scene` }, manifest),
+      undefined,
+    );
+    const changedRecipe = {
+      ...template,
+      executionSelection: { ...template.executionSelection, authoringRecipeId: 'different-reviewed-recipe:v1' },
+    };
+    assert.equal(exactness.findManifestEntry(changedRecipe, manifest), undefined, id);
+  }
 });
 
 test('historical adapter examples retain their recorded immutable pin when authoring adds that revision', async () => {
