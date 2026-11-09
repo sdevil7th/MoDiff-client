@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:903b7312fddea4d37099d75d8c570ebd07eea393e123197391d8ef10cb607de3",
+  "assetSetId": "sha256:canonical-json:2b7c7c58c28330eaee4283bdd5335d901a17d3d0b7af5d1587d727380f36f3cb",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -452,15 +452,11 @@
       "provenanceTemplateId": "flux2_klein_edit"
     },
     {
-      "path": "template-gallery/flux2_klein_multi_reference.webp",
-      "sha256": "sha256:bytes:9806aac19e5e4d6de3d9d3b2e0e005b3b827197d23fd9cb9f7d1f8388bc568ac",
-      "publishDecision": "approved",
-      "holdReason": null,
-      "creatorOrRightsholder": "MoDiff project maintainers, subject to the recorded source and model terms",
-      "creationMethod": "AI-generated Gallery media or deterministic derivative",
+      "creatorOrRightsholder": "MoDiff project maintainers, with explicit derivative-source rights attestation by SOURAV DAS",
+      "creationMethod": "AI-generated two-reference derivative material-fusion Gallery example; explicit maintainer derivative-source rights attestation",
       "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/tree/e7b7dc27f91deacad38e78976d1f2b499d76a294",
       "sourceRevision": "black-forest-labs/FLUX.2-klein-4B@e7b7dc27f91deacad38e78976d1f2b499d76a294",
-      "sourceLicense": "Original generation or recorded workflow input; see modelTerms",
+      "sourceLicense": "Original project derivative generation; both source-image permissions explicitly attested; see pinned model terms; existing source image license labels unchanged",
       "modelTerms": [
         "black-forest-labs/FLUX.2-klein-4B: Apache-2.0; https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/tree/e7b7dc27f91deacad38e78976d1f2b499d76a294"
       ],
@@ -468,11 +464,22 @@
       "humanLikenessConsent": "synthetic",
       "marks": [],
       "requiredAttribution": [],
+      "path": "template-gallery/flux2_klein_multi_reference.webp",
+      "sha256": "sha256:bytes:84e5166bd444404fb49ea1cdca69090a03e4de7ebe460c8e0afec89aae503252",
+      "publishDecision": "approved",
+      "holdReason": null,
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
-      "provenanceTemplateId": "flux2_klein_multi_reference"
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-klein-derivative-registration",
+      "humanApprovalPacketSHA256": "6110699f001f269b75ee943b96c82d2c0c37cb33ba4c10fdd1a9cd15d4d48042",
+      "provenanceTemplateId": "flux2_klein_multi_reference",
+      "sourceRightsAttestation": "The maintainer holds the rights or permissions needed to use both identified reference images to make and publicly redistribute this exact derivative output under Apache-2.0. Existing input records and licenses are not changed or relicensed. Exact generation model identities for the two runtime input files were not captured in their existing rights records; prior public-input approval alone is not asserted to establish this derivative grant.",
+      "sourceReferenceContentHashes": [
+        "sha256:bytes:1d993540e914f0e2d230f1133b57ae14bb837829237a53c89613fcdef6699995",
+        "sha256:bytes:fc326ed56f9e5de83262a0a1bc4ce85f4b4b291d654a05efa4a32fc133f97a3f"
+      ],
+      "humanApprovalScope": "The maintainer explicitly approved the proposed 4/5 scores, known limits, exact retained Klein two-reference derivative output, its redacted technical/quality metadata, and permission to make and redistribute this derivative under Apache-2.0. Existing source images and their mixed license records remain unchanged; no other assets or held cases are newly approved."
     },
     {
       "path": "template-gallery/flux2_klein_text_to_image.webp",
@@ -3039,11 +3046,11 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:5b83106a52d861a36158928a5e73cb123f68a3bce7f95df64649e115d3c903ab",
+      "sha256": "sha256:bytes:fdebe0a84a40ca035ca9ffefebb526c33d69b467ceeb6802b630e5375e06ae42",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
-      "creationMethod": "MoDiff-authored technical provenance or quality metadata from the explicitly approved six-image source packet",
+      "creationMethod": "MoDiff-authored technical provenance or quality metadata from the explicitly approved retained Klein two-reference source packet",
       "sourceUrl": null,
       "sourceRevision": null,
       "sourceLicense": "Apache-2.0 project-authored metadata; generated-media terms remain in their exact per-file records",
@@ -3055,9 +3062,9 @@
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-11-09",
-      "reviewClass": "per-file-human-approved-six-z-registration",
-      "humanApprovalPacketSHA256": "9b728a5f8535fc1ba3c03d2e2759d7ac795a586fafab51beb1509379ed388934",
-      "humanApprovalScope": "The maintainer explicitly approved the proposed 4/5 quality rubric and scores, known limits, exact six Z-image outputs and their project-authored redacted provenance/review records. This packet includes no source photographs, authored masks or unrelated assets."
+      "reviewClass": "per-file-human-approved-klein-derivative-registration",
+      "humanApprovalPacketSHA256": "6110699f001f269b75ee943b96c82d2c0c37cb33ba4c10fdd1a9cd15d4d48042",
+      "humanApprovalScope": "The maintainer explicitly approved the proposed 4/5 scores, known limits, exact retained Klein two-reference derivative output, its redacted technical/quality metadata, and permission to make and redistribute this derivative under Apache-2.0. Existing source images and their mixed license records remain unchanged; no other assets or held cases are newly approved."
     },
     {
       "path": "template-gallery/qwen_character_angles.webp",
@@ -3936,14 +3943,14 @@
     },
     {
       "path": "template-gallery/reviews/flux2_klein_multi_reference.quality-review.json",
-      "sha256": "sha256:bytes:7a90fab4fbc67f092eab6c32485ad218b84a2d159c9a4f12e0f5d68574560420",
+      "sha256": "sha256:bytes:7f6d97ce71b303302117236ae3c8f3cd047801026a8f808916c69c9008c6c5c5",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
-      "creationMethod": "MoDiff-authored technical metadata or review record",
+      "creationMethod": "MoDiff-authored technical provenance or quality metadata from the explicitly approved retained Klein two-reference source packet",
       "sourceUrl": null,
       "sourceRevision": null,
-      "sourceLicense": "Apache-2.0",
+      "sourceLicense": "Apache-2.0 project-authored metadata; generated-media terms remain in their exact per-file records",
       "modelTerms": [],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
@@ -3951,20 +3958,22 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
-      "provenanceTemplateId": "flux2_klein_multi_reference"
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-klein-derivative-registration",
+      "provenanceTemplateId": "flux2_klein_multi_reference",
+      "humanApprovalPacketSHA256": "6110699f001f269b75ee943b96c82d2c0c37cb33ba4c10fdd1a9cd15d4d48042",
+      "humanApprovalScope": "The maintainer explicitly approved the proposed 4/5 scores, known limits, exact retained Klein two-reference derivative output, its redacted technical/quality metadata, and permission to make and redistribute this derivative under Apache-2.0. Existing source images and their mixed license records remain unchanged; no other assets or held cases are newly approved."
     },
     {
       "path": "template-gallery/reviews/flux2_klein_multi_reference.reviewed-provenance.json",
-      "sha256": "sha256:bytes:8a20fadb16da5e8dcb0799ea2a847d000236c729ab29908f2805d04b1e044df5",
+      "sha256": "sha256:bytes:dd9601157dcff562c822db19d08d7c7f7720a1e069945563609e87c7fc52cf77",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers",
-      "creationMethod": "MoDiff-authored technical metadata or review record",
+      "creationMethod": "MoDiff-authored technical provenance or quality metadata from the explicitly approved retained Klein two-reference source packet",
       "sourceUrl": null,
       "sourceRevision": null,
-      "sourceLicense": "Apache-2.0",
+      "sourceLicense": "Apache-2.0 project-authored metadata; generated-media terms remain in their exact per-file records",
       "modelTerms": [],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
@@ -3972,9 +3981,11 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
-      "reviewedAt": "2026-08-03",
-      "reviewClass": "standard-human-attestation",
-      "provenanceTemplateId": "flux2_klein_multi_reference"
+      "reviewedAt": "2026-11-09",
+      "reviewClass": "per-file-human-approved-klein-derivative-registration",
+      "provenanceTemplateId": "flux2_klein_multi_reference",
+      "humanApprovalPacketSHA256": "6110699f001f269b75ee943b96c82d2c0c37cb33ba4c10fdd1a9cd15d4d48042",
+      "humanApprovalScope": "The maintainer explicitly approved the proposed 4/5 scores, known limits, exact retained Klein two-reference derivative output, its redacted technical/quality metadata, and permission to make and redistribute this derivative under Apache-2.0. Existing source images and their mixed license records remain unchanged; no other assets or held cases are newly approved."
     },
     {
       "path": "template-gallery/reviews/flux2_klein_text_to_image.quality-review.json",

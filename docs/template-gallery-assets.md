@@ -8,7 +8,7 @@ Face token.
 [Hugging Face's current storage policy](https://huggingface.co/docs/hub/en/storage-limits)
 describes storage for a free user or organization's public repositories as
 **best effort**, and asks that public uploads provide real community value. The
-checked complete Gallery manifest declares 395 files (514,515,256 bytes, about 491 MiB), below the Hub's
+checked complete Gallery manifest declares 395 files (514,571,305 bytes, about 491 MiB), below the Hub's
 repository-structure recommendations, so a public Dataset is a reasonable
 zero-cost home for this release. It is not a contractual free hosting
 guarantee: monitor the current Hub policy and keep the byte manifest portable

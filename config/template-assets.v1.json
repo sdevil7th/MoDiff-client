@@ -159,8 +159,8 @@
     },
     {
       "path": "template-gallery/flux2_klein_multi_reference.webp",
-      "size": 318536,
-      "sha256": "sha256:bytes:9806aac19e5e4d6de3d9d3b2e0e005b3b827197d23fd9cb9f7d1f8388bc568ac",
+      "size": 318418,
+      "sha256": "sha256:bytes:84e5166bd444404fb49ea1cdca69090a03e4de7ebe460c8e0afec89aae503252",
       "contentType": "image/webp",
       "purposes": ["runtime"],
       "width": 1024,
@@ -1079,8 +1079,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 206676,
-      "sha256": "sha256:bytes:5b83106a52d861a36158928a5e73cb123f68a3bce7f95df64649e115d3c903ab",
+      "size": 206669,
+      "sha256": "sha256:bytes:fdebe0a84a40ca035ca9ffefebb526c33d69b467ceeb6802b630e5375e06ae42",
       "contentType": "application/json",
       "purposes": ["runtime"]
     },
@@ -1405,15 +1405,15 @@
     },
     {
       "path": "template-gallery/reviews/flux2_klein_multi_reference.quality-review.json",
-      "size": 4131,
-      "sha256": "sha256:bytes:7a90fab4fbc67f092eab6c32485ad218b84a2d159c9a4f12e0f5d68574560420",
+      "size": 3297,
+      "sha256": "sha256:bytes:7f6d97ce71b303302117236ae3c8f3cd047801026a8f808916c69c9008c6c5c5",
       "contentType": "application/json",
       "purposes": ["runtime"]
     },
     {
       "path": "template-gallery/reviews/flux2_klein_multi_reference.reviewed-provenance.json",
-      "size": 41769,
-      "sha256": "sha256:bytes:8a20fadb16da5e8dcb0799ea2a847d000236c729ab29908f2805d04b1e044df5",
+      "size": 98777,
+      "sha256": "sha256:bytes:dd9601157dcff562c822db19d08d7c7f7720a1e069945563609e87c7fc52cf77",
       "contentType": "application/json",
       "purposes": ["runtime"]
     },
@@ -3144,9 +3144,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:903b7312fddea4d37099d75d8c570ebd07eea393e123197391d8ef10cb607de3",
+  "assetSetId": "sha256:canonical-json:2b7c7c58c28330eaee4283bdd5335d901a17d3d0b7af5d1587d727380f36f3cb",
   "status": "ready",
   "assetCount": 395,
-  "totalBytes": 514515256,
+  "totalBytes": 514571305,
   "missingAssets": []
 }
