@@ -331,8 +331,8 @@
     },
     {
       "path": "template-gallery/flux_control_canny.webp",
-      "size": 191804,
-      "sha256": "sha256:bytes:a804cb1321c87b86298ebc4697af4d52628c29615ccda38bfa38eb2c7fc566c3",
+      "size": 191202,
+      "sha256": "sha256:bytes:13ed32399453783f830246f92653bc93ea31ff58170cf928c9f5bc523cdd85de",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -342,8 +342,8 @@
     },
     {
       "path": "template-gallery/flux_depth_control.webp",
-      "size": 551212,
-      "sha256": "sha256:bytes:0251b217bc148491321ae32f1298965127cd193edc348042e42deca3bb2aea9f",
+      "size": 548974,
+      "sha256": "sha256:bytes:c3d52c29b6a8cae80d2feffb8a978cded8b34509abd09216f665ab3af13f189e",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -364,8 +364,8 @@
     },
     {
       "path": "template-gallery/flux_dev_expert_text_to_image.webp",
-      "size": 408558,
-      "sha256": "sha256:bytes:13c815eb6d245685e543d000e499036aad973bea6c0d4fff01c670580db08206",
+      "size": 294230,
+      "sha256": "sha256:bytes:b983944ddd54ef1833aad2930b82887f87490ecb4b7b080e31f5641d0af78143",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -386,8 +386,8 @@
     },
     {
       "path": "template-gallery/flux_fill_outpaint.webp",
-      "size": 344252,
-      "sha256": "sha256:bytes:465ba287ed383289877edbcbd3618da81f4971b9935b3161a44ca8d59a25df7b",
+      "size": 344634,
+      "sha256": "sha256:bytes:5231750f57bed56cc705d53f19661884498a5bb2d981bed82e2c2b5da22d5074",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -419,8 +419,8 @@
     },
     {
       "path": "template-gallery/flux_krea_text_to_image.webp",
-      "size": 270072,
-      "sha256": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
+      "size": 256340,
+      "sha256": "sha256:bytes:95538f4be462f8f8faef04834e1171911162e73e1f1dc3a4fac8cf7e8e12064b",
       "contentType": "image/webp",
       "purposes": [
         "runtime",
@@ -541,8 +541,8 @@
     },
     {
       "path": "template-gallery/flux_lora_photoreal_documentary.webp",
-      "size": 258492,
-      "sha256": "sha256:bytes:fee9159c34ddcd3e2026610e5826f5a397f8e155e8a4047115bb85f5ce236510",
+      "size": 135492,
+      "sha256": "sha256:bytes:9904d73d7c35e1844ab7a47a556c15805508d08f09391e1f88c1b76240482d1e",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -563,8 +563,8 @@
     },
     {
       "path": "template-gallery/flux_lora_retro_comic.webp",
-      "size": 684938,
-      "sha256": "sha256:bytes:b0a7fc4f480faa92d33f506b751cddfc4b7937ae82d258548efb547445353cef",
+      "size": 374028,
+      "sha256": "sha256:bytes:df7c0c2e750bc46913441a3b8d284ed7fca0563d0cce43faa0142c0db8d95809",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -585,8 +585,8 @@
     },
     {
       "path": "template-gallery/flux_lora_watercolor.webp",
-      "size": 382120,
-      "sha256": "sha256:bytes:55b05b1cee751203d37fa6166f82c9743e7a202f46bead8f19ed70e77cf5ce85",
+      "size": 61852,
+      "sha256": "sha256:bytes:75e44686c2194ec8ec79db1cbdd90ac89d5d629509c4892d855caf59846ed876",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1338,8 +1338,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 206998,
-      "sha256": "sha256:bytes:5c9fdf548942b1efd9ede8416e1f3333f3fe56c2a0b7a0685cd146912cd102cc",
+      "size": 206768,
+      "sha256": "sha256:bytes:39b0924eaec67ad7ac42766d133856f148e25b84784305cb45acd6c6b24d7d1e",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1479,8 +1479,8 @@
     },
     {
       "path": "template-gallery/qwen_outpaint_aspect_template.webp",
-      "size": 403554,
-      "sha256": "sha256:bytes:6dbd61c93050c6b565923580971be27d3d26360386c92494a5836dc4e19187d2",
+      "size": 403880,
+      "sha256": "sha256:bytes:d9ccf1960420a487ce16258167a88c7f4eb103fb24444ea0ad997487d1061554",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1490,8 +1490,8 @@
     },
     {
       "path": "template-gallery/qwen_outpaint_draft.webp",
-      "size": 286502,
-      "sha256": "sha256:bytes:776cc1d7953e252a676e8ce9c733945f79e3ef3f5aa41281cf072077d1a67581",
+      "size": 287108,
+      "sha256": "sha256:bytes:dfa97dd6b2acbe53b05814a1d6d525ca3fdddb2d1dbe000b3dab7fa1ed5feb6a",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1962,8 +1962,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_control_canny.quality-review.json",
-      "size": 4414,
-      "sha256": "sha256:bytes:cb7b1e20f93d5ea6f796c7d2cc030f76d2327ae4d50cffef3cedc6ef1356dbfd",
+      "size": 4766,
+      "sha256": "sha256:bytes:18fe010ceca23f0e99deb1d854905d52d805c45931b4ab523c364ac36ae594ab",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1971,8 +1971,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_control_canny.reviewed-provenance.json",
-      "size": 41982,
-      "sha256": "sha256:bytes:761b42bfc3e6c95d884a560a6b2188b8a4a018ee51616857ee02b538b1e9c387",
+      "size": 163707,
+      "sha256": "sha256:bytes:de3e003b083c9ecbf1dfae92a5c9a225c963943be0820aba88e24723aecc70b0",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1980,8 +1980,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_depth_control.quality-review.json",
-      "size": 4189,
-      "sha256": "sha256:bytes:2976a4ac98fe2fcb0ca30ec3f17a853bd5d5e17150a5a80fb259ed6f87e304dd",
+      "size": 4666,
+      "sha256": "sha256:bytes:cfa61450e6b63ad91cdba6b5d17c8ee316db1ce6005b19569595e173c9800daf",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1989,8 +1989,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_depth_control.reviewed-provenance.json",
-      "size": 41179,
-      "sha256": "sha256:bytes:a89189e3ba9f648a9b087d3dba78bffe7e7fbcf02734e494535b7e9f414a1f1f",
+      "size": 162839,
+      "sha256": "sha256:bytes:845284bdb0898bb02ddd178e1de0c4b24e2281ae8f84c15eb09de2798abfcf79",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1998,8 +1998,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_dev_expert_text_to_image.quality-review.json",
-      "size": 3853,
-      "sha256": "sha256:bytes:5848e398fe3095e3b5ff4576567249038021bf1c551530c1feac66d18a37ac21",
+      "size": 4079,
+      "sha256": "sha256:bytes:4b7d81b2a342e898519cfef4ea3ada3325831a7a0c93b0966a42d59f74999715",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2007,8 +2007,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_dev_expert_text_to_image.reviewed-provenance.json",
-      "size": 49961,
-      "sha256": "sha256:bytes:736a0bb30b5d47745e5cc871c07c5c77ade430ccd25d251854bc306d8057d86c",
+      "size": 102483,
+      "sha256": "sha256:bytes:56dd0d53dd62f58ff085722eb7266a7c4e10e591b0a78a9408c3b2061e656182",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2034,8 +2034,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_fill_outpaint.quality-review.json",
-      "size": 4082,
-      "sha256": "sha256:bytes:bfe72fb5245dc022e878d57972d21ec11b5576f1d204fe95aba599843a22f9a9",
+      "size": 4863,
+      "sha256": "sha256:bytes:cf7d2d52d6d95733fd75be94e96fac1b331e8ad8996d615640123e95d3604edf",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2043,8 +2043,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_fill_outpaint.reviewed-provenance.json",
-      "size": 43436,
-      "sha256": "sha256:bytes:a28f45de914552bca7f191510ed3f1fedf91b562708adc339610a7c9ec67402a",
+      "size": 167448,
+      "sha256": "sha256:bytes:83bd50a5df98a04d55a86ca75b3f39a5d87d11221910a8f2d1cc570dc5cc423c",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2088,8 +2088,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_krea_text_to_image.quality-review.json",
-      "size": 3961,
-      "sha256": "sha256:bytes:79c50447e19b09ec091bc0fbd2986c75001a525f7ea060c6a347d5ae52b15872",
+      "size": 4794,
+      "sha256": "sha256:bytes:e60051b4da6abcd87c5c1356a2ff3dae280d92fbe25f9a95360f6d54bad93c45",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2097,8 +2097,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_krea_text_to_image.reviewed-provenance.json",
-      "size": 37803,
-      "sha256": "sha256:bytes:3c59ae43a99b7946adea634976786e5105ac537516b3f74c4ca73d1d885fa567",
+      "size": 89106,
+      "sha256": "sha256:bytes:6cc4951f1e036aa80a7e92f80be0c40d37336f0f76ca7fe3dc118679f3cd08f3",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2178,8 +2178,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_photoreal_documentary.quality-review.json",
-      "size": 3246,
-      "sha256": "sha256:bytes:bc6c3a241cf0fa9a1336717b6d05b2c7a6e50b1a94911088e559e9d1dba69507",
+      "size": 4360,
+      "sha256": "sha256:bytes:36a405950da3e180bdea7d6912da7ec2d19ca8382e3f4a26bd9bb9e79cc5f6d6",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2187,8 +2187,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_photoreal_documentary.reviewed-provenance.json",
-      "size": 52433,
-      "sha256": "sha256:bytes:e7c4fcd6b52af6e45867d22c3adb1416adef0463802cd1d7890ec36129ba234c",
+      "size": 106591,
+      "sha256": "sha256:bytes:80b8756cfa9e3cc14716d82a93f7322b08d2f53901b913ab119258891fc4dffb",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2196,8 +2196,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_retro_comic.quality-review.json",
-      "size": 3307,
-      "sha256": "sha256:bytes:259d069f67a64529bd2c67a542e988edc231c776724996a12a33083f02d4bf15",
+      "size": 4525,
+      "sha256": "sha256:bytes:4436655b45348e57831e147e268e80be4759cd5aec0e6e0eb8d6f1530de06435",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2205,8 +2205,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_retro_comic.reviewed-provenance.json",
-      "size": 52797,
-      "sha256": "sha256:bytes:07f76c1b55b52a8419ed33561a1050e8692b8d9a087ce339958c9ddcf7d68ff2",
+      "size": 107029,
+      "sha256": "sha256:bytes:3e44966400c118ba7ea67c8c511dcd0aad51a7e59d64bf1d4a0b96566a96f3e2",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2214,8 +2214,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_watercolor.quality-review.json",
-      "size": 3441,
-      "sha256": "sha256:bytes:d3bd65fb0179f57dd516cc80cbb7124e4a0e868c5880853e06900b65214d31e7",
+      "size": 4145,
+      "sha256": "sha256:bytes:3454f88eecab20d70370fe23bbd9248d6e6e3255d0fbfc557a2f1103c94e7ef4",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2223,8 +2223,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_watercolor.reviewed-provenance.json",
-      "size": 52678,
-      "sha256": "sha256:bytes:c80ee9c29331e71e067fb681c0af5d0979680928f957d422047fde5177120174",
+      "size": 106882,
+      "sha256": "sha256:bytes:c51b9dfb5471d1f0f704852672152a09f0c01aeeaee7f5dd0b324e5652fe8b6f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2646,8 +2646,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_outpaint_aspect_template.quality-review.json",
-      "size": 4059,
-      "sha256": "sha256:bytes:2b83ee76cb0393da3228eef42396dd7fc07a7a42fa594d9cf53a1c73b408556a",
+      "size": 4721,
+      "sha256": "sha256:bytes:6fa2bc63b9e95cd36614b65c3856ef017b6fd76ed35104ef727e053336b6dee9",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2655,8 +2655,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_outpaint_aspect_template.reviewed-provenance.json",
-      "size": 43638,
-      "sha256": "sha256:bytes:0dc29edc25438f4b451df5c1f5fda03ebbca50f04e2cad9e73073f72aaef2fbf",
+      "size": 165827,
+      "sha256": "sha256:bytes:d0fec0ffe18f3927eef5eac8faa6dc3b7ff8f28b3a79e634bde1a30d886e7390",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2664,8 +2664,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_outpaint_draft.quality-review.json",
-      "size": 4917,
-      "sha256": "sha256:bytes:7018012c3a5ba1544271df1b3f802f806b3c03f1fa774572b6336ded97faceaf",
+      "size": 4688,
+      "sha256": "sha256:bytes:edef85b30a3c7aeb5e0b9a911ad571a82cc3faa213616813a290a74f32fe2cd5",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2673,8 +2673,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_outpaint_draft.reviewed-provenance.json",
-      "size": 43793,
-      "sha256": "sha256:bytes:348d1c3fedae6c17387002e6c6e2e4dfa193cb55bc5db82bb81ae7ff430955ef",
+      "size": 166059,
+      "sha256": "sha256:bytes:d81e1657ee09184d12a43ddf019c19298b0b4b6ba4f673bf764ac4627a3e1c1b",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3948,9 +3948,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:9d7efda84387bc7972025b8ede85cbde6a73224ca67db267b8c97ab14da08e94",
+  "assetSetId": "sha256:canonical-json:b6a23187640a183543a16b46401bac85b2a1b82f6ea75c489c1e71d95ba55084",
   "status": "ready",
   "assetCount": 395,
-  "totalBytes": 515207983,
+  "totalBytes": 515208398,
   "missingAssets": []
 }
