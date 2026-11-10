@@ -740,6 +740,13 @@ only when the form is empty and the native capture has no such field or omission
 A legacy text form model label requires matching active durable ModelsLoader
 authoring and literal pipeline binding; the observed identity retains that label
 separately from the consumed loader class.
+Fresh plain and single-adapter Auto text graphs can also retain decoder width
+and height connected to the denoiser outputs. Both native values, source node
+and ports, backend-resolved dimensions and any retained inline defaults must
+agree. The observation records `decoderGeometryRoute: denoiser_dimensions`;
+final validation checks the canonical decoder, denoiser, output and locked
+dimensions even if someone removes the marker and recomputes metadata hashes.
+This does not relax historical missing-port, adapter or image-edit checks.
 Do not rerun a model merely to add this maintainer metadata, rewrite a raw task,
 refresh a stale public template lock, or infer missing consumed defaults. The
 existing source/model/input/media validators and human review still apply.
@@ -782,6 +789,19 @@ quantization and unsupported graphs stay outside this reader's scope. A valid
 observation closes only this execution-identity gap: source/input/media checks,
 human listening, current-template review and publication decisions remain
 separate. It adds no runtime, Auto admission, hardware qualification or download.
+
+The separate `observed-workflow-auto-video-resource-v1` vocabulary currently
+covers the eight-leaf native LTX text-to-video path with its pinned 2× Spandrel
+delivery. It requires a completed first attempt, matching original graph,
+task/session/workflow/form, native consumed controls, backend-resolved placement,
+both immutable installed owners and measured delivered geometry. Reused owners,
+adapters, external inputs, additional controls, compilation, quantization and
+unsupported paths remain held. The shared requested encoder length is retained
+separately from the native LTX cap of 128; at guidance one the authored empty
+negative prompt is captured as null. Neither value is rewritten in the receipt.
+Rehashed projections must still match the canonical graph, model set and final
+frame geometry. This maintainer-only observation adds no admission, execution,
+quality approval, resource fit or hardware qualification.
 
 The `observed-workflow-auto-image-resource-v1` vocabulary covers one fresh,
 unquantized one-reference edit or two-reference modular image-conditioned graph: one literal pinned

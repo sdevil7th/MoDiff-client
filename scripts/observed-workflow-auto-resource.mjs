@@ -72,6 +72,7 @@ function finiteJson(value, depth = 0, seen = new Set()) {
   for (const item of Object.values(value)) finiteJson(item, depth + 1, seen);
   seen.delete(value);
 }
+export { finiteJson as assertFiniteObservedJson };
 
 // Same compact sorted ASCII-JSON wire domain as the worker. A representation
 // mismatch remains unsupported; it is never repaired by replacing the receipt.
@@ -100,6 +101,10 @@ export function observedWorkflowAutoResourceId(plan) {
     assert.match(o.revision, /^[0-9a-f]{40}$/u);
     const imageConditioned = plan.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE;
     const legacy = plan.source === OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE;
+    if (o.decoderGeometryRoute !== undefined) {
+      assert(!imageConditioned);
+      assert.equal(o.decoderGeometryRoute, 'denoiser_dimensions');
+    }
     if (imageConditioned) assert(['edit_image', 'multi_image_reference_edit'].includes(o.task));
     else {
       assert.equal(o.task, 'text_to_image');
@@ -138,7 +143,6 @@ export function observedWorkflowAutoResourceId(plan) {
     if (legacy) {
       assert(!Object.hasOwn(o, 'weightLoadingMode') && !Object.hasOwn(plan, 'weightLoadingMode'));
       same(o.absentLoaderControls, ['weight_format', 'weight_loading_mode']);
-      if (o.decoderGeometryRoute !== undefined) assert.equal(o.decoderGeometryRoute, 'denoiser_dimensions');
       assert.match(o.backendSourceFingerprint, /^sha256:backend-source-v1:[a-f0-9]{64}$/u);
       assert.match(o.backendContractFingerprint, /^sha256:backend-contract-v1:[a-f0-9]{64}$/u);
       if (o.guiderConfiguration !== undefined) {
@@ -533,6 +537,56 @@ export function observedWorkflowAutoLegacyProofMatches(plan, provenance) {
   }
 }
 
+/** Recheck the connected decoder route after hashes have been recomputed. */
+export function observedWorkflowAutoTextGeometryProofMatches(plan, provenance) {
+  try {
+    assert([OBSERVED_WORKFLOW_AUTO_SOURCE, OBSERVED_WORKFLOW_AUTO_LORA_SOURCE].includes(plan.source));
+    assert(observedWorkflowAutoResourceId(plan));
+    assert.equal(plan.resourceObservation.decoderGeometryRoute, 'denoiser_dimensions');
+    const nodes = provenance.graph.canonicalGraph.nodes;
+    assert(nodes.length >= 5 && nodes.length <= 7);
+    const roles = new Map(nodes.map((node) => [scope(node), node]));
+    assert.equal(roles.size, nodes.length);
+    assert(nodes.every((node) => core.includes(scope(node)) || [optional, descriptorScope].includes(scope(node))));
+    for (const kind of core) assert(roles.has(kind));
+    assert.equal(roles.has(descriptorScope), plan.source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE);
+    const owner = roles.get(ownerScope),
+      denoise = roles.get('modules.ModularDiffusers.Denoise');
+    const decode = roles.get('modules.ModularDiffusers.DecodeLatents'),
+      preview = roles.get('modules.Image.Preview');
+    for (const [node, field, supplier, port] of [
+      [decode, 'vae', owner, 'vae_out'],
+      [decode, 'latents', denoise, 'latents'],
+      [preview, 'image', decode, 'images'],
+    ]) {
+      assert.equal(node.params[field]?.sourceId, supplier.key);
+      assert.equal(node.params[field].sourceKey, port);
+      assert(!Object.hasOwn(node.params[field], 'value'));
+    }
+    assert.equal(provenance.output.items.length, 1);
+    for (const field of ['width', 'height']) {
+      const actual = plan.resourceObservation.geometry[field],
+        p = decode.params[field];
+      assert.equal(p?.sourceId, denoise.key);
+      assert.equal(p.sourceKey, 'out_' + field);
+      if (Object.hasOwn(p, 'value')) same(p.value, actual);
+      assert(!denoise.params[field]?.sourceId && !denoise.params[field]?.sourceKey);
+      same(value(denoise, field), actual);
+      same(provenance.output.items[0][field], actual);
+      same(provenance.template.lockedSettings[field], actual);
+    }
+    same(value(owner, 'repo_id'), { source: 'hub', value: plan.modelRepo });
+    same(value(owner, 'revision'), plan.modelRevision);
+    same(value(owner, 'model_type'), plan.modelType);
+    assert.equal(provenance.template.lockedSettings.mode, 'text_to_image');
+    assert.equal(provenance.template.lockedSettings.resourceMode, 'auto');
+    assert(Array.isArray(provenance.inputs.items) && provenance.inputs.items.length === 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A projected adapter identity is useful only with the existing strict native proof. */
 export function observedWorkflowAutoLoraProofMatches(plan, provenance) {
   try {
@@ -864,7 +918,7 @@ export function observedWorkflowAutoPlan(
     const denoiseOwner = scopes.get('modules.ModularDiffusers.Denoise').id;
     for (const key of ['width', 'height']) assert(Object.hasOwn(auto.resolvedFields[denoiseOwner], key));
     const controls = [];
-    let legacyDecoderRoute = false;
+    let connectedDecoderRoute = false;
     let legacyGuiderConfiguration;
     if (legacy && scopes.has(optional)) {
       const guider = scopes.get(optional),
@@ -887,7 +941,7 @@ export function observedWorkflowAutoPlan(
       const node = apiGraph.nodes[id];
       assert(node);
       const kind = scope(node);
-      if (legacy && kind === 'modules.ModularDiffusers.DecodeLatents') {
+      if (!imageConditioned && kind === 'modules.ModularDiffusers.DecodeLatents') {
         same(Object.keys(fields).sort(), ['height', 'width']);
         for (const key of ['width', 'height']) {
           const param = node.params[key],
@@ -902,7 +956,7 @@ export function observedWorkflowAutoPlan(
           same(fields[key], value(apiGraph.nodes[denoiseOwner], key));
           assert(!Object.hasOwn(rows.get(id).omittedFields ?? {}, key));
         }
-        legacyDecoderRoute = true;
+        connectedDecoderRoute = true;
         continue;
       }
       validateControlFields(kind, fields, imageConditioned);
@@ -1001,12 +1055,12 @@ export function observedWorkflowAutoPlan(
       geometry: { width: d.width.value, height: d.height.value },
       strategy: auto.strategy,
       controls,
+      ...(connectedDecoderRoute ? { decoderGeometryRoute: 'denoiser_dimensions' } : {}),
       ...(legacy
         ? {
             absentLoaderControls: ['weight_format', 'weight_loading_mode'],
             backendSourceFingerprint: backendSource.fingerprint,
             backendContractFingerprint: backendContract.fingerprint,
-            ...(legacyDecoderRoute ? { decoderGeometryRoute: 'denoiser_dimensions' } : {}),
             ...(legacyGuiderConfiguration ? { guiderConfiguration: legacyGuiderConfiguration } : {}),
           }
         : {}),

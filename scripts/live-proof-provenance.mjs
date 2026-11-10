@@ -9,6 +9,7 @@ import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resou
 import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
 import {
+  OBSERVED_WORKFLOW_AUTO_SOURCE,
   OBSERVED_WORKFLOW_AUTO_LORA_SOURCE,
   OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE,
   OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE,
@@ -18,10 +19,17 @@ import {
   observedWorkflowAutoAudioProofMatches,
   observedWorkflowAutoImageProofMatches,
   observedWorkflowAutoLegacyProofMatches,
+  observedWorkflowAutoTextGeometryProofMatches,
   observedWorkflowAutoPlan,
   observedWorkflowAutoResourceId,
   workerGraphHash,
 } from './observed-workflow-auto-resource.mjs';
+import {
+  OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE,
+  observedWorkflowAutoVideoPlan,
+  observedWorkflowAutoVideoProofMatches,
+  observedWorkflowAutoVideoResourceId,
+} from './observed-workflow-auto-video-resource.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
@@ -1271,7 +1279,9 @@ export function executionPlanIdentity(apiGraph, executionContext) {
       ? (observedWorkflowAutoPlan(apiGraph, {
           ...executionContext,
           adapterProofContext: observedAdapterProofContext(apiGraph, executionContext),
-        }) ?? observedWorkflowAutoAudioPlan(apiGraph, executionContext))
+        }) ??
+        observedWorkflowAutoAudioPlan(apiGraph, executionContext) ??
+        observedWorkflowAutoVideoPlan(apiGraph, executionContext))
       : null;
   const plan =
     observedAutoPlan ??
@@ -1295,7 +1305,10 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
     measurement?.processRssBytes ??
     null;
   const manualResourceCandidateId =
-    !isObservedWorkflowAutoSource(executionPlan?.source) && executionPlan?.modelType && executionPlan?.dtype
+    !isObservedWorkflowAutoSource(executionPlan?.source) &&
+    executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
+    executionPlan?.modelType &&
+    executionPlan?.dtype
       ? `manual-resource-v1:${[
           executionPlan.modelType,
           executionPlan.dtype,
@@ -1308,6 +1321,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       hints?.autoResourceCandidateId ??
       executionPlan?.autoResourceCandidateId ??
       observedWorkflowAutoResourceId(executionPlan) ??
+      observedWorkflowAutoVideoResourceId(executionPlan) ??
       manualResourceCandidateId,
     elapsedSeconds:
       Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
@@ -1877,6 +1891,31 @@ export function validateRunProvenance(provenance) {
       blockers.push(
         'execution legacy resource observation does not match the original graph/source/contract/model/output proof.',
       );
+    }
+    if (
+      [OBSERVED_WORKFLOW_AUTO_SOURCE, OBSERVED_WORKFLOW_AUTO_LORA_SOURCE].includes(
+        provenance?.graph?.executionPlan?.source,
+      ) &&
+      (provenance.graph.executionPlan.resourceObservation?.decoderGeometryRoute !== undefined ||
+        provenance.graph.canonicalGraph?.nodes?.some(
+          (node) =>
+            node.module === 'modules.ModularDiffusers' &&
+            node.action === 'DecodeLatents' &&
+            ['width', 'height'].some((field) => node.params?.[field]?.sourceId || node.params?.[field]?.sourceKey),
+        )) &&
+      !observedWorkflowAutoTextGeometryProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push(
+        'execution text decoder geometry observation does not match the original connected graph/output proof.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedWorkflowAutoVideoResourceId(provenance.graph.executionPlan) ||
+        !observedWorkflowAutoVideoProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push('execution video resource observation does not match the original graph/model/output proof.');
     }
     if (
       provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE &&

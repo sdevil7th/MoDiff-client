@@ -16,6 +16,7 @@ import {
   observedWorkflowAutoLoraProofMatches,
   observedWorkflowAutoImageProofMatches,
   observedWorkflowAutoLegacyProofMatches,
+  observedWorkflowAutoTextGeometryProofMatches,
   observedWorkflowAutoResourceId,
 } from './observed-workflow-auto-resource.mjs';
 import { canonicalJsonHash, stableJsonValue } from './canonical-json.mjs';
@@ -1746,6 +1747,104 @@ function legacyDecoderWitness() {
   w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
   return w;
 }
+
+function nativeDecoderWitness(w = witness()) {
+  const decode = w.apiGraph.nodes[w.ids.decode];
+  const fields = {};
+  for (const field of ['width', 'height']) {
+    const actual = w.apiGraph.nodes[w.ids.denoise].params[field].value;
+    decode.params[field] = { value: actual, display: 'input', sourceId: w.ids.denoise, sourceKey: 'out_' + field };
+    fields[field] = { value: actual, source: 'connected', sourceNodeId: w.ids.denoise, sourcePortId: 'out_' + field };
+  }
+  w.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === w.ids.decode).fields = fields;
+  w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.decode] = Object.fromEntries(
+    Object.entries(fields).map(([key, field]) => [key, field.value]),
+  );
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  return w;
+}
+
+test('fresh native Auto decoder retains connected geometry for plain and single-adapter text graphs', () => {
+  for (const w of [nativeDecoderWitness(), nativeDecoderWitness(loraWitness())]) {
+    const before = structuredClone(w);
+    const plan = planFor(w);
+    assert.equal(
+      plan.source,
+      w.ids.lora ? 'observed-workflow-auto-lora-resource-v1' : 'observed-workflow-auto-resource-v1',
+    );
+    assert.equal(plan.resourceObservation.decoderGeometryRoute, 'denoiser_dimensions');
+    assert(observedWorkflowAutoResourceId(plan));
+    assert(observedWorkflowAutoTextGeometryProofMatches(plan, legacyTextProof(w, plan)));
+    assert.deepEqual(w, before);
+  }
+});
+
+test('fresh connected decoder geometry rejects missing, stale and substituted native values', () => {
+  for (const make of [() => nativeDecoderWitness(), () => nativeDecoderWitness(loraWitness())])
+    for (const mutate of [
+      (w) => {
+        w.apiGraph.nodes[w.ids.decode].params.width.sourceKey = 'latents';
+      },
+      (w) => {
+        w.apiGraph.nodes[w.ids.decode].params.width.value = 512;
+      },
+      (w) => {
+        delete w.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === w.ids.decode).fields.width;
+      },
+      (w) => {
+        w.executedOutput.resolvedExecutionInputs.nodes.find(
+          (n) => n.nodeId === w.ids.decode,
+        ).fields.width.sourcePortId = 'width';
+      },
+      (w) => {
+        w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.decode].height = 512;
+      },
+    ]) {
+      const w = make();
+      mutate(w);
+      w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+      assert(
+        !['observed-workflow-auto-resource-v1', 'observed-workflow-auto-lora-resource-v1'].includes(planFor(w).source),
+      );
+    }
+});
+
+test('rehashed text decoder observations remain bound to canonical geometry and cannot hide their route', () => {
+  const w = nativeDecoderWitness(),
+    plan = planFor(w),
+    proof = legacyTextProof(w, plan);
+  for (const mutate of [
+    (p) => {
+      p.graph.canonicalGraph.nodes.find((n) => n.action === 'DecodeLatents').params.width.sourceKey = 'latents';
+    },
+    (p) => {
+      p.output.items[0].width = 512;
+    },
+    (p) => {
+      p.template.lockedSettings.height = 512;
+    },
+    (p) => {
+      p.inputs.items.push({ role: 'referenceImages[0]' });
+    },
+  ]) {
+    const changed = structuredClone(proof);
+    mutate(changed);
+    assert.equal(observedWorkflowAutoTextGeometryProofMatches(plan, changed), false);
+  }
+  const hidden = structuredClone(proof);
+  hidden.schemaVersion = 2;
+  hidden.graph.executionPlan = structuredClone(plan);
+  delete hidden.graph.executionPlan.resourceObservation.decoderGeometryRoute;
+  hidden.graph.executionPlan.observedResourceCandidateId =
+    plan.source + ':' + canonicalJsonHash(hidden.graph.executionPlan.resourceObservation);
+  hidden.execution = { resourceCandidateId: observedWorkflowAutoResourceId(hidden.graph.executionPlan) };
+  assert(hidden.execution.resourceCandidateId);
+  assert(
+    validateRunProvenance(hidden).includes(
+      'execution text decoder geometry observation does not match the original connected graph/output proof.',
+    ),
+  );
+});
 test('historical decoder geometry requires the exact connected denoiser output and native values', () => {
   const w = legacyDecoderWitness(),
     plan = planFor(w),
