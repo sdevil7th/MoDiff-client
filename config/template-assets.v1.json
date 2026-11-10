@@ -155,8 +155,8 @@
     },
     {
       "path": "template-gallery/character_edit.webp",
-      "size": 245424,
-      "sha256": "sha256:bytes:2f06039573ec8997f9a871577fcd27bbc302a61b40b8107291e61de4aacb3254",
+      "size": 242746,
+      "sha256": "sha256:bytes:c7da13667186b8303eab34103e3e2394e590166cc14a0f5c2c769af8942f035d",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1338,8 +1338,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 206395,
-      "sha256": "sha256:bytes:60a372315880816149fe0867cd06cd58d2448aaa39b658b8a7ab59dee52c2e8f",
+      "size": 206161,
+      "sha256": "sha256:bytes:6fbc9dfe54f27a7d51b1c7d8fa588dc8234df5ef8324ba422816dbc6ec7f48b1",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1369,8 +1369,8 @@
     },
     {
       "path": "template-gallery/qwen_edit_plus_single_image.webp",
-      "size": 163116,
-      "sha256": "sha256:bytes:3156bbe36229159f789855cd951d8a224b6485752e50104822a696870a13bc46",
+      "size": 165018,
+      "sha256": "sha256:bytes:be3f439416a3a4fe5647f032961908a3a4ac98c228cab0f7e13931e21d90e7de",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1380,8 +1380,8 @@
     },
     {
       "path": "template-gallery/qwen_edit_strength_sweep.webp",
-      "size": 211152,
-      "sha256": "sha256:bytes:0f785808b47a1d08dc63928a6730eb49825e2655271f8e8f2717c8f6db337a69",
+      "size": 198596,
+      "sha256": "sha256:bytes:964eb0865b5f5e07434e604b427aa1d25f77e606eb6c6ea104c730e7e7d3ac62",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1402,8 +1402,8 @@
     },
     {
       "path": "template-gallery/qwen_inpaint_object_replace.webp",
-      "size": 158158,
-      "sha256": "sha256:bytes:5ccd7adeac6f6ddb1d988de1aec90e75ba53a94ed27a1d32eafd3aec2e2531c9",
+      "size": 161870,
+      "sha256": "sha256:bytes:4537acd74aac196bbc1fdf2804ee273605c6d1d44cf08f62e7ecc2f5cf892e39",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1424,8 +1424,8 @@
     },
     {
       "path": "template-gallery/qwen_logo_texture.webp",
-      "size": 261230,
-      "sha256": "sha256:bytes:0b55d7f2b6c913996965242f0d71b0ddef713a5cca582bdfcf8dfaee8f1ea577",
+      "size": 256582,
+      "sha256": "sha256:bytes:c4afc3f779e03437a122845ee9f19d149e5a049f0cce7b076047a69f964bc416",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1468,8 +1468,8 @@
     },
     {
       "path": "template-gallery/qwen_multi_reference_product.webp",
-      "size": 195330,
-      "sha256": "sha256:bytes:7acc91f678a731bf91d0d7fbee7085894eb1165884ed66aa178911b0925d4bde",
+      "size": 195546,
+      "sha256": "sha256:bytes:c0377035121c03214e54df360f380f531a700efdf17a9e2f3d732dc18244e846",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1524,8 +1524,8 @@
     },
     {
       "path": "template-gallery/qwen_product_ad_composite.webp",
-      "size": 194110,
-      "sha256": "sha256:bytes:4b55c8e4d6603d58139d98e9450fcfa5cb62dafa0bbdc12fef0ccd37f2157153",
+      "size": 173146,
+      "sha256": "sha256:bytes:0bc45b6953d46b6553f549a01c39f8ce15d92472d0c855d60e52a8c74dfd4f5e",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1547,8 +1547,8 @@
     },
     {
       "path": "template-gallery/qwen_product_relight.webp",
-      "size": 198082,
-      "sha256": "sha256:bytes:a77aead151d72398d73d93719dc258fd797e75d6409a0de80208d43816057c2a",
+      "size": 196658,
+      "sha256": "sha256:bytes:927824741931202a42d711f671723ee5b44353afb8741ed4f279dc7ee2e5dc5c",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1569,8 +1569,8 @@
     },
     {
       "path": "template-gallery/qwen_tile_extract.webp",
-      "size": 85542,
-      "sha256": "sha256:bytes:66005c52bdbf800764f4de443586346c7bf75a1fd5ebc4255df405d1180c3b00",
+      "size": 85964,
+      "sha256": "sha256:bytes:1b6523e040e6895af885ff53a1033a3caeeb18a4615788ed385a8f061eef6465",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1591,8 +1591,8 @@
     },
     {
       "path": "template-gallery/reference_fusion.webp",
-      "size": 324236,
-      "sha256": "sha256:bytes:cb5621c2927bdb58ecc595e71d258b9eee2ef2ca164242474846db825cdb2cb1",
+      "size": 322954,
+      "sha256": "sha256:bytes:fcce19c98e3931e5b15de0b7deee704fff89276b3dabbef53de49c73cf08c155",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1692,8 +1692,8 @@
     },
     {
       "path": "template-gallery/reviews/character_edit.quality-review.json",
-      "size": 5058,
-      "sha256": "sha256:bytes:10700042aceac7d071fb5aa3a3f1d26c3cbdef462352a167e7dbbcc1d53ef00f",
+      "size": 3905,
+      "sha256": "sha256:bytes:89cca4e7b8e466c614d973925b4775e18cec8c39e14e639a9d48b89918e7ae7f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1701,8 +1701,8 @@
     },
     {
       "path": "template-gallery/reviews/character_edit.reviewed-provenance.json",
-      "size": 46906,
-      "sha256": "sha256:bytes:cc6d3832032ef61930d18c38f0042ffc3dc80452b035853f07449a25fa36b625",
+      "size": 106076,
+      "sha256": "sha256:bytes:fee8045c51a38c8c73f668af5e3f513d7f0cbbf6978122fe73d2487ab746e110",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2465,18 +2465,18 @@
       ]
     },
     {
-      "path": "template-gallery/reviews/qwen_edit_plus_single_image.duplicate-provenance.json",
-      "size": 82296,
-      "sha256": "sha256:bytes:dd76a3ef7b084e4b419ac4742834c16cbfffd24413a2484c5190eaa933a41f7f",
+      "path": "template-gallery/reviews/qwen_edit_plus_single_image.quality-review.json",
+      "size": 3415,
+      "sha256": "sha256:bytes:bd2066932a1749ee87c340450d232ed2d8f919648ae9e1e64b9ea30f531d73d7",
       "contentType": "application/json",
       "purposes": [
         "runtime"
       ]
     },
     {
-      "path": "template-gallery/reviews/qwen_edit_plus_single_image.quality-review.json",
-      "size": 1583,
-      "sha256": "sha256:bytes:0b438037b118e2b5865e6dfa2ba7c3c06d7dc7f24224886f01777be7f2b2e23b",
+      "path": "template-gallery/reviews/qwen_edit_plus_single_image.reviewed-provenance.json",
+      "size": 98849,
+      "sha256": "sha256:bytes:4b672fc3ddc522c44a41c7065cefda8c82d2d5be5ab7f01375b19cc93e029fe8",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2484,8 +2484,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_edit_strength_sweep.quality-review.json",
-      "size": 4164,
-      "sha256": "sha256:bytes:496a280901eb5ca3cd80d222d0226537befd1ce050d05ed56fa5ce233b7e7af3",
+      "size": 3369,
+      "sha256": "sha256:bytes:c0632baaea92783a73856fd89295df7ddea9b07712a35311f81fd2c8ca9c0727",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2493,8 +2493,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_edit_strength_sweep.reviewed-provenance.json",
-      "size": 38475,
-      "sha256": "sha256:bytes:7ed8775e68ea0323457286de63b0bdf828b57b9ca20e871708f4fdfca533762d",
+      "size": 99281,
+      "sha256": "sha256:bytes:021e25f19a4a62f07513e3556ba7865e2ae7631762ead746ef6563e2912b0a4a",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2520,8 +2520,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_inpaint_object_replace.quality-review.json",
-      "size": 4203,
-      "sha256": "sha256:bytes:27aa406a3b4226b341e30b216811782d0bfdd18683b89b29564ecf07e301ce47",
+      "size": 3893,
+      "sha256": "sha256:bytes:cdbd7d549bfef1a9513cd8ed5feef6ba7798f380ffe45830cfa588de789c3cdf",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2529,8 +2529,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_inpaint_object_replace.reviewed-provenance.json",
-      "size": 44712,
-      "sha256": "sha256:bytes:61958d9a47301ee3d2fb83283d5f2ba7bffab3c49bfcfe93402bc64697f95fa4",
+      "size": 109340,
+      "sha256": "sha256:bytes:9110d6bf939d4c68541767c20ad62684978c590af344a226d76ee02c32b76fef",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2556,8 +2556,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_logo_texture.quality-review.json",
-      "size": 4525,
-      "sha256": "sha256:bytes:4671b5e55420dab7ed9fdd700b806ddd6f57a2782ef2a1e89931db6805f58e9e",
+      "size": 3936,
+      "sha256": "sha256:bytes:27383d10d65bf5bcf81efb5a197751c3ad29476fd23f72cd8a937dc432e6f555",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2565,8 +2565,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_logo_texture.reviewed-provenance.json",
-      "size": 46983,
-      "sha256": "sha256:bytes:7cdb2104446f3083e04d29643c264c4fe9ceeecfd0e359424b8e135711adc21f",
+      "size": 106958,
+      "sha256": "sha256:bytes:d056004421a13aa28a5f5f67ef52e3647ab07573df5c8cf8d9846aeea8d9a698",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2628,8 +2628,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_multi_reference_product.quality-review.json",
-      "size": 5028,
-      "sha256": "sha256:bytes:395c6c3e058b55d78d3adbc09d9fe3aa6f1f14c4af845e55b79c0e2a82dc9b68",
+      "size": 4364,
+      "sha256": "sha256:bytes:f541e013bf476dc05c7bf0815db9fd100925c3ed5e4303e275998940c6d38d31",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2637,8 +2637,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_multi_reference_product.reviewed-provenance.json",
-      "size": 49298,
-      "sha256": "sha256:bytes:9a49f077f6eaefb162e4cf1b2a12801b3ed36bb11e782b80b0d13a654499c131",
+      "size": 109254,
+      "sha256": "sha256:bytes:e3855abb4ed1a82b068269f8a1ce817cb327d9f05abe65b7a22ff4fb87dbf597",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2718,8 +2718,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_product_ad_composite.quality-review.json",
-      "size": 4979,
-      "sha256": "sha256:bytes:49eab3a43671aa04a445c7cb38aab25a3c3628a1aaf378dc3a23a5ff9b834234",
+      "size": 3944,
+      "sha256": "sha256:bytes:d1fbc94b163a8573d46a2dd47946935ae06ce51ab4f95cd84e64913bd22e377d",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2727,8 +2727,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_product_ad_composite.reviewed-provenance.json",
-      "size": 48107,
-      "sha256": "sha256:bytes:39b1f417ec7f7fe2672404d6ba52c9c8ac2707d52e41c911ca7ba8e4ac014430",
+      "size": 108001,
+      "sha256": "sha256:bytes:381e12e3f39be2ae1a7192b918eba815d2029351d68377acb959d31a70eb357b",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2754,8 +2754,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_product_relight.quality-review.json",
-      "size": 4413,
-      "sha256": "sha256:bytes:753786d3770b00a95f1dad1e2296c37421e794565e0941384582ad9e06f4c542",
+      "size": 3508,
+      "sha256": "sha256:bytes:b861d8ce095fd338d8d55d9b332d1010511af533986d66664186feebdc61bafc",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2763,8 +2763,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_product_relight.reviewed-provenance.json",
-      "size": 48693,
-      "sha256": "sha256:bytes:43b244fc27e57b7b8a2e1723628ea9aeb0bf364b76bfa7c81ec9408d7c88bfba",
+      "size": 108714,
+      "sha256": "sha256:bytes:27502d691d21995e461135d22847cb0ae821b03f103eca40cab80c4ad8ce230d",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2790,8 +2790,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_tile_extract.quality-review.json",
-      "size": 4031,
-      "sha256": "sha256:bytes:34c6b47a541749a745738ce15452fd85b2f2bb4883d325f43f70854750b662a1",
+      "size": 3373,
+      "sha256": "sha256:bytes:09131391c3324338e90a40f57fd1cada2f08e321ec5904fcfc0d6c9920ee6aed",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2799,8 +2799,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_tile_extract.reviewed-provenance.json",
-      "size": 40954,
-      "sha256": "sha256:bytes:4eb7ec4d1ce6925dac29fba4d929cae2a2815f5c39c81d92c17f07ad0d81f3fc",
+      "size": 99836,
+      "sha256": "sha256:bytes:3b08851c75268f5dd35a5e5f0f4f1e47ecbe95ecfdccde93f1ba08e74f0fc241",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2826,8 +2826,8 @@
     },
     {
       "path": "template-gallery/reviews/reference_fusion.quality-review.json",
-      "size": 4266,
-      "sha256": "sha256:bytes:dc9e6e9fac8d2e1fb11786e7b3027ffac58e4436e10a5f6658958ea20437b94a",
+      "size": 3490,
+      "sha256": "sha256:bytes:0042893cc0ba3eb36438c8af0108de25c620cedc8febc83d14b46accb427f73a",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2835,8 +2835,8 @@
     },
     {
       "path": "template-gallery/reviews/reference_fusion.reviewed-provenance.json",
-      "size": 47402,
-      "sha256": "sha256:bytes:bc56957f55d2b4200c31df83ee548a8b50ebf1cf3b6493bc881b25032d12355f",
+      "size": 107349,
+      "sha256": "sha256:bytes:e8bb52b4d660c345368dd44a7d9d40edf62b00770a01dc444a5d5e9ec8d8bd87",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3948,9 +3948,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:4a5a578a4631c76af7d94b5a7b30239931275b67fd9b74f036229b34998ba2bf",
+  "assetSetId": "sha256:canonical-json:b4c03560782927a901de93ce6786362f08d4122a3c52c980c40208e2c7133412",
   "status": "ready",
   "assetCount": 395,
-  "totalBytes": 568675348,
+  "totalBytes": 569192593,
   "missingAssets": []
 }

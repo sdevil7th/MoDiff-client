@@ -486,7 +486,8 @@ test('registered Z examples use their current reviewed recipe without granting d
 });
 
 test('historical adapter examples retain their recorded immutable pin when authoring adds that revision', async () => {
-  const manifest = JSON.parse(await readFile('public/template-gallery/manifest.json', 'utf8'));
+  const manifest = JSON.parse(await readFile('scripts/fixtures/historical-qwen-adapter-gallery.json', 'utf8'));
+  const current = JSON.parse(await readFile('public/template-gallery/manifest.json', 'utf8'));
   for (const id of [
     'qwen_product_ad_composite',
     'qwen_product_relight',
@@ -497,6 +498,11 @@ test('historical adapter examples retain their recorded immutable pin when autho
   ]) {
     const template = templates.find((item) => item.id === id);
     const before = structuredClone(template);
+    assert.equal(
+      exactness.getTemplateExampleUiState(template, selectedForm(template), null, current).status,
+      'reviewed',
+      id,
+    );
     assert.equal(exactness.findManifestEntry(template, manifest), undefined);
     const previous = exactness.findHistoricalTemplateManifestEntry(template, manifest);
     assert.ok(previous, id);
