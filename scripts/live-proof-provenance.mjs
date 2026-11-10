@@ -36,6 +36,12 @@ import {
   observedRetainedExpertTextProofMatches,
   observedRetainedExpertTextResourceId,
 } from './retained-native-text-resource.mjs';
+import {
+  OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE,
+  observedRetainedDirectImagePlan,
+  observedRetainedDirectImageProofMatches,
+  observedRetainedDirectImageResourceId,
+} from './retained-native-direct-image-resource.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
@@ -1289,13 +1295,17 @@ export function executionPlanIdentity(apiGraph, executionContext) {
         observedWorkflowAutoAudioPlan(apiGraph, executionContext) ??
         observedWorkflowAutoVideoPlan(apiGraph, executionContext))
       : null;
-  const retainedTextPlan =
+  const retainedPlan =
     executionContext?.retainedNativeEvidence === undefined
       ? null
-      : observedRetainedExpertTextPlan(apiGraph, executionContext);
+      : Object.values(apiGraph?.nodes ?? {}).some(
+            (node) => node.module === 'modules.DiffusersImage' && node.action === 'LoadPipeline',
+          )
+        ? observedRetainedDirectImagePlan(apiGraph, executionContext)
+        : observedRetainedExpertTextPlan(apiGraph, executionContext);
   const plan =
     executionContext?.retainedNativeEvidence !== undefined
-      ? (retainedTextPlan ?? {})
+      ? (retainedPlan ?? {})
       : (observedAutoPlan ??
         modularPlan ??
         (fields.length > 0
@@ -1320,6 +1330,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
     !isObservedWorkflowAutoSource(executionPlan?.source) &&
     executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
     executionPlan?.source !== OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
+    executionPlan?.source !== OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE &&
     executionPlan?.modelType &&
     executionPlan?.dtype
       ? `manual-resource-v1:${[
@@ -1336,6 +1347,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       observedWorkflowAutoResourceId(executionPlan) ??
       observedWorkflowAutoVideoResourceId(executionPlan) ??
       observedRetainedExpertTextResourceId(executionPlan) ??
+      observedRetainedDirectImageResourceId(executionPlan) ??
       manualResourceCandidateId,
     elapsedSeconds:
       Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
@@ -1932,6 +1944,16 @@ export function validateRunProvenance(provenance) {
       blockers.push('execution video resource observation does not match the original graph/model/output proof.');
     }
     if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedRetainedDirectImageResourceId(provenance.graph.executionPlan) ||
+        !observedRetainedDirectImageProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution retained direct-image observation does not match the original source/contract/graph/model/input/output bindings.',
+      );
+    }
+    if (
       provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
       (provenance.execution?.resourceCandidateId !==
         observedRetainedExpertTextResourceId(provenance.graph.executionPlan) ||
@@ -2502,11 +2524,13 @@ export function createRunProvenance({
       ? executionPlanIdentity(apiGraph, {
           executionReceipt,
           executedOutput,
+          templateId,
           taskId,
           modelIdentities: modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean),
           backendSource,
           backendContract: backendContractIdentity(nodesPayload, graph.canonicalGraph),
           retainedNativeEvidence,
+          inputArtifacts,
         })
       : canonicalAccountingProofPlan({
           apiGraph,

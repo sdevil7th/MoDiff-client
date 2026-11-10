@@ -897,6 +897,50 @@ reader supplies no independent memory monitoring, original-time installed file
 inventory, reconstructed loading controls, residency or hardware-fit claim. All
 ordinary model-byte, media, quality, rights and publication checks still apply.
 
+The separate `observed-retained-direct-image-resource-v1` reader handles a
+retained first-attempt direct image task: one `LoadPipeline`, connected
+`DiffusersExecutionRecipe` and `PipelineQuantizationConfigV2`, generic `Inpaint`
+or `ControlGenerate`, one or two image loaders, and CPU Preview. An optional
+`OutpaintCanvas` must have its own original observed call and return. The route
+requires BF16, an immutable Hub revision, no quantization or applied adapters,
+and a consumed model-CPU or group-CPU recipe. Auto and Expert remain distinct.
+This is a maintainer evidence vocabulary; it adds no runtime, execution route,
+Auto admission, package activation or hardware qualification.
+
+For this route, `retainedNativeEvidence` has eight `{ text, sha256 }` records:
+`receipt`, `requests`, `responses`, `derived`, `journal`, `observer`, `comparison`
+and `inputs`. The first six are preserved originals. `comparison` is the original
+image comparison contract, including its positional source roles. `inputs` is a
+current, independently verified pixel inventory: `{ schemaVersion: 1, sources }`.
+Each source records `role`, `contentHash`, `byteSize`, `originalContractRole`,
+`decodedRgbaSha256` and `[width, height]` as `size`. Construct this inventory from
+the actual current encoded files and decoded RGBA pixels. Its semantic roles
+must match `inputArtifacts`; the original contract's positional roles remain
+separate. A current file hash cannot supply a missing original PIL pixel hash.
+The journal limit is 64 MiB, the current input inventory limit is 1 MiB, other
+records are limited to 16 MiB each, and the total is limited to 112 MiB.
+
+The reader joins every original scheduler step and sole official call/return to
+the submitted graph, task/session/attempt, native consumed controls, complete
+source inventory, sole current model identity, exact source bytes and original
+PIL pixel hashes. Prepared outpaint additionally joins the actual source pixels,
+utility controls and source body, prepared canvas/mask and model call. Scalar
+and one-item-array file selections, original alpha policies, legacy form model
+labels, and current operation names are preserved. True CFG and embedded guidance
+stay separate; an unsupported negative-prompt field remains unused. The consumed
+connected recipe stays separate from the loader's inactive offload fallback.
+
+Final validation binds the observation back to the canonical graph parameters,
+locked controls, template/task, source/contract fingerprints, model pin, input
+roles/bytes and single output geometry. Invalid records never fall through to
+a manual identity, and this route also excludes `canonicalAccountingProof`.
+Original null candidate IDs remain null. The recorded direct component hook
+markers are unobserved; consumed recipe controls do not prove native hook
+placement, residency, independent memory monitoring or fit. A separately reviewed
+implementation-file hash and immutable official library commit remain distinct
+from the call observer's decorator-file hash. All normal model-file, media,
+quality, rights and publication gates remain required.
+
 The final validator joins the observed identity back to the original canonical
 controls, single installed model, freshly applied empty adapter state, ordered
 input paths/hashes and measured output. Rehashing a changed observation cannot
