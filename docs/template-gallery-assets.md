@@ -125,6 +125,34 @@ publishing new or changed bytes. Preserve earlier Gallery entries, media,
 provenance and reviews outside the active set and retain the prior immutable
 Dataset revision for rollback.
 
+A maintainer can explicitly accept an example with its disclosed visual
+limitations. Retain the original scores in that case. Record
+`maintainerAcceptance` with schema version 1, decision
+`accepted_with_disclosed_limitations`, the same reviewer and acceptance time as
+the review, the maintainer's statement, and `acceptedReviewHash`. Compute that
+hash using `canonicalJsonHash` over the complete review before adding
+`maintainerAcceptance`. This binds acceptance to the exact media and execution
+bindings, scores, findings and limitations. Ordinary reviews require scores of
+at least four. An explicitly accepted review permits scores from one to five
+while retaining the technical, objective, hard-failure and modality checks.
+Publication still requires the exact-file rights record.
+
+For video, `acceptedFindings` can list the specific qualitative diagnostics the
+maintainer accepted, such as disclosed subject morphing or temporal artifacts.
+The verifier accepts only its enumerated visual findings. Full playback,
+card-size inspection, source comparison, duration, frame counts and execution
+evidence still require their own records. Keep the actual findings in the review.
+
+Fresh image-conditioned LTX evidence uses the existing native video reader.
+It binds the ordered `Image.Load` byte hashes, reference wires and consumed
+conditioning strength, alongside generator and upscaler ownership. Fresh modular
+control evidence uses `observed-workflow-auto-control-resource-v1`. That reader
+binds the base and auxiliary model, exact source-image bytes, native loading
+controls and both Guider and denoiser guidance values. It preserves the original
+null task and explicitly records that the control-scale argument was not captured.
+The saved loading request and the current Auto default may differ while the
+original graph and native applied policy retain their exact values.
+
 Verify the replacement entries with the normal Gallery verifier, then refresh
 the complete byte inventory and SHA-bound rights ledger. Unchanged approved bytes
 keep their original rights reviews; changed metadata and media require their own

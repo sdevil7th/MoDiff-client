@@ -297,6 +297,106 @@ test('ordinary full native video retains an observed resource identity without r
   assert.deepEqual(f, before);
 });
 
+function conditionedFixture(mode) {
+  const f = fixture();
+  const count = mode === 'image_to_video' ? 1 : 2;
+  f.form.mode = mode;
+  f.form.referenceImages = Array.from({ length: count }, (_, i) => `@data/reference-${i}.png`);
+  const v = (value) => ({ value });
+  f.graph.nodes.source = {
+    module: 'modules.Image',
+    action: 'Load',
+    params: { file: v(f.form.referenceImages), alpha_channel: v('ignore') },
+  };
+  f.graph.paths[0].unshift('source');
+  f.graph.nodes.encode.params.reference_images = { sourceId: 'source', sourceKey: 'image' };
+  for (const name of ['encode', 'denoise']) {
+    f.graph.nodes[name].params.mode.value = mode;
+    for (const action of ['EncodeInputs', 'Denoise', 'DecodeLatents'])
+      f.graph.nodes[name].params.video_contract.value.actions[action] = [mode];
+  }
+  f.graph.nodes.denoise.params.conditioning_scale.value = mode === 'image_to_video' ? f.form.strength : 1;
+  const rows = f.output.resolvedExecutionInputs;
+  rows.graphTasks[0].task = mode;
+  for (const row of rows.nodes) if (row.fields.executed_task) row.fields.executed_task.value = mode;
+  rows.nodes.find((row) => row.nodeId === 'denoise').fields.conditioning_strength = {
+    source: 'literal',
+    value: f.form.strength,
+  };
+  f.context.inputArtifacts = f.form.referenceImages.map((path, index) => ({
+    role: `referenceImages[${index}]`,
+    path,
+    byteSize: 100 + index,
+    contentHash: 'sha256:bytes:' + String(index + 1).repeat(64),
+  }));
+  rows.nodes.push({
+    nodeId: 'source',
+    module: 'modules.Image',
+    action: 'Load',
+    omittedFields: {},
+    fields: {
+      alpha_channel: { source: 'literal', value: 'ignore' },
+      source_hashes: { source: 'literal', value: f.context.inputArtifacts.map((i) => i.contentHash.slice(13)) },
+    },
+  });
+  f.graph.runtimeHints.workflowAutoPlan.graphHash = workerGraphHash(f.graph);
+  return f;
+}
+
+for (const mode of ['image_to_video', 'reference_to_video']) {
+  test(`${mode} binds ordered original image bytes and consumed conditioning strength`, () => {
+    const f = conditionedFixture(mode);
+    const plan = observedWorkflowAutoVideoPlan(f.graph, f.context);
+    assert(plan);
+    assert.equal(plan.task, mode);
+    assert.equal(f.task.resourceCandidateId, null);
+    const p = {
+      graph: { canonicalGraph: canonicalizeApiGraph(f.graph) },
+      template: { lockedSettings: f.form },
+      models: { items: f.models },
+      inputs: { count: f.context.inputArtifacts.length, items: f.context.inputArtifacts },
+      output: { items: [{ width: 1536, height: 1024, frames: 121 }] },
+    };
+    assert(observedWorkflowAutoVideoProofMatches(plan, p));
+    const locked = structuredClone(p);
+    delete locked.template.lockedSettings.referenceImages;
+    assert(observedWorkflowAutoVideoProofMatches(plan, locked));
+    for (const mutate of [
+      (x) => {
+        x.inputs.items[0].contentHash = 'sha256:bytes:' + 'f'.repeat(64);
+      },
+      (x) => {
+        x.template.lockedSettings.strength = 0.1;
+      },
+      (x) => {
+        x.graph.canonicalGraph.nodes.find((n) => n.action === 'EncodeInputs').params.reference_images.sourceKey =
+          'mask';
+      },
+    ]) {
+      const changed = structuredClone(p);
+      mutate(changed);
+      assert.equal(observedWorkflowAutoVideoProofMatches(plan, changed), false);
+    }
+    for (const mutate of [
+      (x) => {
+        x.context.inputArtifacts = [];
+      },
+      (x) => {
+        x.output.resolvedExecutionInputs.nodes.find((n) => n.nodeId === 'source').fields.source_hashes.value[0] =
+          'f'.repeat(64);
+      },
+      (x) => {
+        x.output.resolvedExecutionInputs.nodes.find((n) => n.nodeId === 'denoise').fields.conditioning_strength.value =
+          0.1;
+      },
+    ]) {
+      const changed = structuredClone(f);
+      mutate(changed);
+      assert.equal(observedWorkflowAutoVideoPlan(changed.graph, changed.context), null);
+    }
+  });
+}
+
 test('native video refuses a missing or contradictory original witness', async (t) => {
   for (const [name, mutate] of Object.entries({
     'wrong session': (f) => {

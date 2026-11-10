@@ -31,6 +31,12 @@ import {
   observedWorkflowAutoVideoResourceId,
 } from './observed-workflow-auto-video-resource.mjs';
 import {
+  OBSERVED_WORKFLOW_AUTO_CONTROL_SOURCE,
+  observedWorkflowAutoControlPlan,
+  observedWorkflowAutoControlProofMatches,
+  observedWorkflowAutoControlResourceId,
+} from './observed-workflow-auto-control-resource.mjs';
+import {
   OBSERVED_RETAINED_EXPERT_TEXT_SOURCE,
   observedRetainedExpertTextPlan,
   observedRetainedExpertTextProofMatches,
@@ -1293,7 +1299,8 @@ export function executionPlanIdentity(apiGraph, executionContext) {
           adapterProofContext: observedAdapterProofContext(apiGraph, executionContext),
         }) ??
         observedWorkflowAutoAudioPlan(apiGraph, executionContext) ??
-        observedWorkflowAutoVideoPlan(apiGraph, executionContext))
+        observedWorkflowAutoVideoPlan(apiGraph, executionContext) ??
+        observedWorkflowAutoControlPlan(apiGraph, executionContext))
       : null;
   const retainedPlan =
     executionContext?.retainedNativeEvidence === undefined
@@ -1346,6 +1353,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       executionPlan?.autoResourceCandidateId ??
       observedWorkflowAutoResourceId(executionPlan) ??
       observedWorkflowAutoVideoResourceId(executionPlan) ??
+      observedWorkflowAutoControlResourceId(executionPlan) ??
       observedRetainedExpertTextResourceId(executionPlan) ??
       observedRetainedDirectImageResourceId(executionPlan) ??
       manualResourceCandidateId,
@@ -1933,6 +1941,16 @@ export function validateRunProvenance(provenance) {
     ) {
       blockers.push(
         'execution text decoder geometry observation does not match the original connected graph/output proof.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_CONTROL_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedWorkflowAutoControlResourceId(provenance.graph.executionPlan) ||
+        !observedWorkflowAutoControlProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution control resource observation does not match the original graph/model/input/output proof.',
       );
     }
     if (

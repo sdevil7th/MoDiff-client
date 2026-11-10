@@ -25,7 +25,7 @@
     {
       "path": "template-gallery/ace_step_audio_repaint.wav",
       "size": 5760044,
-      "sha256": "sha256:bytes:dffe1277ff9b72c952abfd6e2e869f6db595de834649db78bffbf6ae1ec42c44",
+      "sha256": "sha256:bytes:f3741a6a23c75a564e3f860fb0c308efc456a4b9e4c2f641b6246a0bce4aa41b",
       "contentType": "audio/x-wav",
       "purposes": [
         "runtime"
@@ -375,8 +375,8 @@
     },
     {
       "path": "template-gallery/flux_fill_inpaint.webp",
-      "size": 210382,
-      "sha256": "sha256:bytes:a0b1a20336f5a068497be656dbf86a9b48cac36777ddb317cce55191f2dc41a9",
+      "size": 189448,
+      "sha256": "sha256:bytes:edad9352bd415cd468829ad139fc8d201d3e067d7a9d174d790f6dae4f09fc15",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -453,8 +453,8 @@
     },
     {
       "path": "template-gallery/flux_lora_film_noir.webp",
-      "size": 232496,
-      "sha256": "sha256:bytes:5ae8246396c0052258704b7ac405e7259986d0780ef7effcfd37fb4310368006",
+      "size": 86268,
+      "sha256": "sha256:bytes:4b512d8c233c626ae423f4a8a6735541fe0c458f421f74fd40b124f43b916c94",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -497,8 +497,8 @@
     },
     {
       "path": "template-gallery/flux_lora_oil_painting.webp",
-      "size": 380032,
-      "sha256": "sha256:bytes:9f3f08e474c5bf3cf310ec16356df24867640bf9ac9d8ac8b628d7a281d2cbbf",
+      "size": 171762,
+      "sha256": "sha256:bytes:eadd51446c248f077274e548c2676e7e6c5e6d3f0a26d988f26d17d74e162c4a",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -519,8 +519,8 @@
     },
     {
       "path": "template-gallery/flux_lora_paper_cutout.webp",
-      "size": 421816,
-      "sha256": "sha256:bytes:ec1486ef19c6220ddbbfc31313cc13752c957e860aa2e9b2c11be52a4f64699e",
+      "size": 193160,
+      "sha256": "sha256:bytes:83f9fadbbc3c0015f223c651e1a5628472b4951836f96675c71f47a282a67baa",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1149,8 +1149,8 @@
     },
     {
       "path": "template-gallery/ltx_video_image_to_video.card-preview.mp4",
-      "size": 942563,
-      "sha256": "sha256:bytes:e1065266a98cf1d2ef4679607aafaa9ba56e1f3eab98f1aa726a2ef0a3f85457",
+      "size": 987796,
+      "sha256": "sha256:bytes:2effe668f4ad43f9b4780400581d282aee66714d8450eb999787a1c29338aea0",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1158,8 +1158,8 @@
     },
     {
       "path": "template-gallery/ltx_video_image_to_video.mp4",
-      "size": 4340159,
-      "sha256": "sha256:bytes:ae231645ef33dcde428ee04087d4408c56596bcc9ba0b1082fa4b45b56b5ea4d",
+      "size": 30718837,
+      "sha256": "sha256:bytes:e8804713f41d641d6be227d6d2a2603a1ad17f33164e4a10fa1877101dbe4056",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1167,8 +1167,8 @@
     },
     {
       "path": "template-gallery/ltx_video_image_to_video.poster.png",
-      "size": 1530457,
-      "sha256": "sha256:bytes:f1b007220fbecc2ea40814d88ebab427f81a53a50ada4b109a39fd220f325fbe",
+      "size": 1269054,
+      "sha256": "sha256:bytes:eb63789359a844687ed56687ed0ead528c0845bf98631117d8cac28af0c58ad0",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -1229,8 +1229,8 @@
     },
     {
       "path": "template-gallery/ltx_video_multi_reference.card-preview.mp4",
-      "size": 583149,
-      "sha256": "sha256:bytes:92ed6de4481e1b240dd74f510d6431eef70eb0c5cfcca6c420d73c6e22e5c3c9",
+      "size": 604708,
+      "sha256": "sha256:bytes:c88c7624b05258ec757e1f543b64f2b42aa94eb02333708c4e5231c902046e55",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1238,8 +1238,8 @@
     },
     {
       "path": "template-gallery/ltx_video_multi_reference.mp4",
-      "size": 1981325,
-      "sha256": "sha256:bytes:1abc0dc5217b912ca5c9febefa0c1ce9e221b513370fcb3106b4afbece3a1ced",
+      "size": 14926816,
+      "sha256": "sha256:bytes:debfbe7ec1d1afbba34d05c208762f472fc251434d347ef6021e8476539d7644",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1247,8 +1247,8 @@
     },
     {
       "path": "template-gallery/ltx_video_multi_reference.poster.png",
-      "size": 1853850,
-      "sha256": "sha256:bytes:6260afa6e9efda984a7a75e4420b3d7f7583a6cccdd532b964ca6213b4eb185c",
+      "size": 1483533,
+      "sha256": "sha256:bytes:0f4968be6c8acdd441197f8f3024e48ae103255925869531903af37bb347d859",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -1269,8 +1269,8 @@
     },
     {
       "path": "template-gallery/ltx_video_text_to_video.card-preview.mp4",
-      "size": 875572,
-      "sha256": "sha256:bytes:89be8cfd064fd3c81ab2310ed05d7d8660a875f78c132a7b8d01100d547a5ea7",
+      "size": 920701,
+      "sha256": "sha256:bytes:9b8defe3284dcc8bdb9e83485c93c73b65e8c5ade41afe5a383235b04d81b265",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1278,8 +1278,8 @@
     },
     {
       "path": "template-gallery/ltx_video_text_to_video.mp4",
-      "size": 2917726,
-      "sha256": "sha256:bytes:ba1659c0c3c1a5864dfcd6c01f471a731b84cc9523aaa9e4009863ee61714f44",
+      "size": 18056810,
+      "sha256": "sha256:bytes:9b2b976acb65a6c4a9c2255e50d2b7a65a42bb54146d6d2a39625dfdd0b0fe14",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1287,8 +1287,8 @@
     },
     {
       "path": "template-gallery/ltx_video_text_to_video.poster.png",
-      "size": 2016741,
-      "sha256": "sha256:bytes:85f93dcd6f8e051abb28509284c154585dbc133ce0bc7ed0acd57dbe68781884",
+      "size": 1365296,
+      "sha256": "sha256:bytes:c1626d18f12d4cb226de81cca46c0ef9c57628707246efb237f12c30214292fd",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -1338,8 +1338,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 206768,
-      "sha256": "sha256:bytes:39b0924eaec67ad7ac42766d133856f148e25b84784305cb45acd6c6b24d7d1e",
+      "size": 206395,
+      "sha256": "sha256:bytes:60a372315880816149fe0867cd06cd58d2448aaa39b658b8a7ab59dee52c2e8f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1358,8 +1358,8 @@
     },
     {
       "path": "template-gallery/qwen_control_image_layout.webp",
-      "size": 103296,
-      "sha256": "sha256:bytes:f4ec212d15e923c3f82e9c3d09d9491a3da411f87e95751619fb06cd75809c9b",
+      "size": 100258,
+      "sha256": "sha256:bytes:8aea21cd03849912745c7bbc1a2ceabad27cf3649947c6fb08fd86a7eec16c17",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1391,8 +1391,8 @@
     },
     {
       "path": "template-gallery/qwen_inpaint_mask_draft.webp",
-      "size": 324782,
-      "sha256": "sha256:bytes:b9cfc1e839e7604789fd0598b4f1810796c92b3c17fb106b411901078cf0fb2c",
+      "size": 323382,
+      "sha256": "sha256:bytes:fede5f1cd0f1b8a319eb5dee67377a989413ac7bf122df8dabd96415c7030908",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1501,8 +1501,8 @@
     },
     {
       "path": "template-gallery/qwen_packaging_dieline.webp",
-      "size": 147874,
-      "sha256": "sha256:bytes:88f242e5ad09fbad113c1bbebd9190baf6ab355d59fd22d825e7895cefd30c34",
+      "size": 142470,
+      "sha256": "sha256:bytes:1418c030b8efa5c033b3da9e07a62cc93446b6793c92ea7a707a8dac44820b6d",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1620,8 +1620,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_repaint.quality-review.json",
-      "size": 3110,
-      "sha256": "sha256:bytes:d2cbe043e6636bb17cc55b0c24149e01067077815e2f17a664df39f9ad4e62a4",
+      "size": 4292,
+      "sha256": "sha256:bytes:d2da911efe18959b70b2d7e9ae21c841edcaabf7e7b5df8022a46e900eab06e3",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1629,8 +1629,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_repaint.reviewed-provenance.json",
-      "size": 44702,
-      "sha256": "sha256:bytes:82d0994007d3c2c447a9f3cae6065db34e494eb9f0353c4cfafa9d0ed473c91c",
+      "size": 129851,
+      "sha256": "sha256:bytes:c1204284a3e29dd12a124e56c30e8f42ed7a61352ae85ecab5157cbc34ce4ed1",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2016,8 +2016,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_fill_inpaint.quality-review.json",
-      "size": 4118,
-      "sha256": "sha256:bytes:8a963ab2e9a56174cf2ad78c00b5c2aa9b30209ef4ef475e50204b6ecfd393a6",
+      "size": 5326,
+      "sha256": "sha256:bytes:118df046dca340d5130af71eefea56e4d0182c2beb9b01ac4de9da102fb002ff",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2025,8 +2025,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_fill_inpaint.reviewed-provenance.json",
-      "size": 43884,
-      "sha256": "sha256:bytes:f627d4cce50a72239069596ecdb183842ca96d5d2bdf691f63f5773220086bf0",
+      "size": 168046,
+      "sha256": "sha256:bytes:43b64ed1f67a2e36e9d7646eae58bc0aad9b1d49925425f5ebb98a0607577c3d",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2106,8 +2106,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_film_noir.quality-review.json",
-      "size": 3112,
-      "sha256": "sha256:bytes:f8d8308daa26454b809312b43a96956470a2c8143ee6967b4262e2336d1f5851",
+      "size": 4786,
+      "sha256": "sha256:bytes:d3cf61a480ef2d55e4371d70806b1b70ecd2f97b038906767f36046f7211c1d4",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2115,8 +2115,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_film_noir.reviewed-provenance.json",
-      "size": 52218,
-      "sha256": "sha256:bytes:833d29919af899c20fa213c4dfd0f75e239c66631f746fee9b46e7328a4eec67",
+      "size": 106470,
+      "sha256": "sha256:bytes:063c3b4d37ec01f694e47ca06bce70c54bc9e0abc682fb0b22f914be868a2e18",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2142,8 +2142,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_oil_painting.quality-review.json",
-      "size": 3127,
-      "sha256": "sha256:bytes:b62c3ba1c98b557dd1bee81d7c2c85371ebfe8fe261af18690729f623a1a2ecd",
+      "size": 4685,
+      "sha256": "sha256:bytes:a081914ac871d3d02e47263f1807eb1dc112b861e517221a71ac6987df5611ee",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2151,8 +2151,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_oil_painting.reviewed-provenance.json",
-      "size": 52151,
-      "sha256": "sha256:bytes:8adce5953e160687b1b714c225ec78a2fae584e7038264d7766305edecfdcf7c",
+      "size": 106369,
+      "sha256": "sha256:bytes:04e8530313e3bfcdf2c09550c17ffbe43aed0b4a28eaccf8b8153d217c2aa35f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2160,8 +2160,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_paper_cutout.quality-review.json",
-      "size": 3177,
-      "sha256": "sha256:bytes:045e4480718e933637e16d026c8731d879f038d174d7f40f57009bf43eaab51d",
+      "size": 4842,
+      "sha256": "sha256:bytes:badbd8d5727387a36c3a65bf2780ea931578ea3c6f1dc50421fcce0352cbb45f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2169,8 +2169,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_lora_paper_cutout.reviewed-provenance.json",
-      "size": 52276,
-      "sha256": "sha256:bytes:8fac1a77c1eeab9e791bd350294f04a322d51c6c5a8b5cfcf16aa940f6adfab5",
+      "size": 106530,
+      "sha256": "sha256:bytes:0824474e69c3917b7cecea1fa9830e9a473b5b6f1a11bb3f3293bb8237f30f7e",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2340,8 +2340,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_image_to_video.quality-review.json",
-      "size": 7012,
-      "sha256": "sha256:bytes:201d59e66d2e38c2691ca60021885268583ba4769b554b79b02ebaaad853f4db",
+      "size": 6506,
+      "sha256": "sha256:bytes:6c31e71b0b9e6a6a1c46f55e058dd208b7b2f510f6eeb332648575da388f9431",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2349,8 +2349,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_image_to_video.reviewed-provenance.json",
-      "size": 60427,
-      "sha256": "sha256:bytes:a98d60755d3a230c52c41f7ee6f0a7cb64403ec866c4558f30142955ff839f4c",
+      "size": 143757,
+      "sha256": "sha256:bytes:ff18a19dd44e03eb76e3879a7e49f1732cc9e6dba6affadcf370feafcc6cf06b",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2376,8 +2376,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_multi_reference.quality-review.json",
-      "size": 7831,
-      "sha256": "sha256:bytes:a581122ee28f58c36624af785c0a6741cf94bf69303d68aa21dabfbf1c16b846",
+      "size": 6794,
+      "sha256": "sha256:bytes:ccb132c3ffd2e929acca88d871c2f04ba9d0cd69d54750f303b58953a8b9bc93",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2385,8 +2385,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_multi_reference.reviewed-provenance.json",
-      "size": 60742,
-      "sha256": "sha256:bytes:6a7413901c5e35628bbc371d3c5c3729a5486d28383f00195adb7f6a9db12446",
+      "size": 144273,
+      "sha256": "sha256:bytes:9bdf09de275841af2f1f63ce0011dfc1eeaa703e2deeb2ebf678090abad80203",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2394,8 +2394,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_text_to_video.quality-review.json",
-      "size": 6741,
-      "sha256": "sha256:bytes:0edfcb8a27a65f218f1b42d4d139515cf9ebfbb0b530e2e15122c3b57fe16552",
+      "size": 6898,
+      "sha256": "sha256:bytes:37f6a5c00110c6f9e306447a53691521c77db1ecf3cedf8210dd1e7ed10ea99d",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2403,8 +2403,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_text_to_video.reviewed-provenance.json",
-      "size": 57954,
-      "sha256": "sha256:bytes:2967b15d52914d901b0afd4bf90e267c4762639426ccf9826130f5ef477b89ea",
+      "size": 140131,
+      "sha256": "sha256:bytes:58bfc0b841177bc73dbde13effbf5eebcf9e8d618d3aa90aa8b19afc3a6e5132",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2447,18 +2447,18 @@
       ]
     },
     {
-      "path": "template-gallery/reviews/qwen_control_image_layout.duplicate-provenance.json",
-      "size": 99461,
-      "sha256": "sha256:bytes:88cf4c98bff0bcfc6b73692b8385f8fd4fd6df5f05e1fa1d4423c3615d99c551",
+      "path": "template-gallery/reviews/qwen_control_image_layout.quality-review.json",
+      "size": 3645,
+      "sha256": "sha256:bytes:96b21e77ef524c853732f9ee920cb0cc6306fae984a78c798aab7cc1314b1c4b",
       "contentType": "application/json",
       "purposes": [
         "runtime"
       ]
     },
     {
-      "path": "template-gallery/reviews/qwen_control_image_layout.quality-review.json",
-      "size": 3927,
-      "sha256": "sha256:bytes:945dac5914322567ef3040e21c46709a7a262f2b2bcd0fcdd668d6c2d195971c",
+      "path": "template-gallery/reviews/qwen_control_image_layout.reviewed-provenance.json",
+      "size": 118637,
+      "sha256": "sha256:bytes:63f6695ce2fd38c8014d2de5216bd4a681c207496d5eaad9ec3906a545ca2820",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2502,8 +2502,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_inpaint_mask_draft.quality-review.json",
-      "size": 4826,
-      "sha256": "sha256:bytes:7a61235df3be93a58bde11c0fb112e266ade8d3d4422f75e118007515c6ae29e",
+      "size": 5304,
+      "sha256": "sha256:bytes:aacac275d7f3885f227d431f1a37be7dfcd720cee639e1a34851cdce54719154",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2511,8 +2511,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_inpaint_mask_draft.reviewed-provenance.json",
-      "size": 45735,
-      "sha256": "sha256:bytes:8853df637247dc212985e40d9a1ab4b751e18c0c7fad647cd2eef22994dd1876",
+      "size": 167028,
+      "sha256": "sha256:bytes:fd5214c8523c581b8535d0bd77afc4a8451445aeb449bb079ac150de9c3d5727",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2681,18 +2681,18 @@
       ]
     },
     {
-      "path": "template-gallery/reviews/qwen_packaging_dieline.duplicate-provenance.json",
-      "size": 99305,
-      "sha256": "sha256:bytes:b941eae359a788818b579925327c244af3115375ff312d58a109a929be7cd6fa",
+      "path": "template-gallery/reviews/qwen_packaging_dieline.quality-review.json",
+      "size": 3983,
+      "sha256": "sha256:bytes:dbf5e856ee01a0a2f71fcc96af3c759c08f491dc50c7310b3dfc97b37c7d860a",
       "contentType": "application/json",
       "purposes": [
         "runtime"
       ]
     },
     {
-      "path": "template-gallery/reviews/qwen_packaging_dieline.quality-review.json",
-      "size": 1477,
-      "sha256": "sha256:bytes:ede440811cbc3e403a5f4603d2f5bc16fc56b541ba6d29a7425c84f96647d4b5",
+      "path": "template-gallery/reviews/qwen_packaging_dieline.reviewed-provenance.json",
+      "size": 118404,
+      "sha256": "sha256:bytes:0814dfd3c8a87d3701da63ddc4ab1768eccc971192114a79256e643171166262",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3948,9 +3948,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:b6a23187640a183543a16b46401bac85b2a1b82f6ea75c489c1e71d95ba55084",
+  "assetSetId": "sha256:canonical-json:4a5a578a4631c76af7d94b5a7b30239931275b67fd9b74f036229b34998ba2bf",
   "status": "ready",
   "assetCount": 395,
-  "totalBytes": 515208398,
+  "totalBytes": 568675348,
   "missingAssets": []
 }

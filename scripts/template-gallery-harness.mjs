@@ -749,11 +749,80 @@ function loadSingleProvenance(args, template, expected) {
   }
 }
 
+function validateMaintainerAcceptance(review) {
+  const acceptance = review.maintainerAcceptance;
+  if (acceptance === undefined) return { accepted: false, errors: [] };
+  const invalid = {
+    accepted: false,
+    errors: ['quality review maintainerAcceptance must bind the exact accepted review'],
+  };
+  if (!acceptance || typeof acceptance !== 'object' || Array.isArray(acceptance)) return invalid;
+  const fields = [
+    'schemaVersion',
+    'decision',
+    'reviewer',
+    'acceptedAt',
+    'statement',
+    'acceptedReviewHash',
+    ...(acceptance.acceptedFindings === undefined ? [] : ['acceptedFindings']),
+  ];
+  if (
+    Object.keys(acceptance).length !== fields.length ||
+    fields.some((key) => !Object.hasOwn(acceptance, key)) ||
+    acceptance.schemaVersion !== 1 ||
+    acceptance.decision !== 'accepted_with_disclosed_limitations' ||
+    acceptance.reviewer !== review.reviewer ||
+    acceptance.acceptedAt !== review.reviewedAt ||
+    typeof acceptance.statement !== 'string' ||
+    acceptance.statement.trim().length < 20 ||
+    acceptance.statement.length > 4096 ||
+    !Array.isArray(review.knownLimitations) ||
+    !review.knownLimitations.some((line) => typeof line === 'string' && line.trim().length >= 10)
+  )
+    return invalid;
+  if (
+    acceptance.acceptedFindings !== undefined &&
+    (!Array.isArray(acceptance.acceptedFindings) ||
+      acceptance.acceptedFindings.length > 20 ||
+      new Set(acceptance.acceptedFindings).size !== acceptance.acceptedFindings.length ||
+      acceptance.acceptedFindings.some((finding) => !ACCEPTABLE_VISUAL_FINDINGS.has(finding)))
+  )
+    return invalid;
+  const acceptedReview = { ...review };
+  delete acceptedReview.maintainerAcceptance;
+  try {
+    if (acceptance.acceptedReviewHash !== canonicalJsonHash(acceptedReview)) return invalid;
+  } catch {
+    return invalid;
+  }
+  return { accepted: true, errors: [], acceptedFindings: acceptance.acceptedFindings ?? [] };
+}
+
+const ACCEPTABLE_VISUAL_FINDINGS = new Set([
+  'dynamic video review motionReview.status must be pass',
+  'dynamic video review temporalDefects must be an empty array',
+  'dynamic video review requires passing temporal geometry review',
+  ...['subjectMorphing', 'scaleDrift', 'contactSliding', 'frameGlitches'].map(
+    (field) => `dynamic video temporalGeometryReview.${field} must be none`,
+  ),
+  'source-conditioned video requires passing source preservation review',
+  ...['subjectIdentity', 'unmaskedRegions'].map(
+    (field) => `source-conditioned video sourcePreservationReview.${field} must be preserved`,
+  ),
+  'photoreal video requires passing photographic-realism review',
+  'photoreal video requires plausible lighting, materials, and dynamics',
+]);
+
 export function validateQualityReview(review, expected, requiredStatus = EXACT_QUALITY_REVIEW_STATUS) {
   const errors = [];
   if (!review || typeof review !== 'object' || Array.isArray(review)) {
     return ['Quality review must be a JSON object.'];
   }
+  const acceptance =
+    requiredStatus === REVIEWED_QUALITY_REVIEW_STATUS
+      ? validateMaintainerAcceptance(review)
+      : { accepted: false, errors: [] };
+  errors.push(...acceptance.errors);
   const strictVisualReview =
     requiredStatus === REVIEWED_QUALITY_REVIEW_STATUS &&
     (STRICT_VISUAL_REVIEW_TEMPLATES.has(expected.templateId) ||
@@ -820,10 +889,11 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
     errors.push('quality review knownLimitations must be an array when supplied');
   }
   if (requiredStatus === REVIEWED_QUALITY_REVIEW_STATUS) {
+    const minimumScore = acceptance.accepted ? 1 : 4;
     for (const field of ['promptAdherence', 'composition', 'technicalExecution', 'templateUsefulness']) {
       const score = review.scores?.[field];
-      if (!Number.isFinite(score) || score < 4 || score > 5) {
-        errors.push(`reviewed quality review scores.${field} must be between 4 and 5`);
+      if (!Number.isFinite(score) || score < minimumScore || score > 5) {
+        errors.push(`reviewed quality review scores.${field} must be between ${minimumScore} and 5`);
       }
     }
     if (!Array.isArray(review.hardFailures) || review.hardFailures.length > 0) {
@@ -1069,7 +1139,7 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
       }
     }
   }
-  return errors;
+  return acceptance.accepted ? errors.filter((error) => !acceptance.acceptedFindings.includes(error)) : errors;
 }
 
 function loadQualityReview(args, template, expected, requiredStatus = EXACT_QUALITY_REVIEW_STATUS) {

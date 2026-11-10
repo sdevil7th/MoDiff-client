@@ -19,9 +19,12 @@ const kinds = [
   outScope,
 ];
 
-function project(entries, paths, form) {
+function project(entries, paths, form, inputArtifacts = []) {
   assert.equal(form.resourceMode, 'auto');
-  assert.equal(form.mode, 'text_to_video');
+  assert(['text_to_video', 'image_to_video', 'reference_to_video'].includes(form.mode));
+  const conditioned = form.mode !== 'text_to_video';
+  const inputCount = form.mode === 'image_to_video' ? 1 : form.mode === 'reference_to_video' ? 2 : 0;
+  const imageScope = 'modules.Image.Load';
   assert.equal(form.modelType, 'LTXVideoPipeline');
   assert.equal(form.dtype, 'bfloat16');
   assert.equal(form.quantizationMode, 'none');
@@ -29,13 +32,13 @@ function project(entries, paths, form) {
   assert.equal(form.negativePrompt, '');
   assert.equal(typeof form.autoOffload, 'boolean');
   assert(['none', 'model_cpu', 'group_cpu'].includes(form.offloadMode));
-  assert.equal(entries.length, 8);
+  assert.equal(entries.length, conditioned ? 9 : 8);
   assert.equal(paths.length, 1);
   const ids = entries.map(([id]) => id);
   same([...paths[0]].sort(), [...ids].sort());
-  assert.equal(new Set(paths[0]).size, 8);
+  assert.equal(new Set(paths[0]).size, entries.length);
   const roles = new Map(entries.map(([id, node]) => [scope(node), { id, node }]));
-  same([...roles.keys()].sort(), [...kinds].sort());
+  same([...roles.keys()].sort(), [...kinds, ...(conditioned ? [imageScope] : [])].sort());
   const literal = (kind, field) => {
     const p = roles.get(kind).node.params[field];
     assert(p && !p.sourceId && !p.sourceKey, `${kind}.${field} must be literal`);
@@ -74,6 +77,7 @@ function project(entries, paths, form) {
     [dec, 'latent_binding', den, 'latent_binding'],
     [upScope, 'image', dec, 'video_out'],
     [outScope, 'video', upScope, 'output'],
+    ...(conditioned ? [[enc, 'reference_images', imageScope, 'image']] : []),
   ]) {
     const p = roles.get(target).node.params[field];
     assert.equal(p?.sourceId, roles.get(producer).id);
@@ -136,7 +140,7 @@ function project(entries, paths, form) {
   assert.equal(literal(quantScope, 'backend'), 'none');
   assert.equal(literal(quantScope, 'dtype'), dtype);
   assert.equal(literal(quantScope, 'component_overrides'), '{}');
-  for (const field of ['video', 'reference_images']) {
+  for (const field of ['video', ...(conditioned ? [] : ['reference_images'])]) {
     const p = roles.get(enc).node.params[field];
     assert(p && !p.sourceId && !p.sourceKey && p.value == null);
   }
@@ -148,10 +152,33 @@ function project(entries, paths, form) {
   assert.equal(contract.pipelineClass, 'LTXConditionPipeline');
   for (const action of ['EncodeInputs', 'Denoise', 'DecodeLatents']) {
     assert(Array.isArray(contract.actions[action]));
-    assert(contract.actions[action].includes('text_to_video'));
+    assert(contract.actions[action].includes(form.mode));
   }
-  assert.equal(literal(enc, 'mode'), 'text_to_video');
-  assert.equal(literal(den, 'mode'), 'text_to_video');
+  assert.equal(literal(enc, 'mode'), form.mode);
+  assert.equal(literal(den, 'mode'), form.mode);
+  same(inputArtifacts.length, inputCount);
+  const inputs = [];
+  if (conditioned) {
+    const fields = Object.keys(roles.get(imageScope).node.params).filter((field) => field !== 'label');
+    same(fields.sort(), ['alpha_channel', 'file']);
+    same(literal(imageScope, 'alpha_channel'), 'ignore');
+    const files = literal(imageScope, 'file');
+    assert(Array.isArray(files));
+    if (form.referenceImages !== undefined) same(files, form.referenceImages);
+    same(files.length, inputCount);
+    for (const [index, path] of files.entries()) {
+      assert(typeof path === 'string' && path.length > 0 && path.length <= 16384);
+      const role = `referenceImages[${index}]`;
+      const matches = inputArtifacts.filter((item) => item.role === role);
+      same(matches.length, 1);
+      const input = matches[0];
+      same(input.path, path);
+      assert.match(input.contentHash, /^sha256:bytes:[a-f0-9]{64}$/u);
+      assert(Number.isSafeInteger(input.byteSize) && input.byteSize > 0);
+      inputs.push({ role, contentHash: input.contentHash, byteSize: input.byteSize });
+    }
+    assert(Number.isFinite(form.strength) && form.strength >= 0 && form.strength <= 1);
+  }
   same(literal(enc, 'prompt'), form.prompt);
   same(literal(enc, 'negative_prompt'), form.negativePrompt);
   const width = literal(den, 'width'),
@@ -175,7 +202,7 @@ function project(entries, paths, form) {
   assert.equal(literal(den, 'use_guidance_scale_2'), false);
   assert.equal(literal(den, 'guidance_scale_2'), 0);
   for (const [field, expected] of Object.entries({
-    conditioning_scale: 1,
+    conditioning_scale: form.mode === 'image_to_video' ? form.strength : 1,
     attention_kwargs_json: '',
     strength: form.strength,
     denoise_strength: form.strength,
@@ -202,7 +229,7 @@ function project(entries, paths, form) {
     pipelineClass: 'LTXConditionPipeline',
     modelRepo: repo.value,
     modelRevision: revision,
-    task: 'text_to_video',
+    task: form.mode,
     dtype,
     device,
     offloadMode,
@@ -221,6 +248,7 @@ function project(entries, paths, form) {
       vaeSlicing,
       vaeTiling,
       upscaler,
+      ...(conditioned ? { inputs, conditioningStrength: form.strength } : {}),
     },
   };
   return { plan, roles, literal };
@@ -241,7 +269,6 @@ export function observedWorkflowAutoVideoResourceId(plan) {
       modelType: 'LTXConditionPipeline',
       pipelineClass: 'LTXConditionPipeline',
       modelRepo: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
-      task: 'text_to_video',
       dtype: 'bfloat16',
       device: 'cuda:0',
       resourceMode: 'auto',
@@ -249,6 +276,7 @@ export function observedWorkflowAutoVideoResourceId(plan) {
       quantizationMode: 'none',
     }))
       same(plan[field], expected);
+    assert(['text_to_video', 'image_to_video', 'reference_to_video'].includes(plan.task));
     assert.match(plan.modelRevision, /^[a-f0-9]{40}$/u);
     same(plan.quantizedComponents, []);
     for (const field of ['offloadMode', 'requestedOffloadMode'])
@@ -257,8 +285,23 @@ export function observedWorkflowAutoVideoResourceId(plan) {
     const o = plan.resourceObservation;
     same(
       Object.keys(o).sort(),
-      'base delivery requestedMaxSequenceLength maxSequenceLength vaeSlicing vaeTiling upscaler'.split(' ').sort(),
+      (
+        'base delivery requestedMaxSequenceLength maxSequenceLength vaeSlicing vaeTiling upscaler' +
+        (plan.task === 'text_to_video' ? '' : ' inputs conditioningStrength')
+      )
+        .split(' ')
+        .sort(),
     );
+    if (plan.task !== 'text_to_video') {
+      same(o.inputs.length, plan.task === 'image_to_video' ? 1 : 2);
+      assert(Number.isFinite(o.conditioningStrength) && o.conditioningStrength >= 0 && o.conditioningStrength <= 1);
+      for (const [index, input] of o.inputs.entries()) {
+        same(Object.keys(input).sort(), ['byteSize', 'contentHash', 'role']);
+        same(input.role, `referenceImages[${index}]`);
+        assert.match(input.contentHash, /^sha256:bytes:[a-f0-9]{64}$/u);
+        assert(Number.isSafeInteger(input.byteSize) && input.byteSize > 0);
+      }
+    }
     assert(Number.isSafeInteger(o.requestedMaxSequenceLength) && o.requestedMaxSequenceLength > 0);
     assert.equal(o.maxSequenceLength, Math.min(o.requestedMaxSequenceLength, 128));
     for (const field of ['vaeSlicing', 'vaeTiling']) assert.equal(typeof o[field], 'boolean');
@@ -285,7 +328,7 @@ export function observedWorkflowAutoVideoResourceId(plan) {
 
 export function observedWorkflowAutoVideoPlan(
   apiGraph,
-  { executionReceipt: task, executedOutput: output, taskId, modelIdentities } = {},
+  { executionReceipt: task, executedOutput: output, taskId, modelIdentities, inputArtifacts = [] } = {},
 ) {
   try {
     const hints = apiGraph.runtimeHints,
@@ -317,7 +360,7 @@ export function observedWorkflowAutoVideoPlan(
     assert(!Object.hasOwn(apiGraph, 'loops'));
     assert.equal(hints.workflowAutoPlan.schemaVersion, 1);
     assert.equal(hints.workflowAutoPlan.graphHash, workerGraphHash(apiGraph));
-    const { plan, roles, literal } = project(Object.entries(apiGraph.nodes), apiGraph.paths, form);
+    const { plan, roles, literal } = project(Object.entries(apiGraph.nodes), apiGraph.paths, form, inputArtifacts);
     assert.equal(output.nodeId, roles.get(outScope).id);
     const prep = task.runtimePreparation;
     assert.equal(prep.resourceMode, 'auto');
@@ -338,11 +381,11 @@ export function observedWorkflowAutoVideoPlan(
     assert.equal(receipt.truncated, false);
     same(receipt.uncapturedNodeIds, []);
     same(receipt.graphTasks, [
-      { loaderId: roles.get(video('LoadPipeline')).id, pipelineClass: 'LTXConditionPipeline', task: 'text_to_video' },
+      { loaderId: roles.get(video('LoadPipeline')).id, pipelineClass: 'LTXConditionPipeline', task: form.mode },
     ]);
     const rows = new Map(receipt.nodes.map((row) => [row.nodeId, row]));
-    assert.equal(rows.size, 8);
-    assert.equal(receipt.nodes.length, 8);
+    assert.equal(rows.size, Object.keys(apiGraph.nodes).length);
+    assert.equal(receipt.nodes.length, rows.size);
     for (const [id, node] of Object.entries(apiGraph.nodes)) {
       assert.equal(rows.get(id).module, node.module);
       assert.equal(rows.get(id).action, node.action);
@@ -382,7 +425,16 @@ export function observedWorkflowAutoVideoPlan(
         consumed(kind, field, expected);
       }
     for (const kind of [video('EncodeInputs'), video('Denoise'), video('DecodeLatents')])
-      consumed(kind, 'executed_task', 'text_to_video');
+      consumed(kind, 'executed_task', form.mode);
+    if (form.mode !== 'text_to_video') {
+      consumed(video('Denoise'), 'conditioning_strength', form.strength);
+      consumed('modules.Image.Load', 'alpha_channel', 'ignore');
+      consumed(
+        'modules.Image.Load',
+        'source_hashes',
+        plan.resourceObservation.inputs.map((i) => i.contentHash.slice(13)),
+      );
+    }
     consumed(video('Denoise'), 'max_sequence_length', plan.resourceObservation.maxSequenceLength);
     for (const kind of [video('LoadPipeline'), recipeScope])
       for (const field of kind === recipeScope
@@ -425,9 +477,10 @@ export function observedWorkflowAutoVideoProofMatches(plan, provenance) {
       graph.nodes.map((n) => [n.key, n]),
       graph.paths,
       provenance.template.lockedSettings,
+      provenance.inputs.items ?? [],
     ).plan;
     same(plan, projected);
-    assert.equal(provenance.inputs.count, 0);
+    assert.equal(provenance.inputs.count, plan.resourceObservation.inputs?.length ?? 0);
     assert.equal(provenance.models.items.length, 2);
     for (const [repo, rev] of [
       [plan.modelRepo, plan.modelRevision],
