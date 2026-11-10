@@ -1,4 +1,5 @@
 import type { CustomNodeType } from '../stores/useFlowStore';
+import { insertStageLeaves, visualStageSourceIndex } from '../studio/visualStageOrder';
 import type { NodeData } from '../stores/useNodeStore';
 import { blockInstancePreviewBindingsV2, type BlockJsonValue } from '../studio/blockSchemaV2';
 import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
@@ -9,10 +10,13 @@ import { remapOperationAuthoring, sharedOperationInput } from './operationShared
 
 /** Read-only visual projection and shared value writes used by the ordinary
  * renderer/store. Structural grouping stays in its on-demand planner module. */
-export type VisualOperationGroup = 'inputs' | 'guidance' | 'setup' | 'mask' | 'output';
+export type VisualOperationGroup = keyof typeof VISUAL_STAGE_LABELS;
 export const VISUAL_STAGE_PROVIDER = 'modiff.visual-stages.v1/';
 export const COMBINED_INPUT_PROVIDER = 'modiff.visual-stages.v2/inputs';
 export const VISUAL_STAGE_LABELS = {
+  videoInput: 'Video Input',
+  references: 'Reference Images',
+  generate: 'Generate',
   inputs: 'Encode Inputs',
   guidance: 'Guidance',
   setup: 'Model Setup',
@@ -20,6 +24,9 @@ export const VISUAL_STAGE_LABELS = {
   output: 'Image Output',
 };
 export const VISUAL_STAGE_NAMES = {
+  videoInput: 'video input',
+  references: 'reference image',
+  generate: 'generation',
   inputs: 'encoding',
   guidance: 'guidance',
   setup: 'model setup',
@@ -123,6 +130,7 @@ function projectVisualOperationGroups(
   const projected = new Map<string, string>();
   const semantic = new Map<string, Map<string, string>>();
   const nodes = graph.nodes.filter((node) => !ids.has(node.id) && !ids.has(node.data.blockProjectionOwnerId ?? ''));
+  const externalCount = nodes.length;
   const internalEdges: OperationGraph['edges'] = [];
   // Resolve references across all groups before reading a leaf. Otherwise an
   // input group preceding Model Setup can retain an obsolete loader reference.
@@ -197,11 +205,22 @@ function projectVisualOperationGroups(
         })),
       );
     });
+  const children = nodes.slice(externalCount);
+  const ordinary = insertStageLeaves(
+    nodes.slice(0, externalCount),
+    children.flatMap((leaf) =>
+      visualStageSourceIndex(leaf.data.visualStageSourceIndex)
+        ? [{ index: leaf.data.visualStageSourceIndex, leaf }]
+        : [],
+    ),
+  );
   const result = {
-    nodes: nodes.map((node) => {
-      const hint = remapOperationAuthoring(node.data.operationAuthoring, (id) => projected.get(id) ?? id);
-      return hint ? { ...node, data: { ...node.data, operationAuthoring: hint } } : node;
-    }),
+    nodes: [...ordinary, ...children.filter((n) => !visualStageSourceIndex(n.data.visualStageSourceIndex))].map(
+      (node) => {
+        const hint = remapOperationAuthoring(node.data.operationAuthoring, (id) => projected.get(id) ?? id);
+        return hint ? { ...node, data: { ...node.data, operationAuthoring: hint } } : node;
+      },
+    ),
     edges: [...edges, ...internalEdges],
   };
   if (new Set(nodes.map((node) => node.id)).size !== nodes.length)

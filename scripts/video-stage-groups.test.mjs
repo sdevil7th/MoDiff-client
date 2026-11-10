@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -321,6 +322,48 @@ test('five retained video template factories preserve creative settings on their
       sourceVideo: 'videos/source.mp4',
     };
     const graph = builder.createTemplateOperationGraph(template, form, starter, fixture.registry, spec, capability);
+    const generate = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+    const newStages = graph.nodes.filter((node) =>
+      ['generate', 'videoInput'].includes(groups.visualOperationGroup(node)),
+    );
+    const ordinary = groups.unpackVisualOperationGroups(graph, new Set(newStages.map((node) => node.id))).graph;
+    const identity = (sourceGraph) =>
+      canonicalGraphIdentity(
+        exporter.useFlowStore.getState().exportGraph('presentation', undefined, { sourceGraph, randomizeSeeds: false }),
+      ).hash;
+    assert.equal(
+      identity(graph),
+      identity(ordinary),
+      `${row.id} must preserve execution order as well as values and wires`,
+    );
+    assert.ok(generate, `${row.id} should show Generate before the upscaler or joined delivery`);
+    assert.deepEqual(generate.data.blockInstanceV2.effectiveGraph.nodes.map((n) => n.data.action).sort(), [
+      'DecodeLatents',
+      'Denoise',
+    ]);
+    assert.ok(
+      !generate.data.blockInstanceV2.effectiveInterface.boundary.outputs.some((p) =>
+        ['latents_out', 'latent_binding'].includes(p.binding.fieldOrPortId),
+      ),
+    );
+    assert.equal(
+      generate.data.blockInstanceV2.effectiveInterface.boundary.inputs.filter(
+        (p) => p.binding.fieldOrPortId === 'pipeline',
+      ).length,
+      1,
+    );
+    if (row.id === 'ltx_video_video_to_video') {
+      const input = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'videoInput');
+      assert.ok(input);
+      assert.deepEqual(input.data.blockInstanceV2.effectiveGraph.nodes.map((n) => n.data.action).sort(), [
+        'Load',
+        'Normalize',
+      ]);
+      const fields = input.data.blockInstanceV2.effectiveInterface.controls.map((c) => c.binding.fieldId);
+      for (const field of ['file', 'width', 'height', 'num_frames', 'fit']) assert.ok(fields.includes(field), field);
+      const flatInput = groups.unpackVisualOperationGroups(graph).graph;
+      assert.deepEqual(api(JSON.parse(JSON.stringify(graph))), api(flatInput));
+    }
     const flat = groups.unpackVisualOperationGroups(graph).graph;
     for (const recipe of flat.nodes.filter((node) => node.data.action === 'DiffusersExecutionRecipe'))
       assert.equal(recipe.data.params.attention_backend.value, 'auto', `${row.id}:fresh attention`);

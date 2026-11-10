@@ -113,6 +113,9 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
               {
                 {
                   inputs: 'Group input encoders',
+                  videoInput: 'Group video input',
+                  references: 'Group reference images',
+                  generate: 'Group generation',
                   guidance: 'Group guidance',
                   setup: 'Group model setup',
                   mask: 'Group mask preparation',

@@ -253,3 +253,7 @@ save/restore, undo/redo and stale asynchronous construction. The current public
 catalog contains 66 image templates; additional native candidates have separate
 selected-recipe tests. Those are contract tests. Real model generation, paired
 image comparison, visual review and hardware qualification remain separate evidence.
+Fresh workflows group an exclusive source and outpaint canvas into **Prepare
+Mask**, and an exclusive ordered image source and stitch operation into
+**Reference Images**. The grouped controls edit the original source selection
+and preparation settings. Shared sources stay available to their other branches.

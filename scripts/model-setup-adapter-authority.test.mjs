@@ -1055,7 +1055,7 @@ const editPolicySelections = [
     tasks: ['edit_image'],
     repo: 'black-forest-labs/FLUX.1-Kontext-dev',
     revision: '24e9dedc4ef646698dc8eb4e18ae2cec3c9fea0d',
-    visibleLabels: ['Compose References', 'Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup', 'Reference Images'],
     referenceCount: 2,
     embeddedGuidance: 3.5,
     guiderEnabled: true,

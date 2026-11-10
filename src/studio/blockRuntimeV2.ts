@@ -1,3 +1,4 @@
+import { insertStageLeaves, visualStageSourceIndex } from './visualStageOrder';
 import type { Edge } from '@xyflow/react';
 import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
@@ -444,10 +445,26 @@ function connectorParam(instance: BlockInstanceV2, port: BlockPortV2, direction:
       (binding) => instance.effectiveGraph.nodes.find((node) => node.nodeId === binding.nodeId)?.data.action,
     );
     const action = actions[0];
-    if (typeof action !== 'string' || !action || actions.some((value) => value !== action))
-      throw new Error(
-        `Cannot project action compatibility for Block port "${port.portId}": bound actions differ or are missing.`,
-      );
+    if (typeof action !== 'string' || !action || actions.some((value) => typeof value !== 'string' || !value))
+      throw new Error(`Cannot project action compatibility for Block port "${port.portId}": missing bound action.`);
+    if (actions.some((value) => value !== action)) {
+      // A shared input is compatible only when the source supports every bound
+      // action. Reject mirrors whose own declaration or option filters would
+      // be lost by projecting the primary port.
+      const sameContract = port.mirrorBindings?.every((binding) => {
+        const mirror = sourceParam(instance, binding.nodeId, binding.fieldOrPortId);
+        return (
+          mirror &&
+          canonicalBlockStringifyV2(mirror.signalCompatibility ?? null) ===
+            canonicalBlockStringifyV2(base.signalCompatibility) &&
+          (!mirror.onSignal ||
+            (Array.isArray(mirror.onSignal) && mirror.onSignal.length === 0) ||
+            canonicalBlockStringifyV2(mirror.onSignal) === canonicalBlockStringifyV2(base.onSignal ?? null))
+        );
+      });
+      if (direction !== 'input' || !sameContract) throw new Error('Incompatible action-bound Block mirror.');
+      base.signalCompatibility.boundActions = [...new Set(actions as string[])];
+    }
     base.signalCompatibility.action = action;
   }
   const value = direction === 'input' ? blockInstanceValueV2(instance, port.portId) : undefined;
@@ -1455,6 +1472,10 @@ function projectedNodeData(
     resizable: true,
     ...(typeof raw.description === 'string' ? { description: raw.description } : {}),
     ...(typeof raw.skipParamsCheck === 'boolean' ? { skipParamsCheck: raw.skipParamsCheck } : {}),
+    ...(visualStageSourceIndex(raw.visualStageSourceIndex) &&
+    instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+      ? { visualStageSourceIndex: raw.visualStageSourceIndex }
+      : {}),
     ...(raw.operationAuthoring
       ? {
           operationAuthoring: remapOperationAuthoring(raw.operationAuthoring, (id) =>
@@ -2892,6 +2913,13 @@ export function expandBlockGraphV2ForExecution(
   const executionNodes = [...rootInstances.entries()].flatMap(([id, instance]) =>
     projectedChildren(instance, true, id === selectedOwnerId ? selectedSemanticIds : undefined),
   );
+  const positioned = executionNodes.flatMap((leaf) =>
+    visualStageSourceIndex(leaf.data.visualStageSourceIndex) ? [{ index: leaf.data.visualStageSourceIndex, leaf }] : [],
+  );
+  const orderedNodes = [
+    ...insertStageLeaves(externalNodes, positioned),
+    ...executionNodes.filter((leaf) => !visualStageSourceIndex(leaf.data.visualStageSourceIndex)),
+  ];
   const occupied = new Set(externalNodes.map(({ id }) => id));
   executionNodes.forEach(({ id }) => {
     if (occupied.has(id)) throw new Error(`Cannot expand Block V2 graph: projected node id ${id} already exists.`);
@@ -3010,11 +3038,11 @@ export function expandBlockGraphV2ForExecution(
       }
     }
     return {
-      nodes: [...externalNodes, ...executionNodes].filter(({ id }) => included.has(id)),
+      nodes: orderedNodes.filter(({ id }) => included.has(id)),
       edges: allEdges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
     };
   }
-  return { nodes: [...externalNodes, ...executionNodes], edges: [...translatedEdges, ...internalEdges] };
+  return { nodes: orderedNodes, edges: [...translatedEdges, ...internalEdges] };
 }
 
 /** Rebuild a durable root solely from its embedded instance authority. */

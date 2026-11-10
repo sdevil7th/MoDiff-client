@@ -85,9 +85,20 @@ function declaredSignalCompatibilityIsSatisfied(
     const actions = isRecord(signalValue.connectionActions) ? signalValue.connectionActions : signalValue.actions;
     if (!isRecord(actions)) return false;
     const action = declaration.action === '$node' ? contractNode.action : declaration.action;
-    const modes = actions[action];
-    if (!Array.isArray(modes) || modes.length === 0) return false;
-    return typeof signalValue.mode !== 'string' || modes.includes(signalValue.mode);
+    if (
+      declaration.boundActions !== undefined &&
+      (!Array.isArray(declaration.boundActions) ||
+        !declaration.boundActions.every((value) => typeof value === 'string' && value.length > 0))
+    )
+      return false;
+    return [action, ...(declaration.boundActions ?? [])].every((requiredAction) => {
+      const modes = actions[requiredAction];
+      return (
+        Array.isArray(modes) &&
+        modes.length > 0 &&
+        (typeof signalValue.mode !== 'string' || modes.includes(signalValue.mode))
+      );
+    });
   }
 
   return true;

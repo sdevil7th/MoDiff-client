@@ -35,6 +35,17 @@ its independent audio model, authored soundtrack, timeline fit and muxed export.
 An independently generated soundtrack is not described as audio from the video
 decoder. A real upscaler between decode and export remains a separate stage.
 
+When an upscaler or separately produced soundtrack follows decoding, the
+connected denoiser and decoder appear as **Generate**. The shared pipeline
+input feeds both operations and checks that the selected model supports both
+actions. An exclusive video loader and normalizer appear as **Video Input**.
+The file picker previews the source. Target width, height, frames and fit
+control the normalized clip. Expand either Block to inspect its operations.
+
+In a saved workflow, choose **Model Setup → options → Simplify connected
+stages** to apply the same grouping to that branch. Undo restores its previous
+presentation.
+
 The implementation and proof boundaries are described in the paired backend's
 `docs/video-pipeline-stages.md`. Schema tests and mocked workflows establish
 authoring behavior, not successful video generation. A testable release needs

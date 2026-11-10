@@ -393,7 +393,12 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
+// Expandable input preparation and generation, including order-preserving
+// projection and shared pipeline validation. Measured largest/startup/deferred
+// gzip changed from 498237/676723/336015 to 498592/677080/337273 bytes.
+// Keep the four startup and 90 deferred modules and the 64 KiB per-chunk cap.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  355 +
   97 +
   16 +
   43 +
@@ -548,6 +553,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  357 +
   100 +
   15 +
   42 +
@@ -782,6 +788,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  1258 +
   81 +
   319 +
   96 +

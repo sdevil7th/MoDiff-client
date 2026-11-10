@@ -123,6 +123,8 @@ export type NodeData = {
    * legacy User Block snapshot or Hugging Face Cluster instance beside it.
    */
   blockInstanceV2?: BlockInstanceV2;
+  /** Original ordinary-node position when folded into a workflow stage. */
+  visualStageSourceIndex?: number;
   /** Runtime-only ownership for a node projected from a V2 effective graph. */
   blockProjectionOwnerId?: string;
   /** Stable semantic node id inside the owner's effective graph. */
@@ -214,6 +216,7 @@ export type NodeParams = {
   connectionRole?: string;
   connectionRoleSelector?: ConnectionRoleSelector;
   signalCompatibility?: {
+    boundActions?: string[];
     required?: boolean;
     values?: Record<string, unknown>;
     action?: string;

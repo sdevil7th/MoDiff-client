@@ -70,6 +70,9 @@ export default function EncodingNodeMenu({
     }
   }
   const description = {
+    videoInput: 'Choose a source clip and set its target size, frame count and fit.',
+    references: 'Choose the ordered reference images and adjust how they are joined for encoding.',
+    generate: 'Set the generation controls here. Expand the stage to inspect denoising and latent decoding.',
     guidance:
       'Guidance combines the related Guider and Layers configuration. Schedulers and adapters remain separate nodes.',
     inputs:
@@ -108,6 +111,30 @@ export default function EncodingNodeMenu({
       enqueueSnackbar(error instanceof Error ? error.message : 'Could not combine these stages.', { variant: 'error' });
     }
   }
+  async function simplify() {
+    try {
+      const graph = useFlowStore.getState().toObject();
+      const context = captureWorkflowOperationContext();
+      const signature = operationGraphSignature(graph);
+      const { groupOperationStages, visualGroupOwners } = await import('../workflow/visualOperationGroups');
+      const owners = visualGroupOwners(graph, node.id);
+      if (owners.length !== 1) throw new Error('Choose one Model Setup to simplify its connected stages.');
+      const next = groupOperationStages(graph, owners[0]!.id, [
+        'videoInput',
+        'references',
+        'mask',
+        'output',
+        'generate',
+      ]);
+      if (next === graph) return;
+      commitOperationGraph(next, context, signature, 'Simplify connected stages');
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : 'Could not simplify these stages.', {
+        variant: 'error',
+      });
+    }
+  }
   return (
     <>
       <ModiffButton
@@ -128,6 +155,7 @@ export default function EncodingNodeMenu({
         </ModiffMenuTrigger>
         <ModiffMenuSurface layer="graph">
           <ModiffMenuAction onClick={inspect}>Inspect implementation</ModiffMenuAction>
+          {kind === 'setup' ? <ModiffMenuAction onClick={simplify}>Simplify connected stages</ModiffMenuAction> : null}
           <ModiffMenuAction onClick={separate}>{separateLabel}</ModiffMenuAction>
           {combinationOwner ? (
             <ModiffMenuAction onClick={combine}>Combine encoding and Guidance</ModiffMenuAction>

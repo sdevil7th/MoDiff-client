@@ -656,72 +656,112 @@ test('renamed declared video output stays runnable after ordinary import Save an
   expect(submissions).toBe(0);
 });
 
-test('normal video template card creates real stages and preserves them after reload', async ({ page }) => {
-  const templateId = 'ltx_video_text_to_video';
-  const selection = VIDEO_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;
-  const fixture = await generateTemplateSchemas([{ id: templateId, selection }]);
-  const starter = fixture.recipes[0]!.starter;
-  await ensureFrontend();
-  await installMockRoutes(page);
-  await page.route('**/nodes**', (route) =>
-    route.fulfill({
-      json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } },
-    }),
-  );
-  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
-  await page.route('**/runtime/status**', (route) =>
-    route.fulfill({
-      json: {
-        ready: true,
-        config: { hf_token_configured: false },
-        packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
-      },
-    }),
-  );
-  const selections: unknown[] = [];
-  await page.route('**/operations/starter', (route) => {
-    selections.push(route.request().postDataJSON());
-    return route.fulfill({ json: starter });
-  });
-  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
-  await openTemplateBrowser(page);
-  await page.getByTestId('template-browser-search').fill('Rainy Rail Approach');
-  await page.getByTestId('template-browser-create-card-ltx_video_text_to_video').click();
-  const readGraph = () =>
-    page.evaluate(async () => {
-      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
-      return useFlowStore
-        .getState()
-        .exportGraph('video-template-card-regression', undefined, { randomizeSeeds: false });
+for (const [templateId, title] of [
+  ['ltx_video_text_to_video', 'Rainy Rail Approach'],
+  ['ltx_video_video_to_video', 'Rocket Launch'],
+] as const)
+  test(`normal video template card creates real stages and preserves them after reload for ${title}`, async ({
+    page,
+  }) => {
+    const selection = VIDEO_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;
+    const fixture = await generateTemplateSchemas([{ id: templateId, selection }]);
+    const starter = fixture.recipes[0]!.starter;
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.route('**/nodes**', (route) =>
+      route.fulfill({
+        json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } },
+      }),
+    );
+    await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+    await page.route('**/runtime/status**', (route) =>
+      route.fulfill({
+        json: {
+          ready: true,
+          config: { hf_token_configured: false },
+          packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+        },
+      }),
+    );
+    const selections: unknown[] = [];
+    await page.route('**/operations/starter', (route) => {
+      selections.push(route.request().postDataJSON());
+      return route.fulfill({ json: starter });
     });
-  await expect
-    .poll(async () => {
-      const graph = await readGraph();
-      return Object.values(graph.nodes)
-        .filter((node) => node.module === 'modules.DiffusersVideo')
-        .map((node) => node.action)
-        .sort();
-    })
-    .toEqual(['DecodeLatents', 'Denoise', 'EncodeInputs', 'LoadPipeline']);
-  expect(selections).toContainEqual(
-    expect.objectContaining({
-      pipelineClass: selection.pipelineClass,
-      task: selection.task,
-      executionProfileId: selection.executionProfileId,
-      authoringRecipeId: selection.authoringRecipeId,
-    }),
-  );
-  const before = await readGraph();
-  const template = STUDIO_TEMPLATES.find((item) => item.id === templateId)!;
-  const encoder = Object.values(before.nodes).find((node) => node.action === 'EncodeInputs')!;
-  expect(encoder.params.prompt!.value).toBe(template.prompt);
-  expect(Object.values(before.nodes).some((node) => node.module === 'modules.Spandrel')).toBe(true);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
-  await expect.poll(readGraph).toEqual(before);
-  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
-});
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await openTemplateBrowser(page);
+    await page.getByTestId('template-browser-search').fill(title);
+    await page.getByTestId(`template-browser-create-card-${templateId}`).click();
+    const readGraph = () =>
+      page.evaluate(async () => {
+        const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+        return useFlowStore
+          .getState()
+          .exportGraph('video-template-card-regression', undefined, { randomizeSeeds: false });
+      });
+    await expect
+      .poll(async () => {
+        const graph = await readGraph();
+        return Object.values(graph.nodes)
+          .filter((node) => node.module === 'modules.DiffusersVideo')
+          .map((node) => node.action)
+          .sort();
+      })
+      .toEqual(['DecodeLatents', 'Denoise', 'EncodeInputs', 'LoadPipeline']);
+    expect(selections).toContainEqual(
+      expect.objectContaining({
+        pipelineClass: selection.pipelineClass,
+        task: selection.task,
+        executionProfileId: selection.executionProfileId,
+        authoringRecipeId: selection.authoringRecipeId,
+      }),
+    );
+    const generate = page.locator('.react-flow__node').filter({ has: page.getByText('Generate', { exact: true }) });
+    await expect(generate.getByRole('button', { name: 'Expand block', exact: true })).toBeVisible();
+    if (templateId === 'ltx_video_video_to_video') {
+      const input = page.locator('.react-flow__node').filter({ has: page.getByText('Video Input', { exact: true }) });
+      const source = input.locator('[data-key$=":file"] input[type="text"]');
+      const python =
+        process.env.MODIFF_BACKEND_PYTHON ||
+        path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+      const clip = videoPreviewFixture(python, 320, 180);
+      await page.route('**/media/preview?**', (route) => route.fulfill({ contentType: 'video/webm', body: clip }));
+      await source.fill('videos/review-clip.webm');
+      await source.blur();
+      await expect(input.locator('video')).toHaveCount(1);
+      await input.locator('video').evaluate(async (element: HTMLVideoElement) => {
+        element.muted = true;
+        await element.play();
+      });
+      await expect
+        .poll(() => input.locator('video').evaluate((element: HTMLVideoElement) => element.currentTime))
+        .toBeGreaterThan(0);
+      await input.locator('[data-key$=":fit"] button').first().click();
+      await page.getByRole('option', { name: 'contain', exact: true }).click();
+      await expect
+        .poll(
+          async () => Object.values((await readGraph()).nodes).find((n) => n.action === 'Normalize')?.params.fit?.value,
+        )
+        .toBe('contain');
+    }
+    const before = await readGraph();
+    const generateId = await generate.getAttribute('data-id');
+    const generateRoot = page.locator(`[data-id="${generateId}"]`);
+    await generateRoot.getByRole('button', { name: 'Expand block', exact: true }).click();
+    await expect(generateRoot.getByRole('button', { name: 'Collapse block', exact: true })).toBeVisible();
+    expect(await readGraph()).toEqual(before);
+    await generateRoot.getByRole('button', { name: 'Collapse block', exact: true }).click();
+    expect(await readGraph()).toEqual(before);
+    const template = STUDIO_TEMPLATES.find((item) => item.id === templateId)!;
+    const encoder = Object.values(before.nodes).find((node) => node.action === 'EncodeInputs')!;
+    expect(encoder.params.prompt!.value).toBe(template.prompt);
+    expect(Object.values(before.nodes).some((node) => node.module === 'modules.Spandrel')).toBe(true);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await expect.poll(readGraph).toEqual(before);
+    expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
+  });
 
 for (const { title, templateId, resourceMode, offloadMode } of [
   {

@@ -3335,15 +3335,29 @@ test('Block ports preserve their exact bound action compatibility in both direct
   }
 });
 
-test('Block action-bound mirrors require identical declared leaf actions and reject unknown bindings', () => {
+test('Block action-bound mirrors require every bound action and reject unknown bindings', async () => {
   assert.equal(
     runtime.blockConnectorParamsV2(actionCompatibilityInstanceV2('Generate')).inputs.prompt.signalCompatibility.action,
     'Generate',
   );
-  assert.throws(
-    () => runtime.blockConnectorParamsV2(actionCompatibilityInstanceV2('DifferentAction')),
-    /bound actions differ or are missing/u,
-  );
+  const root = runtime.createBlockRootNodeV2(actionCompatibilityInstanceV2('DifferentAction'));
+  const matching = await server.ssrLoadModule('/src/workflow/nodeConnectionMatching.ts');
+  const accepts = (actions) =>
+    matching.nodeConnectionSemanticsAreCompatible(
+      {
+        module: 'custom.Source',
+        action: 'Load',
+        type: 'custom',
+        params: { output: { display: 'output', type: 'string', signal: { value: { mode: 'edit', actions } } } },
+      },
+      'output',
+      root.data,
+      'prompt',
+    );
+  assert.equal(accepts({ Generate: ['edit'] }), false);
+  assert.equal(accepts({ DifferentAction: ['edit'] }), false);
+  assert.equal(accepts({ Generate: ['edit'], DifferentAction: ['other'] }), false);
+  assert.equal(accepts({ Generate: ['edit'], DifferentAction: ['edit'] }), true);
   const missing = actionCompatibilityInstanceV2();
   missing.effectiveInterface.boundary.inputs[0].binding.nodeId = 'foreign:missing';
   missing.effectiveInterface.effectiveInterfaceHash = schema.blockInterfaceHashV2(missing.effectiveInterface);
