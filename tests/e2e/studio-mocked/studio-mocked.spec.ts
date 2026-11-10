@@ -37378,7 +37378,7 @@ test('selected Kontext multi-reference image policy preserves composition, guida
     reviewTerms: true,
     task: 'multi_image_reference_edit',
     policyTasks: ['edit_image'],
-    visibleLabels: ['Compose References', 'Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup', 'Reference Images'],
     embeddedGuidance: 3.5,
     guiderEnabled: true,
   });
