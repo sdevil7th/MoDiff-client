@@ -284,7 +284,7 @@ test('all 98 reviewed workflows map every selected step into the exact unpruned 
   assert.ok(structuralPlacements > 400, 'the audit unexpectedly flattened away reviewed containers');
 });
 
-test('all 101 reviewed workflows compile to one V2 graph with progressively projected nested containers', () => {
+test('all reviewed workflows compile to one V2 graph with progressively projected nested containers', () => {
   const conditional = reviewedConditionals;
   const selected = JSON.parse(readFileSync(path.join(BACKEND_DATA, 'modular-block-contracts.json'), 'utf8'));
   const allBlocks = new Map(
@@ -759,10 +759,18 @@ test('all 101 reviewed workflows compile to one V2 graph with progressively proj
       ordinaryNodeNestedParent: utilityParent ?? null,
     });
   }
-  assert.equal(definitions.length, 101);
-  assert.equal(nodeCount, 1918);
+  const h3Ids = new Set(
+    definitions.filter((item) => item.pipelineClass === 'MiniMaxH3ImageModularPipeline').map((item) => item.id),
+  );
+  assert.equal(h3Ids.size, 2);
+  assert.equal(definitions.length - h3Ids.size, 101);
+  const h3Nodes = workflowAudit
+    .filter((item) => h3Ids.has(item.definitionId))
+    .reduce((total, item) => total + item.effectiveNodeCount, 0);
+  assert.ok(h3Nodes > 0);
+  assert.equal(nodeCount - h3Nodes, 1918);
   assert.equal(maximumDepth, 5);
-  assert.equal(parameterLocalityChecks, 101);
+  assert.equal(parameterLocalityChecks, definitions.length);
   assert.ok(subtreeSaveChecks > 1400);
   if (process.env.MODIFF_HIERARCHY_AUDIT_OUTPUT) {
     writeFileSync(

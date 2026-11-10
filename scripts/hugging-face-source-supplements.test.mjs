@@ -53,7 +53,21 @@ test('actual mixed-source collection preserves all legacy definitions through th
   assert.equal(mixed.schemaVersion, 7);
   assert.equal(legacy.schemaVersion, 6);
   assert.equal(mixed.diffusersRevision, legacy.diffusersRevision);
-  assert.equal(mixed.sourceSupplements.length, 1);
+  assert.equal(mixed.sourceSupplements.length, 2);
+  const image = mixed.sourceSupplements.find(
+    (source) => source.runtimeProfileId === 'huggingface-diffusers-h3-image-875373a',
+  );
+  assert.equal(image.libraryRevision, '875373ac7f5856071e345a3e394c74efccc6b9e6');
+  const imageDefinitions = mixed.definitions.filter((definition) => image.definitionIds.includes(definition.id));
+  assert.deepEqual(imageDefinitions.map((definition) => definition.workflowId).sort(), [
+    'image_conditioned',
+    'text2image',
+  ]);
+  for (const definition of imageDefinitions) {
+    assert.equal(definition.integrationStatus, 'contract_only');
+    assert.equal(definition.pipelineClass, 'MiniMaxH3ImageModularPipeline');
+    assert.deepEqual(definition.executionAdmissions, []);
+  }
   for (const old of legacy.definitions) {
     assert.deepEqual(
       mixed.definitions.find((item) => item.id === old.id),
