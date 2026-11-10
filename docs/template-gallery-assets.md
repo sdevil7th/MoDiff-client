@@ -863,6 +863,40 @@ Any retained inline defaults stay recorded. An optional Guider requires all eigh
 native scalar controls and the same connected owner at prompt encoding and
 denoising; unsupported guidance configurations remain held.
 
+The `observed-retained-expert-text-resource-v1` vocabulary separately covers a
+retained, first-attempt Expert text-to-image task with six executable leaves:
+one modular owner, explicit ClassifierFreeGuidance, prompt encoding, denoising,
+decoding and CPU Preview. It requires BF16, group-CPU offload, no quantization or
+adapters, and an immutable Hub revision. The old loader contract, graph and native
+capture must all lack `weight_format` and `weight_loading_mode`; the missing
+controls remain absent. A legacy form model label and a blank original loader
+workflow ID stay separate from the durable modular pipeline and executed task.
+
+Pass `retainedNativeEvidence` to `createRunProvenance` only with the original
+receipt, requests, responses, derived call record, raw JSONL journal and observer
+metadata, each as `{ text, sha256 }`. Each UTF-8 record is bounded to 16 MiB and
+their total to 48 MiB. Invalid records produce no fallback resource identity;
+this option cannot be combined with `canonicalAccountingProof`. The reader joins
+the sole submitted graph and successful response to the task/session, complete
+source inventory, six native captures, three actual official calls and returns,
+every scheduler step, applied component policies and decoded image geometry.
+The original scheduler's first started index is null; its returned indices
+must be 1 through the full step count. Journal events from other tasks supply no
+proof. Observer metadata must predate execution; the retained library metadata
+must identify the official Diffusers upstream and immutable commit.
+
+The bounded observation retains the six raw-record hashes and whether the output
+originally had an API graph snapshot. A separately captured request can witness a
+missing snapshot; it never inserts one into the original output. Final validation
+rejoins the canonical graph, locked settings, source/contract fingerprints, sole
+pinned model and single image. A hash of the originally executed creative and
+VAE controls also rejects matching edits to both graph and public settings.
+Prompt/seed changes alter the execution-plan hash,
+while the resource identity describes the same resource recipe. This historical
+reader supplies no independent memory monitoring, original-time installed file
+inventory, reconstructed loading controls, residency or hardware-fit claim. All
+ordinary model-byte, media, quality, rights and publication checks still apply.
+
 The final validator joins the observed identity back to the original canonical
 controls, single installed model, freshly applied empty adapter state, ordered
 input paths/hashes and measured output. Rehashing a changed observation cannot

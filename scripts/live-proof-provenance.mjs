@@ -30,6 +30,12 @@ import {
   observedWorkflowAutoVideoProofMatches,
   observedWorkflowAutoVideoResourceId,
 } from './observed-workflow-auto-video-resource.mjs';
+import {
+  OBSERVED_RETAINED_EXPERT_TEXT_SOURCE,
+  observedRetainedExpertTextPlan,
+  observedRetainedExpertTextProofMatches,
+  observedRetainedExpertTextResourceId,
+} from './retained-native-text-resource.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
@@ -1283,12 +1289,18 @@ export function executionPlanIdentity(apiGraph, executionContext) {
         observedWorkflowAutoAudioPlan(apiGraph, executionContext) ??
         observedWorkflowAutoVideoPlan(apiGraph, executionContext))
       : null;
+  const retainedTextPlan =
+    executionContext?.retainedNativeEvidence === undefined
+      ? null
+      : observedRetainedExpertTextPlan(apiGraph, executionContext);
   const plan =
-    observedAutoPlan ??
-    modularPlan ??
-    (fields.length > 0
-      ? declaredPlan
-      : (executedExpertPlanFromGraph(apiGraph) ?? executedDirectAudioPlanFromGraph(apiGraph) ?? {}));
+    executionContext?.retainedNativeEvidence !== undefined
+      ? (retainedTextPlan ?? {})
+      : (observedAutoPlan ??
+        modularPlan ??
+        (fields.length > 0
+          ? declaredPlan
+          : (executedExpertPlanFromGraph(apiGraph) ?? executedDirectAudioPlanFromGraph(apiGraph) ?? {})));
   return {
     hash: sha256Value('execution-plan-v1', plan),
     plan: orderedValue(plan),
@@ -1307,6 +1319,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
   const manualResourceCandidateId =
     !isObservedWorkflowAutoSource(executionPlan?.source) &&
     executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
+    executionPlan?.source !== OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
     executionPlan?.modelType &&
     executionPlan?.dtype
       ? `manual-resource-v1:${[
@@ -1322,6 +1335,7 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       executionPlan?.autoResourceCandidateId ??
       observedWorkflowAutoResourceId(executionPlan) ??
       observedWorkflowAutoVideoResourceId(executionPlan) ??
+      observedRetainedExpertTextResourceId(executionPlan) ??
       manualResourceCandidateId,
     elapsedSeconds:
       Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
@@ -1918,6 +1932,16 @@ export function validateRunProvenance(provenance) {
       blockers.push('execution video resource observation does not match the original graph/model/output proof.');
     }
     if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedRetainedExpertTextResourceId(provenance.graph.executionPlan) ||
+        !observedRetainedExpertTextProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution retained native text observation does not match the original source/contract/graph/model/output bindings.',
+      );
+    }
+    if (
       provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE &&
       !observedWorkflowAutoImageProofMatches(provenance.graph.executionPlan, provenance)
     ) {
@@ -2454,8 +2478,13 @@ export function createRunProvenance({
   taskId,
   expectedOutput,
   canonicalAccountingProof,
+  retainedNativeEvidence,
   capturedAt = new Date().toISOString(),
 }) {
+  assert.ok(
+    canonicalAccountingProof === undefined || retainedNativeEvidence === undefined,
+    'Retained native records and canonical accounting proof must be reviewed separately.',
+  );
   const rawRouteBinding = apiGraph?.provenance?.registeredBlockV2RouteBinding;
   const routeBinding =
     rawRouteBinding === undefined || rawRouteBinding === null ? null : normalizeResourceRouteBinding(rawRouteBinding);
@@ -2477,6 +2506,7 @@ export function createRunProvenance({
           modelIdentities: modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean),
           backendSource,
           backendContract: backendContractIdentity(nodesPayload, graph.canonicalGraph),
+          retainedNativeEvidence,
         })
       : canonicalAccountingProofPlan({
           apiGraph,
