@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { canonicalizeApiGraph, executionPlanIdentity, executionReceiptIdentity } from './live-proof-provenance.mjs';
 import { workerGraphHash } from './observed-workflow-auto-resource.mjs';
 import {
@@ -342,6 +343,164 @@ function conditionedFixture(mode) {
   f.graph.runtimeHints.workflowAutoPlan.graphHash = workerGraphHash(f.graph);
   return f;
 }
+
+function remasterFixture() {
+  const f = fixture(),
+    v = (value) => ({ value }),
+    wire = (sourceId, sourceKey) => ({ sourceId, sourceKey });
+  f.form.mode = 'video_to_video';
+  f.form.sourceVideo = '@data/source.mp4';
+  f.graph.nodes.source = { module: 'modules.Video', action: 'Load', params: { file: v(f.form.sourceVideo) } };
+  f.graph.nodes.normalize = {
+    module: 'modules.VideoConditioning',
+    action: 'Normalize',
+    params: { video: wire('source', 'video'), width: v(768), height: v(512), num_frames: v(121), fit: v('cover') },
+  };
+  f.graph.paths[0].unshift('source', 'normalize');
+  f.graph.nodes.encode.params.video = wire('normalize', 'output');
+  for (const name of ['encode', 'denoise']) {
+    f.graph.nodes[name].params.mode.value = 'video_to_video';
+    for (const action of ['EncodeInputs', 'Denoise', 'DecodeLatents'])
+      f.graph.nodes[name].params.video_contract.value.actions[action] = ['video_to_video'];
+  }
+  f.graph.nodes.denoise.params.strength.value = 1;
+  const native = f.output.resolvedExecutionInputs;
+  native.graphTasks[0].task = 'video_to_video';
+  for (const row of native.nodes) if (row.fields.executed_task) row.fields.executed_task.value = 'video_to_video';
+  f.context.inputArtifacts = [
+    { role: 'sourceVideo', path: f.form.sourceVideo, contentHash: 'sha256:bytes:' + '1'.repeat(64), byteSize: 100 },
+  ];
+  const paths = [
+    'modules/Video/main.py',
+    'modules/VideoConditioning/main.py',
+    'modules/DiffusersImage/stage_execution.py',
+    'modules/DiffusersVideo/stage_execution.py',
+  ];
+  const files = paths.map((path, i) => ({ path, sha256: String(i + 1).repeat(64) }));
+  f.context.backendSource = { fingerprint: 'sha256:backend-source-v1:' + '8'.repeat(64), files };
+  const descriptors = Array.from({ length: 121 }, () => ['RGB', [768, 512], 'a'.repeat(64)]);
+  const digest = createHash('sha256')
+    .update('modiff-video-source-pixels-v1\0')
+    .update(JSON.stringify(descriptors))
+    .digest('hex');
+  f.context.videoNormalizationEvidence = {
+    schemaVersion: 1,
+    sourceContentHash: f.context.inputArtifacts[0].contentHash,
+    sourceByteSize: 100,
+    sourceFrames: 25,
+    sourceWidth: 1024,
+    sourceHeight: 576,
+    sourceFps: 7,
+    normalizedWidth: 768,
+    normalizedHeight: 512,
+    normalizedFrames: 121,
+    fit: 'cover',
+    descriptors,
+    normalizedPixelHash: digest,
+    backendSourceFingerprint: f.context.backendSource.fingerprint,
+    implementationFiles: structuredClone(files),
+    decoder: { imageioVersion: 'unit-test', imageioFfmpegVersion: 'unit-test', executableSHA256: 'b'.repeat(64) },
+  };
+  native.nodes.push(
+    { nodeId: 'source', module: 'modules.Video', action: 'Load', fields: {}, omittedFields: {} },
+    {
+      nodeId: 'normalize',
+      module: 'modules.VideoConditioning',
+      action: 'Normalize',
+      fields: Object.fromEntries(
+        Object.entries({ width: 768, height: 512, num_frames: 121 }).map(([k, value]) => [
+          k,
+          { source: 'literal', value },
+        ]),
+      ),
+      omittedFields: {},
+    },
+  );
+  const enc = native.nodes.find((n) => n.nodeId === 'encode').fields;
+  enc.video_source_sha256 = { source: 'connected', value: digest, sourceNodeId: 'normalize', sourcePortId: 'output' };
+  enc.video_source_frames = { source: 'connected', value: 121, sourceNodeId: 'normalize', sourcePortId: 'output' };
+  const den = native.nodes.find((n) => n.nodeId === 'denoise').fields;
+  den.conditioning_strength = { source: 'literal', value: 1 };
+  den.denoise_strength = { source: 'literal', value: f.form.strength };
+  f.graph.runtimeHints.workflowAutoPlan.graphHash = workerGraphHash(f.graph);
+  return f;
+}
+
+test('video remaster binds the exact source body through replayed normalization to the original frozen pixels', () => {
+  const f = remasterFixture(),
+    before = structuredClone(f),
+    plan = observedWorkflowAutoVideoPlan(f.graph, f.context);
+  assert(plan);
+  assert.equal(plan.task, 'video_to_video');
+  assert.equal(plan.resourceObservation.denoiseStrength, 0.8);
+  assert.equal(plan.resourceObservation.unusedDenoiserStrength, 1);
+  assert.equal(plan.resourceObservation.conditioningStrength, 1);
+  const provenance = {
+    graph: { canonicalGraph: canonicalizeApiGraph(f.graph) },
+    template: { lockedSettings: f.form },
+    runtime: { backendSource: f.context.backendSource },
+    models: { items: f.models },
+    inputs: { count: 1, items: f.context.inputArtifacts },
+    output: { items: [{ width: 1536, height: 1024, frames: 121 }] },
+  };
+  assert(observedWorkflowAutoVideoProofMatches(plan, provenance));
+  assert.equal(executionPlanIdentity(f.graph, f.context).plan.source, OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE);
+  assert.deepEqual(f, before);
+  for (const mutate of [
+    (p) => (p.inputs.items[0].contentHash = 'sha256:bytes:' + 'f'.repeat(64)),
+    (p) => (p.runtime.backendSource.fingerprint = 'sha256:backend-source-v1:' + 'f'.repeat(64)),
+    (p) => (p.graph.canonicalGraph.nodes.find((n) => n.action === 'Normalize').params.fit.value = 'contain'),
+  ]) {
+    const changed = structuredClone(provenance);
+    mutate(changed);
+    assert.equal(observedWorkflowAutoVideoProofMatches(plan, changed), false);
+  }
+});
+for (const [name, mutate] of [
+  ['missing normalized-pixel evidence', (f) => delete f.context.videoNormalizationEvidence],
+  [
+    'different source body',
+    (f) => (f.context.videoNormalizationEvidence.sourceContentHash = 'sha256:bytes:' + 'f'.repeat(64)),
+  ],
+  [
+    'different original pixel sequence',
+    (f) => (f.context.videoNormalizationEvidence.descriptors[0][2] = 'f'.repeat(64)),
+  ],
+  [
+    'different source implementation',
+    (f) => (f.context.videoNormalizationEvidence.implementationFiles[0].sha256 = 'f'.repeat(64)),
+  ],
+  [
+    'different native normalized hash',
+    (f) =>
+      (f.output.resolvedExecutionInputs.nodes.find((n) => n.nodeId === 'encode').fields.video_source_sha256.value =
+        'f'.repeat(64)),
+  ],
+  [
+    'different connected normalized supplier',
+    (f) =>
+      (f.output.resolvedExecutionInputs.nodes.find(
+        (n) => n.nodeId === 'encode',
+      ).fields.video_source_sha256.sourceNodeId = 'source'),
+  ],
+  [
+    'different consumed remaster strength',
+    (f) =>
+      (f.output.resolvedExecutionInputs.nodes.find((n) => n.nodeId === 'denoise').fields.denoise_strength.value = 0.1),
+  ],
+  [
+    'different consumed conditioning strength',
+    (f) =>
+      (f.output.resolvedExecutionInputs.nodes.find((n) => n.nodeId === 'denoise').fields.conditioning_strength.value =
+        0.1),
+  ],
+  ['different crop policy', (f) => (f.graph.nodes.normalize.params.fit.value = 'contain')],
+])
+  test('video remaster refuses ' + name, () => {
+    const f = remasterFixture();
+    mutate(f);
+    assert.equal(observedWorkflowAutoVideoPlan(f.graph, f.context), null);
+  });
 
 for (const mode of ['image_to_video', 'reference_to_video']) {
   test(`${mode} binds ordered original image bytes and consumed conditioning strength`, () => {

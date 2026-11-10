@@ -980,3 +980,60 @@ absent where originally absent. This maintainer-only reader does not execute a
 model, admit a resource recipe, qualify hardware, alter saved graphs or authorize
 publication. Other image, video, repaint and variation routes need their own
 evidence review.
+
+`observed-retained-modular-image-resource-v1` covers a retained single- or
+two-reference modular edit with eight native leaves, or nine with one applied
+adapter. It joins the four original official encode/image/denoise/decode calls,
+every scheduler step, complete native captures, immutable base and adapter
+identities, source/contract fingerprints, ordered current input bytes and
+original consumed PIL pixel hashes. Its eight bounded evidence records use the
+same names and size limits as the direct image reader described above.
+
+An adapter additionally needs its original load and activation, actual weight
+body, transformer object binding, and the active scale on every consuming
+forward and layer within the denoise interval. Configured names and generated
+runtime names remain distinct. Native CPU and accelerator Preview devices are
+preserved. Absent historical loading controls remain absent. The original graph
+task may be null, and generic form strength/sequence fields are recorded as
+unused when the original calls did not consume them.
+
+The identifier binds the complete observation, rejects contradictory or unknown
+authority fields, and the final validator joins it back to canonical controls,
+model pins, adapter descriptor, input roles and output dimensions. Invalid raw
+records cannot fall through to a manual or Expert identity. This read-only
+historical vocabulary supplies no original-time installed inventory, independent
+memory monitoring, resource admission, residency or hardware qualification, and
+does not authorize publication.
+
+The separate `observed-workflow-auto-masked-image-resource-v1` reader binds a
+fresh nine-leaf native inpaint: source and mask loaders, model owner, Guider,
+prompt/image encoding, denoise, decode and Preview. Its deliberately narrow
+whole-compatible route keeps the actual group-CPU graph policy separate from
+the saved form's requested loading. It joins both native encoded-body hashes,
+source/mask dimensions and modes, consumed controls, resolved Auto fields,
+single immutable model and output geometry. `whole_v1` is supported by the
+original graph and Auto resolution; it is not presented as an independently
+observed official-call argument. The generic sequence-length form field remains
+explicitly unused. Reordered semantic roles, extra suppliers, missing captures
+and changed source/mask bodies fail closed. This receipt reader supplies no
+runtime, resource admission, quality approval or hardware qualification.
+
+The native video reader also handles a ten-leaf source-video remaster with
+`Video.Load` and `VideoConditioning.Normalize`. Supply a separate bounded
+`videoNormalizationEvidence` to `createRunProvenance`: the exact encoded source
+hash/size, original geometry/frame rate/count, declared cover crop and sampled
+geometry/count, ordered RGB pixel descriptors, native normalized-pixel digest,
+the complete backend source fingerprint and the four preparation/capture file
+hashes, plus the local decoder distribution versions and executable hash. Build
+it by decoding the exact source with the recorded decoder and replaying only the
+attested pure preparation functions. Its digest must equal the original
+Encode Inputs connected pixel capture. A current encoded-file hash is not
+invented for `Video.Load`, whose native receipt does not contain one.
+
+The final validator binds this evidence back to the encoded input, connected
+normalizer, full source inventory, original normalized frame sequence, generator
+and upscaler. Active `denoise_strength` stays separate from the generic inactive
+`strength` and independent conditioning scale. Source timing, cover cropping and
+uniform frame sampling remain visible limitations; neither a playback review nor
+photorealism follows from a matching pixel digest. Retained or canonical
+accounting records cannot substitute for this fresh native evidence.

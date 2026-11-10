@@ -1,5 +1,6 @@
 // Maintainer evidence only: a fresh ordinary text-to-video path, never admission.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { canonicalJsonHash, stableJsonValue } from './canonical-json.mjs';
 import { assertFiniteObservedJson, workerGraphHash } from './observed-workflow-auto-resource.mjs';
 
@@ -19,12 +20,71 @@ const kinds = [
   outScope,
 ];
 
-function project(entries, paths, form, inputArtifacts = []) {
+const normalizationPaths = [
+  'modules/Video/main.py',
+  'modules/VideoConditioning/main.py',
+  'modules/DiffusersImage/stage_execution.py',
+  'modules/DiffusersVideo/stage_execution.py',
+];
+function normalizationEvidence(evidence, input, base) {
+  const keys =
+    'schemaVersion sourceContentHash sourceByteSize sourceFrames sourceWidth sourceHeight sourceFps normalizedWidth normalizedHeight normalizedFrames fit descriptors normalizedPixelHash backendSourceFingerprint implementationFiles decoder'.split(
+      ' ',
+    );
+  const n = Object.fromEntries(keys.map((k) => [k, evidence?.[k]]));
+  same(n.schemaVersion, 1);
+  same(n.sourceContentHash, input.contentHash);
+  same(n.sourceByteSize, input.byteSize);
+  for (const k of ['sourceFrames', 'sourceWidth', 'sourceHeight'])
+    assert(Number.isSafeInteger(n[k]) && n[k] > 0 && n[k] <= 32768);
+  assert(Number.isFinite(n.sourceFps) && n.sourceFps > 0 && n.sourceFps <= 120);
+  same(n.normalizedWidth, base.width);
+  same(n.normalizedHeight, base.height);
+  same(n.normalizedFrames, base.frames);
+  same(n.fit, 'cover');
+  assert(n.normalizedFrames <= 241);
+  same(n.descriptors.length, base.frames);
+  for (const d of n.descriptors) {
+    assert(Array.isArray(d));
+    same(d.length, 3);
+    same(d[0], 'RGB');
+    same(d[1], [base.width, base.height]);
+    assert.match(d[2], /^[a-f0-9]{64}$/u);
+  }
+  same(
+    n.normalizedPixelHash,
+    createHash('sha256').update('modiff-video-source-pixels-v1\0').update(JSON.stringify(n.descriptors)).digest('hex'),
+  );
+  assert.match(n.backendSourceFingerprint, /^sha256:backend-source-v1:[a-f0-9]{64}$/u);
+  same(n.implementationFiles.length, 4);
+  same(n.implementationFiles.map((f) => f.path).sort(), [...normalizationPaths].sort());
+  for (const f of n.implementationFiles) {
+    same(Object.keys(f).sort(), ['path', 'sha256']);
+    assert.match(f.sha256, /^[a-f0-9]{64}$/u);
+  }
+  same(Object.keys(n.decoder).sort(), ['executableSHA256', 'imageioFfmpegVersion', 'imageioVersion']);
+  assert.match(n.decoder.executableSHA256, /^[a-f0-9]{64}$/u);
+  for (const k of ['imageioVersion', 'imageioFfmpegVersion'])
+    assert(typeof n.decoder[k] === 'string' && n.decoder[k].length > 0 && n.decoder[k].length <= 64);
+  return n;
+}
+function normalizationSourceMatches(n, source) {
+  same(n.backendSourceFingerprint, source.fingerprint);
+  for (const f of n.implementationFiles) {
+    const rows = source.files.filter((r) => r.path === f.path);
+    same(rows.length, 1);
+    same(rows[0].sha256, f.sha256);
+  }
+}
+function project(entries, paths, form, inputArtifacts = [], normalization) {
   assert.equal(form.resourceMode, 'auto');
-  assert(['text_to_video', 'image_to_video', 'reference_to_video'].includes(form.mode));
-  const conditioned = form.mode !== 'text_to_video';
-  const inputCount = form.mode === 'image_to_video' ? 1 : form.mode === 'reference_to_video' ? 2 : 0;
+  assert(['text_to_video', 'image_to_video', 'reference_to_video', 'video_to_video'].includes(form.mode));
+  const remaster = form.mode === 'video_to_video';
+  const conditioned = ['image_to_video', 'reference_to_video'].includes(form.mode);
+  const inputCount = remaster ? 1 : form.mode === 'image_to_video' ? 1 : form.mode === 'reference_to_video' ? 2 : 0;
   const imageScope = 'modules.Image.Load';
+  const sourceVideoScope = 'modules.Video.Load',
+    normalizeScope = 'modules.VideoConditioning.Normalize';
   assert.equal(form.modelType, 'LTXVideoPipeline');
   assert.equal(form.dtype, 'bfloat16');
   assert.equal(form.quantizationMode, 'none');
@@ -32,13 +92,16 @@ function project(entries, paths, form, inputArtifacts = []) {
   assert.equal(form.negativePrompt, '');
   assert.equal(typeof form.autoOffload, 'boolean');
   assert(['none', 'model_cpu', 'group_cpu'].includes(form.offloadMode));
-  assert.equal(entries.length, conditioned ? 9 : 8);
+  assert.equal(entries.length, remaster ? 10 : conditioned ? 9 : 8);
   assert.equal(paths.length, 1);
   const ids = entries.map(([id]) => id);
   same([...paths[0]].sort(), [...ids].sort());
   assert.equal(new Set(paths[0]).size, entries.length);
   const roles = new Map(entries.map(([id, node]) => [scope(node), { id, node }]));
-  same([...roles.keys()].sort(), [...kinds, ...(conditioned ? [imageScope] : [])].sort());
+  same(
+    [...roles.keys()].sort(),
+    [...kinds, ...(conditioned ? [imageScope] : []), ...(remaster ? [sourceVideoScope, normalizeScope] : [])].sort(),
+  );
   const literal = (kind, field) => {
     const p = roles.get(kind).node.params[field];
     assert(p && !p.sourceId && !p.sourceKey, `${kind}.${field} must be literal`);
@@ -78,6 +141,12 @@ function project(entries, paths, form, inputArtifacts = []) {
     [upScope, 'image', dec, 'video_out'],
     [outScope, 'video', upScope, 'output'],
     ...(conditioned ? [[enc, 'reference_images', imageScope, 'image']] : []),
+    ...(remaster
+      ? [
+          [normalizeScope, 'video', sourceVideoScope, 'video'],
+          [enc, 'video', normalizeScope, 'output'],
+        ]
+      : []),
   ]) {
     const p = roles.get(target).node.params[field];
     assert.equal(p?.sourceId, roles.get(producer).id);
@@ -140,7 +209,7 @@ function project(entries, paths, form, inputArtifacts = []) {
   assert.equal(literal(quantScope, 'backend'), 'none');
   assert.equal(literal(quantScope, 'dtype'), dtype);
   assert.equal(literal(quantScope, 'component_overrides'), '{}');
-  for (const field of ['video', ...(conditioned ? [] : ['reference_images'])]) {
+  for (const field of [...(remaster ? [] : ['video']), ...(conditioned ? [] : ['reference_images'])]) {
     const p = roles.get(enc).node.params[field];
     assert(p && !p.sourceId && !p.sourceKey && p.value == null);
   }
@@ -158,6 +227,33 @@ function project(entries, paths, form, inputArtifacts = []) {
   assert.equal(literal(den, 'mode'), form.mode);
   same(inputArtifacts.length, inputCount);
   const inputs = [];
+  if (remaster) {
+    same(
+      Object.keys(roles.get(sourceVideoScope).node.params).filter((k) => k !== 'label'),
+      ['file'],
+    );
+    same(
+      Object.keys(roles.get(normalizeScope).node.params).sort(),
+      'video width height num_frames fit'.split(' ').sort(),
+    );
+    const path = literal(sourceVideoScope, 'file');
+    assert(typeof path === 'string' && path.length > 0 && path.length <= 16384);
+    if (form.sourceVideo) same(path, form.sourceVideo);
+    const input = inputArtifacts[0];
+    same(input.role, 'sourceVideo');
+    same(input.path, path);
+    assert.match(input.contentHash, /^sha256:bytes:[a-f0-9]{64}$/u);
+    assert(Number.isSafeInteger(input.byteSize) && input.byteSize > 0);
+    inputs.push({ role: 'sourceVideo', contentHash: input.contentHash, byteSize: input.byteSize });
+    for (const [k, v] of Object.entries({
+      width: form.width,
+      height: form.height,
+      num_frames: form.numFrames,
+      fit: 'cover',
+    }))
+      same(literal(normalizeScope, k), v);
+    assert(Number.isFinite(form.strength) && form.strength >= 0 && form.strength <= 1);
+  }
   if (conditioned) {
     const fields = Object.keys(roles.get(imageScope).node.params).filter((field) => field !== 'label');
     same(fields.sort(), ['alpha_channel', 'file']);
@@ -204,7 +300,7 @@ function project(entries, paths, form, inputArtifacts = []) {
   for (const [field, expected] of Object.entries({
     conditioning_scale: form.mode === 'image_to_video' ? form.strength : 1,
     attention_kwargs_json: '',
-    strength: form.strength,
+    strength: remaster ? 1 : form.strength,
     denoise_strength: form.strength,
     reference_strength: 1,
     scheduler_flow_shift: 0,
@@ -249,6 +345,15 @@ function project(entries, paths, form, inputArtifacts = []) {
       vaeTiling,
       upscaler,
       ...(conditioned ? { inputs, conditioningStrength: form.strength } : {}),
+      ...(remaster
+        ? {
+            inputs,
+            conditioningStrength: 1,
+            denoiseStrength: form.strength,
+            unusedDenoiserStrength: 1,
+            normalization: normalizationEvidence(normalization, inputs[0], { width, height, frames, fps }),
+          }
+        : {}),
     },
   };
   return { plan, roles, literal };
@@ -276,7 +381,7 @@ export function observedWorkflowAutoVideoResourceId(plan) {
       quantizationMode: 'none',
     }))
       same(plan[field], expected);
-    assert(['text_to_video', 'image_to_video', 'reference_to_video'].includes(plan.task));
+    assert(['text_to_video', 'image_to_video', 'reference_to_video', 'video_to_video'].includes(plan.task));
     assert.match(plan.modelRevision, /^[a-f0-9]{40}$/u);
     same(plan.quantizedComponents, []);
     for (const field of ['offloadMode', 'requestedOffloadMode'])
@@ -287,20 +392,27 @@ export function observedWorkflowAutoVideoResourceId(plan) {
       Object.keys(o).sort(),
       (
         'base delivery requestedMaxSequenceLength maxSequenceLength vaeSlicing vaeTiling upscaler' +
-        (plan.task === 'text_to_video' ? '' : ' inputs conditioningStrength')
+        (plan.task === 'text_to_video' ? '' : ' inputs conditioningStrength') +
+        (plan.task === 'video_to_video' ? ' denoiseStrength unusedDenoiserStrength normalization' : '')
       )
         .split(' ')
         .sort(),
     );
     if (plan.task !== 'text_to_video') {
-      same(o.inputs.length, plan.task === 'image_to_video' ? 1 : 2);
+      same(o.inputs.length, ['image_to_video', 'video_to_video'].includes(plan.task) ? 1 : 2);
       assert(Number.isFinite(o.conditioningStrength) && o.conditioningStrength >= 0 && o.conditioningStrength <= 1);
       for (const [index, input] of o.inputs.entries()) {
         same(Object.keys(input).sort(), ['byteSize', 'contentHash', 'role']);
-        same(input.role, `referenceImages[${index}]`);
+        same(input.role, plan.task === 'video_to_video' ? 'sourceVideo' : `referenceImages[${index}]`);
         assert.match(input.contentHash, /^sha256:bytes:[a-f0-9]{64}$/u);
         assert(Number.isSafeInteger(input.byteSize) && input.byteSize > 0);
       }
+    }
+    if (plan.task === 'video_to_video') {
+      same(o.conditioningStrength, 1);
+      same(o.unusedDenoiserStrength, 1);
+      assert(Number.isFinite(o.denoiseStrength) && o.denoiseStrength >= 0 && o.denoiseStrength <= 1);
+      same(o.normalization, normalizationEvidence(o.normalization, o.inputs[0], o.base));
     }
     assert(Number.isSafeInteger(o.requestedMaxSequenceLength) && o.requestedMaxSequenceLength > 0);
     assert.equal(o.maxSequenceLength, Math.min(o.requestedMaxSequenceLength, 128));
@@ -328,7 +440,15 @@ export function observedWorkflowAutoVideoResourceId(plan) {
 
 export function observedWorkflowAutoVideoPlan(
   apiGraph,
-  { executionReceipt: task, executedOutput: output, taskId, modelIdentities, inputArtifacts = [] } = {},
+  {
+    executionReceipt: task,
+    executedOutput: output,
+    taskId,
+    modelIdentities,
+    inputArtifacts = [],
+    backendSource,
+    videoNormalizationEvidence,
+  } = {},
 ) {
   try {
     const hints = apiGraph.runtimeHints,
@@ -360,7 +480,15 @@ export function observedWorkflowAutoVideoPlan(
     assert(!Object.hasOwn(apiGraph, 'loops'));
     assert.equal(hints.workflowAutoPlan.schemaVersion, 1);
     assert.equal(hints.workflowAutoPlan.graphHash, workerGraphHash(apiGraph));
-    const { plan, roles, literal } = project(Object.entries(apiGraph.nodes), apiGraph.paths, form, inputArtifacts);
+    const { plan, roles, literal } = project(
+      Object.entries(apiGraph.nodes),
+      apiGraph.paths,
+      form,
+      inputArtifacts,
+      videoNormalizationEvidence,
+    );
+    if (form.mode === 'video_to_video')
+      normalizationSourceMatches(plan.resourceObservation.normalization, backendSource);
     assert.equal(output.nodeId, roles.get(outScope).id);
     const prep = task.runtimePreparation;
     assert.equal(prep.resourceMode, 'auto');
@@ -426,7 +554,23 @@ export function observedWorkflowAutoVideoPlan(
       }
     for (const kind of [video('EncodeInputs'), video('Denoise'), video('DecodeLatents')])
       consumed(kind, 'executed_task', form.mode);
-    if (form.mode !== 'text_to_video') {
+    if (form.mode === 'video_to_video') {
+      consumed(video('Denoise'), 'conditioning_strength', 1);
+      consumed(video('Denoise'), 'denoise_strength', form.strength);
+      for (const [k, v] of Object.entries({ width: form.width, height: form.height, num_frames: form.numFrames }))
+        consumed('modules.VideoConditioning.Normalize', k, v);
+      const fields = rows.get(roles.get(video('EncodeInputs')).id).fields;
+      for (const [k, v] of Object.entries({
+        video_source_sha256: plan.resourceObservation.normalization.normalizedPixelHash,
+        video_source_frames: form.numFrames,
+      }))
+        same(fields[k], {
+          source: 'connected',
+          value: v,
+          sourceNodeId: roles.get('modules.VideoConditioning.Normalize').id,
+          sourcePortId: 'output',
+        });
+    } else if (form.mode !== 'text_to_video') {
       consumed(video('Denoise'), 'conditioning_strength', form.strength);
       consumed('modules.Image.Load', 'alpha_channel', 'ignore');
       consumed(
@@ -478,8 +622,11 @@ export function observedWorkflowAutoVideoProofMatches(plan, provenance) {
       graph.paths,
       provenance.template.lockedSettings,
       provenance.inputs.items ?? [],
+      plan.resourceObservation.normalization,
     ).plan;
     same(plan, projected);
+    if (plan.task === 'video_to_video')
+      normalizationSourceMatches(plan.resourceObservation.normalization, provenance.runtime.backendSource);
     assert.equal(provenance.inputs.count, plan.resourceObservation.inputs?.length ?? 0);
     assert.equal(provenance.models.items.length, 2);
     for (const [repo, rev] of [

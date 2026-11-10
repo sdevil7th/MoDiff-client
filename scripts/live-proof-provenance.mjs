@@ -37,6 +37,12 @@ import {
   observedWorkflowAutoControlResourceId,
 } from './observed-workflow-auto-control-resource.mjs';
 import {
+  OBSERVED_WORKFLOW_AUTO_MASKED_IMAGE_SOURCE,
+  observedWorkflowAutoMaskedImagePlan,
+  observedWorkflowAutoMaskedImageProofMatches,
+  observedWorkflowAutoMaskedImageResourceId,
+} from './observed-workflow-auto-masked-image-resource.mjs';
+import {
   OBSERVED_RETAINED_EXPERT_TEXT_SOURCE,
   observedRetainedExpertTextPlan,
   observedRetainedExpertTextProofMatches,
@@ -48,6 +54,12 @@ import {
   observedRetainedDirectImageProofMatches,
   observedRetainedDirectImageResourceId,
 } from './retained-native-direct-image-resource.mjs';
+import {
+  OBSERVED_RETAINED_MODULAR_IMAGE_SOURCE,
+  observedRetainedModularImagePlan,
+  observedRetainedModularImageProofMatches,
+  observedRetainedModularImageResourceId,
+} from './retained-native-modular-image-resource.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
@@ -1300,7 +1312,8 @@ export function executionPlanIdentity(apiGraph, executionContext) {
         }) ??
         observedWorkflowAutoAudioPlan(apiGraph, executionContext) ??
         observedWorkflowAutoVideoPlan(apiGraph, executionContext) ??
-        observedWorkflowAutoControlPlan(apiGraph, executionContext))
+        observedWorkflowAutoControlPlan(apiGraph, executionContext) ??
+        observedWorkflowAutoMaskedImagePlan(apiGraph, executionContext))
       : null;
   const retainedPlan =
     executionContext?.retainedNativeEvidence === undefined
@@ -1309,7 +1322,8 @@ export function executionPlanIdentity(apiGraph, executionContext) {
             (node) => node.module === 'modules.DiffusersImage' && node.action === 'LoadPipeline',
           )
         ? observedRetainedDirectImagePlan(apiGraph, executionContext)
-        : observedRetainedExpertTextPlan(apiGraph, executionContext);
+        : (observedRetainedModularImagePlan(apiGraph, executionContext) ??
+          observedRetainedExpertTextPlan(apiGraph, executionContext));
   const plan =
     executionContext?.retainedNativeEvidence !== undefined
       ? (retainedPlan ?? {})
@@ -1336,8 +1350,10 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
   const manualResourceCandidateId =
     !isObservedWorkflowAutoSource(executionPlan?.source) &&
     executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
+    executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_MASKED_IMAGE_SOURCE &&
     executionPlan?.source !== OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
     executionPlan?.source !== OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE &&
+    executionPlan?.source !== OBSERVED_RETAINED_MODULAR_IMAGE_SOURCE &&
     executionPlan?.modelType &&
     executionPlan?.dtype
       ? `manual-resource-v1:${[
@@ -1354,8 +1370,10 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       observedWorkflowAutoResourceId(executionPlan) ??
       observedWorkflowAutoVideoResourceId(executionPlan) ??
       observedWorkflowAutoControlResourceId(executionPlan) ??
+      observedWorkflowAutoMaskedImageResourceId(executionPlan) ??
       observedRetainedExpertTextResourceId(executionPlan) ??
       observedRetainedDirectImageResourceId(executionPlan) ??
+      observedRetainedModularImageResourceId(executionPlan) ??
       manualResourceCandidateId,
     elapsedSeconds:
       Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
@@ -1954,6 +1972,16 @@ export function validateRunProvenance(provenance) {
       );
     }
     if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_MASKED_IMAGE_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedWorkflowAutoMaskedImageResourceId(provenance.graph.executionPlan) ||
+        !observedWorkflowAutoMaskedImageProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution masked-image resource observation does not match the original graph/model/source/mask/output proof.',
+      );
+    }
+    if (
       provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
       (provenance.execution?.resourceCandidateId !==
         observedWorkflowAutoVideoResourceId(provenance.graph.executionPlan) ||
@@ -1969,6 +1997,16 @@ export function validateRunProvenance(provenance) {
     ) {
       blockers.push(
         'execution retained direct-image observation does not match the original source/contract/graph/model/input/output bindings.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_MODULAR_IMAGE_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedRetainedModularImageResourceId(provenance.graph.executionPlan) ||
+        !observedRetainedModularImageProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution retained modular-image observation does not match the original source/contract/graph/model/input/output bindings.',
       );
     }
     if (
@@ -2519,11 +2557,17 @@ export function createRunProvenance({
   expectedOutput,
   canonicalAccountingProof,
   retainedNativeEvidence,
+  videoNormalizationEvidence,
   capturedAt = new Date().toISOString(),
 }) {
   assert.ok(
     canonicalAccountingProof === undefined || retainedNativeEvidence === undefined,
     'Retained native records and canonical accounting proof must be reviewed separately.',
+  );
+  assert.ok(
+    videoNormalizationEvidence === undefined ||
+      (canonicalAccountingProof === undefined && retainedNativeEvidence === undefined),
+    'Native video normalization evidence must be reviewed separately from retained or canonical accounting records.',
   );
   const rawRouteBinding = apiGraph?.provenance?.registeredBlockV2RouteBinding;
   const routeBinding =
@@ -2548,6 +2592,7 @@ export function createRunProvenance({
           backendSource,
           backendContract: backendContractIdentity(nodesPayload, graph.canonicalGraph),
           retainedNativeEvidence,
+          videoNormalizationEvidence,
           inputArtifacts,
         })
       : canonicalAccountingProofPlan({
