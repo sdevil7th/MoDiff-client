@@ -12,11 +12,13 @@ export const OBSERVED_WORKFLOW_AUTO_SOURCE = 'observed-workflow-auto-resource-v1
 export const OBSERVED_WORKFLOW_AUTO_LORA_SOURCE = 'observed-workflow-auto-lora-resource-v1';
 export const OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE = 'observed-workflow-auto-audio-resource-v1';
 export const OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE = 'observed-workflow-auto-image-resource-v1';
+export const OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE = 'observed-workflow-auto-legacy-resource-v1';
 export const isObservedWorkflowAutoSource = (source) =>
   source === OBSERVED_WORKFLOW_AUTO_SOURCE ||
   source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE ||
   source === OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE ||
-  source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE;
+  source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE ||
+  source === OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE;
 const same = (a, b) => assert.deepEqual(stableJsonValue(a), stableJsonValue(b));
 const value = (node, key) => node.params?.[key]?.value;
 const scope = (node) => `${node.module}.${node.action}`;
@@ -25,6 +27,7 @@ const core = ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents']
   .map((a) => 'modules.ModularDiffusers.' + a)
   .concat('modules.Image.Preview');
 const optional = 'modules.ModularDiffusers.Guider';
+const encodeScope = 'modules.ModularDiffusers.EncodePrompt';
 const descriptorScope = 'modules.ModularDiffusers.Lora';
 const descriptorFields = new Set(
   'model weight_name revision expected_sha256 scale adapter_name previous_loras scheduler_class scheduler_config'.split(
@@ -37,6 +40,17 @@ const ownerFields = new Set(
   ),
 );
 const scalarFields = new Set('width height num_inference_steps guidance_scale strength'.split(' '));
+
+function validateControlFields(kind, fields, imageConditioned) {
+  if (kind === encodeScope) {
+    assert(!imageConditioned);
+    same(Object.keys(fields), ['max_sequence_length']);
+    assert(Number.isSafeInteger(fields.max_sequence_length) && fields.max_sequence_length > 0);
+  } else {
+    assert(kind === ownerScope || kind === 'modules.ModularDiffusers.Denoise' || kind === optional);
+    for (const key of Object.keys(fields)) assert((kind === ownerScope ? ownerFields : scalarFields).has(key));
+  }
+}
 
 function finiteJson(value, depth = 0, seen = new Set()) {
   assert(depth <= 16);
@@ -85,29 +99,70 @@ export function observedWorkflowAutoResourceId(plan) {
     assert(o.repo.length > 0);
     assert.match(o.revision, /^[0-9a-f]{40}$/u);
     const imageConditioned = plan.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE;
-    assert.equal(o.task, imageConditioned ? 'multi_image_reference_edit' : 'text_to_image');
+    const legacy = plan.source === OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE;
+    if (imageConditioned) assert(['edit_image', 'multi_image_reference_edit'].includes(o.task));
+    else {
+      assert.equal(o.task, 'text_to_image');
+      if (o.formModelType !== undefined) {
+        assert(typeof o.formModelType === 'string' && o.formModelType.length > 0 && o.formModelType.length <= 256);
+        assert.notEqual(o.formModelType, o.modelType);
+      }
+    }
     if (imageConditioned) {
-      assert.equal(o.reportedGraphTask, null);
+      if (o.imageRoute === 'native_state') {
+        assert.equal(o.task, 'edit_image');
+        assert.equal(o.reportedGraphTask, 'edit_image');
+      } else {
+        assert(!Object.hasOwn(o, 'imageRoute'));
+        assert.equal(o.reportedGraphTask, null);
+      }
       assert.equal(o.workflowId, 'image_conditioned');
       assert(typeof o.formModelType === 'string' && o.formModelType.length > 0 && o.formModelType.length <= 256);
-      assert(Array.isArray(o.references) && o.references.length === 2);
+      assert(Array.isArray(o.references) && o.references.length === (o.task === 'edit_image' ? 1 : 2));
       for (const [index, reference] of o.references.entries()) {
         same(Object.keys(reference).sort(), ['contentHash', 'role']);
         assert.equal(reference.role, `referenceImages[${index}]`);
         assert.match(reference.contentHash, /^sha256:bytes:[a-f0-9]{64}$/u);
       }
-      assert.notEqual(o.references[0].contentHash, o.references[1].contentHash);
+      if (o.references.length === 2) assert.notEqual(o.references[0].contentHash, o.references[1].contentHash);
+      if (o.task === 'edit_image') {
+        assert(['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'].includes(o.requestedOffloadMode));
+        assert.equal(typeof o.requestedAutoOffload, 'boolean');
+      }
     }
     assert(['bfloat16', 'float16', 'float32'].includes(o.dtype));
     assert.equal(typeof o.device, 'string');
     assert(o.device.length > 0);
     assert.equal(typeof o.autoOffload, 'boolean');
     assert(['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'].includes(o.offloadMode));
-    assert(['cpu', 'cuda'].includes(o.weightLoadingMode));
+    if (legacy) {
+      assert(!Object.hasOwn(o, 'weightLoadingMode') && !Object.hasOwn(plan, 'weightLoadingMode'));
+      same(o.absentLoaderControls, ['weight_format', 'weight_loading_mode']);
+      if (o.decoderGeometryRoute !== undefined) assert.equal(o.decoderGeometryRoute, 'denoiser_dimensions');
+      assert.match(o.backendSourceFingerprint, /^sha256:backend-source-v1:[a-f0-9]{64}$/u);
+      assert.match(o.backendContractFingerprint, /^sha256:backend-contract-v1:[a-f0-9]{64}$/u);
+      if (o.guiderConfiguration !== undefined) {
+        same(
+          Object.keys(o.guiderConfiguration).sort(),
+          'model_type guider guidance_scale guidance_rescale use_original_formulation enabled start stop'
+            .split(' ')
+            .sort(),
+        );
+        const g = o.guiderConfiguration;
+        same(g.model_type, o.modelType);
+        same(g.guider, 'ClassifierFreeGuidance');
+        same(g.guidance_rescale, 0);
+        same(g.use_original_formulation, false);
+        assert.equal(typeof g.enabled, 'boolean');
+        same(g.start, 0);
+        same(g.stop, 1);
+        assert(Number.isFinite(g.guidance_scale) && g.guidance_scale >= 0);
+      }
+    } else assert(['cpu', 'cuda'].includes(o.weightLoadingMode));
     for (const key of ['width', 'height'])
       assert(Number.isInteger(o.geometry[key]) && o.geometry[key] > 0 && o.geometry[key] <= 32768);
     assert.equal(o.strategy, 'dependency_order_retained_owners');
-    assert(Array.isArray(o.controls) && o.controls.length >= 2 && o.controls.length <= 3);
+    assert(Array.isArray(o.controls) && o.controls.length >= 2 && o.controls.length <= (imageConditioned ? 3 : 4));
     const controls = new Map(o.controls.map((c) => [c.scope, c.fields]));
     assert.equal(controls.size, o.controls.length);
     assert(controls.has(ownerScope));
@@ -115,10 +170,26 @@ export function observedWorkflowAutoResourceId(plan) {
     const denoiseFields = controls.get('modules.ModularDiffusers.Denoise');
     assert(denoiseFields);
     for (const key of ['width', 'height']) same(denoiseFields[key], o.geometry[key]);
-    for (const [kind, fields] of controls) {
-      assert(kind === ownerScope || kind === 'modules.ModularDiffusers.Denoise' || kind === optional);
-      for (const key of Object.keys(fields)) assert((kind === ownerScope ? ownerFields : scalarFields).has(key));
+    for (const [kind, fields] of controls) validateControlFields(kind, fields, imageConditioned);
+    if (legacy) {
+      const primary = controls.get(ownerScope);
+      for (const field of o.absentLoaderControls) assert(!Object.hasOwn(primary, field));
+      for (const field of [
+        'repo_id',
+        'revision',
+        'model_type',
+        'dtype',
+        'device',
+        'offload_mode',
+        'auto_offload',
+        'attention_backend',
+        'vae_slicing',
+        'vae_tiling',
+      ])
+        assert(Object.hasOwn(primary, field));
     }
+    if (controls.has(encodeScope)) same(plan.maxSequenceLength, controls.get(encodeScope).max_sequence_length);
+    else assert(!Object.hasOwn(plan, 'maxSequenceLength'));
     for (const [key, other] of Object.entries({
       modelType: 'modelType',
       modelRepo: 'repo',
@@ -147,7 +218,7 @@ export function observedWorkflowAutoResourceId(plan) {
       assert.equal(o.adapters[0].artifact.source, 'hub');
       assert.equal(o.adapters[0].scheduler, null);
     } else assert(!Object.hasOwn(o, 'adapters'));
-    if (plan.source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE || imageConditioned) {
+    if (plan.source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE || imageConditioned || legacy) {
       const primary = controls.get(ownerScope);
       assert.equal(primary.repo_id?.source, 'hub');
       same(primary.repo_id.value, o.repo);
@@ -163,10 +234,11 @@ export function observedWorkflowAutoResourceId(plan) {
         vae_slicing: 'vaeSlicing',
         vae_tiling: 'vaeTiling',
       })) {
+        if (legacy && key === 'weight_loading_mode') continue;
         assert(Object.hasOwn(primary, key));
         same(primary[key], o[observed]);
       }
-      assert.equal(primary.weight_format, 'native');
+      if (!legacy) assert.equal(primary.weight_format, 'native');
     }
     const id = plan.source + ':' + canonicalJsonHash(o);
     assert.equal(plan.observedResourceCandidateId, id);
@@ -344,6 +416,123 @@ export function observedWorkflowAutoAudioProofMatches(plan, provenance) {
   }
 }
 
+/** Keep absent historical loader controls absent, with source/contract bindings. */
+export function observedWorkflowAutoLegacyProofMatches(plan, provenance) {
+  try {
+    assert.equal(plan.source, OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE);
+    assert(observedWorkflowAutoResourceId(plan));
+    const o = plan.resourceObservation;
+    same(o.backendSourceFingerprint, provenance.runtime.backendSource.fingerprint);
+    same(o.backendContractFingerprint, provenance.runtime.backendContract.fingerprint);
+    const nodes = provenance.graph.canonicalGraph.nodes;
+    assert(nodes.length === 5 || nodes.length === 6);
+    const unique = (kind) => {
+      const matches = nodes.filter((node) => scope(node) === kind);
+      assert.equal(matches.length, 1);
+      return matches[0];
+    };
+    const owner = unique(ownerScope),
+      encode = unique(encodeScope);
+    const denoise = unique('modules.ModularDiffusers.Denoise');
+    const decode = unique('modules.ModularDiffusers.DecodeLatents');
+    const preview = unique('modules.Image.Preview');
+    assert(nodes.every((node) => core.includes(scope(node)) || scope(node) === optional));
+    const contract = provenance.runtime.backendContract.contracts.filter((item) => item.key === ownerScope);
+    assert.equal(contract.length, 1);
+    for (const field of o.absentLoaderControls) {
+      assert(!Object.hasOwn(owner.params, field));
+      assert(!Object.hasOwn(contract[0].params, field));
+    }
+    for (const control of o.controls) {
+      const node = unique(control.scope);
+      for (const [field, observed] of Object.entries(control.fields)) {
+        assert(!node.params[field]?.sourceId && !node.params[field]?.sourceKey);
+        same(value(node, field), observed);
+      }
+    }
+    const connected = new Set();
+    const wire = (node, field, supplier, output) => {
+      connected.add(node.key + ':' + field);
+      assert.equal(node.params[field]?.sourceId, supplier.key);
+      assert.equal(node.params[field]?.sourceKey, output);
+      if (Object.hasOwn(node.params[field], 'value')) {
+        assert(node === decode && ['width', 'height'].includes(field));
+        same(node.params[field].value, o.geometry[field]);
+      }
+    };
+    wire(encode, 'text_encoders', owner, 'text_encoders');
+    wire(denoise, 'unet', owner, 'unet_out');
+    wire(denoise, 'scheduler', owner, 'scheduler');
+    wire(denoise, 'embeddings', encode, 'embeddings');
+    wire(decode, 'vae', owner, 'vae_out');
+    wire(decode, 'latents', denoise, 'latents');
+    if (o.decoderGeometryRoute === 'denoiser_dimensions') {
+      wire(decode, 'width', denoise, 'out_width');
+      wire(decode, 'height', denoise, 'out_height');
+    }
+    wire(preview, 'image', decode, 'images');
+    if (nodes.length === 6) {
+      const guider = unique(optional);
+      assert(o.guiderConfiguration);
+      wire(denoise, 'guider', guider, 'guider_out');
+      wire(encode, 'guider', guider, 'guider_out');
+      for (const [field, observed] of Object.entries(o.guiderConfiguration)) same(value(guider, field), observed);
+      same(o.guiderConfiguration.guidance_scale, value(denoise, 'guidance_scale'));
+    } else assert(!Object.hasOwn(o, 'guiderConfiguration'));
+    for (const node of nodes)
+      for (const [field, param] of Object.entries(node.params)) {
+        if (param.sourceId) assert(connected.has(node.key + ':' + field));
+      }
+    same(value(owner, 'repo_id'), { source: 'hub', value: plan.modelRepo });
+    same(value(owner, 'revision'), plan.modelRevision);
+    same(value(owner, 'model_type'), plan.modelType);
+    for (const field of [
+      'quant_config',
+      'lora_list',
+      'unet',
+      'vae',
+      'controlnet',
+      'text_encoders',
+      'pipeline_components',
+      'image_encoder',
+    ]) {
+      assert(!owner.params[field]?.sourceId && !owner.params[field]?.sourceKey);
+      assert(value(owner, field) == null);
+    }
+    assert.equal(provenance.models.items.length, 1);
+    const model = provenance.models.items[0];
+    same(model.repoId, plan.modelRepo);
+    same(model.selectedRevision, plan.modelRevision);
+    const form = provenance.template.lockedSettings;
+    same(form.mode, 'text_to_image');
+    same(form.modelType, o.formModelType ?? plan.modelType);
+    same(form.dtype, plan.dtype);
+    same(form.quantizationMode, 'none');
+    same(value(owner, 'trust_remote_code'), false);
+    if (Object.hasOwn(form, 'trustRemoteCode')) same(form.trustRemoteCode, false);
+    assert(!Object.hasOwn(form, 'weightFormat'));
+    for (const [field, formKey] of [
+      ['width', 'width'],
+      ['height', 'height'],
+      ['seed', 'seed'],
+      ['num_inference_steps', 'steps'],
+      ['guidance_scale', 'guidanceScale'],
+    ]) {
+      same(value(denoise, field), form[formKey]);
+    }
+    same(value(encode, 'prompt'), form.prompt);
+    same(value(encode, 'negative_prompt') ?? '', form.negativePrompt);
+    if (plan.maxSequenceLength !== undefined) same(plan.maxSequenceLength, form.maxSequenceLength);
+    assert.equal(provenance.inputs.items.length, 0);
+    assert.equal(provenance.output.items.length, 1);
+    same(provenance.output.items[0].mediaType, 'image');
+    for (const field of ['width', 'height']) same(provenance.output.items[0][field], o.geometry[field]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A projected adapter identity is useful only with the existing strict native proof. */
 export function observedWorkflowAutoLoraProofMatches(plan, provenance) {
   try {
@@ -385,9 +574,52 @@ export function observedWorkflowAutoLoraProofMatches(plan, provenance) {
 
 /** Recover only a fresh, literal, unquantized native image T2I owner. Unknown,
  * connected, composite, deferred, reused and runtime-patched cases stay held. */
+function durableTextOwnerAuthoringMatches(snapshot, ownerId, owner) {
+  const matches = [];
+  const visit = (nodes, localIds = null) => {
+    assert(Array.isArray(nodes));
+    for (const node of nodes) {
+      const data = node?.data;
+      if (!data || data.blockProjectionOwnerId) continue;
+      if (data.blockInstanceV2) {
+        assert.equal(localIds, null);
+        const instance = data.blockInstanceV2,
+          children = instance.effectiveGraph?.nodes;
+        assert(typeof instance.instanceId === 'string' && Array.isArray(children));
+        const ids = new Map(
+          children.map((child) => {
+            assert.equal(typeof child.nodeId, 'string');
+            return [
+              child.nodeId,
+              `block-v2-node:${instance.instanceId.length}:${instance.instanceId}:${child.nodeId.length}:${child.nodeId}`,
+            ];
+          }),
+        );
+        assert.equal(ids.size, children.length);
+        visit(children, ids);
+      } else if (scope(data) === ownerScope) matches.push({ id: localIds?.get(node.nodeId) ?? node.id, data });
+    }
+  };
+  visit(snapshot.nodes);
+  assert.equal(matches.length, 1);
+  const { id, data } = matches[0],
+    authoring = data.operationAuthoring,
+    operation = authoring?.operation;
+  assert.equal(id, ownerId);
+  assert.equal(authoring?.schemaVersion, 1);
+  assert.equal(operation?.pipelineClass, value(owner, 'model_type'));
+  assert.equal(operation.task, 'text_to_image');
+  assert.equal(operation.nodeKey, ownerScope);
+  assert.equal(operation.binding?.pipelineClass, value(owner, 'model_type'));
+  same(operation.binding?.values?.model_type, value(owner, 'model_type'));
+  assert(!data.params?.model_type?.sourceId && !data.params?.model_type?.sourceKey);
+  same(data.params?.model_type?.value, value(owner, 'model_type'));
+  return true;
+}
+
 export function observedWorkflowAutoPlan(
   apiGraph,
-  { executionReceipt: task, executedOutput: output, taskId, adapterProofContext } = {},
+  { executionReceipt: task, executedOutput: output, taskId, adapterProofContext, backendSource, backendContract } = {},
 ) {
   try {
     const hints = apiGraph.runtimeHints,
@@ -395,7 +627,7 @@ export function observedWorkflowAutoPlan(
       form = snapshot.studioForm;
     assert.equal(hints.resourceMode, 'auto');
     assert.equal(form.resourceMode, 'auto');
-    const imageConditioned = form.mode === 'multi_image_reference_edit';
+    const imageConditioned = ['edit_image', 'multi_image_reference_edit'].includes(form.mode);
     assert(form.mode === 'text_to_image' || imageConditioned);
     if (imageConditioned) assert.equal(task.resourceCandidateId, null);
     assert.equal(task.status, 'completed');
@@ -427,14 +659,16 @@ export function observedWorkflowAutoPlan(
       ids = new Set(entries.map(([id]) => id));
     const order = [...new Set(apiGraph.paths.flat())];
     same([...ids].sort(), [...order].sort());
-    assert(entries.length <= 7);
+    assert(entries.length <= (form.mode === 'edit_image' ? 8 : 7));
     const scopes = new Map();
     for (const [id, node] of entries) {
       const key = scope(node);
       assert(
         core.includes(key) ||
           (imageConditioned
-            ? key === 'modules.ModularDiffusers.ImageEncode' || key === 'modules.Image.Load'
+            ? key === 'modules.ModularDiffusers.ImageEncode' ||
+              key === 'modules.Image.Load' ||
+              (form.mode === 'edit_image' && key === optional)
             : key === optional || key === descriptorScope),
       );
       assert(!scopes.has(key));
@@ -449,6 +683,11 @@ export function observedWorkflowAutoPlan(
     const { id: ownerId, node: owner } = scopes.get(ownerScope),
       { id: previewId } = scopes.get('modules.Image.Preview');
     const descriptor = scopes.get(descriptorScope);
+    const legacy =
+      !imageConditioned &&
+      !descriptor &&
+      !Object.hasOwn(owner.params, 'weight_format') &&
+      !Object.hasOwn(owner.params, 'weight_loading_mode');
     assert.equal(output.nodeId, previewId);
     const receipt = output.resolvedExecutionInputs;
     assert.equal(receipt.source, 'backend-execution');
@@ -464,15 +703,40 @@ export function observedWorkflowAutoPlan(
       assert.equal(rows.get(id).module, node.module);
       assert.equal(rows.get(id).action, node.action);
     }
+    const routedImage = imageConditioned && scopes.has(optional);
     same(receipt.graphTasks, [
-      { loaderId: ownerId, pipelineClass: value(owner, 'model_type'), task: imageConditioned ? null : 'text_to_image' },
+      {
+        loaderId: ownerId,
+        pipelineClass: value(owner, 'model_type'),
+        task: imageConditioned ? (routedImage ? 'edit_image' : null) : 'text_to_image',
+      },
     ]);
-    if (!imageConditioned) assert.equal(form.modelType, value(owner, 'model_type'));
-    else assert(typeof form.modelType === 'string' && form.modelType.length > 0 && form.modelType.length <= 256);
+    assert(typeof form.modelType === 'string' && form.modelType.length > 0 && form.modelType.length <= 256);
+    const legacyTextLabel = !imageConditioned && form.modelType !== value(owner, 'model_type');
+    if (legacyTextLabel) assert(durableTextOwnerAuthoringMatches(snapshot, ownerId, owner));
     assert.equal(form.quantizationMode, 'none');
     assert.equal(form.trustRemoteCode, false);
     assert.equal(value(owner, 'trust_remote_code'), false);
-    assert.equal(value(owner, 'weight_format'), 'native');
+    if (legacy) {
+      assert(!Object.hasOwn(form, 'weightFormat'));
+      assert.equal(task.resourceCandidateId, null);
+      assert.equal(task.runtimePreparation.performed, false);
+      assert.equal(task.runtimePreparation.residentRecipeReusable, false);
+      assert.equal(backendSource?.fingerprint, task.runtimeFingerprint?.backendSource?.fingerprint);
+      assert.match(backendSource?.fingerprint, /^sha256:backend-source-v1:[a-f0-9]{64}$/u);
+      assert(Array.isArray(backendSource.files) && backendSource.files.length > 0);
+      assert.equal(backendSource.gitCommit, task.runtimeFingerprint.backendSource.gitCommit);
+      assert.equal(backendSource.files.length, task.runtimeFingerprint.backendSource.fileCount);
+      const contracts = backendContract?.contracts?.filter((item) => item.key === ownerScope);
+      assert.equal(contracts?.length, 1);
+      assert.match(backendContract.fingerprint, /^sha256:backend-contract-v1:[a-f0-9]{64}$/u);
+      for (const key of ['weight_format', 'weight_loading_mode']) {
+        assert(!Object.hasOwn(contracts[0].params, key));
+        assert(!Object.hasOwn(rows.get(ownerId).fields, key));
+        assert(!Object.hasOwn(rows.get(ownerId).omittedFields ?? {}, key));
+        assert(!Object.hasOwn(task.runtimePreparation.workflowAuto.resolvedFields[ownerId], key));
+      }
+    } else assert.equal(value(owner, 'weight_format'), 'native');
     for (const key of [
       'repo_id',
       'revision',
@@ -563,6 +827,7 @@ export function observedWorkflowAutoPlan(
       'vae_slicing',
       'vae_tiling',
     ]) {
+      if (legacy && key === 'weight_loading_mode') continue;
       assert.equal(trace[key].source, 'literal');
       same(trace[key].value, key === 'repo_id' ? repo.value : value(owner, key));
     }
@@ -572,7 +837,7 @@ export function observedWorkflowAutoPlan(
     assert.equal(typeof value(owner, 'auto_offload'), 'boolean');
     assert.equal(typeof value(owner, 'device'), 'string');
     assert(['none', 'model_cpu', 'sequential_cpu', 'group_cpu', 'group_disk'].includes(value(owner, 'offload_mode')));
-    assert(['cpu', 'cuda'].includes(value(owner, 'weight_loading_mode')));
+    if (!legacy) assert(['cpu', 'cuda'].includes(value(owner, 'weight_loading_mode')));
     const prep = task.runtimePreparation;
     assert.equal(prep.resourceMode, 'auto');
     const auto = prep.workflowAuto;
@@ -594,21 +859,66 @@ export function observedWorkflowAutoPlan(
       'attention_backend',
       'vae_slicing',
       'vae_tiling',
-    ])
+    ].filter((key) => !legacy || !['weight_loading_mode', 'weight_format'].includes(key)))
       assert(Object.hasOwn(auto.resolvedFields[ownerId], key));
     const denoiseOwner = scopes.get('modules.ModularDiffusers.Denoise').id;
     for (const key of ['width', 'height']) assert(Object.hasOwn(auto.resolvedFields[denoiseOwner], key));
     const controls = [];
+    let legacyDecoderRoute = false;
+    let legacyGuiderConfiguration;
+    if (legacy && scopes.has(optional)) {
+      const guider = scopes.get(optional),
+        fields = rows.get(guider.id).fields;
+      legacyGuiderConfiguration = {};
+      for (const key of 'model_type guider guidance_scale guidance_rescale use_original_formulation enabled start stop'.split(
+        ' ',
+      )) {
+        assert(!guider.node.params[key]?.sourceId && !guider.node.params[key]?.sourceKey);
+        assert.equal(fields[key]?.source, 'literal');
+        assert(!Object.hasOwn(rows.get(guider.id).omittedFields ?? {}, key));
+        same(fields[key].value, value(guider.node, key));
+        legacyGuiderConfiguration[key] = fields[key].value;
+      }
+      const layers = guider.node.params.layers_config;
+      assert(!layers?.sourceId && !layers?.sourceKey);
+      assert(layers?.value == null);
+    }
     for (const [id, fields] of Object.entries(auto.resolvedFields)) {
       const node = apiGraph.nodes[id];
       assert(node);
       const kind = scope(node);
-      assert(kind === ownerScope || kind === 'modules.ModularDiffusers.Denoise' || kind === optional);
+      if (legacy && kind === 'modules.ModularDiffusers.DecodeLatents') {
+        same(Object.keys(fields).sort(), ['height', 'width']);
+        for (const key of ['width', 'height']) {
+          const param = node.params[key],
+            captured = rows.get(id).fields[key];
+          assert.equal(param.sourceId, denoiseOwner);
+          assert.equal(param.sourceKey, 'out_' + key);
+          if (Object.hasOwn(param, 'value')) same(param.value, fields[key]);
+          assert.equal(captured.source, 'connected');
+          assert.equal(captured.sourceNodeId, denoiseOwner);
+          assert.equal(captured.sourcePortId, 'out_' + key);
+          same(captured.value, fields[key]);
+          same(fields[key], value(apiGraph.nodes[denoiseOwner], key));
+          assert(!Object.hasOwn(rows.get(id).omittedFields ?? {}, key));
+        }
+        legacyDecoderRoute = true;
+        continue;
+      }
+      validateControlFields(kind, fields, imageConditioned);
       for (const [key, v] of Object.entries(fields)) {
-        assert((kind === ownerScope ? ownerFields : scalarFields).has(key));
         assert(!node.params[key]?.sourceId && !node.params[key]?.sourceKey);
         same(v, value(node, key));
         const captured = rows.get(id).fields[key];
+        if (legacy) {
+          assert(captured);
+          assert(!Object.hasOwn(rows.get(id).omittedFields ?? {}, key));
+        }
+        if (kind === encodeScope) {
+          assert(captured);
+          assert(!Object.hasOwn(rows.get(id).omittedFields ?? {}, key));
+          same(v, form.maxSequenceLength);
+        }
         if (captured) {
           assert.equal(captured.source, 'literal');
           same(captured.value, key === 'repo_id' ? repo.value : v);
@@ -626,7 +936,13 @@ export function observedWorkflowAutoPlan(
     for (const key of ['width', 'height'])
       assert(Number.isInteger(d[key].value) && d[key].value > 0 && d[key].value <= 32768);
     const encoded = scopes.get('modules.ModularDiffusers.EncodePrompt');
-    for (const [key, formKey] of imageConditioned
+    const exposesNegativePrompt = Object.hasOwn(encoded.node.params, 'negative_prompt');
+    if (!exposesNegativePrompt) {
+      assert.equal(form.negativePrompt, '');
+      assert(!Object.hasOwn(rows.get(encoded.id).fields, 'negative_prompt'));
+      assert(!Object.hasOwn(rows.get(encoded.id).omittedFields ?? {}, 'negative_prompt'));
+    }
+    for (const [key, formKey] of !exposesNegativePrompt
       ? [['prompt', 'prompt']]
       : [
           ['prompt', 'prompt'],
@@ -638,30 +954,35 @@ export function observedWorkflowAutoPlan(
     }
     const references = imageConditioned ? observedImageReferences(apiGraph, receipt, form) : null;
     const plan = {
-      source: imageConditioned
-        ? OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE
-        : adapters
-          ? OBSERVED_WORKFLOW_AUTO_LORA_SOURCE
-          : OBSERVED_WORKFLOW_AUTO_SOURCE,
+      source: legacy
+        ? OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE
+        : imageConditioned
+          ? OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE
+          : adapters
+            ? OBSERVED_WORKFLOW_AUTO_LORA_SOURCE
+            : OBSERVED_WORKFLOW_AUTO_SOURCE,
       modelType: value(owner, 'model_type'),
       pipelineClass: value(owner, 'model_type'),
       modelRepo: repo.value,
       resolvedModelRepo: repo.value,
       resolvedArtifact: repo.value,
       modelRevision: revision,
-      task: imageConditioned ? 'multi_image_reference_edit' : 'text_to_image',
+      task: imageConditioned ? form.mode : 'text_to_image',
       resourceMode: 'auto',
       resolvedResourceMode: 'auto',
       dtype: value(owner, 'dtype'),
       device: value(owner, 'device'),
       offloadMode: value(owner, 'offload_mode'),
       autoOffload: value(owner, 'auto_offload'),
-      weightLoadingMode: value(owner, 'weight_loading_mode'),
+      ...(!legacy ? { weightLoadingMode: value(owner, 'weight_loading_mode') } : {}),
       attentionBackend: value(owner, 'attention_backend'),
       vaeSlicing: value(owner, 'vae_slicing'),
       vaeTiling: value(owner, 'vae_tiling'),
       quantizationMode: 'none',
       quantizedComponents: [],
+      ...(auto.resolvedFields[encoded.id]
+        ? { maxSequenceLength: auto.resolvedFields[encoded.id].max_sequence_length }
+        : {}),
     };
     const observation = {
       schemaVersion: 1,
@@ -673,16 +994,35 @@ export function observedWorkflowAutoPlan(
       device: plan.device,
       offloadMode: plan.offloadMode,
       autoOffload: plan.autoOffload,
-      weightLoadingMode: plan.weightLoadingMode,
+      ...(!legacy ? { weightLoadingMode: plan.weightLoadingMode } : {}),
       attentionBackend: plan.attentionBackend,
       vaeSlicing: plan.vaeSlicing,
       vaeTiling: plan.vaeTiling,
       geometry: { width: d.width.value, height: d.height.value },
       strategy: auto.strategy,
       controls,
-      ...(imageConditioned
-        ? { references, formModelType: form.modelType, reportedGraphTask: null, workflowId: 'image_conditioned' }
+      ...(legacy
+        ? {
+            absentLoaderControls: ['weight_format', 'weight_loading_mode'],
+            backendSourceFingerprint: backendSource.fingerprint,
+            backendContractFingerprint: backendContract.fingerprint,
+            ...(legacyDecoderRoute ? { decoderGeometryRoute: 'denoiser_dimensions' } : {}),
+            ...(legacyGuiderConfiguration ? { guiderConfiguration: legacyGuiderConfiguration } : {}),
+          }
         : {}),
+      ...(imageConditioned
+        ? {
+            references,
+            formModelType: form.modelType,
+            reportedGraphTask: receipt.graphTasks[0].task,
+            workflowId: 'image_conditioned',
+          }
+        : {}),
+      ...(routedImage ? { imageRoute: 'native_state' } : {}),
+      ...(imageConditioned && form.mode === 'edit_image'
+        ? { requestedOffloadMode: form.offloadMode, requestedAutoOffload: form.autoOffload }
+        : {}),
+      ...(legacyTextLabel ? { formModelType: form.modelType } : {}),
       ...(adapters ? { adapters } : {}),
     };
     const result = {
@@ -690,19 +1030,21 @@ export function observedWorkflowAutoPlan(
       resourceObservation: observation,
       observedResourceCandidateId: plan.source + ':' + canonicalJsonHash(observation),
     };
-    if (imageConditioned) assert(observedWorkflowAutoResourceId(result));
+    if (imageConditioned || legacy) assert(observedWorkflowAutoResourceId(result));
     return result;
   } catch {
     return null;
   }
 }
 
-// A single explicit two-reference path. These are declarations and receipts,
+// Explicit one- and two-reference paths. These are declarations and receipts,
 // never executable suppliers or a fallback task classifier in the application.
-function imageConditionedRoles(entries) {
+function imageConditionedRoles(entries, referenceCount = 2, routed = false) {
+  assert(referenceCount === 1 || referenceCount === 2);
+  if (routed) assert.equal(referenceCount, 1);
   const roles = new Map(entries.map(([id, node]) => [scope(node), { id, node }]));
-  assert.equal(entries.length, 7);
-  assert.equal(roles.size, 7);
+  assert.equal(entries.length, routed ? 8 : 7);
+  assert.equal(roles.size, routed ? 8 : 7);
   const get = (kind) => {
     const role = roles.get(kind);
     assert(role);
@@ -770,6 +1112,31 @@ function imageConditionedRoles(entries) {
     [decode.id, new Set(['vae', 'latents'])],
     [preview.id, new Set(['image', 'vae', 'device', 'preview', 'export'])],
   ]);
+  const guider = routed ? get(optional) : null;
+  if (routed) {
+    wires.set(guider.id, {});
+    Object.assign(wires.get(encode.id), { guider: [guider.id, 'guider_out'], image: [load.id, 'image'] });
+    Object.assign(wires.get(denoise.id), {
+      guider: [guider.id, 'guider_out'],
+      route_state_in: [image.id, 'route_state_out'],
+    });
+    Object.assign(wires.get(decode.id), { route_state_in: [denoise.id, 'route_state_out'] });
+    for (const key of ['mask_image', 'padding_mask_crop', 'inpaint_compatibility']) fields.get(image.id).add(key);
+    for (const key of ['image', 'negative_prompt']) fields.get(encode.id).add(key);
+    for (const key of ['guider', 'strength', 'route_state_in']) fields.get(denoise.id).add(key);
+    fields.get(decode.id).add('route_state_in');
+    fields.set(
+      guider.id,
+      new Set(
+        'model_type guider guidance_scale guidance_rescale use_original_formulation enabled start stop layers_config'.split(
+          ' ',
+        ),
+      ),
+    );
+    validateRoutedGuider(guider.node, owner.node);
+    for (const key of ['mask_image', 'padding_mask_crop']) assert(value(image.node, key) == null);
+    assert.equal(value(image.node, 'inpaint_compatibility'), 'native');
+  }
   for (const [id, node] of entries) {
     const expected = wires.get(id);
     for (const [field, param] of Object.entries(node.params)) {
@@ -791,35 +1158,54 @@ function imageConditionedRoles(entries) {
       assert(!Object.hasOwn(node.params[field], 'value'));
     }
   }
-  for (const [role, field] of [
-    [encode, 'prompt_input'],
-    [encode, 'guider'],
-    [preview, 'vae'],
-  ])
+  for (const [role, field] of [[encode, 'prompt_input'], ...(routed ? [] : [[encode, 'guider']]), [preview, 'vae']])
     assert(value(role.node, field) == null);
   assert.equal(value(owner.node, 'workflow_id'), 'image_conditioned');
   assert.equal(value(load.node, 'alpha_channel'), 'ignore');
   const files = value(load.node, 'file');
-  assert(Array.isArray(files) && files.length === 2);
+  assert(Array.isArray(files) && files.length === referenceCount);
   assert(files.every((file) => typeof file === 'string' && file.length > 0 && file.length <= 16384));
-  assert.notEqual(files[0], files[1]);
-  return { owner, load, image, encode, denoise, decode, preview, files };
+  if (referenceCount === 2) assert.notEqual(files[0], files[1]);
+  return { owner, load, image, encode, denoise, decode, preview, files, guider };
+}
+
+function validateRoutedGuider(node, owner) {
+  for (const param of Object.values(node.params)) assert(!param.sourceId && !param.sourceKey);
+  for (const [key, expected] of Object.entries({
+    model_type: value(owner, 'model_type'),
+    guider: 'ClassifierFreeGuidance',
+    guidance_rescale: 0,
+    use_original_formulation: false,
+    enabled: true,
+    start: 0,
+    stop: 1,
+  }))
+    same(value(node, key), expected);
+  assert(value(node, 'layers_config') == null);
+  assert(Number.isFinite(value(node, 'guidance_scale')) && value(node, 'guidance_scale') > 0);
 }
 
 function observedImageReferences(apiGraph, receipt, form) {
   assert.equal(apiGraph.paths.length, 1);
-  assert.equal(apiGraph.paths[0].length, 7);
-  assert.equal(new Set(apiGraph.paths[0]).size, 7);
-  const roles = imageConditionedRoles(Object.entries(apiGraph.nodes));
+  const routed = Object.values(apiGraph.nodes).some((node) => scope(node) === optional);
+  assert.equal(apiGraph.paths[0].length, routed ? 8 : 7);
+  assert.equal(new Set(apiGraph.paths[0]).size, routed ? 8 : 7);
+  const referenceCount = form.mode === 'edit_image' ? 1 : 2;
+  const roles = imageConditionedRoles(Object.entries(apiGraph.nodes), referenceCount, routed);
   const { owner, load, image, denoise } = roles;
   for (const field of ['ambiguousFields', 'unavailableFields'])
     if (receipt[field] !== undefined) same(receipt[field], []);
-  assert.equal(form.negativePrompt, '');
+  if (routed) same(value(roles.encode.node, 'negative_prompt'), form.negativePrompt);
+  else assert.equal(form.negativePrompt, '');
   for (const [key, formKey] of [
     ['dtype', 'dtype'],
     ['device', 'device'],
-    ['offload_mode', 'offloadMode'],
-    ['auto_offload', 'autoOffload'],
+    ...(referenceCount === 2
+      ? [
+          ['offload_mode', 'offloadMode'],
+          ['auto_offload', 'autoOffload'],
+        ]
+      : []),
   ])
     same(value(owner.node, key), form[formKey]);
   for (const [key, formKey] of [
@@ -832,6 +1218,16 @@ function observedImageReferences(apiGraph, receipt, form) {
     same(value(denoise.node, key), form[formKey]);
   same(value(image.node, 'seed'), form.seed);
   const rows = new Map(receipt.nodes.map((row) => [row.nodeId, row]));
+  if (routed)
+    for (const key of 'model_type guider guidance_scale guidance_rescale use_original_formulation enabled start stop'.split(
+      ' ',
+    )) {
+      const row = rows.get(roles.guider.id),
+        field = row.fields[key];
+      assert.equal(field.source, 'literal');
+      same(field.value, value(roles.guider.node, key));
+      assert(!Object.hasOwn(row.omittedFields ?? {}, key));
+    }
   const imageRow = rows.get(image.id);
   assert.equal(imageRow.fields.seed.source, 'literal');
   same(imageRow.fields.seed.value, form.seed);
@@ -853,7 +1249,8 @@ function observedImageReferences(apiGraph, receipt, form) {
     widths = read('source_widths'),
     heights = read('source_heights'),
     modes = read('source_modes');
-  for (const values of [hashes, widths, heights, modes]) assert(Array.isArray(values) && values.length === 2);
+  for (const values of [hashes, widths, heights, modes])
+    assert(Array.isArray(values) && values.length === referenceCount);
   if (receipt.summary) {
     for (const [key, expected] of Object.entries({
       imageAlphaChannel: 'ignore',
@@ -879,7 +1276,12 @@ export function observedWorkflowAutoImageProofMatches(plan, provenance) {
   try {
     assert.equal(plan.source, OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE);
     assert(observedWorkflowAutoResourceId(plan));
-    const roles = imageConditionedRoles(provenance.graph.canonicalGraph.nodes.map((node) => [node.key, node]));
+    const referenceCount = plan.task === 'edit_image' ? 1 : 2;
+    const roles = imageConditionedRoles(
+      provenance.graph.canonicalGraph.nodes.map((node) => [node.key, node]),
+      referenceCount,
+      plan.resourceObservation.imageRoute === 'native_state',
+    );
     const observation = plan.resourceObservation;
     const { owner, denoise } = roles;
     assert.equal(provenance.models.items.length, 1);
@@ -925,10 +1327,18 @@ export function observedWorkflowAutoImageProofMatches(plan, provenance) {
     // they are not part of the portable template's locked-settings projection.
     for (const [key, formKey] of [
       ['dtype', 'dtype'],
-      ['offload_mode', 'offloadMode'],
-      ['auto_offload', 'autoOffload'],
+      ...(referenceCount === 2
+        ? [
+            ['offload_mode', 'offloadMode'],
+            ['auto_offload', 'autoOffload'],
+          ]
+        : []),
     ])
       same(value(owner.node, key), form[formKey]);
+    if (referenceCount === 1) {
+      same(form.offloadMode, observation.requestedOffloadMode);
+      same(form.autoOffload, observation.requestedAutoOffload);
+    }
     for (const [key, formKey] of [
       ['width', 'width'],
       ['height', 'height'],
@@ -939,8 +1349,9 @@ export function observedWorkflowAutoImageProofMatches(plan, provenance) {
       same(value(denoise.node, key), form[formKey]);
     same(value(roles.image.node, 'seed'), form.seed);
     same(value(roles.encode.node, 'prompt'), form.prompt);
-    assert.equal(form.negativePrompt, '');
-    assert.equal(provenance.inputs.items.length, 2);
+    if (roles.guider) same(value(roles.encode.node, 'negative_prompt'), form.negativePrompt);
+    else assert.equal(form.negativePrompt, '');
+    assert.equal(provenance.inputs.items.length, referenceCount);
     for (const [index, input] of provenance.inputs.items.entries()) {
       assert.equal(input.role, `referenceImages[${index}]`);
       assert.equal(input.path, roles.files[index]);

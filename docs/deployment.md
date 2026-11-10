@@ -134,6 +134,15 @@ Run the bundle budget after changes that affect dependencies or code splitting:
 npm run bundle:check
 ```
 
+Node-local audio dispatch history and the approved retained Schnell asset measure
+498243/676733/336133 gzip bytes for the largest startup chunk, startup total and
+deferred total, versus 498146/676633/336052 in the closed 38-template build. The
+ceilings add only the measured 97/100/81 bytes, retaining 12/15/63 bytes of
+headroom. All 119 assets and four startup/90 deferred memberships are unchanged.
+Only `studio-templates.js` and the immutable asset descriptor differ after import
+URL normalization. Dependencies, loading/minifier rules and the independent
+64 KiB deferred chunk cap remain fixed.
+
 Required media loaders in fresh video drafts measure 673303 gzip bytes of startup
 JavaScript, with a 494816-byte largest chunk and 329249 deferred bytes. Startup
 growth is 13/10 bytes; ceilings become 673314/494824 with the same 11/8 bytes

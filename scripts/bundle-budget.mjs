@@ -1,3 +1,10 @@
+// Node-local audio dispatch history plus the approved retained Schnell asset
+// measure largest/startup/deferred gzip 498243/676733/336133 over the closed
+// 38-template build's 498146/676633/336052. Add only the measured 97/100/81
+// bytes, preserving 12/15/63-byte headroom. Only studio-templates.js and the
+// immutable asset descriptor differ after import-URL normalization. All119
+// assets, four startup/90 deferred memberships, dependencies, loading/minifier
+// rules and the independent64KiB deferred chunk cap remain unchanged.
 // Keeping selected-node actions clear of activity measures largest/startup/
 // deferred gzip 498158/676645/336106 over 498142/676630/335787. Allow only the
 // measured 16/15/319 bytes, retaining prior 0/3/9-byte headroom. Only the existing
@@ -387,6 +394,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Scoped video receipts and compatible adapter messaging measure 494870 bytes
 // in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  97 +
   16 +
   43 +
   4 +
@@ -540,6 +548,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  100 +
   15 +
   42 +
   291 +
@@ -773,6 +782,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  81 +
   319 +
   96 +
   3546 +

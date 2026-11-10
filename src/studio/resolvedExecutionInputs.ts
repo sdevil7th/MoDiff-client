@@ -149,6 +149,9 @@ const inputNames: Record<string, string> = {
 };
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
+// These exact raw names are node-local and have no cross-node summary alias.
+const audioDispatchField =
+  /^(?:task_type|repainting_(?:start|end)|(?:src_audio|reference_audio)_(?:sha256|shape|dtype|device|bytes|sample_rate|capture))$/u;
 const nodeInputNames: Record<string, Record<string, string>> = {
   'DiffusersAudio.Generate': {
     ...inputNames,
@@ -429,9 +432,9 @@ const accountingReasons = new Set([
   'already-decoded-image',
   'unsupported-contract',
 ]);
+const digest = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 const exactKeys = (value: Record<string, unknown>, keys: string[]) =>
   Object.keys(value).length === keys.length && keys.every((key) => hasOwn(value, key));
-const digest = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 const originKeys = (value: Record<string, unknown>) =>
   value.source === 'connected' ? ['source', 'sourceNodeId', 'sourcePortId'] : ['source'];
 const accountingOrigin = (value: Record<string, unknown>) =>
@@ -644,8 +647,10 @@ export function coerceResolvedExecutionInputs(
       accounting.set(node.nodeId, parsed);
     }
     const names = hasOwn(nodeInputNames, scope) ? nodeInputNames[scope]! : inputNames;
+    const localAudioField = (key: string) => scope === 'DiffusersAudio.Generate' && audioDispatchField.test(key);
     const fields = node.fields;
     const canonicalName = (key: string) => {
+      if (localAudioField(key)) return key;
       if (
         scope === 'Text.ProcessText' &&
         key === 'pipeline_class' &&
@@ -675,7 +680,7 @@ export function coerceResolvedExecutionInputs(
         (!text(field.sourceNodeId) || !field.sourceNodeId || !text(field.sourcePortId) || !field.sourcePortId)
       )
         return undefined;
-      if (!scopedSummary || !adapterDescriptor) {
+      if ((!scopedSummary || !adapterDescriptor) && !localAudioField(key)) {
         const values = candidates.get(canonical) ?? new Set<string>();
         values.add(JSON.stringify(field.value));
         candidates.set(canonical, values);
@@ -684,7 +689,7 @@ export function coerceResolvedExecutionInputs(
     for (const [key, reason] of Object.entries(node.omittedFields)) {
       const canonical = canonicalName(key);
       if (!canonical || !text(reason)) return undefined;
-      if (!scopedSummary || !adapterDescriptor) unavailable.add(canonical);
+      if ((!scopedSummary || !adapterDescriptor) && !localAudioField(key)) unavailable.add(canonical);
     }
   }
   if (scopedSummary && !adapterDescriptorSeen) return undefined;

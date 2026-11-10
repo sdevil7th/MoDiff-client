@@ -9,11 +9,14 @@ import {
   executionPlanIdentity,
   executionReceiptIdentity,
   validateRunProvenance,
+  backendContractIdentity,
 } from './live-proof-provenance.mjs';
 import { createAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 import {
   observedWorkflowAutoLoraProofMatches,
   observedWorkflowAutoImageProofMatches,
+  observedWorkflowAutoLegacyProofMatches,
+  observedWorkflowAutoResourceId,
 } from './observed-workflow-auto-resource.mjs';
 import { canonicalJsonHash, stableJsonValue } from './canonical-json.mjs';
 
@@ -211,6 +214,264 @@ function witness({ prefix = '', width = 1024, prompt = 'A product photograph', s
   return { apiGraph, executionReceipt, executedOutput, ids };
 }
 const planFor = (w) => executionPlanIdentity(w.apiGraph, w).plan;
+
+function nativeExpertWitness({ guider = false } = {}) {
+  const w = witness({ guider }),
+    form = w.executedOutput.formSnapshot;
+  if (guider) w.apiGraph.nodes[w.ids.denoise].params.guider.sourceKey = 'guider_out';
+  Object.assign(form, { resourceMode: 'expert', device: 'cuda:0', autoOffload: true, offloadMode: 'model_cpu' });
+  delete w.apiGraph.runtimeHints.resourceMode;
+  delete w.apiGraph.runtimeHints.workflowAutoPlan;
+  w.executionReceipt.runtimePreparation = {
+    resourceMode: 'expert',
+    performed: false,
+    residentRecipeReusable: false,
+    cleanup: null,
+  };
+  w.modelIdentities = [
+    {
+      repoId: 'example/native-image',
+      selectedRevision: 'a'.repeat(40),
+      modelRevision: 'example/native-image@' + 'a'.repeat(40),
+      fingerprint: 'sha256:example',
+    },
+  ];
+  const parent = {
+    pipelineClass: form.modelType,
+    task: form.mode,
+    executionProfileId: 'example:modular',
+    authoringRecipeId: 'example-native:v1',
+    baseSpecId: 'example:modular:spec',
+    baseSpecContentHash: 'studio-spec-v1-12345678',
+    authoringContentHash: 'studio-authoring-v1-12345678',
+  };
+  w.apiGraph.runtimeHints.workflowSnapshot.nodes = [
+    {
+      id: w.ids.encode,
+      data: {
+        module: 'modules.ModularDiffusers',
+        action: 'EncodePrompt',
+        operationAuthoring: {
+          operation: { pipelineClass: form.modelType, task: form.mode },
+          ancillaryParent: {
+            schemaVersion: 1,
+            parent,
+            parentRoleNodes: {
+              models: w.ids.owner,
+              prompt: w.ids.encode,
+              denoise: w.ids.denoise,
+              decode: w.ids.decode,
+            },
+          },
+        },
+      },
+    },
+  ];
+  const capture = w.executedOutput.resolvedExecutionInputs;
+  capture.schemaVersion = 1;
+  capture.appliedAdaptersStatus = { schemaVersion: 1, truncated: false };
+  capture.nodes.find((row) => row.nodeId === w.ids.owner).appliedAdapters = {
+    schemaVersion: 1,
+    status: 'complete',
+    source: 'backend-adapter-application',
+    applicationId: '1'.repeat(32),
+    observation: 'activated',
+    adapters: [],
+    stateSha256: 'sha256:applied-adapters-v1:' + canonicalJsonHash({ adapters: [] }),
+  };
+  return w;
+}
+
+test('native Expert identity requires a fresh completed owner capture and preserves absent form weight format', () => {
+  for (const guider of [false, true]) {
+    const w = nativeExpertWitness({ guider }),
+      before = structuredClone(w),
+      plan = planFor(w);
+    assert.equal(plan.source, 'executed-expert-modular-graph-v1');
+    assert.equal(plan.weightFormat, 'native');
+    assert.equal(plan.resourceMode, 'expert');
+    assert.equal(
+      executionReceiptIdentity(w.executionReceipt, plan).resourceCandidateId,
+      'manual-resource-v1:ExampleModularPipeline|bfloat16|model_cpu|none',
+    );
+    assert.deepEqual(w, before);
+    assert.equal(Object.hasOwn(w.executedOutput.formSnapshot, 'weightFormat'), false);
+    assert.equal(w.executionReceipt.resourceCandidateId, null);
+    assert.equal(executionPlanIdentity(w.apiGraph).plan.source, undefined, 'An authored graph alone is insufficient.');
+    const ordinary = structuredClone(w);
+    ordinary.apiGraph.runtimeHints.workflowSnapshot.nodes = [];
+    delete ordinary.apiGraph.nodes[ordinary.ids.owner].params.quant_config.value;
+    assert.equal(
+      planFor(ordinary).source,
+      'executed-expert-modular-graph-v1',
+      'Fresh native execution does not invent missing ancillary authoring metadata.',
+    );
+    for (const mutate of [
+      (x) => {
+        x.executionReceipt.status = 'cancelled';
+      },
+      (x) => {
+        x.executionReceipt.attempt_index = 1;
+      },
+      (x) => {
+        x.executedOutput.taskId = 'other';
+      },
+      (x) => {
+        x.executionReceipt.runtimePreparation.residentRecipeReusable = true;
+      },
+      (x) => {
+        x.executedOutput.resolvedExecutionInputs.truncated = true;
+      },
+      (x) => {
+        x.modelIdentities = [];
+      },
+      (x) => {
+        x.executedOutput.resolvedExecutionInputs.nodes.find(
+          (row) => row.nodeId === x.ids.owner,
+        ).fields.offload_mode.value = 'group_cpu';
+      },
+      (x) => {
+        x.executedOutput.resolvedExecutionInputs.nodes.find(
+          (row) => row.nodeId === x.ids.owner,
+        ).appliedAdapters.observation = 'inherited';
+      },
+      (x) => {
+        x.apiGraph.nodes[x.ids.denoise].params.scheduler.sourceId = x.ids.decode;
+      },
+    ]) {
+      const changed = structuredClone(w);
+      mutate(changed);
+      assert.equal(executionReceiptIdentity(changed.executionReceipt, planFor(changed)).resourceCandidateId, null);
+    }
+  }
+});
+
+test('native Expert upscale identity binds both installed models and the selected output ancestry', () => {
+  const w = nativeExpertWitness({ guider: true }),
+    g = w.apiGraph,
+    output = w.executedOutput;
+  g.nodes['base-preview'] = structuredClone(g.nodes[w.ids.preview]);
+  g.nodes.upscaler = {
+    module: 'modules.Spandrel',
+    action: 'Upscaler',
+    params: {
+      image: { sourceId: w.ids.decode, sourceKey: 'images' },
+      model_id: literal({ source: 'hub', value: 'example/upscaler/weights.pth' }),
+      device: literal('cuda:0'),
+      downscale: literal(0.5),
+      tile_size: literal(256),
+      tile_overlap: literal(32),
+    },
+  };
+  g.nodes[w.ids.preview].params.image = { sourceId: 'upscaler', sourceKey: 'output' };
+  const common = g.paths[0].slice(0, -1);
+  g.paths = [
+    [...common, 'base-preview'],
+    [...common, 'upscaler', w.ids.preview],
+  ];
+  output.resolvedExecutionInputs.nodes.push({
+    nodeId: 'upscaler',
+    module: 'modules.Spandrel',
+    action: 'Upscaler',
+    fields: {
+      model_id: { source: 'literal', value: 'example/upscaler/weights.pth' },
+      device: { source: 'literal', value: 'cuda:0' },
+    },
+  });
+  w.modelIdentities.push({
+    repoId: 'example/upscaler',
+    selectedRevision: 'b'.repeat(40),
+    modelRevision: 'example/upscaler@' + 'b'.repeat(40),
+    fingerprint: 'sha256:auxiliary',
+  });
+  assert.equal(planFor(w).source, 'executed-expert-modular-graph-v1');
+  for (const mutate of [
+    (x) => {
+      x.modelIdentities.pop();
+    },
+    (x) => {
+      x.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === 'upscaler').fields.model_id.value =
+        'other/model/weights.pth';
+    },
+    (x) => {
+      x.apiGraph.nodes['base-preview'].params.image.sourceId = 'upscaler';
+    },
+    (x) => {
+      x.executedOutput.resolvedExecutionInputs.nodes = x.executedOutput.resolvedExecutionInputs.nodes.filter(
+        (r) => r.nodeId !== 'upscaler',
+      );
+    },
+  ]) {
+    const changed = structuredClone(w);
+    mutate(changed);
+    assert.equal(executionReceiptIdentity(changed.executionReceipt, planFor(changed)).resourceCandidateId, null);
+  }
+});
+
+test('native text Auto preserves an unexposed empty negative prompt without fabricating a capture', () => {
+  const w = witness();
+  delete w.apiGraph.nodes[w.ids.encode].params.negative_prompt;
+  const row = w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.encode);
+  delete row.fields.negative_prompt;
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  assert.equal(planFor(w).source, 'observed-workflow-auto-resource-v1');
+  const nonempty = structuredClone(w);
+  nonempty.executedOutput.formSnapshot.negativePrompt = 'different';
+  assert.notEqual(planFor(nonempty).source, 'observed-workflow-auto-resource-v1');
+  row.fields.negative_prompt = { source: 'literal', value: '' };
+  assert.notEqual(planFor(w).source, 'observed-workflow-auto-resource-v1');
+});
+
+test('native text Auto retains a legacy form label only with matching durable owner authoring', () => {
+  const w = witness(),
+    form = w.executedOutput.formSnapshot;
+  form.modelType = 'LegacyExamplePipeline';
+  w.apiGraph.runtimeHints.workflowSnapshot.nodes = [
+    {
+      id: w.ids.owner,
+      data: {
+        module: 'modules.ModularDiffusers',
+        action: 'ModelsLoader',
+        params: structuredClone(w.apiGraph.nodes[w.ids.owner].params),
+        operationAuthoring: {
+          schemaVersion: 1,
+          operation: {
+            pipelineClass: 'ExampleModularPipeline',
+            task: 'text_to_image',
+            nodeKey: 'modules.ModularDiffusers.ModelsLoader',
+            binding: { pipelineClass: 'ExampleModularPipeline', values: { model_type: 'ExampleModularPipeline' } },
+          },
+        },
+      },
+    },
+  ];
+  Object.assign(w.apiGraph.runtimeHints.workflowSnapshot.nodes[0].data.params.model_type, {
+    label: 'Pipeline Type',
+    options: { ExampleModularPipeline: { label: 'Example' } },
+  });
+  const before = structuredClone(w),
+    plan = planFor(w);
+  assert.equal(plan.source, 'observed-workflow-auto-resource-v1');
+  assert.equal(plan.modelType, 'ExampleModularPipeline');
+  assert.equal(plan.resourceObservation.formModelType, 'LegacyExamplePipeline');
+  assert.deepEqual(w, before);
+  for (const mutate of [
+    (g) => {
+      delete g.runtimeHints.workflowSnapshot.nodes[0].data.operationAuthoring;
+    },
+    (g) => {
+      g.runtimeHints.workflowSnapshot.nodes[0].data.operationAuthoring.operation.binding.values.model_type =
+        'OtherPipeline';
+    },
+    (g) => {
+      g.runtimeHints.workflowSnapshot.nodes[0].id = 'foreign-owner';
+    },
+  ]) {
+    const changed = structuredClone(w);
+    mutate(changed.apiGraph);
+    assert.notEqual(planFor(changed).source, 'observed-workflow-auto-resource-v1');
+  }
+});
 
 function imageConditionedWitness(options = {}) {
   const w = witness(options);
@@ -490,6 +751,195 @@ function imageProof(w) {
     adapterApplicationsHash: applied.hash,
   };
 }
+
+function singleReferenceWitness({ requestedOffloadMode = 'model_cpu' } = {}) {
+  const w = imageConditionedWitness();
+  w.executedOutput.formSnapshot.mode = 'edit_image';
+  w.executedOutput.formSnapshot.offloadMode = requestedOffloadMode;
+  w.apiGraph.nodes[w.ids.images].params.file.value.pop();
+  const fields = w.executedOutput.resolvedExecutionInputs.nodes.find((row) => row.nodeId === w.ids.images).fields;
+  for (const key of ['source_hashes', 'source_widths', 'source_heights', 'source_modes']) fields[key].value.pop();
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  return w;
+}
+
+function routedSingleReferenceWitness() {
+  const w = singleReferenceWitness(),
+    g = w.apiGraph,
+    receipt = w.executedOutput.resolvedExecutionInputs;
+  const id = 'routed-guider';
+  w.ids.guider = id;
+  const fields = {
+    model_type: 'ExampleModularPipeline',
+    guider: 'ClassifierFreeGuidance',
+    guidance_scale: 1,
+    guidance_rescale: 0,
+    use_original_formulation: false,
+    enabled: true,
+    start: 0,
+    stop: 1,
+  };
+  g.nodes[id] = {
+    module: 'modules.ModularDiffusers',
+    action: 'Guider',
+    params: {
+      ...Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, literal(v)])),
+      layers_config: literal(null),
+    },
+  };
+  receipt.nodes.push({
+    nodeId: id,
+    module: 'modules.ModularDiffusers',
+    action: 'Guider',
+    fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { source: 'literal', value: v }])),
+  });
+  Object.assign(g.nodes[w.ids.encode].params, {
+    guider: { sourceId: id, sourceKey: 'guider_out' },
+    image: { sourceId: w.ids.images, sourceKey: 'image' },
+    negative_prompt: literal('avoid identity drift'),
+  });
+  w.executedOutput.formSnapshot.negativePrompt = 'avoid identity drift';
+  receipt.nodes.find((r) => r.nodeId === w.ids.encode).fields.negative_prompt = {
+    source: 'literal',
+    value: 'avoid identity drift',
+  };
+  Object.assign(g.nodes[w.ids.imageEncode].params, {
+    mask_image: literal(null),
+    padding_mask_crop: literal(null),
+    inpaint_compatibility: literal('native'),
+  });
+  Object.assign(g.nodes[w.ids.denoise].params, {
+    guider: { sourceId: id, sourceKey: 'guider_out' },
+    route_state_in: { sourceId: w.ids.imageEncode, sourceKey: 'route_state_out' },
+    strength: literal(0.5),
+  });
+  g.nodes[w.ids.decode].params.route_state_in = { sourceId: w.ids.denoise, sourceKey: 'route_state_out' };
+  receipt.nodes.find((r) => r.nodeId === w.ids.denoise).fields.strength = { source: 'literal', value: 0.5 };
+  w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[id] = { guidance_scale: 1 };
+  w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.denoise].strength = 0.5;
+  g.paths[0].splice(2, 0, id);
+  receipt.graphTasks[0].task = 'edit_image';
+  g.runtimeHints.workflowAutoPlan.graphHash = graphHash(g);
+  return w;
+}
+
+test('single-reference native route retains its actual task, Guider, route state and negative prompt', () => {
+  const w = routedSingleReferenceWitness(),
+    before = structuredClone(w),
+    plan = planFor(w);
+  assert.equal(plan.source, 'observed-workflow-auto-image-resource-v1');
+  assert.equal(plan.resourceObservation.reportedGraphTask, 'edit_image');
+  assert.equal(plan.resourceObservation.imageRoute, 'native_state');
+  assert.equal(
+    plan.resourceObservation.controls.find((c) => c.scope === 'modules.ModularDiffusers.Guider').fields.guidance_scale,
+    1,
+  );
+  assert.deepEqual(w, before);
+  const emptyLayerSlot = structuredClone(w);
+  delete emptyLayerSlot.apiGraph.nodes[emptyLayerSlot.ids.guider].params.layers_config.value;
+  emptyLayerSlot.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(emptyLayerSlot.apiGraph);
+  assert.equal(planFor(emptyLayerSlot).source, 'observed-workflow-auto-image-resource-v1');
+  const proof = imageProof(w);
+  proof.inputs.items = proof.inputs.items.slice(0, 1);
+  assert(observedWorkflowAutoImageProofMatches(plan, proof));
+  proof.graph.canonicalGraph.nodes.find((n) => n.action === 'Guider').params.enabled.value = false;
+  assert.equal(observedWorkflowAutoImageProofMatches(plan, proof), false);
+});
+
+test('single-reference native route rejects missing state, hidden masks and conflicting native controls', () => {
+  for (const mutate of [
+    (w) => {
+      w.apiGraph.nodes[w.ids.denoise].params.route_state_in.sourceId = w.ids.owner;
+    },
+    (w) => {
+      delete w.apiGraph.nodes[w.ids.decode].params.route_state_in;
+    },
+    (w) => {
+      w.apiGraph.nodes[w.ids.imageEncode].params.mask_image = { sourceId: w.ids.images, sourceKey: 'image' };
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.graphTasks[0].task = null;
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find(
+        (r) => r.nodeId === w.ids.guider,
+      ).fields.guidance_scale.value = 2;
+    },
+    (w) => {
+      delete w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.guider).fields.enabled;
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find(
+        (r) => r.nodeId === w.ids.encode,
+      ).fields.negative_prompt.value = 'different';
+    },
+  ]) {
+    const w = routedSingleReferenceWitness();
+    mutate(w);
+    w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+    assert.notEqual(planFor(w).source, 'observed-workflow-auto-image-resource-v1');
+  }
+});
+
+test('single-reference Auto edit binds the consumed owner and preserves an explicit requested loading policy', () => {
+  for (const requestedOffloadMode of ['model_cpu', 'group_cpu']) {
+    const w = singleReferenceWitness({ requestedOffloadMode }),
+      before = structuredClone(w),
+      plan = planFor(w);
+    assert.equal(plan.source, 'observed-workflow-auto-image-resource-v1');
+    assert.equal(plan.task, 'edit_image');
+    assert.equal(plan.offloadMode, 'model_cpu');
+    assert.equal(plan.resourceObservation.requestedOffloadMode, requestedOffloadMode);
+    assert.equal(plan.resourceObservation.references.length, 1);
+    assert.equal(w.executionReceipt.resourceCandidateId, null);
+    assert.deepEqual(w, before);
+    const proof = imageProof(w);
+    proof.inputs.items = proof.inputs.items.slice(0, 1);
+    assert(observedWorkflowAutoImageProofMatches(plan, proof));
+    proof.template.lockedSettings.offloadMode = 'group_disk';
+    assert.equal(observedWorkflowAutoImageProofMatches(plan, proof), false);
+  }
+});
+
+test('single-reference Auto edit rejects incomplete, unjoined, borrowed and altered source evidence', () => {
+  const mutations = [
+    (w) => {
+      w.executionReceipt.attempt_index = 1;
+    },
+    (w) => {
+      w.executedOutput.taskId = 'another-task';
+    },
+    (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.reusedOwnerIds = [w.ids.owner];
+    },
+    (w) => {
+      w.apiGraph.nodes[w.ids.imageEncode].params.vae.sourceId = w.ids.decode;
+    },
+    (w) => {
+      w.apiGraph.nodes[w.ids.images].params.file.value.push('@data/images/extra.webp');
+    },
+    (w) => {
+      delete w.executedOutput.resolvedExecutionInputs.nodes.find((row) => row.nodeId === w.ids.images).fields
+        .source_hashes;
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find(
+        (row) => row.nodeId === w.ids.images,
+      ).fields.source_modes.value = ['L'];
+    },
+  ];
+  for (const mutate of mutations) {
+    const w = singleReferenceWitness();
+    mutate(w);
+    w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+    assert.notEqual(planFor(w).source, 'observed-workflow-auto-image-resource-v1');
+  }
+  const w = singleReferenceWitness(),
+    proof = imageProof(w);
+  proof.inputs.items = proof.inputs.items.slice(0, 1);
+  proof.inputs.items[0].contentHash = 'sha256:bytes:' + 'f'.repeat(64);
+  assert.equal(observedWorkflowAutoImageProofMatches(planFor(w), proof), false);
+});
 
 test('rehashed two-image observations stay bound to original canonical model, controls, ordered inputs and output', () => {
   const proof = imageProof(imageConditionedWitness()),
@@ -988,6 +1438,138 @@ test('optional guidance remains part of the exact backend resource observation',
   assert.equal(plan.resourceObservation.controls.length, 3);
 });
 
+function withPromptLength(w, length = 512) {
+  w.apiGraph.nodes[w.ids.encode].params.max_sequence_length = literal(length);
+  w.executedOutput.formSnapshot.maxSequenceLength = length;
+  w.executedOutput.resolvedExecutionInputs.nodes.find((row) => row.nodeId === w.ids.encode).fields.max_sequence_length =
+    {
+      value: length,
+      source: 'literal',
+    };
+  w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.encode] = { max_sequence_length: length };
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  return w;
+}
+
+test('native prompt length remains part of the observed text-to-image recipe with optional guidance', () => {
+  for (const guider of [false, true]) {
+    const w = withPromptLength(witness({ guider })),
+      before = structuredClone(w),
+      plan = planFor(w);
+    assert.equal(plan.source, 'observed-workflow-auto-resource-v1');
+    assert.equal(plan.resourceObservation.controls.length, guider ? 4 : 3);
+    assert.deepEqual(
+      plan.resourceObservation.controls.find((c) => c.scope === 'modules.ModularDiffusers.EncodePrompt'),
+      {
+        scope: 'modules.ModularDiffusers.EncodePrompt',
+        fields: { max_sequence_length: 512 },
+      },
+    );
+    const id = executionReceiptIdentity(w.executionReceipt, plan).resourceCandidateId;
+    assert(id);
+    assert.notEqual(id, executionReceiptIdentity(w.executionReceipt, planFor(witness({ guider }))).resourceCandidateId);
+    const longer = withPromptLength(witness({ guider }), 1024);
+    assert.notEqual(id, executionReceiptIdentity(longer.executionReceipt, planFor(longer)).resourceCandidateId);
+    assert.deepEqual(w, before, 'original native task and graph remain unchanged');
+  }
+});
+
+test('prompt-length observations require exact literal graph, native capture and requested-form agreement', () => {
+  const mutations = {
+    missingCapture: (w, row) => {
+      delete row.fields.max_sequence_length;
+    },
+    omittedCapture: (w, row) => {
+      row.omittedFields = { max_sequence_length: 'uncaptured' };
+    },
+    connectedCapture: (w, row) => {
+      row.fields.max_sequence_length.source = 'connection';
+    },
+    changedCapture: (w, row) => {
+      row.fields.max_sequence_length.value = 256;
+    },
+    changedForm: (w) => {
+      w.executedOutput.formSnapshot.maxSequenceLength = 256;
+    },
+    missingForm: (w) => {
+      delete w.executedOutput.formSnapshot.maxSequenceLength;
+    },
+    changedGraph: (w) => {
+      w.apiGraph.nodes[w.ids.encode].params.max_sequence_length.value = 256;
+    },
+    connectedGraph: (w) => {
+      w.apiGraph.nodes[w.ids.encode].params.max_sequence_length.sourceId = w.ids.owner;
+    },
+    unknownField: (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.encode].unknown = true;
+    },
+    emptyFields: (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.encode] = {};
+    },
+    wrongScope: (w) => {
+      const fields = w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields;
+      fields[w.ids.denoise].max_sequence_length = fields[w.ids.encode].max_sequence_length;
+      delete fields[w.ids.encode];
+    },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const w = withPromptLength(witness({ guider: true }));
+    const row = w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.encode);
+    mutate(w, row);
+    w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+    assert.notEqual(planFor(w).source, 'observed-workflow-auto-resource-v1', name);
+  }
+  for (const length of [0, -1, 1.5, '512', true, null, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.notEqual(
+      planFor(withPromptLength(witness(), length)).source,
+      'observed-workflow-auto-resource-v1',
+      String(length),
+    );
+  }
+  assert.notEqual(
+    planFor(withPromptLength(imageConditionedWitness())).source,
+    'observed-workflow-auto-image-resource-v1',
+  );
+});
+
+test('a pinned single-adapter text recipe retains the same strict prompt-length capture', () => {
+  const w = withPromptLength(loraWitness()),
+    before = structuredClone(w),
+    plan = planFor(w);
+  assert.equal(plan.source, 'observed-workflow-auto-lora-resource-v1');
+  assert.equal(plan.maxSequenceLength, 512);
+  assert(executionReceiptIdentity(w.executionReceipt, plan).resourceCandidateId);
+  assert.equal(plan.resourceObservation.adapters[0].artifact.revision, 'b'.repeat(40));
+  assert.deepEqual(w, before);
+});
+
+test('self-hashed prompt-length projections reject unsupported scope, fields and values', () => {
+  for (const change of [
+    (c) => {
+      c.scope = 'modules.ModularDiffusers.DecodeLatents';
+    },
+    (c) => {
+      c.fields.prompt = 'unrelated';
+    },
+    (c) => {
+      c.fields = {};
+    },
+    (c) => {
+      c.fields.max_sequence_length = 1024;
+    },
+    ...[0, -1, 1.5, '512', true, null, Number.MAX_SAFE_INTEGER + 1].map((v) => (c) => {
+      c.fields.max_sequence_length = v;
+    }),
+  ]) {
+    const w = withPromptLength(witness({ guider: true })),
+      plan = planFor(w);
+    assert.equal(plan.source, 'observed-workflow-auto-resource-v1');
+    change(plan.resourceObservation.controls.find((c) => c.scope === 'modules.ModularDiffusers.EncodePrompt'));
+    plan.observedResourceCandidateId = plan.source + ':' + canonicalJsonHash(plan.resourceObservation);
+    assert.equal(executionReceiptIdentity(w.executionReceipt, plan).resourceCandidateId, null);
+  }
+});
+
 test('ordinary and Unicode requests use the actual worker hash protocol', () => {
   const python = process.env.MODIFF_BACKEND_PYTHON;
   assert(python, 'Set the declared ordinary CPU MODIFF_BACKEND_PYTHON for backend protocol checks.');
@@ -1013,4 +1595,237 @@ print(json.dumps([namespace['workflow_graph_hash'](g) for g in json.load(sys.std
     w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = hashes[i];
     assert.equal(planFor(w).source, 'observed-workflow-auto-resource-v1');
   }
+});
+
+function legacyTextWitness() {
+  const w = witness();
+  for (const field of ['reviewed_variant', 'workflow_id', 'inpaint_compatibility']) {
+    delete w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.owner][field];
+  }
+  for (const field of ['weight_format', 'weight_loading_mode']) {
+    delete w.apiGraph.nodes[w.ids.owner].params[field];
+    delete w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.owner][field];
+    delete w.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === w.ids.owner).fields[field];
+  }
+  Object.assign(w.executedOutput.formSnapshot, { steps: 8, guidanceScale: 1 });
+  Object.assign(w.executionReceipt.runtimePreparation, { performed: false, residentRecipeReusable: false });
+  w.backendSource = {
+    fingerprint: 'sha256:backend-source-v1:' + 'b'.repeat(64),
+    gitCommit: null,
+    files: [{ path: 'main.py', sha256: 'c'.repeat(64) }],
+  };
+  w.executionReceipt.runtimeFingerprint = {
+    backendSource: { fingerprint: w.backendSource.fingerprint, gitCommit: null, fileCount: 1 },
+  };
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  const payload = Object.fromEntries(Object.values(w.apiGraph.nodes).map((n) => [n.module + '.' + n.action, n]));
+  w.backendContract = backendContractIdentity(payload, canonicalizeApiGraph(w.apiGraph));
+  return w;
+}
+function legacyTextProof(w, plan) {
+  return {
+    runtime: { backendSource: w.backendSource, backendContract: w.backendContract },
+    graph: { canonicalGraph: canonicalizeApiGraph(w.apiGraph) },
+    models: { items: [{ repoId: plan.modelRepo, selectedRevision: plan.modelRevision }] },
+    template: { lockedSettings: w.executedOutput.formSnapshot },
+    inputs: { items: [] },
+    output: { items: [{ mediaType: 'image', width: 1024, height: 1024 }] },
+  };
+}
+test('historical text observations preserve absent loader controls and bind the recovered source contract', () => {
+  const w = legacyTextWitness(),
+    plan = planFor(w);
+  assert.equal(plan.source, 'observed-workflow-auto-legacy-resource-v1');
+  assert(!Object.hasOwn(plan, 'weightLoadingMode'));
+  assert(!Object.hasOwn(plan.resourceObservation, 'weightLoadingMode'));
+  assert.deepEqual(plan.resourceObservation.absentLoaderControls, ['weight_format', 'weight_loading_mode']);
+  assert(observedWorkflowAutoResourceId(plan));
+  assert(observedWorkflowAutoLegacyProofMatches(plan, legacyTextProof(w, plan)));
+});
+test('historical text observations reject missing authority, partial controls, reuse and contradictory captures', () => {
+  for (const mutate of [
+    (w) => {
+      delete w.backendSource;
+    },
+    (w) => {
+      delete w.backendContract;
+    },
+    (w) => {
+      w.backendSource.fingerprint = 'sha256:backend-source-v1:' + 'd'.repeat(64);
+    },
+    (w) => {
+      w.backendSource.gitCommit = 'a'.repeat(40);
+    },
+    (w) => {
+      w.executionReceipt.runtimeFingerprint.backendSource.fileCount = 2;
+    },
+    (w) => {
+      w.backendContract.contracts.find((n) => n.key.endsWith('.ModelsLoader')).params.weight_format = {};
+    },
+    (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.weight_format = literal('native');
+    },
+    (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.owner].weight_loading_mode = 'cpu';
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === w.ids.owner).fields.weight_loading_mode =
+        { source: 'literal', value: 'cpu' };
+    },
+    (w) => {
+      w.executedOutput.formSnapshot.weightFormat = 'native';
+    },
+    (w) => {
+      w.executionReceipt.runtimePreparation.residentRecipeReusable = true;
+    },
+    (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.reusedOwnerIds = [w.ids.owner];
+    },
+    (w) => {
+      w.executionReceipt.runtimePreparation.performed = true;
+    },
+    (w) => {
+      w.executionReceipt.resourceCandidateId = 'invented';
+    },
+  ]) {
+    const w = legacyTextWitness();
+    mutate(w);
+    assert.notEqual(planFor(w).source, 'observed-workflow-auto-legacy-resource-v1');
+  }
+});
+test('rehashing a historical observation cannot replace its graph, source, contract, model or output', () => {
+  const w = legacyTextWitness(),
+    plan = planFor(w),
+    proof = legacyTextProof(w, plan);
+  for (const mutate of [
+    (p) => {
+      p.runtime.backendSource.fingerprint = 'sha256:backend-source-v1:' + 'd'.repeat(64);
+    },
+    (p) => {
+      p.runtime.backendContract.fingerprint = 'sha256:backend-contract-v1:' + 'd'.repeat(64);
+    },
+    (p) => {
+      p.runtime.backendContract.contracts.find((n) => n.key.endsWith('.ModelsLoader')).params.weight_loading_mode = {};
+    },
+    (p) => {
+      p.models.items[0].selectedRevision = 'd'.repeat(40);
+    },
+    (p) => {
+      p.output.items[0].width = 512;
+    },
+    (p) => {
+      p.template.lockedSettings.steps = 4;
+    },
+    (p) => {
+      p.graph.canonicalGraph.nodes.find((n) => n.action === 'Denoise').params.embeddings.sourceKey = 'wrong';
+    },
+    (p) => {
+      p.inputs.items.push({ role: 'referenceImages[0]' });
+    },
+  ]) {
+    const altered = structuredClone(proof);
+    mutate(altered);
+    assert.equal(observedWorkflowAutoLegacyProofMatches(plan, altered), false);
+  }
+  const altered = structuredClone(plan);
+  altered.device = altered.resourceObservation.device = 'cpu';
+  altered.observedResourceCandidateId = altered.source + ':' + canonicalJsonHash(altered.resourceObservation);
+  assert.equal(observedWorkflowAutoResourceId(altered), null);
+});
+
+function legacyDecoderWitness() {
+  const w = legacyTextWitness();
+  const decode = w.apiGraph.nodes[w.ids.decode];
+  const fields = {};
+  for (const field of ['width', 'height']) {
+    decode.params[field] = { value: 1024, display: 'input', sourceId: w.ids.denoise, sourceKey: 'out_' + field };
+    fields[field] = { value: 1024, source: 'connected', sourceNodeId: w.ids.denoise, sourcePortId: 'out_' + field };
+  }
+  w.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === w.ids.decode).fields = fields;
+  w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.decode] = { width: 1024, height: 1024 };
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  return w;
+}
+test('historical decoder geometry requires the exact connected denoiser output and native values', () => {
+  const w = legacyDecoderWitness(),
+    plan = planFor(w),
+    proof = legacyTextProof(w, plan);
+  assert.equal(plan.resourceObservation.decoderGeometryRoute, 'denoiser_dimensions');
+  assert(observedWorkflowAutoLegacyProofMatches(plan, proof));
+  delete proof.template.lockedSettings.trustRemoteCode;
+  assert(observedWorkflowAutoLegacyProofMatches(plan, proof));
+  for (const mutate of [
+    (w) => {
+      w.apiGraph.nodes[w.ids.decode].params.width.sourceKey = 'latents';
+    },
+    (w) => {
+      w.apiGraph.nodes[w.ids.decode].params.width.value = 512;
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === w.ids.decode).fields.width.sourcePortId =
+        'width';
+    },
+    (w) => {
+      delete w.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === w.ids.decode).fields.width;
+    },
+    (w) => {
+      w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[w.ids.decode].width = 512;
+    },
+  ]) {
+    const altered = legacyDecoderWitness();
+    mutate(altered);
+    altered.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(altered.apiGraph);
+    assert.notEqual(planFor(altered).source, 'observed-workflow-auto-legacy-resource-v1');
+  }
+  proof.graph.canonicalGraph.nodes.find((n) => n.action === 'Denoise').params.hidden_route = {
+    sourceId: proof.graph.canonicalGraph.nodes.find((n) => n.action === 'EncodePrompt').key,
+    sourceKey: 'embeddings',
+  };
+  assert.equal(observedWorkflowAutoLegacyProofMatches(plan, proof), false);
+});
+function legacyGuiderWitness() {
+  const w = legacyTextWitness(),
+    id = 'guider';
+  const values = {
+    model_type: 'ExampleModularPipeline',
+    guider: 'ClassifierFreeGuidance',
+    guidance_scale: 1,
+    guidance_rescale: 0,
+    use_original_formulation: false,
+    enabled: true,
+    start: 0,
+    stop: 1,
+  };
+  w.apiGraph.nodes[id] = {
+    module: 'modules.ModularDiffusers',
+    action: 'Guider',
+    params: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, literal(v)])),
+  };
+  for (const role of ['encode', 'denoise'])
+    w.apiGraph.nodes[w.ids[role]].params.guider = { sourceId: id, sourceKey: 'guider_out' };
+  w.apiGraph.paths[0].splice(1, 0, id);
+  w.executedOutput.resolvedExecutionInputs.nodes.push({
+    nodeId: id,
+    module: 'modules.ModularDiffusers',
+    action: 'Guider',
+    fields: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, { source: 'literal', value: v }])),
+  });
+  w.executionReceipt.runtimePreparation.workflowAuto.resolvedFields[id] = { guidance_scale: 1 };
+  w.apiGraph.runtimeHints.workflowAutoPlan.graphHash = graphHash(w.apiGraph);
+  return w;
+}
+test('historical Guider configurations require all native controls and both consuming paths', () => {
+  const w = legacyGuiderWitness(),
+    plan = planFor(w),
+    proof = legacyTextProof(w, plan);
+  assert.equal(plan.source, 'observed-workflow-auto-legacy-resource-v1');
+  assert(observedWorkflowAutoLegacyProofMatches(plan, proof));
+  const bad = legacyGuiderWitness();
+  delete bad.executedOutput.resolvedExecutionInputs.nodes.find((n) => n.nodeId === 'guider').fields.enabled;
+  assert.notEqual(planFor(bad).source, 'observed-workflow-auto-legacy-resource-v1');
+  const changed = structuredClone(proof);
+  changed.graph.canonicalGraph.nodes.find((n) => n.action === 'Guider').params.enabled.value = false;
+  assert.equal(observedWorkflowAutoLegacyProofMatches(plan, changed), false);
+  delete proof.graph.canonicalGraph.nodes.find((n) => n.action === 'EncodePrompt').params.guider;
+  assert.equal(observedWorkflowAutoLegacyProofMatches(plan, proof), false);
 });

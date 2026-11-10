@@ -12,10 +12,12 @@ import {
   OBSERVED_WORKFLOW_AUTO_LORA_SOURCE,
   OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE,
   OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE,
   isObservedWorkflowAutoSource,
   observedWorkflowAutoLoraProofMatches,
   observedWorkflowAutoAudioProofMatches,
   observedWorkflowAutoImageProofMatches,
+  observedWorkflowAutoLegacyProofMatches,
   observedWorkflowAutoPlan,
   observedWorkflowAutoResourceId,
   workerGraphHash,
@@ -452,16 +454,16 @@ export function executedExpertPlanFromGraph(apiGraph) {
 
 /**
  * Ordinary modular Run has no managed Studio plan. Recover only the reviewed
- * BF16/FP8r, CPU-loading Expert contract from its executed owner and durable
+ * BF16/FP8r or freshly captured native BF16 CPU-loading Expert contract from its executed owner and durable
  * authoring context. This records a recipe, never runtime or fit qualification.
  */
-function executedModularExpertPlanFromGraph(apiGraph) {
+function executedModularExpertPlanFromGraph(apiGraph, executionContext) {
   const snapshot = apiGraph?.runtimeHints?.workflowSnapshot;
   const form = snapshot?.studioForm;
   if (
     form?.resourceMode !== 'expert' ||
     form.dtype !== 'bfloat16' ||
-    form.weightFormat !== 'fp8r' ||
+    ![undefined, 'native', 'fp8r'].includes(form.weightFormat) ||
     form.quantizationMode !== 'none' ||
     form.trustRemoteCode !== false ||
     typeof form.autoOffload !== 'boolean' ||
@@ -497,6 +499,7 @@ function executedModularExpertPlanFromGraph(apiGraph) {
   }
   const repo = apiParamValue(owner, 'repo_id');
   const revision = apiParamValue(owner, 'revision');
+  const weightFormat = apiParamValue(owner, 'weight_format');
   if (
     !repo ||
     typeof repo !== 'object' ||
@@ -512,7 +515,8 @@ function executedModularExpertPlanFromGraph(apiGraph) {
     !/^[0-9a-f]{40}$/u.test(revision) ||
     apiParamValue(owner, 'model_type') !== form.modelType ||
     apiParamValue(owner, 'dtype') !== form.dtype ||
-    apiParamValue(owner, 'weight_format') !== form.weightFormat ||
+    !['native', 'fp8r'].includes(weightFormat) ||
+    (weightFormat === 'fp8r' ? form.weightFormat !== 'fp8r' : ![undefined, 'native'].includes(form.weightFormat)) ||
     apiParamValue(owner, 'device') !== form.device ||
     apiParamValue(owner, 'offload_mode') !== form.offloadMode ||
     apiParamValue(owner, 'auto_offload') !== form.autoOffload ||
@@ -532,6 +536,32 @@ function executedModularExpertPlanFromGraph(apiGraph) {
   ]) {
     const param = owner.params?.[field];
     if (param?.sourceId != null || param?.sourceKey != null || apiParamValue(owner, field) != null) return null;
+  }
+
+  if (weightFormat === 'native') {
+    if (!nativeExpertOwnerCaptureMatches(apiGraph, executionContext, ownerId, owner)) return null;
+    // Older ordinary native graphs need not retain an ancillary Studio profile.
+    // The completed native owner supplies this manual loading recipe; absent
+    // authoring/profile identifiers remain absent instead of being inferred.
+    return orderedValue({
+      source: 'executed-expert-modular-graph-v1',
+      device: form.device,
+      modelType: form.modelType,
+      modelRepo: repo.value,
+      resolvedModelRepo: repo.value,
+      resolvedArtifact: repo.value,
+      modelRevision: revision,
+      pipelineClass: form.modelType,
+      dtype: form.dtype,
+      weightFormat,
+      weightLoadingMode: 'cpu',
+      resourceMode: 'expert',
+      resolvedResourceMode: 'expert',
+      quantizationMode: 'none',
+      quantizedComponents: [],
+      autoOffload: form.autoOffload,
+      offloadMode: form.offloadMode,
+    });
   }
 
   // Read active durable leaves only, not definition snapshots or projected UI
@@ -630,7 +660,7 @@ function executedModularExpertPlanFromGraph(apiGraph) {
     executionProfileId: parent.executionProfileId,
     authoringRecipeId: parent.authoringRecipeId,
     dtype: form.dtype,
-    weightFormat: form.weightFormat,
+    weightFormat,
     weightLoadingMode: 'cpu',
     resourceMode: 'expert',
     resolvedResourceMode: 'expert',
@@ -639,6 +669,173 @@ function executedModularExpertPlanFromGraph(apiGraph) {
     autoOffload: form.autoOffload,
     offloadMode: form.offloadMode,
   });
+}
+
+// Native Expert recovery needs the original completed task and fresh consumed
+// owner, not an authored graph alone. Uncaptured optional controls stay in the
+// immutable graph; this identity grants neither fit nor per-control telemetry.
+function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
+  try {
+    const { executionReceipt: task, executedOutput: output, taskId, modelIdentities } = context ?? {};
+    const hints = apiGraph.runtimeHints,
+      snapshot = hints.workflowSnapshot;
+    assert.equal(snapshot.studioForm.mode, 'text_to_image');
+    assert.equal(task.status, 'completed');
+    assert.equal(task.attempt_index, 0);
+    assert.equal(output.attemptIndex, 0);
+    assert.equal(task.resourceCandidateId, null);
+    assert.equal(task.runtimePreparation.resourceMode, 'expert');
+    assert.equal(task.runtimePreparation.performed, false);
+    assert.equal(task.runtimePreparation.residentRecipeReusable, false);
+    assert.equal(task.runtimePreparation.cleanup, null);
+    assert.equal(typeof task.task_id, 'string');
+    assert(task.task_id);
+    if (taskId !== undefined) assert.equal(taskId, task.task_id);
+    assert.equal(output.taskId, task.task_id);
+    for (const [key, taskKey, outputKey] of [
+      ['sid', 'sid', 'sid'],
+      ['workflowTabId', 'workflow_tab_id', 'workflowTabId'],
+      ['clientRunId', 'client_run_id', 'clientRunId'],
+      ['runInputHash', 'run_input_hash', 'runInputHash'],
+    ]) {
+      const v = key === 'sid' ? apiGraph.sid : hints[key];
+      assert(typeof v === 'string' && v.length > 0);
+      assert.equal(task[taskKey], v);
+      assert.equal(output[outputKey], v);
+    }
+    same(output.apiGraphSnapshot, apiGraph);
+    same(task.workflow_snapshot, snapshot);
+    same(output.formSnapshot, snapshot.studioForm);
+    const entries = nodeEntries(apiGraph),
+      ids = new Set(entries.map(([id]) => id));
+    same([...new Set(apiGraph.paths.flat())].sort(), [...ids].sort());
+    const byScope = new Map();
+    for (const [id, node] of entries) {
+      const kind = node.module + '.' + node.action;
+      assert(
+        ['ModelsLoader', 'EncodePrompt', 'Guider', 'Denoise', 'DecodeLatents']
+          .map((a) => 'modules.ModularDiffusers.' + a)
+          .concat('modules.Spandrel.Upscaler', 'modules.Image.Preview')
+          .includes(kind),
+      );
+      const list = byScope.get(kind) ?? [];
+      list.push({ id, node });
+      byScope.set(kind, list);
+      for (const param of Object.values(node.params)) if (param.sourceId) assert(ids.has(param.sourceId));
+    }
+    for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents'])
+      assert.equal(byScope.get('modules.ModularDiffusers.' + action)?.length, 1);
+    assert((byScope.get('modules.ModularDiffusers.Guider')?.length ?? 0) <= 1);
+    assert((byScope.get('modules.Spandrel.Upscaler')?.length ?? 0) <= 1);
+    const previews = byScope.get('modules.Image.Preview');
+    assert(previews?.length >= 1 && previews.length <= 2);
+    const decode = byScope.get('modules.ModularDiffusers.DecodeLatents')[0],
+      denoise = byScope.get('modules.ModularDiffusers.Denoise')[0],
+      encode = byScope.get('modules.ModularDiffusers.EncodePrompt')[0];
+    for (const [role, field, producer, port] of [
+      [encode, 'text_encoders', ownerId, 'text_encoders'],
+      [denoise, 'unet', ownerId, 'unet_out'],
+      [denoise, 'scheduler', ownerId, 'scheduler'],
+      [denoise, 'embeddings', encode.id, 'embeddings'],
+      [decode, 'vae', ownerId, 'vae_out'],
+      [decode, 'latents', denoise.id, 'latents'],
+    ])
+      same(connectedParamSource(role.node, field), { nodeId: producer, field: port });
+    const guider = byScope.get('modules.ModularDiffusers.Guider')?.[0];
+    if (guider) same(connectedParamSource(denoise.node, 'guider'), { nodeId: guider.id, field: 'guider_out' });
+    const upscaler = byScope.get('modules.Spandrel.Upscaler')?.[0];
+    if (upscaler) same(connectedParamSource(upscaler.node, 'image'), { nodeId: decode.id, field: 'images' });
+    assert(previews.some((p) => p.id === output.nodeId));
+    for (const p of previews) {
+      const expected =
+        p.id === output.nodeId && upscaler
+          ? { nodeId: upscaler.id, field: 'output' }
+          : { nodeId: decode.id, field: 'images' };
+      same(connectedParamSource(p.node, 'image'), expected);
+    }
+    const receipt = output.resolvedExecutionInputs;
+    assert.equal(receipt.schemaVersion, 1);
+    assert.equal(receipt.source, 'backend-execution');
+    assert.equal(receipt.taskId, task.task_id);
+    assert.equal(receipt.attemptIndex, 0);
+    assert.equal(receipt.nodeId, output.nodeId);
+    assert.equal(receipt.truncated, false);
+    same(receipt.uncapturedNodeIds, []);
+    const rows = new Map(receipt.nodes.map((row) => [row.nodeId, row]));
+    assert.equal(rows.size, receipt.nodes.length);
+    const capturedIds = entries
+      .filter(([id, node]) => node.module !== 'modules.Image' || node.action !== 'Preview' || id === output.nodeId)
+      .map(([id]) => id);
+    same([...rows.keys()].sort(), capturedIds.sort());
+    for (const [id, row] of rows) {
+      assert.equal(row.module, apiGraph.nodes[id].module);
+      assert.equal(row.action, apiGraph.nodes[id].action);
+    }
+    same(receipt.graphTasks, [
+      { loaderId: ownerId, pipelineClass: apiParamValue(owner, 'model_type'), task: 'text_to_image' },
+    ]);
+    for (const key of [
+      'repo_id',
+      'revision',
+      'model_type',
+      'dtype',
+      'device',
+      'offload_mode',
+      'auto_offload',
+      'weight_loading_mode',
+      'attention_backend',
+      'vae_slicing',
+      'vae_tiling',
+      'quant_config',
+    ]) {
+      const field = rows.get(ownerId).fields[key];
+      assert.equal(field.source, 'literal');
+      const expected =
+        key === 'repo_id'
+          ? apiParamValue(owner, key).value
+          : key === 'quant_config' && apiParamValue(owner, key) == null
+            ? null
+            : apiParamValue(owner, key);
+      same(field.value, expected, 'Native Expert consumed ' + key);
+      assert(!Object.hasOwn(rows.get(ownerId).omittedFields ?? {}, key));
+    }
+    if (upscaler)
+      for (const key of ['model_id', 'device']) {
+        const param = upscaler.node.params[key];
+        assert(!param?.sourceId && !param?.sourceKey);
+        const raw = apiParamValue(upscaler.node, key),
+          field = rows.get(upscaler.id).fields[key];
+        if (key === 'model_id' && raw && typeof raw === 'object') assert.equal(raw.source, 'hub');
+        assert.equal(field.source, 'literal');
+        same(field.value, key === 'model_id' && typeof raw === 'object' ? raw.value : raw);
+        assert(!Object.hasOwn(rows.get(upscaler.id).omittedFields ?? {}, key));
+      }
+    const applied = createAppliedAdapterProof({
+      apiGraph,
+      canonicalGraph: canonicalizeApiGraph(apiGraph),
+      executedOutput: output,
+      executionReceipt: task,
+      taskId: task.task_id,
+    });
+    assert.equal(applied.proof.truncated, false);
+    assert.equal(applied.proof.owners.length, 1);
+    const application = applied.proof.owners[0].application;
+    assert.equal(application.status, 'complete');
+    assert.equal(application.observation, 'activated');
+    same(application.adapters, []);
+    assert(Array.isArray(modelIdentities));
+    same(modelIdentities.map((m) => m.repoId).sort(), resolvedModelReposFromOutput(output).sort());
+    for (const m of modelIdentities) {
+      assert.match(m.selectedRevision, /^[a-f0-9]{40}$/u);
+      assert.equal(m.modelRevision, m.repoId + '@' + m.selectedRevision);
+      assert(m.fingerprint);
+    }
+    const model = modelIdentities.find((m) => m.repoId === apiParamValue(owner, 'repo_id').value);
+    assert.equal(model.selectedRevision, apiParamValue(owner, 'revision'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Ordinary direct-audio graphs have no managed Studio binding. Record only
@@ -1068,7 +1265,7 @@ export function executionPlanIdentity(apiGraph, executionContext) {
   const expertOnly = fields.every(
     (field) => ['resourceMode', 'resolvedResourceMode'].includes(field) && declaredPlan[field] === 'expert',
   );
-  const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph) : null;
+  const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph, executionContext) : null;
   const observedAutoPlan =
     fields.length === 1 && declaredPlan.resourceMode === 'auto'
       ? (observedWorkflowAutoPlan(apiGraph, {
@@ -1674,6 +1871,14 @@ export function validateRunProvenance(provenance) {
       blockers.push('execution audio resource observation does not match the original graph/model/output proof.');
     }
     if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE &&
+      !observedWorkflowAutoLegacyProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push(
+        'execution legacy resource observation does not match the original graph/source/contract/model/output proof.',
+      );
+    }
+    if (
       provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE &&
       !observedWorkflowAutoImageProofMatches(provenance.graph.executionPlan, provenance)
     ) {
@@ -2231,6 +2436,8 @@ export function createRunProvenance({
           executedOutput,
           taskId,
           modelIdentities: modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean),
+          backendSource,
+          backendContract: backendContractIdentity(nodesPayload, graph.canonicalGraph),
         })
       : canonicalAccountingProofPlan({
           apiGraph,

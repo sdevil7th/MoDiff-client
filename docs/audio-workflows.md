@@ -81,6 +81,15 @@ Input previews and transcoded playback are not proof of the original output's
 identity. Record measured duration, sample rate, channels, finite samples and
 nonempty output separately from listening quality, lyrics, timing or edit seams.
 
+Audio history retains node-local ACE dispatch evidence: the actual task type,
+repaint bounds, and consumed source/reference tensor identity after conversion.
+The backend hashes at most 32 MiB of plain dense CPU/CUDA conditioning audio and
+records the native sample rate, shape, dtype, original device and byte count.
+Unsupported or larger inputs retain an explicit capture status without a hash.
+The client preserves these fields without adding them to the legacy form summary
+or filling gaps in older receipts. A dispatch hash does not establish listening
+quality or unchanged audio outside an edit interval.
+
 Offload can reduce accelerator residency while increasing host-memory demand.
 Supported options do not establish that a particular model, duration and recipe
 fits a Windows machine. Quantized image support does not automatically authorize

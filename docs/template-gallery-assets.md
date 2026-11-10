@@ -717,6 +717,29 @@ it does not assert a registered primary Auto recipe, hardware qualification or
 publication approval. Node IDs, prompts and seeds do not manufacture distinct
 resource recipes; model pins, effective settings and geometry remain bound.
 Original tasks retain their original candidate fields, source and capture time.
+Native BF16 ordinary Expert graphs can recover a manual loading identity only
+from a completed first attempt with exact task/session/workflow/form joins,
+complete consumed owner controls, a freshly activated empty adapter state and
+the complete immutable installed model set. The supported graph is one connected
+text-to-image owner with optional Guider and Spandrel upscale, and one or two
+Preview leaves. The selected output must retain every ancestor; an unused base
+Preview is the only permitted missing capture. A graph alone, reused owner or
+partial capture cannot supply this identity. Missing form weight format and
+ancillary profile identifiers remain absent; the explicit native loader format
+is recorded separately. Uncaptured upscale controls remain graph evidence and
+must not be presented as native per-control telemetry. The existing FP8r Expert
+reader keeps its separate durable-authoring checks.
+The text-to-image observation also retains an optional `EncodePrompt`
+`max_sequence_length` control. It must be a positive safe integer, recorded as
+an unconnected literal in the graph and native consumed-input capture, and
+equal the requested form's `maxSequenceLength`. Missing or omitted captures,
+coercible values, conflicting controls and other encoder fields remain held.
+This evidence check does not replace the backend's model-specific token limits
+or infer an unexposed encoder control. A missing negative-prompt port is allowed
+only when the form is empty and the native capture has no such field or omission.
+A legacy text form model label requires matching active durable ModelsLoader
+authoring and literal pipeline binding; the observed identity retains that label
+separately from the consumed loader class.
 Do not rerun a model merely to add this maintainer metadata, rewrite a raw task,
 refresh a stale public template lock, or infer missing consumed defaults. The
 existing source/model/input/media validators and human review still apply.
@@ -761,22 +784,64 @@ human listening, current-template review and publication decisions remain
 separate. It adds no runtime, Auto admission, hardware qualification or download.
 
 The `observed-workflow-auto-image-resource-v1` vocabulary covers one fresh,
-unquantized two-reference modular image-conditioned graph: one literal pinned
+unquantized one-reference edit or two-reference modular image-conditioned graph: one literal pinned
 ModelsLoader, Image.Load, ImageEncode, EncodePrompt, Denoise, DecodeLatents and
-Preview. Both source files must have ordered native hashes and complete RGB
+Preview. Every source file must have ordered native hashes and complete RGB
 geometry captures. ImageEncode must use that loader's VAE; its latents and the
 same loader's text, denoiser and decoder components must reach the sole output.
 Task, attempt, session, workflow, form, worker graph hash, resolved Auto controls
 and consumed controls must agree. Reused, deferred, patched, quantized,
 adapter-bearing and unsupported graphs remain held.
 
+The reader also covers the eight-leaf single-reference native-state route with
+an explicit Guider. Its original `edit_image` task remains recorded. ImageEncode
+and Denoise must consume the same Guider, Denoise must consume ImageEncode's
+route state, and DecodeLatents must consume Denoise's route state. The literal
+ClassifierFreeGuidance configuration and all eight captured scalar controls
+must agree; an empty, unconnected layers slot stays empty. Masks, crops and
+other route variants remain outside this reader's scope.
+
 Historical image-conditioned captures can explicitly report `graphTasks.task:
 null`. That null remains recorded as `reportedGraphTask`; it is not rewritten as
 a backend task declaration. The observed operation comes from the saved
-multi-reference mode, literal `image_conditioned` workflow and complete connected
+edit or multi-reference mode, literal `image_conditioned` workflow and complete connected
 path. A legacy form model label is retained separately from the actual executed
 loader class and immutable installed model. Neither a label nor an Auto hint
 alone establishes execution evidence.
+
+For a single-reference edit, an explicit ordinary owner loading override can
+differ from the requested form policy. The observation retains both requested
+offload fields; the effective policy still requires literal graph controls,
+backend-resolved Auto fields and native consumed-input agreement. The final
+validator checks the requested fields against the locked template and the
+effective fields against the canonical graph. This does not qualify the
+requested policy or another device. The two-reference policy checks are unchanged.
+
+An upscale comparison can retain the genuine internally generated base export
+as an `upscaleSourceComparison` artifact. Verify its original task/output join,
+durable path, bytes and hash before binding it to the before panel. This records
+the comparison export; it is neither an external reference nor a claim that the
+upscaler reopened that encoded file. Obtain exact-file publication rights for
+both the base export and final image.
+
+The separate `observed-workflow-auto-legacy-resource-v1` vocabulary covers a
+fresh, unquantized modular text-to-image owner with an optional Guider when the
+original loader contract exposed neither `weight_format` nor
+`weight_loading_mode`. Both fields must also be absent from the graph, native
+trace and resolved Auto fields; the form must have no weight-format selection.
+The recovered complete source inventory must match the worker attestation, and
+the retained node contract must confirm the missing ports. The observation binds
+both source and contract fingerprints and leaves the loading mode absent.
+Reused owners, adapters and image-conditioned graphs remain outside this
+historical vocabulary. Final validation joins the actual controls, connected
+path, current recipe, sole immutable model and full image geometry. This closes
+an execution-identity gap without claiming an unrecorded loading policy,
+independent memory monitoring or hardware qualification.
+When the old decoder consumes dimensions from the denoiser, both connected
+native values and source ports must agree with the graph and output geometry.
+Any retained inline defaults stay recorded. An optional Guider requires all eight
+native scalar controls and the same connected owner at prompt encoding and
+denoising; unsupported guidance configurations remain held.
 
 The final validator joins the observed identity back to the original canonical
 controls, single installed model, freshly applied empty adapter state, ordered
