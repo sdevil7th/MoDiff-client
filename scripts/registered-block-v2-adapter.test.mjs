@@ -1077,15 +1077,15 @@ test('every reviewed direct-media projection is explicit and undeclared media ha
       .filter(({ mediaType }) => mediaType !== undefined)
       .map((binding) => ({ registeredRoute, binding })),
   );
-  assert.equal(reviewedMediaBindings.length, 112);
+  assert.equal(reviewedMediaBindings.length, 114);
   assert.equal(
     reviewedMediaBindings.every(({ binding }) => binding.adaptation !== undefined),
     true,
   );
 
   const directMediaBindings = reviewedMediaBindings.filter(({ binding }) => binding.adaptation === 'direct_media');
-  assert.equal(directMediaBindings.length, 81);
-  assert.equal(new Set(directMediaBindings.map(({ registeredRoute }) => registeredRoute.definitionId)).size, 77);
+  assert.equal(directMediaBindings.length, 83);
+  assert.equal(new Set(directMediaBindings.map(({ registeredRoute }) => registeredRoute.definitionId)).size, 79);
   for (const { registeredRoute, binding } of directMediaBindings) {
     assert.notEqual(binding.fieldId, 'file', `${registeredRoute.definitionId} must use a reviewed export for files`);
     assert.notEqual(binding.role, 'videoExport', `${registeredRoute.definitionId} must not bypass its export node`);

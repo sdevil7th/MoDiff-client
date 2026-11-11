@@ -388,3 +388,68 @@ test('required model inputs use current registry contracts inside collapsed Bloc
     assert.deepEqual(inspectRequiredGraphInputs(roots, { nodes: [leaf], edges: [] }, registry), []);
   }
 });
+
+test('selected backend block contracts own required inputs; authored hints and computed selectors do not', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  const key = 'modules.ModularDiffusers.WorkflowImageEncode';
+  const registry = {
+    [key]: {
+      params: {
+        image: { type: 'image', display: 'input', required: true },
+        state_in: { type: 'modular_workflow_state', display: 'input', required: true },
+      },
+    },
+  };
+  const node = {
+    id: 'encode',
+    data: {
+      module: 'modules.ModularDiffusers',
+      action: 'WorkflowImageEncode',
+      params: {
+        pipeline_class: { value: 'SelectedPipeline' },
+        workflow_id: { value: 'image_conditioned' },
+        block_path: { value: 'vae_encoder' },
+        image: { ...registry[key].params.image, required: false },
+        state_in: { ...registry[key].params.state_in, value: 'sealed state' },
+      },
+    },
+  };
+  const operation = {
+    nodeKey: key,
+    pipelineClass: 'SelectedPipeline',
+    decomposition: 'block',
+    binding: {
+      pipelineClass: 'SelectedPipeline',
+      values: {
+        pipeline_class: 'SelectedPipeline',
+        workflow_id: 'image_conditioned',
+        block_path: 'vae_encoder',
+      },
+    },
+    ports: [{ name: 'state_in', direction: 'input', required: true, hidden: false, types: ['modular_workflow_state'] }],
+  };
+  const graph = { nodes: [node], edges: [] };
+  const issues = (operations = [operation]) => inspectRequiredGraphInputs([node], graph, registry, operations);
+  assert.deepEqual(issues(), [], 'a prepared-state encoder must not require a nonexistent direct image socket');
+  assert.deepEqual(issues([operation, structuredClone(operation)]), [], 'identical declarations across tasks agree');
+  node.data.params.state_in.value = undefined;
+  assert.deepEqual(
+    issues().map((i) => i.id),
+    ['required-input:encode:state_in'],
+  );
+  node.data.params.state_in.value = 'sealed state';
+  const direct = structuredClone(operation);
+  direct.ports.push({ name: 'image', direction: 'input', required: true, hidden: false, types: ['image'] });
+  assert.equal(issues([direct]).length, 1, 'direct-image encoders remain required');
+  assert.equal(issues([operation, direct]).length, 1, 'conflicting declarations fall back conservatively');
+  node.data.operationAuthoring = { operation };
+  assert.equal(issues([]).length, 1, 'saved operation hints cannot override the backend registry');
+  for (const field of ['pipeline_class', 'workflow_id', 'block_path']) {
+    node.data.params[field].isConnected = true;
+    assert.equal(issues().length, 1, `computed ${field} is not a literal selection`);
+    delete node.data.params[field].isConnected;
+    graph.edges = [{ source: 'computed', target: node.id, targetHandle: field }];
+    assert.equal(issues().length, 1);
+    graph.edges = [];
+  }
+});

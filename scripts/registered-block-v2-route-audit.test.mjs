@@ -865,6 +865,10 @@ const REVIEWED_IMAGE_RESULT_DEFINITIONS = [
  * admission and graph pins below still fail closed if any terminal changes.
  */
 const REVIEWED_TERMINAL_OUTPUTS = new Map([
+  ...['text2image', 'image_conditioned'].map((workflow) => [
+    `diffusers.modular:MiniMaxH3ImageModularPipeline:${workflow}`,
+    [{ portId: 'images', role: 'decode', fieldId: 'images', adaptation: 'direct_media', mediaType: 'image' }],
+  ]),
   ...[
     ['FluxControlNetPipeline', 'control_image', 'diffusersImageControl'],
     ['FluxControlNetImg2ImgPipeline', 'control_edit_image', 'diffusersImageControlEdit'],
@@ -1541,6 +1545,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
       process.env.MODIFF_GENERATE_ROUTE_CANDIDATES === '1'
         ? routeModule.REGISTERED_BLOCK_V2_ROUTES.length
         : expectedAdmissionCount,
+      `compiler failures: ${JSON.stringify(failures, null, 2)}`,
     );
   }
   if (process.env.MODIFF_AUDIT_DISCOVERY === '1' && process.env.MODIFF_ROUTE_CANDIDATES_ONLY !== '1') {
@@ -1575,7 +1580,7 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
       definition.integrationStatus !== 'equivalent_standard_route',
   );
   if (process.env.MODIFF_ROUTE_CANDIDATES_ONLY !== '1')
-    assert.equal(exactModularSuccesses.length, 73, 'the complete currently admitted exact Modular route set drifted');
+    assert.equal(exactModularSuccesses.length, 75, 'the complete currently admitted exact Modular route set drifted');
   exactModularSuccesses.forEach(({ definition, compiledDefinition }) => {
     const exactSteps = compiledDefinition.graph.nodes.filter(
       (node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === 'ReviewedModularWorkflowStep',

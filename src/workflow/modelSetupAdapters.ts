@@ -423,6 +423,14 @@ function modelSetupAdapterAuthoringLimit(
       : [];
   });
   const matches = [...publicMatches, ...evaluationMatches];
+  const genericSelections = (authority.workflowModelDescriptors ?? []).filter(
+    (descriptor) =>
+      descriptor.pipeline === pipeline &&
+      descriptor.repo === repository.value &&
+      task.executionProfileIds.includes(descriptor.profileId),
+  );
+  if (matches.length === 0 && genericSelections.length === 1 && genericSelections[0]!.supportsLora === false)
+    return 'The selected image model does not support LoRA.';
   if (matches.length !== 1)
     return 'The selected image model profile is unavailable or ambiguous. Refresh capabilities.';
   const { capability, profile, evaluationOnly } = matches[0]!;

@@ -55,7 +55,7 @@ function stageKind(node: CustomNodeType): VisualOperationGroup | null {
   if (!operation || !['block', 'bundle'].includes(operation.decomposition)) return null;
   if (['text_encoder', 'vae_encoder', 'image_encoder'].includes(operation.nodeType)) return 'inputs';
   if (
-    workflowTaskCategory(operation.task ?? '') === 'Video' &&
+    ['Image', 'Video'].includes(workflowTaskCategory(operation.task ?? '')) &&
     ['before_encode', 'video_encoder', 'condition_encoder', 'reference_encoder'].includes(operation.nodeType)
   )
     return 'inputs';
@@ -173,15 +173,26 @@ function operationStageMembers(
     return pairs.length === 1 ? pairs[0]! : [];
   }
   if (kind === 'generate') {
+    const supplied = (target: string, port: string, source: string, field: string) => {
+      const wires = graph.edges.filter((edge) => edge.target === target && edge.targetHandle === port);
+      return wires.length === 1 && wires[0]!.source === source && wires[0]!.sourceHandle === field;
+    };
+    if (category === 'Image') {
+      const denoise = scope.find((node) => nodeKey(node) === 'modules.ModularDiffusers.WorkflowImageDenoise');
+      const decode = scope.find((node) => nodeKey(node) === 'modules.ModularDiffusers.WorkflowDecodeImage');
+      return denoise &&
+        decode &&
+        supplied(denoise.id, 'pipeline_components', ownerId, 'pipeline_components') &&
+        supplied(decode.id, 'pipeline_components', ownerId, 'pipeline_components') &&
+        supplied(decode.id, 'state_in', denoise.id, 'state_out')
+        ? [denoise, decode]
+        : [];
+    }
     const denoise = scope.find((node) => nodeKey(node) === 'modules.DiffusersVideo.Denoise');
     const decode = scope.find(
       (node) => nodeKey(node) === 'modules.DiffusersVideo.DecodeLatents' && stageKind(node) === 'output',
     );
     if (category !== 'Video' || !denoise || !decode) return [];
-    const supplied = (target: string, port: string, source: string, field: string) => {
-      const wires = graph.edges.filter((edge) => edge.target === target && edge.targetHandle === port);
-      return wires.length === 1 && wires[0]!.source === source && wires[0]!.sourceHandle === field;
-    };
     return supplied(denoise.id, 'pipeline', ownerId, 'pipeline') &&
       supplied(decode.id, 'pipeline', ownerId, 'pipeline') &&
       supplied(decode.id, 'latents', denoise.id, 'latents_out') &&
@@ -391,9 +402,9 @@ export function groupVisualStages(
           port.mirrorBindings?.length &&
           !(
             kind === 'generate' &&
-            port.binding.fieldOrPortId === 'pipeline' &&
+            ['pipeline', 'pipeline_components'].includes(port.binding.fieldOrPortId) &&
             port.mirrorBindings.length === 1 &&
-            port.mirrorBindings[0]!.fieldOrPortId === 'pipeline' &&
+            port.mirrorBindings[0]!.fieldOrPortId === port.binding.fieldOrPortId &&
             canonicalBlockStringifyV2(port.mirrorBindings) ===
               canonicalBlockStringifyV2(
                 old.definitionSnapshot.boundary.inputs.find((p) => p.portId === port.portId)?.mirrorBindings ?? [],
@@ -534,28 +545,35 @@ export function groupVisualStages(
       }
     }
   }
-  // One public pipeline socket feeds both real stages through the V2 mirrored input.
+  // One public component socket feeds both real stages through the V2 mirrored input.
   const redundantEdges = new Set<string>();
   if (kind === 'generate') {
-    const pipelineMembers = ['modules.DiffusersVideo.Denoise', 'modules.DiffusersVideo.DecodeLatents'].flatMap((key) =>
-      members.filter((member) => nodeKey(member) === key),
-    );
-    const pipelines = pipelineMembers.flatMap((member) =>
-      inputs.filter((port) => port.binding.nodeId === remap(member.id) && port.binding.fieldOrPortId === 'pipeline'),
-    );
-    const wires = pipelineMembers.map((member) =>
-      graph.edges.filter((edge) => edge.target === member.id && edge.targetHandle === 'pipeline'),
-    );
-    if (
-      pipelines.length === 2 &&
-      wires.length === 2 &&
-      wires.every((edges) => edges.length === 1) &&
-      wires[0]![0]!.source === wires[1]![0]!.source &&
-      wires[0]![0]!.sourceHandle === wires[1]![0]!.sourceHandle
-    ) {
-      pipelines[0]!.mirrorBindings = [pipelines[1]!.binding];
-      inputs.splice(inputs.indexOf(pipelines[1]!), 1);
-      redundantEdges.add(wires[1]![0]!.id);
+    for (const [keys, field] of [
+      [['modules.DiffusersVideo.Denoise', 'modules.DiffusersVideo.DecodeLatents'], 'pipeline'],
+      [
+        ['modules.ModularDiffusers.WorkflowImageDenoise', 'modules.ModularDiffusers.WorkflowDecodeImage'],
+        'pipeline_components',
+      ],
+    ] as const) {
+      const pipelineMembers = keys.flatMap((key) => members.filter((member) => nodeKey(member) === key));
+      const pipelines = pipelineMembers.flatMap((member) =>
+        inputs.filter((port) => port.binding.nodeId === remap(member.id) && port.binding.fieldOrPortId === field),
+      );
+      const wires = pipelineMembers.map((member) =>
+        graph.edges.filter((edge) => edge.target === member.id && edge.targetHandle === field),
+      );
+      if (
+        pipelines.length === 2 &&
+        pipelines[0]!.valueType === pipelines[1]!.valueType &&
+        wires.length === 2 &&
+        wires.every((edges) => edges.length === 1) &&
+        wires[0]![0]!.source === wires[1]![0]!.source &&
+        wires[0]![0]!.sourceHandle === wires[1]![0]!.sourceHandle
+      ) {
+        pipelines[0]!.mirrorBindings = [pipelines[1]!.binding];
+        inputs.splice(inputs.indexOf(pipelines[1]!), 1);
+        redundantEdges.add(wires[1]![0]!.id);
+      }
     }
   }
   const ordinaryIds = preserveOrder
@@ -797,7 +815,7 @@ export function groupNewOperationGraph(graph: OperationGraph) {
   for (const owner of graph.nodes.filter((node) => operationOwnsModel(operationAuthoring(node)?.operation)))
     next =
       workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Image'
-        ? groupOperationStages(next, owner.id, ['inputs', 'setup', 'output', 'references', 'mask'], true)
+        ? groupOperationStages(next, owner.id, ['inputs', 'setup', 'generate', 'output', 'references', 'mask'], true)
         : ['Audio', 'Video'].includes(workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? ''))
           ? groupOperationStages(next, owner.id, ['inputs', 'guidance', 'setup', 'output', 'videoInput', 'generate'])
           : groupOperationStages(next, owner.id);

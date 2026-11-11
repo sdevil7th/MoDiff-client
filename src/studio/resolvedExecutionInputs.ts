@@ -113,6 +113,7 @@ const inputNames: Record<string, string> = {
   true_cfg_scale: 'trueCfgScale',
   max_sequence_length: 'maxSequenceLength',
   num_images_per_prompt: 'imagesPerPrompt',
+  min_generation_area: 'minimumGenerationArea',
   num_frames: 'numFrames',
   fps: 'fps',
   frame_rate: 'fps',

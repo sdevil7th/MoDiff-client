@@ -6,6 +6,7 @@ import { REGISTERED_BLOCK_V2_FANOUT_ROUTES } from './registeredBlockV2FanOutRout
 import { REGISTERED_BLOCK_V2_AUDIO_ROUTES } from './registeredBlockV2AudioRoutes';
 import { REGISTERED_BLOCK_V2_IMAGE_ROUTES } from './registeredBlockV2ImageRoutes';
 import { REGISTERED_BLOCK_V2_ORDINARY_FLUX_ROUTES } from './registeredBlockV2OrdinaryFluxRoutes';
+import { REGISTERED_BLOCK_V2_SOURCE_ROUTES } from './registeredBlockV2SourceRoutes';
 
 export type RegisteredBlockV2BoundaryInputBinding = Readonly<{
   portId: string;
@@ -167,6 +168,7 @@ function transformersRoute(fields: TransformersRouteFields): RegisteredBlockV2Ro
  * pipeline-class inference.
  */
 export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Object.freeze([
+  ...REGISTERED_BLOCK_V2_SOURCE_ROUTES,
   ...REGISTERED_BLOCK_V2_IMAGE_ROUTES,
   ...REGISTERED_BLOCK_V2_ORDINARY_FLUX_ROUTES,
   ...REGISTERED_BLOCK_V2_AUDIO_ROUTES,

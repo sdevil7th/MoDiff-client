@@ -181,6 +181,28 @@ before(async () => {
   );
 });
 
+test('a backend-defined model can explicitly decline LoRA without granting generic adapter execution', () => {
+  const { graph, root } = cases.get('z_image_quick_concept');
+  const chain = adapters.modelSetupAdapterChain(graph, root.id);
+  const capability = authority.studioModelCapabilities.find((row) => row.modelType === 'ZImageModularPipeline');
+  const profile = capability.executionProfiles.find(
+    (row) =>
+      row.default_repo === chain.owner.data.params.repo_id.value.value &&
+      row.pipeline_class === chain.owner.data.params.model_type.value,
+  );
+  const descriptor = {
+    pipeline: profile.pipeline_class,
+    profileId: profile.id,
+    repo: profile.default_repo,
+    label: 'Backend image model',
+    supportsLora: false,
+  };
+  const generic = { ...authority, studioModelCapabilities: [], workflowModelDescriptors: [descriptor] };
+  assert.match(adapters.modelSetupAdapterAddUnavailable(chain, generic), /does not support LoRA/u);
+  descriptor.supportsLora = true;
+  assert.match(adapters.modelSetupAdapterAddUnavailable(chain, generic), /unavailable or ambiguous/u);
+});
+
 test('all eight curated FLUX templates retain their original adapters while the exact selected policy authorizes editing', async (t) => {
   const capability = authority.studioModelCapabilities.find((item) => item.modelType === 'FluxModularPipeline');
   assert.equal(capability.supportsLora, false, 'The selected policy must not promote aggregate capability flags.');

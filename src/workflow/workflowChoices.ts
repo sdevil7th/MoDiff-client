@@ -42,6 +42,7 @@ export type WorkflowModelDescriptor = {
   pipeline: string;
   label: string;
   repo: string;
+  supportsLora?: boolean;
   inventory?: WorkflowModelInventory;
   evaluationOnly?: true;
   modelType?: string;
@@ -112,6 +113,7 @@ export function parseWorkflowModelDescriptors(
       if (profile.public !== undefined && typeof profile.public !== 'boolean') invalid();
       seen.add(profileId);
       const repo = text(profile.default_repo);
+      if (model.supportsLora !== undefined && typeof model.supportsLora !== 'boolean') invalid();
       const inventory = parseWorkflowModelInventory(model, repo);
       let offers: Pick<
         WorkflowModelDescriptor,
@@ -142,6 +144,7 @@ export function parseWorkflowModelDescriptors(
         pipeline,
         label: text(model.label),
         repo,
+        ...(typeof model.supportsLora === 'boolean' ? { supportsLora: model.supportsLora } : {}),
         ...(inventory ? { inventory } : {}),
         ...offers,
       });

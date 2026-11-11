@@ -64,9 +64,11 @@ test('actual mixed-source collection preserves all legacy definitions through th
     'text2image',
   ]);
   for (const definition of imageDefinitions) {
-    assert.equal(definition.integrationStatus, 'contract_only');
+    assert.equal(definition.integrationStatus, 'reviewed_modular_workflow_route');
     assert.equal(definition.pipelineClass, 'MiniMaxH3ImageModularPipeline');
-    assert.deepEqual(definition.executionAdmissions, []);
+    assert.equal(definition.executionAdmissions.length, 1);
+    assert.equal(definition.executionAdmissions[0].status, 'admitted');
+    assert.equal(definition.executionAdmissions[0].executable, false);
   }
   for (const old of legacy.definitions) {
     assert.deepEqual(

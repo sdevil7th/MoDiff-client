@@ -1046,7 +1046,14 @@ export function planOperationChange(
         if (
           field.hidden ||
           field.display === 'output' ||
-          targetTaken.has(`${candidate.id}:${name}`) ||
+          (targetTaken.has(`${candidate.id}:${name}`) &&
+            !edges.some(
+              (wire) =>
+                wire.target === candidate.id &&
+                wire.targetHandle === name &&
+                wire.source === edge.source &&
+                wire.sourceHandle === edge.sourceHandle,
+            )) ||
           !connectionTypesAreCompatible(oldNode.data.params[oldField]?.type, field.type) ||
           (isGuidanceSetting(oldNode, oldField) && !canTransfer(oldNode, oldField, candidate, name))
         )
@@ -1071,6 +1078,18 @@ export function planOperationChange(
           : [];
       }),
     );
+    const archivedInputs = candidates.filter(({ proposed }) =>
+      returning?.edges.some(
+        (wire) =>
+          wire.source === proposed.source &&
+          wire.sourceHandle === proposed.sourceHandle &&
+          wire.target === proposed.target &&
+          wire.targetHandle === proposed.targetHandle,
+      ),
+    );
+    // Every matching archived wire supplied this same material source. Restore
+    // one anchor here; the existing inactive-wire pass restores its fanout.
+    if (archivedInputs.length) return archivedInputs[0]!;
     const bestScore = Math.max(0, ...candidates.map((candidate) => candidate.score));
     const best = candidates.filter((candidate) => candidate.score === bestScore);
     return best.length === 1 ? best[0]! : null;
@@ -1116,7 +1135,13 @@ export function planOperationChange(
             ...replacement.candidate.data.params[replacement.name],
             isInput: true,
           };
-          edges.push(replacement.proposed);
+          if (
+            !edges.some(
+              (wire) =>
+                wire.target === replacement.proposed.target && wire.targetHandle === replacement.proposed.targetHandle,
+            )
+          )
+            edges.push(replacement.proposed);
           targetTaken.add(`${replacement.proposed.target}:${replacement.proposed.targetHandle}`);
           addPreserved(
             `${endpointLabel(source, edge.sourceHandle)} → ${endpointLabel(replacement.candidate, replacement.name)} connection`,
@@ -1180,6 +1205,30 @@ export function planOperationChange(
       if (baselineEdge) {
         rebuiltManagedConnections += 1;
         continue;
+      }
+      // A retained operation can move a public input to another stage. Resolve
+      // the unique compatible destination through the same reviewed port search
+      // used when the original operation is replaced entirely.
+      if (!affected.has(edge.source) && affected.has(edge.target) && source && target) {
+        const replacement = replacementInput(target, edge.targetHandle ?? '', edge);
+        if (replacement) {
+          replacement.candidate.data.params[replacement.name] = {
+            ...replacement.candidate.data.params[replacement.name],
+            isInput: true,
+          };
+          if (
+            !edges.some(
+              (wire) =>
+                wire.target === replacement.proposed.target && wire.targetHandle === replacement.proposed.targetHandle,
+            )
+          )
+            edges.push(replacement.proposed);
+          targetTaken.add(`${replacement.proposed.target}:${replacement.proposed.targetHandle}`);
+          addPreserved(
+            `${endpointLabel(source, edge.sourceHandle)} → ${endpointLabel(replacement.candidate, replacement.name)} connection`,
+          );
+          continue;
+        }
       }
       diagnostics.push(
         `${endpointLabel(source, edge.sourceHandle)} → ${endpointLabel(target, edge.targetHandle)} will be disconnected because the selected model does not expose a compatible destination. Both nodes are kept.`,

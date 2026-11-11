@@ -9,6 +9,7 @@ import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInp
 import type { OperationContract } from '../workflow/operationContracts';
 import { processImageInputRequirements } from '../workflow/processImageInputRequirements';
 import { conditionalInputRequired } from '../workflow/conditionalInputRequirements';
+import { selectedBlockInputRequirements } from '../workflow/selectedBlockInputRequirements';
 
 /** Inspect current declarations on the same lowered graph used by Run. */
 export function inspectRequiredGraphInputs(
@@ -31,6 +32,7 @@ export function inspectRequiredGraphInputs(
     const definition = registry[`${node.data.module}.${node.data.action}`];
     const declared = definition?.params;
     const requirements = processImageInputRequirements(node, registry, operations, graph.edges);
+    const blockRequirements = selectedBlockInputRequirements(node, registry, operations, graph.edges);
     for (const field of new Set([...Object.keys(declared ?? {}), ...Object.keys(node.data.params)])) {
       const saved = node.data.params[field] ?? declared![field]!;
       const param = declared?.[field] ?? saved;
@@ -39,6 +41,7 @@ export function inspectRequiredGraphInputs(
       // intact and respect explicit optionality and dynamic skip validation.
       const required =
         requirements?.[field]?.required ??
+        blockRequirements?.get(field) ??
         conditionalInputRequired(node, param, registry, graph.edges) ??
         (param.display === 'filebrowser' &&
           (saved.required ?? !(definition?.skipParamsCheck ?? node.data.skipParamsCheck)));

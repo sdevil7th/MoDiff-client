@@ -2220,6 +2220,9 @@ test('workflow discovery retains backend models absent from the legacy Studio un
     ['Future relative', 'owner/relative', 'relative'],
   ]);
   assert.equal(result.length, 2);
+  const noLora = structuredClone(payload);
+  noLora.capabilities[0].supportsLora = false;
+  assert.equal(choices.parseWorkflowModelDescriptors(noLora, support)[0].supportsLora, false);
   const legacy = structuredClone(payload);
   delete legacy.capabilities[0].label;
   assert.deepEqual(

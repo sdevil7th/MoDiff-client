@@ -397,7 +397,20 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // projection and shared pipeline validation. Measured largest/startup/deferred
 // gzip changed from 498237/676723/336015 to 498592/677080/337273 bytes.
 // Keep the four startup and 90 deferred modules and the 64 KiB per-chunk cap.
+// Generic H3 image switching, exact source-route pins and shared stage sockets
+// measure largest/startup/deferred gzip 498892/677379/337569, against the
+// packaged 498595/677083/337306. Add only 297/296/263 measured feature bytes,
+// retaining 15/22/148-byte headroom. Only studio-templates and operation-authoring
+// differ after import-URL normalization; all 119 assets, four startup/90 deferred
+// memberships, dependencies, loading/minifier rules and the 64 KiB cap stay fixed.
+// Exact backend-selected block input requirements measure largest/startup gzip
+// 499048/677534 against 498892/677379: add only 156/155 bytes, retaining 15/22
+// bytes of headroom. Deferred gzip decreases to 337464; both deferred ceilings
+// stay fixed. Only studio-templates changes after import-URL normalization;
+// all 119 assets, four startup/90 deferred memberships and dependencies stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  156 +
+  297 +
   355 +
   97 +
   16 +
@@ -553,6 +566,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  155 +
+  296 +
   357 +
   100 +
   15 +
@@ -788,6 +803,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
 const MAX_DEFERRED_GZIP_BYTES =
+  263 +
   1258 +
   81 +
   319 +

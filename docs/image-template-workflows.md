@@ -46,6 +46,16 @@ actions. Combine encoding and Guidance and Separate encoding stages each support
 one-step Undo. Inspecting or saving a workflow never changes a reusable library
 definition implicitly.
 
+MiniMax H3 Image uses the same generic Model Setup, Encode Inputs, Generate and
+Preview stages. Generate combines the real denoising and decoding calls, with
+one shared component input; expanding it preserves the executable graph. Its
+reference-image preparation remains inside Encode Inputs. Required-input checks
+use the exact backend-declared block selected by literal pipeline, workflow and
+block identifiers. A prepared-state encoder therefore needs its state connection,
+while a direct-image encoder still needs its image connection. Saved operation
+hints cannot override this contract; unknown, connected or conflicting selectors
+retain the conservative registry requirements.
+
 The four Qwen masked-edit/outpaint templates use real native stages with a
 backend-owned compatibility path for their original image preparation and final
 mask composite. Their dimensions, strength, crop padding and outpaint canvas
