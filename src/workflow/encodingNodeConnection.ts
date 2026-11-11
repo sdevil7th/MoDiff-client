@@ -7,6 +7,7 @@ import {
   planOperationChange,
   type OperationGraph,
   type OperationStarter,
+  type OperationLayoutReferenceContext,
 } from './operationAuthoring';
 import { visualGroupOwners } from './visualOperationGroups';
 import type { OperationContract } from './operationContracts';
@@ -41,10 +42,11 @@ export function planEncodingConnection(
   connection: Connection,
   route: ReturnType<typeof encodingConnectionRoute>,
   starter: OperationStarter,
+  layoutReferenceContext?: OperationLayoutReferenceContext,
 ): OperationGraph {
   if (starter.pipelineClass !== route.operation.pipelineClass || starter.task !== route.operation.task)
     throw new Error('The image encoding route changed. Nothing changed.');
-  const plan = planOperationChange(graph, route.owner.id, starter, { preserveValues: true });
+  const plan = planOperationChange(graph, route.owner.id, starter, { preserveValues: true, layoutReferenceContext });
   if (plan.review.required)
     throw new Error(
       `Cannot connect without changing existing work: ${plan.review.attention.join(' ')} Nothing changed.`,

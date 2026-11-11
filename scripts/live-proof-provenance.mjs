@@ -1,9 +1,66 @@
+import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { canonicalJsonHash as observationJsonHash } from './canonical-json.mjs';
 
 import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
+import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
+import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
+import {
+  OBSERVED_WORKFLOW_AUTO_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_LORA_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE,
+  OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE,
+  isObservedWorkflowAutoSource,
+  observedWorkflowAutoLoraProofMatches,
+  observedWorkflowAutoAudioProofMatches,
+  observedWorkflowAutoImageProofMatches,
+  observedWorkflowAutoLegacyProofMatches,
+  observedWorkflowAutoTextGeometryProofMatches,
+  observedWorkflowAutoPlan,
+  observedWorkflowAutoResourceId,
+  workerGraphHash,
+} from './observed-workflow-auto-resource.mjs';
+import {
+  OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE,
+  observedWorkflowAutoVideoPlan,
+  observedWorkflowAutoVideoProofMatches,
+  observedWorkflowAutoVideoResourceId,
+} from './observed-workflow-auto-video-resource.mjs';
+import {
+  OBSERVED_WORKFLOW_AUTO_CONTROL_SOURCE,
+  observedWorkflowAutoControlPlan,
+  observedWorkflowAutoControlProofMatches,
+  observedWorkflowAutoControlResourceId,
+} from './observed-workflow-auto-control-resource.mjs';
+import {
+  OBSERVED_WORKFLOW_AUTO_MASKED_IMAGE_SOURCE,
+  observedWorkflowAutoMaskedImagePlan,
+  observedWorkflowAutoMaskedImageProofMatches,
+  observedWorkflowAutoMaskedImageResourceId,
+} from './observed-workflow-auto-masked-image-resource.mjs';
+import {
+  OBSERVED_RETAINED_EXPERT_TEXT_SOURCE,
+  observedRetainedExpertTextPlan,
+  observedRetainedExpertTextProofMatches,
+  observedRetainedExpertTextResourceId,
+} from './retained-native-text-resource.mjs';
+import {
+  OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE,
+  observedRetainedDirectImagePlan,
+  observedRetainedDirectImageProofMatches,
+  observedRetainedDirectImageResourceId,
+} from './retained-native-direct-image-resource.mjs';
+import {
+  OBSERVED_RETAINED_MODULAR_IMAGE_SOURCE,
+  observedRetainedModularImagePlan,
+  observedRetainedModularImageProofMatches,
+  observedRetainedModularImageResourceId,
+} from './retained-native-modular-image-resource.mjs';
+export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
 export const LIVE_PROOF_PROVENANCE_FORMAT = 'modiff.live-proof.provenance.v2';
@@ -115,6 +172,9 @@ export function liveProofLockHash(provenance) {
     deterministicFingerprint: provenance?.runtime?.deterministic?.fingerprint,
     outputCollectionHash: provenance?.output?.collectionHash,
     ...(provenance?.routeBindingHash ? { routeBindingHash: provenance.routeBindingHash } : {}),
+    ...(provenance?.adapterApplicationsHash !== undefined
+      ? { adapterApplicationsHash: provenance.adapterApplicationsHash }
+      : {}),
   };
   return sha256Value('live-proof-lock-v1', proofLock);
 }
@@ -430,7 +490,808 @@ export function executedExpertPlanFromGraph(apiGraph) {
   });
 }
 
-export function executionPlanIdentity(apiGraph) {
+/**
+ * Ordinary modular Run has no managed Studio plan. Recover only the reviewed
+ * BF16/FP8r or freshly captured native BF16 CPU-loading Expert contract from its executed owner and durable
+ * authoring context. This records a recipe, never runtime or fit qualification.
+ */
+function executedModularExpertPlanFromGraph(apiGraph, executionContext) {
+  const snapshot = apiGraph?.runtimeHints?.workflowSnapshot;
+  const form = snapshot?.studioForm;
+  if (
+    form?.resourceMode !== 'expert' ||
+    form.dtype !== 'bfloat16' ||
+    ![undefined, 'native', 'fp8r'].includes(form.weightFormat) ||
+    form.quantizationMode !== 'none' ||
+    form.trustRemoteCode !== false ||
+    typeof form.autoOffload !== 'boolean' ||
+    typeof form.offloadMode !== 'string' ||
+    typeof form.device !== 'string' ||
+    typeof form.modelType !== 'string' ||
+    !Array.isArray(snapshot.nodes)
+  )
+    return null;
+
+  const entries = nodeEntries(apiGraph);
+  const byId = new Map(entries);
+  const executedIds = new Set((apiGraph?.paths ?? []).flat().map(String));
+  const owners = entries.filter(
+    ([id, node]) =>
+      executedIds.has(id) && node?.module === 'modules.ModularDiffusers' && node.action === 'ModelsLoader',
+  );
+  if (owners.length !== 1) return null;
+  const [ownerId, owner] = owners[0];
+  for (const field of [
+    'repo_id',
+    'revision',
+    'model_type',
+    'dtype',
+    'weight_format',
+    'device',
+    'offload_mode',
+    'auto_offload',
+    'weight_loading_mode',
+    'trust_remote_code',
+  ]) {
+    if (owner.params?.[field]?.sourceId != null || owner.params?.[field]?.sourceKey != null) return null;
+  }
+  const repo = apiParamValue(owner, 'repo_id');
+  const revision = apiParamValue(owner, 'revision');
+  const weightFormat = apiParamValue(owner, 'weight_format');
+  if (
+    !repo ||
+    typeof repo !== 'object' ||
+    Array.isArray(repo) ||
+    repo.source !== 'hub' ||
+    typeof repo.value !== 'string' ||
+    !repo.value ||
+    // Normal template forms retain model type and controls; the immutable
+    // repository lives on the executed loader. A retained optional form
+    // repository must agree, but its absence cannot erase that actual owner.
+    (form.modelRepo !== undefined && repo.value !== form.modelRepo) ||
+    typeof revision !== 'string' ||
+    !/^[0-9a-f]{40}$/u.test(revision) ||
+    apiParamValue(owner, 'model_type') !== form.modelType ||
+    apiParamValue(owner, 'dtype') !== form.dtype ||
+    !['native', 'fp8r'].includes(weightFormat) ||
+    (weightFormat === 'fp8r' ? form.weightFormat !== 'fp8r' : ![undefined, 'native'].includes(form.weightFormat)) ||
+    apiParamValue(owner, 'device') !== form.device ||
+    apiParamValue(owner, 'offload_mode') !== form.offloadMode ||
+    apiParamValue(owner, 'auto_offload') !== form.autoOffload ||
+    apiParamValue(owner, 'weight_loading_mode') !== 'cpu' ||
+    apiParamValue(owner, 'trust_remote_code') !== false
+  )
+    return null;
+  // A borrowed component or a quantization node changes the loading contract.
+  for (const field of [
+    'quant_config',
+    'unet',
+    'vae',
+    'controlnet',
+    'text_encoders',
+    'pipeline_components',
+    'image_encoder',
+  ]) {
+    const param = owner.params?.[field];
+    if (param?.sourceId != null || param?.sourceKey != null || apiParamValue(owner, field) != null) return null;
+  }
+
+  if (weightFormat === 'native') {
+    if (!nativeExpertOwnerCaptureMatches(apiGraph, executionContext, ownerId, owner)) return null;
+    // Older ordinary native graphs need not retain an ancillary Studio profile.
+    // The completed native owner supplies this manual loading recipe; absent
+    // authoring/profile identifiers remain absent instead of being inferred.
+    return orderedValue({
+      source: 'executed-expert-modular-graph-v1',
+      device: form.device,
+      modelType: form.modelType,
+      modelRepo: repo.value,
+      resolvedModelRepo: repo.value,
+      resolvedArtifact: repo.value,
+      modelRevision: revision,
+      pipelineClass: form.modelType,
+      dtype: form.dtype,
+      weightFormat,
+      weightLoadingMode: 'cpu',
+      resourceMode: 'expert',
+      resolvedResourceMode: 'expert',
+      quantizationMode: 'none',
+      quantizedComponents: [],
+      autoOffload: form.autoOffload,
+      offloadMode: form.offloadMode,
+    });
+  }
+
+  // Read active durable leaves only, not definition snapshots or projected UI
+  // duplicates. Local Block roles use semantic IDs; external roles already use
+  // exported IDs. This is the blockProjectionNodeIdV2 identity format, not a
+  // reconstruction of graph execution or socket expansion.
+  const leaves = [];
+  const visit = (nodes, localIds = null) => {
+    for (const node of nodes) {
+      const data = node?.data;
+      if (!data || data.blockProjectionOwnerId) continue;
+      if (data.blockInstanceV2) {
+        const instance = data.blockInstanceV2;
+        const children = instance.effectiveGraph?.nodes;
+        if (localIds || typeof instance.instanceId !== 'string' || !Array.isArray(children)) return false;
+        const ids = new Map(
+          children.map((child) => [
+            child.nodeId,
+            `block-v2-node:${instance.instanceId.length}:${instance.instanceId}:${child.nodeId?.length}:${child.nodeId}`,
+          ]),
+        );
+        if (ids.size !== children.length || children.some((child) => typeof child.nodeId !== 'string')) return false;
+        if (!visit(children, ids)) return false;
+      } else {
+        const context = data.operationAuthoring?.ancillaryParent;
+        const roles = context?.parentRoleNodes;
+        leaves.push({
+          data,
+          id: localIds?.get(node.nodeId) ?? node.id,
+          roles:
+            roles && Object.fromEntries(Object.entries(roles).map(([role, id]) => [role, localIds?.get(id) ?? id])),
+        });
+      }
+    }
+    return true;
+  };
+  if (!visit(snapshot.nodes)) return null;
+  const contexts = leaves.filter(
+    ({ data, id, roles }) =>
+      data.module === 'modules.ModularDiffusers' &&
+      data.action === 'EncodePrompt' &&
+      roles?.models === ownerId &&
+      roles.prompt === id,
+  );
+  if (contexts.length !== 1) return null;
+  const hint = contexts[0].data.operationAuthoring;
+  const context = hint.ancillaryParent;
+  const parent = context.parent;
+  const roles = contexts[0].roles;
+  if (
+    context.schemaVersion !== 1 ||
+    parent?.pipelineClass !== form.modelType ||
+    parent.task !== form.mode ||
+    hint.operation?.pipelineClass !== form.modelType ||
+    hint.operation.task !== form.mode ||
+    typeof parent.executionProfileId !== 'string' ||
+    !parent.executionProfileId ||
+    typeof parent.authoringRecipeId !== 'string' ||
+    !parent.authoringRecipeId ||
+    typeof parent.baseSpecId !== 'string' ||
+    !parent.baseSpecId.startsWith(`${parent.executionProfileId}:`) ||
+    !/^studio-spec-v1-[0-9a-f]{8}$/u.test(parent.baseSpecContentHash ?? '') ||
+    !/^studio-authoring-v1-[0-9a-f]{8}$/u.test(parent.authoringContentHash ?? '') ||
+    new Set(Object.values(roles)).size !== Object.values(roles).length
+  )
+    return null;
+  for (const [role, action] of [
+    ['prompt', 'EncodePrompt'],
+    ['denoise', 'Denoise'],
+    ['decode', 'DecodeLatents'],
+  ]) {
+    const node = byId.get(roles[role]);
+    if (!executedIds.has(roles[role]) || node?.module !== 'modules.ModularDiffusers' || node.action !== action)
+      return null;
+  }
+  for (const [role, field, sourceRole, sourceField] of [
+    ['prompt', 'text_encoders', 'models', 'text_encoders'],
+    ['denoise', 'unet', 'models', 'unet_out'],
+    ['denoise', 'scheduler', 'models', 'scheduler'],
+    ['denoise', 'embeddings', 'prompt', 'embeddings'],
+    ['decode', 'vae', 'models', 'vae_out'],
+    ['decode', 'latents', 'denoise', 'latents'],
+  ]) {
+    const source = connectedParamSource(byId.get(roles[role]), field);
+    if (source?.nodeId !== roles[sourceRole] || source.field !== sourceField) return null;
+  }
+  return orderedValue({
+    source: 'executed-expert-modular-graph-v1',
+    device: form.device,
+    modelType: form.modelType,
+    modelRepo: repo.value,
+    resolvedModelRepo: repo.value,
+    resolvedArtifact: repo.value,
+    modelRevision: revision,
+    pipelineClass: form.modelType,
+    executionProfileId: parent.executionProfileId,
+    authoringRecipeId: parent.authoringRecipeId,
+    dtype: form.dtype,
+    weightFormat,
+    weightLoadingMode: 'cpu',
+    resourceMode: 'expert',
+    resolvedResourceMode: 'expert',
+    quantizationMode: 'none',
+    quantizedComponents: [],
+    autoOffload: form.autoOffload,
+    offloadMode: form.offloadMode,
+  });
+}
+
+// Native Expert recovery needs the original completed task and fresh consumed
+// owner, not an authored graph alone. Uncaptured optional controls stay in the
+// immutable graph; this identity grants neither fit nor per-control telemetry.
+function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
+  try {
+    const { executionReceipt: task, executedOutput: output, taskId, modelIdentities } = context ?? {};
+    const hints = apiGraph.runtimeHints,
+      snapshot = hints.workflowSnapshot;
+    assert.equal(snapshot.studioForm.mode, 'text_to_image');
+    assert.equal(task.status, 'completed');
+    assert.equal(task.attempt_index, 0);
+    assert.equal(output.attemptIndex, 0);
+    assert.equal(task.resourceCandidateId, null);
+    assert.equal(task.runtimePreparation.resourceMode, 'expert');
+    assert.equal(task.runtimePreparation.performed, false);
+    assert.equal(task.runtimePreparation.residentRecipeReusable, false);
+    assert.equal(task.runtimePreparation.cleanup, null);
+    assert.equal(typeof task.task_id, 'string');
+    assert(task.task_id);
+    if (taskId !== undefined) assert.equal(taskId, task.task_id);
+    assert.equal(output.taskId, task.task_id);
+    for (const [key, taskKey, outputKey] of [
+      ['sid', 'sid', 'sid'],
+      ['workflowTabId', 'workflow_tab_id', 'workflowTabId'],
+      ['clientRunId', 'client_run_id', 'clientRunId'],
+      ['runInputHash', 'run_input_hash', 'runInputHash'],
+    ]) {
+      const v = key === 'sid' ? apiGraph.sid : hints[key];
+      assert(typeof v === 'string' && v.length > 0);
+      assert.equal(task[taskKey], v);
+      assert.equal(output[outputKey], v);
+    }
+    same(output.apiGraphSnapshot, apiGraph);
+    same(task.workflow_snapshot, snapshot);
+    same(output.formSnapshot, snapshot.studioForm);
+    const entries = nodeEntries(apiGraph),
+      ids = new Set(entries.map(([id]) => id));
+    same([...new Set(apiGraph.paths.flat())].sort(), [...ids].sort());
+    const byScope = new Map();
+    for (const [id, node] of entries) {
+      const kind = node.module + '.' + node.action;
+      assert(
+        ['ModelsLoader', 'EncodePrompt', 'Guider', 'Denoise', 'DecodeLatents']
+          .map((a) => 'modules.ModularDiffusers.' + a)
+          .concat('modules.Spandrel.Upscaler', 'modules.Image.Preview')
+          .includes(kind),
+      );
+      const list = byScope.get(kind) ?? [];
+      list.push({ id, node });
+      byScope.set(kind, list);
+      for (const param of Object.values(node.params)) if (param.sourceId) assert(ids.has(param.sourceId));
+    }
+    for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents'])
+      assert.equal(byScope.get('modules.ModularDiffusers.' + action)?.length, 1);
+    assert((byScope.get('modules.ModularDiffusers.Guider')?.length ?? 0) <= 1);
+    assert((byScope.get('modules.Spandrel.Upscaler')?.length ?? 0) <= 1);
+    const previews = byScope.get('modules.Image.Preview');
+    assert(previews?.length >= 1 && previews.length <= 2);
+    const decode = byScope.get('modules.ModularDiffusers.DecodeLatents')[0],
+      denoise = byScope.get('modules.ModularDiffusers.Denoise')[0],
+      encode = byScope.get('modules.ModularDiffusers.EncodePrompt')[0];
+    for (const [role, field, producer, port] of [
+      [encode, 'text_encoders', ownerId, 'text_encoders'],
+      [denoise, 'unet', ownerId, 'unet_out'],
+      [denoise, 'scheduler', ownerId, 'scheduler'],
+      [denoise, 'embeddings', encode.id, 'embeddings'],
+      [decode, 'vae', ownerId, 'vae_out'],
+      [decode, 'latents', denoise.id, 'latents'],
+    ])
+      same(connectedParamSource(role.node, field), { nodeId: producer, field: port });
+    const guider = byScope.get('modules.ModularDiffusers.Guider')?.[0];
+    if (guider) same(connectedParamSource(denoise.node, 'guider'), { nodeId: guider.id, field: 'guider_out' });
+    const upscaler = byScope.get('modules.Spandrel.Upscaler')?.[0];
+    if (upscaler) same(connectedParamSource(upscaler.node, 'image'), { nodeId: decode.id, field: 'images' });
+    assert(previews.some((p) => p.id === output.nodeId));
+    for (const p of previews) {
+      const expected =
+        p.id === output.nodeId && upscaler
+          ? { nodeId: upscaler.id, field: 'output' }
+          : { nodeId: decode.id, field: 'images' };
+      same(connectedParamSource(p.node, 'image'), expected);
+    }
+    const receipt = output.resolvedExecutionInputs;
+    assert.equal(receipt.schemaVersion, 1);
+    assert.equal(receipt.source, 'backend-execution');
+    assert.equal(receipt.taskId, task.task_id);
+    assert.equal(receipt.attemptIndex, 0);
+    assert.equal(receipt.nodeId, output.nodeId);
+    assert.equal(receipt.truncated, false);
+    same(receipt.uncapturedNodeIds, []);
+    const rows = new Map(receipt.nodes.map((row) => [row.nodeId, row]));
+    assert.equal(rows.size, receipt.nodes.length);
+    const capturedIds = entries
+      .filter(([id, node]) => node.module !== 'modules.Image' || node.action !== 'Preview' || id === output.nodeId)
+      .map(([id]) => id);
+    same([...rows.keys()].sort(), capturedIds.sort());
+    for (const [id, row] of rows) {
+      assert.equal(row.module, apiGraph.nodes[id].module);
+      assert.equal(row.action, apiGraph.nodes[id].action);
+    }
+    same(receipt.graphTasks, [
+      { loaderId: ownerId, pipelineClass: apiParamValue(owner, 'model_type'), task: 'text_to_image' },
+    ]);
+    for (const key of [
+      'repo_id',
+      'revision',
+      'model_type',
+      'dtype',
+      'device',
+      'offload_mode',
+      'auto_offload',
+      'weight_loading_mode',
+      'attention_backend',
+      'vae_slicing',
+      'vae_tiling',
+      'quant_config',
+    ]) {
+      const field = rows.get(ownerId).fields[key];
+      assert.equal(field.source, 'literal');
+      const expected =
+        key === 'repo_id'
+          ? apiParamValue(owner, key).value
+          : key === 'quant_config' && apiParamValue(owner, key) == null
+            ? null
+            : apiParamValue(owner, key);
+      same(field.value, expected, 'Native Expert consumed ' + key);
+      assert(!Object.hasOwn(rows.get(ownerId).omittedFields ?? {}, key));
+    }
+    if (upscaler)
+      for (const key of ['model_id', 'device']) {
+        const param = upscaler.node.params[key];
+        assert(!param?.sourceId && !param?.sourceKey);
+        const raw = apiParamValue(upscaler.node, key),
+          field = rows.get(upscaler.id).fields[key];
+        if (key === 'model_id' && raw && typeof raw === 'object') assert.equal(raw.source, 'hub');
+        assert.equal(field.source, 'literal');
+        same(field.value, key === 'model_id' && typeof raw === 'object' ? raw.value : raw);
+        assert(!Object.hasOwn(rows.get(upscaler.id).omittedFields ?? {}, key));
+      }
+    const applied = createAppliedAdapterProof({
+      apiGraph,
+      canonicalGraph: canonicalizeApiGraph(apiGraph),
+      executedOutput: output,
+      executionReceipt: task,
+      taskId: task.task_id,
+    });
+    assert.equal(applied.proof.truncated, false);
+    assert.equal(applied.proof.owners.length, 1);
+    const application = applied.proof.owners[0].application;
+    assert.equal(application.status, 'complete');
+    assert.equal(application.observation, 'activated');
+    same(application.adapters, []);
+    assert(Array.isArray(modelIdentities));
+    same(modelIdentities.map((m) => m.repoId).sort(), resolvedModelReposFromOutput(output).sort());
+    for (const m of modelIdentities) {
+      assert.match(m.selectedRevision, /^[a-f0-9]{40}$/u);
+      assert.equal(m.modelRevision, m.repoId + '@' + m.selectedRevision);
+      assert(m.fingerprint);
+    }
+    const model = modelIdentities.find((m) => m.repoId === apiParamValue(owner, 'repo_id').value);
+    assert.equal(model.selectedRevision, apiParamValue(owner, 'revision'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Ordinary direct-audio graphs have no managed Studio binding. Record only
+// their unique connected recipe. Expert records that authored structure; Auto
+// additionally requires the native joins below. Neither grants fit qualification.
+// Do not substitute stale form/model aliases for the loader.
+function executedDirectAudioPlanFromGraph(apiGraph, resourceMode = 'expert') {
+  const form = apiGraph?.runtimeHints?.workflowSnapshot?.studioForm;
+  if (
+    !['expert', 'auto'].includes(resourceMode) ||
+    form?.resourceMode !== resourceMode ||
+    form.quantizationMode !== 'none'
+  )
+    return null;
+  const entries = nodeEntries(apiGraph);
+  const paths = apiGraph?.paths;
+  if (
+    entries.some(
+      ([id, node]) =>
+        !id ||
+        !node ||
+        typeof node !== 'object' ||
+        Array.isArray(node) ||
+        !node.params ||
+        typeof node.params !== 'object' ||
+        Array.isArray(node.params),
+    ) ||
+    ![5, 6, 8].includes(entries.length) ||
+    !Array.isArray(paths) ||
+    paths.length !== 1 ||
+    !Array.isArray(paths[0]) ||
+    paths[0].length !== entries.length ||
+    new Set(paths[0]).size !== entries.length ||
+    entries.some(([id]) => !paths[0].includes(id))
+  )
+    return null;
+  const role = (module, action) => {
+    const matches = entries.filter(([, node]) => node.module === module && node.action === action);
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const loader = role('modules.DiffusersAudio', 'LoadPipeline');
+  const generate = role('modules.DiffusersAudio', 'Generate');
+  const recipe = role('modules.DiffusersRuntime', 'DiffusersExecutionRecipe');
+  const quant = role('modules.DiffusersRuntime', 'PipelineQuantizationConfigV2');
+  const output = role('modules.Audio', 'Export');
+  if (!loader || !generate || !recipe || !quant || !output) return null;
+  const source = role('modules.Audio', 'Load');
+  const match = role('modules.Audio', 'MatchLoudness');
+  const join = role('modules.Audio', 'Join');
+  const roles = [loader, generate, recipe, quant, output, source, match, join].filter(Boolean);
+  if (roles.length !== entries.length || Boolean(match) !== Boolean(join) || (join && !source)) return null;
+  const literal = (entry, field) => {
+    const param = entry?.[1]?.params?.[field];
+    return param && !param.sourceId && !param.sourceKey ? apiParamValue(entry[1], field) : undefined;
+  };
+  const repo = hubRepository(literal(loader, 'model_id'));
+  const revision = literal(loader, 'revision');
+  const pipelineClass = literal(loader, 'pipeline_class');
+  const mode = literal(loader, 'mode');
+  const contract = literal(loader, 'audio_contract');
+  if (
+    !repo ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(repo) ||
+    !/^[a-f0-9]{40}$/u.test(String(revision)) ||
+    typeof pipelineClass !== 'string' ||
+    !pipelineClass ||
+    typeof mode !== 'string' ||
+    !mode ||
+    !contract ||
+    Array.isArray(contract) ||
+    contract.schemaVersion !== 1 ||
+    contract.library !== 'diffusers' ||
+    contract.mediaKind !== 'audio' ||
+    contract.pipelineClass !== pipelineClass ||
+    contract.repository !== repo ||
+    contract.mode !== mode ||
+    contract.referenceAudio !== 'forbidden' ||
+    !Array.isArray(contract.actions?.Generate) ||
+    !contract.actions.Generate.includes(mode) ||
+    !['required', 'forbidden'].includes(contract.sourceAudio) ||
+    (contract.sourceAudio === 'required') !== Boolean(source) ||
+    stableStringify(literal(generate, 'audio_contract')) !== stableStringify(contract)
+  )
+    return null;
+  const wires = new Map([
+    [loader[0], { execution_recipe: [recipe[0], 'execution_recipe'] }],
+    [recipe[0], { quantization_config: [quant[0], 'quantization_config'] }],
+    [quant[0], {}],
+    [generate[0], { pipeline: [loader[0], 'pipeline'], ...(source ? { source_audio: [source[0], 'audio'] } : {}) }],
+    [output[0], { audio: join ? [join[0], 'output'] : [generate[0], 'audio'] }],
+    ...(source ? [[source[0], {}]] : []),
+    ...(match
+      ? [
+          [match[0], { audio: [generate[0], 'audio'], reference: [source[0], 'audio'] }],
+          [join[0], { source: [source[0], 'audio'], continuation: [match[0], 'output'] }],
+        ]
+      : []),
+  ]);
+  const mediaValue = (value) => typeof value === 'string' && value.length <= 16_384;
+  for (const [id, node] of entries) {
+    const expected = wires.get(id);
+    if (!expected) return null;
+    const previewPort = id === output[0] ? 'file' : source && id === source[0] ? 'filename' : null;
+    for (const [key, param] of Object.entries(node.params ?? {})) {
+      const previewValue = param?.value;
+      // These native preview references survive Save/reopen; sourceKey names
+      // an output field here, not an additional graph connection.
+      const presentation =
+        key === 'preview' &&
+        previewPort !== null &&
+        param?.display === 'ui_audio' &&
+        param.sourceKey === previewPort &&
+        Object.keys(param).every((field) => ['display', 'sourceKey', 'value'].includes(field)) &&
+        (previewValue == null ||
+          mediaValue(previewValue) ||
+          (Array.isArray(previewValue) && previewValue.length <= 16 && previewValue.every(mediaValue)));
+      if ((param?.sourceId || param?.sourceKey) && !Object.hasOwn(expected, key) && !presentation) return null;
+    }
+    for (const [field, [producer, port]] of Object.entries(expected)) {
+      const wire = connectedParamSource(node, field);
+      if (wire?.nodeId !== producer || wire.field !== port || paths[0].indexOf(producer) >= paths[0].indexOf(id))
+        return null;
+    }
+  }
+  const dtype = literal(loader, 'dtype');
+  const device = literal(loader, 'device');
+  const autoOffload = literal(loader, 'auto_offload');
+  const offloadMode = literal(loader, 'offload_mode');
+  const deviceMap = literal(recipe, 'device_map');
+  if (
+    !['float32', 'float16', 'bfloat16'].includes(dtype) ||
+    typeof device !== 'string' ||
+    !device ||
+    typeof autoOffload !== 'boolean' ||
+    typeof offloadMode !== 'string' ||
+    !offloadMode ||
+    typeof deviceMap !== 'string' ||
+    !deviceMap ||
+    literal(quant, 'backend') !== 'none' ||
+    literal(quant, 'dtype') !== dtype ||
+    literal(recipe, 'device') !== device ||
+    literal(recipe, 'offload_mode') !== offloadMode ||
+    form.dtype !== dtype ||
+    form.device !== device ||
+    form.autoOffload !== autoOffload ||
+    form.offloadMode !== offloadMode
+  )
+    return null;
+  const extras = {};
+  for (const [field, name, type] of [
+    ['attention_backend', 'attentionBackend', 'string'],
+    ['regional_compile', 'regionalCompile', 'boolean'],
+    ['denoiser_cache', 'denoiserCache', 'string'],
+    ['channels_last', 'channelsLast', 'boolean'],
+    ['layerwise_casting', 'layerwiseCasting', 'boolean'],
+  ]) {
+    const value = literal(recipe, field);
+    if (typeof value !== type) return null;
+    extras[name] = value;
+  }
+  return orderedValue({
+    ...(resourceMode === 'expert' ? { source: 'executed-expert-direct-audio-graph-v1' } : {}),
+    modelType: pipelineClass,
+    pipelineClass,
+    modelRepo: repo,
+    resolvedModelRepo: repo,
+    resolvedArtifact: repo,
+    modelRevision: revision,
+    task: mode,
+    dtype,
+    device,
+    deviceMap,
+    autoOffload,
+    offloadMode,
+    quantizationMode: 'none',
+    quantizedComponents: [],
+    resourceMode,
+    resolvedResourceMode: resourceMode,
+    ...extras,
+  });
+}
+
+// A retained whole-workflow audio run needs the same native joins as image Auto.
+// Literal form values alone never supply this identity. Initial scope is one
+// fresh unquantized Generate/Export owner, optionally with the ordinary joined
+// continuation chain. Repaint, adapters, reuse, patches and other scopes stay held.
+function observedWorkflowAutoAudioPlan(
+  apiGraph,
+  { executionReceipt: task, executedOutput: output, taskId, modelIdentities } = {},
+) {
+  try {
+    const base = executedDirectAudioPlanFromGraph(apiGraph, 'auto');
+    assert(base && ['text_to_audio', 'audio_continuation'].includes(base.task));
+    const hints = apiGraph.runtimeHints,
+      form = hints.workflowSnapshot.studioForm;
+    assert.equal(hints.resourceMode, 'auto');
+    assert.equal(form.mode, base.task);
+    assert.equal(form.trustRemoteCode, false);
+    assert.equal(task.status, 'completed');
+    assert.equal(task.attempt_index, 0);
+    assert.equal(task.resourceCandidateId ?? null, null);
+    assert.equal(output.attemptIndex, 0);
+    assert.equal(task.task_id, output.taskId);
+    if (taskId !== undefined) assert.equal(taskId, task.task_id);
+    for (const [key, taskKey, outputKey] of [
+      ['sid', 'sid', 'sid'],
+      ['workflowTabId', 'workflow_tab_id', 'workflowTabId'],
+      ['clientRunId', 'client_run_id', 'clientRunId'],
+      ['runInputHash', 'run_input_hash', 'runInputHash'],
+    ]) {
+      const identity = key === 'sid' ? apiGraph.sid : hints[key];
+      assert.equal(typeof identity, 'string');
+      assert(identity.length > 0);
+      same(task[taskKey], identity, key);
+      same(output[outputKey], identity, key);
+    }
+    same(output.apiGraphSnapshot, apiGraph);
+    same(task.workflow_snapshot, hints.workflowSnapshot);
+    same(output.formSnapshot, form);
+    assert.equal(hints.workflowAutoPlan.schemaVersion, 1);
+    assert.equal(hints.workflowAutoPlan.graphHash, workerGraphHash(apiGraph));
+    assert(!Object.hasOwn(apiGraph, 'loops'));
+    const entries = nodeEntries(apiGraph),
+      byScope = new Map(entries.map(([id, node]) => [node.module + '.' + node.action, { id, node }]));
+    assert.equal(byScope.size, entries.length);
+    assert.equal(entries.length, base.task === 'text_to_audio' ? 5 : 8);
+    const owner = byScope.get('modules.DiffusersAudio.LoadPipeline'),
+      generate = byScope.get('modules.DiffusersAudio.Generate');
+    const recipe = byScope.get('modules.DiffusersRuntime.DiffusersExecutionRecipe'),
+      quant = byScope.get('modules.DiffusersRuntime.PipelineQuantizationConfigV2');
+    const exported = byScope.get('modules.Audio.Export');
+    assert.equal(output.nodeId, exported.id);
+    const captured = output.resolvedExecutionInputs;
+    assert.equal(captured.schemaVersion, 1);
+    assert.equal(captured.source, 'backend-execution');
+    assert.equal(captured.taskId, task.task_id);
+    assert.equal(captured.attemptIndex, 0);
+    assert.equal(captured.nodeId, exported.id);
+    assert.equal(captured.truncated, false);
+    same(captured.uncapturedNodeIds, []);
+    const rows = new Map(captured.nodes.map((row) => [row.nodeId, row]));
+    assert.equal(rows.size, entries.length);
+    assert.equal(captured.nodes.length, entries.length);
+    for (const [id, node] of entries) {
+      assert.equal(rows.get(id).module, node.module);
+      assert.equal(rows.get(id).action, node.action);
+    }
+    assert.equal(modelIdentities?.length, 1);
+    assert.equal(modelIdentities[0].repoId, base.modelRepo);
+    assert.equal(modelIdentities[0].selectedRevision, base.modelRevision);
+    const prep = task.runtimePreparation;
+    assert.equal(prep.resourceMode, 'auto');
+    const auto = prep.workflowAuto;
+    assert.equal(auto.strategy, 'dependency_order_retained_owners');
+    assert.equal(auto.schedule, null);
+    assert.equal(auto.cachePreparation, null);
+    for (const field of ['reusedOwnerIds', 'preparedDataNodes', 'appliedUpdates', 'releases']) same(auto[field], []);
+    const allowed = new Map([
+      [owner.id, new Set('model_id pipeline_class revision dtype device offload_mode auto_offload mode'.split(' '))],
+      [
+        recipe.id,
+        new Set(
+          'attention_backend regional_compile layerwise_casting channels_last device_map denoiser_cache max_memory device_map_overrides vae_slicing vae_tiling offload_mode device'.split(
+            ' ',
+          ),
+        ),
+      ],
+      [quant.id, new Set('backend component_overrides'.split(' '))],
+      [generate.id, new Set('num_inference_steps guidance_scale audio_duration'.split(' '))],
+    ]);
+    same(Object.keys(auto.resolvedFields).sort(), [...allowed.keys()].sort());
+    const controls = [];
+    for (const [id, fields] of Object.entries(auto.resolvedFields)) {
+      same(Object.keys(fields).sort(), [...allowed.get(id)].sort());
+      const node = apiGraph.nodes[id];
+      for (const [key, observed] of Object.entries(fields)) {
+        assert(!node.params[key]?.sourceId && !node.params[key]?.sourceKey);
+        same(apiParamValue(node, key), observed);
+        const field = rows.get(id).fields[key];
+        if (field) {
+          assert.equal(field.source, 'literal');
+          // Continuation resolves the requested source-duration control plus
+          // its extension into the library's full target duration. Check that
+          // actual value below, rather than conflating admission and call data.
+          if (!(id === generate.id && key === 'audio_duration' && base.task === 'audio_continuation'))
+            same(field.value, key === 'model_id' ? base.modelRepo : observed);
+        }
+      }
+      controls.push({ scope: node.module + '.' + node.action, fields: structuredClone(fields) });
+    }
+    controls.sort((a, b) => a.scope.localeCompare(b.scope));
+    const native = (entry, key, expected) => {
+      const field = rows.get(entry.id).fields[key];
+      assert.equal(field.source, 'literal');
+      same(field.value, expected);
+    };
+    if (base.task === 'audio_continuation') {
+      const source = byScope.get('modules.Audio.Load');
+      const file = source.node.params.file;
+      assert(!file?.sourceId && !file?.sourceKey);
+      assert.equal(typeof file?.value, 'string');
+      assert(file.value.length > 0 && file.value.length <= 16_384);
+      same(file.value, form.sourceAudio);
+    }
+    for (const key of [
+      'model_id',
+      'pipeline_class',
+      'revision',
+      'dtype',
+      'device',
+      'auto_offload',
+      'offload_mode',
+      'enable_vae_tiling',
+    ])
+      native(owner, key, key === 'model_id' ? base.modelRepo : apiParamValue(owner.node, key));
+    for (const key of ['device', 'offload_mode', 'attention_backend', 'vae_slicing', 'vae_tiling'])
+      native(recipe, key, apiParamValue(recipe.node, key));
+    native(quant, 'dtype', base.dtype);
+    assert.equal(base.attentionBackend, 'auto');
+    for (const key of ['regional_compile', 'layerwise_casting', 'channels_last'])
+      assert.equal(apiParamValue(recipe.node, key), false);
+    assert.equal(apiParamValue(recipe.node, 'denoiser_cache'), 'none');
+    for (const key of ['max_memory', 'device_map_overrides']) assert.equal(apiParamValue(recipe.node, key), '{}');
+    assert.equal(apiParamValue(quant.node, 'component_overrides'), '{}');
+    const duration = apiParamValue(generate.node, 'audio_duration'),
+      extension = base.task === 'audio_continuation' ? apiParamValue(generate.node, 'extension_duration') : null;
+    assert(Number.isFinite(duration) && duration > 0);
+    same(duration, form.audioDuration);
+    if (extension !== null) {
+      assert(Number.isFinite(extension) && extension > 0);
+      same(extension, form.extensionDuration);
+      assert.equal(apiParamValue(generate.node, 'return_continuation_tail'), true);
+    }
+    const effective = duration + (extension ?? 0);
+    for (const [key, formKey] of [
+      ['prompt', 'prompt'],
+      ['lyrics', 'lyrics'],
+      ['vocal_language', 'vocalLanguage'],
+      ['num_inference_steps', 'steps'],
+      ['guidance_scale', 'guidanceScale'],
+      ['shift', 'shift'],
+      ['seed', 'seed'],
+      ['bpm', 'bpm'],
+      ['keyscale', 'keyscale'],
+      ['timesignature', 'timesignature'],
+    ]) {
+      const value = apiParamValue(generate.node, key);
+      same(value, form[formKey]);
+      native(generate, key, value);
+    }
+    native(generate, 'audio_duration', effective);
+    const sampleRate = apiParamValue(generate.node, 'sample_rate');
+    assert(Number.isInteger(sampleRate) && sampleRate > 0);
+    native(generate, 'sample_rate', sampleRate);
+    native(exported, 'sample_rate', sampleRate);
+    const observation = {
+      schemaVersion: 1,
+      strategy: auto.strategy,
+      modelType: base.modelType,
+      repo: base.modelRepo,
+      revision: base.modelRevision,
+      task: base.task,
+      dtype: base.dtype,
+      device: base.device,
+      offloadMode: base.offloadMode,
+      autoOffload: base.autoOffload,
+      deviceMap: base.deviceMap,
+      attentionBackend: base.attentionBackend,
+      workload: {
+        requestedAudioDuration: duration,
+        effectiveAudioDuration: effective,
+        extensionDuration: extension,
+        steps: apiParamValue(generate.node, 'num_inference_steps'),
+        guidanceScale: apiParamValue(generate.node, 'guidance_scale'),
+        sampleRate,
+      },
+      controls,
+    };
+    const plan = { ...base, source: OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE, resourceObservation: observation };
+    plan.observedResourceCandidateId = plan.source + ':' + observationJsonHash(observation);
+    assert(observedWorkflowAutoResourceId(plan));
+    return plan;
+  } catch {
+    return null;
+  }
+}
+
+function observedAdapterProofContext(apiGraph, context) {
+  try {
+    if (
+      !Object.values(apiGraph.nodes).some(
+        (node) => node.module === 'modules.ModularDiffusers' && node.action === 'Lora',
+      )
+    )
+      return null;
+    const canonicalGraph = canonicalizeApiGraph(apiGraph);
+    const taskId = context?.taskId ?? context?.executionReceipt?.task_id;
+    const application = createAppliedAdapterProof({
+      apiGraph,
+      canonicalGraph,
+      executedOutput: context?.executedOutput,
+      executionReceipt: context?.executionReceipt,
+      taskId,
+    });
+    if (!application) return null;
+    return {
+      taskId,
+      graph: { canonicalGraph },
+      models: modelSetIdentity(context?.modelIdentities ?? []),
+      adapterApplications: application.proof,
+      adapterApplicationsHash: application.hash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function executionPlanIdentity(apiGraph, executionContext) {
   const runtimeHints = apiGraph?.runtimeHints ?? {};
   const declaredPlan = Object.fromEntries(
     EXECUTION_PLAN_FIELDS.filter((field) => runtimeHints[field] !== undefined).map((field) => [
@@ -438,7 +1299,39 @@ export function executionPlanIdentity(apiGraph) {
       runtimeHints[field],
     ]),
   );
-  const plan = Object.keys(declaredPlan).length > 0 ? declaredPlan : (executedExpertPlanFromGraph(apiGraph) ?? {});
+  const fields = Object.keys(declaredPlan);
+  const expertOnly = fields.every(
+    (field) => ['resourceMode', 'resolvedResourceMode'].includes(field) && declaredPlan[field] === 'expert',
+  );
+  const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph, executionContext) : null;
+  const observedAutoPlan =
+    fields.length === 1 && declaredPlan.resourceMode === 'auto'
+      ? (observedWorkflowAutoPlan(apiGraph, {
+          ...executionContext,
+          adapterProofContext: observedAdapterProofContext(apiGraph, executionContext),
+        }) ??
+        observedWorkflowAutoAudioPlan(apiGraph, executionContext) ??
+        observedWorkflowAutoVideoPlan(apiGraph, executionContext) ??
+        observedWorkflowAutoControlPlan(apiGraph, executionContext) ??
+        observedWorkflowAutoMaskedImagePlan(apiGraph, executionContext))
+      : null;
+  const retainedPlan =
+    executionContext?.retainedNativeEvidence === undefined
+      ? null
+      : Object.values(apiGraph?.nodes ?? {}).some(
+            (node) => node.module === 'modules.DiffusersImage' && node.action === 'LoadPipeline',
+          )
+        ? observedRetainedDirectImagePlan(apiGraph, executionContext)
+        : (observedRetainedModularImagePlan(apiGraph, executionContext) ??
+          observedRetainedExpertTextPlan(apiGraph, executionContext));
+  const plan =
+    executionContext?.retainedNativeEvidence !== undefined
+      ? (retainedPlan ?? {})
+      : (observedAutoPlan ??
+        modularPlan ??
+        (fields.length > 0
+          ? declaredPlan
+          : (executedExpertPlanFromGraph(apiGraph) ?? executedDirectAudioPlanFromGraph(apiGraph) ?? {})));
   return {
     hash: sha256Value('execution-plan-v1', plan),
     plan: orderedValue(plan),
@@ -455,7 +1348,14 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
     measurement?.processRssBytes ??
     null;
   const manualResourceCandidateId =
-    executionPlan?.modelType && executionPlan?.dtype
+    !isObservedWorkflowAutoSource(executionPlan?.source) &&
+    executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
+    executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_MASKED_IMAGE_SOURCE &&
+    executionPlan?.source !== OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
+    executionPlan?.source !== OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE &&
+    executionPlan?.source !== OBSERVED_RETAINED_MODULAR_IMAGE_SOURCE &&
+    executionPlan?.modelType &&
+    executionPlan?.dtype
       ? `manual-resource-v1:${[
           executionPlan.modelType,
           executionPlan.dtype,
@@ -465,7 +1365,16 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       : null;
   return {
     resourceCandidateId:
-      hints?.autoResourceCandidateId ?? executionPlan?.autoResourceCandidateId ?? manualResourceCandidateId,
+      hints?.autoResourceCandidateId ??
+      executionPlan?.autoResourceCandidateId ??
+      observedWorkflowAutoResourceId(executionPlan) ??
+      observedWorkflowAutoVideoResourceId(executionPlan) ??
+      observedWorkflowAutoControlResourceId(executionPlan) ??
+      observedWorkflowAutoMaskedImageResourceId(executionPlan) ??
+      observedRetainedExpertTextResourceId(executionPlan) ??
+      observedRetainedDirectImageResourceId(executionPlan) ??
+      observedRetainedModularImageResourceId(executionPlan) ??
+      manualResourceCandidateId,
     elapsedSeconds:
       Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
         ? measurement.elapsedSeconds
@@ -710,6 +1619,17 @@ function sourceFilesUnder(target) {
 }
 
 function gitCommit(root) {
+  const topLevel = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (topLevel.status !== 0 || !topLevel.stdout.trim()) return null;
+  try {
+    if (realpathSync(topLevel.stdout.trim()) !== realpathSync(root)) return null;
+  } catch {
+    return null;
+  }
   const result = spawnSync('git', ['rev-parse', 'HEAD'], {
     cwd: root,
     encoding: 'utf8',
@@ -727,12 +1647,17 @@ export function backendSourceIdentity(backendRoot) {
     path.join(backendRoot, 'utils'),
   ];
   const files = [...new Set(targets.flatMap(sourceFilesUnder))]
-    // This identity is also captured by the Python worker before imports.
-    // Use language-independent Unicode/code-point ordering rather than the
-    // host locale so both processes hash the same ordered file inventory.
-    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    // The Python worker sorts POSIX paths before imports. Normalize separators
+    // before sorting: on Windows a backslash orders Image after ImageFilters.
     .map((file) => ({
-      path: path.relative(backendRoot, file).replaceAll('\\', '/'),
+      file,
+      relativePath: path.relative(backendRoot, file).replaceAll('\\', '/'),
+    }))
+    .sort((left, right) =>
+      left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0,
+    )
+    .map(({ file, relativePath }) => ({
+      path: relativePath,
       sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
     }));
   const payload = {
@@ -924,6 +1849,11 @@ function outputIdentity(outputAnalysis, executedOutput) {
 
 export function validateRunProvenance(provenance) {
   const blockers = [];
+  try {
+    validateAppliedAdapterProof(provenance);
+  } catch (error) {
+    blockers.push(`Applied adapter evidence is invalid: ${error.message}`);
+  }
   const required = [
     ['template.resolvedTemplateLockHash', provenance?.template?.resolvedTemplateLockHash],
     ['template.revisionHash', provenance?.template?.revisionHash],
@@ -986,6 +1916,114 @@ export function validateRunProvenance(provenance) {
     }
     if (!provenance?.execution?.resourceCandidateId) {
       blockers.push('execution.resourceCandidateId is missing.');
+    }
+    if (
+      isObservedWorkflowAutoSource(provenance?.graph?.executionPlan?.source) &&
+      (!observedWorkflowAutoResourceId(provenance.graph.executionPlan) ||
+        provenance.execution?.resourceCandidateId !== observedWorkflowAutoResourceId(provenance.graph.executionPlan))
+    ) {
+      blockers.push('execution.resourceCandidateId does not match the retained workflow Auto observation.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_LORA_SOURCE &&
+      !observedWorkflowAutoLoraProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push('execution LoRA resource observation does not match the original applied adapter proof.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE &&
+      !observedWorkflowAutoAudioProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push('execution audio resource observation does not match the original graph/model/output proof.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_LEGACY_SOURCE &&
+      !observedWorkflowAutoLegacyProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push(
+        'execution legacy resource observation does not match the original graph/source/contract/model/output proof.',
+      );
+    }
+    if (
+      [OBSERVED_WORKFLOW_AUTO_SOURCE, OBSERVED_WORKFLOW_AUTO_LORA_SOURCE].includes(
+        provenance?.graph?.executionPlan?.source,
+      ) &&
+      (provenance.graph.executionPlan.resourceObservation?.decoderGeometryRoute !== undefined ||
+        provenance.graph.canonicalGraph?.nodes?.some(
+          (node) =>
+            node.module === 'modules.ModularDiffusers' &&
+            node.action === 'DecodeLatents' &&
+            ['width', 'height'].some((field) => node.params?.[field]?.sourceId || node.params?.[field]?.sourceKey),
+        )) &&
+      !observedWorkflowAutoTextGeometryProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push(
+        'execution text decoder geometry observation does not match the original connected graph/output proof.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_CONTROL_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedWorkflowAutoControlResourceId(provenance.graph.executionPlan) ||
+        !observedWorkflowAutoControlProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution control resource observation does not match the original graph/model/input/output proof.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_MASKED_IMAGE_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedWorkflowAutoMaskedImageResourceId(provenance.graph.executionPlan) ||
+        !observedWorkflowAutoMaskedImageProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution masked-image resource observation does not match the original graph/model/source/mask/output proof.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedWorkflowAutoVideoResourceId(provenance.graph.executionPlan) ||
+        !observedWorkflowAutoVideoProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push('execution video resource observation does not match the original graph/model/output proof.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedRetainedDirectImageResourceId(provenance.graph.executionPlan) ||
+        !observedRetainedDirectImageProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution retained direct-image observation does not match the original source/contract/graph/model/input/output bindings.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_MODULAR_IMAGE_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedRetainedModularImageResourceId(provenance.graph.executionPlan) ||
+        !observedRetainedModularImageProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution retained modular-image observation does not match the original source/contract/graph/model/input/output bindings.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedRetainedExpertTextResourceId(provenance.graph.executionPlan) ||
+        !observedRetainedExpertTextProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution retained native text observation does not match the original source/contract/graph/model/output bindings.',
+      );
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_WORKFLOW_AUTO_IMAGE_SOURCE &&
+      !observedWorkflowAutoImageProofMatches(provenance.graph.executionPlan, provenance)
+    ) {
+      blockers.push('execution image resource observation does not match the original graph/model/input/output proof.');
     }
     if (!Number.isFinite(provenance?.execution?.elapsedSeconds) || provenance.execution.elapsedSeconds < 0) {
       blockers.push('execution.elapsedSeconds is invalid.');
@@ -1062,6 +2100,442 @@ export function validateRunProvenance(provenance) {
   return blockers;
 }
 
+const same = (actual, expected, label) => assert.equal(stableStringify(actual), stableStringify(expected), label);
+const immutableRevision = (value) => typeof value === 'string' && /^[a-f0-9]{40,64}$/i.test(value);
+
+const accountingFields = {
+  LoadPipeline: `model_id pipeline_class mode revision conditioning_kind conditioning_model_id conditioning_revision
+    dtype device quantization_mode quantized_components device_map auto_offload offload_mode enable_vae_slicing
+    enable_vae_tiling low_cpu_mem_usage`.split(/\s+/u),
+  PipelineQuantizationConfigV2: 'backend components dtype excluded_modules component_overrides'.split(' '),
+  DiffusersExecutionRecipe: `device_map max_memory device_map_overrides offload_mode device attention_backend
+    attention_components vae_slicing vae_tiling layerwise_casting layerwise_casting_components layerwise_storage_dtype
+    layerwise_compute_dtype channels_last channels_last_components regional_compile compile_components compile_backend
+    compile_mode compile_fullgraph compile_dynamic denoiser_cache cache_threshold cache_options`.split(/\s+/u),
+  UnconditionalGenerate: 'image_contract batch_size seed num_inference_steps eta class_label output_type'.split(' '),
+  Preview: ['device', 'export'],
+};
+const accountingModules = {
+  LoadPipeline: 'modules.DiffusersImage',
+  UnconditionalGenerate: 'modules.DiffusersImage',
+  PipelineQuantizationConfigV2: 'modules.DiffusersRuntime',
+  DiffusersExecutionRecipe: 'modules.DiffusersRuntime',
+  Preview: 'modules.Image',
+};
+const accountingScalar = (value) =>
+  value === null ||
+  typeof value === 'boolean' ||
+  (typeof value === 'string' && value.length <= 16_384) ||
+  (typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER);
+const accountingValue = (value) =>
+  accountingScalar(value) || (Array.isArray(value) && value.length <= 16 && value.every(accountingScalar));
+function accountingKeys(value, keys, label) {
+  assert.ok(value && typeof value === 'object' && !Array.isArray(value), label);
+  same(Object.keys(value).sort(), [...keys].sort(), label);
+}
+// The backend hashes sorted ASCII JSON, separately from existing v1 hashes.
+function accountingDigest(kind, value) {
+  const ordered = (item) =>
+    Array.isArray(item)
+      ? item.map(ordered)
+      : item && typeof item === 'object'
+        ? Object.fromEntries(
+            Object.keys(item)
+              .sort()
+              .map((key) => [key, ordered(item[key])]),
+          )
+        : item;
+  const ascii = JSON.stringify(ordered(value)).replace(
+    /[\u007f-\uffff]/g,
+    (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+  return createHash('sha256').update(`${kind}\n${ascii}`, 'ascii').digest('hex');
+}
+
+/** Independent accounting join; not a provenance factory or release grant.
+ * Initial scope is the existing five-node, unquantized DDIM canonical creator.
+ * The optional shared-factory hook binds this join to the original task/output.
+ * Native acceptance remains separate; the default factory path stays unchanged.
+ */
+export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target, runtimeEvidence }) {
+  assertCanonicalDdimGraphEnvelope(expectedApiGraph);
+  assertCanonicalDdimGraphEnvelope(apiGraph);
+  same(
+    canonicalGraphIdentity(apiGraph),
+    canonicalGraphIdentity(expectedApiGraph),
+    'Accounting graph is not the canonical export.',
+  );
+  assert.equal(target.modelType, 'DDIMPipeline', 'Canonical accounting model is outside the reviewed initial scope.');
+  assert.equal(target.task, 'unconditional_image');
+  assert.equal(consumed?.schemaVersion, 1);
+  assert.equal(consumed.source, 'backend-execution');
+  assert.equal(consumed.truncated, false);
+  same(consumed.uncapturedNodeIds, [], 'Accounting ancestry is incomplete.');
+  same(consumed.fieldAccountingStatus, { schemaVersion: 1, truncated: false }, 'Accounting extension is incomplete.');
+  assert.ok(Array.isArray(consumed.nodes) && consumed.nodes.length === 5, 'Exact five-node accounting is required.');
+  assert.equal(new Set(consumed.nodes.map((row) => row.nodeId)).size, 5, 'Accounting owner identities are ambiguous.');
+  same(
+    consumed.nodes.map((row) => row.nodeId).sort(),
+    Object.keys(apiGraph.nodes).sort(),
+    'Accounting graph scope differs.',
+  );
+  assert.ok(Array.isArray(apiGraph.paths) && apiGraph.paths.length === 1, 'One executed canonical path is required.');
+  same([...apiGraph.paths[0]].sort(), Object.keys(apiGraph.nodes).sort(), 'Accounting contains an unexecuted owner.');
+  const byAction = new Map();
+  for (const row of consumed.nodes) {
+    const node = apiGraph.nodes[row.nodeId];
+    assert.ok(Object.hasOwn(accountingFields, row.action), 'Unknown accounting action.');
+    assert.equal(row.module, accountingModules[row.action], 'Unknown accounting module.');
+    assert.equal(node.module, row.module);
+    assert.equal(node.action, row.action);
+    assert.ok(!byAction.has(row.action), 'Accounting owner is not unique.');
+    byAction.set(row.action, { row, node });
+    same(row.omittedFields, {}, 'Legacy consumed fields were omitted.');
+    const section = row.fieldAccounting;
+    accountingKeys(
+      section,
+      [
+        'schemaVersion',
+        'fields',
+        'inputProjections',
+        'outputProjections',
+        'unaccountedFields',
+        'omittedFields',
+        'complete',
+      ],
+      'Unknown or missing accounting section keys.',
+    );
+    assert.equal(section.schemaVersion, 1);
+    assert.equal(section.complete, true, 'Incomplete field accounting.');
+    same(section.omittedFields, {}, 'Accounting fields were omitted.');
+    same(section.unaccountedFields, [], 'Unaccounted graph fields remain.');
+    assert.ok(JSON.stringify(section).length <= 65_536, 'Accounting section exceeds its bound.');
+    accountingKeys(section.fields, accountingFields[row.action], 'Accounting literal field set differs.');
+    for (const [key, field] of Object.entries(section.fields)) {
+      const parameter = node.params[key];
+      assert.ok(
+        parameter && Object.hasOwn(parameter, 'value') && !parameter.sourceId && !parameter.sourceKey,
+        `Accounting literal origin differs: ${row.nodeId}.${key}`,
+      );
+      assert.equal(field.source, 'literal', 'Connected or overridden scalar accounting is unsupported.');
+      if (field.disposition === 'metadata') {
+        accountingKeys(field, ['disposition', 'source', 'reason', 'sha256'], 'Unexpected metadata fields.');
+        assert.equal(key, 'image_contract');
+        assert.equal(field.reason, 'presentation-contract');
+        assert.equal(
+          field.sha256,
+          accountingDigest('image-contract-v1', parameter.value),
+          'Metadata contract hash differs.',
+        );
+      } else {
+        accountingKeys(
+          field,
+          ['disposition', 'inputValue', 'value', 'source', ...(field.disposition === 'consumed' ? [] : ['reason'])],
+          'Unexpected accounted scalar fields.',
+        );
+        assert.ok(
+          ['consumed', 'inactive', 'superseded'].includes(field.disposition),
+          'Unknown accounting disposition.',
+        );
+        assert.ok(accountingValue(field.inputValue) && accountingValue(field.value), 'Unbounded accounting scalar.');
+        const requested = parameter.value?.source === 'hub' ? parameter.value.value : parameter.value;
+        same(field.inputValue, requested, `Requested literal differs: ${row.nodeId}.${key}`);
+      }
+    }
+    for (const [key, parameter] of Object.entries(node.params)) {
+      if (Object.hasOwn(parameter, 'value') && !parameter.sourceId)
+        assert.ok(Object.hasOwn(section.fields, key), `Unaccounted literal: ${row.nodeId}.${key}`);
+    }
+    for (const [key, field] of Object.entries(row.fields)) {
+      assert.equal(field.source, 'literal', 'Legacy scalar origin differs.');
+      accountingKeys(field, ['value', 'source'], 'Legacy scalar has contradictory origin fields.');
+      if (key === 'executed_task') {
+        assert.equal(row.action, 'UnconditionalGenerate');
+        assert.equal(field.value, target.task);
+        continue;
+      }
+      const accounted = section.fields[key];
+      assert.ok(accounted && accounted.disposition !== 'metadata', `Legacy scalar lacks accounting: ${key}`);
+      let expected = row.action === 'LoadPipeline' ? accounted.inputValue : accounted.value;
+      if (key === 'seed' && Number.isSafeInteger(expected) && typeof field.value === 'string')
+        expected = String(expected);
+      same(field.value, expected, `Legacy/new accounting contradicts: ${row.nodeId}.${key}`);
+    }
+  }
+  const owner = byAction.get('LoadPipeline');
+  const recipe = byAction.get('DiffusersExecutionRecipe');
+  const quant = byAction.get('PipelineQuantizationConfigV2');
+  const generate = byAction.get('UnconditionalGenerate');
+  const preview = byAction.get('Preview');
+  assert.ok(owner && recipe && quant && generate && preview, 'Canonical accounting roles are incomplete.');
+  assert.equal(consumed.nodeId, preview.row.nodeId, 'Accounting output owner differs.');
+  const fields = (entry) => entry.row.fieldAccounting.fields;
+  const value = (entry, key) => fields(entry)[key].value;
+  const check = (entry, key, disposition, effective, reason) => {
+    const field = fields(entry)[key];
+    assert.equal(field.disposition, disposition, `Wrong disposition: ${entry.row.nodeId}.${key}`);
+    assert.equal(field.reason, reason, `Wrong disposition reason: ${entry.row.nodeId}.${key}`);
+    same(field.value, effective, `Effective control differs: ${entry.row.nodeId}.${key}`);
+  };
+  const wires = new Map([
+    [owner.row.nodeId, { execution_recipe: [recipe, 'execution_recipe'] }],
+    [recipe.row.nodeId, { quantization_config: [quant, 'quantization_config'] }],
+    [generate.row.nodeId, { pipeline: [owner, 'pipeline'] }],
+    [preview.row.nodeId, { image: [generate, 'images'] }],
+    [quant.row.nodeId, {}],
+  ]);
+  for (const entry of byAction.values()) {
+    const expected = wires.get(entry.row.nodeId);
+    // The normal exporter also retains Preview's UI output selector. It has
+    // no source node and is never an execution input or producer connection.
+    for (const [key, parameter] of Object.entries(entry.node.params)) {
+      if (!parameter.sourceId && parameter.sourceKey) {
+        assert.equal(entry, preview, 'A dangling input port is not accounted.');
+        assert.equal(key, 'preview');
+        same(parameter, { display: 'ui_image', sourceKey: 'output' }, 'Unknown output selector.');
+      }
+    }
+    const connected = Object.entries(entry.node.params).filter(([, parameter]) => parameter.sourceId);
+    same(connected.map(([key]) => key).sort(), Object.keys(expected).sort(), 'Unexpected connected runtime input.');
+    for (const [key, [producer, port]] of Object.entries(expected)) {
+      const parameter = entry.node.params[key];
+      assert.equal(parameter.sourceId, producer.row.nodeId, 'Connected producer differs.');
+      assert.equal(parameter.sourceKey, port, 'Connected producer port differs.');
+      assert.ok(!Object.hasOwn(parameter, 'value'), 'Connected input also declares a literal.');
+      assert.ok(
+        apiGraph.paths[0].indexOf(producer.row.nodeId) < apiGraph.paths[0].indexOf(entry.row.nodeId),
+        'Producer was not executed before its consumer.',
+      );
+    }
+  }
+  const disabled = { backend: 'none', disabled: true };
+  const recipeValues = { schema_version: 1, quantization: 'none', device_map_strategy: value(recipe, 'device_map') };
+  const componentFields = new Set([
+    'attention_components',
+    'layerwise_casting_components',
+    'channels_last_components',
+    'compile_components',
+  ]);
+  for (const key of accountingFields.DiffusersExecutionRecipe.filter((key) => key !== 'device_map_overrides')) {
+    const item = value(recipe, key);
+    if (componentFields.has(key)) {
+      assert.ok(typeof item === 'string' || (Array.isArray(item) && item.every((part) => typeof part === 'string')));
+      recipeValues[key] = [
+        ...new Set(
+          (Array.isArray(item) ? item : item.replaceAll('\n', ',').split(','))
+            .map((part) => part.trim())
+            .filter(Boolean),
+        ),
+      ];
+    } else recipeValues[key] = item;
+  }
+  for (const key of ['max_memory', 'cache_options', 'device_map_overrides'])
+    assert.equal(value(recipe, key), '{}', 'Mapping or cache configuration is outside the bounded accounting scope.');
+  assert.equal(value(recipe, 'device_map'), 'none', 'Split/manual placement is outside the bounded accounting scope.');
+  assert.equal(value(recipe, 'offload_mode'), 'none', 'Offload accounting needs a separate reviewed scope.');
+  const projection = (item, kind, values, producer) => {
+    accountingKeys(
+      item,
+      ['kind', 'values', 'sha256', ...(producer ? ['source', 'sourceNodeId', 'sourcePortId'] : [])],
+      'Projection shape differs.',
+    );
+    assert.equal(item.kind, kind);
+    same(item.values, values, 'Projection differs from actual producer controls.');
+    assert.equal(item.sha256, accountingDigest(kind, values), 'Projection hash differs.');
+    if (producer) {
+      assert.equal(item.source, 'connected');
+      assert.equal(item.sourceNodeId, producer[0].row.nodeId);
+      assert.equal(item.sourcePortId, producer[1]);
+    }
+  };
+  for (const entry of byAction.values()) {
+    const section = entry.row.fieldAccounting;
+    const inputPort = entry === owner ? 'execution_recipe' : entry === recipe ? 'quantization_config' : null;
+    const outputPort = entry === recipe ? 'execution_recipe' : entry === quant ? 'quantization_config' : null;
+    accountingKeys(section.inputProjections, inputPort ? [inputPort] : [], 'Unexpected input projections.');
+    accountingKeys(section.outputProjections, outputPort ? [outputPort] : [], 'Unexpected output projections.');
+    if (inputPort)
+      projection(
+        section.inputProjections[inputPort],
+        entry === owner ? 'execution-recipe-v1' : 'disabled-quantization-v1',
+        entry === owner ? recipeValues : disabled,
+        entry === owner ? [recipe, inputPort] : [quant, inputPort],
+      );
+    if (outputPort)
+      projection(
+        section.outputProjections[outputPort],
+        entry === recipe ? 'execution-recipe-v1' : 'disabled-quantization-v1',
+        entry === recipe ? recipeValues : disabled,
+      );
+  }
+  assert.equal(value(quant, 'backend'), 'none', 'Enabled quantization is unsupported.');
+  for (const key of accountingFields.PipelineQuantizationConfigV2)
+    check(
+      quant,
+      key,
+      ['dtype', 'excluded_modules'].includes(key) ? 'inactive' : 'consumed',
+      fields(quant)[key].inputValue,
+      ['dtype', 'excluded_modules'].includes(key) ? 'feature-disabled' : undefined,
+    );
+  const inactiveRecipe = new Set(['device_map_overrides']);
+  for (const [enabled, keys] of [
+    [
+      value(recipe, 'layerwise_casting'),
+      ['layerwise_casting_components', 'layerwise_storage_dtype', 'layerwise_compute_dtype'],
+    ],
+    [value(recipe, 'channels_last'), ['channels_last_components']],
+    [
+      value(recipe, 'regional_compile'),
+      ['compile_components', 'compile_backend', 'compile_mode', 'compile_fullgraph', 'compile_dynamic'],
+    ],
+    [value(recipe, 'denoiser_cache') !== 'none', ['cache_threshold', 'cache_options']],
+  ])
+    if (!enabled) for (const key of keys) inactiveRecipe.add(key);
+  for (const key of accountingFields.DiffusersExecutionRecipe)
+    check(
+      recipe,
+      key,
+      inactiveRecipe.has(key) ? 'inactive' : 'consumed',
+      fields(recipe)[key].inputValue,
+      inactiveRecipe.has(key) ? 'feature-disabled' : undefined,
+    );
+  const superseded = {
+    device: 'device',
+    offload_mode: 'offload_mode',
+    auto_offload: 'offload_mode',
+    enable_vae_slicing: 'vae_slicing',
+    enable_vae_tiling: 'vae_tiling',
+  };
+  for (const key of accountingFields.LoadPipeline) {
+    if (Object.hasOwn(superseded, key)) {
+      const effective =
+        key === 'auto_offload' ? value(recipe, 'offload_mode') !== 'none' : value(recipe, superseded[key]);
+      check(owner, key, 'superseded', effective, 'connected-recipe');
+    } else if (key === 'device_map' && ['cuda', 'cuda:0'].includes(value(owner, 'device'))) {
+      assert.equal(fields(owner)[key].inputValue, 'none');
+      check(owner, key, 'superseded', 'cuda', 'loader-normalization');
+    } else if (['conditioning_model_id', 'conditioning_revision'].includes(key)) {
+      check(owner, key, 'inactive', fields(owner)[key].inputValue, 'adapter-inactive');
+    } else check(owner, key, 'consumed', fields(owner)[key].inputValue);
+  }
+  assert.equal(value(owner, 'pipeline_class'), target.modelType);
+  assert.equal(value(owner, 'mode'), target.task);
+  assert.equal(value(owner, 'conditioning_kind'), 'none');
+  assert.equal(value(owner, 'quantization_mode'), 'none');
+  same(value(owner, 'quantized_components'), [], 'Quantized components are unsupported.');
+  assert.ok(immutableRevision(value(owner, 'revision')), 'Executed loader pin is unresolved.');
+  same(
+    [{ repoId: value(owner, 'model_id'), revision: value(owner, 'revision') }],
+    target.modelSet,
+    'Executed model set differs.',
+  );
+  for (const key of accountingFields.UnconditionalGenerate) {
+    if (key === 'image_contract') {
+      assert.equal(fields(generate)[key].disposition, 'metadata');
+      continue;
+    }
+    check(
+      generate,
+      key,
+      key === 'class_label' ? 'inactive' : 'consumed',
+      fields(generate)[key].inputValue,
+      key === 'class_label' ? 'adapter-inactive' : undefined,
+    );
+  }
+  assert.equal(value(generate, 'output_type'), 'pil', 'Only already-decoded output is accounted.');
+  check(preview, 'device', 'inactive', fields(preview).device.inputValue, 'already-decoded-image');
+  check(preview, 'export', 'consumed', fields(preview).export.inputValue);
+  const plan = {
+    source: 'executed-canonical-accounting-v1',
+    resourceMode: 'expert',
+    resolvedResourceMode: 'expert',
+    modelType: target.modelType,
+    pipelineClass: value(owner, 'pipeline_class'),
+    modelRepo: value(owner, 'model_id'),
+    resolvedModelRepo: value(owner, 'model_id'),
+    resolvedArtifact: value(owner, 'model_id'),
+    dtype: value(owner, 'dtype'),
+    device: value(owner, 'device'),
+    deviceMap: value(owner, 'device_map'),
+    autoOffload: value(owner, 'auto_offload'),
+    offloadMode: value(owner, 'offload_mode'),
+    quantizationMode: 'none',
+    quantizedComponents: [],
+    attentionBackend: recipeValues.attention_backend,
+    regionalCompile: recipeValues.regional_compile,
+    denoiserCache: recipeValues.denoiser_cache,
+    channelsLast: recipeValues.channels_last,
+    layerwiseCasting: recipeValues.layerwise_casting,
+  };
+  if (apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0)
+    plan.runtimeHintAccounting = canonicalDdimRuntimeHintAccounting({
+      apiGraph,
+      consumed,
+      plan,
+      runtimeEvidence,
+      digest: sha256Value,
+    });
+  return { ownerId: owner.row.nodeId, plan, hash: sha256Value('execution-plan-v1', plan) };
+}
+
+function canonicalAccountingProofPlan({ apiGraph, executedOutput, executionReceipt, taskId, proof }) {
+  accountingKeys(
+    proof,
+    ['expectedApiGraph', 'target', 'run', ...(Object.hasOwn(proof, 'graphCompleted') ? ['graphCompleted'] : [])],
+    'Canonical proof accepts original evidence, not a supplied plan.',
+  );
+  const { run, target, expectedApiGraph } = proof;
+  const task = run?.task;
+  assert.ok(typeof taskId === 'string' && taskId.length > 0, 'Canonical task identity is missing.');
+  assert.equal(task?.task_id, taskId, 'Canonical proof belongs to another task.');
+  assert.equal(task.status, 'completed', 'Canonical task is not completed.');
+  assert.equal(task.attempt_index, 0, 'Canonical retries are outside the reviewed scope.');
+  same(task, executionReceipt, 'Canonical raw task differs from the measured task.');
+  assert.ok(task.resourceCandidateId == null, 'Canonical Expert task retains an Auto resource candidate.');
+  assert.ok(
+    !task.runtimeHints || Object.keys(task.runtimeHints).length === 0,
+    'Canonical task contains unreviewed runtime hints.',
+  );
+  assert.ok(
+    executedOutput && typeof executedOutput.id === 'string' && executedOutput.id.length > 0,
+    'Canonical output is missing.',
+  );
+  assert.equal(executedOutput.taskId, taskId, 'Canonical output belongs to another task.');
+  assert.equal(executedOutput.attemptIndex, 0, 'Canonical output attempt differs.');
+  assert.ok(typeof executedOutput.workflowTabId === 'string' && executedOutput.workflowTabId.length > 0);
+  assert.equal(run.workflow_id, executedOutput.workflowTabId, 'Canonical output belongs to another workflow.');
+  const persisted = (run.outputs ?? []).filter((item) => item.id === executedOutput.id && item.taskId === taskId);
+  assert.equal(persisted.length, 1, 'Canonical output is not uniquely present in the raw task.');
+  for (const key of [
+    'taskId',
+    'clientRunId',
+    'runInputHash',
+    'workflowTabId',
+    'attemptIndex',
+    'nodeId',
+    'fieldKey',
+    'apiGraphSnapshot',
+    'resolvedExecutionInputs',
+    'mediaHash',
+    'mediaItems',
+  ]) {
+    assert.notEqual(executedOutput[key], undefined, `Canonical output is missing ${key}.`);
+    same(executedOutput[key], persisted[0][key], `Canonical original output ${key} differs.`);
+  }
+  same(apiGraph, executedOutput.apiGraphSnapshot, 'Canonical factory graph differs from the original output.');
+  const consumed = executedOutput.resolvedExecutionInputs;
+  assert.equal(consumed?.taskId, taskId, 'Canonical consumed receipt belongs to another task.');
+  assert.equal(consumed.attemptIndex, 0, 'Canonical consumed receipt attempt differs.');
+  assert.equal(consumed.nodeId, executedOutput.nodeId, 'Canonical consumed receipt output owner differs.');
+  return canonicalAccountingExecutionPlan({
+    expectedApiGraph,
+    apiGraph,
+    consumed,
+    target,
+    runtimeEvidence: { run, output: executedOutput, graphCompleted: proof.graphCompleted },
+  });
+}
+
 export function createRunProvenance({
   templateId,
   lockedSettings,
@@ -1081,20 +2555,80 @@ export function createRunProvenance({
   executionReceipt,
   taskId,
   expectedOutput,
+  canonicalAccountingProof,
+  retainedNativeEvidence,
+  videoNormalizationEvidence,
   capturedAt = new Date().toISOString(),
 }) {
+  assert.ok(
+    canonicalAccountingProof === undefined || retainedNativeEvidence === undefined,
+    'Retained native records and canonical accounting proof must be reviewed separately.',
+  );
+  assert.ok(
+    videoNormalizationEvidence === undefined ||
+      (canonicalAccountingProof === undefined && retainedNativeEvidence === undefined),
+    'Native video normalization evidence must be reviewed separately from retained or canonical accounting records.',
+  );
   const rawRouteBinding = apiGraph?.provenance?.registeredBlockV2RouteBinding;
   const routeBinding =
     rawRouteBinding === undefined || rawRouteBinding === null ? null : normalizeResourceRouteBinding(rawRouteBinding);
   const routeBindingHash = routeBinding ? resourceRouteBindingHash(routeBinding) : null;
   const graph = canonicalGraphIdentity(apiGraph);
-  const executionPlan = executionPlanIdentity(apiGraph);
+  const adapterApplications = createAppliedAdapterProof({
+    apiGraph,
+    canonicalGraph: graph.canonicalGraph,
+    executedOutput,
+    executionReceipt,
+    taskId,
+  });
+  const executionPlan =
+    canonicalAccountingProof === undefined
+      ? executionPlanIdentity(apiGraph, {
+          executionReceipt,
+          executedOutput,
+          templateId,
+          taskId,
+          modelIdentities: modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean),
+          backendSource,
+          backendContract: backendContractIdentity(nodesPayload, graph.canonicalGraph),
+          retainedNativeEvidence,
+          videoNormalizationEvidence,
+          inputArtifacts,
+        })
+      : canonicalAccountingProofPlan({
+          apiGraph,
+          executedOutput,
+          executionReceipt,
+          taskId,
+          proof: canonicalAccountingProof,
+        });
   const execution = executionReceiptIdentity(executionReceipt, executionPlan.plan);
   const runtime = normalizeBackendRuntime(runtimeFingerprint, deterministicMode);
   const backendSourceAttestation = processBackendSourceAttestation(runtimeFingerprint);
   const backendContract = backendContractIdentity(nodesPayload, graph.canonicalGraph);
   const deterministic = deterministicIdentity(deterministicMode);
   const modelSet = modelSetIdentity(modelIdentities?.length ? modelIdentities : [modelIdentity].filter(Boolean));
+  if (canonicalAccountingProof !== undefined) {
+    same(
+      modelSet.items
+        .map((item) => ({ repoId: item.repoId, revision: item.selectedRevision }))
+        .sort((left, right) => left.repoId.localeCompare(right.repoId)),
+      canonicalAccountingProof.target.modelSet,
+      'Canonical installed model identity differs from the executed model owner.',
+    );
+    same(runtimeFingerprint, executionReceipt.runtimeFingerprint, 'Canonical runtime differs from the raw task.');
+    assert.ok(
+      Number.isFinite(executionReceipt.started_at) &&
+        Number.isFinite(executionReceipt.completed_at) &&
+        executionReceipt.completed_at >= executionReceipt.started_at,
+      'Canonical task duration is missing.',
+    );
+    assert.equal(
+      capturedAt,
+      new Date(executionReceipt.completed_at * 1000).toISOString(),
+      'Canonical completion time differs.',
+    );
+  }
   const compatibilityModel =
     modelSet.count === 1
       ? modelSet.items[0]
@@ -1131,6 +2665,7 @@ export function createRunProvenance({
     deterministicFingerprint: deterministic.fingerprint,
     outputCollectionHash: output.collectionHash,
     ...(routeBindingHash ? { routeBindingHash } : {}),
+    ...(adapterApplications ? { adapterApplicationsHash: adapterApplications.hash } : {}),
   };
   const firstOutput = output.items[0] ?? {};
   const provenance = {
@@ -1160,6 +2695,9 @@ export function createRunProvenance({
     sampleRate: firstOutput.sampleRate ?? null,
     channels: firstOutput.channels ?? null,
     ...(routeBinding ? { routeBinding, routeBindingHash } : {}),
+    ...(adapterApplications
+      ? { adapterApplications: adapterApplications.proof, adapterApplicationsHash: adapterApplications.hash }
+      : {}),
     template: {
       ...template,
       expectedOutput:

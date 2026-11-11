@@ -17,6 +17,7 @@ export type TemplateAssetSource = {
 };
 
 const COMMIT_PATTERN = /^[a-f0-9]{40}$/;
+const ASSET_SET_ID_PATTERN = /^sha256:canonical-json:[a-f0-9]{64}$/;
 const REPO_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const GALLERY_PATH_PATTERN = /^(?:public\/)?template-gallery(?:\/(.*))?$/;
 
@@ -75,11 +76,11 @@ function validateSource(source: TemplateAssetSource) {
     if (!source.revision || !COMMIT_PATTERN.test(source.revision)) {
       throw new Error('The Hugging Face template Gallery revision must be an immutable 40-character commit SHA.');
     }
-    if (!/^sha256:canonical-json:[a-f0-9]{64}$/.test(source.assetSetId ?? '')) {
+    if (!ASSET_SET_ID_PATTERN.test(source.assetSetId ?? '')) {
       throw new Error('The Hugging Face template Gallery asset-set identity is missing.');
     }
   }
-  if (source.completeAssetSetId != null && !/^sha256:canonical-json:[a-f0-9]{64}$/.test(source.completeAssetSetId)) {
+  if (source.completeAssetSetId != null && !ASSET_SET_ID_PATTERN.test(source.completeAssetSetId)) {
     throw new Error('The complete Template Gallery asset-set identity is invalid.');
   }
   const unavailableAssets = source.unavailableAssets ?? [];

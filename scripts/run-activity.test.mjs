@@ -7,6 +7,7 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let activityModule;
+let outputContracts;
 let flowStoreModule;
 let issueStoreModule;
 let settingsStoreModule;
@@ -15,6 +16,43 @@ let studioStoreModule;
 let taskStoreModule;
 let server;
 let originalFetch;
+
+test('Queue terminal details supersede stale progress while retaining failure diagnostics', () => {
+  const stale = {
+    message: 'Running modules.Primitive.DataViewer',
+    phase: 'executing',
+    current_step: 2,
+    total_steps: 4,
+  };
+  assert.equal(activityModule.runActivityDetailForTask({ ...stale, status: 'completed' }), 'Completed');
+  assert.equal(activityModule.runActivityDetailForTask({ ...stale, status: 'cancelled' }), 'Cancelled');
+  assert.equal(
+    activityModule.runActivityDetailForTask({ ...stale, status: 'failed', error: 'Load failed' }),
+    'Load failed',
+  );
+  assert.equal(
+    activityModule.runActivityDetailForTask({ status: 'failed', message: 'Worker exited' }),
+    'Worker exited',
+  );
+  assert.match(activityModule.runActivityDetailForTask({ ...stale, status: 'running' }), /Running|2/u);
+});
+
+test('Queue accepts batch upscale frame progress through the existing phase contract', () => {
+  const detail = activityModule.runActivityDetailForTask({
+    status: 'running',
+    phase: 'upscaling',
+    message: 'Upscaling frame 1/405',
+    current_step: 1,
+    total_steps: 405,
+    elapsed_seconds: 0.4,
+    average_step_seconds: 0.4,
+    eta_seconds: 161.6,
+  });
+  assert.match(detail, /Upscaling frame 1\/405/u);
+  assert.match(detail, /Phase: upscaling/u);
+  assert.match(detail, /Step 1\/405/u);
+  assert.match(detail, /ETA/u);
+});
 
 before(async () => {
   const storage = new Map();
@@ -28,8 +66,15 @@ before(async () => {
     removeItem: (key) => storage.delete(key),
     setItem: (key, value) => storage.set(key, String(value)),
   };
+  const sessionValues = new Map();
+  globalThis.sessionStorage = {
+    getItem: (key) => sessionValues.get(key) ?? null,
+    setItem: (key, value) => sessionValues.set(key, String(value)),
+    removeItem: (key) => sessionValues.delete(key),
+  };
   globalThis.window = {
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
     location: { origin: 'http://127.0.0.1:5191' },
   };
   server = await createServer({
@@ -41,6 +86,7 @@ before(async () => {
     appType: 'custom',
   });
   activityModule = await server.ssrLoadModule('/src/studio/runActivity.ts');
+  outputContracts = await server.ssrLoadModule('/src/studio/outputContracts.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   issueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');
   settingsStoreModule = await server.ssrLoadModule('/src/stores/useSettingsStore.ts');
@@ -119,6 +165,39 @@ function output(overrides = {}) {
     ...overrides,
   };
 }
+
+test('run outputs preserve declared JSON with backend file URLs and structured, null and zero values', () => {
+  for (const value of [{ message: '<img src=x onerror="alert(1)">', values: [false, 'हैलो'] }, null, 0]) {
+    for (const withMediaItem of [false, true]) {
+      const url = '/file?file=%40data%2Fstudio%2Foutputs%2Frecorded.json';
+      const record = output({
+        displayType: 'json',
+        url,
+        value,
+        mediaItems: withMediaItem ? [{ index: 0, displayType: 'json', url, value }] : undefined,
+      });
+      const items = activityModule.mediaViewerItemsForRun([record]);
+      assert.equal(items.length, 1);
+      assert.equal(items[0].kind, 'text');
+      assert.equal(items[0].text, JSON.stringify(value, null, 2));
+      assert.equal(items[0].url, undefined);
+    }
+  }
+});
+
+test('run outputs retain explicit null from parsed JSON history and per-item captures', () => {
+  const url = '/file?file=recorded.json';
+  for (const withMediaItem of [false, true]) {
+    const record = outputContracts.coerceStudioOutput({
+      id: 'parsed-json',
+      displayType: 'json',
+      url,
+      value: withMediaItem ? { legacy: 'fallback' } : null,
+      mediaItems: withMediaItem ? [{ index: 0, displayType: 'json', url, value: null }] : undefined,
+    });
+    assert.equal(activityModule.mediaViewerItemsForRun([record])[0].text, 'null');
+  }
+});
 
 function deferredResponse() {
   let resolve;
@@ -256,7 +335,139 @@ test('same-text run notifications remain individually actionable by task', () =>
   );
 });
 
-test('the browser crash checkpoint remains bounded and always retains the active workflow', () => {
+test('the browser checkpoint preserves every dirty document beyond twelve tabs', () => {
+  const tabs = Array.from({ length: 15 }, (_, index) => ({
+    id: `unsaved-${index}`,
+    title: `Unsaved ${index}`,
+    createdAt: index,
+    updatedAt: index,
+    dirty: true,
+    source: 'manual',
+    snapshot: {
+      nodes: [
+        {
+          id: `text-${index}`,
+          position: { x: index, y: 0 },
+          type: 'custom',
+          data: { module: 'modules.Primitive', action: 'Text', params: { value: { value: `Keep ${index}` } } },
+        },
+      ],
+      edges: [{ id: `wire-${index}`, source: `text-${index}`, target: `viewer-${index}` }],
+    },
+  }));
+  const checkpoint = studioStoreModule.workflowTabsForLocalCheckpoint(tabs, 'unsaved-14');
+  assert.deepEqual(checkpoint, tabs);
+  const store = studioStoreModule.useStudioStore;
+  const before = store.getState();
+  try {
+    store.setState({ workflowTabs: tabs, activeWorkflowTabId: 'unsaved-14' });
+    assert.deepEqual(JSON.parse(sessionStorage.getItem('modiff.studio')).state.workflowTabs, tabs);
+  } finally {
+    store.setState(before);
+  }
+});
+
+test('checkpoint quota failure visibly requests preservation and clears only after a successful write', () => {
+  const write = sessionStorage.setItem;
+  const warn = console.warn;
+  const store = studioStoreModule.useStudioStore;
+  const messages = [];
+  try {
+    console.warn = (...args) => messages.push(args);
+    sessionStorage.setItem = () => {
+      throw new DOMException('Full', 'QuotaExceededError');
+    };
+    store.setState({ launcherDismissed: true });
+    store.setState({ launcherDismissed: false });
+    const warnings = snackbarModule.getToastItems().filter((item) => item.id === 'studio-checkpoint-write-failed');
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].persist, true);
+    assert.match(warnings[0].message, /Save or export unsaved workflows before refreshing/);
+    sessionStorage.setItem = write;
+    store.setState({ launcherDismissed: true });
+    assert.equal(
+      snackbarModule.getToastItems().some((item) => item.id === 'studio-checkpoint-write-failed'),
+      false,
+    );
+  } finally {
+    sessionStorage.setItem = write;
+    console.warn = warn;
+    store.setState({ launcherDismissed: false });
+  }
+});
+
+for (const label of ['flow', 'settings']) {
+  test(`${label} mutations survive checkpoint quota failures with a visible preservation warning`, () => {
+    const store = label === 'flow' ? flowStoreModule.useFlowStore : settingsStoreModule.useSettingsStore;
+    const before = store.getState();
+    const targetStorage = label === 'flow' ? sessionStorage : localStorage;
+    const write = targetStorage.setItem;
+    const warn = console.warn;
+    const mutation = label === 'flow' ? { viewport: { x: 17, y: 19, zoom: 0.75 } } : { isRightPanelOpen: false };
+    try {
+      console.warn = () => {};
+      targetStorage.setItem = () => {
+        throw new DOMException('Full', 'QuotaExceededError');
+      };
+      assert.doesNotThrow(() => store.setState(mutation));
+      for (const [key, value] of Object.entries(mutation)) assert.deepEqual(store.getState()[key], value);
+      assert.equal(
+        snackbarModule.getToastItems().filter((item) => item.id === 'studio-checkpoint-write-failed').length,
+        1,
+      );
+    } finally {
+      targetStorage.setItem = write;
+      console.warn = warn;
+      store.setState(before);
+    }
+  });
+}
+
+test('checkpoint warning clears only after every failed namespace has recovered', () => {
+  const flow = flowStoreModule.useFlowStore;
+  const settings = settingsStoreModule.useSettingsStore;
+  const studio = studioStoreModule.useStudioStore;
+  const before = [flow.getState(), settings.getState(), studio.getState()];
+  const localWrite = localStorage.setItem;
+  const sessionWrite = sessionStorage.setItem;
+  const warn = console.warn;
+  const failed = new Set(['modiff.flow', 'modiff.settings']);
+  try {
+    console.warn = () => {};
+    const failingWrite = (storage, write) => (name, value) => {
+      if (failed.has(name)) throw new DOMException('Full', 'QuotaExceededError');
+      return write.call(storage, name, value);
+    };
+    localStorage.setItem = failingWrite(localStorage, localWrite);
+    sessionStorage.setItem = failingWrite(sessionStorage, sessionWrite);
+    assert.doesNotThrow(() => flow.setState({ viewport: { x: 17, y: 19, zoom: 0.75 } }));
+    assert.doesNotThrow(() => settings.setState({ isRightPanelOpen: false }));
+    studio.setState({ launcherDismissed: true });
+    assert.equal(
+      snackbarModule.getToastItems().filter((item) => item.id === 'studio-checkpoint-write-failed').length,
+      1,
+    );
+    failed.delete('modiff.flow');
+    flow.setState(before[0]);
+    assert.equal(
+      snackbarModule.getToastItems().some((item) => item.id === 'studio-checkpoint-write-failed'),
+      true,
+    );
+    failed.delete('modiff.settings');
+    settings.setState(before[1]);
+    assert.equal(
+      snackbarModule.getToastItems().some((item) => item.id === 'studio-checkpoint-write-failed'),
+      false,
+    );
+  } finally {
+    localStorage.setItem = localWrite;
+    sessionStorage.setItem = sessionWrite;
+    console.warn = warn;
+    [flow, settings, studio].forEach((store, index) => store.setState(before[index]));
+  }
+});
+
+test('the browser crash checkpoint bounds saved tabs and retains every dirty and active workflow', () => {
   const tabs = Array.from({ length: 40 }, (_, index) => ({
     id: `workflow-${index}`,
     title: `Workflow ${index}`,
@@ -268,8 +479,13 @@ test('the browser crash checkpoint remains bounded and always retains the active
   }));
   const checkpoint = studioStoreModule.workflowTabsForLocalCheckpoint(tabs, 'workflow-2');
 
-  assert.equal(checkpoint.length, 12);
+  assert.equal(checkpoint.length, 15);
   assert.ok(checkpoint.some((tab) => tab.id === 'workflow-2'));
+  assert.ok(tabs.filter((tab) => tab.dirty).every((tab) => checkpoint.includes(tab)));
+  const savedTabs = tabs.map((tab) => ({ ...tab, dirty: false }));
+  const savedCheckpoint = studioStoreModule.workflowTabsForLocalCheckpoint(savedTabs, 'workflow-2');
+  assert.equal(savedCheckpoint.length, 12);
+  assert.ok(savedCheckpoint.some((tab) => tab.id === 'workflow-2'));
   assert.deepEqual(
     checkpoint,
     tabs.filter((tab) => checkpoint.includes(tab)),
@@ -297,7 +513,7 @@ test('reordering tabs changes only their order and persists that order', () => {
   }
   assert.equal(flowStoreModule.useFlowStore.getState(), flow);
   assert.deepEqual(
-    JSON.parse(localStorage.getItem('modiff.studio')).state.workflowTabs.map((tab) => tab.id),
+    JSON.parse(sessionStorage.getItem('modiff.studio')).state.workflowTabs.map((tab) => tab.id),
     after.workflowTabs.map((tab) => tab.id),
   );
   after.moveWorkflowTab(source.id, target.id, 'after');

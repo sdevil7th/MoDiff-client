@@ -42,7 +42,9 @@ test(
     let stat;
     do {
       stat = await readFile(`/proc/${pid}/stat`, 'utf8').catch((error) => {
-        if (error.code === 'ENOENT') return '';
+        // /proc may disappear before open (ENOENT) or after open, before
+        // read (ESRCH), when Linux finishes reaping the killed process.
+        if (error.code === 'ENOENT' || error.code === 'ESRCH') return '';
         throw error;
       });
       if (!stat || /\) Z /.test(stat)) break;

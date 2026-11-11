@@ -159,6 +159,7 @@ function selectedBindingValues(
     candidate,
     quantizableComponents,
     modelVariant,
+    false,
   );
   return Object.fromEntries(
     admission.executionParameterSources.flatMap((source) =>
@@ -182,14 +183,18 @@ export function huggingFaceClusterExecutionParameterValues(
   candidate: StudioAutoResourceCandidate | null = null,
   quantizableComponents: readonly string[] = ['transformer'],
   modelVariant: string = admission.artifact?.repo ?? '',
+  provisional = true,
 ): Record<string, unknown> {
   const selectedQuantizedComponents =
     form.quantizationMode === 'none' ? [] : jsonClone(candidate?.quantizedComponents ?? [...quantizableComponents]);
   const attentionBackend =
     candidate?.attentionBackend ??
     (typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto');
+  // Preserve the disabled compiler skeleton's existing metadata identity.
+  // Enabled children receive the authored/qualified policy via selectedBindingValues.
   const nativeFlashAttention =
-    candidate?.attentionBackend ?? (form.device.startsWith('cuda') ? '_native_flash' : 'auto');
+    candidate?.attentionBackend ??
+    (provisional ? (form.device.startsWith('cuda') ? '_native_flash' : 'auto') : attentionBackend);
   const values: Record<string, unknown> = {
     ...form,
     bpmNormalized: form.bpm > 0 ? form.bpm : 0,

@@ -2,6 +2,38 @@ export function captureQualificationStatus(supportTier) {
   return supportTier === 'supported' ? 'qualified' : 'observed';
 }
 
+export function hardwareExecutionDevice(health, provenance) {
+  const profile = health?.runtime_profile?.installed;
+  const measurement = provenance?.execution?.measurement;
+  const measuredDevice = measurement?.device;
+  const backend = measurement?.backend;
+  const expected = {
+    'nvidia-cuda': ['cuda', 'cuda'],
+    'amd-rocm-linux': ['cuda', 'rocm'],
+    'amd-instinct-rocm-linux': ['cuda', 'rocm'],
+    'amd-pytorch-windows': ['cuda', 'rocm'],
+    'intel-xpu': ['xpu', 'xpu'],
+    'apple-mps': ['mps', 'mps'],
+    cpu: ['cpu', 'cpu'],
+  }[profile];
+  if (!expected) throw new Error('Hardware evidence has no reviewed runtime profile.');
+  const match = typeof measuredDevice === 'string' ? /^(cpu|cuda|xpu|mps)(?::([0-9]+))?$/.exec(measuredDevice) : null;
+  if (!match || match[1] !== expected[0] || backend !== expected[1]) {
+    throw new Error('Executed device/backend does not match the recorded hardware profile.');
+  }
+  const index = Number(match[2] ?? 0);
+  if (!Number.isSafeInteger(index) || (['cpu', 'mps'].includes(match[1]) && index !== 0)) {
+    throw new Error('Executed device index is invalid.');
+  }
+  if (profile === 'cpu') return { name: 'cpu', backend: 'cpu', vendor: null, total_memory: null };
+  const devices = health?.packages?.torch?.[`${match[1]}_devices`];
+  const device = Array.isArray(devices) ? devices.find((item) => item?.index === index) : null;
+  if (!device || typeof device.name !== 'string' || !device.name.trim() || device.backend !== backend) {
+    throw new Error('Executed accelerator is missing or inconsistent in captured physical device metadata.');
+  }
+  return device;
+}
+
 export function hardwareReceiptQualifies(receipt, profileId, manifestRevision) {
   return (
     receipt?.status === 'qualified' &&

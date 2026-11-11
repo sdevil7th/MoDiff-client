@@ -1,3 +1,5 @@
+import { canonicalJsonHash } from './canonical-json.mjs';
+
 const OUTPUT_NODE_KEYS = new Set([
   'modules.Audio.Export',
   'modules.Image.Preview',
@@ -94,7 +96,134 @@ function intentionalDisabledManagedFallbackNodeIds(graph) {
   return new Set([fallback.id]);
 }
 
-export function verifyNoDeadWorkflowNodes(workflow, graph) {
+/** Bind an auxiliary terminal to independently supplied backend source
+ * declarations. Manifest metadata alone can never declare an output root. */
+export function canonicalAuxiliaryTerminalBinding(workflow, graph, source) {
+  const spec = source?.executionSpec;
+  if (
+    !spec ||
+    spec.schemaVersion !== 1 ||
+    spec.modelType !== workflow.modelType ||
+    spec.mode !== workflow.mode ||
+    !Array.isArray(spec.auxiliaryTerminalRoles) ||
+    spec.auxiliaryTerminalRoles.length === 0 ||
+    !Array.isArray(source.operationContracts)
+  )
+    throw new Error(`${workflow.id} has no matching authoritative auxiliary-terminal source contract.`);
+  const nodes = graph.nodes ?? [],
+    edges = graph.edges ?? [];
+  const roles = new Map();
+  for (const [role, key] of spec.roles) {
+    const candidates = nodes.filter((node) => nodeKey(node) === key);
+    if (candidates.length !== 1)
+      throw new Error(`${workflow.id} auxiliary source role ${role} is missing or ambiguous.`);
+    roles.set(role, candidates[0]);
+  }
+  const owner = nodes.find((node) => nodeKey(node) === `${spec.loaderModule}.${spec.loaderAction}`);
+  const ownerClass = owner?.data?.params?.model_type ?? owner?.data?.params?.pipeline_class;
+  if (
+    ownerClass?.value !== spec.pipelineClass ||
+    owner?.data?.operationAuthoring?.operation?.pipelineClass !== spec.pipelineClass
+  )
+    throw new Error(`${workflow.id} auxiliary workflow changes its declared model owner.`);
+  for (const [from, sourceHandle, to, targetHandle] of spec.edges)
+    if (
+      edges.filter((edge) => edge.target === roles.get(to)?.id && edge.targetHandle === targetHandle).length !== 1 ||
+      !edges.some(
+        (edge) =>
+          edge.source === roles.get(from)?.id &&
+          edge.sourceHandle === sourceHandle &&
+          edge.target === roles.get(to)?.id &&
+          edge.targetHandle === targetHandle,
+      )
+    )
+      throw new Error(`${workflow.id} is missing an authoritative auxiliary-workflow dependency.`);
+  const terminals = spec.auxiliaryTerminalRoles.map((role) => {
+    const node = roles.get(role),
+      key = nodeKey(node);
+    const contracts = source.operationContracts.filter(
+      (contract) =>
+        contract.nodeKey === key &&
+        contract.pipelineClass === spec.pipelineClass &&
+        contract.task === spec.mode &&
+        contract.support === 'declared',
+    );
+    if (contracts.length !== 1)
+      throw new Error(`${workflow.id} auxiliary stage has no unique authoritative operation contract.`);
+    const contract = contracts[0],
+      actual = node.data?.operationAuthoring?.operation;
+    for (const field of [
+      'operationId',
+      'nodeKey',
+      'nodeType',
+      'blockName',
+      'decomposition',
+      'pipelineClass',
+      'task',
+      'support',
+    ])
+      if (actual?.[field] !== contract[field])
+        throw new Error(`${workflow.id} auxiliary stage differs from its authoritative operation.`);
+    const statePort = contract.ports.find(
+      (port) =>
+        port.direction === 'input' &&
+        port.required &&
+        port.semantics?.kind === 'state' &&
+        port.semantics.owner === 'same_loader',
+    );
+    const componentPort = contract.ports.find(
+      (port) =>
+        port.direction === 'input' &&
+        port.required &&
+        port.semantics?.kind === 'component' &&
+        port.semantics.owner === 'same_loader',
+    );
+    const prefix = `${spec.pipelineClass}:`;
+    if (
+      !statePort?.semantics.scope?.startsWith(prefix) ||
+      componentPort?.semantics.scope !== spec.pipelineClass ||
+      contract.decomposition !== 'block'
+    )
+      throw new Error(`${workflow.id} auxiliary stage has no declared owned SDK state dependency.`);
+    const workflowId = statePort.semantics.scope.slice(prefix.length);
+    const expected = { pipeline_class: spec.pipelineClass, workflow_id: workflowId, block_path: contract.blockName };
+    if (
+      actual.workflowId !== workflowId ||
+      actual.binding?.pipelineClass !== spec.pipelineClass ||
+      owner.data.params?.workflow_id?.value !== workflowId
+    )
+      throw new Error(`${workflow.id} auxiliary stage changes its SDK workflow context.`);
+    for (const [field, value] of Object.entries(expected))
+      if (node.data.params?.[field]?.value !== value || actual.binding?.values?.[field] !== value)
+        throw new Error(`${workflow.id} auxiliary stage changes a declared SDK binding.`);
+    const expectedIncoming = spec.edges
+      .filter(([, , target]) => target === role)
+      .map(([from, sourceHandle, , targetHandle]) => `${roles.get(from).id}\0${sourceHandle}\0${targetHandle}`)
+      .sort();
+    const actualIncoming = edges
+      .filter((edge) => edge.target === node.id)
+      .map((edge) => `${edge.source}\0${edge.sourceHandle}\0${edge.targetHandle}`)
+      .sort();
+    if (
+      canonicalJsonHash(actualIncoming) !== canonicalJsonHash(expectedIncoming) ||
+      edges.some((edge) => edge.source === node.id)
+    )
+      throw new Error(`${workflow.id} auxiliary stage is not its exact declared terminal.`);
+    return {
+      role,
+      nodeId: node.id,
+      nodeKey: key,
+      operationId: contract.operationId,
+      pipelineClass: spec.pipelineClass,
+      task: spec.mode,
+      workflowId,
+      blockName: contract.blockName,
+    };
+  });
+  return { schemaVersion: 1, executionSpecId: spec.id, executionSpecContentHash: spec.contentHash, terminals };
+}
+
+export function verifyNoDeadWorkflowNodes(workflow, graph, authoritativeSource) {
   const nodes = graph.nodes ?? [];
   const edges = graph.edges ?? [];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
@@ -113,7 +242,14 @@ export function verifyNoDeadWorkflowNodes(workflow, graph) {
     throw new Error(`${workflow.id} has no preview, export, or data output node.`);
   }
 
-  const used = new Set(outputNodes.map((node) => node.id));
+  let auxiliaryIds = [];
+  if (Object.prototype.hasOwnProperty.call(workflow, 'auxiliaryTerminalBinding')) {
+    const expected = canonicalAuxiliaryTerminalBinding(workflow, graph, authoritativeSource);
+    if (canonicalJsonHash(workflow.auxiliaryTerminalBinding) !== canonicalJsonHash(expected))
+      throw new Error(`${workflow.id} auxiliary-terminal metadata differs from its authoritative source binding.`);
+    auxiliaryIds = expected.terminals.map((terminal) => terminal.nodeId);
+  }
+  const used = new Set([...outputNodes.map((node) => node.id), ...auxiliaryIds]);
   const pending = [...used];
   while (pending.length > 0) {
     const nodeId = pending.pop();

@@ -5,39 +5,241 @@ while Git contains only code, metadata, and SHA-256 identities. Runtime URLs
 are pinned to one immutable Dataset commit. Public users do not need a Hugging
 Face token.
 
+Approved supplementary showcases are listed in `src/studio/templateShowcases.json`.
+Their exact media and redacted recipe/review records use this same immutable
+Dataset, asset inventory, per-file rights ledger and publication verifier. Each
+entry binds both file hashes. A featured cover is labelled **Approved showcase ·
+separate recipe** and links the actual consumed prompt, ordered input identities,
+model pins, controls and accepted limitations. It does not change template defaults,
+`findManifestEntry`, current-template qualification or the original 89-case count.
+The MiniMax green-centre perfume showcase is an ordered-reference material edit;
+its blue-centre text-to-image source is separately registered.
+
 [Hugging Face's current storage policy](https://huggingface.co/docs/hub/en/storage-limits)
 describes storage for a free user or organization's public repositories as
 **best effort**, and asks that public uploads provide real community value. The
-current Gallery is about 466 MiB and 360 files, well below the Hub's
+checked complete Gallery manifest declares 395 files (514,571,305 bytes, about 491 MiB), below the Hub's
 repository-structure recommendations, so a public Dataset is a reasonable
 zero-cost home for this release. It is not a contractual free hosting
 guarantee: monitor the current Hub policy and keep the byte manifest portable
 enough to migrate to another public Dataset namespace if needed.
 
 The checked-in source configuration is
-`src/studio/templateAssetSource.json`. `mode: "local"` is the safe migration
-default; it keeps the current application working until a real Dataset is
-uploaded and verified. Do not replace it with a guessed namespace or a moving
-`main` revision.
+`src/studio/templateAssetSource.json`. The current release selects a public
+Hugging Face Dataset by immutable revision and explicitly lists withheld assets.
+`mode: "local"` remains available for a complete verified local copy. Never replace
+the reviewed source with a guessed namespace or a moving `main` revision.
+
+## Deterministic inventory and current-source reports
+
+The inventory uses repository-owned MIME mappings for supported Gallery formats,
+including the existing `audio/x-wav` spelling, rather than the host's registry.
+Unknown extensions remain `application/octet-stream`. PNG/WebP dimensions come
+from their checked headers even when the operating system has no MIME entry;
+an invalid known image is an error, not an opaque-file fallback. Byte hashes,
+sizes, purposes and complete-set checks remain strict.
+
+This does not rewrite an older approved manifest. If identical image bytes have
+older generic MIME metadata or omitted dimensions, preserve that original set
+and prepare a separate metadata proposal for review. Running `inventory --write`
+changes the asset-set identity; it is not a way to dismiss a mismatch without
+reviewing dependent rights/source records and the immutable Dataset update.
+
+The release-candidate report runs the existing `release-contract.mjs --check`
+before claiming `releaseContractCurrent`. A stale contract, verifier failure,
+timeout or inability to start the check makes that gate false and adds
+`release-contract-not-current`. The bounded check never regenerates the contract,
+installs packages or fills missing qualification evidence. Its private diagnostics
+are not copied into the public report. `--check` still verifies the report itself,
+and `--require-ready` still enforces every other release gate.
 
 ## One-time public Dataset setup
+
+Before publishing or refreshing examples, preserve each run's original consumed
+recipe, graph, task receipts, model/input identities and source/runtime provenance.
+Historical examples keep their original recipe authority when templates change.
+Updating a template hash alone does not establish equivalent execution.
+
+The template browser labels retained approved media **Previous recipe example**
+when the earlier creator lock matches without the new execution selection.
+It also recognizes an added explicit Hub artifact revision only when the
+published record's model revision and model commit both already contain that
+exact immutable repository/revision pair. The previous lock must still match
+all other settings, weight hashes, input bindings and review requirements.
+This read-only display lookup never rewrites the current template or published
+record, and never satisfies current-graph exactness or the release Gallery gate.
+
+The maintainer-only `gallery:repair-evidence` command repairs one retained example
+from its original evidence. It requires the original per-run provenance and
+matching creator settings, admission locks, consumed form, canonical graph,
+completed task/node receipts and pinned inputs. Indexed reference roles preserve
+input order. It refuses missing authority or changed recipes before modifying
+sidecars, preserves source/runtime/model identities, capture time and the original
+ordered output byte identities, and retains content-addressed before-copies with
+rollback if paired writes fail. Persistent storage failure or process termination
+can require recovery from those originals; this is not a crash-atomic transaction. Its media
+discovery excludes sidecars and preserves output collection order. Use it on
+private retained evidence; public asset updates still follow the publication
+procedure below. Missing current execution or quality proof requires recovery
+and review of matching receipts or a genuinely accepted new run.
+
+For historical reconciliation, preserve the original manifest, provenance and
+quality-review bytes before assembling a candidate. Keep current recipe
+comparison separate from the retained creator and any recorded derivative.
+Media with a previous-recipe match remains historical even when its bytes and
+review are valid. A missing complete model-set record cannot be reconstructed
+from a singular model field or a graph naming one loader.
+
+Public provenance intentionally redacts source/runtime details. Its maintained
+public verification uses the pinned original attestations; a private validator
+requiring unredacted source inventories is not interchangeable with that check.
+Do not interpret expected redaction diagnostics as authority to fill missing
+fields, relax current proof requirements or rewrite approved sidecars.
+
+A later private run can supply a current-recipe replacement candidate when an
+original pre-run declaration matches today's locked settings and execution
+selection, and the original task, consumed controls, graph, model, source and
+media independently corroborate it. Keep any absent output template identity
+absent. Preserve the run's source, capture time and original public/private
+status; do not retrospectively label it a public-default execution.
+
+Prepare its proposed entry, public-format provenance and exact media outside the
+active Gallery. A single reviewed run is not an exact duplicate proof. Carry
+private human acceptance separately from the template rubric, per-file rights
+and publication decision. An unfinished review must continue to fail the normal
+publication checks. An isolated local verification fixture is not authority to
+change the real Dataset source or weaken its complete-set checks.
+
+In particular, matching prompts, seed and media do not make Expert execution
+prove a currently selected Auto recipe. Required-input paths are real input
+bindings rather than blank template defaults; retain their original content
+identity and establish current bundled-input authority separately. Missing
+consumed fields cannot be filled from submitted intent or listening approval.
+The [paired recovery checkpoint](https://github.com/sdevil7th/MoDiff/blob/fix-ui-ux-issues/plans/release-20261028/gallery-evidence-recovery.md)
+records the recovered current-recipe replacements and their remaining proof
+boundaries. Original Expert observations retain their recorded policy; later
+Auto observations remain separate evidence. Register an accepted retained output
+only after its formal quality review and exact-file redistribution approval.
+
+### Registering an accepted retained output
+
+Bind the original media bytes and creator settings to the actual completed task,
+graph, consumed controls, immutable model set and source/runtime evidence. Carry
+the existing visual or listening verdict separately; never fill missing execution
+fields from that verdict or relabel a single reviewed run as duplicate exactness.
+
+Complete the existing template-quality rubric and record the reviewer and review
+time. A proposed score is not a score previously supplied by the reviewer. Obtain
+explicit approval of the proposed record and the per-file rights terms before
+publishing new or changed bytes. Preserve earlier Gallery entries, media,
+provenance and reviews outside the active set and retain the prior immutable
+Dataset revision for rollback.
+
+A maintainer can explicitly accept an example with its disclosed visual
+limitations. Retain the original scores in that case. Record
+`maintainerAcceptance` with schema version 1, decision
+`accepted_with_disclosed_limitations`, the same reviewer and acceptance time as
+the review, the maintainer's statement, and `acceptedReviewHash`. Compute that
+hash using `canonicalJsonHash` over the complete review before adding
+`maintainerAcceptance`. This binds acceptance to the exact media and execution
+bindings, scores, findings and limitations. Ordinary reviews require scores of
+at least four. An explicitly accepted review permits scores from one to five
+while retaining the technical, objective, hard-failure and modality checks.
+Publication still requires the exact-file rights record.
+
+For video, `acceptedFindings` can list the specific qualitative diagnostics the
+maintainer accepted, such as disclosed subject morphing or temporal artifacts.
+The verifier accepts only its enumerated visual findings. Full playback,
+card-size inspection, source comparison, duration, frame counts and execution
+evidence still require their own records. Keep the actual findings in the review.
+
+Fresh image-conditioned LTX evidence uses the existing native video reader.
+It binds the ordered `Image.Load` byte hashes, reference wires and consumed
+conditioning strength, alongside generator and upscaler ownership. Fresh modular
+control evidence uses `observed-workflow-auto-control-resource-v1`. That reader
+binds the base and auxiliary model, exact source-image bytes, native loading
+controls and both Guider and denoiser guidance values. It preserves the original
+null task and explicitly records that the control-scale argument was not captured.
+The saved loading request and the current Auto default may differ while the
+original graph and native applied policy retain their exact values.
+
+Verify the replacement entries with the normal Gallery verifier, then refresh
+the complete byte inventory and SHA-bound rights ledger. Unchanged approved bytes
+keep their original rights reviews; changed metadata and media require their own
+approved records. Publish the approved subset when holds remain, anonymously
+verify the exact returned commit, and update the complete inventory and pinned
+source descriptor together. Do not clear unrelated rights or model holds.
+
+After the source update, rerun Gallery verification and coverage and compare the
+remaining errors with the preserved report. Report repaired entries separately
+from overall release eligibility. Build/package and test the changed source before
+claiming that a running application serves the new registration.
+
+The release-contract generator also inspects the bundled backend node sources.
+It ignores removed module directories only when they are empty or contain solely
+the residual `__pycache__` directory. Other missing initializers, Python sources
+or unresolved registry declarations remain errors; cached bytecode is never
+imported to reconstruct a missing module.
+
+Hardware registration uses the run's measured execution device and backend,
+not the first accelerator listed by its host. CPU execution cannot qualify a
+CUDA, ROCm, XPU or MPS profile. GPU evidence must identify the actual device
+index in captured physical device metadata, with a matching backend. Missing
+or contradictory measurements remain blocked; old receipts are not rewritten
+to supply them. A conditional/preview profile still records an observation,
+not supported-profile qualification. Runtime installation tiers and CI checks
+alone do not establish physical model qualification.
+
+Current health reports use a resource fingerprint, while completed tasks retain
+a separate execution fingerprint. Hardware registration compares the resource
+domain to health, then binds the unchanged execution identity and normalized
+runtime to original provenance and the worker's exact source inventory. It does
+not replace an execution hash with a resource hash. Retained live-proof artifact
+directories must include the original `run-terminal.json`, `backend-health.json`
+and `run-provenance.json` alongside `status.json`; the completed task must own
+that provenance. The full provenance validator still applies. A status marker
+or an old output file alone cannot establish qualification.
+
+The ACE-Step RTX 4080 cold-load check applies to both the catalog display alias
+and the actual backend pipeline class. Changing that identity spelling does
+not remove its required timing evidence or its 120-second limit.
+
+For ordinary direct-audio graphs without a legacy Studio binding, the proof
+reader can recover a manual resource identity from one executed loader, its
+connected disabled-quantization recipe and the exact Generate/Export chain.
+Source-backed and loudness-match/join chains must retain their required input
+connections and execution order. The audio contract, immutable model revision,
+resource controls and saved manual policy must agree. This identity names the
+actual backend pipeline, not a display alias from the form. It does not recover
+missing consumed controls, establish input bytes or grant model, hardware,
+Automatic memory, listening or publication qualification. Unsupported or
+ambiguous compositions remain held; canonical field-accounting coverage is a
+separate contract.
+
+The ordinary Audio Load and Export nodes can retain `ui_audio` preview values
+after execution and reopening. Their declared `filename`/`file` preview sources
+are presentation metadata, with bounded literal media references. The proof
+reader preserves those references and retains the same resource identity;
+connected preview suppliers, unknown keys, structured values and unsupported
+preview sources remain rejected. This does not supply missing input-byte or
+consumed-control evidence, and never rewrites the original submitted graph.
 
 Choose a user or organization namespace where you have write permission. The
 recommended repository name is `<namespace>/modiff-template-gallery`. The
 repository must remain public for unauthenticated open-source use.
 
-Before running an upload, settle the Gallery media license. The application is
-Apache-2.0, but that does not automatically license generated outputs, input
-fixtures, model-derived examples, or third-party marks. The current Dataset
-card intentionally uses `license: other` because the 140 checked provenance and
-review records do not declare a reusable asset license. Its metadata is also
-intentionally incomplete, so it cannot be published accidentally. [Hugging
-Face's repository-license contract](https://huggingface.co/docs/hub/en/repositories-licenses)
-requires `license: other` to include both a descriptive `license_name` in
-`docs/template-gallery-dataset-card.md` and the actual terms in
-`docs/template-gallery-dataset-license.txt`; the uploader refuses all Hub
-mutations until both exist. Do not choose Apache-2.0, CC0, CC-BY, or another
-license unless every included asset can legally be distributed on those terms.
+Before running an upload, review the rights for every included file. The
+application is Apache-2.0, but that does not automatically license generated
+outputs, input fixtures, model-derived examples, or third-party marks. The
+Dataset card declares `license: other`,
+`license_name: modiff-template-gallery-mixed-asset-terms`, and `license_link: LICENSE`.
+The complete terms already exist in `docs/template-gallery-dataset-license.txt`;
+they defer to each exact file's rights record and grant no blanket asset license.
+[Hugging Face's repository-license contract](https://huggingface.co/docs/hub/en/repositories-licenses)
+requires a descriptive name and actual terms for `license: other`, and the
+uploader checks both before any Hub mutation. These existing Dataset terms do
+not approve new media. Choose each file's license only after reviewing its source,
+model and adapter terms, attribution, consent, and redistribution rights.
 
 Publication also requires `config/template-asset-rights.v1.json`. It is a
 SHA-bound, one-record-per-file ledger and is uploaded alongside the byte
@@ -52,8 +254,10 @@ record the creator/rightsholder, creation method, source URL and revision,
 source license, model terms, AI-generation flag, likeness/consent status,
 marks, attribution, asset license, reviewer, and review date. Change the
 decision to `approved` only after a human review. The uploader requires exact
-path and SHA coverage and refuses stale, missing, duplicate, or held records
-before authenticating or changing a Hub repository.
+path and SHA coverage and refuses stale, missing, or duplicate records before
+authenticating or changing a Hub repository. Complete publication also refuses
+held records; provisional publication includes only the approved subset and
+retains every hold.
 
 The commands below use the backend environment because it already contains
 `huggingface_hub` and `hf_xet`. Authenticate with a write-scoped token. Never
@@ -121,7 +325,16 @@ does not delete `README.md`, `.gitattributes`, or unrelated Dataset files.
 While upstream permissions are pending, `upload-provisional` may publish only
 the ledger's approved records. It writes a blocked manifest, lists every
 withheld path in the Dataset card, verifies the public bytes anonymously, and
-has no activation option:
+has no activation option.
+
+The provisional command validates the complete checked-in inventory and rights
+ledger, then stages only approved files. Withheld local files may be absent;
+their descriptors and holds remain unchanged. Every approved file must still
+have exact local bytes and a safe regular-file path. Staging and byte verification
+finish before credential access or a Hub mutation. Complete-set verification,
+upload, activation and pruning retain their stricter complete-set requirements.
+
+For example:
 
 ```bash
 ../MoDiff/.venv/bin/python scripts/template-gallery-assets.py upload-provisional \
@@ -132,7 +345,10 @@ has no activation option:
 
 Open the printed manifest URL in a private browser window where you are not
 signed into Hugging Face. It must return JSON. The upload already performed a
-full anonymous byte verification; repeat it independently before activation:
+full anonymous byte verification. For a complete publication, repeat it before
+activation. For a provisional publication, first follow the
+[reviewed approved-subset source update](#reviewed-approved-subset-source-updates)
+procedure, which validates against the candidate descriptor:
 
 ```bash
 ../MoDiff/.venv/bin/python scripts/template-gallery-assets.py verify-remote \
@@ -144,7 +360,7 @@ full anonymous byte verification; repeat it independently before activation:
 Full verification also rejects any stale or unexpected file under the two
 MoDiff-managed prefixes.
 
-Then activate that exact commit:
+For a complete publication only, activate that exact commit:
 
 ```bash
 ../MoDiff/.venv/bin/python scripts/template-gallery-assets.py activate \
@@ -162,17 +378,20 @@ public visibility and every managed asset byte, and only then updates
 
 ## Current publication state
 
-The complete local set contains 360 verified files. The rights ledger approves
-356 and holds four ACE Chinese New Year / Ghibli media files while written
-permission is pending. Publish the approved subset with `upload-provisional`;
-do not activate it. After both permissions are recorded, approve those exact
-four records, run the complete `upload` command, and activate only its fully
-verified immutable revision.
+The checked complete manifest declares 395 files with no missing paths. Its
+rights ledger marks 391 approved and holds four ACE Chinese New Year / Ghibli media
+files while written permission is pending. The current source descriptor pins
+the public approved subset and names those four unavailable paths. These are
+contract counts, not a claim that every file is materialized in each checkout.
+Recompute them after an asset change.
 
-The current strict inventory has 360 required paths: 358 are used at runtime
-(14 are also used by maintainer tooling) and 2 are tooling-only. Of these, 359
-files are present and total 465.91 MiB; the poster above is the one missing
-path. The scanner covers runtime TypeScript/JavaScript/JSON, generated source,
+Use `upload-provisional` while holds remain and review any new source pin using
+the approved-subset procedure below. Keep each held path and digest unchanged
+until its own permission evidence is recorded. Complete-set `upload` and
+`activate` require a fully approved set.
+
+The strict inventory classifies runtime and maintainer references separately.
+The scanner covers runtime TypeScript/JavaScript/JSON, generated source,
 the public Gallery manifest, maintainer scripts, and JSON/YAML/TOML configs. It
 recognizes `/template-gallery/...`, `public/template-gallery/...`, and bare
 `template-gallery/...` references. Adding a concrete reference in a durable but
@@ -224,7 +443,7 @@ two gates intentionally hash the local files and are not clean-checkout gates.
 The normal backend installer automatically materializes the exact pinned
 snapshot, forces a local-mode client build, and mirrors the complete payload to
 `web/template-gallery`. If the checked source is still in migration-time local
-mode, it verifies the existing 360 files before building. If it is in
+mode, it verifies the complete expected asset set before building. If it is in
 Hugging Face mode, it downloads anonymously first. Installation fails closed
 on a missing file or hash mismatch.
 
@@ -442,15 +661,389 @@ with `download`. After the integrated application test succeeds, review
 2. Add or replace reviewed files and update Gallery qualification metadata.
 3. Run `inventory --write`, `verify`, and the normal Gallery qualification
    gates.
-4. Upload without `--create` to the same public Dataset.
-5. Test the printed revision unauthenticated.
-6. Activate the new commit and run the full frontend acceptance suite.
+4. Refresh the per-file rights skeleton. New or changed bytes remain held until
+   their specific human review; do not use a blanket attestation.
+5. Upload without `--create` to the same public Dataset, using
+   `upload-provisional` while any holds remain, and verify the returned revision
+   anonymously.
+6. Use complete-set activation or the reviewed approved-subset source update,
+   as applicable, then run the required frontend acceptance checks.
 7. Commit the new storage manifest and pinned source configuration together.
 
 Never mutate a released source configuration to `main`, a tag, or a pull-request
 ref. Rollback means restoring the previous checked-in commit SHA and asset-set
 identity.
 
+## Reviewed approved-subset source updates
+
+`upload-provisional` remains non-activating. When a release deliberately retains
+held previews, maintainers may review an immutable source-descriptor update,
+as the existing approved-subset runtime contract supports. This is separate
+from the complete-set `activate` command.
+
+After human rights approval of every newly included byte and the uploader's
+anonymous verification, review the exact returned Dataset revision and subset
+manifest against the complete local manifest and rights ledger. Update only
+`repoId`, the immutable `revision`, and the corresponding source identities in
+`src/studio/templateAssetSource.json`: `assetSetId` is the verified subset;
+`completeAssetSetId` is the complete checked authoring manifest; and the sorted
+`unavailableAssets` list must exactly match the verified remote `missingAssets`.
+Preserve the existing path roots and Dataset type. Never infer these values
+from directory contents or clear a hold to make the sets match.
+
+Preserve the previous descriptor bytes before preparing this change. The edited
+descriptor is a release candidate; do not build or deploy it until verification
+succeeds. If verification fails, restore those exact descriptor bytes and
+retain the failure evidence.
+
+Run `verify-remote --full` against that reviewed descriptor before its commit.
+It validates the exact complete manifest or approved-subset projection and
+rights ledger, then anonymously verifies every included byte and rejects
+unexpected managed files. Run the ordinary asset storage/release checks and
+Setup's Gallery materialization check for the same pinned source. Rollback is
+the previous descriptor and identities. Keep held assets excluded; do not use
+complete-set `activate` or `prune-local` for a subset.
+
+This source update does not approve media rights, template quality, model
+execution, Auto, or Gallery eligibility. New inputs and previews still require
+the normal per-file human rights and template evidence reviews.
+
+`npm run gallery:verify` verifies locally materialized bytes against the active
+source descriptor. For an immutable Hugging Face subset, it requires the exact
+complete storage manifest and rights ledger, verifies every included file's
+byte identity, and reports `withheldAssets` and `withheldExamples` separately
+from `verifiedExamples`. An exclusion must be an explicit rights hold with an
+exact path and hash; held bytes found locally remain withheld. All available
+media, provenance, quality review, and current template checks remain required,
+including the metadata checks for withheld examples. Local-source mode still
+requires the complete Gallery. This check does not approve held content,
+replace anonymous `verify-remote --full`, or establish new execution or quality
+evidence.
+
+## Decoded-video identity across reviewed FFmpeg producers
+
+Historical `sha256:decoded-video-framemd5` identities hash FFmpeg's complete
+frame-checksum output, including its software banner. The reviewed Linux
+`Lavf61.1.100` and Windows `Lavf61.7.100` producers can emit identical stream
+metadata, timestamps and per-frame checksums with different software comments.
+The verifier retains the actual raw digest and accepts a historical digest only
+when changing that single banner to a reviewed producer reproduces it exactly.
+It reports each use in `decodedHashCompatibilityMatches`. All remaining checksum
+bytes, published-file SHA-256, audio PCM, provenance and review checks stay strict.
+For AV identity, only a matching historical video identity and the actual decoded
+audio identity can reproduce the recorded AV hash. No media, manifest hash or
+approval record is rewritten. This compatibility does not qualify a changed
+template recipe; stale creator locks and other release failures remain blocking.
+
 ## Live generation batching
 
 The maintainer-only Gallery runner may reuse a loaded pipeline only for consecutive templates with the same normalized Studio `modelType`. The first template, every model boundary, and every failed template resets the reuse chain and invokes accelerator cleanup. Template inputs come from an explicit checked-in input map; the runner never acquires or repairs a model during execution. Use `npm run gallery:run -- --help` for the current options rather than retaining dated host-specific command batches in documentation.
+
+## Retained whole-workflow Auto observations
+
+A normal graph Run can have a verified whole-workflow Auto receipt without a
+primary Studio candidate ID. For a completed, fresh, unquantized native modular
+text-to-image graph, the provenance reader can recover an observed resource
+identity from the original task's backend-resolved fields and consumed node
+receipts. It checks the exact request/output/task/attempt/session/workflow joins,
+worker graph hash, immutable literal model owner, controls and backend task
+declaration. Missing, conflicting, connected, reused, deferred, patched or
+unsupported evidence stays held. Client form intent alone supplies no identity.
+
+The `observed-workflow-auto-resource-v1` identity records that executed recipe;
+it does not assert a registered primary Auto recipe, hardware qualification or
+publication approval. Node IDs, prompts and seeds do not manufacture distinct
+resource recipes; model pins, effective settings and geometry remain bound.
+Original tasks retain their original candidate fields, source and capture time.
+Native BF16 ordinary Expert graphs can recover a manual loading identity only
+from a completed first attempt with exact task/session/workflow/form joins,
+complete consumed owner controls, a freshly activated empty adapter state and
+the complete immutable installed model set. The supported graph is one connected
+text-to-image owner with optional Guider and Spandrel upscale, and one or two
+Preview leaves. The selected output must retain every ancestor; an unused base
+Preview is the only permitted missing capture. A graph alone, reused owner or
+partial capture cannot supply this identity. Missing form weight format and
+ancillary profile identifiers remain absent; the explicit native loader format
+is recorded separately. Uncaptured upscale controls remain graph evidence and
+must not be presented as native per-control telemetry. The existing FP8r Expert
+reader keeps its separate durable-authoring checks.
+The text-to-image observation also retains an optional `EncodePrompt`
+`max_sequence_length` control. It must be a positive safe integer, recorded as
+an unconnected literal in the graph and native consumed-input capture, and
+equal the requested form's `maxSequenceLength`. Missing or omitted captures,
+coercible values, conflicting controls and other encoder fields remain held.
+This evidence check does not replace the backend's model-specific token limits
+or infer an unexposed encoder control. A missing negative-prompt port is allowed
+only when the form is empty and the native capture has no such field or omission.
+A legacy text form model label requires matching active durable ModelsLoader
+authoring and literal pipeline binding; the observed identity retains that label
+separately from the consumed loader class.
+Fresh plain and single-adapter Auto text graphs can also retain decoder width
+and height connected to the denoiser outputs. Both native values, source node
+and ports, backend-resolved dimensions and any retained inline defaults must
+agree. The observation records `decoderGeometryRoute: denoiser_dimensions`;
+final validation checks the canonical decoder, denoiser, output and locked
+dimensions even if someone removes the marker and recomputes metadata hashes.
+This does not relax historical missing-port, adapter or image-edit checks.
+Do not rerun a model merely to add this maintainer metadata, rewrite a raw task,
+refresh a stale public template lock, or infer missing consumed defaults. The
+existing source/model/input/media validators and human review still apply.
+
+A separate `observed-workflow-auto-lora-resource-v1` vocabulary covers one
+literal pinned Hub `ModularDiffusers.Lora` descriptor connected to the ordinary
+modular text-to-image owner, optionally with the existing Guider. It requires the
+original complete, freshly activated native adapter application and the existing
+strict ordered-adapter proof, including installed base/adapter identities,
+artifact pin/hash, name and numeric scale. The resource projection retains the
+validated adapter material; per-application IDs stay in execution evidence and
+do not manufacture a different resource recipe. The final provenance validator
+joins that projection back to the strict native proof even if someone recomputes
+its hash. Legacy plain-graph identities are unchanged.
+
+Multiple adapters, predecessor chains, scheduler overrides, connected descriptor
+controls, missing/ambiguous pins, unavailable/truncated state and reused owners
+remain outside this observed-reader scope. This reader runs only in maintainer
+evidence tooling: it does not add an Auto recipe, execute a supplier, alter saved
+graphs/receipts, acquire weights or grant hardware, quality or publication
+qualification. A missing original task candidate remains missing; the derived
+observation records the actual retained execution separately.
+
+The `observed-workflow-auto-audio-resource-v1` vocabulary covers a fresh,
+unquantized direct-audio text-to-audio graph or its ordinary Load → Generate →
+MatchLoudness → Join → Export continuation. It requires a completed first attempt,
+one immutable installed model, the exact five/eight-node graph and typed audio
+contract, matching request/task/output/session/workflow/form snapshots, the worker
+graph hash, complete native consumed controls and backend-resolved Auto fields.
+Automatic attention, the exact loader/recipe/disabled quantization settings and
+every claimed creative input must agree; a form selection alone is insufficient.
+
+The resource projection distinguishes the requested source duration from the
+full generated continuation target and final delivered duration. Prompt, lyrics,
+seed and node labels remain in execution evidence rather than manufacturing new
+resource recipes. Rehashed observations must still match the canonical controls,
+installed model pin, sample rate and output duration. Original tasks keep their
+absent primary candidate ID. Repaint, variation, patched/deferred/reused owners,
+quantization and unsupported graphs stay outside this reader's scope. A valid
+observation closes only this execution-identity gap: source/input/media checks,
+human listening, current-template review and publication decisions remain
+separate. It adds no runtime, Auto admission, hardware qualification or download.
+
+The separate `observed-workflow-auto-video-resource-v1` vocabulary currently
+covers the eight-leaf native LTX text-to-video path with its pinned 2× Spandrel
+delivery. It requires a completed first attempt, matching original graph,
+task/session/workflow/form, native consumed controls, backend-resolved placement,
+both immutable installed owners and measured delivered geometry. Reused owners,
+adapters, external inputs, additional controls, compilation, quantization and
+unsupported paths remain held. The shared requested encoder length is retained
+separately from the native LTX cap of 128; at guidance one the authored empty
+negative prompt is captured as null. Neither value is rewritten in the receipt.
+Rehashed projections must still match the canonical graph, model set and final
+frame geometry. This maintainer-only observation adds no admission, execution,
+quality approval, resource fit or hardware qualification.
+
+The `observed-workflow-auto-image-resource-v1` vocabulary covers one fresh,
+unquantized one-reference edit or two-reference modular image-conditioned graph: one literal pinned
+ModelsLoader, Image.Load, ImageEncode, EncodePrompt, Denoise, DecodeLatents and
+Preview. Every source file must have ordered native hashes and complete RGB
+geometry captures. ImageEncode must use that loader's VAE; its latents and the
+same loader's text, denoiser and decoder components must reach the sole output.
+Task, attempt, session, workflow, form, worker graph hash, resolved Auto controls
+and consumed controls must agree. Reused, deferred, patched, quantized,
+adapter-bearing and unsupported graphs remain held.
+
+The reader also covers the eight-leaf single-reference native-state route with
+an explicit Guider. Its original `edit_image` task remains recorded. ImageEncode
+and Denoise must consume the same Guider, Denoise must consume ImageEncode's
+route state, and DecodeLatents must consume Denoise's route state. The literal
+ClassifierFreeGuidance configuration and all eight captured scalar controls
+must agree; an empty, unconnected layers slot stays empty. Masks, crops and
+other route variants remain outside this reader's scope.
+
+Historical image-conditioned captures can explicitly report `graphTasks.task:
+null`. That null remains recorded as `reportedGraphTask`; it is not rewritten as
+a backend task declaration. The observed operation comes from the saved
+edit or multi-reference mode, literal `image_conditioned` workflow and complete connected
+path. A legacy form model label is retained separately from the actual executed
+loader class and immutable installed model. Neither a label nor an Auto hint
+alone establishes execution evidence.
+
+For a single-reference edit, an explicit ordinary owner loading override can
+differ from the requested form policy. The observation retains both requested
+offload fields; the effective policy still requires literal graph controls,
+backend-resolved Auto fields and native consumed-input agreement. The final
+validator checks the requested fields against the locked template and the
+effective fields against the canonical graph. This does not qualify the
+requested policy or another device. The two-reference policy checks are unchanged.
+
+An upscale comparison can retain the genuine internally generated base export
+as an `upscaleSourceComparison` artifact. Verify its original task/output join,
+durable path, bytes and hash before binding it to the before panel. This records
+the comparison export; it is neither an external reference nor a claim that the
+upscaler reopened that encoded file. Obtain exact-file publication rights for
+both the base export and final image.
+
+The separate `observed-workflow-auto-legacy-resource-v1` vocabulary covers a
+fresh, unquantized modular text-to-image owner with an optional Guider when the
+original loader contract exposed neither `weight_format` nor
+`weight_loading_mode`. Both fields must also be absent from the graph, native
+trace and resolved Auto fields; the form must have no weight-format selection.
+The recovered complete source inventory must match the worker attestation, and
+the retained node contract must confirm the missing ports. The observation binds
+both source and contract fingerprints and leaves the loading mode absent.
+Reused owners, adapters and image-conditioned graphs remain outside this
+historical vocabulary. Final validation joins the actual controls, connected
+path, current recipe, sole immutable model and full image geometry. This closes
+an execution-identity gap without claiming an unrecorded loading policy,
+independent memory monitoring or hardware qualification.
+When the old decoder consumes dimensions from the denoiser, both connected
+native values and source ports must agree with the graph and output geometry.
+Any retained inline defaults stay recorded. An optional Guider requires all eight
+native scalar controls and the same connected owner at prompt encoding and
+denoising; unsupported guidance configurations remain held.
+
+The `observed-retained-expert-text-resource-v1` vocabulary separately covers a
+retained, first-attempt Expert text-to-image task with six executable leaves:
+one modular owner, explicit ClassifierFreeGuidance, prompt encoding, denoising,
+decoding and CPU Preview. It requires BF16, group-CPU offload, no quantization or
+adapters, and an immutable Hub revision. The old loader contract, graph and native
+capture must all lack `weight_format` and `weight_loading_mode`; the missing
+controls remain absent. A legacy form model label and a blank original loader
+workflow ID stay separate from the durable modular pipeline and executed task.
+
+Pass `retainedNativeEvidence` to `createRunProvenance` only with the original
+receipt, requests, responses, derived call record, raw JSONL journal and observer
+metadata, each as `{ text, sha256 }`. Each UTF-8 record is bounded to 16 MiB and
+their total to 48 MiB. Invalid records produce no fallback resource identity;
+this option cannot be combined with `canonicalAccountingProof`. The reader joins
+the sole submitted graph and successful response to the task/session, complete
+source inventory, six native captures, three actual official calls and returns,
+every scheduler step, applied component policies and decoded image geometry.
+The original scheduler's first started index is null; its returned indices
+must be 1 through the full step count. Journal events from other tasks supply no
+proof. Observer metadata must predate execution; the retained library metadata
+must identify the official Diffusers upstream and immutable commit.
+
+The bounded observation retains the six raw-record hashes and whether the output
+originally had an API graph snapshot. A separately captured request can witness a
+missing snapshot; it never inserts one into the original output. Final validation
+rejoins the canonical graph, locked settings, source/contract fingerprints, sole
+pinned model and single image. A hash of the originally executed creative and
+VAE controls also rejects matching edits to both graph and public settings.
+Prompt/seed changes alter the execution-plan hash,
+while the resource identity describes the same resource recipe. This historical
+reader supplies no independent memory monitoring, original-time installed file
+inventory, reconstructed loading controls, residency or hardware-fit claim. All
+ordinary model-byte, media, quality, rights and publication checks still apply.
+
+The separate `observed-retained-direct-image-resource-v1` reader handles a
+retained first-attempt direct image task: one `LoadPipeline`, connected
+`DiffusersExecutionRecipe` and `PipelineQuantizationConfigV2`, generic `Inpaint`
+or `ControlGenerate`, one or two image loaders, and CPU Preview. An optional
+`OutpaintCanvas` must have its own original observed call and return. The route
+requires BF16, an immutable Hub revision, no quantization or applied adapters,
+and a consumed model-CPU or group-CPU recipe. Auto and Expert remain distinct.
+This is a maintainer evidence vocabulary; it adds no runtime, execution route,
+Auto admission, package activation or hardware qualification.
+
+For this route, `retainedNativeEvidence` has eight `{ text, sha256 }` records:
+`receipt`, `requests`, `responses`, `derived`, `journal`, `observer`, `comparison`
+and `inputs`. The first six are preserved originals. `comparison` is the original
+image comparison contract, including its positional source roles. `inputs` is a
+current, independently verified pixel inventory: `{ schemaVersion: 1, sources }`.
+Each source records `role`, `contentHash`, `byteSize`, `originalContractRole`,
+`decodedRgbaSha256` and `[width, height]` as `size`. Construct this inventory from
+the actual current encoded files and decoded RGBA pixels. Its semantic roles
+must match `inputArtifacts`; the original contract's positional roles remain
+separate. A current file hash cannot supply a missing original PIL pixel hash.
+The journal limit is 64 MiB, the current input inventory limit is 1 MiB, other
+records are limited to 16 MiB each, and the total is limited to 112 MiB.
+
+The reader joins every original scheduler step and sole official call/return to
+the submitted graph, task/session/attempt, native consumed controls, complete
+source inventory, sole current model identity, exact source bytes and original
+PIL pixel hashes. Prepared outpaint additionally joins the actual source pixels,
+utility controls and source body, prepared canvas/mask and model call. Scalar
+and one-item-array file selections, original alpha policies, legacy form model
+labels, and current operation names are preserved. True CFG and embedded guidance
+stay separate; an unsupported negative-prompt field remains unused. The consumed
+connected recipe stays separate from the loader's inactive offload fallback.
+
+Final validation binds the observation back to the canonical graph parameters,
+locked controls, template/task, source/contract fingerprints, model pin, input
+roles/bytes and single output geometry. Invalid records never fall through to
+a manual identity, and this route also excludes `canonicalAccountingProof`.
+Original null candidate IDs remain null. The recorded direct component hook
+markers are unobserved; consumed recipe controls do not prove native hook
+placement, residency, independent memory monitoring or fit. A separately reviewed
+implementation-file hash and immutable official library commit remain distinct
+from the call observer's decorator-file hash. All normal model-file, media,
+quality, rights and publication gates remain required.
+
+The final validator joins the observed identity back to the original canonical
+controls, single installed model, freshly applied empty adapter state, ordered
+input paths/hashes and measured output. Rehashing a changed observation cannot
+substitute another model, input order, control tuple or output. Source dimensions
+remain native capture evidence; no new pixel identity is inferred from file
+hashes. Existing source, input-byte, media, quality, rights and publication checks
+still apply. The original primary candidate and template identifiers remain
+absent where originally absent. This maintainer-only reader does not execute a
+model, admit a resource recipe, qualify hardware, alter saved graphs or authorize
+publication. Other image, video, repaint and variation routes need their own
+evidence review.
+
+`observed-retained-modular-image-resource-v1` covers a retained single- or
+two-reference modular edit with eight native leaves, or nine with one applied
+adapter. It joins the four original official encode/image/denoise/decode calls,
+every scheduler step, complete native captures, immutable base and adapter
+identities, source/contract fingerprints, ordered current input bytes and
+original consumed PIL pixel hashes. Its eight bounded evidence records use the
+same names and size limits as the direct image reader described above.
+
+An adapter additionally needs its original load and activation, actual weight
+body, transformer object binding, and the active scale on every consuming
+forward and layer within the denoise interval. Configured names and generated
+runtime names remain distinct. Native CPU and accelerator Preview devices are
+preserved. Absent historical loading controls remain absent. The original graph
+task may be null, and generic form strength/sequence fields are recorded as
+unused when the original calls did not consume them.
+
+The identifier binds the complete observation, rejects contradictory or unknown
+authority fields, and the final validator joins it back to canonical controls,
+model pins, adapter descriptor, input roles and output dimensions. Invalid raw
+records cannot fall through to a manual or Expert identity. This read-only
+historical vocabulary supplies no original-time installed inventory, independent
+memory monitoring, resource admission, residency or hardware qualification, and
+does not authorize publication.
+
+The separate `observed-workflow-auto-masked-image-resource-v1` reader binds a
+fresh nine-leaf native inpaint: source and mask loaders, model owner, Guider,
+prompt/image encoding, denoise, decode and Preview. Its deliberately narrow
+whole-compatible route keeps the actual group-CPU graph policy separate from
+the saved form's requested loading. It joins both native encoded-body hashes,
+source/mask dimensions and modes, consumed controls, resolved Auto fields,
+single immutable model and output geometry. `whole_v1` is supported by the
+original graph and Auto resolution; it is not presented as an independently
+observed official-call argument. The generic sequence-length form field remains
+explicitly unused. Reordered semantic roles, extra suppliers, missing captures
+and changed source/mask bodies fail closed. This receipt reader supplies no
+runtime, resource admission, quality approval or hardware qualification.
+
+The native video reader also handles a ten-leaf source-video remaster with
+`Video.Load` and `VideoConditioning.Normalize`. Supply a separate bounded
+`videoNormalizationEvidence` to `createRunProvenance`: the exact encoded source
+hash/size, original geometry/frame rate/count, declared cover crop and sampled
+geometry/count, ordered RGB pixel descriptors, native normalized-pixel digest,
+the complete backend source fingerprint and the four preparation/capture file
+hashes, plus the local decoder distribution versions and executable hash. Build
+it by decoding the exact source with the recorded decoder and replaying only the
+attested pure preparation functions. Its digest must equal the original
+Encode Inputs connected pixel capture. A current encoded-file hash is not
+invented for `Video.Load`, whose native receipt does not contain one.
+
+The final validator binds this evidence back to the encoded input, connected
+normalizer, full source inventory, original normalized frame sequence, generator
+and upscaler. Active `denoise_strength` stays separate from the generic inactive
+`strength` and independent conditioning scale. Source timing, cover cropping and
+uniform frame sampling remain visible limitations; neither a playback review nor
+photorealism follows from a matching pixel digest. Retained or canonical
+accounting records cannot substitute for this fresh native evidence.

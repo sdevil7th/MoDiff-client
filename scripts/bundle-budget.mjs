@@ -1,3 +1,297 @@
+// Node-local audio dispatch history plus the approved retained Schnell asset
+// measure largest/startup/deferred gzip 498243/676733/336133 over the closed
+// 38-template build's 498146/676633/336052. Add only the measured 97/100/81
+// bytes, preserving 12/15/63-byte headroom. Only studio-templates.js and the
+// immutable asset descriptor differ after import-URL normalization. All119
+// assets, four startup/90 deferred memberships, dependencies, loading/minifier
+// rules and the independent64KiB deferred chunk cap remain unchanged.
+// Keeping selected-node actions clear of activity measures largest/startup/
+// deferred gzip 498158/676645/336106 over 498142/676630/335787. Allow only the
+// measured 16/15/319 bytes, retaining prior 0/3/9-byte headroom. Only the existing
+// studio-templates and SelectionToolbar assets change after URL normalization;
+// all119 assets/four startup/90 deferred memberships, dependencies, loading and
+// minifier rules and the independent64KiB deferred chunk cap stay fixed.
+// Folding Session activity measures largest/startup/deferred gzip
+// 498142/676630/335787 over 498028/676515/335743. Only studio-templates.js
+// changes after import-URL normalization. Add only the measured 114/115 startup
+// bytes, retaining prior headroom; both deferred limits,119 assets/four startup/90
+// deferred memberships, dependencies, minifier and loading boundaries stay fixed.
+// Direct stage editing and Block/Python guidance measure largest/startup/deferred
+// gzip 498028/676515/335743 over 497985/676473/335647. Add only the measured
+// 43/42/96 bytes, retaining prior headroom. The five normalized changes are
+// CustomExtensionsPanel, EncodingNode, NodeList, block-composition-tools and
+// studio-templates. All119 assets, four startup/90 deferred memberships,
+// dependencies, minifier/loading rules and the independent64KiB cap stay fixed.
+// Visible model-change conflicts measure largest/startup/deferred gzip
+// 497985/676473/335647 over 497981/676468/335619. Only the deferred
+// OperationModelPicker changes after immutable import-URL normalization; all119
+// assets and four startup/90 deferred memberships stay exact. Allow only the
+// measured four-byte largest-chunk import fingerprint growth. Aggregate startup,
+// deferred, 64 KiB chunk, dependency, minifier and loading limits stay unchanged.
+// Selected workflow setup measures largest/startup/deferred gzip
+// 497978/676464/335501 over 497685/676173/331955: add only 293/291/3546 bytes,
+// retaining 3/12/199 bytes of headroom. All119 assets,94 JS and four startup/
+// 90 deferred memberships stay exact. Shared-export alias churn is not a new
+// dependency or loading boundary; the independent 64 KiB chunk cap is unchanged.
+// Scoped Run recovery adds measured largest/startup/deferred gzip bytes
+// 894/896/1556 over 496791/675277/330399, retaining 3/12/199-byte headroom.
+// Exact setting/runtime focus and semantic document ownership keep the same
+// 119 assets and four startup/90 deferred memberships. Dependencies, minifier,
+// loading boundaries, model guards and the independent 64 KiB chunk cap stay fixed.
+// Declared output readiness measures largest/startup/deferred gzip
+// 496790/675278/330510 against 9760's 496684/675171/330491. Only
+// studio-templates.js changes after immutable URL normalization; all119 assets,
+// 94 JavaScript names and four startup/90 deferred memberships remain exact.
+// Add only measured106/107 startup bytes, retaining4/11 bytes of headroom.
+// Deferred caps, dependencies, minifier, loading rules and model guards stay fixed.
+// Generator-first import summaries measure largest/startup/deferred gzip
+// 496684/675171/330491 against E129's 496585/675069/330324. Only
+// studio-templates.js changes after immutable import-URL normalization; all
+// 94 JavaScript names and four startup/90 deferred memberships remain exact.
+// Add only the measured 99/102 startup bytes, retaining 4/11-byte headroom.
+// Both deferred caps, dependencies, minifier and loading rules stay unchanged.
+// Fresh lyric composites share their actual node/edge construction with managed
+// recipes. Largest/startup/deferred gzip is 496585/675069/330324 against the
+// accepted D77 496579/675066/329724. Keep both startup limits and the 64 KiB
+// deferred chunk limit unchanged; add only the measured 600 deferred bytes,
+// retaining 274 bytes of deferred headroom. All 94 JavaScript names and their
+// four startup/90 deferred memberships, dependencies and loading rules stay fixed.
+// Versioned primary-model summaries add 82/83 compressed startup bytes over
+// 496485/674972; deferred gzip falls from 329730 to 329712. Only studio-templates.js
+// changes after immutable import-URL normalization, with all 94 JavaScript names,
+// four startup/90 deferred assets and dependency/loading rules unchanged. Add only
+// the measured cost, retaining 22/25-byte headroom and both deferred caps.
+// The accepted rear-view contact-sheet prompt and corrected four-panel description
+// measure largest/startup/deferred gzip 496485/674972/329730 versus the packaged
+// D59 build's 496250/674736/329640. Only studio-templates.js changes after immutable
+// import-URL normalization; the other 89 template contracts and all 94 JavaScript
+// asset names are exact. Add only measured startup growth 235/236 bytes, retaining
+// 22/25-byte headroom and both deferred caps. No dependency or loading-rule change.
+// Scoped audio creative receipts measure largest/startup/deferred gzip
+// 496254/674742/329707 versus the accepted 496215/674704/329829.
+// Add the measured 39/38 startup bytes, retaining 18/19-byte headroom and
+// both deferred caps. Only studio-templates.js changes after immutable import
+// URL normalization; all 4 startup/90 deferred assets and build rules remain.
+// Shared managed input previews measure largest/startup/deferred gzip
+// 496215/674704/329829 versus 496087/674572/329587. Only studio-templates.js
+// changes after cache-version normalization; all 90 deferred assets differ
+// only in their versioned imports. Add the measured 128/132/242 bytes, keeping
+// prior 18/19/169-byte headroom, four startup assets and the 64 KiB chunk cap.
+// No dependency, loading-boundary, minifier or model/runtime change.
+// Required literal media-file readiness adds 103/102 startup gzip bytes over
+// 495984/674470; deferred gzip falls from 329666 to 329587. Retain 18/19 bytes
+// headroom, the same 4 startup/90 deferred assets and both deferred caps. No new
+// dependency, module-loading rule or minifier change.
+// Generic conditional input requirements measure largest/startup/deferred gzip
+// 495984/674470/329666 versus accepted 495868/674357/329734. Add only measured
+// startup growth 116/113 bytes, retaining 18/19 bytes of headroom. The same four
+// startup and 90 deferred asset names, dependencies and loading boundaries stay
+// fixed. Both deferred caps and module-identity checks remain unchanged.
+// Pika saved-model preservation and joined video/audio drafts measure largest/
+// startup/deferred gzip 495868/674357/329734 against 495666/674155/329445.
+// Add only measured startup growth of 202/202 bytes, retaining 18/19 bytes of
+// headroom and both deferred caps. Only studio-templates.js and the deferred
+// DeveloperWorkflowLauncher.js change after URL-version normalization. The same
+// four startup and 90 deferred assets, dependencies and chunk rules remain.
+// Shared normal template routing adds video to the exact selected creator.
+// Largest/startup/deferred gzip measure 495666/674155/329445 against the accepted
+// 495646/674134/329538. Add measured startup growth of 20/21 bytes, retaining 18/19 bytes
+// of headroom and both deferred caps. Four startup and 90 deferred assets retain
+// membership; dependencies, chunk rules, minification and identity checks stay fixed.
+// Finite task artifact inventories share parsing across legacy and generic
+// model surfaces. Compared with client 9bc8fa7, largest/startup/deferred gzip
+// measures 495646/674134/329538 versus 495384/673867/329241. Add only measured
+// feature growth 262/267/297, preserving 18/19/218 bytes of prior headroom.
+// Four startup and 90 deferred asset names retain membership. Dependencies,
+// chunk rules, minification and module identity checks remain unchanged.
+// Required media loaders in fresh video drafts measure largest/startup/deferred
+// gzip 494816/673303/329249 versus 494806/673290/329066. Add only measured
+// startup growth 10/13, retaining 8/11 bytes of headroom. Both deferred caps
+// remain fixed; only DeveloperWorkflowLauncher.js changes after URL-version
+// normalization. The same 94 asset names and build rules retain membership.
+// Versioned video task observations measure largest/startup/deferred gzip
+// 494806/673290/329066 versus 494749/673238/329380. Add measured startup
+// growth 57/52, retaining 8/11 bytes of headroom and both deferred caps.
+// All 94 JavaScript asset names retain membership; only studio-templates.js
+// changes after URL-version normalization. Dependency and build rules stay fixed.
+// Generic video stages, strict ownership metadata and retained template finishing
+// measure largest/startup/deferred gzip 494749/673238/329380 against the accepted
+// 494455/672941/328233. Add only measured growth 294/297/1147, preserving 8/11/79
+// bytes of headroom. The same four startup and 90 deferred assets retain their
+// loading membership. Dependencies, chunk rules, minifier, identity validation
+// and the independent 65536-byte deferred chunk cap remain unchanged.
+// Recorded-pin historical examples and the explicit portrait-v3 recipe measure
+// largest/startup/deferred gzip 494455/672941/328233 versus the accepted
+// 494259/672742/328069. Add measured startup growth 196/199, retaining 8/11
+// bytes of headroom. The same four startup and 90 deferred assets retain their
+// loading membership. Both deferred caps, dependencies and identity gates stay fixed.
+// Versioned FLUX3 prompts, scoped image receipts and ordinary protected-PNG
+// authoring measure largest/startup/deferred gzip 494259/672742/328069 versus
+// accepted 493208/671695/327026. Add only measured growth 1051/1047/1043,
+// preserving 8/11/243 bytes of headroom. Four startup assets are unchanged;
+// deferred assets grow 89 -> 90 with the template-authoring facade. No new
+// dependency or eager loading boundary; the 65536-byte deferred chunk cap,
+// minifier, graph/media/identity validators and all other checks stay fixed.
+// Save/read hydration ownership measures largest/startup/deferred gzip
+// 493208/671695/327026 versus the accepted 493170/671659/327133.
+// Add only measured aggregate startup growth 38/36, preserving 8/11 bytes
+// of headroom. The same four startup and 89 deferred assets retain membership;
+// all deferred bodies match after versioned URL normalization. Dependencies,
+// minifier, loading boundaries, validators and both deferred caps stay fixed.
+// Custom recipe preservation and page-lifecycle retry cancellation measure
+// largest/startup/deferred gzip 491521/670008/326977 versus the accepted
+// 491457/669945/327044. Add only measured startup growth 64/63, preserving
+// 8/11 bytes of headroom. The same four startup and 89 deferred assets retain
+// membership; all deferred bodies match after versioned URL normalization.
+// Dependencies, minifier, loading boundaries and both deferred caps stay fixed.
+// Passive saved-form preservation and authoritative service-cache status measure
+// largest/startup/deferred gzip 491457/669945/327044 versus the accepted
+// 490814/669295/326710. Add only aggregate growth 643/650/334, preserving
+// 8/11/225 bytes of headroom. All 89 deferred bodies match after normalizing
+// versioned URLs; the same four startup and 89 deferred assets retain membership.
+// Dependencies, chunk rules, minifier, validators and 65536-byte chunk cap stay fixed.
+// Windows Block sizing/disabled-stage/label/default/readiness fixes and the
+// reviewed Vite 8.1.4 -> 8.1.6 security update measure largest/startup/deferred
+// gzip 490814/669295/326710 versus accepted 490492/668797/326749. Add only
+// measured aggregate startup growth 322/498, preserving 8/11-byte headroom.
+// The same four startup and 89 deferred assets retain their loading membership;
+// chunk rules, minifier settings, validators and both deferred caps stay fixed.
+// Bounded native field-accounting/applied-adapter parsing and explicit cache-release
+// feedback measure largest/startup/deferred gzip 490492/668797/326749 versus
+// accepted 488472/666779/326783. Add only measured startup growth 2020/2018,
+// preserving 8/11 bytes of headroom. Dependencies, startup membership, minifier,
+// loading boundaries and both deferred ceilings remain unchanged.
+// Explicit declared Experimental discovery measures largest/startup/deferred gzip
+// 488406/666710/326605 versus accepted 488399/666704/326318. Add only the
+// measured 287-byte deferred growth, retaining 152 bytes of aggregate headroom.
+// Existing startup and chunk caps, dependencies and loading boundaries stay fixed.
+// Pinned NASA/Monet planning definitions measure largest/startup/deferred gzip
+// 488399/666704/326318 versus 488210/666514/326348. Add only measured
+// 189/190-byte startup growth, preserving 15/17-byte headroom and all deferred caps.
+// Legacy schema-one advisory-hint compatibility measures largest/startup/
+// deferred gzip 488210/666514/326348 versus 488155/666461/326431.
+// Add only measured startup growth 55/53 bytes, retaining 15/17 bytes of
+// headroom. Deferred caps, dependencies, minifier and loading boundaries stay fixed.
+// Exact immutable default-weight-format validation measures largest/startup/
+// deferred gzip 488155/666461/326431 versus accepted 488073/666379/326387.
+// Add only measured feature growth 82/82/44 bytes, retaining 15/17/39 bytes
+// of headroom. Dependencies, minifier, loading boundaries, validators and the
+// independent 65536-byte deferred chunk cap remain unchanged.
+// Exact cache observations, exclusive-owner enhancement removal, same-artifact
+// layout preservation and semantic crossing checks measure largest/startup/
+// deferred gzip 488073/666379/326387 versus 487800/666105/324323.
+// Add only measured 273/274/2064 bytes, retaining 15/17/39 bytes of headroom.
+// Dependencies, minifier, startup graph and validators remain unchanged;
+// the independent 65536-byte deferred chunk cap also remains fixed.
+// Explicit artifact-format preservation and ten blocked FP8r planning recipes
+// measure largest/startup/deferred gzip 487800/666105/324323, versus the accepted
+// 480984/659291/323388 baseline. Add only the measured 6816/6814/935 aggregate
+// growth, retaining 15/17/39 bytes of headroom. Dependencies, minifier, loading
+// boundaries, validators and the independent 65536-byte chunk limit stay fixed.
+// Mandatory source/effective pre-tokenizer identities add the final strict
+// consumer checks. The final build measures deferred gzip 323388 versus
+// 323285 (+103); retain 39 bytes of aggregate headroom at 323427. Startup
+// measures 659291/480984 below its existing caps. No dependency, minifier,
+// loading-boundary, validator or individual deferred chunk cap changes.
+// Generic public recipe/provider discovery and the strict authored-layout PUP
+// consumer measure largest/startup/deferred gzip 480976/659280/323285 bytes,
+// versus 479207/657512/321188 at the accepted prior feature checkpoint.
+// Add the measured aggregate growth 1769/1768/2097, retaining 23/28/39 bytes
+// of headroom. Dependencies, minifier, loading boundaries, validation and the
+// independent 65536-byte deferred chunk limit are unchanged.
+// Declared raw/layout PUP selection adds bounded alternative parsing, exact-parent
+// rebinding and deferred controls. Measured deferred gzip grows 319433 -> 320994
+// (+1561 bytes across the deferred graph). Add only this measured growth
+// to the aggregate cap, preserving 39 bytes of headroom at 321033. Startup/chunk
+// caps, dependencies, minifier, lazy boundaries and validators remain unchanged.
+// Normal evaluation discovery/Custom selection, declared PUP/LoRA authoring,
+// default-seed consumption and current runtime-option presentation measure
+// largest-startup/startup/deferred gzip bytes 479207/657512/319433 in the
+// canonical Linux complete check. Allow 288/288/864 bytes over the prior caps,
+// leaving 23/28/39 bytes of headroom. This is aggregate measured feature and
+// correctness cost, not per-module attribution. Keep dependencies, minifier,
+// loading boundaries, all validators and the 65536-byte deferred chunk cap fixed.
+// Aggregate release feature/correctness cost versus the accepted COMPLETE baseline:
+// deferred gzip 316833 -> 318426 (+1593). Raise 317015 to 318608, retaining
+// 182 bytes of headroom. This is not per-module attribution or an immediate
+// private-baseline measurement; startup/chunk caps and validators stay fixed.
+// Lossless structured prompt enhancement preserves authored layout/source bindings
+// and validates native ID mapping in deferred code. Measured deferred gzip grows
+// from 316480 to 316833 bytes (+353). Add exactly that feature cost to the prior
+// 316662-byte aggregate cap, preserving its 182-byte headroom at 317015 bytes.
+// Startup, individual chunk caps, dependencies, minifier and lazy boundaries stay
+// unchanged; the existing built assets require no rebuild for this sizing check.
+// Selected Process Image input requirements share the current operation contract
+// across readiness and graph recovery. The optimized build measures startup/
+// largest-startup/deferred gzip bytes 657234/478930/316398, versus the recorded
+// accepted 656925/478620/316464. Allow 288 bytes in each startup cap, leaving
+// 18/12 bytes of headroom; retain strict selector/port validation, dependencies,
+// loading boundaries, minifier and both deferred caps unchanged.
+// Owner-bound V2 preview lookup restores complete ordered media collections,
+// including declared legacy preview controls. Startup/chunk/deferred gzip bytes
+// measure 656925/478620/316464 versus 656739/478434/316484 before the fix.
+// Allow 192 bytes for the 186-byte shared correctness increase in each startup
+// cap, leaving 39/34 bytes. Keep strict binding validation, dependencies, loading
+// boundaries, minifier and both deferred caps unchanged.
+// Shared ancillary readiness resolves the exact current declaration before the
+// synchronous collector inspects the scoped graph. Two consumers share one
+// display witness; pending/stale/error handling preserves fresh Run authority.
+// Measured startup/chunk/deferred gzip bytes are 656712/478407/316414 versus
+// 656178/477874/316369. Add 512 bytes to the existing two startup caps only;
+// dependencies, loading boundaries and both deferred caps remain unchanged.
+// Explicit private evaluation authoring adds a bounded lazy parser and Custom
+// memory guards. The first build measures startup/chunk/deferred gzip bytes
+// 656188/477881/316459 versus 656112/477808/315072. Reserve 128/128/1536
+// additional bytes for the shared metadata and strict collision validation.
+// Dependencies, lazy boundaries, minifier and the deferred chunk cap stay fixed.
+// Final selected-parent field authority and owned Guidance presentation, plus
+// source-region removal and runtime Auto resource-update corrections, measure
+// startup/chunk/deferred gzip bytes 656112/477808/315072. Bound the completed
+// feature and correctness changes by another 128/128/896 bytes over the prior
+// caps 656004/477694/314230, leaving 20/14/54 bytes of measured headroom.
+// Dependencies, lazy boundaries, chunk rules, minifier and the independent
+// 65536-byte deferred chunk cap remain unchanged.
+// Optional prompt enhancement, strict consumed-input/summary validation and the
+// asynchronous exact execution scope measure startup/chunk/deferred gzip bytes
+// 655940/477635/314107 versus the accepted 650884/472574/291190 baseline.
+// Keep planner/declaration loading deferred: the async selector boundary removes
+// 31722 eager bytes, and separate saved-hint codecs remove another 5555 bytes.
+// Bound required feature growth at 5120/5120/23040 bytes over that baseline:
+// caps 656004/477694/314230 leave 64/59/123 bytes in this measured build.
+// Dependencies, chunk rules, minifier and the 65536-byte deferred chunk cap stay fixed.
+// Generic structured layout/reference editing, exact selected block-field schemas
+// and backend-owned format inventory measure startup/chunk/deferred
+// 650884/472574/291190 gzip bytes versus MAIN 648784/470476/283943.
+// The layout editor remains lazy (6540 bytes); Model Manager adds 602 lazy bytes.
+// Shared strict schema/inventory validation and renewed route pins add 2100 startup
+// bytes. Allow 2112 per startup cap and 7232 aggregate deferred bytes, leaving
+// 28/34/42 bytes. Dependencies, Vite/minifier/loading boundaries and the independent
+// 65536-byte deferred chunk cap remain unchanged.
+// Declared-source offload labels measure startup/chunk/deferred 648784/470476/283943
+// gzip bytes. Add 64 bytes to each startup cap, leaving 16/20 bytes of margin.
+// Dependencies, loading boundaries and both deferred caps remain unchanged.
+// Ordinary graph recovery measures startup/chunk/deferred 648736/470427/283981
+// gzip bytes. Retain both startup caps; add 32 deferred bytes, leaving 19 bytes.
+// Dependencies, loading boundaries and the individual deferred chunk cap stay fixed.
+// Generic audio setup/output, current adapter authority and seven selected audio
+// recipes measure startup/chunk/deferred 648723/470415/283916 gzip bytes.
+// Allow 896/896/2368 bytes over the prior caps, leaving 13/17/52 bytes.
+// Dependencies, minifier, loading boundaries and the 65536-byte chunk cap stay fixed.
+// Block bound-action projection and declared-role validation measure startup/chunk/
+// deferred 647825/469517/281574 bytes (+117/+118/+76 from 647708/469399/281498).
+// Add 64 bytes per cap: 647840/469536/281600, leaving 15/19/26 bytes of margin.
+// Dependencies, loading boundaries, minifier and the 65536 deferred chunk cap stay fixed.
+// The final six registered stage boundaries add 105 startup/chunk gzip bytes:
+// 647708/469399 versus the initial coherent 647603/469294 measurement.
+// Add 128 bytes to those two caps only: 647776/469472, leaving 68/73 bytes.
+// Final deferred total is 281498; its 281536 aggregate and 65536 chunk caps stay fixed.
+// Shared stage contracts and required-controls safety validation measure
+// startup/largest-startup/deferred 647603/469294/281513 gzip bytes in the
+// coherent build. Former caps 647072/468768/278976 miss by 531/526/2537 bytes.
+// Allow only 576 startup/largest bytes and 2560 aggregate deferred bytes;
+// new caps 647648/469344/281536 leave 45/50/23 bytes of measured headroom.
+// Dependencies, minifier settings and loading boundaries stay unchanged;
+// retain the independent 65536-byte limit for every deferred chunk.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -30,7 +324,175 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // Required-input preflight, leaf-graph cycle checks and connectable scalar editors
 // add shared correctness logic: measured largest startup chunk 450.1 KiB.
 // Keep native creation deferred and bound the chunk at 450.25 KiB.
-const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 256;
+// Abortable backend probes, durable runtime status parsing, and regenerated
+// route pins measure 461311 bytes here. Allow a bounded 512-byte increase;
+// deferred chunk ceilings and the complete startup budget remain independent.
+// Exact image-template execution selections add bounded shared recipe metadata.
+// Native graph creation stays lazy: measured largest startup chunk is 462529
+// bytes. Allow 1280 bytes for the metadata, without new dependencies.
+// Conditional component connector roles and exact dual-Guidance recipe metadata
+// measure 463021 bytes. Allow 256 more bytes; native creation remains deferred.
+// Verified supervisor origins, ordered health discovery and bounded legacy
+// recovery share one control helper. Together with exact consumed-control
+// visibility, the measured chunk is 463619 bytes (+567 from 463052). Allow
+// 576 bytes; retain lazy authoring and the independent deferred-chunk ceiling.
+// Owned metadata waiting and fresh-document hydration add 280 bytes to this
+// shared startup chunk (463950 measured). Bound the necessary fix by 320 bytes.
+// Combined Windows recovery, checkpoint, preview and complete-scope Auto fixes
+// measure 464333 bytes after reusing normalized attention/progress/preview
+// values. Bound their remaining combined cost with 512 bytes; no new imports.
+// Two full-image recipe declarations and their reviewed terms add 1374 gzip
+// bytes to the same startup chunk (465247 measured). Authoring stays deferred.
+// Preserve both reviewed allowances: 464000 + 512 + 1536 = 466048 bytes.
+// PNG encoding and pending-socket retirement add 255 startup gzip bytes over
+// the 644101-byte paired baseline. Measured startup/chunk: 644356/466049.
+// Allow 32 additional bytes here and below; deferred limits stay unchanged.
+// Exact speech-control aliases and single-file media projection bring measured
+// startup/chunk to 644443/466136 bytes. Bound this shared fix by 128 more bytes.
+// Recorded legacy-field presence and exact controlled-route schema checks measure
+// startup/chunk 644791/466487 bytes (+348/+351). Bound these shared corrections
+// with 384 bytes; no dependencies, eager authoring imports or deferred caps change.
+// Exact image task receipts, legacy ordinary-image recovery and collapsed cache
+// ownership add 287 shared gzip bytes (startup/chunk 645078/466774 measured).
+// Allow 384 more bytes; authoring stays deferred, with no dependency changes
+// or increase to either deferred limit.
+// Retaining the server cache view through restored graphs and retiring only
+// acknowledged runtime leaves adds 738 startup gzip bytes (645816/467510).
+// Bound this shared correctness path by 768 bytes; deferred caps stay fixed.
+// Generic image stage/adapter metadata and ordered chain sharing add 375 gzip
+// bytes over the paired 467559-byte chunk baseline (467934 measured). Reserve
+// 384 bytes; graph creation and structural authoring remain deferred.
+// Finite manual float precision and exact step increments measure startup/chunk/
+// deferred 646464/468158/278511 bytes versus the accepted 646417/468111/278510
+// (+47/+47/+1 bytes), while retaining existing padding when it preserves the value.
+// Allow 64 bytes for startup and its largest chunk, with no dependency or loading changes.
+// Shared strict CPU/CUDA loading-policy validation measures startup/chunk/deferred
+// 646530/468224/278562 bytes versus the accepted numeric 646464/468158/278511
+// (+66/+66/+51). Sharing the predicate saves 20 startup bytes over the first
+// candidate. Existing headroom plus 64 additional startup/chunk bytes leaves
+// 30/32 bytes of margin; both deferred limits and lazy boundaries stay fixed.
+// Selected-profile image adapter permission and bounded owned-chain editing
+// measure startup/chunk/deferred 646923/468616/278913 bytes versus the accepted
+// 646530/468224/278562 baseline (+393/+392/+351). Allow 384 startup/chunk bytes
+// and 320 aggregate deferred bytes with existing headroom; dependencies, lazy
+// boundaries, minifier settings and the 64 KiB per-deferred-chunk cap stay fixed.
+// Authoritative image execution-mode bindings measure startup/chunk 647025/468717
+// gzip bytes versus the accepted 646923/468616 (+102/+101); deferred 278958
+// stays within its existing 278976 cap. Two semantics-preserving isolated
+// candidates still miss startup/chunk limits (646985/468683 and 647014/468706).
+// Retain the strict current-owner/parser checks and allow 128 startup/chunk
+// bytes only; dependencies, lazy boundaries, minifier and deferred caps stay fixed.
+// Acknowledged Save/Delete summaries keep the saved list current after closing a
+// tab. Measured gzip grows 488406 -> 488472 (+66) for the largest startup chunk,
+// 666710 -> 666779 (+69) for startup, and 326605 -> 326783 (+178) deferred.
+// Add only those measured costs, preserving 8/11/152 bytes of existing headroom.
+// Dependencies, startup membership, lazy boundaries and the 64 KiB chunk cap stay fixed.
+// Authored-device import, immutable Install pins and page-owned checkpoints measure
+// largest/startup/deferred gzip 493170/671659/327133 versus 491521/670008/326977.
+// Allow only measured startup growth (+1649/+1651), retaining 8/11 bytes headroom.
+// Four startup and 89 deferred assets, dependencies, loading rules and deferred caps stay fixed.
+// Scoped video receipts and compatible adapter messaging measure 494870 bytes
+// in the largest startup asset (+46 over the cap). Add 64 bytes, no dependencies.
+// Expandable input preparation and generation, including order-preserving
+// projection and shared pipeline validation. Measured largest/startup/deferred
+// gzip changed from 498237/676723/336015 to 498592/677080/337273 bytes.
+// Keep the four startup and 90 deferred modules and the 64 KiB per-chunk cap.
+// Generic H3 image switching, exact source-route pins and shared stage sockets
+// measure largest/startup/deferred gzip 498892/677379/337569, against the
+// packaged 498595/677083/337306. Add only 297/296/263 measured feature bytes,
+// retaining 15/22/148-byte headroom. Only studio-templates and operation-authoring
+// differ after import-URL normalization; all 119 assets, four startup/90 deferred
+// memberships, dependencies, loading/minifier rules and the 64 KiB cap stay fixed.
+// Exact backend-selected block input requirements measure largest/startup gzip
+// 499048/677534 against 498892/677379: add only 156/155 bytes, retaining 15/22
+// bytes of headroom. Deferred gzip decreases to 337464; both deferred ceilings
+// stay fixed. Only studio-templates changes after import-URL normalization;
+// all 119 assets, four startup/90 deferred memberships and dependencies stay fixed.
+// The H3 human-and-cat template and its legacy form metadata measure
+// 500712/679198/337468 largest/startup/deferred gzip, against 499048/677534/337464.
+// Only studio-templates differs after import-URL normalization. Add the measured
+// 1664/1664 startup bytes. One labeled editorial PNG brings the bundle to 120
+// assets; deferred limits, four startup/90 deferred memberships, dependencies,
+// loading boundaries and the 64 KiB cap stay fixed.
+const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  1664 +
+  156 +
+  297 +
+  355 +
+  97 +
+  16 +
+  43 +
+  4 +
+  293 +
+  894 +
+  106 +
+  99 +
+  82 +
+  235 +
+  39 +
+  128 +
+  103 +
+  116 +
+  202 +
+  20 +
+  262 +
+  // Source-specific hierarchy selection: 495136 -> 495384 gzip bytes.
+  // Retain 18 bytes of headroom, four startup assets and both deferred caps.
+  248 +
+  // Explicit mixed-source collection validation: 494870 -> 495136 gzip bytes.
+  // Add its measured aggregate cost; retain 18 bytes of headroom and all deferred caps.
+  266 +
+  64 +
+  10 +
+  57 +
+  294 +
+  196 +
+  1051 +
+  38 +
+  1649 +
+  64 +
+  643 +
+  322 +
+  2020 +
+  66 +
+  189 +
+  55 +
+  82 +
+  273 +
+  6816 +
+  1769 +
+  450 * 1024 +
+  896 +
+  768 +
+  1280 +
+  256 +
+  576 +
+  320 +
+  512 +
+  1536 +
+  32 +
+  128 +
+  384 +
+  384 +
+  768 +
+  384 +
+  64 +
+  64 +
+  384 +
+  128 +
+  576 +
+  128 +
+  64 +
+  64 +
+  2112 +
+  5086 +
+  128 +
+  128 +
+  512 +
+  192 +
+  288 +
+  288 +
+  114;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -87,7 +549,106 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES = 450 * 1024 + 256;
 // bounded 128 bytes above the previous ceiling, not an unbounded budget reset.
 // The same authoring fixes measure 624.2 KiB startup with no new dependencies.
 // Allow 624.5 KiB; individual deferred-chunk ceilings stay fixed.
-const MAX_STARTUP_GZIP_BYTES = 624 * 1024 + 512;
+// The same changes measure 639616 startup bytes, 128 above the former bound.
+// Allow 256 additional bytes without increasing deferred or total ceilings.
+// The same image-template metadata measures 640835 startup bytes. Native graph
+// authoring and controlled-workflow helpers load only when creation is requested.
+// The validated connector and Guidance fixes measure 641325 startup bytes.
+// Allow 384 additional bytes without new dependencies or eager authoring imports.
+// The same supervisor/consumed-control fix measures 641927 startup bytes
+// (+567 from 641360). Bound this shared correctness logic with 576 bytes;
+// no new dependencies or eager template-creation imports.
+// The same startup fix adds 277 bytes (642255 measured); deferred code falls
+// by 115 bytes. Add 320 here without changing lazy boundaries or chunk limits.
+// The same combined fixes measure 642639 startup bytes. Add the same bounded
+// 512 bytes without changing code-splitting boundaries or dependencies.
+// The same recipe metadata measures 643554 total startup bytes (+1378).
+// Allocate 1536 bytes for this feature, preserving the existing four assets.
+// Preserve both reviewed allowances: 642304 + 512 + 1536 = 644352 bytes.
+// The same shared image metadata measures 646240 startup bytes, 373 above the
+// paired 645867-byte baseline. Reserve the same bounded 384-byte allowance.
+// Preserve the same bounded 64-byte numeric-field correction allowance.
+// Preserve the separately measured 64-byte shared loading-policy allowance above.
+// Preserve the measured 384-byte selected-image authoring allowance above.
+// The same build measures 673359 aggregate startup bytes (+45 over the cap).
+// Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
+const MAX_STARTUP_GZIP_BYTES =
+  1664 +
+  155 +
+  296 +
+  357 +
+  100 +
+  15 +
+  42 +
+  291 +
+  896 +
+  107 +
+  102 +
+  83 +
+  236 +
+  38 +
+  132 +
+  102 +
+  113 +
+  202 +
+  21 +
+  267 +
+  // Same hierarchy feature: 673622 -> 673867 bytes; retain 19 bytes of headroom.
+  245 +
+  // Same feature: 673359 -> 673622 gzip bytes, retaining 19 bytes of headroom.
+  // No dependency, minifier, startup membership or lazy-boundary change.
+  263 +
+  64 +
+  13 +
+  52 +
+  297 +
+  199 +
+  1047 +
+  36 +
+  1651 +
+  63 +
+  650 +
+  498 +
+  2018 +
+  69 +
+  190 +
+  53 +
+  82 +
+  274 +
+  6814 +
+  1768 +
+  624 * 1024 +
+  896 +
+  768 +
+  1280 +
+  384 +
+  576 +
+  320 +
+  512 +
+  1536 +
+  32 +
+  128 +
+  384 +
+  384 +
+  768 +
+  384 +
+  64 +
+  64 +
+  384 +
+  128 +
+  576 +
+  128 +
+  64 +
+  64 +
+  2112 +
+  5092 +
+  128 +
+  128 +
+  512 +
+  192 +
+  288 +
+  288 +
+  115;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or
@@ -177,7 +738,136 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 247.4 KiB measured; retain the independent 64 KiB per-chunk limit.
 // Deferred native Block creation and explicit-interface preservation measure
 // 248.1 KiB combined. Allow 512 bytes beyond the previous deferred ceiling.
-const MAX_DEFERRED_GZIP_BYTES = 248 * 1024 + 512;
+// Backend-defined image-template creation, exact parameter bindings and guarded
+// atomic insertion measure 257611 deferred bytes. Bound this added feature at
+// 3328 bytes above the previous aggregate; the 64 KiB chunk ceiling stays fixed.
+// The exact recipe fixes measure 257819 aggregate bytes. Allow another 128 bytes
+// while retaining the independent 64 KiB limit for every deferred chunk.
+// Validated preservation of the two Z-Image default adapter names adds 263
+// compressed bytes (258082 total). Bound it with 256 additional bytes above
+// the prior ceiling; startup, dependencies and individual chunk limits stay fixed.
+// Exact consumed-control visibility measures 258292 aggregate bytes (+137
+// from 258155). Allow 128 additional bytes above the previous ceiling;
+// retain the independent 64 KiB limit and all lazy authoring boundaries.
+// Bounded runtime-discovery waiting, cancellation and owned device normalization
+// stay in lazy template authoring. Measured aggregate is 258637 bytes (+345;
+// 329 bytes in that helper). Allow 384 bytes above the former 258304-byte cap;
+// startup, the 64 KiB per-chunk ceiling and loading boundaries stay unchanged.
+// Reviewed guidance transfer, component-bundle authoring, optional stage
+// controls and native masked recipes measure 267262 deferred bytes. Read-only
+// visual projection keeps structural grouping out of startup. Exact archived
+// runtime restoration and the native recipe checks add 1316 bytes to the last
+// reviewed build. Bound these features and relocation at 8.5 KiB above the
+// former aggregate cap; startup and both per-chunk caps stay fixed.
+// Preserving one declared media source across new required inputs adds 746
+// deferred gzip bytes (267236 -> 267982 measured). Its role, source, literal
+// and cycle guards stay in the existing lazy authoring chunk and reuse nanoid.
+// Allow 768 bytes; startup, dependencies and both per-chunk caps stay fixed.
+// Ordinary media-source labels add upstream repository/local context and
+// visible branch ordinals without changing ports or attachment authority.
+// Measured deferred aggregate is 268690 bytes (+588 from 268102); reuse the
+// existing Block projection and cache immutable instances. Allow 640 bytes;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+// Combined Windows and Linux correctness fixes measure 268989 deferred bytes
+// after shared media-driver/preview reuse. Add 256 bounded bytes; retain the
+// independent 65536-byte deferred-chunk ceiling and existing dependencies.
+// Bounded optional-runtime status retries, visible stale-progress errors and
+// status-only recovery measure 269147 deferred gzip bytes (+457 from 268690).
+// Allow 512 bytes for this correctness fix in the existing lazy workspace;
+// startup, dependencies and both per-chunk ceilings remain unchanged.
+// Preserve both reviewed allowances: 268800 + 256 + 512 = 269568 bytes.
+// The combined build measures 269414 deferred bytes, 642643 startup bytes and
+// a 464336-byte largest startup chunk; retain the existing startup ceilings.
+// Declared text/JSON Gallery previews and raw-original downloads share the
+// Previous text formatter/viewer and existing export path. Together with the
+// Session JSON kind/null and Previous declared-family corrections, the measured
+// build is 270329 deferred bytes (+915 from 269414). Allow only 1024 additional
+// aggregate bytes; startup,
+// dependencies and both per-chunk ceilings remain unchanged.
+// Retrying non-JSON transient HTTP errors adds 14 bytes to the workspace chunk.
+// The versioned aggregate measures 269341 bytes; allow 128 additional bytes
+// for this correction, keeping startup, per-chunk and loading limits unchanged.
+// Exact Custom recipe readiness and selection measure 271404 deferred bytes.
+// Allocate 2048 bytes above the prior cap; the 64 KiB per-chunk limit stays fixed.
+// The shared 512-byte polling allowance above is counted once. Preserve the
+// separate Windows 256 + 1024 and incoming 128 + 2048 additions:
+// 268800 + 512 + 256 + 1024 + 128 + 2048 = 272768 bytes.
+// Owned image adapters, combined-stage controls and strict backend recipe
+// validation measure 277158 deferred bytes versus the paired 272631 baseline.
+// Sharing the already-lazy authoring planners saves 1450 bytes. Reserve only
+// 4608 additional bytes for this feature; no dependencies, eager authoring,
+// unsafe minifier rewrites or individual 64 KiB deferred limits are added.
+// Exact selected-image adapter authority, safe unsupported-row recovery and
+// typed direct-adapter/Cosmos output ownership add 1605 deferred gzip bytes to
+// the 276849-byte image-stage checkpoint. The validator is shared and remains
+// lazy. Measured aggregate is 278454; allow 1280 bytes above the previous cap
+// (278656 total), with existing headroom covering the rest of this correction.
+// Numeric precision measures 278511 deferred bytes, within the existing ceiling.
+// Keep both aggregate and individual deferred limits unchanged.
+// The selected-image authoring feature above uses 320 additional aggregate bytes;
+// the independently bounded 64 KiB deferred chunks and loading checks stay fixed.
+// Sealed selector normalization and reviewed catalog pins measure deferred gzip
+// 320994 -> 321188 bytes (+194). Add only that measured aggregate cost to the
+// 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
+// 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
+// Approved showcases add exactly 960 compressed bytes to the deferred browser.
+// The 94 JavaScript names and four startup/90 deferred memberships are unchanged;
+// only TemplateBrowserDialog has functional residue after build-URL normalization.
+// Startup code differs only in the three verified Dataset descriptor values.
+// Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
+const MAX_DEFERRED_GZIP_BYTES =
+  960 +
+  263 +
+  1258 +
+  81 +
+  319 +
+  96 +
+  3546 +
+  1556 +
+  242 +
+  297 +
+  1147 +
+  1043 +
+  334 +
+  178 +
+  287 +
+  44 +
+  2064 +
+  935 +
+  103 +
+  2097 +
+  248 * 1024 +
+  32 +
+  2368 +
+  512 +
+  3328 +
+  128 +
+  256 +
+  128 +
+  384 +
+  8704 +
+  768 +
+  640 +
+  256 +
+  512 +
+  1024 +
+  128 +
+  2048 +
+  4608 +
+  1280 +
+  320 +
+  2560 +
+  64 +
+  7232 +
+  22998 +
+  896 +
+  1536 +
+  353 +
+  1593 +
+  864 +
+  1561 +
+  194 +
+  600;
 
 const STATIC_MODULE_REFERENCE =
   /\b(?:import(?=\s|["'{*])(?!\s*\()|export(?=\s|["'{*]))[^;]*?["'](\.\/[^"'?]+\.js)(?:\?v=[0-9a-f]{16})?["']/g;

@@ -86,3 +86,21 @@ test('Guidance presentation excludes unrelated recipes and scopes to image/audio
   outside.effectiveGraph.nodes.forEach((n) => (n.data.operationAuthoring.operation.task = 'other_task'));
   assert.equal(presentation.isFocusedStageNode(outside), false);
 });
+
+test('optional visual stages use the ordinary node shell and keep custom reusable names', () => {
+  for (const kind of ['setup', 'mask', 'output']) {
+    const instance = {
+      definitionSnapshot: { displayName: 'My reusable stage', source: { provider: `modiff.visual-stages.v1/${kind}` } },
+      effectiveGraph: { nodes: [{ data: {} }] },
+    };
+    assert.equal(presentation.isFocusedStageNode(instance), true);
+    assert.equal(presentation.isFocusedStageNode({ ...instance, effectiveGraph: { nodes: [] } }), false);
+  }
+  assert.equal(
+    presentation.isFocusedStageNode({
+      definitionSnapshot: { source: { provider: 'user' } },
+      effectiveGraph: { nodes: [{ data: {} }] },
+    }),
+    false,
+  );
+});

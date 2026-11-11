@@ -46,6 +46,8 @@ The model list is filtered by task. A model profile being visible means the clie
   already-open Queue, Setup, or Block tool. Refresh preserves your explicit open/collapsed choice.
 - **Save** writes the active snapshot to the backend **My workflows** library. Its menu provides Save as and a JSON
   file copy; `Ctrl+S` saves the current name and `Ctrl+Shift+S` opens Save as.
+  Opening a saved workflow from the library keeps its saved revision and timestamp.
+  Subsequent edits still autosave; opening an unchanged document does not save it again.
 - **Export** provides a workflow package, latest-output package, and Gallery shortcut. Expert also exposes raw workflow/API graph JSON.
 - **Auto view / Expert view** changes editing tools and node discovery. It preserves the graph and execution settings.
 - **Resources → Automatic / Expert overrides** selects this workflow's execution policy in either view.
@@ -344,6 +346,8 @@ Progress can show exact bytes when Hugging Face exposes a total. During metadata
 For gated models, accept the provider's terms and authenticate through supported Hugging Face tooling. Never put a token in a prompt, issue, screenshot, export, or tracked configuration file.
 
 ## Run Readiness
+
+Template cards show **Auto check at Run** when their model prerequisites and required inputs pass the template check. This is not a current memory-fit assessment of the complete workflow. Run checks the actual graph and current memory before submitting an Auto task. Explicit Custom recipes retain their experimental prerequisite status; built-in processing that needs no model download can show **Ready now**.
 
 The current graph is checked before submission. Blocking issues can include:
 

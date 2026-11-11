@@ -19,6 +19,8 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { imageUrlLightboxOpener } from '../utils/mediaViewer';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { useRunRecoveryFocus } from '../studio/useRunRecoveryFocus';
+import { captureRunRecoveryOrigin } from '../studio/runRecovery';
 import {
   createOrUpdateStudioGraph,
   ensureStudioGraphReadyForRun,
@@ -56,6 +58,7 @@ import {
 import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
+import { studioSupportsStrength } from '../studio/effectiveControls';
 import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies';
 import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import type { StudioAspectRatio, StudioFormState, StudioMode, StudioModelType } from '../studio/types';
@@ -69,6 +72,7 @@ import { useStudioReadiness } from '../studio/useStudioReadiness';
 import { summarizeRunReadinessIssues, useRunReadinessIssues } from '../studio/useRunReadinessIssues';
 import { formatRequestError } from '../utils/requestJson';
 import { requestExecutionStop } from '../utils/serverActions';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { applyStudioRuntimeHints } from '../studio/runPreparation';
 import { ensureStudioAutoPlanReadyForRun, useStudioRunActions } from '../studio/useStudioRunActions';
@@ -111,6 +115,7 @@ function copyText(value: string, label: string) {
 }
 
 export default function StudioPanel() {
+  const recoveryFocusRef = useRunRecoveryFocus('studio');
   const [isWorking, setIsWorking] = useState(false);
   const modelUsageTerms = useModelUsageTermsGate();
   const [maskEditorOpen, setMaskEditorOpen] = useState(false);
@@ -344,6 +349,7 @@ export default function StudioPanel() {
     backendCapabilitiesAuthoritative: studioModelCapabilitiesAuthoritative,
   });
   const requiredVideos = capability.modeRequirements?.[form.mode]?.requiredVideos ?? [];
+  const supportsStrength = studioSupportsStrength(form, studioModelCapabilities, activeTemplate);
   const requiresSourceVideo = requiredVideos.includes('sourceVideo');
   const requiresReferenceVideos = requiredVideos.includes('referenceVideos');
   const requiresControlVideo = requiredVideos.includes('controlVideo');
@@ -417,12 +423,12 @@ export default function StudioPanel() {
   ]);
 
   useEffect(() => {
-    if (!runtimeStatus) return;
+    if (!runtimeStatus || templateGraphPreparing) return;
     const preferredDevice = getPreferredRuntimeDevice(runtimeStatus);
     if (preferredDevice === form.device || runtimeDeviceIsAvailable(runtimeStatus, form.device)) return;
     if (form.device !== DEFAULT_STUDIO_FORM.device && !form.device.toLowerCase().startsWith('cuda')) return;
     updateAndSync({ device: preferredDevice });
-  }, [form.device, runtimeStatus, updateAndSync]);
+  }, [form.device, runtimeStatus, templateGraphPreparing, updateAndSync]);
 
   const handleAspectChange = (aspectRatio: StudioAspectRatio) => {
     const aspect = ASPECT_OPTIONS.find((item) => item.label === aspectRatio);
@@ -495,7 +501,7 @@ export default function StudioPanel() {
     }
   }, []);
 
-  const handleExportApiGraph = useCallback(() => {
+  const handleExportApiGraph = useCallback(async () => {
     if (!sid) {
       enqueueSnackbar('Connect to the MoDiff server before exporting the API graph.', {
         variant: 'error',
@@ -503,13 +509,20 @@ export default function StudioPanel() {
       });
       return;
     }
-    const apiGraph = applyStudioRuntimeHints(useFlowStore.getState().exportGraph(sid));
-    const blob = new Blob([JSON.stringify(apiGraph, null, 2)], { type: 'application/json' });
-    const anchor = document.createElement('a');
-    anchor.href = URL.createObjectURL(blob);
-    anchor.download = 'modiff-api-graph.json';
-    anchor.click();
-    URL.revokeObjectURL(anchor.href);
+    try {
+      const pending = prepareExecutionScope();
+      const executionScope = pending ? await pending : undefined;
+      const exported = useFlowStore.getState().exportGraph(sid, undefined, { executionScope, randomizeSeeds: false });
+      const apiGraph = executionScope ? exported : applyStudioRuntimeHints(exported);
+      const blob = new Blob([JSON.stringify(apiGraph, null, 2)], { type: 'application/json' });
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = 'modiff-api-graph.json';
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+    } catch (error) {
+      enqueueSnackbar(formatRequestError(error, 'Could not export this workflow.'), { variant: 'error' });
+    }
   }, [sid]);
 
   const restoreLatestOutput = useCallback(() => {
@@ -540,12 +553,15 @@ export default function StudioPanel() {
     try {
       useStudioStore.getState().restoreWorkflowFromOutput(latest);
       const context = captureWorkflowOperationContext();
-      const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+      const pending = prepareExecutionScope({ workflowContext: context });
+      const executionScope = pending ? await pending : undefined;
+      const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
       if (!autoReady) return;
       await coordinateGraphRun({
         sid,
         studioContext: { forceDeterministic: !latest.formSnapshot.randomSeed },
         workflowContext: context,
+        executionScope,
       });
     } catch (error) {
       if (isWorkflowOperationCancelled(error)) return;
@@ -563,7 +579,7 @@ export default function StudioPanel() {
   }, [setLightboxOpener]);
 
   const handleReviewRunIssues = useCallback(() => {
-    showRunIssues(runReadiness.issues);
+    showRunIssues(runReadiness.issues, captureRunRecoveryOrigin());
   }, [runReadiness.issues, showRunIssues]);
 
   const handleRunSweep = useCallback(
@@ -597,13 +613,16 @@ export default function StudioPanel() {
           advanceWorkflowOperationContext(context);
           const nextForm = useStudioStore.getState().form;
           syncStudioGraphValues(nextForm);
-          const autoReady = await ensureStudioAutoPlanReadyForRun(context);
+          const pending = prepareExecutionScope({ workflowContext: context });
+          const executionScope = pending ? await pending : undefined;
+          const autoReady = executionScope ? true : await ensureStudioAutoPlanReadyForRun(context);
           if (!autoReady) break;
-          await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
+          if (!executionScope) await ensureStudioGraphReadyForRun(useStudioStore.getState().form, context);
           assertWorkflowOperationContext(context);
           const { response } = await coordinateGraphRun({
             sid,
             workflowContext: context,
+            executionScope,
             studioContext: {
               forceDeterministic: true,
               variation: {
@@ -663,7 +682,7 @@ export default function StudioPanel() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-3 p-3" data-testid="studio-panel">
+    <div ref={recoveryFocusRef} className="flex flex-col gap-3 p-3" data-testid="studio-panel">
       <div
         ref={stickyHeaderRef}
         className="sticky top-0 z-20 -mx-3 -mt-3 grid gap-2 border-b border-modiff-border bg-modiff-bg p-3 shadow-modiff-node"
@@ -798,6 +817,7 @@ export default function StudioPanel() {
               <>
                 <StudioSelect
                   aria-label="Task"
+                  data-run-recovery-field="mode"
                   value={form.mode}
                   data-testid="studio-task-select"
                   onValueChange={(value) => {
@@ -810,6 +830,7 @@ export default function StudioPanel() {
                 />
                 <StudioSelect
                   aria-label="Model"
+                  data-run-recovery-field="modelType"
                   value={form.modelType}
                   data-testid="studio-model-select"
                   onValueChange={(value) => {
@@ -1087,6 +1108,7 @@ export default function StudioPanel() {
               ) : capability.layerResolutions?.length ? (
                 <StudioSelect
                   aria-label="Layer resolution"
+                  data-run-recovery-field="width"
                   data-testid="studio-layer-resolution-select"
                   value={String(form.width)}
                   onValueChange={(value) => {
@@ -1331,7 +1353,7 @@ export default function StudioPanel() {
                       }
                     </>
                   )}
-                  {capability.supportsImageInput && !isVideoMode && !isPerceptionMode && (
+                  {supportsStrength && !isVideoMode && !isPerceptionMode && (
                     <>
                       <ModiffFieldShell label={`Strength: ${form.strength}`}>
                         <StudioSlider
@@ -1368,6 +1390,7 @@ export default function StudioPanel() {
                   )}
                   {capability.supportsLayers && (
                     <StudioInput
+                      name="layers"
                       label={
                         capability.layerCount
                           ? `Layers (${capability.layerCount.min}–${capability.layerCount.max})`
@@ -1387,10 +1410,11 @@ export default function StudioPanel() {
                 </div>
               </section>
             )}
-            {usesPrompt && <StudioParameterExplainers form={form} />}
+            {usesPrompt && <StudioParameterExplainers form={form} supportsStrength={supportsStrength} />}
             {usesPrompt && (
               <StudioVariationPlanner
                 form={form}
+                supportsStrength={supportsStrength}
                 template={activeTemplate}
                 onChange={updateAndSync}
                 onRunSweep={(variations) => {
@@ -1672,6 +1696,7 @@ export default function StudioPanel() {
                   )}
                   <StudioSelect
                     aria-label="Offload mode"
+                    data-run-recovery-field="offloadMode"
                     data-testid="studio-offload-mode-select"
                     value={form.offloadMode}
                     onValueChange={(value) => updateAndSync({ offloadMode: value as StudioFormState['offloadMode'] })}
@@ -1757,6 +1782,7 @@ export default function StudioPanel() {
                   </p>
                   {form.mode.includes('control_union') && (
                     <StudioInput
+                      name="controlMode"
                       label="ControlNet Union mode (0–5)"
                       value={form.controlMode}
                       onChange={(value) => updateAndSync({ controlMode: numberValue(value, form.controlMode) })}

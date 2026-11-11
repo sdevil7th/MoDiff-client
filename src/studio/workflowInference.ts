@@ -1,6 +1,5 @@
 import type { Edge, Viewport } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
-import { rebaseGraphDevices } from './deviceRebase';
 import {
   BUILTIN_AUDIO_OPERATION_MODES,
   BUILTIN_DATA_OPERATION_MODES,
@@ -297,7 +296,41 @@ export function adoptManagedWorkflowGraph(
   );
 }
 
+function isModelLoader(node: NodeLike) {
+  return (
+    [
+      'models',
+      'wanPipeline',
+      'qwenPipeline',
+      'qwenInpaintPipeline',
+      'diffusersImagePipeline',
+      'audioPipeline',
+      'speechModel',
+    ].includes(String(node.data?.studioRole)) ||
+    ['ModelsLoader', 'LoadPipeline', 'LoadInpaintPipeline', 'LoadSpeechRecognitionModel', 'LoadAnyToAnyModel'].includes(
+      String(node.data?.action),
+    )
+  );
+}
+
+function declaredModelType(nodes: NodeLike[], fallback: StudioModelType) {
+  const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
+  if (explicit) return explicit;
+  const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
+  if (pipelineClass) return pipelineClass;
+  const repos = nodes.map((node) => stringValue(paramValue(node, ['repo_id', 'model_id', 'repo'])));
+  // Several execution profiles may share weights. Retain matching authored
+  // context rather than selecting a different profile from catalog order.
+  if (repos.includes(STUDIO_MODEL_PROFILES[fallback].defaultRepo)) return fallback;
+  return Object.values(STUDIO_MODEL_PROFILES).find((profile) => repos.includes(profile.defaultRepo))?.modelType;
+}
+
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
+  // A processing stage is not the generation model. Prefer the existing
+  // loader declarations before the standalone-operation fallbacks, independent
+  // of canvas order. This summary never changes the executable graph.
+  const loadedModel = declaredModelType(nodes.filter(isModelLoader), fallback.modelType);
+  if (loadedModel) return loadedModel;
   if (nodes.some((node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText')) {
     return 'BuiltinDataOperation';
   }
@@ -328,20 +361,13 @@ function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioMod
   ) {
     return 'SpandrelImageUpscale';
   }
-  const explicit = nodes.map((node) => paramValue(node, ['model_type'])).find(isStudioModelType);
-  if (explicit) return explicit;
-  const pipelineClass = nodes.map((node) => paramValue(node, ['pipeline_class'])).find(isStudioModelType);
-  if (pipelineClass) return pipelineClass;
-
-  const repoText = nodes.map((node) => stringValue(paramValue(node, ['repo_id', 'model_id', 'repo']))).join(' ');
-  const matchedProfile = Object.values(STUDIO_MODEL_PROFILES).find((profile) => repoText.includes(profile.defaultRepo));
-  return matchedProfile?.modelType ?? fallback.modelType;
+  return declaredModelType(nodes, fallback.modelType) ?? fallback.modelType;
 }
 
 function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
-  if (modelType === 'BuiltinDataOperation' || roles.has('dataOperation')) {
+  if (modelType === 'BuiltinDataOperation') {
     const operationNode = findNode(
       nodes,
       (node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText',
@@ -349,7 +375,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     const operation = stringValue(paramValue(operationNode, ['operation']));
     return BUILTIN_DATA_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'text_select';
   }
-  if (modelType === 'BuiltinAudioOperation' || roles.has('audioOperation')) {
+  if (modelType === 'BuiltinAudioOperation') {
     const operationNode = findNode(
       nodes,
       (node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio',
@@ -357,7 +383,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     const operation = stringValue(paramValue(operationNode, ['operation']));
     return BUILTIN_AUDIO_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'audio_trim';
   }
-  if (modelType === 'BuiltinImageOperation' || roles.has('imageOperation')) {
+  if (modelType === 'BuiltinImageOperation') {
     const operationNode = findNode(
       nodes,
       (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
@@ -379,7 +405,7 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     }
     return 'image_adjustment';
   }
-  if (modelType === 'BuiltinVideoOperation' || roles.has('videoOperation')) {
+  if (modelType === 'BuiltinVideoOperation') {
     const operationNode = findNode(
       nodes,
       (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
@@ -390,10 +416,10 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
     }
     return 'video_frame_extract';
   }
-  if (modelType === 'SpandrelVideoUpscale' || roles.has('videoUpscaler')) {
+  if (modelType === 'SpandrelVideoUpscale') {
     return 'video_upscale';
   }
-  if (modelType === 'SpandrelImageUpscale' || roles.has('imageUpscaler')) {
+  if (modelType === 'SpandrelImageUpscale') {
     return 'image_upscale';
   }
   if (
@@ -405,6 +431,14 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   }
   const hasWan = keys.has('modules.DiffusersVideo.LoadPipeline') || keys.has('modules.DiffusersVideo.Generate');
   if (hasWan || modelType === 'WanVACEPipeline') {
+    const authoredMode = nodes
+      .filter((node) => node.data?.module === 'modules.DiffusersVideo')
+      .map((node) => paramValue(node, ['mode']))
+      .find(
+        (value): value is StudioMode =>
+          typeof value === 'string' && isModelCompatibleWithMode(modelType, value as StudioMode),
+      );
+    if (authoredMode) return authoredMode;
     if (roles.has('loadMaskVideo') || roles.has('alignMaskVideo')) return 'video_inpaint';
     if (roles.has('loadVideo') && roles.has('loadControlVideo')) return 'control_video_to_video';
     if (roles.has('loadControlVideo')) return 'control_to_video';
@@ -535,6 +569,7 @@ export function inferStudioFormFromWorkflow(
       ].includes(String(node.data?.studioRole)) ||
       [
         'EncodePrompt',
+        'EncodeInputs',
         'Generate',
         'UnconditionalGenerate',
         'PredictMap',
@@ -550,30 +585,14 @@ export function inferStudioFormFromWorkflow(
       ].includes(String(node.data?.action)),
   );
   const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
-  const modelNode = findNode(
-    nodes,
-    (node) =>
-      [
-        'models',
-        'wanPipeline',
-        'qwenPipeline',
-        'qwenInpaintPipeline',
-        'diffusersImagePipeline',
-        'audioPipeline',
-        'speechModel',
-        'imageUpscaler',
-        'videoUpscaler',
-      ].includes(String(node.data?.studioRole)) ||
-      [
-        'ModelsLoader',
-        'LoadPipeline',
-        'LoadInpaintPipeline',
-        'LoadSpeechRecognitionModel',
-        'LoadAnyToAnyModel',
-        'Upscaler',
-        'UpscaleVideo',
-      ].includes(String(node.data?.action)),
-  );
+  const modelNode =
+    findNode(nodes, isModelLoader) ??
+    findNode(
+      nodes,
+      (node) =>
+        ['imageUpscaler', 'videoUpscaler'].includes(String(node.data?.studioRole)) ||
+        ['Upscaler', 'UpscaleVideo'].includes(String(node.data?.action)),
+    );
   const quantizationNode = findNode(
     nodes,
     (node) => node.data?.studioRole === 'qwenQuantization' || node.data?.action === 'QuantizationConfigNode',
@@ -599,6 +618,7 @@ export function inferStudioFormFromWorkflow(
       ].includes(String(node.data?.studioRole)) ||
       [
         'Generate',
+        'Denoise',
         'UnconditionalGenerate',
         'PredictMap',
         'Inpaint',
@@ -742,7 +762,7 @@ export function inferStudioFormFromWorkflow(
     numFrames: numberValue(paramValue(generateNode, ['num_frames']), defaults.numFrames),
     fps: numberValue(
       paramValue(
-        findNode(nodes, (node) => node.data?.studioRole === 'videoExport'),
+        findNode(nodes, (node) => node.data?.studioRole === 'videoExport' || nodeKey(node) === 'modules.Video.Export'),
         ['fps'],
       ) ?? paramValue(videoUpscaleNode, ['fps']),
       defaults.fps,
@@ -762,7 +782,9 @@ export function workflowSnapshotFromGraph(
   edgeType: string,
   fallback: StudioFormState = DEFAULT_STUDIO_FORM,
 ): WorkflowTabSnapshot {
-  const portableGraph = rebaseGraphDevices(cloneJson(graph), fallback.device);
+  // Import retains each node's authored placement. The current form is only
+  // context for summary inference, not permission to move every node's device.
+  const portableGraph = cloneJson(graph);
   const nodes = cloneJson((Array.isArray(portableGraph.nodes) ? portableGraph.nodes : []) as CustomNodeType[]);
   const edges = cloneJson(Array.isArray(portableGraph.edges) ? portableGraph.edges : []).map((edge) => ({
     ...edge,

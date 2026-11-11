@@ -4,11 +4,11 @@ import type { RegisteredBlockV2Route } from './registeredBlockV2Routes';
 export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[] = [
   {
     definitionId: 'diffusers.composite:Flux2KleinKVPipeline:edit_image',
-    definitionContentHash: 'sha256:1fda4a421dfec461143cb30d37b671e46db8bd1792e392503053a37a45d11f8f',
+    definitionContentHash: 'sha256:ca2fb371f260a8f3b690284ecd12f800505d618a176b582ae36cd2c915eb8ed4',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'Flux2KleinKVPipeline',
     workflowId: 'edit_image',
     admissionId: 'diffusers.cluster-admission:Flux2KleinKVPipeline:edit_image:mode:edit_image',
@@ -24,8 +24,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: 'a6dfb36eca3a3906eb2fd460795adfb844e5fcce',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-128b7e27',
-    compiledDefinitionCanonicalSha256: 'sha256:4c97573e9f09e33dd3f4ca5fa92caa6a71332e227e0f2575edb59e8a24f6ec7b',
+    compiledDefinitionContentHash: 'block-definition-v2-fc52c390',
+    compiledDefinitionCanonicalSha256: 'sha256:8ad85392ea447b287ac19cd67f67c065b3c5e2316ea8beaa9ea86490300f7c33',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -142,11 +142,11 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
   },
   {
     definitionId: 'diffusers.composite:Flux2KleinKVPipeline:multi_image_reference_edit',
-    definitionContentHash: 'sha256:5946ff18a5dde271dfd1870b7597b73cf391d8a322f379f71e6a8599e4adcd93',
+    definitionContentHash: 'sha256:8cdf6fb33de7d24d695a9ce87b9b237f8de66e6fdabeccf14c11a559f005149e',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'Flux2KleinKVPipeline',
     workflowId: 'multi_image_reference_edit',
     admissionId:
@@ -163,8 +163,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: 'a6dfb36eca3a3906eb2fd460795adfb844e5fcce',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-4ea6fac1',
-    compiledDefinitionCanonicalSha256: 'sha256:29c86eb53eb9bc383017c78f93a6f83323b8fe9c190690d2c9468089b155f66a',
+    compiledDefinitionContentHash: 'block-definition-v2-6d5da01d',
+    compiledDefinitionCanonicalSha256: 'sha256:943f327b1b6e103da60e455052cd8c75be8a03a3888250489d77249297d8acc2',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -281,11 +281,11 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
   },
   {
     definitionId: 'diffusers.composite:Flux2KleinKVPipeline:text_to_image',
-    definitionContentHash: 'sha256:d6d33b4746508cc5645a9625b42d3773c1b89ccd510118cd31bfa4f780e01baa',
+    definitionContentHash: 'sha256:c74a9871820add61078b8ec125200afedd3eae938a485ed3c10ee271f47d5cd0',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'Flux2KleinKVPipeline',
     workflowId: 'text_to_image',
     admissionId: 'diffusers.cluster-admission:Flux2KleinKVPipeline:text_to_image:mode:text_to_image',
@@ -301,8 +301,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: 'a6dfb36eca3a3906eb2fd460795adfb844e5fcce',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-7b195a35',
-    compiledDefinitionCanonicalSha256: 'sha256:db3a4e598d825a308d89c3120027941609914d8584d2ddcb3289591778f73c55',
+    compiledDefinitionContentHash: 'block-definition-v2-ef34d7b2',
+    compiledDefinitionCanonicalSha256: 'sha256:fe9f52bf3a5e4c9c5f62931c6e7eeeb5e4bfeaecd7d8398a59df49e95f7d9b64',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -412,11 +412,11 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
   },
   {
     definitionId: 'diffusers.composite:FluxControlNetImg2ImgPipeline:control_edit_image',
-    definitionContentHash: 'sha256:9987ec6b7ffc97a8a4b928332d7e58167fd6efc92f5548a18d2a0d14208e9e71',
+    definitionContentHash: 'sha256:6037a9442f357ca32f3dbb545556e8fa89658d3f5afe3e1628dd0fc52d7e1080',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'FluxControlNetImg2ImgPipeline',
     workflowId: 'control_edit_image',
     admissionId: 'diffusers.cluster-admission:FluxControlNetImg2ImgPipeline:control_edit_image:mode:control_edit_image',
@@ -432,8 +432,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-5c79ef1a',
-    compiledDefinitionCanonicalSha256: 'sha256:456d106b05b927edca75ecc053c7ccd44c2343e676da02e463eb948a7e64e25f',
+    compiledDefinitionContentHash: 'block-definition-v2-b29434ec',
+    compiledDefinitionCanonicalSha256: 'sha256:97a5dee1ced951799be07a767a51248bb6a35cb3e2f6b6dd8a17ae31c55c4adf',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -596,11 +596,11 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
   },
   {
     definitionId: 'diffusers.composite:FluxControlNetInpaintPipeline:control_inpaint',
-    definitionContentHash: 'sha256:7084dd7161c97b95221e6669e77bfcbf2abe3921a08c705651ccaed9c6b6b6f8',
+    definitionContentHash: 'sha256:8e560173f5110301cbfdb8d9e8db1d367ed3b98d636a22ebe0f8f4eee869791c',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'FluxControlNetInpaintPipeline',
     workflowId: 'control_inpaint',
     admissionId: 'diffusers.cluster-admission:FluxControlNetInpaintPipeline:control_inpaint:mode:control_inpaint',
@@ -616,8 +616,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-56a63dd8',
-    compiledDefinitionCanonicalSha256: 'sha256:53b16cb361adae1d5c2d7c8d91a614cefc86d39d00dcd2c410595c27babb31f4',
+    compiledDefinitionContentHash: 'block-definition-v2-96edfc16',
+    compiledDefinitionCanonicalSha256: 'sha256:d8cf5b00c1f28224e2c327dddbb18f1d3c9c58dbb5794f3f91ffbf24118e5ed4',
     controlFanOuts: [
       {
         source: 'quantizationMode',
@@ -787,11 +787,11 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
   },
   {
     definitionId: 'diffusers.composite:FluxControlNetPipeline:control_image',
-    definitionContentHash: 'sha256:d4039ab110b37eaab96f82b10902341cf2e533108d0368bea791d0061e242acb',
+    definitionContentHash: 'sha256:bdfe72e92e2aa94c896fb2b49ef2ebdbcc59a95f11ab6ababbc6273d83bbe5dd',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
-    libraryRevision: 'fbf49e7f35857f76bc57b177e26f12b03687c668',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'FluxControlNetPipeline',
     workflowId: 'control_image',
     admissionId: 'diffusers.cluster-admission:FluxControlNetPipeline:control_image:mode:control_image',
@@ -807,8 +807,8 @@ export const REGISTERED_BLOCK_V2_IMAGE_ROUTES: readonly RegisteredBlockV2Route[]
       revision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-0ab14aa7',
-    compiledDefinitionCanonicalSha256: 'sha256:d3b2944e1c7db016cecc7fa39ca8af39ee876c0bc7fdcab4baf7500e7b8ad54c',
+    compiledDefinitionContentHash: 'block-definition-v2-4e36b75f',
+    compiledDefinitionCanonicalSha256: 'sha256:4993875deda3899e1d63a386c19e4bce829aff9ff38d2ce4293f1e4ed509f84e',
     controlFanOuts: [
       {
         source: 'quantizationMode',

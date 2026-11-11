@@ -25,13 +25,13 @@ import { compactReviewedModularInternalLayoutV2 } from '../studio/reviewedModula
 import { saveBlockInstanceV2AsNewUserDefinition } from '../studio/blockPersistenceV2';
 import { registeredRouteSetForBlockV1 } from '../studio/blockRouteSelectionV1';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
-import { BlockNodeFrame, ModiffDialog, ModiffFieldShell, ModiffIconButton, ModiffSelect } from '../ui';
+import { BlockNodeFrame, ModiffButton, ModiffDialog, ModiffFieldShell, ModiffIconButton, ModiffSelect } from '../ui';
 import { enqueueSnackbar } from '../ui/snackbar';
 import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
-import { visualOperationGroup } from '../workflow/visualOperationGroups';
+import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 
 const OperationOwnerControls = lazy(() => import('./OperationOwnerControls'));
 const BlockDetailDialogV2 = lazy(() => import('./BlockDetailDialogV2'));
@@ -403,15 +403,30 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
             >
               <Settings2 size={15} />
             </ModiffIconButton>
-            <ModiffIconButton
-              className="nodrag nowheel"
-              size="compact"
-              label={view.expanded ? 'Collapse block' : 'Expand block'}
-              onClick={handleToggleExpanded}
-              data-testid={`user-block-toggle-${node.id}`}
-            >
-              {view.expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </ModiffIconButton>
+            {view.expanded ? (
+              <ModiffIconButton
+                className="nodrag nowheel"
+                size="compact"
+                label="Collapse block"
+                onClick={handleToggleExpanded}
+                data-testid={`user-block-toggle-${node.id}`}
+              >
+                <Minimize2 size={16} />
+              </ModiffIconButton>
+            ) : (
+              <ModiffButton
+                className="nodrag nowheel whitespace-nowrap"
+                size="compact"
+                tone="ghost"
+                aria-label="Expand block"
+                title="Expand this Block to edit its canvas nodes."
+                icon={<Maximize2 size={16} />}
+                onClick={handleToggleExpanded}
+                data-testid={`user-block-toggle-${node.id}`}
+              >
+                Expand block
+              </ModiffButton>
+            )}
           </>
         }
         controls={

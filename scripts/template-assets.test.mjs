@@ -81,6 +81,27 @@ test('rejects moving revisions and path traversal', () => {
   );
 });
 
+test('validates approved and complete asset identities independently across repeated resolution', () => {
+  const source = { ...remoteSource, completeAssetSetId: `sha256:canonical-json:${'b'.repeat(64)}` };
+  for (let attempt = 0; attempt < 3; attempt += 1)
+    assert.match(resolveTemplateAssetUrlFromSource('/template-gallery/example.webp', source), /\/resolve\//);
+  for (const invalid of [
+    'sha256:canonical-json:short',
+    `sha256:canonical-json:${'A'.repeat(64)}`,
+    'other:' + 'a'.repeat(64),
+  ]) {
+    assert.throws(
+      () => resolveTemplateAssetUrlFromSource('/template-gallery/example.webp', { ...source, assetSetId: invalid }),
+      /asset-set identity/,
+    );
+    assert.throws(
+      () =>
+        resolveTemplateAssetUrlFromSource('/template-gallery/example.webp', { ...source, completeAssetSetId: invalid }),
+      /complete Template Gallery asset-set identity/,
+    );
+  }
+});
+
 test('build and runtime contracts agree on local and immutable remote source shapes', () => {
   assert.deepEqual(resolveTemplateAssetBuildSource(localSource), localSource);
   assert.deepEqual(resolveTemplateAssetBuildSource(remoteSource), remoteSource);

@@ -1,3 +1,8 @@
+export function compareCanonicalWorkflowRecordIds(left, right) {
+  // Published IDs use codepoint order so host locale never rewrites unrelated pairs.
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+}
+
 export function retainUnselectedCurrentWorkflowRecords(records, capabilities, requestedPair) {
   if (!requestedPair) return [];
   const currentPairs = new Set(

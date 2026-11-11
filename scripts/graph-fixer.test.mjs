@@ -294,6 +294,161 @@ test('Fix recognizes an internal connected output in collapsed, expanded and sav
   }
 });
 
+function splitImageBlock(expanded, boundary = false, nested = false) {
+  const source = definition('modules.Image', 'Load', 'Load Image', {
+    image: { display: 'output', type: 'image' },
+  });
+  const resize = node(
+    'resize',
+    definition('modules.Image', 'Resize', 'Resize', {
+      image: { display: 'input', type: 'image', required: true },
+      output: { display: 'output', type: 'image' },
+      width: { type: 'int', value: 256 },
+      height: { type: 'int', value: 256 },
+    }),
+  );
+  const base = structuredClone(blockV2Node().data.blockInstanceV2.definitionSnapshot);
+  const semantic = {
+    nodes: [
+      { nodeId: 'load', nodeType: 'custom', data: source },
+      { nodeId: 'preview', nodeType: 'custom', data: imagePreview, ...(nested ? { parentNodeId: 'inside' } : {}) },
+      ...(boundary === 'mirror' ? [{ nodeId: 'second-preview', nodeType: 'custom', data: imagePreview }] : []),
+      ...(nested
+        ? [{ nodeId: 'inside', nodeType: 'group', data: { type: 'group', label: 'Inside', params: {} } }]
+        : []),
+    ],
+    edges: [],
+    executionOrder: ['load', 'preview', ...(boundary === 'mirror' ? ['second-preview'] : [])],
+  };
+  base.graph = { ...semantic, graphHash: blockSchema.blockGraphHashV2(semantic) };
+  base.boundary = {
+    mode: 'explicit',
+    inputs: boundary
+      ? [
+          {
+            portId: 'result',
+            label: 'Result',
+            valueType: 'image',
+            required: true,
+            binding: { nodeId: 'preview', fieldOrPortId: 'image' },
+            ...(boundary === 'mirror'
+              ? { mirrorBindings: [{ nodeId: 'second-preview', fieldOrPortId: 'image' }] }
+              : {}),
+          },
+        ]
+      : [],
+    outputs: [
+      {
+        portId: 'loaded',
+        label: 'Loaded image',
+        valueType: 'image',
+        required: false,
+        binding: { nodeId: 'load', fieldOrPortId: 'image' },
+      },
+    ],
+  };
+  base.previews = [];
+  base.contentHash = blockSchema.blockDefinitionContentHashV2(base);
+  let instance = blockSchema.createBlockInstanceV2(base, {
+    instanceId: 'split-image',
+    position: { x: 0, y: 0 },
+    size: { width: 360, height: 420 },
+  });
+  instance = blockRuntime.setBlockPresentationV2(instance, {
+    expanded,
+    collapsedContainerNodeIds: nested === 'collapsed' ? ['inside'] : [],
+  });
+  const projection = blockRuntime.materializeBlockProjectionV2(blockRuntime.createBlockRootNodeV2(instance));
+  return {
+    nodes: [...projection.nodes, resize],
+    edges: [
+      ...projection.edges,
+      edge('to-resize', instance.instanceId, 'loaded', resize.id, 'image'),
+      edge(
+        'to-preview',
+        resize.id,
+        'output',
+        instance.instanceId,
+        boundary ? 'result' : 'block-crossing:input:preview:image',
+      ),
+    ],
+    registry: { 'modules.Image.Preview': imagePreview },
+  };
+}
+
+test('Fix preserves the Load to outside Resize to inside Preview crossing route', () => {
+  for (const expanded of [true, false]) {
+    const context = JSON.parse(JSON.stringify(splitImageBlock(expanded)));
+    const before = structuredClone(context);
+    const plan = graphFixer.buildGraphFixPlan(context);
+    assert.equal(
+      plan.issues.some(({ kind }) => kind === 'missing_output' || kind === 'missing_input'),
+      false,
+      `The saved crossing route is already connected; expanded=${expanded}.`,
+    );
+    assert.equal(plan.candidateCount, 0, 'Do not suggest bypassing the external Resize.');
+    assert.deepEqual(context, before);
+  }
+});
+
+test('Fix resolves public, mirrored and nested output input bindings without changing saved graphs', () => {
+  for (const expanded of [false, true])
+    for (const boundary of [false, true, 'mirror'])
+      for (const nested of [false, 'expanded', 'collapsed']) {
+        const context = JSON.parse(JSON.stringify(splitImageBlock(expanded, boundary, nested)));
+        const before = structuredClone(context);
+        const plan = graphFixer.buildGraphFixPlan(context);
+        assert.deepEqual(plan.issues, [], `expanded=${expanded}, boundary=${boundary}, nested=${nested}`);
+        assert.deepEqual(context, before);
+      }
+});
+
+test('Fix does not infer output connectivity from missing, invalid or unrelated Block crossings', () => {
+  for (const fault of [
+    'disconnected',
+    'missing-source',
+    'unknown-leaf',
+    'unknown-field',
+    'wrong-direction',
+    'malformed-handle',
+    'wrong-source-direction',
+    'wrong-type',
+    'disabled-source',
+    'unrelated-block',
+  ]) {
+    const context = splitImageBlock(true);
+    const crossing = context.edges.find(({ id }) => id === 'to-preview');
+    if (fault === 'disconnected') context.edges = context.edges.filter((item) => item !== crossing);
+    if (fault === 'missing-source') crossing.source = 'absent';
+    if (fault === 'unknown-leaf') crossing.targetHandle = 'block-crossing:input:absent:image';
+    if (fault === 'unknown-field') crossing.targetHandle = 'block-crossing:input:preview:absent';
+    if (fault === 'wrong-direction') crossing.targetHandle = 'block-crossing:output:preview:image';
+    if (fault === 'malformed-handle') crossing.targetHandle = 'block-crossing:input:%:image';
+    if (fault === 'wrong-source-direction') crossing.sourceHandle = 'image';
+    if (fault === 'wrong-type') context.nodes.find(({ id }) => id === 'resize').data.params.output.type = 'string';
+    if (fault === 'disabled-source') context.nodes.find(({ id }) => id === 'resize').data.uiState = { disabled: true };
+    if (fault === 'unrelated-block') {
+      const unrelated = blockV2Node('unrelated');
+      context.nodes.push(unrelated);
+      crossing.target = unrelated.id;
+      crossing.targetHandle = 'reference';
+    }
+    const before = structuredClone(context);
+    const plan = graphFixer.buildGraphFixPlan(context);
+    assert.equal(
+      plan.issues.some(({ kind }) => kind === 'missing_output'),
+      true,
+      fault,
+    );
+    if (!['disconnected', 'disabled-source', 'unrelated-block'].includes(fault))
+      assert.ok(
+        plan.issues.some(({ kind }) => kind === 'broken_link' || kind === 'type_mismatch'),
+        fault,
+      );
+    assert.deepEqual(context, before);
+  }
+});
+
 test('required inputs with explicit values or defaults do not receive spurious connection repairs', () => {
   const text = definition('modules.Test', 'Text', 'Text', { text: { display: 'output', type: 'string' } });
   const target = definition('modules.Test', 'Generate', 'Generate', {

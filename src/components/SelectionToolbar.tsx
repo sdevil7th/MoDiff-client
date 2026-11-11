@@ -39,6 +39,7 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { isUserBlockExpandedInstance } from '../studio/userBlocks';
 import { isHuggingFaceClusterExpanded } from '../studio/huggingFaceClusterGraph';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { prepareHuggingFaceClustersForRun } from '../studio/huggingFaceClusterPreparation';
 import { validateCurrentRun } from '../studio/runReadiness';
@@ -53,6 +54,7 @@ const NodeInspectorDialog = lazy(() => import('./NodeInspectorDialog'));
 
 const TOOLBAR_MARGIN = 8;
 const TOOLBAR_SELECTION_GAP = 12;
+const ACTIVITY_OVERLAY_SELECTOR = '[data-canvas-overlay="activity"]';
 
 type SelectionToolbarProps = {
   canvasSuspended: boolean;
@@ -206,10 +208,44 @@ export function SelectionToolbar({
     (showSingleNodeActions || showCreateBlock || Boolean(singleContainer) || Boolean(singleProjectedModular));
 
   useEffect(() => {
-    const handleResize = () => setLayoutRevision((revision) => revision + 1);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    const toolbar = toolbarRef.current;
+    if (!visible || !toolbar) return;
+    const workspace = toolbar.closest<HTMLElement>('[data-canvas-workspace]');
+    let frame: number | null = null;
+    let active = true;
+    const schedulePosition = () => {
+      if (!active || frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (active) setLayoutRevision((revision) => revision + 1);
+      });
+    };
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedulePosition);
+    const observeLayout = () => {
+      observer?.disconnect();
+      observer?.observe(toolbar);
+      if (workspace) {
+        observer?.observe(workspace);
+        const activity = workspace.querySelector<HTMLElement>(ACTIVITY_OVERLAY_SELECTOR);
+        if (activity) observer?.observe(activity);
+      }
+      schedulePosition();
+    };
+    // Activity can mount/unmount independently of the selected graph. Its
+    // ResizeObserver handles folding and changing history without graph edits.
+    const mutations = workspace ? new MutationObserver(observeLayout) : null;
+    mutations?.observe(workspace!, { childList: true });
+    const observeFrame = requestAnimationFrame(observeLayout);
+    window.addEventListener('resize', schedulePosition);
+    return () => {
+      active = false;
+      cancelAnimationFrame(observeFrame);
+      if (frame !== null) cancelAnimationFrame(frame);
+      observer?.disconnect();
+      mutations?.disconnect();
+      window.removeEventListener('resize', schedulePosition);
+    };
+  }, [visible]);
 
   useLayoutEffect(() => {
     const toolbar = toolbarRef.current;
@@ -238,6 +274,27 @@ export function SelectionToolbar({
 
     left = Math.max(minLeft, Math.min(left, maxLeft));
     top = Math.max(minTop, Math.min(top, maxTop));
+
+    const activity = toolbar
+      .closest<HTMLElement>('[data-canvas-workspace]')
+      ?.querySelector<HTMLElement>(ACTIVITY_OVERLAY_SELECTOR)
+      ?.getBoundingClientRect();
+    if (
+      activity &&
+      activity.width > 0 &&
+      activity.height > 0 &&
+      left < activity.right + TOOLBAR_MARGIN &&
+      left + toolbarWidth > activity.left - TOOLBAR_MARGIN &&
+      top < activity.bottom + TOOLBAR_MARGIN &&
+      top + toolbarHeight > activity.top - TOOLBAR_MARGIN
+    ) {
+      // Clamping an off-screen selection to the canvas edge must not cover
+      // activity controls, or leave node actions underneath the opened list.
+      const above = activity.top - toolbarHeight - TOOLBAR_MARGIN;
+      const right = activity.right + TOOLBAR_MARGIN;
+      if (above >= minTop) top = Math.min(top, above);
+      else if (right <= maxLeft) left = Math.max(left, right);
+    }
 
     toolbar.style.setProperty('--modiff-selection-toolbar-x', `${Math.round(left)}px`);
     toolbar.style.setProperty('--modiff-selection-toolbar-y', `${Math.round(top)}px`);
@@ -287,6 +344,8 @@ export function SelectionToolbar({
   const handleRunFromNode = useCallback(async () => {
     if (!singleActionNode) return;
     try {
+      const pending = prepareExecutionScope({ targetNodeId: singleActionNode.id });
+      const executionScope = pending ? await pending : undefined;
       if (singleActionNode.data.huggingFaceClusterRole === 'root' || singleActionNode.data.blockInstanceV2) {
         await prepareHuggingFaceClustersForRun([singleActionNode.id]);
       }
@@ -295,9 +354,10 @@ export function SelectionToolbar({
         isConnected,
         includeStudio: false,
         targetNodeId: singleActionNode.id,
+        executionScope,
       });
       if (!validation.canRun || !sid) return;
-      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id });
+      await coordinateGraphRun({ sid, targetNodeId: singleActionNode.id, executionScope });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       enqueueSnackbar(message, { variant: 'error', persist: true });
@@ -335,7 +395,7 @@ export function SelectionToolbar({
     if (!singleActionNode) return;
     try {
       const result = await recomputeNodeOutputs([singleActionNode.id]);
-      if (result.nodes.length) setNodeCached(singleActionNode.id, false);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar(
         result.nodes.length
           ? 'Outputs will recompute on the next Run. Loaded models are retained.'
@@ -350,8 +410,8 @@ export function SelectionToolbar({
   const handleClearCache = useCallback(async () => {
     if (!singleActionNode) return;
     try {
-      await deleteNodeCache([singleActionNode.id]);
-      setNodeCached(singleActionNode.id, false);
+      const result = await deleteNodeCache([singleActionNode.id]);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

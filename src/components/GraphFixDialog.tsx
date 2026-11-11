@@ -87,8 +87,16 @@ export default function GraphFixDialog() {
   const isConnected = useWebsocketStore((state) => state.isConnected);
   const readiness = useRunReadinessIssues({ sid, isConnected, includeStudio: Boolean(graphBinding) });
   const plan = useMemo(
-    () => buildGraphFixPlan({ nodes, edges, registry, modularBlockDefinitions, readinessIssues: readiness.issues }),
-    [edges, nodes, readiness.issues, registry, modularBlockDefinitions],
+    () =>
+      buildGraphFixPlan({
+        nodes,
+        edges,
+        registry,
+        operationContracts: readiness.operationContracts,
+        modularBlockDefinitions,
+        readinessIssues: readiness.issues,
+      }),
+    [edges, nodes, readiness.issues, registry, readiness.operationContracts, modularBlockDefinitions],
   );
   const planFingerprint = plan.issues
     .map((issue) => `${issue.id}:${issue.candidates.map((item) => item.id).join(',')}`)
@@ -205,6 +213,7 @@ export default function GraphFixDialog() {
         nodes: currentGraph.nodes,
         edges: currentGraph.edges,
         registry,
+        operationContracts: useNodesStore.getState().operationContracts,
         modularBlockDefinitions,
         readinessIssues: validation.issues,
       });

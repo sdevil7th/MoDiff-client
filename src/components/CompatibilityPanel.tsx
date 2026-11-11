@@ -90,13 +90,16 @@ export default function CompatibilityPanel() {
 
   if (!selected) {
     return (
-      <div className="grid gap-3 p-4 text-sm text-modiff-text" data-testid="compatibility-panel">
-        <div className="flex items-center gap-2 font-semibold">
-          <CheckCircle2 size={17} className="text-modiff-green" />
-          No model substitution
+      <>
+        <WorkflowResourcePanelV2 />
+        <div className="grid gap-3 p-4 text-sm text-modiff-text" data-testid="compatibility-panel">
+          <div className="flex items-center gap-2 font-semibold">
+            <CheckCircle2 size={17} className="text-modiff-green" />
+            No model substitution
+          </div>
+          <p className="text-xs text-modiff-subtle-text">Select a Studio model to inspect local compatibility.</p>
         </div>
-        <p className="text-xs text-modiff-subtle-text">Select a Studio model to inspect local compatibility.</p>
-      </div>
+      </>
     );
   }
 
@@ -236,7 +239,12 @@ export default function CompatibilityPanel() {
 
   return (
     <>
+      <WorkflowResourcePanelV2 />
       <div className="grid gap-3 p-3 text-sm text-modiff-text" data-testid="compatibility-panel">
+        <h2 className="font-semibold">Selected model</h2>
+        <p className="text-xs text-modiff-subtle-text">
+          Model options apply to this selection. Check the whole workflow above before running.
+        </p>
         <p className="text-xs text-modiff-subtle-text">
           Automatic memory selects a supported local resource recipe. Custom keeps your configured technical settings.
           Switching preserves the workflow’s nodes, connections and creative controls.

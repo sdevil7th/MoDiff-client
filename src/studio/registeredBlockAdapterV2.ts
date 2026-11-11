@@ -235,11 +235,59 @@ function semanticParam(param: NodeParams, label: string) {
   return jsonObject(semantic, label);
 }
 
-function semanticNodeData(node: CustomNodeType) {
+function sealedSignalOptions(
+  node: CustomNodeType,
+  fieldId: string,
+  param: NodeParams,
+  admission: HuggingFaceNodeLibraryExecutionAdmission,
+) {
+  const declarations = admission.dynamicFieldActions.filter(
+    ({ role, field, event }) =>
+      role === node.data.huggingFaceClusterExecutionRole && field === fieldId && event === 'onSignal',
+  );
+  if (!declarations.length) return param.onSignal;
+  if (declarations.length !== 1) invalid(`node ${node.id}.${fieldId} has ambiguous declared signal actions.`);
+  const source = declarations[0]!.valueSource;
+  if (!Object.prototype.hasOwnProperty.call(admission.sealedBindingValues, source)) return param.onSignal;
+  const selected = admission.sealedBindingValues[source];
+  // Only exact string-keyed identity maps are projected. Mutable and ordinary
+  // node descriptors retain their complete choices and existing behavior.
+  if (typeof selected !== 'string' || !selected) return param.onSignal;
+  if (!isRecord(param.signal) || param.signal.value !== selected)
+    invalid(`node ${node.id}.${fieldId} does not witness its declared sealed signal identity.`);
+  const project = (descriptor: unknown): unknown => {
+    if (Array.isArray(descriptor)) return descriptor.map(project);
+    if (
+      !isRecord(descriptor) ||
+      descriptor.action !== 'value' ||
+      descriptor.prop !== 'options' ||
+      !isRecord(descriptor.data)
+    )
+      return descriptor;
+    if (
+      typeof descriptor.target !== 'string' ||
+      !Object.prototype.hasOwnProperty.call(node.data.params, descriptor.target) ||
+      !Object.prototype.hasOwnProperty.call(descriptor.data, selected)
+    )
+      invalid(`node ${node.id}.${fieldId} has no exact options branch for its sealed signal identity.`);
+    return { ...descriptor, data: { [selected]: descriptor.data[selected] } };
+  };
+  return project(param.onSignal);
+}
+
+function semanticNodeData(node: CustomNodeType, admission: HuggingFaceNodeLibraryExecutionAdmission) {
   const params = Object.fromEntries(
     Object.entries(node.data.params)
       .sort(([left], [right]) => lexicalCompare(left, right))
-      .map(([fieldId, param]) => [fieldId, semanticParam(param, `node ${node.id}.${fieldId}`)]),
+      .map(([fieldId, param]) => {
+        const semantic = semanticParam(param, `node ${node.id}.${fieldId}`);
+        if (param.onSignal !== undefined)
+          semantic.onSignal = jsonValue(
+            sealedSignalOptions(node, fieldId, param, admission),
+            `node ${node.id}.${fieldId}.onSignal`,
+          );
+        return [fieldId, semantic];
+      }),
   );
   return jsonObject(
     {
@@ -729,13 +777,14 @@ function deterministicExecutionOrder(nodes: readonly BlockGraphNodeV2[], edges: 
 function blockGraph(
   skeleton: HuggingFaceClusterExecutionSkeleton,
   semanticIds: ReadonlyMap<string, string>,
-  modularMetadata: ReadonlyMap<string, BlockGraphNodeModularDiffusersV2> = new Map(),
+  modularMetadata: ReadonlyMap<string, BlockGraphNodeModularDiffusersV2>,
+  admission: HuggingFaceNodeLibraryExecutionAdmission,
 ) {
   const nodes: BlockGraphNodeV2[] = skeleton.nodes
     .map((node) => {
       const semanticRole = node.data.huggingFaceClusterExecutionRole!;
       const metadata = modularMetadata.get(semanticRole);
-      const semanticData = semanticNodeData(node);
+      const semanticData = semanticNodeData(node, admission);
       return {
         nodeId: semanticIds.get(node.id)!,
         nodeType: node.type || node.data.type || 'custom',
@@ -905,7 +954,7 @@ export function compileRegisteredBlockV2(
     controlIds.add(controlId);
   });
 
-  const graph = blockGraph(skeleton, semanticIds, exact.metadataBySemanticRole);
+  const graph = blockGraph(skeleton, semanticIds, exact.metadataBySemanticRole, admission);
   const reviewedInputBindings = new Map(
     (exact.boundaryInputs ?? options.route?.boundary.inputs ?? []).map((binding) => [
       binding.inputName ?? binding.portId,

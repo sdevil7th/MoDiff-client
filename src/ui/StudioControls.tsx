@@ -41,6 +41,7 @@ export function SectionHeader({ title, action }: { title: string; action?: React
 
 export function StudioInput({
   label,
+  name,
   value,
   onChange,
   multiline = false,
@@ -51,6 +52,7 @@ export function StudioInput({
   required = false,
 }: {
   label: string;
+  name?: string;
   value: string | number;
   onChange: (value: string) => void;
   multiline?: boolean;
@@ -75,6 +77,8 @@ export function StudioInput({
       {multiline ? (
         <ModiffTextarea
           id={id}
+          name={name}
+          data-run-recovery-field={name}
           value={value}
           disabled={disabled}
           readOnly={readOnly}
@@ -86,6 +90,8 @@ export function StudioInput({
       ) : (
         <ModiffInput
           id={id}
+          name={name}
+          data-run-recovery-field={name}
           value={value}
           disabled={disabled}
           readOnly={readOnly}

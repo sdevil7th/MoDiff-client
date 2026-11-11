@@ -3,8 +3,10 @@ import { nanoid } from 'nanoid';
 
 import type { NodeData, NodeParams } from './useNodeStore';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
+import type { NodeMemoryUsage } from '../types/api';
 import { deepEqual } from '../utils/deepEqual';
 import { applyFlowNodeChangesInvariant, removeFlowNodesInvariant, replaceFlowGraph } from './flowGraphMutations';
+import { projectFlowCacheStatus } from './flowRuntimeCache';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import { normalizeBlockInstanceV2 } from '../studio/blockSchemaV2';
 import {
@@ -16,9 +18,10 @@ import {
 } from '../studio/blockRuntimeV2';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { decorateConnectionEdges } from '../theme/connectionTypes';
-import { collapsedUserBlockFieldTarget } from '../studio/userBlocks';
+import { collapsedUserBlockFieldTarget, runtimeProgressTarget } from '../studio/userBlocks';
 import { operationAuthoring } from '../workflow/operationAuthoringHint';
 import { workflowTaskCategory } from '../workflow/workflowTaskBrowser';
+import { isFocusedImageEncoding } from '../workflow/encodingNodePresentation';
 
 type FlowStoreSet = (
   partial: Partial<FlowStore> | FlowStore | ((state: FlowStore) => Partial<FlowStore> | FlowStore),
@@ -39,7 +42,7 @@ export function addFlowNode(node: CustomNodeType, set: FlowStoreSet, get: FlowSt
 }
 
 export function removeFlowNodes(ids: string | string[], set: FlowStoreSet, get: FlowStoreGet) {
-  removeFlowNodesInvariant(ids, set, get);
+  return removeFlowNodesInvariant(ids, set, get);
 }
 
 export function removeFlowEdges(ids: string | string[], get: FlowStoreGet) {
@@ -81,7 +84,8 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
       const owners = state.nodes.filter((candidate) => {
         const instance = candidate.data.blockInstanceV2;
         return (
-          instance?.definitionSnapshot.source.provider === 'modiff.visual-stages.v1/inputs' &&
+          isFocusedImageEncoding(instance) &&
+          instance &&
           instance.effectiveGraph.nodes.some((stage) => {
             const data = stage.data as unknown as NodeData;
             const task = data.operationAuthoring?.operation.task;
@@ -178,7 +182,7 @@ export function writeNodeParam<K extends keyof NodeParams = 'value'>(
   });
 }
 
-export function setFlowNodeSize(id: string, width: number, height: number, set: FlowStoreSet) {
+export function setFlowNodeSize(id: string, width: number, height: number, set: FlowStoreSet, sizeMode?: 'compact') {
   set((state) => {
     const node = state.nodes.find((item) => item.id === id);
     if (!node) {
@@ -194,7 +198,10 @@ export function setFlowNodeSize(id: string, width: number, height: number, set: 
     if (
       node.width === width &&
       node.height === height &&
-      (!owner || (previousLayout?.width === width && previousLayout?.height === height))
+      (!owner ||
+        (previousLayout?.width === width &&
+          previousLayout?.height === height &&
+          (sizeMode === undefined || previousLayout?.sizeMode === sizeMode)))
     ) {
       return state;
     }
@@ -208,6 +215,9 @@ export function setFlowNodeSize(id: string, width: number, height: number, set: 
                 y: node.position.y,
                 width,
                 height,
+                // Measurements preserve an existing manual size, but never
+                // relabel unmarked legacy expanded geometry as compact.
+                ...((sizeMode ?? previousLayout?.sizeMode) ? { sizeMode: sizeMode ?? previousLayout?.sizeMode } : {}),
               },
             },
           })
@@ -230,7 +240,8 @@ export function setFlowNodeSize(id: string, width: number, height: number, set: 
         ...state.edges.filter((edge) => edge.data?.blockProjectionOwnerId !== ownerId),
         ...projection.edges,
       ];
-      return { nodes, edges: decorateConnectionEdges(nodes, edges) };
+      const cachedNodes = projectFlowCacheStatus(nodes, state.runtimeCachedNodeIds);
+      return { nodes: cachedNodes, edges: decorateConnectionEdges(cachedNodes, edges) };
     }
 
     return { nodes: state.nodes.map((item) => (item.id === id ? { ...item, width, height } : item)) };
@@ -635,19 +646,36 @@ export function setFlowViewport(viewport: Viewport, set: FlowStoreSet) {
 export function setFlowNodeCached(
   id: string,
   isCached: boolean,
-  memoryUsage: Record<string, number> | undefined,
+  memoryUsage: NodeMemoryUsage | undefined,
   executionTime: Record<string, number> | undefined,
   set: FlowStoreSet,
+  runtimeNodeId?: string,
 ) {
   set((state) => {
-    const node = state.nodes.find((item) => item.id === id);
+    const targetId = runtimeProgressTarget(state.nodes, id) ?? id;
+    const cachedId = runtimeNodeId ?? id;
+    const previous = state.runtimeCachedNodeIds ?? [];
+    const runtimeCachedNodeIds = isCached
+      ? previous.includes(cachedId)
+        ? previous
+        : [...previous, cachedId]
+      : previous.filter(
+          (cached) =>
+            cached !== cachedId &&
+            (id !== targetId || runtimeNodeId !== undefined || runtimeProgressTarget(state.nodes, cached) !== targetId),
+        );
+    const cacheChanged = !deepEqual(state.runtimeCachedNodeIds, runtimeCachedNodeIds);
+    const node = state.nodes.find((item) => item.id === targetId);
     if (!node) {
-      return state;
+      return cacheChanged ? { runtimeCachedNodeIds } : state;
     }
+    const nextIsCached =
+      isCached || runtimeCachedNodeIds.some((cached) => runtimeProgressTarget(state.nodes, cached) === targetId);
     const nextMemoryUsage = !isCached ? undefined : memoryUsage || node.data.memoryUsage || {};
     const nextExecutionTime = !isCached ? undefined : executionTime || node.data.executionTime || {};
     if (
-      node.data.isCached === isCached &&
+      !cacheChanged &&
+      node.data.isCached === nextIsCached &&
       deepEqual(node.data.memoryUsage, nextMemoryUsage) &&
       deepEqual(node.data.executionTime, nextExecutionTime)
     ) {
@@ -655,13 +683,14 @@ export function setFlowNodeCached(
     }
 
     return {
+      runtimeCachedNodeIds,
       nodes: state.nodes.map((item) =>
-        item.id === id
+        item.id === targetId
           ? {
               ...item,
               data: {
                 ...item.data,
-                isCached,
+                isCached: nextIsCached,
                 memoryUsage: nextMemoryUsage,
                 executionTime: nextExecutionTime,
               },
@@ -673,13 +702,17 @@ export function setFlowNodeCached(
 }
 
 export function updateFlowCacheStatus(ids: string | string[], set: FlowStoreSet) {
-  const cached = toArray(ids);
+  const cached = [...new Set(toArray(ids))];
   set((state) => {
-    const cachedSet = new Set(cached);
-    if (state.nodes.every((node) => Boolean(node.data.isCached) === cachedSet.has(node.id))) {
+    const cachedSet = new Set(cached.map((id) => runtimeProgressTarget(state.nodes, id)));
+    if (
+      deepEqual(state.runtimeCachedNodeIds, cached) &&
+      state.nodes.every((node) => Boolean(node.data.isCached) === cachedSet.has(node.id))
+    ) {
       return state;
     }
     return {
+      runtimeCachedNodeIds: cached,
       nodes: state.nodes.map((node) => {
         const isCached = cachedSet.has(node.id);
         return Boolean(node.data.isCached) === isCached ? node : { ...node, data: { ...node.data, isCached } };
@@ -761,9 +794,10 @@ export function updateFlowNodeProgress(
 
 export function resetFlowStatus(cachedIds: string | string[], set: FlowStoreSet, get: FlowStoreGet) {
   void get;
-  const cachedSet = new Set(toArray(cachedIds));
+  const cached = [...new Set(toArray(cachedIds))];
   set((state) => {
-    let changed = state.lastExecutionTime !== 0;
+    const cachedSet = new Set(cached.map((id) => runtimeProgressTarget(state.nodes, id)));
+    let changed = state.lastExecutionTime !== 0 || !deepEqual(state.runtimeCachedNodeIds, cached);
     const nodes = state.nodes.map((node) => {
       const isCached = cachedSet.has(node.id);
       const hasExecutionState = Boolean(
@@ -792,7 +826,7 @@ export function resetFlowStatus(cachedIds: string | string[], set: FlowStoreSet,
         },
       };
     });
-    return changed ? { nodes, lastExecutionTime: 0 } : state;
+    return changed ? { nodes, lastExecutionTime: 0, runtimeCachedNodeIds: cached } : state;
   });
 }
 

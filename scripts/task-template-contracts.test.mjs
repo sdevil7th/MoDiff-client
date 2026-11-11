@@ -33,6 +33,194 @@ after(async () => {
   await server?.close();
 });
 
+test('required Diffusers providers are hash-covered and bound to the exact declared overlay profile', async () => {
+  const runtime = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
+  const modelType = 'DDPMPipeline';
+  const mode = 'unconditional_image';
+  const providerId = 'reviewed-diffusers-provider-v1';
+  const profile = {
+    id: 'provider-fixture:direct',
+    modes: [mode],
+    loader_module: 'modules.DiffusersImage',
+    loader_action: 'LoadPipeline',
+    execution_path: 'diffusers-pipeline',
+    pipeline_class: modelType,
+    default_repo: modelProfilesModule.DDPM_CIFAR10_REPO,
+    optional_runtime_delivery: 'optional_overlay',
+    optional_runtime_profiles: [providerId],
+    required_diffusers_provider: providerId,
+    optionalRuntimeRequirement: {
+      schemaVersion: 1,
+      delivery: 'optional_overlay',
+      requiredNow: true,
+      profileIds: [providerId],
+      executionProfileIds: ['provider-fixture:direct'],
+      state: 'missing',
+      reason: 'optional_runtime_missing',
+    },
+  };
+  const semantic = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'provider-fixture:unconditional:v1',
+    modelType,
+    mode,
+    executionProfileId: profile.id,
+    loaderModule: profile.loader_module,
+    loaderAction: profile.loader_action,
+    executionPath: profile.execution_path,
+    pipelineClass: modelType,
+    defaultRepo: profile.default_repo,
+    roles: [
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', 0, 0],
+      ['diffusersUnconditionalGenerate', 'modules.DiffusersImage.UnconditionalGenerate', 400, 0],
+      ['preview', 'modules.Image.Preview', 800, 0],
+    ],
+    edges: [
+      ['diffusersImagePipeline', 'pipeline', 'diffusersUnconditionalGenerate', 'pipeline'],
+      ['diffusersUnconditionalGenerate', 'images', 'preview', 'image'],
+    ],
+    bindings: [['diffusersImagePipeline', 'quantized_components', 'emptyList']],
+    autoFields: [],
+    actions: [],
+    requiredDiffusersProvider: providerId,
+  };
+  const signed = (value) => ({
+    ...value,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(value))}`,
+  });
+  const parseProfile = (value) =>
+    runtime.parseOptionalRuntimeExecutionProfiles([structuredClone(value)], undefined, (item) => item === mode)[0];
+  const parseSpec = (value, selected = profile) =>
+    executionSpecsModule.parseStudioExecutionSpecs([value], modelType, [mode], [selected]);
+  const parsed = parseProfile(profile);
+  for (const item of [semantic, { ...semantic, auxiliaryTerminalRoles: [] }]) {
+    assert.deepEqual(parseSpec(signed(item), parsed), [signed(item)]);
+  }
+
+  for (const change of [
+    { required_diffusers_provider: null },
+    { required_diffusers_provider: '' },
+    { required_diffusers_provider: 'wrong:runtime' },
+    { optional_runtime_profiles: [] },
+    { optional_runtime_profiles: ['different-provider'] },
+    { optional_runtime_profiles: [providerId, providerId] },
+    { optional_runtime_delivery: 'base' },
+    { optionalRuntimeRequirement: undefined },
+    { optionalRuntimeRequirement: { ...profile.optionalRuntimeRequirement, requiredNow: false } },
+    { optionalRuntimeRequirement: { ...profile.optionalRuntimeRequirement, profileIds: ['different-provider'] } },
+  ]) {
+    assert.throws(() => parseProfile({ ...profile, ...change }), undefined, JSON.stringify(change));
+  }
+  for (const value of [null, '', 'different-provider', 'wrong:runtime', undefined]) {
+    assert.throws(() => parseSpec(signed({ ...semantic, requiredDiffusersProvider: value })));
+  }
+  const { requiredDiffusersProvider: _required, ...legacySemantic } = semantic;
+  assert.throws(() => parseSpec(signed(legacySemantic)), 'A required provider cannot be omitted from its spec');
+  const { required_diffusers_provider: _provider, ...legacyProfile } = profile;
+  assert.throws(() => parseSpec(signed(semantic), legacyProfile), 'The spec cannot introduce undeclared authority');
+  const otherProfile = {
+    ...profile,
+    required_diffusers_provider: 'different-provider',
+    optional_runtime_profiles: ['different-provider'],
+  };
+  assert.throws(
+    () => parseSpec({ ...signed(semantic), requiredDiffusersProvider: 'different-provider' }, otherProfile),
+    'Even a consistently changed profile cannot reuse the old specification hash',
+  );
+  for (const item of [legacySemantic, { ...legacySemantic, auxiliaryTerminalRoles: [] }]) {
+    const old = signed(item);
+    assert.deepEqual(parseSpec(old, legacyProfile), [old], 'Both old key sets retain their original hash and meaning');
+  }
+});
+
+test('empty multiple-choice bindings preserve an empty list while text bindings stay scalar', async () => {
+  const modelType = 'DDPMPipeline';
+  const mode = 'unconditional_image';
+  const profile = {
+    id: 'ddpm-cifar10:direct',
+    modes: [mode],
+    loader_module: 'modules.DiffusersImage',
+    loader_action: 'LoadPipeline',
+    execution_path: 'diffusers-pipeline',
+    pipeline_class: modelType,
+    default_repo: modelProfilesModule.DDPM_CIFAR10_REPO,
+  };
+  const semantic = {
+    schemaVersion: 1,
+    canonicalizationVersion: 1,
+    id: 'ddpm-empty-component-fixture:v1',
+    modelType,
+    mode,
+    executionProfileId: profile.id,
+    loaderModule: profile.loader_module,
+    loaderAction: profile.loader_action,
+    executionPath: profile.execution_path,
+    pipelineClass: modelType,
+    defaultRepo: profile.default_repo,
+    roles: [
+      ['diffusersImagePipeline', 'modules.DiffusersImage.LoadPipeline', 0, 0],
+      ['diffusersUnconditionalGenerate', 'modules.DiffusersImage.UnconditionalGenerate', 400, 0],
+      ['preview', 'modules.Image.Preview', 800, 0],
+    ],
+    edges: [
+      ['diffusersImagePipeline', 'pipeline', 'diffusersUnconditionalGenerate', 'pipeline'],
+      ['diffusersUnconditionalGenerate', 'images', 'preview', 'image'],
+    ],
+    bindings: [['diffusersImagePipeline', 'quantized_components', 'emptyList']],
+    autoFields: [],
+    actions: [],
+  };
+  const spec = {
+    ...semantic,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(semantic))}`,
+  };
+  assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([spec], modelType, [mode], [profile]), [spec]);
+  const withWeightFormat = { ...semantic, bindings: [['diffusersImagePipeline', 'weight_format', 'weightFormat']] };
+  const weightSpec = {
+    ...withWeightFormat,
+    contentHash: `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(withWeightFormat))}`,
+  };
+  assert.deepEqual(executionSpecsModule.parseStudioExecutionSpecs([weightSpec], modelType, [mode], [profile]), [
+    weightSpec,
+  ]);
+  for (const source of ['weight_format', 'WeightFormat', ['weightFormat'], null]) {
+    const invalid = { ...withWeightFormat, bindings: [['diffusersImagePipeline', 'weight_format', source]] };
+    invalid.contentHash = `studio-spec-v1-${hashModule.hashString(hashModule.stableStringify(invalid))}`;
+    assert.throws(() => executionSpecsModule.parseStudioExecutionSpecs([invalid], modelType, [mode], [profile]));
+  }
+  globalThis.window ??= { location: { origin: 'http://127.0.0.1:5191' } };
+  const valuesModule = await server.ssrLoadModule('/src/studio/executionSpecValues.ts');
+  const form = {
+    ...modelProfilesModule.DEFAULT_STUDIO_FORM,
+    ...modelProfilesModule.getFormDefaultsForMode(mode, modelType),
+  };
+  const before = structuredClone(form);
+  assert.equal(
+    valuesModule.resolveStudioExecutionSpecValues(
+      form,
+      weightSpec,
+      modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+    ).weightFormat,
+    'native',
+  );
+  const first = valuesModule.resolveStudioExecutionSpecValues(
+    form,
+    spec,
+    modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+  );
+  assert.deepEqual(first.emptyList, []);
+  assert.equal(first.empty, '');
+  first.emptyList.push('transformer');
+  const second = valuesModule.resolveStudioExecutionSpecValues(
+    form,
+    spec,
+    modelProfilesModule.STUDIO_MODEL_PROFILES[modelType],
+  );
+  assert.deepEqual(second.emptyList, [], 'Separate drafts must not share mutable component selections');
+  assert.deepEqual(form, before);
+});
+
 test('new outpaint forms fully repaint the extension without changing saved or inpaint settings', () => {
   for (const model of ['FluxFillPipeline', 'FluxKontextInpaintPipeline', 'Flux2KleinInpaintPipeline']) {
     const saved = { ...modelProfilesModule.getFormDefaultsForMode('outpaint', model), strength: 0.85 };

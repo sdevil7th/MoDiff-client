@@ -5,12 +5,18 @@ import type { NodeData } from '../stores/useNodeStore';
 import type { RunReadinessIssue } from './types';
 import { runtimeProgressTarget } from './userBlocks';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
+import { operationInputIsSuppliedByBundle } from '../workflow/componentBundleInputs';
+import type { OperationContract } from '../workflow/operationContracts';
+import { processImageInputRequirements } from '../workflow/processImageInputRequirements';
+import { conditionalInputRequired } from '../workflow/conditionalInputRequirements';
+import { selectedBlockInputRequirements } from '../workflow/selectedBlockInputRequirements';
 
 /** Inspect current declarations on the same lowered graph used by Run. */
 export function inspectRequiredGraphInputs(
   visible: CustomNodeType[],
   graph: { nodes: CustomNodeType[]; edges: Edge[] },
   registry: Record<string, NodeData>,
+  operations: readonly OperationContract[] = [],
 ): RunReadinessIssue[] {
   const enabled = new Map(graph.nodes.filter((node) => !node.data.uiState?.disabled).map((node) => [node.id, node]));
   const issues: RunReadinessIssue[] = [];
@@ -23,25 +29,61 @@ export function inspectRequiredGraphInputs(
     ),
   );
   for (const node of enabled.values()) {
-    const declared = registry[`${node.data.module}.${node.data.action}`]?.params;
+    const definition = registry[`${node.data.module}.${node.data.action}`];
+    const declared = definition?.params;
+    const requirements = processImageInputRequirements(node, registry, operations, graph.edges);
+    const blockRequirements = selectedBlockInputRequirements(node, registry, operations, graph.edges);
     for (const field of new Set([...Object.keys(declared ?? {}), ...Object.keys(node.data.params)])) {
       const saved = node.data.params[field] ?? declared![field]!;
       const param = declared?.[field] ?? saved;
+      // Like ordinary required sockets, an unannotated literal file editor is
+      // mandatory on a normally validated node. Keep raw/immutable definitions
+      // intact and respect explicit optionality and dynamic skip validation.
+      const required =
+        requirements?.[field]?.required ??
+        blockRequirements?.get(field) ??
+        conditionalInputRequired(node, param, registry, graph.edges) ??
+        (param.display === 'filebrowser' &&
+          (saved.required ?? !(definition?.skipParamsCheck ?? node.data.skipParamsCheck)));
       if (
-        !param.required ||
+        !required ||
         param.disabled ||
         param.display === 'output' ||
-        !(param.isInput || param.display === 'input')
+        !(
+          param.isInput ||
+          param.display === 'input' ||
+          param.display === 'modelselect' ||
+          param.display === 'filebrowser'
+        )
       )
         continue;
-      const value = saved.value ?? saved.default ?? param.default;
-      if (value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length)) continue;
+      const selected = saved.value ?? saved.default ?? param.default;
+      const value =
+        param.display === 'modelselect' && selected && typeof selected === 'object' && !Array.isArray(selected)
+          ? 'value' in selected
+            ? selected.value
+            : undefined
+          : selected;
+      let present: unknown = value;
+      if (param.display === 'filebrowser') {
+        present =
+          typeof value === 'string'
+            ? value.trim()
+            : Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === 'string' && item.trim())
+              ? value
+              : undefined;
+      } else if (param.display === 'modelselect' && typeof value === 'string') {
+        present = value.trim();
+      }
+      if (present !== undefined && present !== null && present !== '' && (!Array.isArray(present) || present.length))
+        continue;
       const supplied = graph.edges.some((edge) => {
         if (edge.target !== node.id || edge.targetHandle !== field) return false;
         const source = enabled.get(edge.source)?.data.params[edge.sourceHandle ?? ''];
         return source?.display === 'output' && connectionTypesAreCompatible(source.type, saved.type);
       });
       if (supplied) continue;
+      if (operationInputIsSuppliedByBundle(node, field, graph)) continue;
       const target = visible.some((item) => item.id === node.id && !item.hidden)
         ? node.id
         : (owners.get(node.id) ?? runtimeProgressTarget(visible, node.id) ?? node.id);
@@ -55,7 +97,10 @@ export function inspectRequiredGraphInputs(
         nodeId: target,
         ...(target === node.id ? { fieldId: field } : {}),
         message: `${node.data.label || node.data.action} needs ${saved.label || field} before running.`,
-        details: `Connect an enabled compatible source to ${field}, or provide its declared value. Expand the Block to inspect the affected node.`,
+        details:
+          param.display === 'filebrowser'
+            ? `Select the required media file in ${saved.label || field}. Expand the Block if the Load node is inside it.`
+            : `Connect an enabled compatible source to ${field}, or provide its declared value. Expand the Block to inspect the affected node.`,
       });
     }
   }

@@ -10,12 +10,12 @@ import { ModiffButton, ModiffTooltip } from '../ui';
 import {
   openRunActivity,
   runActivityLabelForTask,
+  runActivityDetailForTask,
   runActivityTargetForTask,
   type RunActivityStatus,
 } from '../studio/runActivity';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { cx } from '../utils/classNames';
-import { executionProgressDetail, executionProgressFrom } from '../studio/executionProgress';
 
 type QueueButtonProps = {
   children: string;
@@ -78,11 +78,7 @@ function RunActivityRow({
 }: RunActivityRowProps) {
   if (!task) return null;
   const label = runActivityLabelForTask(task, taskId);
-  const detail =
-    executionProgressDetail(executionProgressFrom(task)) ||
-    task.error ||
-    task.message ||
-    `${label} · ${fallbackStatus}`;
+  const detail = runActivityDetailForTask(task, fallbackStatus);
   return (
     <ModiffTooltip<HTMLButtonElement> content={detail} placement="top">
       {(tooltipProps) => (
@@ -317,7 +313,7 @@ export default function RunQueuePanel() {
                       {runActivityLabelForTask(run, run.task_id || run.id)}
                     </span>
                     <span className="block truncate text-xs text-modiff-subtle-text">
-                      {run.error || run.message || run.task_id || run.sid}
+                      {runActivityDetailForTask(run, run.status ?? 'completed')}
                     </span>
                   </span>
                   <span className="flex-none text-xs font-semibold text-modiff-subtle-text">

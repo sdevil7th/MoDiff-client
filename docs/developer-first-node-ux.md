@@ -7,6 +7,17 @@ are retained.
 
 ## Custom nodes
 
+**Saved Blocks** reuse groups of canvas nodes and their settings. Use **Create
+block** for selected nodes or **Save as reusable Block…** on a stage group, then
+insert the saved copy from the library. **Custom nodes** are Python extensions:
+use **Add custom node** when you want to supply new code. Saving a Block does not
+write Python or authorize additional source; existing source approvals still apply.
+
+On a collapsed reusable Block, **Expand block** shows its contents for ordinary
+canvas editing. Collapse it again when finished; exposed controls stay directly
+editable without expansion. Saving changes offers workflow-only, new reusable
+Block and applicable existing-definition choices.
+
 The full-width yellow **Add custom node** button opens Local, Hugging Face or Git.
 Selected source cards have a yellow border, tint and checkmark. Advanced contains
 optional name/revision settings; normal remote imports need only a repository.
@@ -25,6 +36,17 @@ The permanent Custom nodes category discovers backend `custom/` files/packages
 without running them. Use Load deliberately, then Reload after editing. Disable
 keeps the source. Registry refresh does not rewrite existing node port definitions.
 Code/dependency identity changes invalidate execution until Reload.
+
+An approved custom Block's **Load Models** component fields use their own exact
+lowercase 40-character revisions when you select **Install** beside a Hub model.
+Another cached revision does not hide that install action; missing exact cache
+evidence keeps it available. Set a literal repository and revision first:
+connected, missing or mutable pins report a correction instead of downloading a
+default branch. Expand a Block to install from its component loader when the
+collapsed or nested control cannot prove the pin owner. Ordinary model controls
+retain their catalog behavior. Alias inspection follows declared ownership only;
+malformed, cyclic or excessive control chains require expansion. This installs model files only;
+source approval, dependency readiness and Custom memory requirements still apply.
 
 ## Image/audio attachment
 
@@ -48,7 +70,19 @@ instead of silently discarding authored settings.
 | Upscale / refinement                 | Retain named downstream image operations, connect ordinary image outputs                           |
 | ACE variation/repaint/continuation   | Attach Load Audio to declared source_audio; keep prompt/lyrics controls                            |
 | Transcription / processing           | Connect existing typed audio sources to declared consumers; no automatic model-family substitution |
-| Video                                | Existing functionality unchanged; simplification deferred                                          |
+| Video                                | Shared stages for selected LTX/Wan routes; existing native video stages use the same grouping      |
+
+Pika H3 Flex has a conservative presentation profile alongside MiniMax H3, so
+capability parsing and saved-form restoration retain its exact model identity
+for text, keyframe and reference tasks. The backend still owns its provider,
+task-selected weights, required adapter and fixed sampler. This presentation
+registration grants no Auto, template, Gallery or live-output qualification.
+
+When one declared producer publishes both video frames and audio, a fresh
+workflow attaches the existing joined exporter and presents Video Output. Both
+typed streams stay connected to that same producer. Independently generated
+soundtracks retain their separate stages; missing or incompatible joined
+exporters produce a connection notice. Existing saved graphs are unchanged.
 
 This audit does not claim fewer backend classes: existing generic modular stages
 already share their execution implementations, and the remaining Generate/Edit
@@ -66,6 +100,9 @@ palette showed63 entries, separately from121 upstream catalog entries.
 
 New native image starters combine their input encoding stages into **Encode Inputs**.
 Related Guider and Layers stages appear as **Guidance** where they are connected.
+Fresh Qwen/Z-Image templates also present a single actual Guider as Guidance,
+shared by encoding and denoising. Z-Image Turbo keeps CFG disabled; paths without
+an upstream guider do not add one. See [image template workflows](image-template-workflows.md).
 Encode Inputs uses the ordinary node layout, scrolling controls and status-strip
 resize grip. It is not an expandable canvas Block. Backend encoding stages remain
 separate, with typed conditioning, latent and route-state outputs. Guidance uses
@@ -100,30 +137,129 @@ are not silently repaired or structurally rewritten when opened.
    Existing ControlNet and custom branches are retained; Image does not mean
    Control Image. Unsupported or ambiguous preparation reports an error rather
    than silently choosing a different operation or discarding existing work.
-4. Use **Inspect implementation** in the options menu for stage details. Use
-   **Separate encoding stages** to edit individual stages/custom connections on
-   the canvas, with one Undo to restore the combined node. Inspection never turns
-   the node into an enclosing Block.
+4. Choose the visible **Edit stages** action to edit individual stages and their
+   connections on the canvas. It uses the existing separation transaction, with
+   one Undo to restore the combined node. Common controls remain directly editable
+   without separation. **Inspect implementation** and the named **Separate…**
+   actions remain in the options menu. Inspection never turns the node into an
+   enclosing Block. Model Setup, Guidance, Prepare Mask and Output groups use the
+   same direct editing action where that compact presentation is supported.
 5. Change model/task through Load Models. Compatible values and external branches
-   are retained; incompatible changes still require the normal review. Save and
-   refresh retain the presentation and values.
+   are retained; incompatible changes still require the normal review. An existing
+   image/audio source also supplies newly required inputs with the same declared
+   media role and compatible type when the preserved source is unambiguous.
+   Different roles and already authored inputs remain separate. Save and refresh
+   retain the presentation and values.
+
+Uploading or removing a source file updates Run readiness immediately, including
+optional loader pickers connected to required workflow inputs.
 
 Existing workflows are not regrouped on open. Their loader inspector's
 **Workflow stage actions** menu offers **Group input encoders**, **Group guidance**
 and **Add image / audio input…** where supported. That explicit attachment action
 opens the supported-role/source chooser; it is not a permanent form and ordinary
 typed wiring does not require it. Audio sources retain upload, playback and seek.
-Individual implementation nodes
-remain available. Grouping changes encoder runtime IDs once, so a first run may
-recompute encoding; opening details or collapsing field sections does not change runtime identities.
+Individual implementation nodes remain available. Grouping changes the selected
+stages' runtime IDs once, so a first run may recompute encoding or recreate loader
+ownership. Opening details or collapsing field sections does not change runtime identities.
 Shared seed controls still update across the visual boundary.
 
 Grouping does not grant model capabilities or Automatic memory qualification.
 Whole-pipeline operations remain whole-pipeline operations; no fake encoder is
 inserted. A group with manually nested containers or mirrored custom interfaces
 requires explicit structural editing/ungrouping before automatic task adaptation.
-New audio grouping recipes, Model Setup, Prepare Mask and Image Output are
-follow-on candidates; video simplification remains deferred.
+Audio supports the applicable Model Setup and Audio Output groups described
+below. Selected LTX/Wan video routes use the shared stage presentation too;
+other video routes retain their existing native Modular or whole-pipeline nodes.
+Fresh image, audio and video template cards with an explicit execution recipe
+use that same backend-owned starter through the normal creation path. Selected
+video templates retain their creative settings, source nodes, upscaler and
+soundtrack branches. Their ordinary stage graph is checkpointed and restored
+without a managed receipt for a different topology. This fresh-template routing
+does not convert previously saved whole-pipeline workflows.
+Add media reads declared image, audio and video input roles for the selected
+model. It can add an ordinary media loader or use a compatible existing source.
+The attachment stays in the same graph and is one Undo/Redo transaction;
+unsupported task changes still require review. Existing saved graphs are not
+rewritten on open, and missing source files continue to block Run.
+
+Model Setup reports when its inline LoRA editor does not support the selected
+pipeline type. This is separate from a graph with shared or missing consumers;
+viewing the limitation does not alter the graph or grant adapter support.
+
+Recorded ordinary video stage inputs keep condition strength and denoise
+strength separate. A source-video pixel digest identifies the ordered frozen
+PIL frames used by Encode Inputs, alongside their count; it is not a source-file
+hash. Other frame types report an unavailable digest. Saved receipts survive
+history reload without borrowing values from the current form.
+
+## Audio stages
+
+The same stage actions offer **Group model setup** for eligible direct audio
+loaders and their exclusive configuration/adapter nodes. Native MiniMax retains
+Semantic Generation and Denoise; **Group audio output** combines its real decoder
+and Export Audio node. The group uses the existing player, file export and
+inspection/interface controls. Direct whole-pipeline Generate operations retain
+their separate exporter. Source audio and meaningful processing nodes remain
+connected outside those groups.
+
+Selected ACE branches can expose one owned adapter row when the backend declares
+the exact task, model revision and registered transport. Capacity restricts Add;
+the existing row can still be edited, replaced or removed. Other audio models do
+not inherit that permission. See [audio workflow stages](audio-workflows.md) for
+the full task, adapter and qualification boundaries.
+
+## Optional image stages
+
+**Workflow stage actions** in the loader’s Node inspector, or inside an existing
+Model Setup node, offers these explicit groups when the existing model branch
+contains the required nodes:
+
+- **Group model setup** combines the loader with connected built-in LoRA
+  descriptors/adapters or quantization/execution-recipe configuration. A bare
+  loader stays Load Models. Unrelated loaders, ControlNet, Guidance and shared
+  modifiers remain separate.
+- **Group mask preparation** combines Load Image and the existing Outpaint
+  Canvas utility only when its canvas and mask outputs feed the same declared
+  inpaint/outpaint consumer. Geometry, margins, overlap, feathering and file
+  selection stay on those original fields. A plain inpaint mask loader has no
+  new preprocessing step.
+- **Group image output** combines a declared native image decoder with its
+  directly connected Preview Image nodes. Whole-pipeline output already goes
+  straight to Preview, so that single node is not wrapped.
+
+These groups use the ordinary node shell, with real controls and declared
+sockets. Image Output displays the existing backend preview. Use their options
+menu to inspect the implementation, configure interfaces, separate stages or
+explicitly save a reusable node. Separate and grouping are one Undo step;
+refresh keeps the chosen layout and settings. Saving snapshots current values
+and creates independent reusable instances through the same User Node contract.
+
+Model Setup retains the model picker and Change model / task review. Applying a
+change adapts its complete connected workflow, including Encode Inputs and
+Denoise outside the wrapper. Cancelling leaves the graph unchanged. Existing
+saved workflows and new template defaults are not automatically regrouped.
+Grouping folds real canvas nodes/wires into a V2 interface; executable stages,
+component wires, backend cache policies and the executor stay the same.
+
+The same menu offers **Use component bundle** and **Expose components** when
+actual operation contracts declare that a loader aggregate supplies exact scoped
+component members to the existing stage inputs. The initial backend prototype
+publishes this relation for Qwen native text to image. It keeps the same loader,
+Encode Inputs, Guidance, Denoise and Decode implementations; four raw loader
+component connections become three aggregate connections, reducing this graph
+by one wire. It does not replace the shared, per-run Guidance strategy with the
+bundle's default guider. There is no model-name dispatch in the client action.
+
+An independent component supplier, modifier path, literal component override or
+custom aggregate cannot prove the backend's sealed loader/member identity, so
+that entire consumer keeps its existing ordinary component connections. Breakout
+restores the declared raw loader connections while keeping explicit overrides.
+Both actions use one Undo transaction and persist on refresh; reusable V2
+snapshots and unrelated branches retain their existing authority. Backend checks
+still enforce actual object identity, component roles, loader ownership and
+runtime generation. This is explicit opt-in wiring; template defaults and saved
+graphs are not automatically converted. Broader component facades remain deferred.
 
 ## Connection guidance
 
@@ -133,6 +269,11 @@ missing types require **Show unverified matches**. This includes deliberately
 generic utilities such as Data Viewer. Type compatibility is not a guarantee of
 model availability, shape, memory or the behavior of arbitrary Python.
 
+On ordinary nodes and collapsed stages, selecting a node or wire keeps the
+wire's hit area below other node controls. Selection still changes its stroke,
+and exposed wire sections remain selectable. Expanded child edges retain the
+existing hierarchy layering; this changes no saved graph or execution wiring.
+
 New mask inputs use a loaded black/white image's pixels. Use the explicitly named
 Alpha mask output only when you intend transparency to define the mask. A model
 must still support the chosen task. Automatic memory recipes are separate from
@@ -140,6 +281,19 @@ valid graph structure; unqualified exact model/task/settings combinations need
 explicit Custom settings and are not silently admitted by attachment.
 
 ## Verification trail
+
+The library parser accepts collection schema 7 with explicit immutable source
+supplements, while preserving schema 5/6 collections. Member definitions keep
+their own schema and source revision; adding a source does not rewrite existing
+definition hashes. Source metadata is for authoring and does not activate a
+runtime, approve custom code or establish model/hardware qualification. The
+client renders these declarations without model-specific parameter branches.
+
+The unpruned hierarchy API uses collection schema 2 with separate schema 1 source
+snapshots. Select the definition's exact revision before showing or compiling its
+tree; an unavailable source remains unavailable. Standalone historical schema 1
+snapshots stay readable. Source grouping does not grant edited-tree execution or
+change an existing graph's source identity.
 
 Focused source/lifecycle, graph transactions, saved-Block boundaries, registry
 and search tests precede real browser journeys. The model-free Local/Hub/Git

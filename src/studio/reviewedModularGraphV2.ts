@@ -12,6 +12,7 @@ import type {
 import type { RegisteredBlockV2ControlFanOut, RegisteredBlockV2Route } from './registeredBlockV2Routes';
 import { reviewedCallerInputOwnersV2 } from './reviewedControlOwnershipV2';
 import {
+  modularConditionalSnapshotForSource,
   reviewedConditionalParameterPlacement,
   type HuggingFaceModularConditionalPlacement,
   type HuggingFaceModularConditionalSnapshot,
@@ -144,7 +145,9 @@ export function reviewedWorkflowHierarchyV2(
   snapshot: HuggingFaceModularConditionalSnapshot | undefined,
   definition: HuggingFaceNodeLibraryDefinition,
 ): ReviewedWorkflowHierarchy | null {
-  if (!snapshot || snapshot.diffusersRevision !== definition.libraryRevision) return null;
+  const source = modularConditionalSnapshotForSource(snapshot, definition.libraryRevision);
+  if (!source) return null;
+  snapshot = source;
   const pipeline = snapshot.pipelines.find(({ pipelineClass }) => pipelineClass === definition.pipelineClass);
   const workflow = pipeline?.workflows.find(({ id }) => id === definition.workflowId);
   if (!pipeline || !workflow) return null;
@@ -427,7 +430,7 @@ export function reviewedModularGraphV2(
     if (value.includes('image_encoder') && !value.includes('vae')) return 'image_encoder';
     if (value.includes('video_encoder')) return 'video_encoder';
     if (value.includes('vae_encoder') || value.includes('imageencode')) return 'vae_encoder';
-    if (value.includes('before_encode')) return 'before_encode';
+    if (value.includes('before_encode') || value.includes('prepare_images')) return 'before_encode';
     if (value.includes('after_decode')) return 'after_decode';
     if (value.includes('decoder') || value === 'decode') return 'decoder';
     if (value.includes('denoise')) return 'denoise';
@@ -744,6 +747,7 @@ export function reviewedModularGraphV2(
       block.inputs,
       block.outputs,
       isLoopMember ? 'loop_member' : isLoopOwner ? 'loop_owner' : 'step',
+      block,
     );
     paramsByPath.set(key, params);
   });
