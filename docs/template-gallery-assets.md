@@ -5,6 +5,16 @@ while Git contains only code, metadata, and SHA-256 identities. Runtime URLs
 are pinned to one immutable Dataset commit. Public users do not need a Hugging
 Face token.
 
+Approved supplementary showcases are listed in `src/studio/templateShowcases.json`.
+Their exact media and redacted recipe/review records use this same immutable
+Dataset, asset inventory, per-file rights ledger and publication verifier. Each
+entry binds both file hashes. A featured cover is labelled **Approved showcase ·
+separate recipe** and links the actual consumed prompt, ordered input identities,
+model pins, controls and accepted limitations. It does not change template defaults,
+`findManifestEntry`, current-template qualification or the original 89-case count.
+The MiniMax green-centre perfume showcase is an ordered-reference material edit;
+its blue-centre text-to-image source is separately registered.
+
 [Hugging Face's current storage policy](https://huggingface.co/docs/hub/en/storage-limits)
 describes storage for a free user or organization's public repositories as
 **best effort**, and asks that public uploads provide real community value. The

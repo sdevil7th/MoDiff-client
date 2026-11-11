@@ -544,7 +544,8 @@ export type TemplateCardMedia = {
 
 /**
  * Resolves card media through the same exactness gate used to qualify a
- * published example. Card browsing is independent from the active form: a
+ * published example. The browser selects display-only showcases separately.
+ * Card browsing is independent from the active form: a
  * user editing an instantiated workflow must not invalidate the immutable
  * base-template preview. Conversely, a stale, revoked, or mismatched manifest
  * entry must not contribute any generated card media.

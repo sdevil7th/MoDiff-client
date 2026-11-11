@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { createServer } from 'vite';
 
-test('the H3 old-town human-and-cat template creates the exact generic image recipe without publishing a preview', async () => {
+test('the H3 template keeps its generic recipe and identifies its separately approved edit showcase', async () => {
   const original = { window: globalThis.window, localStorage: globalThis.localStorage };
   const storage = new Map();
   globalThis.localStorage = {
@@ -34,7 +34,10 @@ test('the H3 old-town human-and-cat template creates the exact generic image rec
     const exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
     const card = exactness.getTemplateCardMedia(template, null);
     assert.equal(card.thumbnailPath, '/assets/minimax-h3-old-town.card-poster.png');
-    assert.equal(card.mediaPath, undefined, 'Editorial artwork is not a generated example.');
+    assert.equal(card.mediaPath, undefined, 'The recipe itself still has no current qualified output.');
+    const { getTemplateShowcase } = await server.ssrLoadModule('/src/studio/templateShowcases.ts');
+    assert.match(getTemplateShowcase(template.id).mediaPath, /showcases\/h3-emerald-material-transfer\.webp/u);
+    assert.equal(exactness.getTemplateExampleUiState(template, {}, null, null).status, 'unverified');
     const browser = await server.ssrLoadModule('/src/studio/templateBrowser.ts');
     assert.equal(browser.hasDeclaredExperimentalCreator(template), true);
     const quality = await server.ssrLoadModule('/src/studio/templateQuality.ts');

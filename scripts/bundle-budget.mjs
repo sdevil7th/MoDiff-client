@@ -810,7 +810,13 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // 320994 -> 321188 bytes (+194). Add only that measured aggregate cost to the
 // 321033-byte cap, preserving 39 bytes of headroom at 321227. Startup caps, the
 // 65536-byte deferred chunk cap, dependencies and loading boundaries stay fixed.
+// Approved showcases add exactly 960 compressed bytes to the deferred browser.
+// The 94 JavaScript names and four startup/90 deferred memberships are unchanged;
+// only TemplateBrowserDialog has functional residue after build-URL normalization.
+// Startup code differs only in the three verified Dataset descriptor values.
+// Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  960 +
   263 +
   1258 +
   81 +

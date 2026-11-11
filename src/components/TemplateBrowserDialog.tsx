@@ -20,6 +20,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { getTemplateShowcase } from '../studio/templateShowcases';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { isWorkflowOperationCancelled, useStudioStore } from '../stores/useStudioStore';
@@ -1104,7 +1105,11 @@ function TemplateBrowserCard({
   selected: boolean;
   template: StudioTemplate;
 }) {
-  const { beforePath, mediaPath: cardMediaPath, thumbnailPath } = getTemplateCardMedia(template, manifest);
+  const showcase = getTemplateShowcase(template.id);
+  const publishedMedia = getTemplateCardMedia(template, manifest);
+  const beforePath = showcase ? undefined : publishedMedia.beforePath;
+  const cardMediaPath = showcase?.mediaPath ?? publishedMedia.mediaPath;
+  const thumbnailPath = showcase?.mediaPath ?? publishedMedia.thumbnailPath;
   const historical = !findManifestEntry(template, manifest) && findHistoricalTemplateManifestEntry(template, manifest);
   const hasUsageRestrictions = acknowledgementRequiredForTemplate(template).length > 0;
 
@@ -1144,9 +1149,9 @@ function TemplateBrowserCard({
           thumbnailPath={thumbnailPath}
           variant={template.thumbnailVariant}
         />
-        {historical ? (
+        {showcase || historical ? (
           <span className="absolute bottom-2 left-2 rounded-modiff-compact bg-modiff-bg/85 px-2 py-1 text-xs text-modiff-text">
-            Previous recipe example
+            {showcase ? 'Approved showcase · separate recipe' : 'Previous recipe example'}
           </span>
         ) : null}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-end gap-2 bg-gradient-to-b from-modiff-bg/80 to-transparent p-3">
@@ -1273,6 +1278,7 @@ function TemplateRecipeDetail({
   template: StudioTemplate;
 }) {
   const currentEntry = findManifestEntry(template, manifest, { requireCardPreview: false });
+  const showcase = getTemplateShowcase(template.id);
   const detailManifestEntry =
     currentEntry ?? findHistoricalTemplateManifestEntry(template, manifest, { requireCardPreview: false });
   // Source inputs have their own reviewed hash and do not become invalid merely
@@ -1285,10 +1291,12 @@ function TemplateRecipeDetail({
     .flatMap((binding) => binding.defaultAssets)
     .find((asset) => asset.previewPath)?.previewPath;
   const thumbnailPath =
+    showcase?.mediaPath ??
     templateManifestPath(detailManifestEntry?.thumbnailPath ?? detailManifestEntry?.posterPath) ??
     templateExampleThumbnailPath(template);
-  const beforePath = templateManifestPath(sourceEntry?.beforePath ?? bundledSourcePreview);
-  const afterPath = templateManifestPath(detailManifestEntry?.afterPath ?? detailManifestEntry?.outputPath);
+  const beforePath = showcase ? undefined : templateManifestPath(sourceEntry?.beforePath ?? bundledSourcePreview);
+  const afterPath =
+    showcase?.mediaPath ?? templateManifestPath(detailManifestEntry?.afterPath ?? detailManifestEntry?.outputPath);
   const inputPresentation = templateInputPresentation(template);
   const createLabel = requiresTermsReview ? 'Review terms' : 'Use template';
   const hasInputAction = readiness.issues.some((issue) => issue.action === 'open_assets');
@@ -1315,7 +1323,14 @@ function TemplateRecipeDetail({
         thumbnailPath={thumbnailPath}
         variant={template.thumbnailVariant}
       />
-      {!currentEntry && detailManifestEntry && template.executionSelection ? (
+      {showcase ? (
+        <p className="mt-2 text-xs leading-5 text-modiff-subtle-text" data-testid="template-approved-showcase">
+          {showcase.title}. Approved image from a separate recipe; the template defaults below are unchanged.{' '}
+          <a className="text-modiff-blue underline" href={showcase.recordPath} target="_blank" rel="noreferrer">
+            View the actual prompt, settings and accepted review
+          </a>
+        </p>
+      ) : !currentEntry && detailManifestEntry && template.executionSelection ? (
         <p className="mt-2 text-xs leading-5 text-modiff-subtle-text" data-testid="template-historical-example">
           Example from the previous recipe. This template now creates editable developer workflow nodes; the new graph
           has not been visually qualified by this image.

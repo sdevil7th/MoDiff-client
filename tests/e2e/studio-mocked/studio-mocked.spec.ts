@@ -26,6 +26,30 @@ import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 import { audioPreviewFixture, videoPreviewFixture } from './mediaInputPreviewFixture';
 
+for (const [templateId, search, file] of [
+  ['flux3_klein_fp8r512_text_to_image', 'Ceramic Radio', 'flux3-pine-lake-mountains-pup.v1.webp'],
+  ['minimax_h3_image_old_town_cat', 'Old Town', 'h3-emerald-material-transfer.webp'],
+] as const) {
+  test(`approved showcase for ${templateId} links its own recipe without executing anything`, async ({ page }) => {
+    await bootMockedTemplateBrowser(page);
+    await page.getByRole('button', { name: /^Experimental /u, exact: false }).click();
+    let writes = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url())) writes++;
+    });
+    await page.getByTestId('template-browser-search').fill(search);
+    const card = page.getByTestId(`template-browser-card-${templateId}`);
+    await expect(card.getByText('Approved showcase · separate recipe')).toBeVisible();
+    await expect(card.locator('img').first()).toHaveAttribute('src', new RegExp(file.replaceAll('.', '\\.')));
+    await card.getByRole('button', { name: /^View details for /u }).click();
+    const review = page.getByTestId('template-approved-showcase');
+    await expect(review).toContainText('template defaults below are unchanged');
+    await expect(review.getByRole('link')).toHaveAttribute('href', /\/showcases\/[a-z0-9.-]+\.json$/u);
+    await expect(review.getByRole('link')).toHaveAttribute('rel', 'noreferrer');
+    expect(writes).toBe(0);
+  });
+}
+
 for (const [viewport, deviceScaleFactor] of [
   [{ width: 3840, height: 2160 }, 1],
   [{ width: 2560, height: 1440 }, 1.5],
