@@ -31,7 +31,7 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `b8d322f92f2ef5891e865e4bcc7a3f0da26a7512`.
+CI backend contract: `8f02c5b72748a3e493653884136bebe548ff3cde`.
 
 Both CI jobs use this exact immutable backend pin. The application table above
 is the earlier reviewed testing baseline. The selected backend includes the shared video

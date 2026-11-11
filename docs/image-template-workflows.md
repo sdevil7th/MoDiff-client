@@ -56,6 +56,15 @@ while a direct-image encoder still needs its image connection. Saved operation
 hints cannot override this contract; unknown, connected or conflicting selectors
 retain the conservative registry requirements.
 
+The **Experimental** category includes **MiniMax H3 Image — Old Town: Human & Cat**.
+It creates the same generic text-to-image stages, with a fictional adult and a
+cat as the foreground subjects and a detailed street background. Its pinned
+2048-square BF16 recipe uses Custom memory and SSD group offload. The preview
+remains unverified until creative review. Its card uses a labeled vector
+illustration, which can be rendered with `node scripts/render-h3-template-poster.mjs`.
+The template adds no Auto or broader hardware qualification. Edit the prompt to
+turn the old town into a modern city.
+
 The four Qwen masked-edit/outpaint templates use real native stages with a
 backend-owned compatibility path for their original image preparation and final
 mask composite. Their dimensions, strength, crop padding and outpaint canvas

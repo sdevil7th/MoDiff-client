@@ -146,7 +146,7 @@ test('two experimental Custom recipes extend image coverage while preserving the
     publicTemplates.filter((item) => item.example?.mediaType === 'image' && historicalImageIds.has(item.id)).length,
     54,
   );
-  assert.equal(publicTemplates.filter((item) => item.example?.mediaType === 'image').length, 66);
+  assert.equal(publicTemplates.filter((item) => item.example?.mediaType === 'image').length, 67);
   for (const template of candidates) {
     assert.equal(
       publicTemplates.some((item) => item.id === template.id),

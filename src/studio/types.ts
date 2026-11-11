@@ -94,6 +94,7 @@ export type StudioModelType =
   | 'Cosmos3DistilledModularPipeline'
   | 'Cosmos3OmniModularPipeline'
   | 'MiniMaxH3ModularPipeline'
+  | 'MiniMaxH3ImageModularPipeline'
   | 'PikaH3FlexModularPipeline'
   | 'WanAnimate2ModularPipeline'
   | 'WanAnimate2DistilledModularPipeline'
@@ -251,6 +252,7 @@ export type StudioPresetId =
   | 'flux_control';
 
 export type StudioTemplateId =
+  | 'minimax_h3_image_old_town_cat'
   | 'flux3_klein_fp8r512_text_to_image'
   | 'flux3_klein_fp8r512_single_reference_edit'
   | 'flux3_klein_fp8r512_multi_reference_edit'
@@ -1067,6 +1069,7 @@ export type StudioModelProfile = {
     | 'HunyuanVideo 1.5'
     | 'Cosmos 3'
     | 'MiniMax H3'
+    | 'MiniMax Image'
     | 'Z-Image'
     | 'Qwen Image'
     | 'Wan Video'

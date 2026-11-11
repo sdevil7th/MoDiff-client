@@ -4021,6 +4021,72 @@ function protectedPhotoSettings(cropTop: number): StudioTemplateWorkflowBlockSet
 
 const NORMALIZED_STUDIO_TEMPLATES: StudioTemplate[] = [
   ...BASE_STUDIO_TEMPLATES.map(withVideoDeliveryWorkflow),
+  withTemplateRecipeDefaults(
+    {
+      id: 'minimax_h3_image_old_town_cat',
+      label: 'MiniMax H3 Image — Old Town: Human & Cat',
+      modelDisplayName: 'MiniMax H3 Image',
+      mode: 'text_to_image',
+      modelType: 'MiniMaxH3ImageModularPipeline',
+      category: 'concept',
+      tags: ['minimax-h3-image', 'experimental', 'portrait', 'cat', 'old-town', 'two-subjects', '2048-square'],
+      difficulty: 'advanced',
+      modelArtifact: {
+        source: 'hub',
+        value: 'MiniMaxAI/MiniMax-H3-Image',
+        revision: '492fd8c4eca666f1085f57e30738c1e0d86b3439',
+      },
+      requiredBackendCapabilities: [
+        'modules.ModularDiffusers.ModelsLoader',
+        'modules.ModularDiffusers.WorkflowTextEncode',
+        'modules.ModularDiffusers.WorkflowImageDenoise',
+        'modules.ModularDiffusers.WorkflowDecodeImage',
+        'modules.Image.Preview',
+      ],
+      vramEstimate: 'SSD offload on a high-memory system; check available resources before running.',
+      runtimeEstimate: 'Tens of minutes with SSD offload; loaded components can reduce startup time.',
+      description: 'A cinematic portrait of a sketchbook-carrying adult and an orange tabby in a rain-washed old town.',
+      userGoal: 'Create two expressive foreground subjects within a richly detailed, believable street scene.',
+      presetId: 'quality',
+      example: {
+        mediaType: 'image',
+        status: 'unverified',
+        thumbnailPath: '/assets/minimax-h3-old-town.card-poster.png',
+        lockedSeed: 11426,
+        modelRevision: '492fd8c4eca666f1085f57e30738c1e0d86b3439',
+        lockedSettings: {
+          width: 2048,
+          height: 2048,
+          randomSeed: false,
+          steps: 6,
+          guidanceScale: 1,
+          dtype: 'bfloat16',
+          quantizationMode: 'none',
+          resourceMode: 'expert',
+          autoOffload: true,
+          offloadMode: 'group_disk',
+        },
+        expectedOutput: { width: 2048, height: 2048 },
+        runtimeEstimate: 'Timing depends on loading, placement and hardware',
+        notes:
+          'No reviewed preview is registered. The native fixed sampler owns its six heads and schedule. This recipe uses no external reference images and grants no Auto or hardware qualification.',
+      },
+      executionSelection: IMAGE_TEMPLATE_EXECUTION_SELECTIONS.minimax_h3_image_old_town_cat,
+      promptGuide: {
+        ...BASE_PROMPT_GUIDE,
+        modelHints: [
+          'Keep the person and cat prominent while describing a clear foreground, middle distance and background.',
+          'For a city variation, replace the old-town architecture with a busy modern street while retaining the two subjects.',
+          'Edit the prompt, dimensions and seed; the model owns its sampling schedule.',
+        ],
+      },
+    },
+    [
+      'A cinematic environmental portrait with the realism of an exceptional travel photograph. In the foreground, a fictional adult woman in her late twenties sits on a weathered stone bench at the edge of a narrow old town square. She wears a textured rust-brown wool coat, a muted teal scarf, dark trousers and worn leather ankle boots. A closed sketchbook rests on her lap, held naturally with relaxed hands. She smiles softly down at a beautiful orange tabby cat sitting beside her on the bench. The cat looks up at her with alert amber eyes, distinct whiskers, coherent paws and a long tail curling along the stone. The woman and cat are both large, clearly separated and fully inside the frame, with natural anatomy and a warm sense of companionship.\n\nBehind them, a richly detailed old town lane recedes through a stone arch: irregular rain-darkened cobblestones, ochre and faded rose plaster facades, carved wooden doors, green shutters, wrought-iron balconies overflowing with flowers, small cafe tables and a parked bicycle. A few distant pedestrians with umbrellas give the street life without competing with the main subjects. Warm cafe windows and amber street lamps reflect in shallow puddles as cool blue-hour light settles between the buildings. Layered depth, believable perspective, detailed fur and fabric, subtle skin texture, realistic light and shadow, restrained cinematic colour, 35 mm street-level composition. Keep the architecture recognisable rather than dissolving it into excessive blur. No readable lettering, logos or watermarks.',
+      '',
+    ],
+    -1,
+  ),
   // Reviewed fixed-input examples retain their experimental Custom contracts.
   withTemplateRecipeDefaults(
     {

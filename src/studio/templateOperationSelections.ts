@@ -143,6 +143,15 @@ export function qwenInpaintNativeCandidateSelection(id: StudioTemplateId): Studi
 /** Curated fresh recipes, not global model defaults or execution authority. */
 export const IMAGE_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateId, StudioTemplateExecutionSelection>> =
   {
+    minimax_h3_image_old_town_cat: {
+      ...native(
+        'MiniMaxH3ImageModularPipeline',
+        'minimax-h3-image:official-provider:v1',
+        'MiniMaxH3ImageModularPipeline',
+        'text_to_image',
+      ),
+      memoryPolicy: 'custom_experimental',
+    },
     // Public-intent planning descriptors; no runtime or Gallery qualification.
     flux3_klein_fp8r512_text_to_image: {
       schemaVersion: 1,

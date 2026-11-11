@@ -408,7 +408,14 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // bytes of headroom. Deferred gzip decreases to 337464; both deferred ceilings
 // stay fixed. Only studio-templates changes after import-URL normalization;
 // all 119 assets, four startup/90 deferred memberships and dependencies stay fixed.
+// The H3 human-and-cat template and its legacy form metadata measure
+// 500712/679198/337468 largest/startup/deferred gzip, against 499048/677534/337464.
+// Only studio-templates differs after import-URL normalization. Add the measured
+// 1664/1664 startup bytes. One labeled editorial PNG brings the bundle to 120
+// assets; deferred limits, four startup/90 deferred memberships, dependencies,
+// loading boundaries and the 64 KiB cap stay fixed.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  1664 +
   156 +
   297 +
   355 +
@@ -566,6 +573,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  1664 +
   155 +
   296 +
   357 +

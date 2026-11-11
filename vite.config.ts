@@ -48,6 +48,7 @@ function shellPublicAssetsPlugin(): Plugin {
     ['assets/minimax-chamber-pop.card-poster.png', 'image/png'],
     ['assets/flux2-dev.card-poster.png', 'image/png'],
     ['assets/cosmos3-super.card-poster.png', 'image/png'],
+    ['assets/minimax-h3-old-town.card-poster.png', 'image/png'],
   ]);
   return {
     name: 'modiff-shell-public-assets',

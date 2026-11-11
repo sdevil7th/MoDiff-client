@@ -234,6 +234,12 @@ const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSem
 
 export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = [
   {
+    id: 'minimax-h3-image-no-negative-input',
+    modelTypes: ['MiniMaxH3ImageModularPipeline'],
+    executionProfileId: 'minimax-h3-image:official-provider:v1',
+    reason: 'The declared H3 Image contract has no negative-prompt input; exclusions stay in the positive brief.',
+  },
+  {
     id: 'flux3-distilled-no-negative-input',
     modelTypes: ['Flux3DistilledModularPipeline'],
     executionProfileId: 'flux3-klein:official-provider:v1',

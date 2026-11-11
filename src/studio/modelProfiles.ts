@@ -456,6 +456,7 @@ const STUDIO_MODEL_LABEL_VALUES = [
   'Real-ESRGAN x2 Image Upscale',
   'FLUX 3 Image Klein Base',
   'FLUX 3 Image Klein',
+  'MiniMax H3 Image',
 ] as const;
 
 export const STUDIO_MODE_DESCRIPTIONS: Record<StudioMode, string> = {
@@ -3808,6 +3809,39 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
   },
   Flux3ModularPipeline: contractOnlyImageProfile(FLUX3_BASE_REPO, FLUX3_BASE_REVISION, 50, 3.5, true),
   Flux3DistilledModularPipeline: contractOnlyImageProfile(FLUX3_DISTILLED_REPO, FLUX3_DISTILLED_REVISION, 16, 1, false),
+  MiniMaxH3ImageModularPipeline: {
+    family: 'MiniMax Image',
+    catalogVisibility: 'internal',
+    defaultRepo: 'MiniMaxAI/MiniMax-H3-Image',
+    defaultDtype: 'bfloat16',
+    defaultSize: { width: 2048, height: 2048, aspectRatio: '1:1' },
+    recommendedSteps: 6,
+    recommendedGuidance: 1,
+    guidanceLabel: 'Fixed six-head sampler',
+    supportsNegativePrompt: false,
+    supportFlags: 5,
+    outputKind: 'image',
+    offloadSupport: {
+      default: 'group_disk',
+      lowVram: 'group_disk',
+      emergency: 'group_disk',
+      modes: ['none', 'group_disk'],
+    },
+    lowVram: { dtype: 'bfloat16', autoOffload: true, offloadMode: 'group_disk', steps: 6, width: 2048, height: 2048 },
+    modes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    modeRequirements: {
+      edit_image: { requiredImages: ['referenceImages'] },
+      multi_image_reference_edit: { requiredImages: ['referenceImages'] },
+    },
+    revisionCandidates: ['492fd8c4eca666f1085f57e30738c1e0d86b3439'],
+    executionStatus: 'expert_only',
+    qualificationStatus: 'runtime-required',
+    qualifiedModes: [],
+    autoEligible: false,
+    templateEligible: false,
+    galleryEligible: false,
+    liveProof: false,
+  },
 } satisfies Record<StudioModelType, StudioModelProfileSource>;
 
 if (STUDIO_MODEL_LABEL_VALUES.length !== Object.keys(STUDIO_MODEL_PROFILE_SOURCES).length) {
@@ -4580,6 +4614,17 @@ export const STUDIO_AUTO_MODEL_REQUIREMENTS = {
   },
   Flux3ModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3ModularPipeline'),
   Flux3DistilledModularPipeline: /* @__PURE__ */ pendingPlanningRequirement('Flux3DistilledModularPipeline'),
+  MiniMaxH3ImageModularPipeline: {
+    modelType: 'MiniMaxH3ImageModularPipeline',
+    supportedModes: ['text_to_image', 'edit_image', 'multi_image_reference_edit'],
+    autoStatus: 'manual_only',
+    minimum: 'The exact optional runtime, full model files and Custom resource checks.',
+    recommended: 'A high-memory system with SSD offload; check each device separately.',
+    qualityDefaults: 'Native BF16, 2048 square and the model-owned sampling schedule.',
+    artifacts: ['MiniMaxAI/MiniMax-H3-Image'],
+    notes: 'Linux execution evidence is separate from general hardware and Gallery qualification.',
+    manualOnlyReason: 'Auto qualification is pending.',
+  },
 } satisfies Record<StudioModelType, StudioAutoModelRequirementMetadata>;
 
 export function getStudioModelDisplayName(profile: StudioModelProfile) {
