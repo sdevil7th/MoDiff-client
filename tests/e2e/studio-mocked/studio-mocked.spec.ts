@@ -12600,6 +12600,14 @@ async function installPublicFlux3AuthoringRoutes(
     }));
     const selections = [
       ...defaultSelections,
+      ...defaultSelections.map(({ selection }) => ({
+        id: `${selection.executionProfileId}:edit-image-append`,
+        selection: {
+          ...selection,
+          task: 'edit_image',
+          authoringRecipeId: `${selection.pipelineClass === 'Flux3DistilledModularPipeline' ? 'flux3-klein' : 'flux3-klein-base'}:official:edit-image:prompt-preview-append-fp32:v1`,
+        },
+      })),
       ...(fixture.starters as OperationStarter[]).map((starter) => ({
         id: starter.authoring!.id,
         selection: {
@@ -13874,6 +13882,86 @@ for (const variant of ['flux3-klein', 'flux3-klein-base'] as const)
     expect(await read()).toEqual(disabled);
     expect(forbiddenPosts).toEqual([]);
   });
+
+for (const task of ['text_to_image', 'edit_image'] as const)
+  for (const variant of ['flux3-klein', 'flux3-klein-base'] as const)
+    test(`public model/task change retains reviewed PUP offer for ${variant} ${task}`, async ({ page }) => {
+      await page.setViewportSize({ width: 1920, height: 1200 });
+      await ensureFrontend();
+      await installPublicFlux3AuthoringRoutes(page, true, true);
+      const selections: Record<string, unknown>[] = [];
+      const forbiddenPosts: string[] = [];
+      page.on('request', (request) => {
+        const pathname = new URL(request.url()).pathname;
+        if (request.method() !== 'POST') return;
+        if (pathname === '/operations/starter') selections.push(request.postDataJSON());
+        if (
+          /\/(?:graph|execute|install|download)(?:\/|$)/u.test(pathname) ||
+          pathname.startsWith('/runtime/optional-runtimes')
+        )
+          forbiddenPosts.push(pathname);
+      });
+      await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+      const launcher = page.getByRole('dialog', { name: 'Workflows', exact: true });
+      await launcher.getByTestId(`workflow-task-${task}`).click();
+      await expect(launcher).toHaveCount(0);
+      const read = () =>
+        page.evaluate(async () => {
+          const raw = window.__MODIFF_E2E__!.exportWorkflowGraph();
+          const { expandFlowExecutionGraph } = await import('/src/stores/useFlowStore.ts');
+          const graph = expandFlowExecutionGraph(raw.nodes, raw.edges);
+          const loader = graph.nodes.find((node) => node.data.action === 'ModelsLoader')!;
+          const prompt = graph.nodes.find((node) => node.data.action === 'EncodePrompt')!;
+          return {
+            model: loader.data.params.model_type.value,
+            prompt: prompt.data.params.prompt.value ?? prompt.data.params.prompt.default,
+            parent: prompt.data.operationAuthoring?.ancillaryParent?.parent ?? null,
+            enabledBranches: graph.nodes.filter((node) => node.data.operationAuthoring?.ancillaryBindings?.length)
+              .length,
+            resourceMode: window.__MODIFF_E2E__!.getState().studio.form.resourceMode,
+          };
+        });
+      const before = await read();
+      expect(before.resourceMode).toBe('auto');
+      const setup = page
+        .locator('.react-flow__node')
+        .filter({ has: page.getByRole('button', { name: 'Choose model', exact: true }) });
+      await setup.getByRole('button', { name: 'Change model / task', exact: true }).click();
+      await setup.getByLabel('Replacement pipeline', { exact: true }).click();
+      const pipeline = variant === 'flux3-klein' ? 'Flux3DistilledModularPipeline' : 'Flux3ModularPipeline';
+      await page.getByRole('option', { name: pipeline, exact: true }).click();
+      await setup.getByLabel('Replacement model', { exact: true }).click();
+      const repo = `black-forest-labs/flux-3-image-${variant.replace('flux3-', '')}`;
+      await page.getByRole('option', { name: new RegExp(`${repo}$`, 'u') }).click();
+      await setup.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+      const review = page.getByRole('dialog', { name: 'Review model / task change', exact: true });
+      const expected = {
+        executionProfileId: `${variant}:official-provider:v1`,
+        authoringRecipeId: `${variant}:official:${task === 'text_to_image' ? 'text-to-image' : 'edit-image'}:prompt-preview-append-fp32:v1`,
+      };
+      expect(selections.at(-1)).toMatchObject(expected);
+      await expect(review.getByRole('heading', { name: 'Review model / task change', exact: true })).toBeVisible();
+      await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+      expect(await read()).toEqual(before);
+      await setup.getByRole('button', { name: 'Preview model / task change', exact: true }).click();
+      await review.getByRole('button', { name: 'Apply graph change', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+      const changed = await read();
+      expect(changed).toMatchObject({
+        model: pipeline,
+        prompt: before.prompt,
+        parent: expected,
+        enabledBranches: 0,
+        resourceMode: 'auto',
+      });
+      await page.locator('.react-flow__pane').click({ position: { x: 80, y: 80 } });
+      await page.keyboard.press('Control+z');
+      await expect.poll(read).toEqual(before);
+      await page.keyboard.press('Control+Shift+z');
+      await expect.poll(read).toEqual(changed);
+      await expect(page.getByRole('button', { name: 'Enable enhancement', exact: true })).toBeVisible();
+      expect(forbiddenPosts).toEqual([]);
+    });
 
 /** Read-only projection of the ordinary graph; no form/store setters. */
 async function publicFlux3FormatSnapshot(page: Page) {

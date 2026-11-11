@@ -197,6 +197,12 @@ does not expand the public model union or grant Auto support. Optional per-task
 `authoringRecipes` select a current declared starter; its enhancement offer is
 attached after ordinary media/output completion without enabling a provider.
 
+Model Setup's model/task change resolves these offers from the exact selected
+public or evaluation descriptor. A public offer does not require Custom memory;
+evaluation descriptors retain that separate guard. Preview and Apply preserve the
+declared recipe identity, and changing models only attaches the enhancement offer.
+Enabling its provider remains an explicit action.
+
 An optional per-task `rawAuthoringRecipeId` declares a distinct raw-prompt
 alternative. Explicit Enable selects that exact alternative for a null layout,
 or the original declaration for authored regions. Both fresh responses must

@@ -56,11 +56,11 @@ export default function OperationGraphControls({
   const descriptors = useNodesStore((s) => s.workflowModelDescriptors);
   const matchingDescriptors = descriptors.filter(
     (descriptor) =>
-      descriptor.evaluationOnly &&
+      (descriptor.evaluationOnly || descriptor.authoringRecipes?.[task]) &&
       descriptor.pipeline === pipeline &&
       (!executionProfileId || descriptor.profileId === executionProfileId),
   );
-  const evaluationOnly = matchingDescriptors.length > 0;
+  const evaluationOnly = matchingDescriptors.some((descriptor) => descriptor.evaluationOnly);
   const selectedExecutionProfileId =
     executionProfileId ?? (matchingDescriptors.length === 1 ? matchingDescriptors[0]!.profileId : undefined);
   const authoringRecipeId =
