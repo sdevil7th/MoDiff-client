@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
+import { executionReceiptsForRun } from './template-gallery-runner.mjs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
@@ -19,7 +20,9 @@ let fixture,
   contracts,
   starterParser,
   drafts,
-  setupAdapters;
+  setupAdapters,
+  secondaryStages,
+  secondaryFixture;
 before(async () => {
   const backend = process.env.MODIFF_BACKEND_DIR || path.resolve('../MoDiff');
   const python =
@@ -40,6 +43,37 @@ before(async () => {
     ['ltx_video_video_to_video', 'LTXVideoPipeline', 'LTXConditionPipeline', 'ltx-video:direct', 'video_to_video'],
     ['ltx_video_multi_reference', 'LTXVideoPipeline', 'LTXConditionPipeline', 'ltx-video:direct', 'reference_to_video'],
     ['wan_22_ti2v_5b_seed_vault', 'WanTI2VPipeline', 'WanTI2VPipeline', 'wan-22-ti2v-5b:direct', 'text_to_video'],
+    [
+      'wan_vace_cinematic_text_to_video',
+      'WanVideoPipeline',
+      'WanPipeline',
+      'wan-text-to-video:direct',
+      'text_to_video',
+    ],
+    [
+      'wan_vace_video_color_grade',
+      'WanVideoPipeline',
+      'WanVideoToVideoPipeline',
+      'wan-video-to-video:direct',
+      'video_color_edit',
+    ],
+    [
+      'wan_vace_video_to_video',
+      'WanVideoPipeline',
+      'WanVideoToVideoPipeline',
+      'wan-video-to-video:direct',
+      'video_to_video',
+    ],
+    ['wan_vace_masked_object_replace', 'WanVACEPipeline', 'WanVACEPipeline', 'wan-vace:direct', 'video_inpaint'],
+    ['wan_vace_outpaint_reframe', 'WanVACEPipeline', 'WanVACEPipeline', 'wan-vace:direct', 'video_outpaint'],
+    ['wan_vace_grayscale_control', 'WanVACEPipeline', 'WanVACEPipeline', 'wan-vace:direct', 'control_to_video'],
+    [
+      'wan_22_i2v_seed_vault',
+      'WanImageToVideoPipeline',
+      'WanImageToVideoPipeline',
+      'wan-22-image-to-video:direct',
+      'image_to_video',
+    ],
   ])
     selections.push({
       id,
@@ -51,6 +85,10 @@ before(async () => {
         authoringRecipeId: 'generic-video-stages:v1',
       },
     });
+  selections.push({
+    id: 'unbound-vace-whole',
+    selection: { pipelineClass: 'WanVACEPipeline', task: 'control_to_video' },
+  });
   fixture = JSON.parse(
     execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py')], {
       cwd: backend,
@@ -58,6 +96,35 @@ before(async () => {
       maxBuffer: 64 * 1024 ** 2,
       timeout: 120_000,
       input: JSON.stringify(selections),
+      env: {
+        ...process.env,
+        MODIFF_BACKEND_DIR: backend,
+        HF_HUB_OFFLINE: '1',
+        TRANSFORMERS_OFFLINE: '1',
+        PYTHONDONTWRITEBYTECODE: '1',
+        CUDA_VISIBLE_DEVICES: '',
+      },
+    }),
+  );
+  fixture.unboundVace = fixture.recipes.find((row) => row.id === 'unbound-vace-whole');
+  fixture.recipes = fixture.recipes.filter((row) => row !== fixture.unboundVace);
+  secondaryFixture = JSON.parse(
+    execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py')], {
+      cwd: backend,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 ** 2,
+      timeout: 120_000,
+      input: JSON.stringify([
+        {
+          id: 'soundtrack',
+          selection: {
+            pipelineClass: 'AceStepPipeline',
+            task: 'text_to_audio',
+            executionProfileId: 'ace-step-audio:direct',
+            repository: 'ACE-Step/acestep-v15-xl-turbo-diffusers',
+          },
+        },
+      ]),
       env: {
         ...process.env,
         MODIFF_BACKEND_DIR: backend,
@@ -92,6 +159,26 @@ before(async () => {
   drafts = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
   setupAdapters = await server.ssrLoadModule('/src/workflow/modelSetupAdapters.ts');
   ({ STUDIO_TEMPLATES: templates } = await server.ssrLoadModule('/src/studio/templates.ts'));
+  secondaryStages = await server.ssrLoadModule('/src/studio/templateSecondaryStages.ts');
+  const operations = contracts.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  const resolved = secondaryFixture.recipes[0].starter;
+  const soundtrackStarter = starterParser.parseOperationStarter(
+    resolved,
+    resolved.pipelineClass,
+    resolved.task,
+    operations,
+    { executionProfileId: 'ace-step-audio:direct', repository: 'ACE-Step/acestep-v15-xl-turbo-diffusers' },
+  );
+  fixture.registry = await secondaryStages.templateSecondaryStageRegistry(
+    templates.find((item) => item.id === 'wan_22_ti2v_5b_seed_vault'),
+    fixture.registry,
+    nodes.parseStudioModelCapabilities(fixture.publicPayload).capabilities,
+    operations,
+    async () => soundtrackStarter,
+  );
   builder = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
   ({ DEFAULT_STUDIO_FORM: defaults } = await server.ssrLoadModule('/src/studio/modelProfiles.ts'));
@@ -201,11 +288,98 @@ function graphFor(row) {
   return graph;
 }
 
+test('encoded video stages require their real encoding instead of duplicate raw media, including restored schemas', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  const { inspectBlockMediaInputsV2 } = await server.ssrLoadModule('/src/studio/blockMediaReadinessV2.ts');
+  const operations = contracts.parseOperationContracts(fixture.publicPayload.operationContracts, 3);
+  for (const row of fixture.recipes.filter((item) => item.starter.pipelineClass === 'WanVACEPipeline')) {
+    const graph = graphFor(row);
+    const render = graph.nodes.find(
+      (node) => node.data.operationAuthoring?.operation.operationId === 'diffusion.render_video',
+    );
+    assert.ok(render, row.id);
+    // An old saved instance still has the whole-operation raw-media overlay.
+    for (const name of ['video', 'mask']) render.data.params[name].required = true;
+    const before = structuredClone(graph);
+    const required = () =>
+      inspectRequiredGraphInputs(graph.nodes, graph, fixture.registry, operations).filter(
+        (issue) => issue.nodeId === render.id,
+      );
+    const media = () =>
+      inspectBlockMediaInputsV2(graph.nodes, graph, operations, fixture.registry).filter(
+        (issue) => issue.nodeId === render.id,
+      );
+    assert.deepEqual(required(), [], row.id);
+    assert.deepEqual(media(), [], row.id);
+    assert.deepEqual(graph, before, 'inspection must not rewrite a restored workflow');
+    const wire = graph.edges.find((edge) => edge.target === render.id && edge.targetHandle === 'encoded_inputs');
+    assert.ok(wire);
+    graph.edges = graph.edges.filter((edge) => edge !== wire);
+    assert.deepEqual(
+      required().map((issue) => issue.fieldId),
+      ['encoded_inputs'],
+    );
+    graph.edges.push(wire);
+    const encoder = graph.nodes.find((node) => node.id === wire.source);
+    encoder.data.uiState = { disabled: true };
+    assert.deepEqual(
+      required().map((issue) => issue.fieldId),
+      ['encoded_inputs'],
+    );
+    delete encoder.data.uiState;
+    const output = encoder.data.params[wire.sourceHandle];
+    const type = output.type;
+    output.type = 'image';
+    assert.deepEqual(
+      required().map((issue) => issue.fieldId),
+      ['encoded_inputs'],
+    );
+    output.type = type;
+    assert.deepEqual(required(), []);
+    const strictRegistry = structuredClone(fixture.registry);
+    strictRegistry['modules.DiffusersVideo.Generate'].params.video.required = true;
+    assert.ok(
+      inspectRequiredGraphInputs(graph.nodes, graph, strictRegistry, []).some(
+        (issue) => issue.nodeId === render.id && issue.fieldId === 'video',
+      ),
+      'saved hints cannot narrow registry requirements without current backend authority',
+    );
+    render.data.operationAuthoring.operation.ports.find((port) => port.name === 'encoded_inputs').required = false;
+    graph.edges = graph.edges.filter((edge) => edge !== wire);
+    assert.deepEqual(
+      required().map((issue) => issue.fieldId),
+      ['encoded_inputs'],
+      'saved port metadata cannot relax current backend requiredness',
+    );
+    graph.edges.push(wire);
+    render.data.params.mode.isConnected = true;
+    assert.ok(
+      inspectRequiredGraphInputs(graph.nodes, graph, strictRegistry, operations).some(
+        (issue) => issue.nodeId === render.id && issue.fieldId === 'video',
+      ),
+      'computed selectors do not establish a literal bundle selection',
+    );
+  }
+});
+
 function api(graph) {
   const result = exporter.useFlowStore
     .getState()
     .exportGraph('video-stage-contract', undefined, { sourceGraph: graph, randomizeSeeds: false });
-  const names = new Map(Object.entries(result.nodes).map(([id, node]) => [id, `${node.module}.${node.action}`]));
+  const keys = Object.values(result.nodes).map((node) => `${node.module}.${node.action}`);
+  const names = new Map(
+    Object.entries(result.nodes).map(([id, node]) => {
+      const key = `${node.module}.${node.action}`;
+      const consumers = Object.values(result.nodes)
+        .flatMap((consumer) =>
+          Object.entries(consumer.params ?? {})
+            .filter(([, value]) => value?.sourceId === id)
+            .map(([field]) => `${consumer.module}.${consumer.action}.${field}`),
+        )
+        .sort();
+      return [id, keys.filter((item) => item === key).length === 1 ? key : `${key}:${consumers.join(',')}`];
+    }),
+  );
   assert.equal(new Set(names.values()).size, names.size);
   const normalize = (value) =>
     Array.isArray(value)
@@ -294,13 +468,109 @@ test('direct video Model Setup explains unavailable inline adapters without blam
   }
 });
 
-test('five retained video template factories preserve creative settings on their exact staged starters', () => {
+test('fresh ordinary native video keeps sampling and decode in Generate and delivery in Video Output', () => {
+  const row = fixture.recipes.find((item) => item.id === 'ltx_video_text_to_video');
+  const original = graphFor(row);
+  const graph = groups.groupNewOperationGraph(original);
+  const generate = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+  const output = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'output');
+  assert.ok(generate, 'an adjacent native decoder must not be consumed by Output before Generate is built');
+  assert.deepEqual(generate.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+    'DecodeLatents',
+    'Denoise',
+  ]);
+  assert.deepEqual(
+    output.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action),
+    ['Export'],
+  );
+  assert.deepEqual(api(graph), api(original));
+});
+
+test('soundtrack secondary owner receives the same Model Setup grouping as standalone audio', () => {
+  const template = templates.find((item) => item.id === 'wan_22_ti2v_5b_seed_vault');
+  const row = fixture.recipes.find((item) => item.id === template.id);
   const parsed = nodes.parseStudioModelCapabilities(fixture.publicPayload);
   const operations = contracts.parseOperationContracts(
     fixture.publicPayload.operationContracts,
     fixture.publicPayload.operationContractSchemaVersion,
   );
-  for (const row of fixture.recipes.filter((row) => row.spec)) {
+  const capability = parsed.capabilities.find((item) => item.modelType === template.modelType);
+  const spec = capability.studioExecutionSpecs.find((item) => item.mode === template.mode);
+  const starter = starterParser.parseOperationStarter(
+    row.starter,
+    row.starter.pipelineClass,
+    row.starter.task,
+    operations,
+    { executionProfileId: row.spec.executionProfileId, authoringRecipeId: 'generic-video-stages:v1' },
+  );
+  const form = {
+    ...defaults,
+    ...exactness.getTemplateLockedSettings(template),
+    device: 'cpu:0',
+    offloadMode: 'none',
+    autoOffload: false,
+  };
+  const graph = builder.createTemplateOperationGraph(template, form, starter, fixture.registry, spec, capability, {
+    operationContracts: operations,
+    studioModelCapabilities: parsed.capabilities,
+  });
+  const setups = graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'setup');
+  assert.equal(setups.length, 2, 'video and soundtrack need independent declared Model Setup stages');
+  const audioSetup = setups.find((node) =>
+    node.data.blockInstanceV2.effectiveGraph.nodes.some(
+      (leaf) => leaf.data.module === 'modules.DiffusersAudio' && leaf.data.action === 'LoadPipeline',
+    ),
+  );
+  assert.ok(audioSetup, 'the actual ACE loader and its exclusive recipe must be grouped');
+  assert.deepEqual(audioSetup.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+    'DiffusersExecutionRecipe',
+    'LoadPipeline',
+    'PipelineQuantizationConfigV2',
+  ]);
+  const flattened = groups.unpackVisualOperationGroups(graph).graph;
+  assert.equal(flattened.nodes.filter((node) => node.data.action === 'LoadPipeline').length, 2);
+  assert.equal(flattened.nodes.filter((node) => node.data.action === 'FitDuration').length, 1);
+  assert.equal(flattened.nodes.filter((node) => node.data.action === 'ExportWithAudio').length, 1);
+});
+
+test('secondary stage resolution rejects a different immutable model without changing registry data', async () => {
+  const template = templates.find((item) => item.id === 'wan_22_ti2v_5b_seed_vault');
+  const capability = nodes.parseStudioModelCapabilities(fixture.publicPayload).capabilities;
+  const operations = contracts.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  const before = structuredClone(secondaryFixture.registry);
+  const row = secondaryFixture.recipes[0].starter;
+  const starter = starterParser.parseOperationStarter(row, row.pipelineClass, row.task, operations, {
+    executionProfileId: 'ace-step-audio:direct',
+    repository: template.workflowBlockSettings.soundtrack.model.value,
+  });
+  const foreign = structuredClone(starter);
+  const owner = foreign.nodes.find((item) => contracts.operationOwnsModel(item.operation));
+  owner.node.params.revision.value = '0'.repeat(40);
+  await assert.rejects(
+    secondaryStages.templateSecondaryStageRegistry(
+      template,
+      secondaryFixture.registry,
+      capability,
+      operations,
+      async () => foreign,
+    ),
+    /different immutable soundtrack model/,
+  );
+  assert.deepEqual(secondaryFixture.registry, before);
+});
+
+test('retained video template factories preserve creative settings on their exact latent starters', () => {
+  const parsed = nodes.parseStudioModelCapabilities(fixture.publicPayload);
+  const operations = contracts.parseOperationContracts(
+    fixture.publicPayload.operationContracts,
+    fixture.publicPayload.operationContractSchemaVersion,
+  );
+  for (const row of fixture.recipes.filter(
+    (row) => row.spec && !row.id.startsWith('wan_vace_') && row.id !== 'wan_22_i2v_seed_vault',
+  )) {
     const template = templates.find((template) => template.id === row.id);
     assert.ok(template?.executionSelection, row.id);
     const capability = parsed.capabilities.find((capability) => capability.modelType === template.modelType);
@@ -397,7 +667,9 @@ test('five retained video template factories preserve creative settings on their
     ])
       assert.equal(denoiser.data.params[key].value, value, `${row.id}:${key}`);
     const decoder = flat.nodes.find((node) => node.data.action === 'DecodeLatents');
-    const exportNode = flat.nodes.find((node) => node.data.module === 'modules.Video');
+    const exportNode = flat.nodes.find(
+      (node) => node.data.module === 'modules.Video' && node.data.action.startsWith('Export'),
+    );
     assert.ok(decoder && exportNode, 'real video decode and delivery are retained');
     const videoWire = flat.edges.find((edge) => edge.target === exportNode.id && edge.targetHandle === 'video');
     if (template.workflowBlocks?.includes('upscaler')) {
@@ -407,8 +679,8 @@ test('five retained video template factories preserve creative settings on their
       assert.ok(flat.edges.some((edge) => edge.source === decoder.id && edge.target === upscale.id));
       assert.equal(
         graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'output').length,
-        0,
-        'an interposed upscale remains a genuine separate stage',
+        1,
+        'an interposed upscale keeps its own stage before Video Output',
       );
     } else assert.equal(videoWire.source, decoder.id);
     if (template.workflowBlocks?.includes('soundtrack')) {
@@ -448,6 +720,77 @@ test('five retained video template factories preserve creative settings on their
   }
 });
 
+test('new single-shot templates expose the agreed source, mask, generate and delivery stages', () => {
+  const parsed = nodes.parseStudioModelCapabilities(fixture.publicPayload);
+  for (const row of fixture.recipes.filter(
+    (row) => row.spec && (row.id.startsWith('wan_vace_') || row.id === 'wan_22_i2v_seed_vault'),
+  )) {
+    const template = templates.find((item) => item.id === row.id);
+    const capability = parsed.capabilities.find((item) => item.modelType === template.modelType);
+    const spec = capability.studioExecutionSpecs.find((item) => item.mode === template.mode);
+    const form = {
+      ...defaults,
+      ...exactness.getTemplateLockedSettings(template),
+      device: 'cpu:0',
+      offloadMode: 'none',
+      autoOffload: false,
+      referenceImages: ['images/reference.png'],
+      sourceVideo: 'videos/source.mp4',
+      controlVideo: 'videos/control.mp4',
+      maskVideo: 'videos/mask.mp4',
+    };
+    const graph = builder.createTemplateOperationGraph(template, form, row.starter, fixture.registry, spec, capability);
+    const kinds = graph.nodes.map((node) => groups.visualOperationGroup(node));
+    for (const kind of ['setup', 'inputs', 'generate', 'output']) assert.ok(kinds.includes(kind), `${row.id}:${kind}`);
+    if (
+      ['video_color_edit', 'video_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'].includes(
+        template.mode,
+      )
+    ) {
+      const input = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'videoInput');
+      assert.ok(input, row.id);
+      const file = input.data.blockInstanceV2.effectiveInterface.controls.find(
+        (control) => control.binding.fieldId === 'file',
+      );
+      assert.ok(file, `${row.id}: the source picker and its inline preview remain available`);
+      const load = input.data.blockInstanceV2.effectiveGraph.nodes.find((node) => node.nodeId === file.binding.nodeId);
+      assert.ok(load.data.params.file.fieldOptions.fileTypes.includes('video'));
+    }
+    if (['video_inpaint', 'video_outpaint'].includes(template.mode)) assert.ok(kinds.includes('mask'), row.id);
+    if (template.mode === 'video_inpaint') assert.ok(kinds.includes('references'), row.id);
+    if (template.mode === 'image_to_video') assert.ok(kinds.includes('imageInput'), row.id);
+    const flat = groups.unpackVisualOperationGroups(graph).graph;
+    if (template.mode === 'video_outpaint') {
+      const canvas = flat.nodes.find((node) => node.data.action === 'OutpaintCanvas');
+      assert.equal(canvas.data.params.preparation.value, 'prepared');
+      assert.equal(canvas.data.params.prepared_mask_file.value, form.maskVideo);
+      for (const field of ['preparation', 'prepared_mask_file', 'left', 'right', 'top', 'bottom'])
+        assert.ok(
+          graph.nodes
+            .find((node) => groups.visualOperationGroup(node) === 'mask')
+            .data.blockInstanceV2.effectiveInterface.controls.some((control) => control.binding.fieldId === field),
+        );
+      const encoder = flat.nodes.find((node) => node.data.action === 'EncodeInputs');
+      assert.ok(
+        flat.edges.some(
+          (edge) =>
+            edge.source === canvas.id &&
+            edge.sourceHandle === 'canvas' &&
+            edge.target === encoder.id &&
+            edge.targetHandle === 'video',
+        ),
+      );
+    }
+    const actual = flat.nodes.find(
+      (node) => node.data.action === (template.modelType === 'WanVACEPipeline' ? 'Generate' : 'Denoise'),
+    );
+    const seed = actual.data.params.seed.value;
+    assert.equal(typeof seed === 'object' ? seed.value : seed, form.seed);
+    assert.equal(actual.data.params.num_inference_steps.value, form.steps);
+    assert.deepEqual(api(JSON.parse(JSON.stringify(graph))), api(flat));
+  }
+});
+
 test('soundtrack field projection preserves managed selector metadata and exact fresh-field revision', async () => {
   const values = await server.ssrLoadModule('/src/studio/controlledWorkflowValues.ts');
   const settings = templates.find((item) => item.id === 'wan_22_ti2v_5b_seed_vault').workflowBlockSettings.soundtrack;
@@ -472,15 +815,34 @@ test('joint video output keeps audio connected and refuses an independently supp
   );
 });
 
+test('the exact VACE catalog keeps whole-operation drafts separate from encoded-stage alternatives', () => {
+  const operations = contracts.parseOperationContracts(fixture.publicPayload.operationContracts, 3);
+  const original = fixture.unboundVace.starter;
+  const parse = (value) => starterParser.parseOperationStarter(value, value.pipelineClass, value.task, operations);
+  assert.equal(parse(original).nodes.length, 2);
+  const whole = original.nodes.find((node) => node.node.action === 'Generate');
+  assert.equal(whole.operation.operationId, 'diffusion.generate_video');
+  assert.equal(whole.operation.decomposition, 'pipeline');
+  const mixed = structuredClone(original);
+  const staged = fixture.recipes.find((row) => row.id === 'wan_vace_grayscale_control').starter;
+  mixed.nodes.push(structuredClone(staged.nodes.find((node) => node.operation.nodeType === 'video_encoder')));
+  mixed.edges.push(structuredClone(staged.edges.find((edge) => edge.targetHandle === 'pipeline')));
+  assert.throws(() => parse(mixed), 'a partial mixture never becomes either declared route');
+  assert.deepEqual(fixture.unboundVace.starter, original);
+});
+
 test('selected video starters reject missing ownership wires, partial stages and foreign task metadata', () => {
   const operations = contracts.parseOperationContracts(fixture.publicPayload.operationContracts, 3);
   for (const row of fixture.recipes.filter((item) => item.spec)) {
+    const rendered = row.starter.pipelineClass === 'WanVACEPipeline';
     const parse = (value) =>
       starterParser.parseOperationStarter(value, value.pipelineClass, value.task, operations, {
         executionProfileId: row.spec.executionProfileId,
         authoringRecipeId: 'generic-video-stages:v1',
       });
-    for (const field of ['encoded_inputs', 'latent_binding', 'latents', 'pipeline']) {
+    for (const field of rendered
+      ? ['encoded_inputs', 'pipeline']
+      : ['encoded_inputs', 'latent_binding', 'latents', 'pipeline']) {
       const value = structuredClone(row.starter);
       const index = value.edges.findIndex((edge) => edge.targetHandle === field);
       assert.ok(index >= 0);
@@ -491,7 +853,12 @@ test('selected video starters reject missing ownership wires, partial stages and
       (value) => value.nodes.push(structuredClone(value.nodes[0])),
       (value) =>
         (value.nodes.find((item) => item.operation.nodeType === 'denoise').operation.task = 'foreign_video_task'),
-      (value) => value.edges.push(structuredClone(value.edges.find((edge) => edge.targetHandle === 'latent_binding'))),
+      (value) =>
+        value.edges.push(
+          structuredClone(
+            value.edges.find((edge) => edge.targetHandle === (rendered ? 'encoded_inputs' : 'latent_binding')),
+          ),
+        ),
     ]) {
       const value = structuredClone(row.starter);
       change(value);
@@ -575,7 +942,7 @@ test('video output wording follows the declared decoder after removing the previ
   });
 });
 
-test('fresh task drafts group the real retained-video exporter with their decoder', () => {
+test('fresh task drafts retain the real exporter and the adjacent decoder in their selected stages', () => {
   for (const row of fixture.recipes.filter((item) => item.spec && item.starter.task === 'text_to_video')) {
     const starter = structuredClone(row.starter);
     for (const { node } of starter.nodes)
@@ -587,7 +954,9 @@ test('fresh task drafts group the real retained-video exporter with their decode
     const output = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'output');
     assert.ok(output, row.id);
     const leaves = output.data.blockInstanceV2.effectiveGraph.nodes;
-    assert.ok(leaves.some((node) => node.data.action === 'DecodeLatents'));
+    const generate = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+    assert.ok(generate.data.blockInstanceV2.effectiveGraph.nodes.some((node) => node.data.action === 'DecodeLatents'));
+    assert.ok(!leaves.some((node) => node.data.action === 'DecodeLatents'));
     assert.ok(leaves.some((node) => node.data.module === 'modules.Video' && node.data.action === 'ExportAsset'));
     assert.equal(output.data.blockInstanceV2.previewStates[0].binding.mediaType, 'video');
     assert.deepEqual(api(graph), api(groups.unpackVisualOperationGroups(graph).graph));
@@ -608,37 +977,48 @@ test('fresh video drafts connect declared image and video sources without changi
     assert.deepEqual(starter, original);
     assert.deepEqual(notices, [], row.id);
     const flat = groups.unpackVisualOperationGroups(graph).graph;
-    for (const node of flat.nodes)
-      for (const [field, expected] of [
-        ['guidance_scale', 1],
-        ['num_inference_steps', 8],
-      ])
-        if (node.data.params[field])
+    for (const node of flat.nodes) {
+      const source = original.nodes.find(
+        (item) => item.operation.operationId === node.data.operationAuthoring?.operation.operationId,
+      );
+      for (const field of ['guidance_scale', 'num_inference_steps'])
+        if (source && node.data.params[field])
           assert.equal(
             node.data.params[field].value ?? node.data.params[field].default,
-            expected,
+            source.node.params[field].value ?? source.node.params[field].default,
             `${row.id}/${node.data.action}/${field}`,
           );
-    const kind = row.starter.task === 'video_to_video' ? 'video' : 'image';
-    const source = flat.nodes.filter(
-      (node) =>
-        node.data.module === (kind === 'video' ? 'modules.Video' : 'modules.Image') && node.data.action === 'Load',
-    );
-    assert.equal(source.length, 1, row.id);
-    const connections = flat.edges.filter((edge) => edge.source === source[0].id && edge.sourceHandle === kind);
-    assert.equal(connections.length, 1, row.id);
-    const target = flat.nodes.find((node) => node.id === connections[0].target);
-    assert.equal(target.data.action, 'EncodeInputs');
-    assert.equal(connections[0].targetHandle, kind === 'video' ? 'video' : 'reference_images');
+    }
+    const kinds = new Set();
+    for (const input of row.starter.requiredInputs) {
+      const target = flat.nodes.find(
+        (node) => node.data.operationAuthoring?.operation.operationId === input.operationId,
+      );
+      const types =
+        target?.data.operationAuthoring.operation.ports.find((port) => port.name === input.field)?.types ?? [];
+      const kind = types.includes('image') ? 'image' : types.includes('video') ? 'video' : null;
+      if (!kind) continue;
+      kinds.add(kind);
+      const wires = flat.edges.filter((edge) => edge.target === target.id && edge.targetHandle === input.field);
+      assert.equal(wires.length, 1, `${row.id}:${input.field}`);
+      const source = flat.nodes.find((node) => node.id === wires[0].source);
+      assert.equal(source.data.module, kind === 'video' ? 'modules.Video' : 'modules.Image');
+      assert.equal(source.data.action, 'Load');
+      assert.equal(target.data.action, 'EncodeInputs');
+    }
     assert.deepEqual(api(graph), api(flat));
-    const unavailable = { ...fixture.registry };
-    delete unavailable[kind === 'video' ? 'modules.Video.Load' : 'modules.Image.Load'];
-    const missing = drafts.createWorkflowDraft(starter, unavailable);
-    assert.ok(missing.notices.some((message) => message.includes('loader is unavailable or incompatible')));
-    assert.equal(
-      groups.unpackVisualOperationGroups(missing.graph).graph.nodes.some((node) => node.data.action === 'Load'),
-      false,
-    );
+    for (const kind of kinds) {
+      const unavailable = { ...fixture.registry };
+      const module = kind === 'video' ? 'modules.Video' : 'modules.Image';
+      delete unavailable[`${module}.Load`];
+      const missing = drafts.createWorkflowDraft(starter, unavailable);
+      assert.ok(missing.notices.some((message) => message.includes('loader is unavailable or incompatible')));
+      assert.ok(
+        !groups
+          .unpackVisualOperationGroups(missing.graph)
+          .graph.nodes.some((node) => node.data.module === module && node.data.action === 'Load'),
+      );
+    }
   }
 });
 
@@ -741,19 +1121,38 @@ test('ordinary video template creation reaches real stages and checkpoints their
           studioModelCapabilities: parsed.capabilities,
           studioExecutionSpecInvalid: false,
         });
-        globalThis.fetch = async () => Response.json(row.starter);
+        const requests = [];
+        globalThis.fetch = async (url, init) => {
+          if (String(url).endsWith('/operations/starter')) {
+            const request = JSON.parse(init.body);
+            requests.push(request);
+            const selected = [row, ...secondaryFixture.recipes].find(
+              (item) => item.starter.pipelineClass === request.pipelineClass && item.starter.task === request.task,
+            );
+            assert.ok(selected, 'the actual primary or secondary model must be explicitly requested');
+            return Response.json(selected.starter);
+          }
+          return Response.json(row.starter);
+        };
         const form = structuredClone(studio.getState().form);
         await lifecycle.createTemplateOperationWorkflow(template, form, studioModule.captureWorkflowOperationContext());
+        assert.equal(requests.length, template.workflowBlocks?.includes('soundtrack') ? 2 : 1);
         const graph = flow.getState().toObject();
         const flat = groups.unpackVisualOperationGroups(graph).graph;
-        for (const action of ['LoadPipeline', 'EncodeInputs', 'Denoise', 'DecodeLatents'])
+        const rendered = row.starter.pipelineClass === 'WanVACEPipeline';
+        for (const action of rendered
+          ? ['LoadPipeline', 'EncodeInputs', 'Generate']
+          : ['LoadPipeline', 'EncodeInputs', 'Denoise', 'DecodeLatents'])
           assert.equal(
             flat.nodes.filter((node) => node.data.module === 'modules.DiffusersVideo' && node.data.action === action)
               .length,
             1,
           );
         assert.ok(
-          !flat.nodes.some((node) => node.data.module === 'modules.DiffusersVideo' && node.data.action === 'Generate'),
+          rendered ||
+            !flat.nodes.some(
+              (node) => node.data.module === 'modules.DiffusersVideo' && node.data.action === 'Generate',
+            ),
         );
         const encoder = flat.nodes.find((node) => node.data.action === 'EncodeInputs');
         assert.equal(encoder.data.params.prompt.value, form.prompt);
@@ -763,6 +1162,22 @@ test('ordinary video template creation reaches real stages and checkpoints their
         assert.equal(saved.snapshot.activeTemplateId, template.id);
         assert.equal(saved.snapshot.studioGraphBinding, null);
         const before = flow.getState().exportGraph('saved-video-template', undefined, { randomizeSeeds: false });
+        const events = Object.keys(before.nodes).map((node) => ({
+          type: 'executed',
+          task_id: 'video-receipt-contract',
+          node,
+          status: 'succeeded',
+          hasChanged: true,
+        }));
+        const output = { taskId: 'video-receipt-contract', apiGraphSnapshot: before };
+        const receipts = executionReceiptsForRun(template, output, events);
+        assert.equal(receipts.filter((item) => item.action === (rendered ? 'Generate' : 'Denoise')).length, 1);
+        const tampered = structuredClone(output);
+        const sampler = Object.values(tampered.apiGraphSnapshot.nodes).find(
+          (node) => node.action === (rendered ? 'Generate' : 'Denoise'),
+        );
+        sampler.params.pipeline.sourceId = 'foreign-owner';
+        assert.throws(() => executionReceiptsForRun(template, tampered, events), /foreign encoding owner/);
         studio.setState({ workflowTabs: [], activeWorkflowTabId: tabId });
         studio.getState().mergeBackendWorkflow({ ...saved, revision: 1 });
         studio.getState().hydrateActiveWorkflowCanvas();

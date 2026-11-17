@@ -1534,9 +1534,14 @@ test('automatic projected-node measurements preserve Redo while explicit resizin
   const values = structuredClone(
     before.nodes.find((node) => node.id === instance.instanceId).data.blockInstanceV2.values,
   );
-  flow.setNodeSize(child.id, 520, 720, { history: false });
+  flow.setNodeSize(child.id, 520, 720, { history: false, sizeMode: 'compact' });
   assert.equal(flowStore.useFlowStore.getState().historyFuture, before.historyFuture);
   assert.equal(flowStore.useFlowStore.getState().historyPast, before.historyPast);
+  assert.equal(
+    flowStore.useFlowStore.getState().nodes.find((node) => node.id === instance.instanceId).data.blockInstanceV2
+      .presentation.internalLayout[child.data.blockProjectionNodeId].sizeMode,
+    'compact',
+  );
   flow.redo();
   flow.ensureBlockProjectionV2(instance.instanceId);
   const resized = flowStore.useFlowStore.getState().nodes.find((node) => node.id === child.id);
@@ -1547,7 +1552,10 @@ test('automatic projected-node measurements preserve Redo while explicit resizin
     values,
   );
   const source = fs.readFileSync(path.join(ROOT, 'src/components/ProjectedBlockNodeV2.tsx'), 'utf8');
-  assert.match(source, /setNodeSize\(node\.id, current\.width \?\? 280, minimumHeight, \{ history: false \}\)/u);
+  assert.match(
+    source,
+    /setNodeSize\(node\.id, current\.width \?\? 280, minimumHeight, \{ history: false, sizeMode: 'compact' \}\)/u,
+  );
 });
 
 for (const requested of [

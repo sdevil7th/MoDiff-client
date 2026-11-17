@@ -195,8 +195,8 @@ export default function ModelSetupAdapterControls({
                     setError(failure instanceof Error ? failure.message : 'Adapter controls are unavailable.');
                   }
                 }}
-                module="MoDiff"
-                action="Model Setup adapters"
+                module={node.data.module}
+                action={node.data.action}
                 mode="controls"
               />
             </section>

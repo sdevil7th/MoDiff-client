@@ -24,6 +24,7 @@ import { FieldFrame, ModiffButton, ModiffDialog, ModiffSearchInput } from '../ui
 import { GraphIconButton } from '../ui/GraphControls';
 import { enqueueSnackbar } from '../ui/snackbar';
 import fieldAction, { fieldActionSource } from '../utils/fieldAction';
+import { deepEqual } from '../utils/deepEqual';
 import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 import { installModelField, modelFieldIsInstalled } from '../utils/modelFieldInstall';
 
@@ -162,7 +163,7 @@ function RawModelSelectField(props: FieldProps) {
     const scheduledAction = props.onChange;
     actionTimerRef.current = window.setTimeout(() => {
       const source = fieldActionSource(props);
-      if (source?.param?.onChange === scheduledAction) {
+      if (source?.param && deepEqual(source.param.onChange, scheduledAction)) {
         void fieldAction(latestActionPropsRef.current, value);
       }
     }, 250);

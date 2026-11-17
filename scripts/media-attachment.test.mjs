@@ -336,7 +336,7 @@ test('optional stage groups retain executable leaves, previews and exact mask ge
     target: 'preview',
     targetHandle: 'image',
   });
-  assert.deepEqual(visual.availableOperationStageGroups(graph, owner.id), ['setup', 'output']);
+  assert.deepEqual(visual.availableOperationStageGroups(graph, owner.id), ['generate', 'setup', 'output']);
   const before = visual.unpackVisualOperationGroups(graph).graph;
   const grouped = visual.groupOperationStages(graph, owner.id, ['output']);
   const output = grouped.nodes.find((n) => visual.visualOperationGroup(n) === 'output');
@@ -930,7 +930,13 @@ test('visual encoders and guidance preserve executable stages, typed wires, and 
     JSON.stringify(starter.nodes.map((item) => [item.operation.nodeType, item.operation.decomposition])),
   );
   assert.equal(guidance, undefined, 'fresh Guidance belongs to Encode Inputs');
-  assert.equal(grouped.nodes.length, 4);
+  assert.equal(grouped.nodes.length, 3);
+  assert.deepEqual(grouped.nodes.map((node) => node.data.label).sort(), ['Encode Inputs', 'Generate', 'Model Setup']);
+  const generate = grouped.nodes.find((node) => visual.visualOperationGroup(node) === 'generate');
+  assert.deepEqual(generate.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+    'DecodeLatents',
+    'Denoise',
+  ]);
   assert.equal(presentation.isFocusedGuidance(input.data.blockInstanceV2), true);
   assert.deepEqual(input.data.blockInstanceV2.effectiveGraph.nodes.map((n) => n.data.action).sort(), [
     'EncodePrompt',

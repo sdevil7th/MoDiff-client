@@ -2,6 +2,8 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { OperationGraph } from '../workflow/operationAuthoring';
 import { CONTROLLED_WORKFLOW_NODE_KEYS as KEYS } from './controlledWorkflowContracts';
 import type { StudioFormState, StudioTemplateWorkflowBlockSettings } from './types';
+import { groupVisualStages } from '../workflow/visualOperationGroups';
+import { operationAuthoring } from '../workflow/operationAuthoring';
 
 /** Author ordinary image nodes inside the existing fresh-template transaction. */
 export function attachTemplateImageComposite({
@@ -47,10 +49,15 @@ export function attachTemplateImageComposite({
   for (const node of [background, mask]) set(node, ['alpha_channel'], 'ignore');
   background.data.label = 'Protected background';
   mask.data.label = 'Protection mask';
+  background.data.params.file!.label = 'Protected background';
+  mask.data.params.file!.label = 'Protection mask';
+  const placement: string[] = [];
   let foreground = source;
   let sourceHandle = input.sourceHandle!;
   for (const [position, size] of [settings.foregroundSize, settings.verticalPad, settings.horizontalPad].entries()) {
     const resize = utility(KEYS.imageResize, position + 2);
+    resize.data.label = ['Fit image', 'Vertical padding', 'Horizontal padding'][position]!;
+    placement.push(resize.id);
     set(resize, ['width'], size.width);
     set(resize, ['height'], size.height);
     set(resize, ['method'], position === 0 ? 'stretch' : 'pad');
@@ -61,9 +68,12 @@ export function attachTemplateImageComposite({
     sourceHandle = 'output';
   }
   const crop = utility(KEYS.imageCrop, 5);
+  crop.data.label = 'Crop';
+  placement.push(crop.id);
   for (const field of ['x', 'y', 'width', 'height'] as const) set(crop, [field], settings.crop[field]);
   connect(foreground, [sourceHandle], crop, ['image']);
   const composite = utility(KEYS.imageMaskComposite, 6);
+  placement.push(composite.id);
   set(composite, ['mask_channel'], settings.maskChannel);
   set(composite, ['invert_mask'], settings.invertMask);
   connect(background, ['image'], composite, ['background']);
@@ -78,4 +88,35 @@ export function attachTemplateImageComposite({
   save.data.label = 'Protected image (PNG)';
   save.data.studioRole = 'compositeOutput';
   connect(composite, ['output'], save, ['image']);
+  // Preserve the declared raw preview and optional enhancement-parent identity
+  // inside Generate. Image Output owns the final protected PNG separately.
+  preview.data.label = 'Generated image before protection';
+  const referenceLoads = graph.nodes.filter(
+    (node) => node.data.module === 'modules.Image' && node.data.action === 'Load' && node.id !== mask.id,
+  );
+  for (const node of referenceLoads) if (node.id !== background.id) node.data.params.file!.label = 'Reference images';
+  const upstream = graph.edges
+    .filter((edge) => edge.target === source.id)
+    .flatMap((edge) => {
+      const node = graph.nodes.find((node) => node.id === edge.source);
+      return node && operationAuthoring(node)?.operation.nodeType === 'denoise' ? [node] : [];
+    });
+  if (
+    operationAuthoring(source)?.operation.nodeType !== 'decoder' ||
+    new Set(upstream.map((node) => node.id)).size !== 1
+  )
+    throw new Error('The protected composition needs one declared native sampler and its decoder.');
+  // Annotate parents before presentation changes endpoint identities; the
+  // ordinary grouper then remaps those same advisory references.
+  return (current: OperationGraph): OperationGraph => {
+    let grouped = groupVisualStages(current, placement, 'composite');
+    grouped = groupVisualStages(grouped, [mask.id], 'mask');
+    grouped = groupVisualStages(
+      grouped,
+      referenceLoads.map((node) => node.id),
+      'references',
+    );
+    grouped = groupVisualStages(grouped, [save.id], 'output');
+    return groupVisualStages(grouped, [upstream[0]!.id, source.id, preview.id], 'generate');
+  };
 }

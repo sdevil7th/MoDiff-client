@@ -209,7 +209,7 @@ function qualificationFixtureProcess(
   directory,
   provenance,
   argv = [],
-  { canonical = true, experimental = false, staleGraph = false } = {},
+  { canonical = true, experimental = false, staleGraph = false, reviewedExperimental = false } = {},
 ) {
   const provenancePath = join(directory, 'proof.json');
   const registryPath = join(directory, 'registry.json');
@@ -250,7 +250,14 @@ function qualificationFixtureProcess(
       id: `${modelType}:text_to_image:${provenance.template.id}`,
       sourceTemplateId: provenance.template.id,
       variant: 'lora-theme',
-      graphPath: 'experimental/selected-lora.json',
+      ...(reviewedExperimental
+        ? {
+            experimentalRecipe: JSON.parse(
+              readFileSync(join(ROOT, 'config', 'canonical-template-variants.v1.json'), 'utf8'),
+            ).templates.find((row) => row.id === provenance.template.id).experimentalRecipe,
+          }
+        : {}),
+      graphPath: 'experimental/fixture/selected-lora.json',
       graphHash: staleGraph ? '0'.repeat(64) : canonicalJsonHash(variantGraph),
     };
     const variantFile = join(backendDirectory, 'data', 'graphs', variant.graphPath);
@@ -276,7 +283,7 @@ function qualificationFixtureProcess(
   return { result, registryPath, backendDirectory };
 }
 
-test('public experimental LoRA variants require explicit canonical lookup and retain their exact graph hash', async (t) => {
+test('experimental LoRA variants without a reviewed declaration require explicit lookup and retain their exact graph hash', async (t) => {
   for (const templateId of ['flux3_klein_fp8r512_lora_style', 'flux3_klein_base_fp8r512_lora_style']) {
     await t.test(templateId, async () => {
       const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-experimental-'));
@@ -285,7 +292,7 @@ test('public experimental LoRA variants require explicit canonical lookup and re
       try {
         const ordinary = qualificationFixtureProcess(directory, provenance, [], { experimental: true });
         assert.notEqual(ordinary.result.status, 0);
-        assert.match(ordinary.result.stderr, /no current canonical workflow/);
+        assert.match(ordinary.result.stderr, /Reviewed experimental association differs from its declaration/);
         assert.equal(existsSync(ordinary.registryPath), false);
         const explicit = qualificationFixtureProcess(directory, provenance, ['--allow-blocked-probe'], {
           experimental: true,
@@ -309,6 +316,26 @@ test('public experimental LoRA variants require explicit canonical lookup and re
         assert.ok(manifest.experimentalWorkflows.every((record) => record.qualifiedRuntimeProfiles.length === 0));
         const runtime = await loadTemplateRuntime(ROOT, { includePlanning: true });
         assert.equal(runtime.templates.find((item) => item.id === templateId).example.status, 'unverified');
+      } finally {
+        disposeFixture(directory);
+      }
+    });
+  }
+});
+
+test('reviewed experimental recording rejects a thin synthetic proof before retention', async (t) => {
+  for (const templateId of ['flux3_klein_fp8r512_lora_style', 'flux3_klein_base_fp8r512_lora_style']) {
+    await t.test(templateId, async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'modiff-template-qualification-reviewed-experimental-'));
+      try {
+        const { result, registryPath } = qualificationFixtureProcess(directory, await fixture(templateId), [], {
+          experimental: true,
+          reviewedExperimental: true,
+        });
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /Reviewed experimental recipe proof is incomplete/);
+        assert.equal(existsSync(registryPath), false);
+        assert.equal(existsSync(join(directory, 'retained')), false);
       } finally {
         disposeFixture(directory);
       }

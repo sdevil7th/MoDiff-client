@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { format } from 'prettier';
 import ts from 'typescript';
+import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 export const PROJECT_ROOT = resolve(SCRIPT_PATH, '..', '..');
@@ -191,7 +192,27 @@ function kebabCase(value) {
     .toLowerCase();
 }
 
+export function canonicalTemplateInputRole(role) {
+  if (typeof role !== 'string') return null;
+  const indexed = /^referenceImages\[(0|[1-9]\d*)\]$/.exec(role);
+  if (indexed) {
+    const index = Number(indexed[1]);
+    return Number.isSafeInteger(index) && index >= 0 && index < 64 ? `reference_image_${index + 1}` : null;
+  }
+  const aliases = {
+    maskImage: 'mask_image',
+    controlImage: 'control_image',
+    sourceVideo: 'source_video',
+    maskVideo: 'mask_video',
+    controlVideo: 'control_video',
+    sourceAudio: 'source_audio',
+    referenceAudio: 'reference_audio',
+  };
+  return Object.hasOwn(aliases, role) ? aliases[role] : role;
+}
+
 function roleMetadata(role) {
+  role = canonicalTemplateInputRole(role);
   const referenceMatch = /^reference_image_(\d+)$/.exec(role);
   if (referenceMatch) {
     const index = Number(referenceMatch[1]);
@@ -320,6 +341,32 @@ function inputItems(run) {
   return run?.inputs?.items ?? [];
 }
 
+export function isGeneratedUpscaleComparison(item, run, entry) {
+  if (
+    item?.role !== 'upscaleSourceComparison' ||
+    !CONTENT_HASH_PATTERN.test(item.contentHash ?? '') ||
+    !/^@data\/studio\/outputs\/[^/]+$/u.test(item.path ?? '') ||
+    item.contentHash !== entry?.beforeMediaHash
+  )
+    return false;
+  const nodes = run?.graph?.canonicalGraph?.nodes ?? [];
+  if (nodes.some((node) => node.module === 'modules.Image' && node.action === 'Load')) return false;
+  return nodes.some((node) => {
+    if (node.module !== 'modules.Spandrel' || node.action !== 'Upscaler') return false;
+    const input = node.params?.image;
+    const decoder = nodes.find((candidate) => candidate.key === input?.sourceId);
+    const denoiser = nodes.find((candidate) => candidate.key === decoder?.params?.latents?.sourceId);
+    return (
+      input?.sourceKey === 'images' &&
+      decoder?.module === 'modules.ModularDiffusers' &&
+      decoder.action === 'DecodeLatents' &&
+      decoder.params.latents.sourceKey === 'latents' &&
+      denoiser?.module === 'modules.ModularDiffusers' &&
+      denoiser.action === 'Denoise'
+    );
+  });
+}
+
 function inputExtension(artifact, sourcePath) {
   const declaredExtension = extname(artifact.path).toLowerCase();
   if (/^\.[a-z0-9]{1,8}$/.test(declaredExtension)) return declaredExtension;
@@ -429,10 +476,11 @@ async function collectRequirements(projectRoot) {
     for (const item of firstInputs) {
       const artifact = {
         ...item,
+        role: canonicalTemplateInputRole(item.role) ?? item.role,
         templateId: entry.templateId,
         ...(item === previewInputCandidates[0] ? { previewPath: entry.beforePath } : {}),
       };
-      if (String(item.path).startsWith(GENERATED_INPUT_PREFIX)) {
+      if (String(item.path).startsWith(GENERATED_INPUT_PREFIX) || isGeneratedUpscaleComparison(item, runs[0], entry)) {
         excludedGenerated.push(artifact);
         continue;
       }
@@ -510,6 +558,20 @@ async function collectRequirements(projectRoot) {
       });
       continue;
     }
+    if (
+      ['bindingId', 'assetId', 'fileName'].some(
+        (field) =>
+          override[field] !== undefined &&
+          (typeof override[field] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,191}$/u.test(override[field])),
+      )
+    ) {
+      issues.push({
+        templateId: override.templateId,
+        role: override.role,
+        reason: 'Selected-input metadata ids and filenames must be bounded plain names.',
+      });
+      continue;
+    }
     if (!CONTENT_HASH_PATTERN.test(override.contentHash ?? '') || !Number.isSafeInteger(override.byteSize)) {
       issues.push({
         templateId: override.templateId,
@@ -530,6 +592,9 @@ async function collectRequirements(projectRoot) {
     const artifact = {
       templateId: override.templateId,
       role: override.role,
+      bindingId: override.bindingId,
+      assetId: override.assetId,
+      fileName: override.fileName,
       bindingLabel: override.bindingLabel,
       assetLabel: override.assetLabel,
       path: override.path,
@@ -582,6 +647,7 @@ async function resolveRequirementSources(projectRoot, requirements) {
   const sourceAssetsRoot = resolve(projectRoot, 'artifacts', 'template-gallery', 'source-assets');
   const searchFiles = [
     ...(await walkFiles(publicGalleryRoot, runtimeInputRoot)),
+    ...(await walkFiles(resolve(projectRoot, RUNTIME_ASSET_ROOT))),
     ...(await walkFiles(sourceAssetsRoot)),
   ];
   const hashMatches = new Map();
@@ -635,13 +701,13 @@ function buildMapping(requirements, resolutions) {
     const assetRelativePath = toPosix(join('assets', `${hashHex}${extension}`));
     const runtimePath = `${RUNTIME_PUBLIC_PREFIX}/${assetRelativePath}`;
     const defaultAsset = {
-      id: `${artifact.templateId}-${kebabCase(artifact.role)}`,
+      id: artifact.assetId ?? `${artifact.templateId}-${kebabCase(artifact.role)}`,
       label: artifact.assetLabel ?? metadata.label,
       mediaType: metadata.mediaType,
       ...(artifact.previewPath ? { previewPath: artifact.previewPath } : {}),
       runtimePath,
       runtimeSha256: artifact.contentHash,
-      fileName: `${artifact.templateId}.${artifact.role}${extension}`,
+      fileName: artifact.fileName ?? `${artifact.templateId}.${artifact.role}${extension}`,
     };
 
     const templateFields = groupedByTemplate.get(artifact.templateId) ?? new Map();
@@ -684,14 +750,19 @@ function buildMapping(requirements, resolutions) {
         throw new Error(`${templateId} declares multiple reviewed defaults for singular field ${field}.`);
       }
       const fieldMetadata = FIELD_METADATA[field];
+      for (const key of ['bindingId', 'bindingLabel']) {
+        const declarations = [
+          ...new Set(assets.map(({ artifact }) => artifact[key]).filter((value) => value !== undefined)),
+        ];
+        if (declarations.length > 1) throw new Error(`${templateId} has conflicting ${key} declarations for ${field}.`);
+      }
       bindings.push({
-        id: `${templateId}-${kebabCase(field)}-defaults`,
-        label:
-          assets.length === 1 && assets[0].artifact.bindingLabel
-            ? assets[0].artifact.bindingLabel
-            : assets.length === 1
-              ? fieldMetadata.singularLabel
-              : fieldMetadata.pluralLabel,
+        id: assets[0].artifact.bindingId ?? `${templateId}-${kebabCase(field)}-defaults`,
+        label: assets[0].artifact.bindingLabel
+          ? assets[0].artifact.bindingLabel
+          : assets.length === 1
+            ? fieldMetadata.singularLabel
+            : fieldMetadata.pluralLabel,
         mediaType: fieldMetadata.mediaType,
         origin: 'template',
         requiredAt: 'workflow_start',
@@ -729,13 +800,48 @@ function validateCoverage(requirements, mapping) {
     );
   }
   for (const requirement of requirements) {
-    const expectedId = `${requirement.templateId}-${kebabCase(requirement.role)}`;
+    const expectedId = requirement.assetId ?? `${requirement.templateId}-${kebabCase(requirement.role)}`;
     if (!mappedAssetIds.has(expectedId)) {
       throw new Error(
         `Default input coverage is missing ${requirement.templateId} ${requirement.role} (${requirement.contentHash}).`,
       );
     }
   }
+}
+
+async function retainedRecipeRuntimeAssets(projectRoot, currentAssets) {
+  const retained = [];
+  const known = new Set(currentAssets.map((asset) => asset.relativePath));
+  for (const path of await walkFiles(resolve(projectRoot, GALLERY_ROOT, 'recipes'))) {
+    if (extname(path) !== '.json') continue;
+    const recipe = await readJson(path);
+    if (recipe.kind !== 'retained-template-declaration') continue;
+    for (const binding of recipe.template?.inputBindings ?? []) {
+      for (const asset of binding.defaultAssets ?? []) {
+        const match = /^\/template-gallery\/runtime-inputs\/(assets\/[a-f0-9]{64}\.[a-z0-9]+)$/u.exec(
+          asset.runtimePath ?? '',
+        );
+        if (!match || known.has(match[1])) continue;
+        const sourcePath = publicFilePath(projectRoot, asset.runtimePath);
+        if (
+          !CONTENT_HASH_PATTERN.test(asset.runtimeSha256 ?? '') ||
+          !sourcePath ||
+          (await fileSha256(sourcePath)) !== asset.runtimeSha256
+        ) {
+          throw new Error(`Retained recipe input bytes differ: ${recipe.template.id} ${asset.id}.`);
+        }
+        retained.push({
+          relativePath: match[1],
+          sourcePath,
+          contentHash: asset.runtimeSha256,
+          byteSize: (await stat(sourcePath)).size,
+          retainedRecipe: toPosix(relative(projectRoot, path)),
+        });
+        known.add(match[1]);
+      }
+    }
+  }
+  return retained;
 }
 
 export class TemplateDefaultInputResolutionError extends Error {
@@ -757,10 +863,46 @@ export async function buildTemplateDefaultInputPlan(projectRoot = PROJECT_ROOT) 
     throw new TemplateDefaultInputResolutionError(resolved.issues);
   }
 
-  const { mapping, runtimeAssets } = buildMapping(collected.requirements, resolved.resolutions);
-  validateCoverage(collected.requirements, mapping);
   const templateIds = await readStudioTemplateIds(projectRoot);
   const templateIdSet = new Set(templateIds);
+  const generatedRequirements = collected.requirements.filter((item) => templateIdSet.has(item.templateId));
+  const sourceOwnedRequirements = collected.requirements.filter((item) => !templateIdSet.has(item.templateId));
+  const runtime = await loadTemplateRuntime(projectRoot, { includePlanning: true });
+  if (sourceOwnedRequirements.length) {
+    for (const item of sourceOwnedRequirements) {
+      const template = runtime.templates.find((candidate) => candidate.id === item.templateId);
+      const metadata = roleMetadata(item.role);
+      const binding = template?.inputBindings?.find(
+        (candidate) => candidate.origin === 'template' && candidate.field === metadata.field,
+      );
+      const asset = binding?.defaultAssets[metadata.field === 'referenceImages' ? metadata.order - 1 : 0];
+      if (!asset || asset.runtimeSha256 !== item.contentHash) {
+        throw new Error(
+          `Source-owned template input differs from approved provenance: ${item.templateId} ${item.role}.`,
+        );
+      }
+    }
+  }
+  // Appended templates author their bindings explicitly and do not use the
+  // BASE_STUDIO_TEMPLATES packed indexes. Verify them without rewriting them.
+  const { mapping, runtimeAssets } = buildMapping(generatedRequirements, resolved.resolutions);
+  const { mapping: completeMapping } = buildMapping(collected.requirements, resolved.resolutions);
+  const retainedRuntimeAssets = await retainedRecipeRuntimeAssets(projectRoot, runtimeAssets);
+  runtimeAssets.push(...retainedRuntimeAssets);
+  runtimeAssets.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  const inputContractHashes = Object.fromEntries(
+    Object.entries(completeMapping).map(([id, bindings]) => [
+      id,
+      templateInputContractHash(
+        templateIdSet.has(id)
+          ? mapping[id]
+          : runtime.templates
+              .find((template) => template.id === id)
+              ?.inputBindings.filter((binding) => binding.origin === 'template'),
+      ),
+    ]),
+  );
+  validateCoverage(generatedRequirements, mapping);
   const approvedTemplateIds = collected.approvedEntries.map((entry) => entry.templateId);
   const approvedTemplateIdSet = new Set(approvedTemplateIds);
   const unexpectedTemplateIds = Object.keys(mapping).filter((templateId) => !approvedTemplateIdSet.has(templateId));
@@ -776,7 +918,10 @@ export async function buildTemplateDefaultInputPlan(projectRoot = PROJECT_ROOT) 
     projectRoot,
     templateIds,
     approvedTemplateIds,
-    requirements: collected.requirements,
+    requirements: generatedRequirements,
+    sourceOwnedRequirements,
+    inputContractHashes,
+    retainedRuntimeAssets,
     excludedGenerated: collected.excludedGenerated,
     resolutions: resolved.resolutions,
     mapping,
@@ -829,12 +974,29 @@ export async function renderRuntimeInputTypescript(plan) {
                 ? `Reviewed reference image ${assetIndex + 1}`
                 : `Reviewed ${binding.field.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}`;
             const packedAsset = [`${Buffer.from(digest, 'hex').toString('base64')}.${extension}`];
-            if (packedPreview || asset.label !== defaultAssetLabel) packedAsset.push(packedPreview ?? null);
-            if (asset.label !== defaultAssetLabel) packedAsset.push(asset.label);
+            const referenceImage = binding.field === 'referenceImages';
+            const fieldName = binding.field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+            const fileField = binding.field.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+            const defaultId = `${templateId}-${referenceImage ? 'reference-image' : fieldName}${referenceImage ? `-${assetIndex + 1}` : ''}`;
+            const defaultFileName = `${templateId}.${referenceImage ? `reference_image_${assetIndex + 1}` : fileField}.${extension}`;
+            const metadata = {
+              ...(asset.id !== defaultId ? { id: asset.id } : {}),
+              ...(asset.fileName !== defaultFileName ? { fileName: asset.fileName } : {}),
+            };
+            const customMetadata = Object.keys(metadata).length > 0;
+            if (packedPreview || asset.label !== defaultAssetLabel || customMetadata)
+              packedAsset.push(packedPreview ?? null);
+            if (asset.label !== defaultAssetLabel || customMetadata)
+              packedAsset.push(asset.label !== defaultAssetLabel ? asset.label : null);
+            if (customMetadata) packedAsset.push(metadata);
             return packedAsset;
           }),
         ];
-        if (binding.label !== defaultBindingLabel) packedBinding.push(binding.label);
+        const defaultBindingId = `${templateId}-${binding.field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-defaults`;
+        const customId = binding.id !== defaultBindingId;
+        if (binding.label !== defaultBindingLabel || customId)
+          packedBinding.push(binding.label !== defaultBindingLabel ? binding.label : null);
+        if (customId) packedBinding.push(binding.id);
         return packedBinding;
       }),
     );
@@ -853,8 +1015,8 @@ import type {
 } from '../types';
 
 /** Generated by scripts/template-default-inputs.mjs. Do not edit by hand. */
-type PackedAsset = readonly [runtimePath: string, previewPath?: string | true | null, label?: string];
-type PackedBinding = readonly [fieldIndex: number, assets: readonly PackedAsset[], label?: string];
+type PackedAsset = readonly [runtimePath: string, previewPath?: string | true | null, label?: string | null, metadata?: { readonly id?: string; readonly fileName?: string }];
+type PackedBinding = readonly [fieldIndex: number, assets: readonly PackedAsset[], label?: string | null, id?: string];
 
 const PACKED_INPUT_FIELDS = ${JSON.stringify(packedFields)} as const satisfies readonly StudioTemplateInputFormField[];
 
@@ -886,7 +1048,7 @@ function unpackAsset(
   packed: PackedAsset,
   index: number,
 ): StudioTemplateDefaultInputAsset {
-  const [runtimeFile, preview, label] = packed;
+  const [runtimeFile, preview, label, metadata] = packed;
   const separator = runtimeFile.lastIndexOf('.');
   const digest = Array.from(atob(runtimeFile.slice(0, separator)), (byte) =>
     byte.charCodeAt(0).toString(16).padStart(2, '0'),
@@ -904,23 +1066,23 @@ function unpackAsset(
   const fileField = referenceImage ? 'reference_image' : camelToDelimited(field, '_');
   const suffix = referenceImage ? String(index + 1) : '';
   return {
-    id: templateId + '-' + assetField + (suffix ? '-' + suffix : ''),
+    id: metadata?.id ?? templateId + '-' + assetField + (suffix ? '-' + suffix : ''),
     label: label ?? (referenceImage ? 'Reviewed reference image ' + (index + 1) : reviewedLabel(field)),
     mediaType,
     ...(previewPath ? { previewPath } : {}),
     runtimePath,
     runtimeSha256: \`sha256:bytes:\${digest}\`,
-    fileName: templateId + '.' + fileField + (suffix ? '_' + suffix : '') + '.' + extension,
+    fileName: metadata?.fileName ?? templateId + '.' + fileField + (suffix ? '_' + suffix : '') + '.' + extension,
   };
 }
 
 export function templateDefaultInputBindings(templateId: StudioTemplateId, index: number) {
   const bindings = PACKED_TEMPLATE_DEFAULT_INPUTS[index];
-  return (bindings ?? []).map(([fieldIndex, assets, label]) => {
+  return (bindings ?? []).map(([fieldIndex, assets, label, id]) => {
     const field = PACKED_INPUT_FIELDS[fieldIndex]!;
     const mediaType = mediaTypeForField(field);
     return {
-      id: templateId + '-' + camelToDelimited(field, '-') + '-defaults',
+      id: id ?? templateId + '-' + camelToDelimited(field, '-') + '-defaults',
       label:
         label ??
         (field === 'referenceImages'
@@ -950,17 +1112,37 @@ export async function writeTemplateDefaultInputPlan(plan, destinationRoot = plan
   const jsonPath = resolve(destinationRoot, RUNTIME_JSON_PATH);
   const typescriptPath = resolve(destinationRoot, GENERATED_TYPESCRIPT_PATH);
 
-  await rm(runtimeRoot, { recursive: true, force: true });
-  await mkdir(runtimeAssetRoot, { recursive: true });
-  for (const asset of plan.runtimeAssets) {
-    const destination = resolve(runtimeRoot, asset.relativePath);
-    if (!isWithin(runtimeAssetRoot, destination)) {
-      throw new Error(`Refusing to write runtime input outside the asset root: ${asset.relativePath}`);
-    }
-    await mkdir(resolve(destination, '..'), { recursive: true });
-    await copyFile(asset.sourcePath, destination);
+  const galleryRoot = resolve(destinationRoot, GALLERY_ROOT);
+  if (!isWithin(galleryRoot, runtimeRoot) || runtimeRoot === galleryRoot) {
+    throw new Error('Runtime input replacement must remain inside the destination Gallery.');
   }
-  await writeFile(jsonPath, renderRuntimeInputJson(plan));
+  await mkdir(galleryRoot, { recursive: true });
+  const staging = await mkdtemp(join(galleryRoot, '.runtime-inputs-staging-'));
+  // The verified installed cache can be the only remaining copy of an input.
+  // Preserve every source before replacing its destination tree.
+  try {
+    for (const asset of plan.runtimeAssets) {
+      const destination = resolve(staging, asset.relativePath);
+      if (!isWithin(resolve(staging, 'assets'), destination)) {
+        throw new Error(`Refusing to write runtime input outside the asset root: ${asset.relativePath}`);
+      }
+      if (!(await fileMatches(asset.sourcePath, asset)))
+        throw new Error(`Runtime input source changed: ${asset.relativePath}`);
+      await mkdir(resolve(destination, '..'), { recursive: true });
+      await copyFile(asset.sourcePath, destination);
+      if (!(await fileMatches(destination, asset)))
+        throw new Error(`Runtime input staged copy changed: ${asset.relativePath}`);
+    }
+    await writeFile(join(staging, 'default-input-bindings.json'), renderRuntimeInputJson(plan));
+    await rm(runtimeRoot, { recursive: true, force: true });
+    await rename(staging, runtimeRoot);
+  } catch (error) {
+    // Keep staged originals for recovery if filesystem replacement failed.
+    error.message += ` Staged input copies are retained at ${staging}.`;
+    throw error;
+  }
+  if (!isWithin(runtimeAssetRoot, resolve(runtimeRoot, 'assets'))) throw new Error('Invalid runtime asset root.');
+  if (jsonPath !== resolve(runtimeRoot, 'default-input-bindings.json')) throw new Error('Invalid runtime JSON target.');
   await mkdir(resolve(typescriptPath, '..'), { recursive: true });
   await writeFile(typescriptPath, await renderRuntimeInputTypescript(plan));
   await syncManifestInputContracts(plan, destinationRoot);
@@ -979,15 +1161,17 @@ export async function syncManifestInputContracts(plan, destinationRoot = plan.pr
   const manifestPath = resolve(destinationRoot, MANIFEST_PATH);
   const manifest = await readManifestIfPresent(destinationRoot);
   if (!manifest) return;
+  const before = stableJson(manifest);
 
   manifest.examples = (manifest.examples ?? []).map((entry) => {
-    const hash = templateInputContractHash(plan.mapping[entry.templateId]);
+    const hash =
+      plan.inputContractHashes?.[entry.templateId] ?? templateInputContractHash(plan.mapping[entry.templateId]);
     if (hash) return { ...entry, templateInputContractHash: hash };
     const rest = { ...entry };
     delete rest.templateInputContractHash;
     return rest;
   });
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  if (stableJson(manifest) !== before) await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 async function relativeFileInventory(root) {
@@ -1043,7 +1227,8 @@ export async function verifyTemplateDefaultInputPlan(plan, destinationRoot = pla
   const manifest = await readManifestIfPresent(destinationRoot);
   if (manifest) {
     for (const entry of manifest.examples ?? []) {
-      const expectedHash = templateInputContractHash(plan.mapping[entry.templateId]);
+      const expectedHash =
+        plan.inputContractHashes?.[entry.templateId] ?? templateInputContractHash(plan.mapping[entry.templateId]);
       if (entry.templateInputContractHash !== expectedHash) {
         issues.push(`${entry.templateId} has a stale templateInputContractHash.`);
       }
@@ -1081,6 +1266,7 @@ function bundleSummary(plan, verb) {
     `for ${Object.keys(plan.mapping).length} approved templates`,
     `as ${plan.runtimeAssets.length} unique runtime files (${(byteSize / 1024 / 1024).toFixed(2)} MiB)`,
     `and excluded ${plan.excludedGenerated.length} generated downstream input(s).`,
+    `Verified ${plan.sourceOwnedRequirements.length} separately authored input(s) without changing their bindings.`,
   ].join(' ');
 }
 

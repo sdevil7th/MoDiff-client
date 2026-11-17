@@ -98,15 +98,20 @@ test('fresh lyric composite keeps its branch brief and authored attention throug
     studio.getState().applyTemplate(template);
     studio.getState().updateForm({ device: 'cpu:0', offloadMode: 'none', autoOffload: false });
     registry.setState(authority);
-    globalThis.fetch = async (url) => {
+    globalThis.fetch = async (url, init) => {
       assert.match(String(url), /operations\/starter/);
-      return Response.json(row.starter);
+      const selection = JSON.parse(init.body);
+      const selected = [row, fixture.secondaryVideo].find(
+        (item) => item.starter.pipelineClass === selection.pipelineClass && item.starter.task === selection.task,
+      );
+      assert.ok(selected, `Unexpected secondary recipe: ${JSON.stringify(selection)}`);
+      return Response.json(selected.starter);
     };
     const form = structuredClone(studio.getState().form);
     assert.notEqual(form.prompt, template.workflowBlockSettings.lyricVideo.audio.prompt);
     await lifecycle.createTemplateOperationWorkflow(template, form, studioModule.captureWorkflowOperationContext());
     const flat = groups.unpackVisualOperationGroups(flow.getState().toObject()).graph;
-    assert.equal(flat.nodes.length, 14);
+    assert.equal(flow.getState().nodes.filter((node) => /^Shot \d+ · /u.test(node.data.label ?? '')).length, 9);
     assert.equal(studio.getState().graphBinding, null);
     const generator = flat.nodes.find(
       (node) => node.data.module === 'modules.DiffusersAudio' && node.data.action === 'Generate',
@@ -114,24 +119,31 @@ test('fresh lyric composite keeps its branch brief and authored attention throug
     const field = (node, name) => node.data.params[name].value ?? node.data.params[name].default;
     const brief = template.workflowBlockSettings.lyricVideo;
     assert.equal(field(generator, 'prompt'), brief.audio.prompt);
-    assert.equal(field(generator, 'bpm'), 100);
+    assert.equal(field(generator, 'bpm'), 96);
     assert.equal(field(generator, 'lyrics'), brief.audio.lyrics);
-    assert.equal(field(generator, 'audio_duration'), 30);
+    assert.equal(field(generator, 'audio_duration'), 45);
     assert.deepEqual(field(generator, 'seed'), { value: brief.audio.seed, isRandom: false });
     for (const recipe of flat.nodes.filter((node) => node.data.action === 'DiffusersExecutionRecipe'))
       assert.equal(field(recipe, 'attention_backend'), 'auto');
-    const sequence = flat.nodes.find((node) => node.data.action === 'GenerateSequence');
-    assert.equal(field(sequence, 'prompts_json'), brief.promptsJson);
-    assert.equal(field(sequence, 'num_frames'), 81);
-    assert.equal(field(sequence, 'frame_rate'), 16);
-    assert.equal(field(sequence, 'width'), 768);
-    assert.equal(field(sequence, 'height'), 512);
+    const exported = Object.values(
+      flow.getState().exportGraph('lyric-stages', undefined, { randomizeSeeds: false }).nodes,
+    );
+    assert.ok(!exported.some((node) => ['GenerateSequence', 'GenerateShotJob', 'BuildShotJobs'].includes(node.action)));
+    const shots = exported.filter((node) => node.module === 'modules.DiffusersVideo' && node.action === 'Denoise');
+    assert.equal(shots.length, 9);
+    for (const shot of shots) {
+      assert.equal(shot.params.num_frames.value, 81);
+      assert.equal(shot.params.width.value, 768);
+      assert.equal(shot.params.height.value, 512);
+    }
     assert.equal(
-      field(
-        flat.nodes.find((node) => node.data.action === 'Compose'),
-        'transition_seconds',
-      ),
-      0.35,
+      exported.find((node) => node.module === 'modules.Video' && node.action === 'Concatenate').params
+        .transition_seconds.value,
+      0,
+    );
+    assert.equal(
+      exported.find((node) => node.module === 'modules.Video' && node.action === 'Trim').params.end.value,
+      720,
     );
     assert.equal(
       field(
@@ -139,6 +151,13 @@ test('fresh lyric composite keeps its branch brief and authored attention throug
         'lrc',
       ),
       brief.lrc,
+    );
+    assert.equal(
+      field(
+        flat.nodes.find((node) => node.data.action === 'LyricOverlay'),
+        'enabled',
+      ),
+      false,
     );
     assert.ok(flat.edges.some((edge) => edge.source === generator.id && edge.targetHandle === 'audio'));
     // Ordinary node edits, rather than the advisory root form, remain authoritative.
@@ -211,7 +230,14 @@ test('actual published audio policy parses without changing its false broad flag
   );
   assert.equal(actual.mediaKind, 'audio');
   assert.equal(actual.maxOwnedAdapters, 1);
-  assert.deepEqual(actual.repositoryRevisions, profile.repository_revisions);
+  assert.equal(actual.repositoryRevisions.length, 2);
+  assert.ok(
+    actual.repositoryRevisions.every((pair) =>
+      profile.repository_revisions.some((item) => item.repo === pair.repo && item.revision === pair.revision),
+    ),
+  );
+  assert.ok(profile.repository_revisions.some((pair) => pair.repo === 'ACE-Step/acestep-v15-xl-base-diffusers'));
+  assert.ok(!actual.repositoryRevisions.some((pair) => pair.repo === 'ACE-Step/acestep-v15-xl-base-diffusers'));
   assert.throws(() =>
     policies.parseImageAdapterAuthoringPolicy(actual, profile.modes, profile.repository_revisions, profile),
   );
@@ -271,7 +297,9 @@ test('actual published audio policy parses without changing its false broad flag
 });
 
 test('actual selected audio tasks and both own repositories authorize one populated row and safe recovery', async (t) => {
-  for (const row of fixture.recipes.filter((item) => item.starter.pipelineClass === 'AceStepPipeline'))
+  for (const row of fixture.recipes.filter(
+    (item) => item.starter.pipelineClass === 'AceStepPipeline' && item.id !== 'ace:ACE-Step-Base:audio_variation',
+  ))
     await t.test(row.id, () => {
       const { graph, root, chain } = setup(row);
       assert.equal(adapters.modelSetupAdapterAddUnavailable(chain, authority), null);
@@ -317,6 +345,22 @@ test('actual selected audio tasks and both own repositories authorize one popula
       );
       assert.equal(edge.target, restored.tail[0].target);
     });
+});
+
+test('the Base source-cover starter does not inherit the Turbo adapter-authoring grant', () => {
+  const row = fixture.recipes.find((item) => item.id === 'ace:ACE-Step-Base:audio_variation');
+  const { graph, root, chain } = setup(row);
+  assert.equal(typeof adapters.modelSetupAdapterAddUnavailable(chain, authority), 'string');
+  const before = structuredClone(graph);
+  assert.throws(() =>
+    adapters.planModelSetupAdapterEdit(
+      graph,
+      root.id,
+      { kind: 'add', values: pinned(), registry: authority.nodesRegistry },
+      authority,
+    ),
+  );
+  assert.deepEqual(graph, before);
 });
 
 test('audio Add refuses stale, connected, foreign, ambiguous or withdrawn selected authority unchanged', () => {
@@ -402,7 +446,10 @@ test('all seven actual curated audio factories preserve original creative settin
   assert.equal(audio.length, 7);
   for (const template of audio) {
     const selection = template.executionSelection;
-    const repository = template.workflowBlockSettings?.lora?.baseModel?.value;
+    const repository =
+      template.modelArtifact?.source === 'hub'
+        ? template.modelArtifact.value
+        : template.workflowBlockSettings?.lora?.baseModel?.value;
     const row = fixture.recipes.find(
       (item) =>
         item.starter.pipelineClass === selection.pipelineClass &&
@@ -436,11 +483,12 @@ test('all seven actual curated audio factories preserve original creative settin
     const owner = flat.nodes.find((node) => node.data.operationAuthoring?.operation.decomposition === 'loader');
     assert.equal(
       owner.data.params.revision.value,
-      repository
-        ? 'be23effe449c5957947f3020fd63bee23c64abe4'
-        : selection.pipelineClass === 'AceStepPipeline'
-          ? '200ba991ae448051e14b0183157e35c2d27c9fb0'
-          : template.example.modelRevision,
+      template.modelArtifact?.revision ??
+        (repository
+          ? 'be23effe449c5957947f3020fd63bee23c64abe4'
+          : selection.pipelineClass === 'AceStepPipeline'
+            ? '200ba991ae448051e14b0183157e35c2d27c9fb0'
+            : template.example.modelRevision),
     );
     const generator = flat.nodes.find(
       (node) => node.data.action === 'Generate' || node.data.action === 'WorkflowSemanticGeneration',
@@ -458,6 +506,33 @@ test('all seven actual curated audio factories preserve original creative settin
       assert.ok(!flat.nodes.some((node) => ['EncodeInputs', 'Denoise', 'DecodeLatents'].includes(node.data.action)));
     } else assert.equal(graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'output').length, 1);
   }
+});
+
+test('the accepted Base cover refuses a same-class Turbo starter', () => {
+  const template = templates.find((item) => item.id === 'ace_step_audio_variation');
+  const row = fixture.recipes.find((item) => item.id === 'ace:ACE-Step:audio_variation');
+  const capability = authority.studioModelCapabilities.find((item) => item.modelType === template.modelType);
+  const spec = capability.studioExecutionSpecs.find((item) => item.mode === template.mode);
+  const form = {
+    ...defaults,
+    ...exactness.getTemplateLockedSettings(template),
+    device: 'cpu:0',
+    offloadMode: 'none',
+    autoOffload: false,
+  };
+  assert.throws(
+    () =>
+      builder.createTemplateOperationGraph(
+        template,
+        form,
+        actualStarter(row),
+        fixture.registry,
+        spec,
+        capability,
+        authority,
+      ),
+    /different immutable template model artifact/,
+  );
 });
 
 function actualGraph(row) {
@@ -531,11 +606,18 @@ test('actual audio families group only their real execution stages', async (t) =
       const setup = grouped.nodes.filter((node) => groups.visualOperationGroup(node) === 'setup');
       const output = grouped.nodes.filter((node) => groups.visualOperationGroup(node) === 'output');
       const native = row.starter.pipelineClass === 'MiniMaxMusic3ModularPipeline';
-      assert.equal(setup.length, native ? 0 : 1);
-      assert.equal(output.length, native ? 1 : 0);
+      assert.equal(setup.length, 1);
+      assert.equal(output.length, 1);
+      assert.equal(output[0].data.label, 'Audio Output');
+      assert.equal(output[0].data.blockInstanceV2.previewStates[0].binding.mediaType, 'audio');
       assert.ok(!grouped.nodes.some((node) => groups.visualOperationGroup(node) === 'guidance'));
       assert.ok(!grouped.nodes.some((node) => groups.visualOperationGroup(node) === 'inputs'));
       if (native) {
+        assert.deepEqual(
+          setup[0].data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action),
+          ['ModelsLoader'],
+          'The real native loader is the shared Model Setup; it gains no synthetic encoding operation.',
+        );
         assert.equal(output[0].data.label, 'Audio Output');
         assert.deepEqual(
           projection.visualStagePresentation('output', projection.visualOperationGroupMedia(output[0])),
@@ -551,7 +633,7 @@ test('actual audio families group only their real execution stages', async (t) =
         assert.equal(
           grouped.nodes.length,
           original.nodes.length,
-          'integrated Generate and Export remain ordinary nodes',
+          'integrated Generate and single-node output stage preserve the original node count',
         );
       assert.deepEqual(original, before, 'presentation must not mutate the creator graph');
       assert.deepEqual(

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "format": "modiff.gallery.recipe-history.v1",
+  "source": {
+    "repository": "sourav-das/modiff-template-gallery",
+    "revision": "042ea73d44522da8dd1a6168033bbfe811003568"
+  },
+  "records": [],
+  "recordsHash": "sha256:canonical-json:f8f6f7a3acddfe32148f438f670c4e27821fbf2d092fcc72be6089ddd8b2f962"
+}

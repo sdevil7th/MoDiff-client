@@ -1,4 +1,8 @@
 import { hasInlineScalarControl } from '../studio/inlineScalarControl';
+import { visualStageFieldSource, visualStageFieldSources } from '../studio/visualStageFieldActions';
+import { deepEqual } from '../utils/deepEqual';
+import type { NodeParams } from './useNodeStore';
+import type { WorkflowOperationContext } from './useStudioStore';
 import { applyEdgeChanges, type Connection, type Edge, type EdgeChange } from '@xyflow/react';
 import { nanoid } from 'nanoid';
 import {
@@ -33,6 +37,22 @@ type FlowStoreSet = (
 ) => void;
 
 type FlowStoreGet = () => FlowStore;
+
+// The app supplies browser state at its boundary. Pure graph planners must not
+// import browser configuration or start discovery merely to edit a connection.
+type StageFieldRuntime = {
+  capture: () => WorkflowOperationContext;
+  isCurrent: (context: WorkflowOperationContext) => boolean;
+  field: (module: string, action: string, key: string) => NodeParams | undefined;
+};
+let stageFieldRuntime: StageFieldRuntime | undefined;
+export type SignalUpdateOptions = {
+  dispatchStageActions?: boolean;
+  changedSignal?: { nodeId: string; fieldKey: string; value: unknown };
+};
+export function configureStageFieldRuntime(runtime: StageFieldRuntime) {
+  stageFieldRuntime = runtime;
+}
 
 function connectionParam(nodes: CustomNodeType[], node: CustomNodeType | undefined, handle: string | null | undefined) {
   const endpoint = parseBlockCrossingHandleV2(handle);
@@ -400,7 +420,7 @@ function updateSpawnReplacement(conn: CustomConnection, edgeToUpdate: Edge, get:
 
   set({ edges: get().edges.map((edge) => (edge.id === edgeToUpdate.id ? updatedEdge : edge)) });
   get().updateHandleConnectionStatus();
-  get().updateSignalValues(updatedEdge);
+  get().updateSignalValues(updatedEdge, { dispatchStageActions: true });
 }
 
 function appendConnection(conn: CustomConnection, get: FlowStoreGet, set: FlowStoreSet) {
@@ -409,7 +429,7 @@ function appendConnection(conn: CustomConnection, get: FlowStoreGet, set: FlowSt
 
   set({ edges: [...get().edges, newEdge] });
   get().updateHandleConnectionStatus();
-  get().updateSignalValues(newEdge);
+  get().updateSignalValues(newEdge, { dispatchStageActions: true });
 }
 
 function maybeAddSpawnField(conn: CustomConnection, get: FlowStoreGet, set: FlowStoreSet) {
@@ -674,10 +694,10 @@ export function handleReconnect(oldEdge: Edge, conn: Connection, set: FlowStoreS
   const replacement = decorateConnectionEdge({ ...oldEdge, ...conn, data: oldEdge.data }, get().nodes);
   set({ edges: get().edges.map((edge) => (edge.id === oldEdge.id ? replacement : edge)) });
   get().updateHandleConnectionStatus();
-  get().updateSignalValues([oldEdge, replacement]);
+  get().updateSignalValues([oldEdge, replacement], { dispatchStageActions: true });
 }
 
-export function updateSignalsForEdges(edges: Edge | Edge[], get: FlowStoreGet) {
+export function updateSignalsForEdges(edges: Edge | Edge[], get: FlowStoreGet, options: SignalUpdateOptions = {}) {
   let edgesArray = toArray(edges);
   const currentEdgeIds = new Set(get().edges.map(({ id }) => id));
   const incompatibleIds = new Set(
@@ -711,40 +731,159 @@ export function updateSignalsForEdges(edges: Edge | Edge[], get: FlowStoreGet) {
       return;
     }
 
+    // Opening/recovering an ordinary visual stage must preserve the saved
+    // native signal metadata. Its derived public socket can synthesize a model
+    // identity that was never authored on the adjacent leaf. Only a user wire
+    // edit or scoped native reply may persist/cascade that new identity.
+    if (
+      !options.dispatchStageActions &&
+      [sourceNode, targetNode].some((node) => {
+        const instance =
+          node.data.blockInstanceV2 ??
+          get().nodes.find((candidate) => candidate.id === node.data.blockProjectionOwnerId)?.data.blockInstanceV2;
+        return (
+          instance?.definitionSnapshot.ownership.kind === 'user' &&
+          instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+        );
+      })
+    )
+      return;
+
     const sourceParam = nodeConnectorParam(sourceNode, sourceHandle);
     const targetParam = nodeConnectorParam(targetNode, targetHandle);
+    const changedSignal = options.changedSignal;
+    const matchesChangedSignal = (node: CustomNodeType, handle: string) => {
+      if (!changedSignal) return false;
+      const sources = visualStageFieldSources(get().nodes, {
+        nodeId: node.id,
+        fieldKey: handle,
+        module: node.data.module,
+        action: node.data.action,
+      });
+      return (sources ?? [{ node, fieldKey: handle, param: nodeConnectorParam(node, handle) }]).some(
+        (source) =>
+          source.node.id === changedSignal.nodeId &&
+          source.fieldKey === changedSignal.fieldKey &&
+          deepEqual(source.param?.signal?.value, changedSignal.value),
+      );
+    };
+    const sourceChanged = matchesChangedSignal(sourceNode, sourceHandle);
+    const targetChanged = matchesChangedSignal(targetNode, targetHandle);
+    // Scoped metadata replies refresh only their own connected consumers.
+    // Superseded replies in the same canvas cannot replay an older payload.
+    if (changedSignal && !sourceChanged && !targetChanged) return;
     const sourceSignal = sourceParam?.signal;
     const targetSignal = targetParam?.signal;
+    const sourceConnected = get().edges.some(
+      (wire) => wire.source === edge.source && wire.sourceHandle === sourceHandle,
+    );
+    const targetConnected = get().edges.some(
+      (wire) => wire.target === edge.target && wire.targetHandle === targetHandle,
+    );
+    const setSignal = (node: CustomNodeType, fieldKey: string, signal: NonNullable<typeof sourceSignal>) => {
+      const sources = visualStageFieldSources(get().nodes, {
+        nodeId: node.id,
+        fieldKey,
+        module: node.data.module,
+        action: node.data.action,
+      });
+      for (const source of sources ?? [null]) {
+        const runtimeId = source?.node.id ?? node.id;
+        const runtimeField = source?.fieldKey ?? fieldKey;
+        const nativeNode = source?.node ?? node;
+        const param = source?.param ?? nodeConnectorParam(node, fieldKey);
+        const automaticHook = Array.isArray(param?.onSignal) ? param.onSignal.length > 0 : Boolean(param?.onSignal);
+        const manualDispatch =
+          source ||
+          !automaticHook ||
+          param?.fieldOptions?.suppressInitialFieldAction === true ||
+          param?.fieldOptions?.suppressAutomaticSignalAction === true;
+        const signalChanged = !deepEqual(param?.signal?.value, signal.value);
+        // A rendered relay may already have copied the payload without running
+        // the suppressed/missing native callback. The publisher's exact change
+        // still requires that callback once, even when delivery itself is a no-op.
+        const publishedChange =
+          (sourceChanged && node.id === targetNode.id && fieldKey === targetHandle) ||
+          (targetChanged && node.id === sourceNode.id && fieldKey === sourceHandle);
+        get().setParam(runtimeId, runtimeField, signal, 'signal');
+        // Imported ordinary schemas may omit callbacks. A changed signal still
+        // uses the current registered native hook, without replaying it on open.
+        if (
+          options.dispatchStageActions &&
+          manualDispatch &&
+          signal.value !== undefined &&
+          (signalChanged || publishedChange)
+        ) {
+          const runtime = stageFieldRuntime;
+          if (!runtime) continue;
+          const context = runtime.capture();
+          void import('../utils/fieldAction')
+            .then(({ default: fieldAction, buildFieldActionProps }) => {
+              if (!runtime.isCurrent(context)) return;
+              const props = buildFieldActionProps(runtimeId, runtimeField);
+              const onSignal = source
+                ? props?.onSignal
+                : runtime.field(nativeNode.data.module, nativeNode.data.action, runtimeField)?.onSignal;
+              if (props && (source || onSignal))
+                return fieldAction({ ...props, onSignal, workflowContext: context }, signal.value, 'onSignal');
+            })
+            .catch((error: unknown) =>
+              enqueueSnackbar(error instanceof Error ? error.message : 'Could not update stage metadata.', {
+                variant: 'error',
+              }),
+            );
+        }
+      }
+    };
 
-    if (sourceParam?.disabled || targetParam?.disabled) {
+    const targetStage = options.dispatchStageActions
+      ? visualStageFieldSource(get().nodes, {
+          nodeId: targetNode.id,
+          fieldKey: targetHandle,
+          module: targetNode.data.module,
+          action: targetNode.data.action,
+        })
+      : null;
+    const nativeTarget = targetStage?.node ?? targetNode;
+    const registeredTarget = options.dispatchStageActions
+      ? stageFieldRuntime?.field(
+          nativeTarget.data.module,
+          nativeTarget.data.action,
+          targetStage?.fieldKey ?? targetHandle,
+        )
+      : undefined;
+    // Saved disabled presentation can predate a model switch. Only a solicited
+    // native metadata reply may refresh such a registered signal consumer.
+    const targetDisabled = registeredTarget?.onSignal ? registeredTarget.disabled : targetParam?.disabled;
+    if (sourceParam?.disabled || targetDisabled) {
       return;
     }
 
     if (sourceSignal) {
-      if (!sourceParam?.isConnected && !sourceSignal.origin) {
-        get().setParam(edge.source, sourceHandle, { ...sourceSignal, value: undefined }, 'signal');
+      if (!sourceConnected && !sourceSignal.origin) {
+        setSignal(sourceNode, sourceHandle, { ...sourceSignal, value: undefined });
       }
 
       if (
-        sourceParam?.isConnected &&
+        sourceConnected &&
         sourceSignal.direction === 'output' &&
         !(targetSignal?.direction === 'input' && targetSignal.origin)
       ) {
-        get().setParam(edge.target, targetHandle, { ...sourceSignal, origin: undefined }, 'signal');
+        setSignal(targetNode, targetHandle, { ...sourceSignal, origin: undefined });
       }
     }
 
     if (targetSignal) {
-      if (!targetParam?.isConnected && !targetSignal.origin) {
-        get().setParam(edge.target, targetHandle, { ...targetSignal, value: undefined }, 'signal');
+      if (!targetConnected && !targetSignal.origin) {
+        setSignal(targetNode, targetHandle, { ...targetSignal, value: undefined });
       }
 
       if (
-        targetParam?.isConnected &&
+        targetConnected &&
         targetSignal.direction === 'input' &&
         !(sourceSignal?.direction === 'output' && sourceSignal.origin)
       ) {
-        get().setParam(edge.source, sourceHandle, { ...targetSignal, origin: undefined }, 'signal');
+        setSignal(sourceNode, sourceHandle, { ...targetSignal, origin: undefined });
       }
     }
   });

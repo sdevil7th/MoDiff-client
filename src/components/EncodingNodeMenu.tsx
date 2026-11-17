@@ -70,20 +70,24 @@ export default function EncodingNodeMenu({
     }
   }
   const description = {
+    composite: 'Fit, pad, crop and composite the generated image with its protected background and mask.',
+    imageInput: 'Choose the opening image and inspect its source preview.',
     videoInput: 'Choose a source clip and set its target size, frame count and fit.',
-    references: 'Choose the ordered reference images and adjust how they are joined for encoding.',
-    generate: 'Set the generation controls here. Expand the stage to inspect denoising and latent decoding.',
+    references: 'Choose ordered reference images and inspect how they enter encoding.',
+    generate: 'Set generation controls here. Expand to inspect the actual sampling and decoding operations.',
     guidance:
       'Guidance combines the related Guider and Layers configuration. Schedulers and adapters remain separate nodes.',
     inputs:
       'Text, image and declared Guidance stages run behind this node. Guidance affects conditioning and denoising. Collapsing a section only hides its fields; use its Enabled control to change execution. Load media separately and connect its output to the relevant input.',
     setup:
       'Model Setup contains this loader and its connected configuration or adapter nodes. Model and task changes review the complete connected workflow. Grouping does not load or cache models.',
-    mask: 'Prepare Mask contains the existing image source and Outpaint Canvas utility. Canvas geometry, mask feathering and the white-generate mask keep their original bindings. It does not add preprocessing to other masked tasks.',
+    mask: 'Prepare or align the source mask and any selected canvas borders. White marks regions to generate. Expand to inspect the actual inputs and processing.',
     output:
       media === 'audio'
-        ? 'Audio Output runs the existing audio decoder and Export Audio nodes. Playback uses the normal backend preview state; all declared output sockets remain available.'
-        : 'Image Output runs the existing decoder and Preview Image nodes. Its image display uses the normal backend preview state; all declared output sockets remain available.',
+        ? 'Deliver and preview the generated audio with its export settings.'
+        : media === 'video'
+          ? 'Export and preview the final video. Upscaling and soundtrack preparation have separate stages.'
+          : 'Preview or save the final image. Expand to inspect any included decoding and delivery operations.',
   }[kind];
   function separate() {
     try {

@@ -1,5 +1,11 @@
 import { remapOperationAuthoring, sharedOperationInput } from '../workflow/operationSharedInputs';
 import { planVisualSharedInput } from '../workflow/visualOperationGroupProjection';
+import {
+  exposeVisualStageControl,
+  visualStageFieldSource,
+  visualStageRuntimeNode,
+} from '../studio/visualStageFieldActions';
+import { setBlockFieldValuesV1 } from '../studio/blockContainerEditingV1';
 import { isFocusedStageNode, isFocusedGuidance } from '../workflow/encodingNodePresentation';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
@@ -19,6 +25,7 @@ import {
   handleReconnect,
   refreshHandleConnectionStatus,
   updateSignalsForEdges,
+  type SignalUpdateOptions,
 } from './flowConnectionMutations';
 import {
   assertPreparedExecutionScope,
@@ -225,7 +232,7 @@ export type FlowStore = {
   resetNodeSize: (id: string) => void;
   setAllEdgesType: (edgeType: 'default' | 'smoothstep') => void;
   updateHandleConnectionStatus: () => void;
-  updateSignalValues: (edges: Edge | Edge[]) => void;
+  updateSignalValues: (edges: Edge | Edge[], options?: SignalUpdateOptions) => void;
   getSignalValue: (id: string, param: string) => NodeParamSignal['value'] | undefined;
   groupNodes: (ids: string[]) => void;
   loopNodes: (ids: string[]) => void;
@@ -1578,6 +1585,41 @@ function updateBlockInstanceV2(
   return projectBlockInstanceV2(state, id, reducer(root.data.blockInstanceV2));
 }
 
+/** Normal field metadata writes target the durable native leaf, never a facade.
+ * This is restricted to ordinary visual grouping, not registered sealed Blocks. */
+function writeVisualStageParam(
+  state: Pick<FlowStore, 'nodes' | 'edges'>,
+  id: string,
+  field: string,
+  value: unknown,
+  key: keyof NodeParams,
+) {
+  const runtime = visualStageRuntimeNode(state.nodes, id);
+  if (!runtime || key === 'isConnected') return null;
+  const fieldId = field;
+  const params = runtime.stage.data.params as Record<string, NodeParams>;
+  if (!params[fieldId]) return null;
+  const normalizedValue = value === undefined ? undefined : cloneJson(value);
+  if (deepEqual(params[fieldId][key], normalizedValue)) {
+    const repaired = exposeVisualStageControl(runtime.instance, runtime.stage.nodeId, fieldId);
+    return repaired === runtime.instance ? false : updateBlockInstanceV2(state, runtime.root.id, () => repaired);
+  }
+  return updateBlockInstanceV2(state, runtime.root.id, (instance) => {
+    if (key === 'value')
+      return setBlockFieldValuesV1(
+        instance,
+        [{ nodeId: runtime.stage.nodeId, fieldId }],
+        normalizedValue as BlockJsonValue,
+        { authored: false },
+      );
+    const graph = cloneJson(instance.effectiveGraph);
+    const stage = graph.nodes.find(({ nodeId }) => nodeId === runtime.stage.nodeId)!;
+    const fields = stage.data.params as Record<string, NodeParams>;
+    fields[fieldId] = { ...fields[fieldId], [key]: normalizedValue };
+    return exposeVisualStageControl(replaceBlockEffectiveGraphV2(instance, graph), runtime.stage.nodeId, fieldId);
+  });
+}
+
 function isUndoableNodeChange(change: NodeChange<CustomNodeType>, nodes: CustomNodeType[]) {
   if (change.type === 'select' || change.type === 'dimensions') {
     return false;
@@ -1640,15 +1682,11 @@ export const useFlowStore = create<FlowStore>()(
       onReconnect: (oldEdge, conn) => {
         get().withHistory('Reconnect edge', () => handleReconnect(oldEdge, conn, set, get));
       },
-      updateSignalValues: (edges: Edge | Edge[]) => {
-        updateSignalsForEdges(edges, get);
+      updateSignalValues: (edges: Edge | Edge[], options) => {
+        updateSignalsForEdges(edges, get, options);
       },
       getSignalValue: (id: string, param: string) => {
-        const node = get().nodes.find((n) => n.id === id);
-        if (!node) {
-          return undefined;
-        }
-        const signal = node.data.params?.[param]?.signal;
+        const signal = get().getParam(id, param, 'signal');
         return signal ? signal.value : undefined;
       },
       updateHandleConnectionStatus: () => {
@@ -1702,9 +1740,24 @@ export const useFlowStore = create<FlowStore>()(
         }
       },
       getParam: <K extends keyof NodeParams>(id: string, param: string, key: K) => {
+        const runtime = visualStageRuntimeNode(get().nodes, id);
+        if (runtime) {
+          const source = visualStageFieldSource(get().nodes, {
+            nodeId: id,
+            fieldKey: param,
+            module: String(runtime.stage.data.module),
+            action: String(runtime.stage.data.action),
+          });
+          return (source?.param[key] ?? null) as NodeParams[K] | null;
+        }
         return readNodeParam(id, param, key, get);
       },
       setParam: <K extends keyof NodeParams = 'value'>(id: string, param: string, value: NodeParams[K], key?: K) => {
+        const stageGraph = writeVisualStageParam(get(), id, param, value, key ?? 'value');
+        if (stageGraph !== null) {
+          if (stageGraph) set(stageGraph);
+          return;
+        }
         writeNodeParam(id, param, value, key, set);
         if (key === 'type') {
           get().refreshConnectionVisuals();
@@ -1847,6 +1900,24 @@ export const useFlowStore = create<FlowStore>()(
         return getFlowNodeParamValues(id, get);
       },
       replaceNodeParams: (id: string, params: Record<string, NodeParams>) => {
+        const runtime = visualStageRuntimeNode(get().nodes, id);
+        if (runtime) {
+          set(
+            (state) =>
+              updateBlockInstanceV2(state, runtime.root.id, (instance) => {
+                const graph = cloneJson(instance.effectiveGraph);
+                graph.nodes.find(({ nodeId }) => nodeId === runtime.stage.nodeId)!.data.params = cloneJson(
+                  params,
+                ) as BlockJsonValue;
+                let updated = replaceBlockEffectiveGraphV2(instance, graph);
+                for (const field of Object.keys(params))
+                  updated = exposeVisualStageControl(updated, runtime.stage.nodeId, field);
+                return updated;
+              }) ?? state,
+          );
+          get().refreshConnectionVisuals();
+          return;
+        }
         replaceFlowNodeParams(id, params, set, get);
         get().refreshConnectionVisuals();
       },

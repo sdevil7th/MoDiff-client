@@ -9,6 +9,56 @@ function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+/** Resolve presentation through the declared interface, never an alias name. */
+export function blockControlBindingV2(
+  node: CustomNodeType | undefined,
+  key: string,
+  param: NodeParams,
+  nodes: CustomNodeType[],
+) {
+  const owner = node?.data.blockInstanceV2
+    ? node
+    : nodes.find((candidate) => candidate.id === node?.data.blockProjectionOwnerId);
+  const instance = owner?.data.blockInstanceV2;
+  if (!node || !instance || owner?.id !== instance.instanceId) return null;
+  const binding = param.fieldOptions?.blockBindingV2;
+  const local = param.fieldOptions?.blockContainerControlV1;
+  let controls: Array<Pick<BlockControlV2, 'binding' | 'mirrorBindings'>>;
+  if (local !== undefined) {
+    if (
+      !record(local) ||
+      local.schemaVersion !== 1 ||
+      local.ownerId !== instance.instanceId ||
+      local.containerNodeId !== node.data.blockProjectionNodeId ||
+      typeof local.controlId !== 'string'
+    )
+      return null;
+    controls = blockContainerInterfaceV1(instance, String(local.containerNodeId)).controls.filter(
+      (entry) => entry.controlId === local.controlId,
+    );
+  } else if (binding !== undefined) {
+    if (
+      !record(binding) ||
+      binding.schemaVersion !== 2 ||
+      binding.direction !== 'control' ||
+      binding.ownerId !== instance.instanceId ||
+      typeof binding.logicalId !== 'string'
+    )
+      return null;
+    controls = instance.effectiveInterface.controls.filter((entry) => entry.controlId === binding.logicalId);
+    if (
+      controls.some(
+        (control) => control.binding.nodeId !== binding.nodeId || control.binding.fieldId !== binding.fieldOrPortId,
+      )
+    )
+      return null;
+  } else {
+    if (node.id !== instance.instanceId) return null;
+    controls = instance.effectiveInterface.controls.filter((entry) => entry.controlId === key);
+  }
+  return controls.length === 1 ? { instance, control: controls[0]! } : null;
+}
+
 /** Display-only: a wire supplies execution values, never a renderer evaluation.
  * Resolve aliases against their owning instance; do not persist another value.
  */
@@ -35,23 +85,9 @@ export function blockControlConnectionNotesV2(
   if (!instance) return notes;
   for (const [key, param] of Object.entries(params)) {
     if (param.hidden || param.isInput || param.display === 'input' || param.display === 'output') continue;
-    const binding = param.fieldOptions?.blockBindingV2;
-    const local = param.fieldOptions?.blockContainerControlV1;
-    let control: Pick<BlockControlV2, 'binding' | 'mirrorBindings'> | undefined;
-    if (
-      record(local) &&
-      local.ownerId === instance.instanceId &&
-      local.containerNodeId === node.data.blockProjectionNodeId
-    ) {
-      control = blockContainerInterfaceV1(instance, String(local.containerNodeId)).controls.find(
-        (entry) => entry.controlId === local.controlId,
-      );
-    } else if (record(binding) && binding.ownerId === instance.instanceId) {
-      control = instance.effectiveInterface.controls.find((entry) => entry.controlId === binding.logicalId);
-    } else if (node.id === instance.instanceId) {
-      control = instance.effectiveInterface.controls.find((entry) => entry.controlId === key);
-    }
-    if (!control) continue;
+    const resolved = blockControlBindingV2(node, key, param, nodes);
+    if (!resolved) continue;
+    const { control } = resolved;
     const targets = [control.binding, ...(control.mirrorBindings ?? [])];
     const driven = new Set<string>();
     const sources = new Set<string>();

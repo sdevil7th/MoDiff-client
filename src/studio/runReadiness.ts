@@ -10,7 +10,7 @@ import {
   withoutBlockCompilationTransientsV2,
   resolveFlowExecutionTargetNodeIds,
 } from '../stores/useFlowStore';
-import { buildApiGraphExport } from '../stores/flowGraphExport';
+import { buildApiGraphExport, executableFlowNodes } from '../stores/flowGraphExport';
 import { useNodesStore } from '../stores/useNodeStore';
 import { runtimeFailureTargetsActiveWorkflow, useRunIssueStore } from '../stores/useRunIssueStore';
 import {
@@ -234,6 +234,7 @@ function isModelFilePath(value: string) {
 export function collectNodeModelReferences(node: ReturnType<typeof useFlowStore.getState>['nodes'][number]) {
   const references: Array<{ kind: 'repo' | 'path'; value: string; paramKey: string; revision?: string }> = [];
   const params = node.data.params || {};
+  const registeredParams = useNodesStore.getState().nodesRegistry[`${node.data.module}.${node.data.action}`]?.params;
   const selectedReviewedVariant = compactModelString(
     repoValueFromParam(params.reviewed_variant?.value ?? params.reviewed_variant?.default),
   );
@@ -245,6 +246,11 @@ export function collectNodeModelReferences(node: ReturnType<typeof useFlowStore.
   });
 
   Object.entries(params).forEach(([paramKey, param]) => {
+    // Some loaders retain an auxiliary choice while their selected adapter
+    // makes that field inactive. Only the current registry may declare this
+    // policy; hidden primary models and imported opt-out hints still count.
+    if (param.hidden === true && registeredParams?.[paramKey]?.fieldOptions?.modelReferenceInactiveWhenHidden === true)
+      return;
     // The sealed repository is the registered definition's baseline. Once an
     // admitted same-family variant is selected, only that effective artifact
     // should participate in install/readiness checks.
@@ -1029,14 +1035,7 @@ function invalidCompositeExecutionGraphIssue(error: unknown) {
 }
 
 function enabledExecutableNodes(graph = executableFlowGraph()) {
-  return graph.nodes.filter(
-    (node) =>
-      node.data.type !== 'group' &&
-      node.data.type !== 'loop' &&
-      !node.data.uiState?.disabled &&
-      Boolean(node.data.module) &&
-      Boolean(node.data.action),
-  );
+  return executableFlowNodes(graph.nodes);
 }
 
 function isOutputLikeNode(node: ReturnType<typeof enabledExecutableNodes>[number]) {

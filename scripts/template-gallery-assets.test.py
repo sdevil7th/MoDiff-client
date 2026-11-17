@@ -365,7 +365,7 @@ class TemplateGalleryAssetTests(unittest.TestCase):
         self.assertEqual(assets.unaudited_durable_reference_sources(), [])
         required = assets.required_assets_by_purpose()
         self.assertEqual(required["inputs/qwen-carton-layout-control.png"], {"tooling"})
-        self.assertEqual(required["manifest.json"], {"runtime"})
+        self.assertEqual(required["manifest.json"], {"runtime", "tooling"})
         self.assertEqual(
             required["runtime-inputs/default-input-bindings.json"], {"tooling"}
         )

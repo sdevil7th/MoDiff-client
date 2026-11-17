@@ -3,9 +3,13 @@ import { canonicalJsonHash } from './canonical-json.mjs';
 const OUTPUT_NODE_KEYS = new Set([
   'modules.Audio.Export',
   'modules.Image.Preview',
+  'modules.Image.Save',
   'modules.Primitive.DataViewer',
   'modules.Primitive.ExportData',
+  // This native operation writes the assembled asset and its delivered preview.
+  'modules.Video.ConcatenateAssets',
   'modules.Video.Export',
+  'modules.Video.ExportAsset',
   'modules.Video.ExportWithAudio',
 ]);
 

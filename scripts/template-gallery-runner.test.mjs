@@ -1537,7 +1537,9 @@ test('gallery runner rejects cached audio/video generation receipts as vacuous d
 
 test('gallery runner accepts generic Diffusers video receipts for Wan and LTX graphs', () => {
   for (const modelType of ['WanVACEPipeline', 'WanVideoPipeline', 'LTXVideoPipeline']) {
-    const template = { modelType };
+    // Today's stage-authoring metadata must not rewrite retained whole-run
+    // evidence during receipt repair. Its original executed graph is authority.
+    const template = { modelType, executionSelection: { authoringRecipeId: 'generic-video-stages:v1' } };
     const output = {
       taskId: `task-${modelType}`,
       apiGraphSnapshot: {

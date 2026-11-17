@@ -14,7 +14,12 @@ import RunSessionShelf from './components/RunSessionShelf.tsx';
 import StartupWorkspaceGate from './components/StartupWorkspaceGate.tsx';
 import WorkflowTabsBar from './components/WorkflowTabsBar.tsx';
 import { useFlowStore } from './stores/useFlowStore.ts';
-import { useStudioStore } from './stores/useStudioStore.ts';
+import {
+  useStudioStore,
+  captureWorkflowOperationContext,
+  workflowOperationContextIsCurrent,
+} from './stores/useStudioStore.ts';
+import { configureStageFieldRuntime } from './stores/flowConnectionMutations';
 import { useTaskStore } from './stores/useTaskStore.ts';
 import { useGraphFixStore } from './stores/useGraphFixStore.ts';
 import { useRunIssueStore } from './stores/useRunIssueStore.ts';
@@ -55,6 +60,12 @@ const ModelsLibraryPanel = lazy(() =>
 const TAB_BAR_WIDTH = modiffLayout.tabBarWidth;
 const WORKSPACE_MIN_WIDTH = modiffLayout.workspaceMinWidth;
 const SUPERVISOR_STARTUP_TIMEOUT_MS = 5_000;
+
+configureStageFieldRuntime({
+  capture: captureWorkflowOperationContext,
+  isCurrent: workflowOperationContextIsCurrent,
+  field: (module, action, key) => useNodesStore.getState().nodesRegistry[`${module}.${action}`]?.params[key],
+});
 
 async function boundedSupervisorStartup(fetchSupervisorTasks: () => Promise<void>) {
   await waitForSupervisorMetadata(useNodesStore);
@@ -435,7 +446,7 @@ export default function App() {
 
   const handleTabChange = useCallback(
     (index: number) => {
-      if (index === leftPanelTabIndex) {
+      if (index === leftPanelTabIndex && isLeftPanelOpen) {
         setLeftPanelOpen(false);
         setLeftPanelTabIndex(-1);
       } else {
@@ -443,7 +454,7 @@ export default function App() {
         setLeftPanelTabIndex(index);
       }
     },
-    [setLeftPanelTabIndex, setLeftPanelOpen, leftPanelTabIndex],
+    [setLeftPanelTabIndex, setLeftPanelOpen, leftPanelTabIndex, isLeftPanelOpen],
   );
 
   return (

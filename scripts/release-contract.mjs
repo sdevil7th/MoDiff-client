@@ -7,12 +7,18 @@ import { buildBackendInstallerPackageSet } from './backend-installer-contract.mj
 import { assertBackendNodeKeys, readBundledBackendNodeRegistry } from './backend-node-registry.mjs';
 import {
   assessHistoricalEvidence,
+  selectCurrentHistoricalEvidence,
   canonicalWorkflowContract,
+  canonicalWorkflowDeclaredModelRevision,
   findCanonicalWorkflowRecord,
+  templateResourceExecutionModelType,
+  qualificationModelArtifacts,
+  assessGalleryReleaseApproval,
   readCanonicalEvidenceFile,
   readCanonicalWorkflowEvidence,
 } from './release-contract-core.mjs';
 import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
+import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -145,6 +151,7 @@ function outputContract(template) {
 function resourceContract(profile, template) {
   const locked = template.example?.lockedSettings ?? {};
   return {
+    executionModelType: templateResourceExecutionModelType(template),
     supportedOffloadModes: profile.offloadSupport.modes,
     declaredRecipes: [
       {
@@ -312,8 +319,10 @@ function verifiedDirectReceipt(value) {
 }
 
 const gallery = readJson(join(CLIENT_ROOT, 'public', 'template-gallery', 'manifest.json'));
+const gallerySource = readJson(join(CLIENT_ROOT, 'src', 'studio', 'templateAssetSource.json'));
 const workflowManifest = readJson(join(BACKEND_ROOT, 'data', 'workflow-library-manifest.json'));
 const artifactCatalog = readJson(join(BACKEND_ROOT, 'data', 'model-artifact-catalog.json'));
+const canonicalAuthoring = readJson(join(BACKEND_ROOT, 'data', 'template-authoring-specs.v1.json')).specifications;
 const galleryByTemplate = new Map(gallery.examples.map((entry) => [entry.templateId, entry]));
 const artifactByModel = new Map(artifactCatalog.models.map((entry) => [entry.modelType, entry]));
 const directReceipts = readTemplateReceiptRegistry().map(verifiedDirectReceipt).filter(Boolean);
@@ -324,7 +333,11 @@ for (const directReceipt of directReceipts) {
   candidates.sort((left, right) => String(left.capturedAt ?? '').localeCompare(String(right.capturedAt ?? '')));
   directReceiptsByTemplate.set(directReceipt.templateId, candidates);
 }
-const workflowRecords = workflowManifest.workflows.map((workflow) => {
+const reviewedExperimental = selectReviewedExperimentalWorkflows(
+  workflowManifest.experimentalWorkflows ?? [],
+  readJson(join(CLIENT_ROOT, 'config/canonical-template-variants.v1.json')),
+);
+const workflowRecords = [...workflowManifest.workflows, ...reviewedExperimental].map((workflow) => {
   const graphPath = join(BACKEND_ROOT, 'data', 'graphs', workflow.graphPath);
   const graph = readJson(graphPath);
   return { manifest: workflow, graph, contract: canonicalWorkflowContract(workflow, graph) };
@@ -377,9 +390,8 @@ try {
   const { STUDIO_TEMPLATES } = await vite.ssrLoadModule('/src/studio/templates.ts');
   const { STUDIO_MODEL_PROFILES } = await vite.ssrLoadModule('/src/studio/modelProfiles.ts');
   const { templateBackendNodeKeys } = await vite.ssrLoadModule('/src/studio/templateBackendCapabilities.ts');
-  const { getPromptSettingsHash, getTemplateLockHash, getTemplateLockedSettings } = await vite.ssrLoadModule(
-    '/src/studio/templateExactness.ts',
-  );
+  const { getPromptSettingsHash, getTemplateLockHash, getTemplateLockedSettings, findManifestEntry } =
+    await vite.ssrLoadModule('/src/studio/templateExactness.ts');
   const backendNodeRegistry = readBundledBackendNodeRegistry(BACKEND_ROOT);
   for (const workflow of workflowRecords) {
     assertBackendNodeKeys(workflow.contract.backendNodes, backendNodeRegistry, workflow.manifest.id);
@@ -421,7 +433,7 @@ try {
         promptSettingsHash: currentPromptSettingsHash,
       }),
     }));
-    const currentHistoricalEvidence = assessedHistoricalCandidates.filter((item) => item.assessment.matches).at(-1);
+    const currentHistoricalEvidence = selectCurrentHistoricalEvidence(assessedHistoricalCandidates);
     const latestHistoricalEvidence = assessedHistoricalCandidates.at(-1) ?? null;
     const lastSuccessfulRun = currentHistoricalEvidence
       ? {
@@ -438,8 +450,16 @@ try {
         : null);
     const qualificationExemption = template.evidencePolicy === 'user_supplied' ? 'user_supplied_artifact' : null;
     const incompleteReceiptFields = qualificationExemption ? [] : receiptMissingFields(lastSuccessfulRun);
-    const approvedGalleryExample =
-      typeof galleryEntry?.qualityReviewStatus === 'string' && galleryEntry.qualityReviewStatus.startsWith('approved_');
+    const galleryApproval = assessGalleryReleaseApproval(galleryEntry, {
+      matchesCurrentRecipe: Boolean(
+        findManifestEntry(template, {
+          ...gallery,
+          examples: galleryEntry ? [galleryEntry] : [],
+        }),
+      ),
+      unavailableAssets: gallerySource.unavailableAssets ?? [],
+    });
+    const approvedGalleryExample = galleryApproval.approved;
     const missingReleaseEvidence = qualificationExemption
       ? []
       : [
@@ -456,20 +476,7 @@ try {
     const backendNodes = workflow?.contract.backendNodes ?? declaredBackendNodes;
     assertBackendNodeKeys(backendNodes, backendNodeRegistry, template.id);
     const artifactRequirements = requiredArtifacts(template, profile, artifactCatalogEntry);
-    if (
-      lastSuccessfulRun?.modelRevision &&
-      !artifactRequirements.some(
-        (artifact) =>
-          artifact.repo && `${artifact.repo}@${artifact.revision ?? ''}` === lastSuccessfulRun.modelRevision,
-      )
-    ) {
-      const at = lastSuccessfulRun.modelRevision.lastIndexOf('@');
-      artifactRequirements.push({
-        role: 'qualification_model',
-        repo: lastSuccessfulRun.modelRevision.slice(0, at),
-        revision: lastSuccessfulRun.modelRevision.slice(at + 1),
-      });
-    }
+    artifactRequirements.push(...qualificationModelArtifacts(lastSuccessfulRun?.modelRevision, artifactRequirements));
     return {
       id: template.id,
       label: template.label,
@@ -483,6 +490,11 @@ try {
       reviewedExampleModelRevision: exactRevision(galleryEntry?.modelRevision),
       reviewedExampleVerificationStatus: galleryEntry?.verificationStatus ?? null,
       reviewedExampleQualityReviewStatus: galleryEntry?.qualityReviewStatus ?? null,
+      reviewedExampleReleaseApproved: approvedGalleryExample,
+      galleryApprovalMissingReasons: galleryApproval.reasons,
+      ...(workflow?.manifest.experimentalRecipe
+        ? { experimentalRecipe: workflow.manifest.experimentalRecipe, modelSupportTier: 'experimental' }
+        : {}),
       requiredArtifacts: artifactRequirements,
       backendNodes,
       packageSetIds: [packageSet.id],
@@ -516,18 +528,34 @@ try {
       const artifact = artifactByModel.get(manifest.modelType);
       const sourceTemplate = templates.find((template) => template.id === manifest.sourceTemplateId);
       const canonicalReceipt = sourceTemplate ? null : canonicalReceiptsByWorkflow.get(manifest.id);
-      const exactModelRevision =
-        sourceTemplate?.exactModelRevision ??
-        (artifact?.baseRepo && artifact?.baseRevision ? `${artifact.baseRepo}@${artifact.baseRevision}` : null);
+      const catalogRevision =
+        artifact?.baseRepo && artifact?.baseRevision ? `${artifact.baseRepo}@${artifact.baseRevision}` : null;
+      const authoring = canonicalAuthoring.find((row) => row.canonicalWorkflowId === manifest.id);
+      const authoredRevision =
+        !sourceTemplate && !catalogRevision && authoring && !manifest.modelType.startsWith('Builtin')
+          ? canonicalWorkflowDeclaredModelRevision(manifest, graph, authoring, artifact)
+          : null;
+      const exactModelRevision = sourceTemplate?.exactModelRevision ?? authoredRevision ?? catalogRevision;
       return {
         id: manifest.id,
         modelType: manifest.modelType,
         mode: manifest.mode,
         graphPath: manifest.graphPath,
+        ...(manifest.experimentalRecipe
+          ? { experimentalRecipe: manifest.experimentalRecipe, modelSupportTier: 'experimental' }
+          : {}),
         graphHash: canonicalWorkflowContract(manifest, graph).graphHash,
         backendNodes: canonicalWorkflowContract(manifest, graph).backendNodes,
         packageSetIds: [packageSet.id],
         exactModelRevision,
+        exactModelRevisionSource: sourceTemplate?.exactModelRevision
+          ? 'template_recipe'
+          : authoredRevision
+            ? 'canonical_authoring'
+            : catalogRevision
+              ? 'artifact_catalog'
+              : null,
+        requiredArtifacts: manifest.requiredArtifacts ?? [],
         defaultAssets: sourceTemplate?.defaultAssets ?? [],
         userInputs: sourceTemplate?.userInputs ?? manifest.requiredInputs ?? {},
         resourceRecipes: sourceTemplate?.resourceRecipes ?? null,
@@ -537,7 +565,11 @@ try {
           ? {
               canonicalExecutionEvidence: {
                 status: manifest.requiredArtifacts?.some((item) => item.startsWith('builtin:'))
-                  ? 'unsupported_builtin_model_not_applicable'
+                  ? canonicalReceipt?.proofKind === 'real_backend_deterministic_data'
+                    ? 'verified_deterministic_execution'
+                    : canonicalReceipt?.proofKind === 'real_backend_deterministic_media'
+                      ? 'verified_deterministic_media_execution'
+                      : 'unsupported_builtin_model_not_applicable'
                   : canonicalReceipt
                     ? 'verified_execution_only'
                     : 'missing',
@@ -545,7 +577,16 @@ try {
               },
             }
           : {}),
-        releaseEligible: Boolean(exactModelRevision && sourceTemplate?.releaseEligible),
+        releaseEligible: Boolean(
+          (exactModelRevision && sourceTemplate?.releaseEligible) ||
+          (manifest.modelType === 'BuiltinDataOperation' &&
+            canonicalReceipt?.proofKind === 'real_backend_deterministic_data' &&
+            canonicalReceipt.deterministicCorrectness === 'verified_exact_result') ||
+          (['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation'].includes(manifest.modelType) &&
+            canonicalReceipt?.proofKind === 'real_backend_deterministic_media' &&
+            canonicalReceipt.canonicalDefaultsExecuted === true &&
+            canonicalReceipt.deterministicCorrectness === 'verified_media_contract'),
+        ),
       };
     })
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -560,9 +601,7 @@ try {
     coverage: {
       templateCount: templates.length,
       reviewedExampleCount: templates.filter((item) => item.reviewedExampleModelRevision).length,
-      approvedReviewedExampleCount: templates.filter((item) =>
-        String(item.reviewedExampleQualityReviewStatus ?? '').startsWith('approved_'),
-      ).length,
+      approvedReviewedExampleCount: templates.filter((item) => item.reviewedExampleReleaseApproved).length,
       historicalEvidenceCount: templates.filter((item) => item.historicalEvidence).length,
       currentHistoricalEvidenceCount: templates.filter((item) => item.lastSuccessfulRealRun).length,
       staleHistoricalEvidenceCount: templates.filter((item) => item.historicalEvidence?.status === 'stale').length,

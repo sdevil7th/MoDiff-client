@@ -40,7 +40,7 @@ export type OperationAuthoring = {
   authored?: string[];
   /** Non-executable, route-scoped recovery copies; never an alternate executor. */
   inactiveDrafts?: InactiveOperationDraft[];
-  sharedInputs?: { field: string; name: string; loaderId: string; groupId: string }[];
+  sharedInputs?: { field: string; name: string; loaderId: string; groupId: string; scopeNodeIds?: string[] }[];
 };
 export type OperationStarter = {
   authoring?: OperationAuthoringRecipe;
@@ -111,6 +111,31 @@ function semanticName(node: CustomNodeType, field: string, direction: 'input' | 
     .replace(/_(input|output|in|out)$/gu, '')
     .replace(/[^a-z0-9]+/gu, ' ')
     .trim();
+}
+
+function uniqueMediaAlias(
+  previous: CustomNodeType,
+  previousField: string,
+  next: CustomNodeType,
+  nextField: string,
+  direction: 'input' | 'output',
+) {
+  if (
+    port(previous, previousField, direction)?.semantics?.kind !== 'media' ||
+    port(next, nextField, direction)?.semantics?.kind !== 'media'
+  )
+    return false;
+  const targetType = next.data.params[nextField]?.type;
+  return (
+    connectionTypesAreCompatible(previous.data.params[previousField]?.type, targetType) &&
+    Object.entries(previous.data.params).filter(
+      ([name, field]) =>
+        !field.hidden &&
+        (direction === 'output' ? field.display === 'output' : field.display !== 'output') &&
+        port(previous, name, direction)?.semantics?.kind === 'media' &&
+        connectionTypesAreCompatible(field.type, targetType),
+    ).length === 1
+  );
 }
 
 function routeKey(node: CustomNodeType) {
@@ -1107,7 +1132,14 @@ export function planOperationChange(
           )
         )
           return [];
-        const score = oldField === name ? 3 : key && key === semanticName(candidate, name, 'output') ? 2 : 0;
+        const score =
+          oldField === name
+            ? 3
+            : key && key === semanticName(candidate, name, 'output')
+              ? 2
+              : uniqueMediaAlias(oldNode, oldField, candidate, name, 'output')
+                ? 1
+                : 0;
         if (!score) return [];
         const proposed = { ...edge, source: candidate.id, sourceHandle: name };
         return compatibleEdge(proposed, nodes) ? [{ proposed, candidate, name, score }] : [];
@@ -1293,8 +1325,19 @@ export function planOperationChange(
       });
     const existing = (resetSharedDefaults ? [] : group.members).flatMap((m) => {
       const old = before.get(m.operationId),
-        field = old?.data.params[m.field];
-      if (!old || !field || operationFieldValue(field) === undefined) return [];
+        field = old?.data.params[m.field],
+        target = members.find(
+          (member) =>
+            member.field === m.field && operationAuthoring(member.node)?.operation.operationId === m.operationId,
+        );
+      if (
+        !old ||
+        !field ||
+        !target ||
+        operationFieldValue(field) === undefined ||
+        !canTransfer(old, m.field, target.node, target.field)
+      )
+        return [];
       return [
         {
           value: operationFieldValue(field),

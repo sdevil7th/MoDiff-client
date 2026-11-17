@@ -1,5 +1,7 @@
 import { enqueueSnackbar } from '../ui/snackbar';
 import { deepEqual } from '../utils/deepEqual';
+import { visualStageRuntimeNode } from '../studio/visualStageFieldActions';
+import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { markStudioGraphDefinitionPending, syncStudioGraphDefinition } from '../studio/graphBridge';
 import { collapsedHuggingFaceClusterPreviewTarget } from '../studio/huggingFaceClusterGraph';
 import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
@@ -1127,7 +1129,11 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       }
       if (!shouldApplyWorkflowCanvasMutation(message, context)) return;
 
-      const node = useFlowStore.getState().nodes.find((n) => n.id === message.node);
+      const nodes = useFlowStore.getState().nodes;
+      const runtime = visualStageRuntimeNode(nodes, message.node);
+      const node = runtime
+        ? blockOperationGraphV2(runtime.instance).nodes.find((n) => n.id === message.node)
+        : nodes.find((n) => n.id === message.node);
       if (!node) {
         if (message.node.startsWith('guidance-schema-')) {
           void import('../workflow/guidanceNodeFields').then(({ receiveGuidanceDefinition }) => {
@@ -1241,6 +1247,13 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       const params = message.params;
       const workflowContext = captureWorkflowOperationContext();
       const schemaPending = markStudioGraphDefinitionPending(nodeId, Object.keys(params) as Array<keyof NodeParams>);
+      const previousSignal = useFlowStore.getState().getParam(nodeId, field, 'signal');
+      const changedSignal =
+        isPlainRecord(params.signal) &&
+        hasOwn(params.signal, 'value') &&
+        !deepEqual(previousSignal?.value, params.signal.value)
+          ? { nodeId, fieldKey: field, value: params.signal.value }
+          : undefined;
 
       useFlowStore.getState().setParam(nodeId, field, true, 'disabled');
       Object.keys(params).forEach((key) => {
@@ -1265,7 +1278,7 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
         if (!workflowOperationContextIsCurrent(workflowContext, { includeForm: false })) return;
         const flow = useFlowStore.getState();
         flow.setParam(nodeId, field, false, 'disabled');
-        if (signalChanged) flow.updateSignalValues(flow.edges);
+        if (signalChanged) flow.updateSignalValues(flow.edges, { dispatchStageActions: true, changedSignal });
       });
       if (schemaPending) scheduleStudioDefinitionSync();
 

@@ -2,7 +2,50 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { before, test } from 'node:test';
-import { canonicalWorkflowRequiredArtifacts } from './workflow-library-contract.mjs';
+import {
+  canonicalWorkflowRequiredArtifacts,
+  hasMachineSpecificWorkflowState,
+  workflowVideoAttentionRecipeError,
+} from './workflow-library-contract.mjs';
+
+test('portable video attention accepts Auto without claiming Flash availability', () => {
+  const recipe = (backend, components) => ({
+    attention_backend: { value: backend },
+    attention_components: { value: components },
+  });
+  for (const pipeline of ['WanPipeline', 'Wan22Pipeline', 'WanTI2VPipeline']) {
+    assert.equal(workflowVideoAttentionRecipeError(pipeline, recipe('auto', '')), null);
+    assert.equal(workflowVideoAttentionRecipeError(pipeline, recipe('_native_flash', 'transformer')), null);
+    assert.match(workflowVideoAttentionRecipeError(pipeline, recipe('_native_flash', '')), /transformer/);
+    assert.match(workflowVideoAttentionRecipeError(pipeline, recipe('arbitrary_backend', 'transformer')), /attention/);
+    assert.match(workflowVideoAttentionRecipeError(pipeline, {}), /attention/);
+  }
+});
+
+test('portable workflow provenance links are not Windows drive paths', () => {
+  for (const link of [
+    'https://huggingface.co/black-forest-labs/FLUX.2-klein-4B',
+    'https://huggingface.co/black-forest-labs/FLUX.1-schnell',
+    'https://huggingface.co/Tongyi-MAI/Z-Image-Turbo',
+    'http://example.org/model-guidance',
+  ])
+    assert.equal(hasMachineSpecificWorkflowState(JSON.stringify({ exampleSource: link })), false, link);
+  for (const reference of [
+    'C:/Users/operator/model',
+    'D:\\weights\\model',
+    'file:///weights/model',
+    '/home/operator/model',
+    '/Users/operator/model',
+    '/tmp/model',
+    '/mnt/models',
+    '\\\\server\\models',
+    'https://localhost/model',
+    'http://127.0.0.1:8088/model',
+    'path /cache/models',
+    'model path: E:/weights/model',
+  ])
+    assert.equal(hasMachineSpecificWorkflowState(JSON.stringify({ value: reference })), true, reference);
+});
 
 const hub = (repository) => ({ value: { source: 'hub', value: repository } });
 const graph = (repositories) => ({

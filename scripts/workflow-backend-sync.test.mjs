@@ -887,3 +887,65 @@ test('startup hydration retains the active run and current preview authority', (
   assert.equal(studio.useStudioStore.getState().previewSlots, slots);
   assert.equal(studio.useStudioStore.getState().workflowTabs[0].dirty, true);
 });
+
+test('reopening a backend-owned document does not autosave passive preview and connection hydration', async () => {
+  const fixture = startupHydrationFixture();
+  sync.markBackendWorkflow(fixture.baseline);
+  const baseline = structuredClone(fixture.baseline);
+  studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+  const checkpoint = studio.useStudioStore.getState().workflowTabs[0];
+  assert.equal(checkpoint.snapshot.nodes[0].data.params.output.isConnected, false);
+  assert.deepEqual(checkpoint.snapshot.nodes[1].data.params.selected_image.value, []);
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    writes.push(body);
+    return new Response(JSON.stringify({ ...body, id: checkpoint.id, revision: 8 }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    sync.queueWorkflowPut(checkpoint, (error) => assert.fail(String(error)));
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(writes.length, 0, 'passive canvas hydration must not create a backend revision');
+    assert.equal(studio.useStudioStore.getState().workflowTabs[0].dirty, false);
+    assert.deepEqual(fixture.baseline, baseline, 'acknowledgement comparison must not mutate its source');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+for (const [label, edit] of pendingHydrationEdits) {
+  test(`a backend acknowledgement never clears an authored ${label} change as passive hydration`, async () => {
+    const fixture = startupHydrationFixture();
+    sync.markBackendWorkflow(fixture.baseline);
+    await edit();
+    studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+    assert.equal(sync.clearDirtyMarkerForExactBackendDocument(fixture.baseline.id), false);
+    assert.equal(studio.useStudioStore.getState().workflowTabs[0].dirty, true);
+  });
+}
+
+test('passive save comparison does not trust later registry mutations', () => {
+  const fixture = startupHydrationFixture();
+  delete fixture.registry['modules.Image.Preview'].params.selected_image;
+  sync.markBackendWorkflow(fixture.baseline);
+  fixture.registry['modules.Image.Preview'].params.selected_image = { type: 'image', display: 'ui_image', value: [] };
+  studio.useStudioStore.getState().saveActiveWorkflowTab(true);
+  assert.equal(sync.clearDirtyMarkerForExactBackendDocument(fixture.baseline.id), false);
+});
+
+for (const rawNodes of [undefined, null, [null, {}]]) {
+  test(`backend acknowledgement tolerates historical unnormalized node data: ${JSON.stringify(rawNodes)}`, () => {
+    const tab = workflowTab({ dirty: false, prompt: 'Backend legacy document' });
+    tab.snapshot.nodes = rawNodes;
+    assert.doesNotThrow(() => sync.markBackendWorkflow(tab));
+    studio.useStudioStore.setState({
+      workflowTabs: [workflowTab({ dirty: true, prompt: 'Actual new document' })],
+      activeWorkflowTabId: null,
+    });
+    assert.equal(sync.clearDirtyMarkerForExactBackendDocument(tab.id), false);
+  });
+}

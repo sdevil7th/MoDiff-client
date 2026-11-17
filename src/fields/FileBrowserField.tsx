@@ -261,7 +261,9 @@ export default function FileBrowserField(props: FieldProps) {
             <div key={index} className="relative min-w-0">
               {isImage(file) ? (
                 <img
-                  className="mx-auto block h-auto max-h-[1024px] w-full max-w-[360px] object-contain"
+                  // Reserve the same frame before and after the image loads.
+                  // A portrait or multi-image input must not grow into nearby stages.
+                  className="mx-auto block aspect-video w-[360px] max-w-full object-contain"
                   src={imagePreviewUrl(file)}
                   alt={file}
                   onLoad={handleMediaLoad}

@@ -3,6 +3,7 @@ import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { canonicalAccountingExecutionPlan } from './release-contract-core.mjs';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { actualAppliedAdapterFixtures, protocolFactoryArguments } from './canonical-provenance-fixtures.mjs';
@@ -10,6 +11,107 @@ import { createRunProvenance, validateAppliedAdapterProof } from './live-proof-p
 
 let server, contracts, inputs, outputUtils, profiles, tasks;
 let ddimAccountingFixture;
+test('native joint-video inputs keep their real model and expansion settings instead of a stale image form', () => {
+  const { receipt } = JSON.parse(
+    readFileSync(new URL('../tests/fixtures/native-joint-video-inputs.v1.json', import.meta.url), 'utf8'),
+  );
+  const identity = { taskId: receipt.taskId, attemptIndex: receipt.attemptIndex, nodeId: receipt.nodeId };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(receipt, identity), receipt);
+  const output = contracts.coerceStudioOutput({
+    id: 'native-av',
+    url: '/video.mp4',
+    ...identity,
+    modelType: 'ZImageModularPipeline',
+    modelLabel: 'Z-Image Turbo',
+    mode: 'text_to_image',
+    formSnapshot: { modelType: 'ZImageModularPipeline', prompt: 'stale form' },
+    resolvedExecutionInputs: receipt,
+  });
+  assert.equal(inputs.outputModelKey(output), 'Kandinsky6TI2VAPipeline');
+  assert.equal(output.modelLabel, 'Kandinsky6TI2VAPipeline');
+  assert.equal(output.prompt, receipt.summary.prompt);
+  assert.equal(output.resolvedExecutionInputs.summary.expandPrompt, false);
+  const tampered = structuredClone(receipt);
+  tampered.nodes.find((n) => n.action === 'GenerateVideoAudio').fields.unreviewed_control = {
+    value: true,
+    source: 'literal',
+  };
+  assert.equal(inputs.coerceResolvedExecutionInputs(tampered, identity), undefined);
+});
+test('native builtin media metadata survives strict parsing without granting model evidence', async () => {
+  const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    `${backend}.venv/${process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'}`;
+  const generated = spawnSync(
+    python,
+    [
+      '-B',
+      '-c',
+      String.raw`
+import json, os
+from types import SimpleNamespace
+from PIL import Image
+from modiff.builtin_media_evidence import begin_media_capture, CONTROL_FIELDS
+from modiff.execution_input_provenance import capture_generation_inputs, build_resolved_execution_inputs
+os.environ['MODIFF_CAPTURE_BUILTIN_MEDIA']='1'
+n=SimpleNamespace(module_name='modules.ImageOperations', class_name='ProcessImage',
+ _execution_input_record=capture_generation_inputs('op',{'module':'modules.ImageOperations','action':'ProcessImage'},{'pipeline_class':'BuiltinImageOperationV1'}))
+begin_media_capture(n,{'operation':'image_crop','width':0},inputs={'image':Image.new('RGB',(3,2),'red'),'mask':None}).finish({'output':Image.new('RGB',(3,2),'red')})
+graph={'nodes':{'op':{'module':'modules.ImageOperations','action':'ProcessImage','params':{}}}}
+receipt=build_resolved_execution_inputs(graph,{'op':n._execution_input_record},task_id='synthetic-media',attempt_index=0,node_id='op')
+print(json.dumps({'receipt':receipt,'scopes':{'.'.join(k):v for k,v in CONTROL_FIELDS.items()}}))
+`,
+    ],
+    // Cold registry imports can exceed 30 seconds under the complete gate.
+    // Match the bounded backend-fixture startup window used by related suites.
+    { cwd: backend, encoding: 'utf8', timeout: 120000 },
+  );
+  assert.equal(generated.status, 0, generated.stderr);
+  const original = JSON.parse(generated.stdout);
+  const { parseBuiltinMediaEvidence, BUILTIN_MEDIA_EVIDENCE_SCOPES } = await server.ssrLoadModule(
+    '/src/studio/builtinMediaEvidence.ts',
+  );
+  for (const [scope, fields] of Object.entries(original.scopes))
+    assert.deepEqual(BUILTIN_MEDIA_EVIDENCE_SCOPES[scope].controls.split(/\s+/u).filter(Boolean).sort(), fields.sort());
+  const identity = { taskId: 'synthetic-media', attemptIndex: 0, nodeId: 'op' };
+  const parsed = inputs.coerceResolvedExecutionInputs(original.receipt, identity);
+  assert.ok(parsed);
+  assert.deepEqual(parsed.nodes[0].mediaEvidence, original.receipt.nodes[0].mediaEvidence);
+  assert.deepEqual(parsed.summary, original.receipt.summary);
+  const legacy = structuredClone(original.receipt);
+  delete legacy.nodes[0].mediaEvidence;
+  delete legacy.mediaEvidenceStatus;
+  assert.ok(inputs.coerceResolvedExecutionInputs(legacy, identity));
+  for (const mutate of [
+    (value) => {
+      delete value.mediaEvidenceStatus;
+    },
+    (value) => {
+      value.nodes[0].mediaEvidence.inputs.image[0].sha256 = 'changed';
+    },
+    (value) => {
+      value.nodes[0].mediaEvidence.controls.secret = 'unreviewed';
+    },
+    (value) => {
+      value.nodes[0].mediaEvidence.inputs.image[0].pixels = [1, 2, 3];
+    },
+    (value) => {
+      value.nodes[0].mediaEvidence.files.other = [];
+    },
+    (value) => {
+      value.nodes[0].module = 'custom.Unreviewed';
+    },
+  ]) {
+    const bad = structuredClone(original.receipt);
+    mutate(bad);
+    assert.equal(inputs.coerceResolvedExecutionInputs(bad, identity), undefined);
+  }
+  assert.equal(
+    parseBuiltinMediaEvidence(original.receipt.nodes[0].mediaEvidence, 'DiffusersImage.Generate'),
+    undefined,
+  );
+});
 function actualDdimAccountingFixture() {
   if (ddimAccountingFixture) return structuredClone(ddimAccountingFixture);
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
@@ -55,6 +157,40 @@ function canonicalAccountingCase() {
     },
   };
 }
+
+test('native empty execution-profile accounting survives receipt and output history parsing', () => {
+  const { receipt } = actualDdimAccountingFixture();
+  const identity = { taskId: receipt.taskId, attemptIndex: receipt.attemptIndex, nodeId: receipt.nodeId };
+  const before = JSON.stringify(receipt);
+  const parsed = inputs.coerceResolvedExecutionInputs(receipt, identity);
+  assert.ok(parsed, 'The current native producer contract must not be dropped by the paired client.');
+  assert.deepEqual(
+    parsed.nodes.find((row) => row.action === 'LoadPipeline').fieldAccounting.fields.execution_profile_id,
+    {
+      disposition: 'inactive',
+      inputValue: '',
+      value: '',
+      source: 'literal',
+      reason: 'adapter-inactive',
+    },
+  );
+  const restored = contracts.coerceStudioOutput({
+    id: 'accounted-profile',
+    url: '/native.webp',
+    ...identity,
+    resolvedExecutionInputs: receipt,
+  });
+  assert.deepEqual(restored.resolvedExecutionInputs, parsed);
+  assert.equal(JSON.stringify(receipt), before);
+  const unknown = structuredClone(receipt);
+  unknown.nodes.find((row) => row.action === 'LoadPipeline').fieldAccounting.fields.unknown_profile_grant = {
+    disposition: 'consumed',
+    inputValue: '',
+    value: '',
+    source: 'literal',
+  };
+  assert.equal(inputs.coerceResolvedExecutionInputs(unknown, identity), undefined);
+});
 
 test('mocked native DDIM accounting derives the unique executed owner without borrowing Preview CPU or hints', () => {
   const value = canonicalAccountingCase();
@@ -496,6 +632,152 @@ function capturedOutput(fields, extra = {}) {
     ...extra,
   });
 }
+
+function builtinHistoryOutput(kind, operation, extra = {}) {
+  const evidence = receipt();
+  const owner = {
+    Image: ['modules.ImageOperations', 'ProcessImage'],
+    Audio: ['modules.Audio', 'ProcessAudio'],
+    Video: ['modules.Video', 'ProcessVideo'],
+    Data: ['modules.Text', 'ProcessText'],
+  }[kind];
+  evidence.nodes = [
+    {
+      nodeId: 'operation',
+      module: owner[0],
+      action: owner[1],
+      fields: { pipeline_class: { value: `Builtin${kind}OperationV1`, source: 'literal' } },
+      omittedFields: {},
+    },
+  ];
+  evidence.summary = { [kind === 'Data' ? 'dataOperationType' : 'modelType']: `Builtin${kind}OperationV1` };
+  if (kind === 'Image') {
+    evidence.nodes[0].fields.executed_task = { value: operation, source: 'literal' };
+    evidence.summary.executedTask = operation;
+    evidence.graphTasks = [{ loaderId: 'operation', pipelineClass: 'BuiltinImageOperationV1', task: operation }];
+  } else if (kind !== 'Data') {
+    evidence.nodes[0].mediaEvidence = {
+      schemaVersion: 1,
+      status: 'complete',
+      source: 'native-builtin-media-v1',
+      controls: { pipeline_class: `Builtin${kind}OperationV1`, operation },
+      inputs: {},
+      outputs: {},
+      files: {},
+    };
+    evidence.mediaEvidenceStatus = { schemaVersion: 1, truncated: false };
+  }
+  return contracts.coerceStudioOutput({
+    id: 'builtin-history',
+    url: '/retained-output',
+    taskId: evidence.taskId,
+    attemptIndex: evidence.attemptIndex,
+    nodeId: evidence.nodeId,
+    modelType: 'ZImageModularPipeline',
+    repo: profiles.STUDIO_MODEL_PROFILES.ZImageModularPipeline.defaultRepo,
+    formSnapshot: { modelType: 'ZImageModularPipeline', mode: 'text_to_image' },
+    resolvedExecutionInputs: evidence,
+    ...extra,
+  });
+}
+
+test('native builtin operation history never inherits an unrelated model or repository', () => {
+  for (const [kind, operation] of [
+    ['Image', 'image_crop'],
+    ['Audio', 'audio_trim'],
+    ['Video', 'frame_interpolation'],
+    ['Data', 'text_select'],
+  ]) {
+    const modelType = `Builtin${kind}Operation`;
+    let output = builtinHistoryOutput(kind, operation);
+    assert.ok(output.resolvedExecutionInputs, kind);
+    const rawReceipt = structuredClone(output.resolvedExecutionInputs);
+    for (let reload = 0; reload < 3; reload++) {
+      assert.equal(output.modelType, modelType, `${kind}: output identity`);
+      assert.equal(inputs.outputModelKey(output), modelType, `${kind}: filter identity`);
+      assert.equal(output.modelLabel, profiles.STUDIO_MODEL_PROFILES[modelType].label);
+      assert.equal(output.repo, profiles.STUDIO_MODEL_PROFILES[modelType].defaultRepo);
+      if (kind !== 'Data') {
+        assert.equal(output.mode, operation);
+        assert.equal(tasks.outputTaskDisplay(output), profiles.STUDIO_MODE_LABELS[operation]);
+      }
+      assert.equal(output.formSnapshot.modelType, 'ZImageModularPipeline', 'historical authoring form is preserved');
+      assert.deepEqual(output.resolvedExecutionInputs, rawReceipt, 'native evidence is never rewritten');
+      output = contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)));
+    }
+  }
+});
+
+test('a valid native receipt never borrows missing prompt or repository fields from a form', () => {
+  const output = capturedOutput(
+    { model_type: 'QwenImageModularPipeline' },
+    {
+      prompt: 'stale form prompt',
+      negativePrompt: 'stale negative prompt',
+      repo: 'wrong/form-model',
+    },
+  );
+  for (const value of [output, contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output)))]) {
+    assert.equal(value.repo, '');
+    assert.equal(value.prompt, '');
+    assert.equal(value.negativePrompt, '');
+  }
+});
+
+test('builtin task labels require complete supported controls and never borrow the saved task', () => {
+  for (const kind of ['Audio', 'Video']) {
+    const operation = kind === 'Audio' ? 'audio_trim' : 'video_trim';
+    const original = builtinHistoryOutput(kind, operation);
+    for (const mutate of [
+      (evidence) => {
+        evidence.nodes[0].mediaEvidence = { schemaVersion: 1, status: 'unavailable', reason: 'not captured' };
+      },
+      (evidence) => {
+        evidence.nodes[0].mediaEvidence.controls.operation = 'not_a_supported_operation';
+      },
+      (evidence) => {
+        evidence.nodes[0].mediaEvidence.controls.pipeline_class = 'ForeignPipeline';
+      },
+      (evidence) => {
+        evidence.graphTasks = [];
+      },
+    ]) {
+      const candidate = structuredClone(original);
+      mutate(candidate.resolvedExecutionInputs);
+      const output = contracts.coerceStudioOutput(candidate);
+      assert.ok(
+        output.resolvedExecutionInputs,
+        'the bounded receipt remains valid; missing task authority is not invented',
+      );
+      assert.equal(tasks.outputTaskDisplay(output), 'Task not uniquely captured');
+      assert.equal(output.formSnapshot.mode, 'text_to_image');
+    }
+  }
+});
+
+test('multiple native deterministic operations retain their profile without inventing one task', () => {
+  const candidate = builtinHistoryOutput('Audio', 'audio_trim');
+  const next = structuredClone(candidate.resolvedExecutionInputs.nodes[0]);
+  next.nodeId = 'second-operation';
+  next.mediaEvidence.controls.operation = 'audio_join';
+  candidate.resolvedExecutionInputs.nodes.push(next);
+  const output = contracts.coerceStudioOutput(candidate);
+  assert.ok(output.resolvedExecutionInputs);
+  assert.equal(inputs.outputModelKey(output), 'BuiltinAudioOperation');
+  assert.equal(tasks.outputTaskDisplay(output), 'Task not uniquely captured');
+});
+
+test('builtin display aliases require their exact native owner instead of a model-name suffix', () => {
+  const candidate = builtinHistoryOutput('Audio', 'audio_trim');
+  delete candidate.resolvedExecutionInputs.nodes[0].mediaEvidence;
+  delete candidate.resolvedExecutionInputs.mediaEvidenceStatus;
+  candidate.resolvedExecutionInputs.nodes[0].module = 'modules.Foreign';
+  const output = contracts.coerceStudioOutput(candidate);
+  assert.ok(output.resolvedExecutionInputs);
+  assert.notEqual(inputs.outputModelKey(output), 'BuiltinAudioOperation');
+  assert.equal(output.repo, '');
+  assert.equal(tasks.outputTaskDisplay(output), 'Task not uniquely captured');
+});
 
 test('captured model identity replaces stale labels for every registered model and custom pipelines', () => {
   for (const [modelType, profile] of Object.entries(profiles.STUDIO_MODEL_PROFILES)) {
@@ -1441,6 +1723,45 @@ test('audio dispatch tensor identities stay node-local through history restore',
   const nested = structuredClone(capture);
   nested.nodes[0].fields.src_audio_shape.value = [[2, 1440000]];
   assert.equal(inputs.coerceResolvedExecutionInputs(nested, identity), undefined);
+});
+
+test('A14B low-noise guidance retains its node-local connected-control evidence', () => {
+  const identity = { taskId: 'a14b-staged', attemptIndex: 0, nodeId: 'output' };
+  const capture = {
+    schemaVersion: 1,
+    source: 'backend-execution',
+    ...identity,
+    nodes: [
+      {
+        nodeId: 'sample',
+        module: 'modules.DiffusersVideo',
+        action: 'Denoise',
+        fields: {
+          secondary_guidance_scale: {
+            value: 2,
+            source: 'connected',
+            sourceNodeId: 'low-noise-control',
+            sourcePortId: 'value',
+          },
+        },
+        omittedFields: {},
+      },
+    ],
+    summary: { guidanceScale2: 2 },
+    ambiguousFields: [],
+    unavailableFields: [],
+    uncapturedNodeIds: [],
+    truncated: false,
+  };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture);
+  const foreign = structuredClone(capture);
+  foreign.nodes[0].module = 'modules.DiffusersImage';
+  foreign.nodes[0].action = 'Generate';
+  assert.equal(
+    inputs.coerceResolvedExecutionInputs(foreign, identity),
+    undefined,
+    'a scoped video control must not become an accepted arbitrary image field',
+  );
 });
 
 test('every backend capture field survives client history parsing with node-scoped adapter identity', () => {

@@ -1300,7 +1300,7 @@ function payloadWithTransformersTextCluster() {
     components: [
       {
         name: 'model_runtime',
-        type: 'modiff.base-model-runtime@sha256:cc7a00bd6942e5d4e95f6cc8a80efab42b1e26c9c4df9862568cd7b6af15f32c',
+        type: 'modiff.base-model-runtime@sha256:111b6c7b46b8e674c8f5abf2c24b90494ab16c511064b9c3286704de5ba87d95',
         creationMethod: 'base_installation',
         reuseKey: ['model_runtime'],
       },
@@ -1334,7 +1334,7 @@ function payloadWithTransformersTextCluster() {
         url: '',
       },
     },
-    contentHash: 'sha256:e982d1206b2cc0b6154de3e90bedcb8fb012cb9c010406f79c7fe49fd56c8e88',
+    contentHash: 'sha256:7df9c6510eb0a7d779a662a9907f318a1a08956d6a094681060e9a23ebb4aff1',
   };
   body.providers = ['diffusers', 'transformers'];
   body.definitions.push(transformerDefinition);
@@ -3467,11 +3467,15 @@ test('Transformers Blocks insert and materialize their exact generic task graph'
   assert.equal(transformersSection.entries[0].insertable, true);
   assert.deepEqual(definition.components[0], {
     name: 'model_runtime',
-    type: 'modiff.base-model-runtime@sha256:cc7a00bd6942e5d4e95f6cc8a80efab42b1e26c9c4df9862568cd7b6af15f32c',
+    type: 'modiff.base-model-runtime@sha256:111b6c7b46b8e674c8f5abf2c24b90494ab16c511064b9c3286704de5ba87d95',
     creationMethod: 'base_installation',
     reuseKey: ['model_runtime'],
   });
   for (const [runtimeDigest, definitionHash] of [
+    [
+      'sha256:cc7a00bd6942e5d4e95f6cc8a80efab42b1e26c9c4df9862568cd7b6af15f32c',
+      'sha256:e982d1206b2cc0b6154de3e90bedcb8fb012cb9c010406f79c7fe49fd56c8e88',
+    ],
     [
       'sha256:cc281f8fbae5093d68b4dd963a8f80e32b1589991c8cda97a3ec0f26c9e700db',
       'sha256:ec00d85eae98ff645e1ead4726c55904a9360513b5e21bdc2473fa1a2720a310',

@@ -57,12 +57,78 @@ export function findCanonicalWorkflowRecord(workflows, template) {
   );
 }
 
+export function templateResourceExecutionModelType(template) {
+  const selected = template?.executionSelection?.pipelineClass;
+  return typeof selected === 'string' && selected.trim() ? selected : template.modelType;
+}
+
+export function qualificationModelArtifacts(modelRevision, existing = []) {
+  if (modelRevision === undefined || modelRevision === null) return [];
+  assert.equal(typeof modelRevision, 'string', 'Qualification model revision must be a revision lock.');
+  const members = modelRevision.split(' | ');
+  assert(members.length > 0 && members.length <= 64, 'Qualification model set exceeds its bound.');
+  const seen = new Map();
+  const artifacts = [];
+  for (const member of members) {
+    const match = /^([A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*)@([a-f0-9]{40,64})$/iu.exec(member);
+    assert(match, 'Qualification model must identify one repository and immutable revision.');
+    const [, repo, revision] = match;
+    assert(!seen.has(repo) || seen.get(repo) === revision, 'Qualification model set contains conflicting revisions.');
+    if (seen.has(repo)) continue;
+    seen.set(repo, revision);
+    if (!existing.some((a) => a.repo === repo && a.revision === revision)) {
+      artifacts.push({ role: 'qualification_model', repo, revision });
+    }
+  }
+  return artifacts;
+}
+
+export function assessGalleryReleaseApproval(entry, { matchesCurrentRecipe, unavailableAssets = [] }) {
+  const reasons = [];
+  if (!entry || !['approved_exact', 'approved_reviewed'].includes(entry.qualityReviewStatus)) {
+    reasons.push('approved_quality_review');
+  }
+  if (!matchesCurrentRecipe) reasons.push('current_recipe_example');
+  const unavailable = new Set(unavailableAssets);
+  const paths = [
+    'outputPath',
+    'thumbnailPath',
+    'cardPreviewPath',
+    'beforePath',
+    'afterPath',
+    'posterPath',
+    'provenancePath',
+    'qualityReviewPath',
+  ]
+    .map((key) => entry?.[key])
+    .filter((value) => typeof value === 'string');
+  for (const path of paths) {
+    if (unavailable.has(path.replace(/^\/+/, ''))) reasons.push(`unavailable_asset:${path}`);
+  }
+  return { approved: reasons.length === 0, reasons };
+}
+
 function sameNodeContract(left, right) {
   return (
     Array.isArray(left) &&
     Array.isArray(right) &&
     JSON.stringify([...new Set(left)].sort()) === JSON.stringify([...new Set(right)].sort())
   );
+}
+
+// A retained receipt with an exact current canonical association is preferred
+// over a Gallery projection of the same-time run. Keep completion time primary:
+// a newer matching run is still the latest evidence. This never promotes stale
+// or incomplete records into matching evidence.
+export function selectCurrentHistoricalEvidence(assessed) {
+  return assessed
+    .filter((item) => item.assessment.matches)
+    .sort(
+      (left, right) =>
+        String(left.candidate.capturedAt ?? '').localeCompare(String(right.candidate.capturedAt ?? '')) ||
+        Number(left.assessment.status === 'current') - Number(right.assessment.status === 'current'),
+    )
+    .at(-1);
 }
 
 export function assessHistoricalEvidence(candidate, canonicalWorkflow, backendRegistry, expected = {}) {
@@ -143,7 +209,23 @@ export function canonicalWorkflowAuthoringContract(manifest, graph, authoring, a
     for (const [key, parameter] of Object.entries(params)) {
       const value = parameter?.value ?? parameter?.default;
       if (value?.source !== 'hub') continue;
-      const repo = value.value;
+      let repo = value.value;
+      // File selectors retain org/repository/path together with exact bytes.
+      // Associate that reviewed file with its declared repository; do not trim
+      // arbitrary strings or turn an unpinned path into a model identity.
+      if (!pins.has(repo) && typeof repo === 'string' && repo.split('/').length > 2) {
+        const parts = repo.split('/');
+        assert(
+          parts.every((part) => part && part !== '.' && part !== '..' && !/[\\\u0000-\u001f]/u.test(part)),
+          'Unsafe Hub model file path.',
+        );
+        assert(
+          /^[a-f0-9]{64}$/iu.test(value.sha256 ?? '') && Number.isSafeInteger(value.byteSize) && value.byteSize > 0,
+          'Hub model file requires exact byte identity.',
+        );
+        assert(immutableRevision(value.revision), 'Hub model file requires an immutable model pin.');
+        repo = parts.slice(0, 2).join('/');
+      }
       const revisionKey = ['model', 'model_id', 'repo_id'].includes(key)
         ? 'revision'
         : `${key.replace(/_(?:id|path)$/, '')}_revision`;
@@ -166,6 +248,14 @@ export function canonicalWorkflowAuthoringContract(manifest, graph, authoring, a
     modelSet,
     outputPlan: authoring.outputPlan,
   };
+}
+
+/** Declared source identity only. Resolving an immutable recipe pin does not
+ * create execution evidence, quality approval or resource qualification. */
+export function canonicalWorkflowDeclaredModelRevision(manifest, graph, authoring, artifact = null) {
+  return canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact)
+    .modelSet.map(({ repoId, revision }) => `${repoId}@${revision}`)
+    .join(' | ');
 }
 
 // Pure shared validation used both when retaining a receipt and when projecting
@@ -558,6 +648,14 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const authoringRows = json(join(backendRoot, 'data/template-authoring-specs.v1.json')).specifications;
   const authoringMatches = authoringRows.filter((row) => row.canonicalWorkflowId === workflowId);
   assert.equal(authoringMatches.length, 1, 'Canonical source authoring identity is missing or ambiguous.');
+  if (manifest.modelType === 'BuiltinDataOperation') {
+    const { readBuiltinDataEvidence } = await import('./builtin-data-qualification.mjs');
+    return readBuiltinDataEvidence({ clientRoot, manifest, graph, authoring: authoringMatches[0], evidencePath });
+  }
+  if (['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation'].includes(manifest.modelType)) {
+    const { readBuiltinMediaEvidence } = await import('./builtin-media-qualification.mjs');
+    return readBuiltinMediaEvidence({ clientRoot, manifest, graph, authoring: authoringMatches[0], evidencePath });
+  }
   const artifact = json(join(backendRoot, 'data/model-artifact-catalog.json')).models.find(
     (row) => row.modelType === manifest.modelType,
   );

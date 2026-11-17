@@ -18,12 +18,13 @@ import {
 import { blockProjectionNodeIdV2, createBlockRootNodeV2, parameterCustomizationState } from '../studio/blockRuntimeV2';
 import type { OperationGraph } from './operationAuthoring';
 import { operationAuthoring } from './operationAuthoringHint';
-import { operationScope } from './operationScope';
+import { declaredImagePipelineStageTail, operationScope } from './operationScope';
 import { operationOwnsModel } from './operationContracts';
 import { remapOperationAuthoring } from './operationSharedInputs';
 import { workflowTaskCategory } from './workflowTaskBrowser';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { hasInlineScalarControl } from '../studio/inlineScalarControl';
+import { groupStoryboardShots } from './storyboardShotPresentation';
 
 import {
   visualOperationGroup,
@@ -88,6 +89,66 @@ const SETUP_UTILITIES = new Set([
   'modules.DiffusersRuntime.DiffusersExecutionRecipe',
 ]);
 
+/** Typed, connected setup suppliers only. Sharing a supplier keeps it external.
+ * This is presentation membership, never permission to load or execute it. */
+function connectedSetupMembers(graph: OperationGraph, ownerId: string, scopeIds: ReadonlySet<string>) {
+  const ordinary = graph.nodes.filter(
+    (node) => !node.parentId && !node.data.blockInstanceV2 && !node.data.blockProjectionOwnerId,
+  );
+  const members = new Set([ownerId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of ordinary.filter((node) => SETUP_UTILITIES.has(nodeKey(node)) && !members.has(node.id))) {
+      // Descriptor/configuration suppliers feed the loader; a whole-pipeline
+      // adapter consumes its pipeline. Every edge must be a declared socket.
+      const connected = graph.edges.some((edge) => {
+        if (!(
+          (members.has(edge.target) && edge.source === node.id) ||
+          (members.has(edge.source) && edge.target === node.id)
+        ))
+          return false;
+        const source = graph.nodes.find((n) => n.id === edge.source)?.data.params[edge.sourceHandle ?? ''];
+        const target = graph.nodes.find((n) => n.id === edge.target)?.data.params[edge.targetHandle ?? ''];
+        return (
+          source?.display === 'output' &&
+          Boolean(
+            target &&
+            (target.display === 'input' || target.isInput) &&
+            connectionTypesAreCompatible(source.type, target.type),
+          )
+        );
+      });
+      if (connected) {
+        members.add(node.id);
+        changed = true;
+      }
+    }
+  }
+  // A descriptor/configuration output shared outside this setup stays external.
+  // Prune backwards as well: an earlier adapter feeding that shared supplier
+  // must not be swallowed by the loader's visual wrapper.
+  changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of [...members].filter((id) => id !== ownerId)) {
+      const node = ordinary.find((node) => node.id === id)!;
+      const directAdapter = ['modules.DiffusersImage.LoadAdapter', 'modules.DiffusersAudio.LoadAdapter'].includes(
+        nodeKey(node),
+      );
+      if (
+        graph.edges.some(
+          (edge) => edge.source === id && !members.has(edge.target) && !(directAdapter && scopeIds.has(edge.target)),
+        )
+      ) {
+        members.delete(id);
+        changed = true;
+      }
+    }
+  }
+  return ordinary.filter((node) => members.has(node.id));
+}
+
 /** Select existing, connected implementations only. Never manufacture a mask,
  * decoder or modifier from a model name, task label or repository. */
 function operationStageMembers(
@@ -147,6 +208,53 @@ function operationStageMembers(
   const owner = scope.find((node) => node.id === ownerId)!;
   const category = workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '');
   if (!['Image', 'Audio', 'Video'].includes(category)) return [];
+  if (category === 'Video' && ['imageInput', 'references'].includes(kind)) {
+    const task = operationAuthoring(owner)!.operation.task;
+    if ((kind === 'imageInput') !== (task === 'image_to_video')) return [];
+    return ordinary.filter(
+      (node) =>
+        nodeKey(node) === 'modules.Image.Load' &&
+        graph.edges.some(
+          (edge) =>
+            edge.source === node.id &&
+            edge.sourceHandle === 'image' &&
+            scopeIds.has(edge.target) &&
+            edge.targetHandle === 'reference_images',
+        ) &&
+        graph.edges.filter((edge) => edge.source === node.id).every((edge) => scopeIds.has(edge.target)),
+    );
+  }
+  if (category === 'Video' && kind === 'mask') {
+    const canvases = ordinary.filter(
+      (node) =>
+        nodeKey(node) === 'modules.VideoConditioning.OutpaintCanvas' &&
+        graph.edges.some(
+          (edge) => edge.source === node.id && edge.sourceHandle === 'mask' && scopeIds.has(edge.target),
+        ),
+    );
+    if (canvases.length === 1) return canvases;
+    const pairs = ordinary.flatMap((align) => {
+      if (
+        nodeKey(align) !== 'modules.VideoConditioning.AlignMask' ||
+        !graph.edges.some(
+          (edge) =>
+            edge.source === align.id &&
+            edge.sourceHandle === 'output' &&
+            scopeIds.has(edge.target) &&
+            edge.targetHandle === 'mask',
+        )
+      )
+        return [];
+      const inputs = graph.edges.filter((edge) => edge.target === align.id && edge.targetHandle === 'mask');
+      const load =
+        inputs.length === 1 &&
+        ordinary.find((node) => node.id === inputs[0]!.source && nodeKey(node) === 'modules.Video.Load');
+      return load && graph.edges.filter((edge) => edge.source === load.id).every((edge) => edge.target === align.id)
+        ? [[load, align]]
+        : [];
+    });
+    return pairs.length === 1 ? pairs[0]! : [];
+  }
   if (kind === 'videoInput' || kind === 'references') {
     const video = kind === 'videoInput';
     if (category !== (video ? 'Video' : 'Image')) return [];
@@ -157,7 +265,19 @@ function operationStageMembers(
       const consumers = graph.edges.filter((edge) => edge.source === prepare.id);
       if (
         !consumers.length ||
-        !consumers.every((edge) => scopeIds.has(edge.target)) ||
+        !consumers.every(
+          (edge) =>
+            scopeIds.has(edge.target) ||
+            (video &&
+              edge.targetHandle === 'video' &&
+              ordinary.some(
+                (node) =>
+                  node.id === edge.target &&
+                  ['modules.VideoConditioning.AlignMask', 'modules.VideoConditioning.OutpaintCanvas'].includes(
+                    nodeKey(node),
+                  ),
+              )),
+        ) ||
         !consumers.some((edge) => edge.sourceHandle === 'output' && edge.targetHandle === media)
       )
         return [];
@@ -180,14 +300,59 @@ function operationStageMembers(
     if (category === 'Image') {
       const denoise = scope.find((node) => nodeKey(node) === 'modules.ModularDiffusers.WorkflowImageDenoise');
       const decode = scope.find((node) => nodeKey(node) === 'modules.ModularDiffusers.WorkflowDecodeImage');
-      return denoise &&
+      if (
+        denoise &&
         decode &&
         supplied(denoise.id, 'pipeline_components', ownerId, 'pipeline_components') &&
         supplied(decode.id, 'pipeline_components', ownerId, 'pipeline_components') &&
         supplied(decode.id, 'state_in', denoise.id, 'state_out')
-        ? [denoise, decode]
+      )
+        return [denoise, decode];
+      // Retained component-based image recipes use the same visible Generate
+      // stage. Fold only one real sampler/decoder pair owned by this loader.
+      const pairs = scope
+        .filter((node) => nodeKey(node) === 'modules.ModularDiffusers.Denoise')
+        .flatMap((sampler) =>
+          scope
+            .filter((node) => nodeKey(node) === 'modules.ModularDiffusers.DecodeLatents')
+            .filter(
+              (decoder) =>
+                supplied(sampler.id, 'unet', ownerId, 'unet_out') &&
+                supplied(sampler.id, 'scheduler', ownerId, 'scheduler') &&
+                supplied(decoder.id, 'vae', ownerId, 'vae_out') &&
+                supplied(decoder.id, 'latents', sampler.id, 'latents'),
+            )
+            .map((decoder) => [sampler, decoder]),
+        );
+      if (pairs.length) return pairs.length === 1 ? pairs[0]! : [];
+      const sampler = scope.find((node) => nodeKey(node) === 'modules.DiffusersImage.Denoise');
+      const decoder = scope.find((node) => nodeKey(node) === 'modules.DiffusersImage.DecodeLatents');
+      const pipelines = graph.edges.filter((edge) => edge.target === sampler?.id && edge.targetHandle === 'pipeline');
+      if (!sampler || !decoder || pipelines.length !== 1) return [];
+      const source = pipelines[0]!;
+      const tail = declaredImagePipelineStageTail(
+        graph,
+        ownerId,
+        graph.edges.filter((edge) => edge.source === source.source && edge.sourceHandle === source.sourceHandle),
+      );
+      return tail?.some((node) => node.id === sampler.id) && tail.some((node) => node.id === decoder.id)
+        ? [sampler, decoder]
         : [];
     }
+    const rendered = scope.find(
+      (node) =>
+        nodeKey(node) === 'modules.DiffusersVideo.Generate' &&
+        operationAuthoring(node)?.operation.nodeType === 'denoise',
+    );
+    const encoding = scope.find((node) => nodeKey(node) === 'modules.DiffusersVideo.EncodeInputs');
+    if (
+      category === 'Video' &&
+      rendered &&
+      encoding &&
+      supplied(rendered.id, 'pipeline', ownerId, 'pipeline') &&
+      supplied(rendered.id, 'encoded_inputs', encoding.id, 'encoded_inputs')
+    )
+      return [rendered];
     const denoise = scope.find((node) => nodeKey(node) === 'modules.DiffusersVideo.Denoise');
     const decode = scope.find(
       (node) => nodeKey(node) === 'modules.DiffusersVideo.DecodeLatents' && stageKind(node) === 'output',
@@ -212,61 +377,16 @@ function operationStageMembers(
     return [];
   if (kind === 'setup') {
     if (operationAuthoring(owner)?.operation.decomposition === 'integrated') return [];
-    const members = new Set([ownerId]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const node of ordinary.filter((node) => SETUP_UTILITIES.has(nodeKey(node)) && !members.has(node.id))) {
-        // Descriptor/configuration suppliers feed the loader; a whole-pipeline
-        // adapter consumes its pipeline. Every edge must be a declared socket.
-        const connected = graph.edges.some((edge) => {
-          if (!(
-            (members.has(edge.target) && edge.source === node.id) ||
-            (members.has(edge.source) && edge.target === node.id)
-          ))
-            return false;
-          const source = graph.nodes.find((n) => n.id === edge.source)?.data.params[edge.sourceHandle ?? ''];
-          const target = graph.nodes.find((n) => n.id === edge.target)?.data.params[edge.targetHandle ?? ''];
-          return (
-            source?.display === 'output' &&
-            Boolean(
-              target &&
-              (target.display === 'input' || target.isInput) &&
-              connectionTypesAreCompatible(source.type, target.type),
-            )
-          );
-        });
-        if (connected) {
-          members.add(node.id);
-          changed = true;
-        }
-      }
-    }
-    // A descriptor/configuration output shared outside this setup stays external.
-    // Prune backwards as well: an earlier adapter feeding that shared supplier
-    // must not be swallowed by the loader's visual wrapper.
-    changed = true;
-    while (changed) {
-      changed = false;
-      for (const id of [...members].filter((id) => id !== ownerId)) {
-        const node = ordinary.find((node) => node.id === id)!;
-        const directAdapter = ['modules.DiffusersImage.LoadAdapter', 'modules.DiffusersAudio.LoadAdapter'].includes(
-          nodeKey(node),
-        );
-        if (
-          graph.edges.some(
-            (edge) => edge.source === id && !members.has(edge.target) && !(directAdapter && scopeIds.has(edge.target)),
-          )
-        ) {
-          members.delete(id);
-          changed = true;
-        }
-      }
-    }
-    return ordinary.filter((node) => members.has(node.id));
+    return connectedSetupMembers(graph, ownerId, scopeIds);
   }
   if (kind === 'output') {
-    const decoders = scope.filter((node) => stageKind(node) === 'output');
+    const decoders = scope.filter(
+      (node) =>
+        stageKind(node) === 'output' ||
+        (category === 'Video' &&
+          nodeKey(node) === 'modules.DiffusersVideo.Generate' &&
+          operationAuthoring(node)?.operation.nodeType === 'denoise'),
+    );
     const members = new Set<string>();
     for (const decoder of decoders) {
       const media = category === 'Video' ? 'video' : category === 'Audio' ? 'audio' : 'image';
@@ -313,7 +433,7 @@ function operationStageMembers(
     }
     return ordinary.filter((node) => members.has(node.id));
   }
-  if (category !== 'Image') return [];
+  if (kind !== 'mask' || category !== 'Image') return [];
   const task = operationAuthoring(owner)!.operation.task;
   if (!['inpaint', 'outpaint'].includes(task ?? '')) return [];
   const members = new Set<string>();
@@ -362,6 +482,11 @@ export function availableOperationStageGroups(graph: OperationGraph, ownerId: st
     const members = operationStageMembers(unpacked.graph, ownerId, kind);
     return members.length > 0 && members.every((node) => !grouped.has(node.id));
   });
+}
+
+/** Shared authoring uses the same diagnosed membership as the visible grouper. */
+export function operationStageMemberIds(graph: OperationGraph, ownerId: string, kind: VisualOperationGroup) {
+  return operationStageMembers(graph, ownerId, kind).map((node) => node.id);
 }
 
 /** Compose ordinary leaves into the existing V2 contract; no library write. */
@@ -418,14 +543,14 @@ export function groupVisualStages(
   }
   const remap = (id: string) =>
     selected.has(id) ? (id.startsWith(`${rootId}/`) ? id.slice(rootId.length + 1) : `stage-${id}`) : id;
-  const preserveOrder = ['videoInput', 'references', 'generate', 'mask'].includes(kind);
+  const preservePosition = ['imageInput', 'videoInput', 'references', 'generate', 'mask', 'composite'].includes(kind);
   const firstStage =
     members.find((node) =>
       kind === 'generate' ? nodeKey(node) === 'modules.DiffusersVideo.Denoise' : node.data.action === 'Load',
     ) ?? members[0]!;
   const position =
     previous?.position ??
-    (preserveOrder
+    (preservePosition
       ? collisionFreeInsertPosition(
           firstStage.position,
           graph.nodes.filter((n) => !selected.has(n.id)),
@@ -451,7 +576,10 @@ export function groupVisualStages(
           (edge.source === node.id && edge.sourceHandle === field && !selected.has(edge.target)) ||
           (edge.target === node.id && edge.targetHandle === field && !selected.has(edge.source)),
       );
-      if (['ui_image', 'ui_audio', 'ui_video'].includes(param.display ?? '') && kind === 'output')
+      if (
+        ['ui_image', 'ui_audio', 'ui_video'].includes(param.display ?? '') &&
+        ['output', 'imageInput', 'videoInput', 'references', 'mask', 'generate'].includes(kind)
+      )
         previews.push({
           nodeId: remap(node.id),
           outputPortId: field,
@@ -468,6 +596,8 @@ export function groupVisualStages(
       // example Image.Load.path). The explicit Block interface still needs a
       // non-empty name without changing the original leaf field.
       let label = (typeof param.label === 'string' && param.label.trim()) || field;
+      if (kind === 'videoInput' && node.data.studioRole === 'loadControlVideo' && field === 'file')
+        label = 'Control video';
       if (
         kind === 'videoInput' &&
         nodeKey(node) === 'modules.Video.Load' &&
@@ -482,7 +612,8 @@ export function groupVisualStages(
         label = `Target ${field === 'num_frames' ? 'frames' : field}`;
       const internalOutput =
         !connected &&
-        ['videoInput', 'references', 'mask', 'generate'].includes(kind) &&
+        (['setup', 'imageInput', 'videoInput', 'references', 'mask', 'generate', 'composite'].includes(kind) ||
+          implicitScalars.has(node.id)) &&
         graph.edges.some((edge) => edge.source === node.id && edge.sourceHandle === field && selected.has(edge.target));
       if (
         (param.display === 'output' && !internalOutput) ||
@@ -499,7 +630,9 @@ export function groupVisualStages(
       if (
         (param.display ||
           (stageKind(node) === 'guidance' && !param.isInput) ||
-          ((['setup', 'mask', 'output', 'videoInput', 'references', 'generate'].includes(kind) ||
+          ((['setup', 'mask', 'output', 'imageInput', 'videoInput', 'references', 'generate', 'composite'].includes(
+            kind,
+          ) ||
             implicitScalars.has(node.id)) &&
             (!param.isInput || hasInlineScalarControl(param)))) &&
         !['input', 'output'].includes(param.display ?? '') &&
@@ -547,9 +680,19 @@ export function groupVisualStages(
   }
   // One public component socket feeds both real stages through the V2 mirrored input.
   const redundantEdges = new Set<string>();
+  if (kind === 'composite') {
+    const counts = new Map<string, number>();
+    for (const control of controls) counts.set(control.label, (counts.get(control.label) ?? 0) + 1);
+    for (const control of controls)
+      if ((counts.get(control.label) ?? 0) > 1) {
+        const member = members.find((node) => remap(node.id) === control.binding.nodeId)!;
+        control.label = `${member.data.label} · ${control.label}`;
+      }
+  }
   if (kind === 'generate') {
     for (const [keys, field] of [
       [['modules.DiffusersVideo.Denoise', 'modules.DiffusersVideo.DecodeLatents'], 'pipeline'],
+      [['modules.DiffusersImage.Denoise', 'modules.DiffusersImage.DecodeLatents'], 'pipeline'],
       [
         ['modules.ModularDiffusers.WorkflowImageDenoise', 'modules.ModularDiffusers.WorkflowDecodeImage'],
         'pipeline_components',
@@ -576,7 +719,9 @@ export function groupVisualStages(
       }
     }
   }
-  const ordinaryIds = preserveOrder
+  // Every presentation stage retains its leaves' source order. Independent
+  // inputs affect traversal and ordered references even in Setup/Encode/Output.
+  const ordinaryIds = preservePosition
     ? insertStageLeaves(
         graph.nodes.filter((n) => !n.data.blockInstanceV2 && !n.data.blockProjectionOwnerId).map((n) => n.id),
         graph.nodes.flatMap(
@@ -592,7 +737,7 @@ export function groupVisualStages(
   const innerGraph = {
     nodes: members.map((node) => {
       const data = structuredClone(node.data);
-      if (preserveOrder) data.visualStageSourceIndex ??= ordinaryIds.indexOf(node.id);
+      if (preservePosition) data.visualStageSourceIndex ??= ordinaryIds.indexOf(node.id);
       const hint = remapOperationAuthoring(data.operationAuthoring, remap);
       if (hint) data.operationAuthoring = hint;
       return {
@@ -792,9 +937,15 @@ export function groupOperationStages(
 ) {
   const unpacked = unpackVisualOperationGroups(graph);
   const grouped = new Set([...unpacked.members.values()].flat());
+  const generated = new Set<string>();
   let next = graph;
   for (const kind of kinds) {
-    const members = operationStageMembers(unpacked.graph, ownerId, kind, combineGuidance);
+    let members = operationStageMembers(unpacked.graph, ownerId, kind, combineGuidance);
+    // A fresh Generate owns its adjacent native decoder. Keep the proven
+    // downstream file exporter as Output without moving that decoder twice.
+    // Explicit grouping of existing saved stages retains its previous scope.
+    if (kind === 'output' && members.some((node) => generated.has(node.id)))
+      members = members.filter((node) => !generated.has(node.id));
     if (members.some((node) => grouped.has(node.id))) continue;
     if (members.length) {
       next = groupVisualStages(
@@ -805,27 +956,296 @@ export function groupOperationStages(
         { combineGuidance: kind === 'inputs' && combineGuidance },
       );
       for (const node of members) grouped.add(node.id);
+      if (kind === 'generate') for (const node of members) generated.add(node.id);
     }
   }
   return next;
 }
 
-export function groupNewOperationGraph(graph: OperationGraph) {
-  let next = graph;
+export function groupNewOperationGraph(graph: OperationGraph, options: { legacyStageOrder?: boolean } = {}) {
+  // Existing decomposed template creators retain their historical traversal.
+  // Fresh Example imports instead preserve the canonical source's own order.
+  const legacyStageOrder =
+    options.legacyStageOrder && graph.nodes.some((node) => operationOwnsModel(operationAuthoring(node)?.operation));
+  // Capture one order before folding any stages. Reconstructing it separately
+  // after each fold can exchange repeated reference-image loaders.
+  const sourceOrder = new Map(graph.nodes.map((node, index) => [node.id, index]));
+  let next = {
+    ...graph,
+    nodes: graph.nodes.map((node) =>
+      legacyStageOrder || node.data.blockInstanceV2 || node.data.blockProjectionOwnerId
+        ? node
+        : { ...node, data: { ...node.data, visualStageSourceIndex: sourceOrder.get(node.id)! } },
+    ),
+  };
+  next = groupStoryboardShots(next, groupVisualStages);
   for (const owner of graph.nodes.filter((node) => operationOwnsModel(operationAuthoring(node)?.operation)))
     next =
       workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Image'
         ? groupOperationStages(next, owner.id, ['inputs', 'setup', 'generate', 'output', 'references', 'mask'], true)
-        : ['Audio', 'Video'].includes(workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? ''))
-          ? groupOperationStages(next, owner.id, ['inputs', 'guidance', 'setup', 'output', 'videoInput', 'generate'])
-          : groupOperationStages(next, owner.id);
+        : workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Video'
+          ? groupOperationStages(next, owner.id, [
+              'inputs',
+              'guidance',
+              'setup',
+              'videoInput',
+              'imageInput',
+              'references',
+              'mask',
+              'generate',
+              'output',
+            ])
+          : workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Audio'
+            ? groupOperationStages(next, owner.id, ['inputs', 'guidance', 'setup', 'output', 'videoInput', 'generate'])
+            : groupOperationStages(next, owner.id);
+  // The same real input preparation can precede a whole native pipeline.
+  // Keep a separately consumed original clip external, with its own preview.
+  for (const prepare of [...next.nodes]) {
+    if (
+      prepare.parentId ||
+      prepare.data.blockInstanceV2 ||
+      prepare.data.blockProjectionOwnerId ||
+      nodeKey(prepare) !== 'modules.VideoConditioning.Normalize'
+    )
+      continue;
+    const incoming = next.edges.filter((edge) => edge.target === prepare.id && edge.targetHandle === 'video');
+    const wire = incoming[0];
+    if (incoming.length !== 1 || wire?.sourceHandle !== 'video') continue;
+    const loader = next.nodes.find((node) => node.id === wire.source);
+    if (
+      !loader ||
+      loader.parentId ||
+      loader.data.blockInstanceV2 ||
+      loader.data.blockProjectionOwnerId ||
+      nodeKey(loader) !== 'modules.Video.Load' ||
+      next.edges.some((edge) => edge.source === loader.id && edge.target !== prepare.id)
+    )
+      continue;
+    const consumers = next.edges.filter((edge) => edge.source === prepare.id && edge.sourceHandle === 'output');
+    if (
+      !consumers.length ||
+      !consumers.some((edge) => {
+        const target = next.nodes.find((node) => node.id === edge.target);
+        const input = target?.data.params[edge.targetHandle ?? ''];
+        return (
+          target?.data.module === 'modules.DiffusersVideo' &&
+          ['Generate', 'GenerateVideoAudio'].includes(target.data.action) &&
+          input?.type === 'video' &&
+          (input.display === 'input' || input.isInput)
+        );
+      })
+    )
+      continue;
+    next = groupVisualStages(next, [loader.id, prepare.id], 'videoInput');
+  }
+  // Whole-pipeline paths already perform encoding/generation/decoding inside
+  // their real native Generate operation. Fold only their actual setup chain;
+  // do not invent an Encode stage or assign operation-authoring authority.
+  // Legacy native modular and Transformers examples also own real, editable
+  // model setup. Keep their authored fields inside the ordinary V2 boundary;
+  // registry hydration must not introduce controls omitted by that recipe.
+  for (const owner of [...next.nodes]) {
+    if (
+      owner.parentId ||
+      owner.data.blockInstanceV2 ||
+      owner.data.blockProjectionOwnerId ||
+      !['modules.ModularDiffusers.ModelsLoader', 'modules.HuggingFaceTransformers.LoadImageTextToTextModel'].includes(
+        nodeKey(owner),
+      )
+    )
+      continue;
+    const consumers = next.nodes.filter(
+      (node) =>
+        !node.parentId &&
+        !node.data.blockInstanceV2 &&
+        !node.data.blockProjectionOwnerId &&
+        !operationAuthoring(node) &&
+        nodeKey(node) === 'modules.HuggingFaceTransformers.GenerateImageVideoText' &&
+        node.data.params.model?.type === owner.data.params.model?.type &&
+        next.edges.some(
+          (edge) =>
+            edge.source === owner.id &&
+            edge.sourceHandle === 'model' &&
+            edge.target === node.id &&
+            edge.targetHandle === 'model',
+        ),
+    );
+    if (nodeKey(owner) === 'modules.ModularDiffusers.ModelsLoader') {
+      const ordinary = next.nodes.filter(
+        (node) =>
+          !node.parentId &&
+          !node.data.blockInstanceV2 &&
+          !node.data.blockProjectionOwnerId &&
+          !operationAuthoring(node),
+      );
+      const supplied = (target: string, field: string, source: string, output: string) =>
+        next.edges.some(
+          (edge) =>
+            edge.source === source &&
+            edge.sourceHandle === output &&
+            edge.target === target &&
+            edge.targetHandle === field,
+        );
+      const encoders = ordinary.filter(
+        (node) =>
+          node.data.module === 'modules.ModularDiffusers' &&
+          [
+            ['EncodePrompt', 'text_encoders', 'text_encoders'],
+            ['ImageEmbeddings', 'image_encoder', 'image_encoder'],
+            ['ImageEncode', 'vae', 'vae_out'],
+          ].some(
+            ([action, input, output]) => node.data.action === action && supplied(node.id, input!, owner.id, output!),
+          ),
+      );
+      const pairs = ordinary
+        .filter((node) => nodeKey(node) === 'modules.ModularDiffusers.Denoise')
+        .flatMap((sampler) =>
+          ordinary
+            .filter((node) => nodeKey(node) === 'modules.ModularDiffusers.DecodeLatents')
+            .filter(
+              (decoder) =>
+                supplied(sampler.id, 'unet', owner.id, 'unet_out') &&
+                supplied(sampler.id, 'scheduler', owner.id, 'scheduler') &&
+                supplied(decoder.id, 'vae', owner.id, 'vae_out') &&
+                supplied(decoder.id, 'latents', sampler.id, 'latents'),
+            )
+            .map((decoder) => [sampler.id, decoder.id]),
+        );
+      if (encoders.length)
+        next = groupVisualStages(
+          next,
+          encoders.map((node) => node.id),
+          'inputs',
+          undefined,
+          {
+            implicitScalarControlNodeIds: encoders.map((node) => node.id),
+          },
+        );
+      if (pairs.length === 1) next = groupVisualStages(next, pairs[0]!, 'generate');
+    }
+    next = groupVisualStages(
+      next,
+      connectedSetupMembers(next, owner.id, new Set()).map((node) => node.id),
+      'setup',
+    );
+    for (const node of consumers) next = groupVisualStages(next, [node.id], 'generate');
+  }
+  for (const owner of [...next.nodes]) {
+    if (
+      owner.parentId ||
+      owner.data.blockInstanceV2 ||
+      owner.data.blockProjectionOwnerId ||
+      operationAuthoring(owner) ||
+      owner.data.action !== 'LoadPipeline' ||
+      ![
+        'modules.DiffusersImage',
+        'modules.DiffusersAudio',
+        'modules.DiffusersVideo',
+        'modules.DiffusersThreeD',
+      ].includes(owner.data.module) ||
+      owner.data.params.pipeline?.display !== 'output' ||
+      ![
+        'image_diffusion_pipeline',
+        'audio_diffusion_pipeline',
+        'video_diffusion_pipeline',
+        'three_d_diffusion_pipeline',
+      ].includes(String(owner.data.params.pipeline.type)) ||
+      owner.data.params.execution_recipe?.type !== 'diffusers_execution_recipe' ||
+      !(owner.data.params.execution_recipe.display === 'input' || owner.data.params.execution_recipe.isInput)
+    )
+      continue;
+    const generation = next.nodes.filter(
+      (node) =>
+        !node.parentId &&
+        !node.data.blockInstanceV2 &&
+        !node.data.blockProjectionOwnerId &&
+        !operationAuthoring(node) &&
+        node.data.module === owner.data.module &&
+        [
+          'Generate',
+          'Edit',
+          'Inpaint',
+          'ControlGenerate',
+          'ControlEdit',
+          'ControlInpaint',
+          'UnconditionalGenerate',
+          'PredictMap',
+          'LayerDecompose',
+          'GenerateVideoAudio',
+          'GenerateRenderedArtifact',
+        ].includes(node.data.action) &&
+        node.data.params.pipeline?.type === owner.data.params.pipeline!.type &&
+        (node.data.params.pipeline!.display === 'input' || node.data.params.pipeline!.isInput) &&
+        next.edges.some(
+          (edge) =>
+            edge.source === owner.id &&
+            edge.sourceHandle === 'pipeline' &&
+            edge.target === node.id &&
+            edge.targetHandle === 'pipeline',
+        ),
+    );
+    const members = connectedSetupMembers(next, owner.id, new Set());
+    next = groupVisualStages(
+      next,
+      members.map((node) => node.id),
+      'setup',
+    );
+    // Keep the authored call fields inside the same real V2 Generate boundary.
+    // Live root-schema hydration must not add inactive controls for other models.
+    for (const node of generation) next = groupVisualStages(next, [node.id], 'generate');
+  }
+  // Export remains its own stage after an intervening upscale, assembly or
+  // independent soundtrack. Group the actual file exporter and its complete
+  // typed boundary, never pull those meaningful operations into Output.
+  for (const node of [...next.nodes]) {
+    const media =
+      node.data.params.preview?.display === 'ui_video'
+        ? 'video'
+        : node.data.params.preview?.display === 'ui_audio'
+          ? 'audio'
+          : null;
+    if (
+      !media ||
+      node.parentId ||
+      node.data.blockInstanceV2 ||
+      node.data.blockProjectionOwnerId ||
+      node.data.params.preview?.dataSource !== 'file' ||
+      node.data.params.file?.display !== 'output' ||
+      !connectionTypesAreCompatible(node.data.params.file.type, media) ||
+      ![
+        'modules.Video.Export',
+        'modules.Video.ExportAsset',
+        'modules.Video.ExportWithAudio',
+        'modules.Audio.Export',
+      ].includes(nodeKey(node))
+    )
+      continue;
+    const input = next.edges.filter((edge) => edge.target === node.id && edge.targetHandle === media);
+    const complete = next.edges
+      .filter((edge) => edge.target === node.id)
+      .every((edge) => {
+        const source = next.nodes.find((candidate) => candidate.id === edge.source)?.data.params[
+          edge.sourceHandle ?? ''
+        ];
+        const target = node.data.params[edge.targetHandle ?? ''];
+        return source?.display === 'output' && target && connectionTypesAreCompatible(source.type, target.type);
+      });
+    if (input.length === 1 && complete) next = groupVisualStages(next, [node.id], 'output');
+  }
   // Fresh groups have no saved reusable baseline yet. Bind that baseline to the
   // completed ordinary graph, after all cross-group owner references are known.
   const existing = new Set(graph.nodes.map((node) => node.id));
   next = {
     ...next,
     nodes: next.nodes.map((node) => {
-      if (existing.has(node.id) || !visualOperationGroup(node)) return node;
+      if (existing.has(node.id)) {
+        const originalIndex = graph.nodes.find((original) => original.id === node.id)?.data.visualStageSourceIndex;
+        const data = { ...node.data };
+        if (originalIndex === undefined) delete data.visualStageSourceIndex;
+        else data.visualStageSourceIndex = originalIndex;
+        return { ...node, data };
+      }
+      if (!visualOperationGroup(node)) return node;
       const instance = node.data.blockInstanceV2!;
       const base = { ...instance.definitionSnapshot, graph: instance.effectiveGraph };
       const definition = normalizeBlockDefinitionV2({ ...base, contentHash: blockDefinitionContentHashV2(base) });

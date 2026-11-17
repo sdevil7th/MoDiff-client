@@ -7,6 +7,7 @@ import { exactCurrentResourceRouteFromManifest, loadCurrentResourceRouteManifest
 import { classifyResourceRecipeReleaseLanes } from './release-qualification-policy.mjs';
 import { resourceRecipeHash, validateResourceQualificationEvidence } from './resource-qualification.mjs';
 import { retainedRouteResourceProofs, validateRouteResourceWorkloadReceipt } from './route-resource-qualification.mjs';
+import { readReleaseRunProvenance } from './release-evidence-paths.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -54,7 +55,7 @@ function sha256File(path) {
 }
 
 function recipeKey(value) {
-  return [value.modelType, value.dtype, value.offloadMode, value.quantizationMode].join('|');
+  return [value.resourceFamily ?? value.modelType, value.dtype, value.offloadMode, value.quantizationMode].join('|');
 }
 
 function validMeasurement(entry) {
@@ -132,6 +133,9 @@ if (existsSync(RECEIPT_REGISTRY_PATH)) {
   for (const receipt of registry.receipts ?? []) {
     const contractTemplate = contractTemplateById.get(receipt.templateId);
     if (!contractTemplate || receipt.templateSchemaHash !== contractTemplate.schemaHash) continue;
+    if ((receipt.resourceFamily ?? receipt.modelType) !== contractTemplate.modelType) {
+      throw new Error(`Resource qualification receipt names another catalog family: ${receipt.templateId}.`);
+    }
     const requirement = requiredByKey.get(recipeKey(receipt));
     if (!requirement?.templates.includes(receipt.templateId)) continue;
     const proofPath = resolve(BACKEND_ROOT, String(receipt.proofPath ?? ''));
@@ -141,18 +145,19 @@ if (existsSync(RECEIPT_REGISTRY_PATH)) {
     if (sha256File(proofPath) !== receipt.proofSha256) {
       throw new Error(`Resource qualification proof hash mismatch: ${String(receipt.proofPath)}`);
     }
-    const baselinePath = resolve(BACKEND_ROOT, String(contractTemplate.lastSuccessfulRealRun?.provenancePath ?? ''));
-    if (!existsSync(baselinePath)) {
-      throw new Error(`Locked-template baseline proof is missing for ${receipt.templateId}.`);
-    }
+    const baseline = readReleaseRunProvenance({
+      clientRoot: CLIENT_ROOT,
+      backendRoot: BACKEND_ROOT,
+      receipt: contractTemplate.lastSuccessfulRealRun,
+    });
     const proof = readJson(proofPath);
     const validated = validateResourceQualificationEvidence({
       provenance: proof,
-      baseline: readJson(baselinePath),
+      baseline,
       contractTemplate,
     });
     if (
-      recipeKey(validated.recipe) !== recipeKey(receipt) ||
+      recipeKey({ ...validated.recipe, resourceFamily: contractTemplate.modelType }) !== recipeKey(receipt) ||
       validated.workloadHash !== receipt.workloadHash ||
       validated.baselineWorkloadHash !== receipt.baselineWorkloadHash ||
       validated.modelRevision !== receipt.modelRevision ||

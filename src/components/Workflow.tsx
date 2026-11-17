@@ -1133,15 +1133,17 @@ function Workflow() {
         } else {
           undo();
         }
+        saveActiveWorkflowTab(true);
       } else if (key === 'y') {
         event.preventDefault();
         redo();
+        saveActiveWorkflowTab(true);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [redo, undo]);
+  }, [redo, saveActiveWorkflowTab, undo]);
 
   return (
     <GraphConnectionSurface

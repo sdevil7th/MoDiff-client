@@ -33,6 +33,13 @@ Keep upload, preview, playback and seek available on that source. Continuation
 can retain separate loudness-match and join operations; repaint keeps its bounded
 time interval. These operations do not disappear when Model Setup is grouped.
 
+The source-cover template selects `ACE-Step/acestep-v15-xl-base-diffusers` at
+`8f40447d21ee59ad4dcee6c99ce248027410bfec`, including its native audio tokenizer
+and detokenizer. Its accepted recipe uses 50 steps, guidance 7 and Expert memory
+policy through the same generic stages. The curated Turbo snapshot lacks those
+source-cover components. Base compatibility does not extend the separate
+Turbo/Runware adapter-authoring grant or establish Auto/hardware qualification.
+
 Music controls such as lyrics, language, BPM and key appear only where the task
 contract supports them. A nominal audio socket alone does not make those controls
 valid for a sound-generation or speech model. AudioLDM2's candidate waveforms

@@ -16,6 +16,11 @@ type Component = {
   originalY: number;
 };
 
+function graphLayoutNodes(nodes: CustomNodeType[]) {
+  const blockOwners = new Set(nodes.filter((node) => node.data.blockInstanceV2).map(({ id }) => id));
+  return nodes.filter((node) => !blockOwners.has(node.data.blockProjectionOwnerId ?? ''));
+}
+
 function finiteDimension(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
@@ -289,8 +294,7 @@ export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): Custo
   // documents. Moving/resizing them here bypasses their durable presentation
   // and competes with the recursive Block fitter. Arrange each V2 root as one
   // unit; keep its user-edited internal layout and connector geometry intact.
-  const blockOwners = new Set(nodes.filter((node) => node.data.blockInstanceV2).map(({ id }) => id));
-  const layoutNodes = nodes.filter((node) => !blockOwners.has(node.data.blockProjectionOwnerId ?? ''));
+  const layoutNodes = graphLayoutNodes(nodes);
   const nextById = new Map(layoutNodes.map((node) => [node.id, { ...node, position: { ...node.position } }]));
   const nodeById = new Map(layoutNodes.map((node) => [node.id, node]));
   const depths = new Map<string, number>();
@@ -350,14 +354,23 @@ export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): Custo
   return nodes.map((node) => nextById.get(node.id) ?? node);
 }
 
-export async function waitForGraphNodeMeasurements(getNodes: () => CustomNodeType[], timeoutMs = 500): Promise<void> {
-  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return;
-  const startedAt = Date.now();
-  await new Promise<void>((resolve) => {
+export async function waitForGraphNodeMeasurements(
+  getNodes: () => CustomNodeType[],
+  timeoutMs = 500,
+): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return false;
+  return new Promise<boolean>((resolve) => {
+    let startedAt: number | undefined;
     let lastMeasuredSignature: string | null = null;
     let stableMeasuredFrames = 0;
     const check = () => {
-      const candidates = getNodes().filter((node) => node.data.type !== 'group' && node.data.type !== 'loop');
+      // A large initial React render can hold the main thread past the whole
+      // measurement budget. Start at the first actual frame so ResizeObserver
+      // still gets a chance to publish bounds before an incomplete timeout.
+      startedAt ??= Date.now();
+      const candidates = graphLayoutNodes(getNodes()).filter(
+        (node) => !node.hidden && node.data.type !== 'group' && node.data.type !== 'loop',
+      );
       const measured = candidates.every(
         (node) => finiteDimension(node.measured?.width) && finiteDimension(node.measured?.height),
       );
@@ -373,7 +386,7 @@ export async function waitForGraphNodeMeasurements(getNodes: () => CustomNodeTyp
         stableMeasuredFrames = 0;
       }
       if (stableMeasuredFrames >= 2 || Date.now() - startedAt >= timeoutMs) {
-        resolve();
+        resolve(stableMeasuredFrames >= 2);
         return;
       }
       window.requestAnimationFrame(check);

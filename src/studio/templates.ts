@@ -11,6 +11,7 @@ import type {
   StudioTemplateReadinessPolicy,
   StudioTemplateWorkflowBlockSettings,
 } from './types';
+import { MOONFLOWER_NINE_SCENE_RECIPE } from './moonflowerRecipe';
 import {
   IMAGE_TEMPLATE_EXECUTION_SELECTIONS,
   AUDIO_TEMPLATE_EXECUTION_SELECTIONS,
@@ -1178,7 +1179,7 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
     '',
   ],
   [
-    'Use the first reference as the fixed ASTERMIST bottle and the second only for cobalt ceramic color, warm studio light, and tactile material. Keep the bottle silhouette, pump, label, exact text, camera, crop, and background fixed. Change only the body to brushed cobalt enamel and collar to champagne aluminum. Match source reflections, grain, focus, and shadow. Do not add the potter, pottery, objects, controls, seams, duplicate edges, or new text.',
+    'Edit the product photograph in the LEFT reference only. Change the existing bottle body from transparent lavender glass to opaque cobalt-blue enamel with a fine brushed surface. Change only the existing short silver collar below the atomizer to pale champagne aluminum. Use the narrow RIGHT reference strip only for the blue material colour and fine surface texture; ignore its lighting and background.\n\nKeep the original exposed spray-pump assembly exactly: the small circular nozzle must remain visible, the silver cylindrical atomizer remains exposed inside its short clear sleeve, and the existing two stepped collars, neck, shoulder and complete bottle silhouette keep the same shape and height. Do not put a closed lid or tall cap over the sprayer.\n\nKeep the large original cream paper label in precisely the same size and position. Its exact two lines remain ASTERMIST and LAVENDER SLEEP SPRAY. Preserve the original grey wall, pale textured stone table, original soft daylight from the upper left, camera angle, framing, grounded contact shadow and every other object-free area. The whole original bottle and complete atomizer stay inside the square output. This is a material-and-colour edit of the same photographed object; do not redesign the packaging, enlarge or shrink the label, change the background to brown, add a new cap, or include the material strip in the result.',
     '',
   ],
   [
@@ -1194,7 +1195,7 @@ const TEMPLATE_PROMPTS: Array<[prompt: string, negativePrompt: string]> = [
     '',
   ],
   [
-    'Wide photoreal documentary. Preserve the first reference pose: the woman courier stands beside her single complete dark city bicycle on the shoulder of the rainy underpass road, one hand holding the saddle and the other holding the handlebar. Show her full body and the entire bicycle in clean side profile with both round wheels fully visible. Preserve the bicycle mechanics from the courier reference: two brake levers, routed brake cables, one small round white front lamp mounted at the head tube, complete crankset, two crank arms and pedals, chain, fork, saddle, mudguards and rear rack. Use the second reference for unmistakable concrete columns, long wet road, ceiling beams, lights and deep vanishing point toward the bright exit. Rust-red jacket, one woman, one bicycle, natural anatomy, plausible scale and grounded contact shadows. No riding pose, duplicates, CGI, collage or text.',
+    'Photoreal documentary photograph, clear full-body side view. Preserve the adult woman and the complete single dark city bicycle from reference one. She stands on the far side of the bicycle, beside its saddle, with both feet separately planted on the wet ground behind the bicycle. Both legs are straight and naturally proportioned, separate from the frame; her arms naturally reach the saddle and handlebar without crossing her torso. Show her whole head, two arms, two hands, two legs and both shoes. The bicycle is completely visible in strict side profile: exactly two circular wheels, a single front wheel and a single rear wheel, one straight fork, one coherent diamond frame, one crankset, chain, two pedals, a saddle and one handlebar. The two wheel silhouettes are cleanly separated. Keep the person and complete bicycle large in the central two thirds of the picture. Her rust-red raincoat, dark trousers and dark shoes match reference one. Use reference two for the rainy concrete underpass setting, long wet road, massive columns, ceiling beams and distant soft daylight. Natural body proportions, plausible mechanical geometry, grounded contact shadows, realistic documentary color. One woman standing beside one bicycle, stationary at the roadside.',
     'cartoon, animation, illustration, oil painting, painterly texture, CGI render, plastic skin, split screen, collage seam, duplicate person, extra limbs, malformed hands, deformed bicycle, warped wheel, broken frame, floating bicycle, impossible reflection, glowing headlamp, text, watermark',
   ],
   [
@@ -2478,8 +2479,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
       'modules.Video.Export',
     ],
     vramEstimate: '32 GB VRAM or 64 GB unified memory; CPU offload supported',
-    runtimeEstimate:
-      'About 6-15 min for a five-second source excerpt and 2× delivery upscale on the qualified ROCm host',
+    runtimeEstimate: 'About 1-2 min for the included short source clip; hardware and loading dependent',
     description:
       'Reconstruct and upscale a rocket launch while preserving its vehicle, trajectory, plume timing and camera.',
     presetId: 'ltx_video_balanced',
@@ -2487,12 +2487,13 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     workflowBlockSettings: { upscaler: VIDEO_DELIVERY_UPSCALER },
     example: videoExample(
       8313,
-      'About 6-15 min on the qualified ROCm host',
+      'About 1-2 min for the included source clip',
       {
         width: 768,
         height: 512,
-        numFrames: 81,
-        fps: 16,
+        numFrames: 25,
+        fps: 7,
+        resourceMode: 'expert',
         steps: 8,
         guidanceScale: 1,
         conditioningScale: 1,
@@ -2505,8 +2506,14 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
         minimumEndToEndMotionCoverage: 0.4,
         minimumStrongMotionWindowRatio: 0.15,
         maximumLowMotionFrameRatio: 0.75,
-        frames: 81,
-        durationSeconds: 5.06,
+        frames: 25,
+        durationSeconds: 25 / 7,
+        sourceTiming: {
+          schemaVersion: 1,
+          sourceMediaHash: 'sha256:bytes:233d1b3a123fceb4f3b68d2d3a9f5b4129627073b8235fe7248ae6ebdeecb554',
+          frames: 25,
+          fps: 7,
+        },
       },
     ),
   },
@@ -2809,9 +2816,15 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
   },
   {
     id: 'ace_step_audio_variation',
-    label: 'ACE-Step Audio — Audio Variation: Alternate Arrangement',
+    label: 'ACE-Step 1.5 Base — Audio Variation: Alternate Arrangement',
     mode: 'audio_variation',
     modelType: 'AceStepAudioPipeline',
+    modelDisplayName: 'ACE-Step 1.5 Base',
+    modelArtifact: {
+      source: 'hub',
+      value: 'ACE-Step/acestep-v15-xl-base-diffusers',
+      revision: '8f40447d21ee59ad4dcee6c99ce248027410bfec',
+    },
     category: 'audio_edit',
     tags: ['audio', 'cover', 'variation'],
     difficulty: 'intermediate',
@@ -2821,7 +2834,11 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     runtimeEstimate: '2-6 min after source audio load',
     description: 'Create a guided cover or variation from source audio.',
     presetId: 'audio_variation',
-    example: audioExample(8302, '2-6 min after source audio load'),
+    example: audioExample(8302, 'About 1 min after source audio and model loading', {
+      steps: 50,
+      guidanceScale: 7,
+      resourceMode: 'expert',
+    }),
   },
   {
     id: 'ace_step_audio_continuation',
@@ -3241,10 +3258,12 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     tags: ['flux', 'kontext', 'multi-reference'],
     difficulty: 'advanced',
     inputRequirements: { referenceImages: 2, sampleAssets: ['source image', 'material reference'] },
+    // Preservation recipe v2 uses the accepted material-only crop from the
+    // generated input map. The previous creator/reference remain archived.
     requiredBackendCapabilities: ['Diffusers image edit pipeline'],
     vramEstimate: '24 GB native or quantized/offloaded',
     runtimeEstimate: '2-6 min after reference load',
-    description: 'Preserve a primary image while transferring material cues from additional references.',
+    description: 'Preserve the source bottle and transfer colour and texture from a material-only reference strip.',
     presetId: 'flux_kontext',
     example: example(8407, '2-6 min after reference load', { steps: 28, guidanceScale: 3.5, resourceMode: 'expert' }),
   },
@@ -3329,10 +3348,16 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     description:
       'Blend two compatible photographic references into one documentary variation with Diffusers FLUX Redux.',
     presetId: 'flux_kontext',
+    workflowBlockSettings: {
+      encodingInputs: {
+        role: 'imageEncode',
+        values: { prompt_embeds_scale: [0.8, 0.2], pooled_prompt_embeds_scale: [0.8, 0.2] },
+      },
+    },
     example: {
-      ...example(8413, '2-6 min after reference load', {
+      ...example(8414, '2-6 min after reference load', {
         steps: 50,
-        guidanceScale: 2.5,
+        guidanceScale: 3.5,
         conditioningScale: 0.7,
         resourceMode: 'expert',
       }),
@@ -3447,9 +3472,10 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     videoDelivery: 'spatial_upscale',
     requiredBackendCapabilities: [
       'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
-      'modules.DiffusersVideo.BuildShotJobs',
-      'modules.DiffusersVideo.GenerateShotJob',
-      'visual collection loops',
+      'modules.DiffusersVideo.EncodeInputs',
+      'modules.DiffusersVideo.Denoise',
+      'modules.DiffusersVideo.DecodeLatents',
+      'modules.Video.ExportAsset',
       'modules.Video.ConcatenateAssets',
     ],
     workflowBlocks: ['quality_video_sequence'],
@@ -3518,7 +3544,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     vramEstimate: '32 GB VRAM or 64 GB unified memory; sequential app-managed shots',
     runtimeEstimate: 'About 15-35 min for six keyframe-locked distilled shots plus per-shot 2x delivery upscale',
     description:
-      'Animate six authored keyframes inside a visible retryable loop, retain every segment, and join them into a meaningful 30-second emergency journey.',
+      'Animate six opening images in separate editable shot groups, retain each segment, and assemble a 30-second emergency journey.',
     presetId: 'ltx_video_balanced',
     example: videoExample(
       8510,
@@ -3542,7 +3568,12 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     tags: ['video', 'long-form', 'sequence', 'port logistics', 'documentary', 'story', 'wan'],
     difficulty: 'advanced',
     inputRequirements: {},
-    requiredBackendCapabilities: ['modules.DiffusersVideo.GenerateSequence', 'modules.Video.Compose'],
+    requiredBackendCapabilities: [
+      'modules.DiffusersVideo.EncodeInputs',
+      'modules.DiffusersVideo.Denoise',
+      'modules.DiffusersVideo.DecodeLatents',
+      'modules.Video.Concatenate',
+    ],
     workflowBlocks: ['video_sequence'],
     workflowBlockSettings: {
       videoSequence: {
@@ -3563,7 +3594,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     example: videoExample(
       8511,
       'About 4 hr 40 min-7 hr 50 min on the qualified host',
-      { numFrames: 81, fps: 16, steps: 50 },
+      { numFrames: 81, fps: 16, steps: 50, resourceMode: 'expert' },
       { frames: 405, durationSeconds: 25.31, maximumNearBlackFrameRatio: 0.7 },
     ),
   },
@@ -3586,9 +3617,10 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     difficulty: 'advanced',
     inputRequirements: {},
     requiredBackendCapabilities: [
-      'modules.DiffusersVideo.BuildShotJobs',
-      'modules.DiffusersVideo.GenerateShotJob',
-      'visual collection loops',
+      'modules.DiffusersVideo.EncodeInputs',
+      'modules.DiffusersVideo.Denoise',
+      'modules.DiffusersVideo.DecodeLatents',
+      'modules.Video.ExportAsset',
       'modules.Video.ConcatenateAssets',
     ],
     workflowBlocks: ['quality_video_sequence'],
@@ -3644,7 +3676,7 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     vramEstimate: 'About 20 GB accelerator memory in resident BF16 on the qualified Radeon host',
     runtimeEstimate: 'About 49 minutes per 5.4-second shot; roughly five hours for six shots plus composition',
     description:
-      'Tell a chronological emergency-supply railway story, pin every source segment for re-editing, and join them inside a visible retryable loop.',
+      'Tell a chronological emergency-supply railway story in six separate shot groups, retain every segment for re-editing, and assemble the complete journey.',
     presetId: 'wan_t2v_13b_quality',
     example: videoExample(
       48117,
@@ -3768,8 +3800,10 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     inputRequirements: {},
     videoDelivery: 'spatial_upscale',
     requiredBackendCapabilities: [
-      'modules.DiffusersVideo.GenerateSequence',
-      'modules.Video.Compose',
+      'modules.DiffusersVideo.EncodeInputs',
+      'modules.DiffusersVideo.Denoise',
+      'modules.DiffusersVideo.DecodeLatents',
+      'modules.Video.Concatenate',
       'modules.Spandrel.Upscaler',
     ],
     workflowBlocks: ['video_sequence', 'upscaler'],
@@ -3815,85 +3849,59 @@ const BASE_STUDIO_TEMPLATES: StudioTemplateSource[] = [
     category: 'audio_generation',
     tags: ['audio', 'video', 'lyrics', 'music video', 'ace-step', 'ltx', 'photoreal', 'story'],
     difficulty: 'advanced',
-    inputRequirements: {},
+    inputRequirements: {
+      referenceImages: 10,
+      sampleAssets: ['nine scene opening images; the garden-path shot uses two ordered references'],
+    },
     thumbnailVariant: 'audio',
     outputKinds: ['video', 'audio'],
     requiredBackendCapabilities: [
       'modules.DiffusersAudio.Generate',
-      'modules.DiffusersVideo.GenerateSequence',
+      'modules.DiffusersVideo.EncodeInputs',
+      'modules.DiffusersVideo.Denoise',
+      'modules.DiffusersVideo.DecodeLatents',
       'modules.Audio.FitDuration',
       'modules.Video.LyricOverlay',
       'modules.Video.ExportWithAudio',
     ],
     workflowBlocks: ['lyric_video'],
     workflowBlockSettings: {
-      lyricVideo: {
-        visualModel: {
-          source: 'hub',
-          value: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
-          revision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd',
-        },
-        transitionSeconds: 0.35,
-        ['fontSize']: 58,
-        bottomMargin: 70,
-        audio: {
-          prompt:
-            "Dream-pop at 100 BPM in C-sharp minor and 4/4. A clear English lead vocal starts on the first beat and sings each of the six supplied lines exactly once, in order, one line every two bars. Finish the final words 'the dawn' by bar 12, then leave a short instrumental tail. Soft electronic drums, warm bass, glassy arpeggiator, polished spacious stereo. No intro, interlude, ad-libs, repeated lines, omitted words, or fade.",
-          lyrics:
-            '[Verse]\nDaylight leaves the garden wall\nSilver buds begin to call\nWhite petals turn into the night\nEvery vine unfolds its light\nStars grow pale above the lawn\nMoonflowers hold until the dawn',
-          durationSeconds: 30,
-          steps: 8,
-          guidanceScale: 1,
-          shift: 3,
-          seed: 1201047366,
-          bpm: 100,
-          keyscale: 'C# minor',
-          timesignature: '4',
-          vocalLanguage: 'en',
-        },
-        audioFit: {
-          sourceStartSeconds: 0,
-          sourceDurationSeconds: 30,
-          targetDurationSeconds: 381 / 16,
-          delaySeconds: 0,
-          targetSampleRate: 48000,
-          fadeInSeconds: 0,
-          fadeOutSeconds: 0,
-        },
-        lrc: '[00:00.00]Daylight leaves the garden wall\n[00:03.26]Silver buds begin to call\n[00:07.44]White petals turn into the night\n[00:11.38]Every vine unfolds its light\n[00:15.08]Stars grow pale above the lawn\n[00:18.90]Moonflowers hold until the dawn',
-        promptsJson: JSON.stringify([
-          'Photoreal music-video opening without visible text. At blue dusk, a stabilized camera glides low beside a real garden wall as closed white moonflower buds and heart-shaped leaves stream past in foreground parallax. Wind moves every vine from frame one while the last warm daylight visibly fades. Natural plant anatomy and restrained color; no people, fantasy glow, illustration, duplicate stems or static hold.',
-          'Photoreal macro time-lapse in the same garden. One healthy white moonflower bud opens continuously into a complete trumpet-shaped bloom while nearby leaves sway in an evening breeze. The camera makes a slow curved move, keeping the flower center sharp and the stone wall softly behind it. Preserve realistic petals and stem attachment; no hands, insects, melting, extra petals, text or frozen interval.',
-          'Photoreal moonlit tracking shot along a mature trellis covered in fully opened white moonflowers. The camera travels steadily between foreground leaves while several blooms turn gently in the wind and soft cloud shadows cross the wall. Clear depth and natural silver-blue light; no people, fantasy particles, artificial neon, warped vines, lettering or static frame.',
-          'Photoreal close passage through the moonflower canopy after a brief shower. The camera pushes forward continuously as round droplets roll down broad leaves, flexible stems rebound in the breeze and white blossoms pass close to both edges. Keep flowers crisp, attached and naturally wet; no flood, impossible water, insects, people, text, synthetic render or sudden jump.',
-          'Photoreal dawn finale in the same garden. A wide camera cranes slowly upward from open white moonflowers toward a pale gold horizon while vines ripple, clouds travel and the first sunlight moves across the wall. The flowers remain stable and recognizable through the closing frame. No people, fantasy glow, melting petals, duplicate blooms, text, illustration or static hold.',
-        ]),
-      },
+      lyricVideo: MOONFLOWER_NINE_SCENE_RECIPE,
     },
     vramEstimate: 'ACE-Step and LTX run sequentially with model offload',
     runtimeEstimate: 'About 20-45 min plus listening and lyric-sync review',
     description:
-      'Generate an original lyric song and a five-shot photoreal dusk-to-dawn moonflower story with timed lyrics and a muxed 20-30 second final video.',
+      'Create the nine-scene photographic Moonflower film with a 45-second song. Each shot owns its reference images; timed lyrics are optional and off by default.',
     presetId: 'audio_balanced',
     promptGuide: AUDIO_PROMPT_GUIDE,
     predictability: predictability(8513),
     example: {
-      ...audioExample(1201047366, 'About 20-45 min on the qualified host', {
-        audioDuration: 30,
+      ...audioExample(20261106, 'About 20-45 min on the qualified host', {
+        audioDuration: 45,
+        resourceMode: 'expert',
+        prompt: MOONFLOWER_NINE_SCENE_RECIPE.audio.prompt,
         lyrics:
           '[Verse]\nDaylight leaves the garden wall\nSilver buds begin to call\nWhite petals turn into the night\nEvery vine unfolds its light\nStars grow pale above the lawn\nMoonflowers hold until the dawn',
-        bpm: 100,
-        timesignature: '4',
+        bpm: 96,
+        keyscale: 'D major',
+        timesignature: '4/4',
       }),
       mediaType: 'video',
       expectedOutput: {
         width: 1536,
         height: 1024,
-        frames: 381,
-        durationSeconds: 23.81,
+        frames: 720,
+        durationSeconds: 45,
         requiresAudio: true,
+        // This accepted garden film uses local foliage/petal motion, not
+        // continuous full-frame camera travel. Retain the stricter global
+        // coverage requirement and measure local activity separately.
+        motionReviewProfile: 'localized_subject',
         minimumMotionCoverage: 0.75,
-        minimumAdjacentMotionCoverage: 0.08,
+        minimumAdjacentMotionCoverage: 0.03,
+        minimumActiveMotionWindowRatio: 0.8,
+        minimumStrongMotionWindowRatio: 0.65,
+        maximumLowMotionFrameRatio: 0.5,
         minimumEndToEndMotionCoverage: 0.5,
       },
     },

@@ -23,6 +23,18 @@ export function captureAudioSchemaFixture() {
     })),
   );
   selections.push({
+    id: 'ace:ACE-Step-Base:audio_variation',
+    selection: {
+      schemaVersion: 1,
+      pipelineClass: 'AceStepPipeline',
+      task: 'audio_variation',
+      executionProfileId: 'ace-step-audio:direct',
+      repository: 'ACE-Step/acestep-v15-xl-base-diffusers',
+      bindingSpec: { modelType: 'AceStepAudioPipeline', mode: 'audio_variation' },
+      authoringRecipeId: 'generic-audio-recipe:v1',
+    },
+  });
+  selections.push({
     id: 'minimax:text_to_audio',
     selection: {
       schemaVersion: 1,
@@ -34,7 +46,17 @@ export function captureAudioSchemaFixture() {
   });
   for (const pipelineClass of ['StableAudioPipeline', 'LongCatAudioDiTPipeline', 'AudioLDM2Pipeline'])
     selections.push({ id: `${pipelineClass}:text_to_audio`, selection: { pipelineClass, task: 'text_to_audio' } });
-  return JSON.parse(
+  selections.push({
+    id: 'lyric-video-secondary',
+    selection: {
+      pipelineClass: 'LTXConditionPipeline',
+      task: 'image_to_video',
+      executionProfileId: 'ltx-video:direct',
+      bindingSpec: { modelType: 'LTXVideoPipeline', mode: 'image_to_video' },
+      authoringRecipeId: 'generic-video-stages:v1',
+    },
+  });
+  const fixture = JSON.parse(
     execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py')], {
       cwd: backend,
       encoding: 'utf8',
@@ -51,4 +73,7 @@ export function captureAudioSchemaFixture() {
       input: JSON.stringify(selections),
     }),
   );
+  fixture.secondaryVideo = fixture.recipes.find((row) => row.id === 'lyric-video-secondary');
+  fixture.recipes = fixture.recipes.filter((row) => row !== fixture.secondaryVideo);
+  return fixture;
 }

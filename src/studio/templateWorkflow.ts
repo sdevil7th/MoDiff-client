@@ -22,6 +22,7 @@ import {
   selectedAutoCandidate,
 } from './autoResource';
 import { getTemplateLockedSettings } from './templateExactness';
+import { isPlanningOnlyTemplate } from './templateCreationPolicy';
 import { normalizeStudioRuntimeDevice } from './runReadiness';
 import { exactStudioExecutionSpecForForm } from './executionSpecs';
 import { materializeTemplateDefaultInputs } from './templateInputs';
@@ -185,10 +186,12 @@ export async function createTemplateOperationWorkflow(
     { createTemplateOperationGraph },
     { requestOperationStarter },
     { commitOperationGraph, operationGraphSignature },
+    { templateSecondaryStageRegistry, templateSecondaryVideoStages },
   ] = await Promise.all([
     import('./templateOperationWorkflow'),
     import('../workflow/operationStarterRequest'),
     import('../workflow/operationGraphTransaction'),
+    import('./templateSecondaryStages'),
   ]);
   assertWorkflowOperationContext(context);
   const signature = operationGraphSignature(previousGraph);
@@ -224,17 +227,37 @@ export async function createTemplateOperationWorkflow(
       ? ['modules.ModularDiffusers.Lora', 'modules.DiffusersImage.LoadAdapter', 'modules.DiffusersAudio.LoadAdapter']
       : []),
     ...(template.workflowBlocks?.includes('upscaler') ? ['modules.Spandrel.Upscaler'] : []),
+    ...(selection.task === 'video_outpaint' ? ['modules.VideoConditioning.OutpaintCanvas'] : []),
+    ...(template.workflowBlocks?.some((block) => ['video_sequence', 'quality_video_sequence'].includes(block))
+      ? [
+          'modules.VideoConditioning.Storyboard',
+          'modules.VideoConditioning.ShotPrompt',
+          'modules.VideoConditioning.ShotInputs',
+          'modules.Primitive.ToList',
+          'modules.Video.ExportAsset',
+          'modules.Video.Concatenate',
+          'modules.Video.ConcatenateAssets',
+        ]
+      : []),
     ...(template.workflowBlocks?.includes('lyric_video')
       ? [
           'modules.DiffusersRuntime.PipelineQuantizationConfigV2',
           'modules.DiffusersRuntime.DiffusersExecutionRecipe',
           'modules.DiffusersVideo.LoadPipeline',
-          'modules.DiffusersVideo.GenerateSequence',
-          'modules.Video.Compose',
+          'modules.DiffusersVideo.EncodeInputs',
+          'modules.DiffusersVideo.Denoise',
+          'modules.DiffusersVideo.DecodeLatents',
           'modules.Spandrel.Upscaler',
           'modules.Video.LyricOverlay',
           'modules.Audio.FitDuration',
           'modules.Video.ExportWithAudio',
+          'modules.Video.Trim',
+          'modules.Video.Concatenate',
+          'modules.Video.ExportAsset',
+          'modules.Primitive.ToList',
+          'modules.VideoConditioning.Storyboard',
+          'modules.VideoConditioning.ShotPrompt',
+          'modules.VideoConditioning.ShotInputs',
         ]
       : []),
   ];
@@ -242,14 +265,30 @@ export async function createTemplateOperationWorkflow(
     await useNodesStore.getState().fetchNodes();
     assertWorkflowOperationContext(context);
   }
+  const current = useNodesStore.getState();
+  const registry = await templateSecondaryStageRegistry(
+    template,
+    current.nodesRegistry,
+    current.studioModelCapabilities,
+    current.operationContracts,
+  );
+  assertWorkflowOperationContext(context);
+  const secondary = await templateSecondaryVideoStages(
+    template,
+    registry,
+    current.studioModelCapabilities,
+    current.operationContracts,
+  );
+  assertWorkflowOperationContext(context);
   const graph = createTemplateOperationGraph(
     template,
     form,
     starter,
-    useNodesStore.getState().nodesRegistry,
+    secondary.registry,
     spec,
     capability,
     useNodesStore.getState(),
+    { secondaryVideo: secondary.video },
   );
   assertWorkflowOperationContext(context);
   commitOperationGraph(graph, context, signature, `Create ${template.label}`);
@@ -262,6 +301,8 @@ export async function createTemplateOperationWorkflow(
 }
 
 export async function createWorkflowFromTemplate(template: StudioTemplate): Promise<TemplateWorkflowResult> {
+  if (isPlanningOnlyTemplate(template))
+    throw new Error('Planning templates are for reference and cannot create workflows.');
   const studio = useStudioStore.getState();
   const workflowTabId = studio.createWorkflowTab(template.label, undefined, 'template', template.id);
   // A template already owns this new document; do not reopen a launcher while its graph resolves.
@@ -347,8 +388,10 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
         throw new Error(`${template.label} graph preparation timed out. No incomplete graph was kept; try again.`);
       }
     }
-    await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 500);
+    const measured = await waitForGraphNodeMeasurements(() => useFlowStore.getState().nodes, 5_000);
     assertWorkflowOperationContext(context);
+    if (!measured)
+      throw new Error('The template controls did not finish measuring. Reopen the template to retry its layout.');
     await useFlowStore.getState().arrangeGraph({ history: false });
     assertWorkflowOperationContext(context);
     await waitForTemplateCanvasPaint();

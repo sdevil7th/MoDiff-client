@@ -33,12 +33,16 @@ reviewed FLUX 3 recipes contain
 real model loading, input encoding, denoising and latent decoding stages. The two
 full-model candidates remain separately unqualified; their presence does not
 establish Auto readiness or fit on ordinary hardware. Fresh eligible native graphs present **Model Setup → Encode Inputs
-→ Denoise → Image Output**. **Encode Inputs** presents the relevant encoding and
+→ Generate → Image Output**. **Encode Inputs** presents the relevant encoding and
 actual Guidance stages together;
 the exported graph retains their distinct backend calls and typed connections.
 Image, mask, control and reference inputs remain separate when their roles differ.
 Model Setup includes exclusive connected LoRA/configuration leaves, while shared
-suppliers stay external. Image Output contains the real decoder and Preview Image.
+suppliers stay external. Generate contains the matching sampler and latent decoder;
+Image Output retains the delivered preview. Component-based image recipes use
+this same presentation as the prepared-state recipes. Grouping requires one
+sampler/decoder pair connected to the same model owner; missing or ambiguous
+pairs are not folded. Any external latent consumer keeps its boundary connection.
 Additional media preparation, control, composite or upscale branches remain visible;
 the four-stage presentation is the core native diffusion path, not a limit on all
 workflow node counts. Existing saved layouts change only through explicit stage
@@ -83,11 +87,14 @@ official pipeline's specialty conditioning and sampling contract:
 | FLUX Canny/Depth control |         2 | Text and VAE control encoding, official latent sampling and decode  |
 | FLUX Redux               |         2 | Pinned prior in reference order, matching base sampler and VAE      |
 
-Their fresh graphs contain real **Load Pipeline → Encode Inputs → Denoise → Decode
-Latents** operations, required utility nodes and previews. These stages retain
-the official pipeline's denoising implementation rather than substituting an
-unreviewed native modular recipe. They do not add an unused Guidance owner.
-Existing saved whole-pipeline workflows retain their original route.
+Their fresh graphs use the same **Model Setup → Encode Inputs → Generate →
+Image Output** presentation, plus required media preparation and utility stages.
+Generate contains the real Denoise and Decode Latents operations; their declared
+conditioning, latent binding and dimensions remain wired to the same pipeline
+owner, including through its ordered adapter chain. The official pipeline's
+denoising implementation remains in use. These recipes do not add an unused
+Guidance owner. Existing saved whole-pipeline workflows retain their original
+route and presentation.
 
 ## Guidance and preserved settings
 

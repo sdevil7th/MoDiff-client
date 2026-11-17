@@ -121,6 +121,8 @@ function project(entries, paths, form, artifacts) {
   const modelType = value(owner, 'model_type');
   assert.match(modelType, /^[A-Za-z]\w*ModularPipeline$/u);
   same(modelType, form.modelType);
+  const actualOffload = value(owner, 'offload_mode');
+  assert(['group_cpu', 'model_cpu'].includes(actualOffload));
   for (const [k, v] of Object.entries({
     dtype: 'bfloat16',
     device: 'cuda:0',
@@ -131,7 +133,7 @@ function project(entries, paths, form, artifacts) {
     trust_remote_code: false,
     workflow_id: 'image_conditioned_inpainting',
     auto_offload: true,
-    offload_mode: 'group_cpu',
+    offload_mode: actualOffload,
     weight_loading_mode: 'cpu',
     weight_format: 'native',
   }))
@@ -233,7 +235,7 @@ function project(entries, paths, form, artifacts) {
     modelRevision: revision,
     dtype: 'bfloat16',
     device: 'cuda:0',
-    offloadMode: 'group_cpu',
+    offloadMode: actualOffload,
     autoOffload: true,
     resourceMode: 'auto',
     resolvedResourceMode: 'auto',
@@ -277,7 +279,6 @@ export function observedWorkflowAutoMaskedImageResourceId(plan) {
     for (const [k, v] of Object.entries({
       dtype: 'bfloat16',
       device: 'cuda:0',
-      offloadMode: 'group_cpu',
       autoOffload: true,
       resourceMode: 'auto',
       resolvedResourceMode: 'auto',
@@ -285,6 +286,7 @@ export function observedWorkflowAutoMaskedImageResourceId(plan) {
       quantizedComponents: [],
     }))
       same(plan[k], v);
+    assert(['group_cpu', 'model_cpu'].includes(plan.offloadMode));
     const o = plan.resourceObservation;
     same(
       Object.keys(o).sort(),
@@ -408,7 +410,7 @@ export function observedWorkflowAutoMaskedImagePlan(api, context = {}) {
     for (const r of [p.owner, p.guide, p.denoise])
       for (const [k, v] of Object.entries(auto.resolvedFields[r.id])) same(v, p.value(r, k));
     same(auto.resolvedFields[p.owner.id].inpaint_compatibility, 'whole_v1');
-    same(auto.resolvedFields[p.owner.id].offload_mode, 'group_cpu');
+    same(auto.resolvedFields[p.owner.id].offload_mode, p.plan.offloadMode);
     same(models.length, 1);
     same(models[0].repoId, p.plan.modelRepo);
     same(models[0].selectedRevision, p.plan.modelRevision);

@@ -10,6 +10,18 @@ import type { FlowGraphNode } from '../stores/flowGraphExport';
 import { deepEqual } from '../utils/deepEqual';
 import type { OperationAuthoring } from './operationAuthoring';
 
+function remapSharedBinding(
+  binding: NonNullable<OperationAuthoring['sharedInputs']>[number],
+  remap: (id: string) => string,
+) {
+  if (!binding || typeof binding.loaderId !== 'string') return binding;
+  return {
+    ...binding,
+    loaderId: remap(binding.loaderId),
+    ...(Array.isArray(binding.scopeNodeIds) ? { scopeNodeIds: binding.scopeNodeIds.map(remap) } : {}),
+  };
+}
+
 function remappedAncillaryBindings(bindings: AncillaryInstanceBinding[], remap: (id: string) => string) {
   const mapped = (values: Record<string, string>) =>
     Object.fromEntries(Object.entries(values).map(([role, id]) => [role, remap(id)]));
@@ -31,9 +43,7 @@ export function remapOperationAuthoring(value: unknown, remap: (id: string) => s
   if (ancillary) hint.ancillaryBindings = remappedAncillaryBindings(ancillary, remap);
   if (parent) hint.ancillaryParent = remapPromptEnhancementParent(parent, remap);
   if (Array.isArray(hint.sharedInputs))
-    hint.sharedInputs = hint.sharedInputs.map((binding) =>
-      binding && typeof binding.loaderId === 'string' ? { ...binding, loaderId: remap(binding.loaderId) } : binding,
-    );
+    hint.sharedInputs = hint.sharedInputs.map((binding) => remapSharedBinding(binding, remap));
   if (Array.isArray(hint.inactiveDrafts) && hint.inactiveDrafts.length <= 16) {
     for (const draft of hint.inactiveDrafts) {
       if (!Array.isArray(draft?.nodes) || !Array.isArray(draft?.edges)) continue;
@@ -47,9 +57,7 @@ export function remapOperationAuthoring(value: unknown, remap: (id: string) => s
         if (saved && savedParent) saved.ancillaryParent = remapPromptEnhancementParent(savedParent, remap);
         if (saved && savedAncillary) saved.ancillaryBindings = remappedAncillaryBindings(savedAncillary, remap);
         if (Array.isArray(saved?.sharedInputs))
-          saved.sharedInputs = saved.sharedInputs.map((binding) =>
-            typeof binding?.loaderId === 'string' ? { ...binding, loaderId: remap(binding.loaderId) } : binding,
-          );
+          saved.sharedInputs = saved.sharedInputs.map((binding) => remapSharedBinding(binding, remap));
       }
       draft.edges = draft.edges.map((edge) =>
         typeof edge?.source === 'string' && typeof edge.target === 'string'
@@ -125,6 +133,18 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
       }
   }
   if (!reached.has(node.id)) return null;
+  const scope = binding.scopeNodeIds;
+  if (
+    scope !== undefined &&
+    (!Array.isArray(scope) ||
+      scope.length < 2 ||
+      scope.length > 32 ||
+      scope.some((id) => typeof id !== 'string' || id.length > 1024 || !reached.has(id)) ||
+      new Set(scope).size !== scope.length ||
+      !scope.includes(node.id))
+  )
+    return null;
+  const scopeKey = scope ? [...scope].sort().join('|') : '';
   if (
     edges.some(
       (edge) =>
@@ -135,7 +155,7 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
   )
     return null;
   const members = candidates.flatMap((n) => {
-    if (!reached.has(n.id)) return [];
+    if (!reached.has(n.id) || (scope && !scope.includes(n.id))) return [];
     const bindings = n.data.operationAuthoring?.sharedInputs;
     return Array.isArray(bindings) && bindings.length <= 32
       ? bindings
@@ -143,6 +163,9 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
             (b) =>
               b?.loaderId === root.id &&
               b.groupId === binding.groupId &&
+              (scope
+                ? Array.isArray(b.scopeNodeIds) && [...b.scopeNodeIds].sort().join('|') === scopeKey
+                : b.scopeNodeIds === undefined) &&
               n.data.params[b.field] &&
               n.data.operationAuthoring!.operation.ports.some(
                 (p) =>
@@ -160,7 +183,7 @@ export function sharedOperationInput(nodes: FlowGraphNode[], edges: Edge[], node
     .sort()
     .join('|');
   if (members.length < 2 || declaredMembers !== binding.groupId) return null;
-  return { key: `operation:${root.id}:${binding.groupId}`, name: binding.name, members };
+  return { key: `operation:${root.id}:${binding.groupId}${scope ? `:${scopeKey}` : ''}`, name: binding.name, members };
 }
 
 export function assertSharedOperationInput(group: NonNullable<ReturnType<typeof sharedOperationInput>>, edges: Edge[]) {

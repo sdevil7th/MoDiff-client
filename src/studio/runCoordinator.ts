@@ -215,7 +215,13 @@ export async function coordinateGraphRun({
   }
   useStudioStore.getState().saveActiveWorkflowTab(true);
   assertCurrentExecutionScope(executionScope);
-  const currentFlowGraph = flow.exportGraph(sid, targetNodeId, { executionScope });
+  // A prepared submission already owns its resolved values. The current export
+  // is inspected for scope/authority only; rerandomizing it would change the
+  // saved canvas while submitting a different, previously prepared seed.
+  const currentFlowGraph = flow.exportGraph(sid, targetNodeId, {
+    executionScope,
+    randomizeSeeds: !preparedGraph,
+  });
   if (executionScope && preparedGraph) assertExecutionScopeGraph(preparedGraph, currentFlowGraph);
   let exportedGraph = lowerModularComposition
     ? lowerModularComposition(preparedGraph ?? currentFlowGraph)

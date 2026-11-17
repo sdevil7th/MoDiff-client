@@ -1,4 +1,5 @@
 import { blockProjectionNodeIdV2 } from './blockRuntimeV2';
+import { executableFlowNodes } from '../stores/flowGraphExport';
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData } from '../stores/useNodeStore';
@@ -18,7 +19,7 @@ export function inspectRequiredGraphInputs(
   registry: Record<string, NodeData>,
   operations: readonly OperationContract[] = [],
 ): RunReadinessIssue[] {
-  const enabled = new Map(graph.nodes.filter((node) => !node.data.uiState?.disabled).map((node) => [node.id, node]));
+  const enabled = new Map(executableFlowNodes(graph.nodes).map((node) => [node.id, node]));
   const issues: RunReadinessIssue[] = [];
   const owners = new Map(
     visible.flatMap(

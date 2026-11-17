@@ -140,10 +140,16 @@ function portFromEdge(
   direction: 'input' | 'output',
   index: number,
 ): UserBlockPort {
-  const key = safeHandle(handle, `${direction}-${index + 1}`);
+  // A logical reusable port ID may be sanitized. Its binding must retain the
+  // exact existing field, including a visual Block's colon-qualified alias.
+  // Changing both silently points a newly composed Block at a missing socket.
+  const key =
+    typeof handle === 'string' && Object.prototype.hasOwnProperty.call(node.data.params ?? {}, handle)
+      ? handle
+      : safeHandle(handle, `${direction}-${index + 1}`);
   const param = node.data.params?.[key];
   return {
-    id: key,
+    id: safeHandle(key, `${direction}-${index + 1}`),
     label: paramLabel(node, key),
     nodeId: node.id,
     paramKey: key,

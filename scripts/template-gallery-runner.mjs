@@ -1180,7 +1180,136 @@ export async function clearRuntimeBetweenRuns(server, fetchImpl = fetch) {
   return payload;
 }
 
+function executionReceiptForNode(node, taskId, websocketEvents, allowCached = false) {
+  const name = `${node.module}.${node.action}`;
+  const receipts = websocketEvents.filter(
+    (event) => event?.type === 'executed' && event?.task_id === taskId && event?.node === node.id,
+  );
+  if (receipts.length === 0) throw new Error(`No execution receipt was captured for ${name} (${node.id}).`);
+  const receipt = receipts.find((event) => event.status !== 'cached' && event.hasChanged !== false);
+  if (!receipt && !allowCached)
+    throw new Error(`${name} returned cached output; this is not an independent duplicate run.`);
+  return { module: node.module, action: node.action, nodeId: node.id, receipt: receipt ?? receipts[0] };
+}
+
+function stagedVideoExecutionReceipts(template, output, graphNodes, websocketEvents) {
+  const paths = output.apiGraphSnapshot?.paths;
+  if (Array.isArray(paths)) {
+    const active = new Set(paths.flat());
+    graphNodes = graphNodes.filter((node) => active.has(node.id));
+  }
+  const video = graphNodes.filter((node) => node.module === 'modules.DiffusersVideo');
+  const encoders = video.filter((node) => node.action === 'EncodeInputs');
+  const samplers = video.filter(
+    (node) => node.action === 'Denoise' || (node.action === 'Generate' && node.params?.encoded_inputs?.sourceId),
+  );
+  const decoders = video.filter((node) => node.action === 'DecodeLatents');
+  const quality = template.workflowBlocks?.includes('quality_video_sequence');
+  const storyboard = quality
+    ? template.workflowBlockSettings?.qualityVideoSequence?.shotsJson
+    : template.workflowBlocks?.includes('lyric_video')
+      ? template.workflowBlockSettings?.lyricVideo?.promptsJson
+      : template.workflowBlockSettings?.videoSequence?.promptsJson;
+  let count = 1;
+  if (storyboard !== undefined) {
+    if (typeof storyboard !== 'string' || Buffer.byteLength(storyboard, 'utf8') > 1024 * 1024)
+      throw new Error('The staged video receipt requires the bounded authored storyboard.');
+    const shots = JSON.parse(storyboard);
+    if (!Array.isArray(shots) || shots.length < 1 || shots.length > 64)
+      throw new Error('The staged video receipt requires one to 64 authored shots.');
+    count = shots.length;
+  } else if (
+    quality ||
+    template.workflowBlocks?.includes('video_sequence') ||
+    template.workflowBlocks?.includes('lyric_video')
+  )
+    throw new Error('The staged video receipt is missing its authored storyboard.');
+  if (encoders.length !== count || samplers.length !== count)
+    throw new Error(`The staged video receipt requires all ${count} authored shots.`);
+  const source = (node, field) => node.params?.[field]?.sourceId;
+  const byId = new Map(graphNodes.map((node) => [node.id, node]));
+  for (const encoder of encoders) {
+    const owner = byId.get(source(encoder, 'pipeline'));
+    const consumers = samplers.filter((node) => source(node, 'encoded_inputs') === encoder.id);
+    if (
+      owner?.module !== 'modules.DiffusersVideo' ||
+      owner.action !== 'LoadPipeline' ||
+      consumers.length !== 1 ||
+      source(consumers[0], 'pipeline') !== owner.id
+    )
+      throw new Error('The staged video receipt has an incomplete or foreign encoding owner.');
+    const sampler = consumers[0];
+    const decoded = decoders.filter((node) => source(node, 'latents') === sampler.id);
+    if (sampler.action === 'Denoise') {
+      if (
+        decoded.length !== 1 ||
+        source(decoded[0], 'latent_binding') !== sampler.id ||
+        source(decoded[0], 'pipeline') !== owner.id
+      )
+        throw new Error('The staged video receipt is missing its owned latent decode.');
+    } else if (decoded.length) throw new Error('The rendered-frame stage cannot claim a separate latent decode.');
+  }
+  if (decoders.length !== samplers.filter((node) => node.action === 'Denoise').length)
+    throw new Error('The staged video receipt contains an unrelated latent decode.');
+  const action = (module, name) => graphNodes.filter((node) => node.module === module && node.action === name);
+  const delivery = graphNodes.filter(
+    (node) =>
+      node.module === 'modules.Video' &&
+      ['Export', 'ExportWithAudio', 'ExportAsset', 'ConcatenateAssets'].includes(node.action),
+  );
+  if (quality) {
+    if (
+      action('modules.Video', 'ExportAsset').length !== count ||
+      action('modules.Video', 'ConcatenateAssets').length !== 1
+    )
+      throw new Error('The quality sequence receipt requires every saved shot and its final assembly.');
+  } else if (!delivery.some((node) => ['Export', 'ExportWithAudio'].includes(node.action)))
+    throw new Error('The staged video receipt is missing its final video delivery.');
+  const assembly = action('modules.Video', 'Concatenate');
+  if (!quality && count > 1 && assembly.length !== 1)
+    throw new Error('The staged video receipt is missing its authored shot assembly.');
+  const audio = action('modules.DiffusersAudio', 'Generate');
+  if (template.workflowBlocks?.some((block) => ['lyric_video', 'soundtrack'].includes(block)) && !audio.length)
+    throw new Error('The staged video receipt is missing its authored soundtrack.');
+  const upscale = action('modules.Spandrel', 'Upscaler');
+  if ((quality && upscale.length !== count) || (template.workflowBlocks?.includes('upscaler') && !upscale.length))
+    throw new Error('The staged video receipt is missing its authored upscale stage.');
+  // Encoding, decoding and upscaling are deterministic and may reuse valid
+  // resident results. Every sampler, saved shot and final delivery must prove
+  // fresh execution; checking only the first repeated action misses partial runs.
+  const required = [
+    ...encoders,
+    ...samplers,
+    ...decoders,
+    ...upscale,
+    ...audio,
+    ...action('modules.Audio', 'Export'),
+    ...assembly,
+    ...delivery,
+  ];
+  const deterministic = new Set([...encoders, ...decoders, ...upscale].map((node) => node.id));
+  return required.map((node) =>
+    executionReceiptForNode(node, output.taskId, websocketEvents, deterministic.has(node.id)),
+  );
+}
+
 export function executionReceiptsForRun(template, output, websocketEvents) {
+  const graphNodes = Array.isArray(output?.apiGraphSnapshot?.nodes)
+    ? output.apiGraphSnapshot.nodes
+    : Object.entries(output?.apiGraphSnapshot?.nodes ?? {}).map(([id, node]) => ({ id, ...node }));
+  const paths = output?.apiGraphSnapshot?.paths;
+  const active = Array.isArray(paths) ? new Set(paths.flat()) : null;
+  // Receipt repair reads the recorded execution, rather than relabelling it
+  // with today's authoring recipe. Preserve genuine historical whole runs.
+  if (
+    graphNodes.some(
+      (node) =>
+        (!active || active.has(node.id)) &&
+        node.module === 'modules.DiffusersVideo' &&
+        ['EncodeInputs', 'Denoise', 'DecodeLatents'].includes(node.action),
+    )
+  )
+    return stagedVideoExecutionReceipts(template, output, graphNodes, websocketEvents);
   const requiredActionGroups = template.workflowBlocks?.includes('quality_video_sequence')
     ? [
         [['modules.DiffusersVideo', 'GenerateShotJob']],
@@ -1206,9 +1335,6 @@ export function executionReceiptsForRun(template, output, websocketEvents) {
           ? [[['modules.DiffusersAudio', 'Generate']], [['modules.Audio', 'Export']]]
           : [];
   if (requiredActionGroups.length === 0) return [];
-  const graphNodes = Array.isArray(output?.apiGraphSnapshot?.nodes)
-    ? output.apiGraphSnapshot.nodes
-    : Object.entries(output?.apiGraphSnapshot?.nodes ?? {}).map(([id, node]) => ({ id, ...node }));
   return requiredActionGroups.map((alternatives) => {
     const matchedAction = alternatives.find(([moduleName, actionName]) =>
       graphNodes.some((item) => item?.module === moduleName && item?.action === actionName),
@@ -1222,19 +1348,11 @@ export function executionReceiptsForRun(template, output, websocketEvents) {
     }
     const [moduleName, actionName] = matchedAction;
     const node = graphNodes.find((item) => item?.module === moduleName && item?.action === actionName);
-    const receipts = websocketEvents.filter(
-      (event) => event?.type === 'executed' && event?.task_id === output?.taskId && event?.node === node.id,
-    );
-    if (receipts.length === 0) throw new Error(`No execution receipt was captured for ${moduleName}.${actionName}.`);
     // A branched graph can visit the same upstream node twice in one task: the
     // first visit executes it and a later branch reuses that result. That is
     // valid within-run graph reuse, not a vacuous gallery proof. Require at
     // least one genuinely changed execution for this task and retain it.
-    const receipt = receipts.find((event) => event.status !== 'cached' && event.hasChanged !== false);
-    if (!receipt) {
-      throw new Error(`${moduleName}.${actionName} returned cached output; this is not an independent duplicate run.`);
-    }
-    return { module: moduleName, action: actionName, nodeId: node.id, receipt };
+    return executionReceiptForNode(node, output.taskId, websocketEvents);
   });
 }
 

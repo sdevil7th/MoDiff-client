@@ -934,19 +934,19 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceAnyToAnyModel:image_to_text',
-    definitionContentHash: 'sha256:3c8581dd36fb231c752f25792ab4ecc94954416170c564486c9a9f5d4e81e64c',
+    definitionContentHash: 'sha256:52724da00ad661dec53c9b84ef3dfad0c5c59c4b3e2d7ec85c6baf14194e82c6',
     libraryRevision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     pipelineClass: 'HuggingFaceAnyToAnyModel',
     workflowId: 'image_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceAnyToAnyModel:image_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-80746e3c',
-    compiledDefinitionCanonicalSha256: 'sha256:0fcb29dac428dbbf1a47203b3525d0c80820cf8744a9e775d013e43aee9cfb4b',
+    compiledDefinitionContentHash: 'block-definition-v2-f525c935',
+    compiledDefinitionCanonicalSha256: 'sha256:19f667a0029be79265aaadcd7a7d8ff2e4723bf6fef4e4134495585af145965a',
     studioMode: 'image_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceAnyToAnyModel:image_to_text',
     studioExecutionSpec: {
-      id: 'janus-pro-1b:image-to-text:v1',
       contentHash: 'studio-spec-v1-234664aa',
       executionProfileId: 'janus-pro-1b:direct',
+      id: 'janus-pro-1b:image-to-text:v1',
     },
     artifact: {
       repo: 'deepseek-community/Janus-Pro-1B',
@@ -954,48 +954,68 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'image', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
+        {
+          portId: 'image',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transformersAnyToAnyGenerate', fieldId: 'result' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersAnyToAnyGenerate',
+          fieldId: 'result',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceAnyToAnyModel:text_generation',
-    definitionContentHash: 'sha256:98147a08217cd1b758fe75398356c2f8b650d21ed4b8444a422ffe15fc3be9a0',
+    definitionContentHash: 'sha256:4466173226db0e1ca825e0903ad81b3889f1b06280b3936f61f2345cdf2aabb0',
     libraryRevision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     pipelineClass: 'HuggingFaceAnyToAnyModel',
     workflowId: 'text_generation',
     admissionId: 'transformers.cluster-admission:HuggingFaceAnyToAnyModel:text_generation',
-    compiledDefinitionContentHash: 'block-definition-v2-55b0e44e',
-    compiledDefinitionCanonicalSha256: 'sha256:4fe1b1cbf6f668f63c0d70c1952dfc0f368f0419958bf011c60f0371193ca0dc',
+    compiledDefinitionContentHash: 'block-definition-v2-520b2947',
+    compiledDefinitionCanonicalSha256: 'sha256:4c81615528327942dd0961e1c26aa789ab14f7ef66ad60ebca657bf5b5a385ea',
     studioMode: 'text_generation',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceAnyToAnyModel:text_generation',
     studioExecutionSpec: {
-      id: 'janus-pro-1b:text-generation:v1',
       contentHash: 'studio-spec-v1-e769a28b',
       executionProfileId: 'janus-pro-1b:direct',
+      id: 'janus-pro-1b:text-generation:v1',
     },
     artifact: {
       repo: 'deepseek-community/Janus-Pro-1B',
       revision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     },
-    boundary: { outputs: [{ portId: 'result', role: 'transformersAnyToAnyGenerate', fieldId: 'result' }] },
+    boundary: {
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersAnyToAnyGenerate',
+          fieldId: 'result',
+        },
+      ],
+    },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceAnyToAnyModel:text_to_image',
-    definitionContentHash: 'sha256:9a4de4fd6bd371da59eb2799deec9d1ebf0055c4de4fb65229dcd1010c83fe9c',
+    definitionContentHash: 'sha256:d5ca9e565a06a6fdead466c480d6eaa1183b0e3aed2e3d2f5ce8c4c9453f7566',
     libraryRevision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
     pipelineClass: 'HuggingFaceAnyToAnyModel',
     workflowId: 'text_to_image',
     admissionId: 'transformers.cluster-admission:HuggingFaceAnyToAnyModel:text_to_image',
-    compiledDefinitionContentHash: 'block-definition-v2-a00d3653',
-    compiledDefinitionCanonicalSha256: 'sha256:bfa76087823f1e2eec178a1f419ffdfbc06131a18200e52333946f5fc0210c57',
+    compiledDefinitionContentHash: 'block-definition-v2-5f187c6e',
+    compiledDefinitionCanonicalSha256: 'sha256:800e93a1e53aea15d797a9b204e471f8e2103e3b71bf7aa93c91ba530f93d657',
     studioMode: 'text_to_image',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceAnyToAnyModel:text_to_image',
     studioExecutionSpec: {
-      id: 'janus-pro-1b:text-to-image:v1',
       contentHash: 'studio-spec-v1-b484288e',
       executionProfileId: 'janus-pro-1b:direct',
+      id: 'janus-pro-1b:text-to-image:v1',
     },
     artifact: {
       repo: 'deepseek-community/Janus-Pro-1B',
@@ -1015,19 +1035,19 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
-    definitionContentHash: 'sha256:d57f7ecdb741ec9d41a4d6bbd0c9769c99cd69495770616f0fd2e91d60aa6bfe',
+    definitionContentHash: 'sha256:7e8d62f390f900af7a6a4550a197615bd5e57d50c9a0add57ab9131ea4f0ddce',
     libraryRevision: '22aad52d435eb6dbaf354bdad9b0da84ce7d6156',
     pipelineClass: 'HuggingFaceCTCSpeechRecognitionModel',
     workflowId: 'speech_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-5a91bee4',
-    compiledDefinitionCanonicalSha256: 'sha256:dcc4b55efd51fba2716eb39a1cedfdf5eb8d2be3a35a197c30c2cf903bdfe16f',
+    compiledDefinitionContentHash: 'block-definition-v2-08accc6d',
+    compiledDefinitionCanonicalSha256: 'sha256:6bebaf807e15ca3965ffeb6a8a0ceaeb89769dec1cc434cc4a01f283a73de68c',
     studioMode: 'speech_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
     studioExecutionSpec: {
-      id: 'wav2vec2-base-960h:speech-to-text:v1',
       contentHash: 'studio-spec-v1-32eb7d06',
       executionProfileId: 'wav2vec2-base-960h:ctc-direct',
+      id: 'wav2vec2-base-960h:speech-to-text:v1',
     },
     artifact: {
       repo: 'facebook/wav2vec2-base-960h',
@@ -1035,26 +1055,38 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'audio', role: 'loadAudio', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'audio' },
+        {
+          portId: 'audio',
+          role: 'loadAudio',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'audio',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transcribeAudio', fieldId: 'transcript' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transcribeAudio',
+          fieldId: 'transcript',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceImageTextToTextModel:image_to_text',
-    definitionContentHash: 'sha256:7fc169a13d9f1a905aaca7ccd2df85b70863bd3f509de1bbc27a55449f01d008',
+    definitionContentHash: 'sha256:8f38e0387f7bd51e6a48f827e9437809963fcf603f510de42502ac07098fc55b',
     libraryRevision: '7e3e67edbbed1bf9888184d9df282b700a323964',
     pipelineClass: 'HuggingFaceImageTextToTextModel',
     workflowId: 'image_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceImageTextToTextModel:image_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-be24b0fc',
-    compiledDefinitionCanonicalSha256: 'sha256:59c13af4fe1251f7d934ac3751fcfef8f95d7d5b7b19172dda410e84013a52d4',
+    compiledDefinitionContentHash: 'block-definition-v2-9613dbd6',
+    compiledDefinitionCanonicalSha256: 'sha256:73c3d7ed12e8e499f9289a03708428bfdaa7e62728705c60ab780c47b9656fcf',
     studioMode: 'image_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceImageTextToTextModel:image_to_text',
     studioExecutionSpec: {
-      id: 'smolvlm-256m-instruct:image-to-text:v1',
       contentHash: 'studio-spec-v1-92e4c167',
       executionProfileId: 'smolvlm-256m-instruct:direct',
+      id: 'smolvlm-256m-instruct:image-to-text:v1',
     },
     artifact: {
       repo: 'HuggingFaceTB/SmolVLM-256M-Instruct',
@@ -1062,26 +1094,38 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'image', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
+        {
+          portId: 'image',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transformersImageTextGenerate', fieldId: 'result' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersImageTextGenerate',
+          fieldId: 'result',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceSpeechRecognitionModel:speech_to_text',
-    definitionContentHash: 'sha256:00517febc489698fb740473c841ef1945c1a83f9a9de166b2dc5316cbda5b970',
+    definitionContentHash: 'sha256:abd9de4f0495851770fb69db92665d8c2b990362b5a420aeca8c4b4f2b7d27eb',
     libraryRevision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af',
     pipelineClass: 'HuggingFaceSpeechRecognitionModel',
     workflowId: 'speech_to_text',
     admissionId: 'transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_to_text',
-    compiledDefinitionContentHash: 'block-definition-v2-0e1c69ce',
-    compiledDefinitionCanonicalSha256: 'sha256:75427ed912ccadd3f878d4f593e360094ad1b7430677a89fa1d93c7e7f2afd25',
+    compiledDefinitionContentHash: 'block-definition-v2-bf35c8de',
+    compiledDefinitionCanonicalSha256: 'sha256:86a97d2d862aeb0e8a7d86e9e8f17bd1fd651de61c4db20649cd0006db96222e',
     studioMode: 'speech_to_text',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceSpeechRecognitionModel:speech_to_text',
     studioExecutionSpec: {
-      id: 'whisper-tiny:speech-to-text:v1',
       contentHash: 'studio-spec-v1-d9e22ded',
       executionProfileId: 'whisper-tiny:direct',
+      id: 'whisper-tiny:speech-to-text:v1',
     },
     artifact: {
       repo: 'openai/whisper-tiny',
@@ -1089,26 +1133,38 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'audio', role: 'loadAudio', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'audio' },
+        {
+          portId: 'audio',
+          role: 'loadAudio',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'audio',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transcribeAudio', fieldId: 'transcript' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transcribeAudio',
+          fieldId: 'transcript',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceSpeechRecognitionModel:speech_translation',
-    definitionContentHash: 'sha256:9299a0d203a6b7f4cacc474a6297be661a2b8f00972900c84745cd4580878c00',
+    definitionContentHash: 'sha256:c0d43e70581851a03fc9c55f8dfd1e32758e552e23c84ee6e5e91a26fd1b0479',
     libraryRevision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af',
     pipelineClass: 'HuggingFaceSpeechRecognitionModel',
     workflowId: 'speech_translation',
     admissionId: 'transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_translation',
-    compiledDefinitionContentHash: 'block-definition-v2-edf1ce1f',
-    compiledDefinitionCanonicalSha256: 'sha256:668b81822cf888c799580e22672f3775d5601583d1bdca51da68b08d14368ced',
+    compiledDefinitionContentHash: 'block-definition-v2-cab448b0',
+    compiledDefinitionCanonicalSha256: 'sha256:0146db5f5843fba25d472db2618e623e40f993e1a86280715ebb169bfe3859c4',
     studioMode: 'speech_translation',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceSpeechRecognitionModel:speech_translation',
     studioExecutionSpec: {
-      id: 'whisper-tiny:speech-translation:v1',
       contentHash: 'studio-spec-v1-1fe7022c',
       executionProfileId: 'whisper-tiny:direct',
+      id: 'whisper-tiny:speech-translation:v1',
     },
     artifact: {
       repo: 'openai/whisper-tiny',
@@ -1116,32 +1172,52 @@ export const REGISTERED_BLOCK_V2_ROUTES: readonly RegisteredBlockV2Route[] = Obj
     },
     boundary: {
       inputs: [
-        { portId: 'audio', role: 'loadAudio', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'audio' },
+        {
+          portId: 'audio',
+          role: 'loadAudio',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'audio',
+        },
       ],
-      outputs: [{ portId: 'result', role: 'transcribeAudio', fieldId: 'transcript' }],
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transcribeAudio',
+          fieldId: 'transcript',
+        },
+      ],
     },
   }),
   transformersRoute({
     definitionId: 'transformers.composite:HuggingFaceTextGenerationModel:text_generation',
-    definitionContentHash: 'sha256:e982d1206b2cc0b6154de3e90bedcb8fb012cb9c010406f79c7fe49fd56c8e88',
+    definitionContentHash: 'sha256:7df9c6510eb0a7d779a662a9907f318a1a08956d6a094681060e9a23ebb4aff1',
     libraryRevision: '12fd25f77366fa6b3b4b768ec3050bf629380bac',
     pipelineClass: 'HuggingFaceTextGenerationModel',
     workflowId: 'text_generation',
     admissionId: 'transformers.cluster-admission:HuggingFaceTextGenerationModel:text_generation',
-    compiledDefinitionContentHash: 'block-definition-v2-62f7b032',
-    compiledDefinitionCanonicalSha256: 'sha256:856c1076bb80aed154b968ff7f8dac877a609f1277b771c3360218cc4a8466ad',
+    compiledDefinitionContentHash: 'block-definition-v2-32a2aa6c',
+    compiledDefinitionCanonicalSha256: 'sha256:de068ad9d59e5d2613abb84e4a035333dffb25bff457130fcda86dc452d96ec2',
     studioMode: 'text_generation',
     adapterContractId: 'transformers.composite-adapter:HuggingFaceTextGenerationModel:text_generation',
     studioExecutionSpec: {
-      id: 'smollm2-135m-instruct:text-generation:v1',
       contentHash: 'studio-spec-v1-d9902470',
       executionProfileId: 'smollm2-135m-instruct:direct',
+      id: 'smollm2-135m-instruct:text-generation:v1',
     },
     artifact: {
       repo: 'HuggingFaceTB/SmolLM2-135M-Instruct',
       revision: '12fd25f77366fa6b3b4b768ec3050bf629380bac',
     },
-    boundary: { outputs: [{ portId: 'result', role: 'transformersTextGenerate', fieldId: 'result' }] },
+    boundary: {
+      outputs: [
+        {
+          portId: 'result',
+          role: 'transformersTextGenerate',
+          fieldId: 'result',
+        },
+      ],
+    },
   }),
 ]);
 

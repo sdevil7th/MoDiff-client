@@ -77,3 +77,35 @@ test('tracked default-input JSON and generated packed bindings stay deterministi
     'the checked-in packed artifact matches the tracked JSON and template order',
   );
 });
+
+test('packed defaults preserve custom binding IDs, asset IDs and filenames without changing their bytes', async () => {
+  const { stripTypeScriptTypes } = await import('node:module');
+  const digest = 'ab'.repeat(32);
+  const asset = {
+    id: 'material-only-v2',
+    label: 'Reviewed reference image 1',
+    mediaType: 'image',
+    runtimePath: `/template-gallery/runtime-inputs/assets/${digest}.png`,
+    runtimeSha256: `sha256:bytes:${digest}`,
+    fileName: 'accepted-material-strip.png',
+  };
+  const mapping = {
+    sample: [
+      {
+        id: 'preserved-custom-binding',
+        label: 'Reviewed reference image',
+        mediaType: 'image',
+        origin: 'template',
+        requiredAt: 'workflow_start',
+        field: 'referenceImages',
+        defaultAssets: [asset],
+      },
+    ],
+  };
+  const rendered = await renderRuntimeInputTypescript({ mapping, templateIds: ['unused', 'sample'] });
+  const module = await import(
+    `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(rendered)).toString('base64')}`
+  );
+  assert.deepEqual(module.templateDefaultInputBindings('sample', 1), mapping.sample);
+  assert.deepEqual(module.templateDefaultInputBindings('unused', 0), []);
+});

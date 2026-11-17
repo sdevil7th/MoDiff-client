@@ -100,7 +100,10 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
       return;
     // This is derived DOM geometry, not a new user edit. Recording it after
     // Undo discarded the pending Redo before the user could restore a wire.
-    setNodeSize(node.id, current.width ?? 280, minimumHeight, { history: false });
+    // This is a measured minimum of the currently collapsed frame, rather
+    // than an old expanded envelope. Mark that proven compact geometry so
+    // hierarchy layout does not discard it as an unmarked legacy size.
+    setNodeSize(node.id, current.width ?? 280, minimumHeight, { history: false, sizeMode: 'compact' });
     updateNodeInternals(node.id);
     scheduleNodeLayoutSync();
   }, [

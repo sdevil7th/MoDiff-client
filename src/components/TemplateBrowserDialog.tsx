@@ -58,6 +58,7 @@ import {
 import { getTemplateReadiness, type TemplateReadinessResult } from '../studio/templateReadiness';
 import { resolveTemplateInputs } from '../studio/templateInputs';
 import { createWorkflowFromTemplate } from '../studio/templateWorkflow';
+import { isPlanningOnlyTemplate } from '../studio/templateCreationPolicy';
 import { getPreset, PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
 import { acknowledgementRequiredForTemplate } from '../studio/modelUsagePolicies';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
@@ -241,6 +242,7 @@ function categoryLabel(categoryId: TemplateBrowserCategoryId) {
 }
 
 function templateHasPublishedMedia(template: StudioTemplate, manifest: TemplateGalleryManifest | null) {
+  if (getTemplateShowcase(template.id)) return true;
   if (manifest) {
     const entry = findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
     if (!entry) return false;
@@ -283,6 +285,9 @@ const AUDIO_WAVEFORM_BAR_CLASSES = [
 ];
 
 const SHOWCASE_TEMPLATE_PRIORITY = [
+  'minimax_h3_image_old_town_cat',
+  'minimax_music3_chamber_pop',
+  'flux3_klein_fp8r512_text_to_image',
   'qwen_low_vram_product_concept',
   'qwen_poster_logo_text',
   'qwen_text_rendering',
@@ -594,7 +599,12 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     [effectiveFilter, form, isExperimentalTemplate],
   );
   const publishedTemplateCount = useMemo(
-    () => catalogTemplates.filter((template) => templateHasPublishedMedia(template, manifest)).length,
+    () =>
+      BROWSER_CATALOG_TEMPLATES.filter(
+        (template) =>
+          (catalogTemplates.some((item) => item.id === template.id) || getTemplateShowcase(template.id)) &&
+          templateHasPublishedMedia(template, manifest),
+      ).length,
     [catalogTemplates, manifest],
   );
   const templates = useMemo(() => {
@@ -605,7 +615,18 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       filter.mode === 'all' &&
       filter.difficulty === 'all';
     if (!isUnfilteredRecommendation) return filteredTemplates;
-    const published = filteredTemplates.filter((template) => templateHasPublishedMedia(template, manifest));
+    // Accepted display media can be featured without changing experimental
+    // execution, terms, memory readiness or the recipe qualification boundary.
+    const candidates = [...filteredTemplates];
+    for (const template of BROWSER_CATALOG_TEMPLATES)
+      if (
+        getTemplateShowcase(template.id) &&
+        template.difficulty !== 'blocked' &&
+        template.example?.status !== 'blocked' &&
+        !candidates.some((item) => item.id === template.id)
+      )
+        candidates.push(template);
+    const published = candidates.filter((template) => templateHasPublishedMedia(template, manifest));
     if (published.length === 0) return filteredTemplates;
     if (filter.sort !== 'recommended') return published;
     return [...published].sort((left, right) => showcasePriority(left.id) - showcasePriority(right.id));
@@ -743,6 +764,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     modelUsageTerms.needsReview(acknowledgementRequiredForTemplate(template));
 
   const requestCreateFromTemplate = (template: StudioTemplate) => {
+    if (isPlanningOnlyTemplate(template)) return;
     modelUsageTerms.request('create', acknowledgementRequiredForTemplate(template), () => createFromTemplate(template));
   };
 
@@ -1231,14 +1253,14 @@ function TemplateBrowserCard({
             tone="primary"
             className="pointer-events-auto w-full"
             icon={<Play size={14} />}
-            disabled={disabled}
+            disabled={disabled || isPlanningOnlyTemplate(template)}
             data-testid={`template-browser-create-card-${template.id}`}
             onClick={(event) => {
               event.stopPropagation();
               onCreate();
             }}
           >
-            {requiresTermsReview ? 'Review terms' : 'Use template'}
+            {isPlanningOnlyTemplate(template) ? 'Planning only' : requiresTermsReview ? 'Review terms' : 'Use template'}
           </ModiffButton>
         </div>
       </div>
@@ -1298,7 +1320,11 @@ function TemplateRecipeDetail({
   const afterPath =
     showcase?.mediaPath ?? templateManifestPath(detailManifestEntry?.afterPath ?? detailManifestEntry?.outputPath);
   const inputPresentation = templateInputPresentation(template);
-  const createLabel = requiresTermsReview ? 'Review terms' : 'Use template';
+  const createLabel = isPlanningOnlyTemplate(template)
+    ? 'Planning only'
+    : requiresTermsReview
+      ? 'Review terms'
+      : 'Use template';
   const hasInputAction = readiness.issues.some((issue) => issue.action === 'open_assets');
   const hasBackendAction = readiness.issues.some((issue) => issue.action === 'open_setup');
   const hasLowVramAction = readiness.issues.some((issue) => issue.action === 'apply_low_vram');
@@ -1462,7 +1488,7 @@ function TemplateRecipeDetail({
                 <Play size={15} />
               )
             }
-            disabled={disabled}
+            disabled={disabled || isPlanningOnlyTemplate(template)}
             data-testid={`template-browser-create-${template.id}`}
             onClick={onCreate}
           >
@@ -1871,7 +1897,7 @@ function MediaSlotView({
                 alt={slot.label}
                 loading="eager"
                 decoding="async"
-                className="relative h-full w-full object-contain p-1.5"
+                className="absolute inset-0 h-full w-full object-contain p-1.5"
                 onError={() => setFailedPath(usablePath)}
               />
             </>
@@ -1881,7 +1907,7 @@ function MediaSlotView({
               alt={slot.label}
               loading="eager"
               decoding="async"
-              className="h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full object-contain"
               onError={() => setFailedPath(usablePath)}
             />
           )

@@ -1,5 +1,7 @@
 import type { OptionDescriptor } from './types';
 import type { NodeParamOptions, NodeParams } from '../stores/useNodeStore';
+import type { CustomNodeType } from '../stores/useFlowStore';
+import { blockControlBindingV2 } from './blockControlConnectionsV2';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -193,13 +195,61 @@ export function registeredRuntimeOptionPresentation(
   if (
     !current ||
     Object.prototype.hasOwnProperty.call(current, 'optionsSource') ||
-    Object.values(currentFields ?? {}).some(
-      (field) => actionCanSetOptions(field.onChange, fieldKey) || actionCanSetOptions(field.onSignal, fieldKey),
-    )
+    (current.runtimeOptions !== 'availability' &&
+      current.runtimeOptions !== 'choices' &&
+      Object.values(currentFields ?? {}).some(
+        (field) => actionCanSetOptions(field.onChange, fieldKey) || actionCanSetOptions(field.onSignal, fieldKey),
+      ))
   ) {
     return options;
   }
-  return runtimeOptionPresentation(options, current.options ?? []);
+  const choices = current.runtimeOptions === 'choices' ? (current.options ?? []) : options;
+  return runtimeOptionPresentation(choices, current.options ?? []);
+}
+
+/** Aliased controls retain authored choices; every declared consumer must agree. */
+export function blockRuntimeOptionPresentation(
+  options: NodeParamOptions,
+  key: string,
+  param: NodeParams,
+  node: CustomNodeType | undefined,
+  owner: CustomNodeType | undefined,
+  registry: Record<string, { params?: Record<string, NodeParams> }>,
+): NodeParamOptions | null {
+  const source = blockControlBindingV2(node, key, param, owner ? [owner] : []);
+  if (!source) return null;
+  const { instance, control } = source;
+  const presentations = [control.binding, ...(control.mirrorBindings ?? [])].flatMap((target) => {
+    const suppliers = instance.effectiveGraph.nodes.filter((entry) => entry.nodeId === target.nodeId);
+    const supplier = suppliers.length === 1 ? suppliers[0] : undefined;
+    const fields = supplier ? registry[`${supplier.data.module}.${supplier.data.action}`]?.params : undefined;
+    const field = fields?.[target.fieldId];
+    // A declared free-form mirror adds no finite enum restriction.
+    if (
+      field &&
+      !Object.prototype.hasOwnProperty.call(field, 'options') &&
+      !Object.prototype.hasOwnProperty.call(field, 'optionsSource')
+    )
+      return [];
+    return [registeredRuntimeOptionPresentation(options, target.fieldId, fields)];
+  });
+  // Dynamic field actions/optionsSource retain their existing authority.
+  if (!presentations.length || presentations.some((presentation) => presentation === options)) return options;
+  const entries = presentations.map((presentation) => runtimeOptionEntries(presentation));
+  const combined = entries[0]!.flatMap((entry) => {
+    if (entry.type !== 'option') return [];
+    const matches = entries.flatMap((rows) => rows.filter((row) => row.type === 'option' && row.value === entry.value));
+    const selected = matches.find((row) => row.type === 'option' && row.disabled) ?? matches[0];
+    return selected?.type === 'option' && selected.descriptor ? [selected.descriptor] : [];
+  });
+  // Only the live registry may opt a physical-device selector into current
+  // membership. Dtypes, formats and all other controls keep authored choices.
+  const primary = instance.effectiveGraph.nodes.find((entry) => entry.nodeId === control.binding.nodeId);
+  const current = primary
+    ? registry[`${primary.data.module}.${primary.data.action}`]?.params?.[control.binding.fieldId]
+    : undefined;
+  const choices = current?.runtimeOptions === 'choices' ? presentations[0]! : options;
+  return runtimeOptionPresentation(choices, combined);
 }
 
 export function runtimeOptionValues(options: unknown, { includeDisabled = false }: { includeDisabled?: boolean } = {}) {

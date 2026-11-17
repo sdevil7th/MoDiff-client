@@ -16,6 +16,22 @@ const accounting = (value, consumed = value.executedOutput.resolvedExecutionInpu
     },
   });
 
+test('DDIM accounting accepts the inactive empty profile selector and rejects stage grants or a consumed claim', async () => {
+  const value = await canonicalHookCase();
+  const loader = value.executedOutput.resolvedExecutionInputs.nodes.find((row) => row.action === 'LoadPipeline');
+  assert.equal(loader.fieldAccounting.fields.execution_profile_id.disposition, 'inactive');
+  assert.doesNotThrow(() => accounting(value));
+  const consumed = structuredClone(value.executedOutput.resolvedExecutionInputs);
+  const field = consumed.nodes.find((row) => row.action === 'LoadPipeline').fieldAccounting.fields.execution_profile_id;
+  field.disposition = 'consumed';
+  delete field.reason;
+  assert.throws(() => accounting(value, consumed), /Wrong disposition/);
+  field.disposition = 'inactive';
+  field.reason = 'adapter-inactive';
+  field.value = 'unreviewed-stage-profile';
+  assert.throws(() => accounting(value, consumed));
+});
+
 test('real FE managed DDIM producer hints are accounted with original completion and GET authority', async () => {
   const value = await hintedCanonicalHookCase();
   const before = JSON.stringify(value);

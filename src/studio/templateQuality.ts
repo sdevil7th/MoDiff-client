@@ -293,11 +293,10 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
     reason: 'The template explicitly locks CFG to 1, where negative conditioning is inactive for this recipe.',
   },
   {
-    id: 'ace-turbo-no-negative-input',
+    id: 'ace-no-negative-input',
     modelTypes: ['AceStepAudioPipeline'],
-    maxGuidanceScale: 1,
     reason:
-      'The ACE-Step v1.5 Turbo backend has no negative-prompt input and uses guidance-distilled CFG 1; exclusions belong in the production brief.',
+      'The reviewed ACE-Step backend audio contract has no negative-prompt input for its Base or Turbo tasks; exclusions belong in the production brief.',
   },
   {
     id: 'minimax-music3-no-negative-input',

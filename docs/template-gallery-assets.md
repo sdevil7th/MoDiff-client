@@ -18,11 +18,12 @@ its blue-centre text-to-image source is separately registered.
 [Hugging Face's current storage policy](https://huggingface.co/docs/hub/en/storage-limits)
 describes storage for a free user or organization's public repositories as
 **best effort**, and asks that public uploads provide real community value. The
-checked complete Gallery manifest declares 395 files (514,571,305 bytes, about 491 MiB), below the Hub's
-repository-structure recommendations, so a public Dataset is a reasonable
-zero-cost home for this release. It is not a contractual free hosting
-guarantee: monitor the current Hub policy and keep the byte manifest portable
-enough to migrate to another public Dataset namespace if needed.
+[versioned asset inventory](../config/template-assets.v1.json) records the exact
+file count, total size and per-file hashes for the complete Gallery. The runtime
+source descriptor separately selects the approved available subset. This release
+uses a public Dataset; that is not a contractual free hosting guarantee. Monitor
+the current Hub policy and keep the byte manifest portable enough to migrate to
+another public Dataset namespace if needed.
 
 The checked-in source configuration is
 `src/studio/templateAssetSource.json`. The current release selects a public
@@ -68,6 +69,62 @@ exact immutable repository/revision pair. The previous lock must still match
 all other settings, weight hashes, input bindings and review requirements.
 This read-only display lookup never rewrites the current template or published
 record, and never satisfies current-graph exactness or the release Gallery gate.
+
+### Explicit historical recipe records and curated showcases
+
+`config/template-recipe-history.v1.json` retains exact creator declarations for
+approved examples whose authoring stages have changed. Each record binds the
+current declaration to the original template lock, graph, full model set, inputs,
+media, provenance and review hashes. Older selection metadata comes from the
+preserved source declaration; it is not inferred from a similar pipeline name.
+Run `npm run gallery:recipes:verify` against the materialized pinned Gallery.
+The verifier rejects changed prompts, controls, model sets, inputs or sidecars.
+It never edits an original receipt or grants current-graph execution proof.
+When accepted current-recipe replacements supersede every active historical
+example, this ledger may contain zero records. Preserve prior declarations and
+sidecars in the immutable Dataset history; an empty active ledger grants no proof.
+
+The browser continues to label these outputs **Previous recipe example**.
+Repository-relative weight filenames can resolve to their exact recorded Hub
+repository, but only the added revision field may be omitted from an older lock;
+weight hashes, filenames and every other setting remain binding.
+
+`config/release-showcase-scope.v1.json` names a curated preview selection and every
+excluded template with a reason. `npm run release:showcases:verify` checks that
+selection with the ordinary Gallery media, provenance, review, storage and rights
+checks. Historical entries additionally require their explicit recipe records.
+It reports current and historical examples separately and never counts excluded
+items as completed. The full storage subset is still hash-verified.
+
+The release contract keeps the original quality decision separate from
+`reviewedExampleReleaseApproved`. Current release approval requires the exact
+current-recipe manifest entry and available media, previews and review records.
+A prior approval remains recorded when its recipe changes or the source
+descriptor withholds an asset for rights review, but cannot satisfy this gate.
+Unknown approval-status spellings also remain blocked.
+
+This is a showcase gate, not overall release approval. Ordinary Gallery coverage,
+canonical-workflow, resource and hardware qualification gates remain strict and
+must be reported separately. Curation neither hides execution failures nor sets
+a time limit on users' workflows. The default complete Gallery verifier is
+unchanged; only an explicit maintainer selection scopes its example checks.
+
+### Reproducing reviewed input bindings
+
+`npm run gallery:runtime-inputs:check` recognizes both historical snake-case input
+roles and the native camel-case roles, including ordered `referenceImages[n]`
+inputs. It preserves original provenance and verifies exact input bytes. A
+comparison image produced by the connected denoiser/decoder/upscaler chain is
+not a root workflow input. Missing or disconnected ancestry remains an error.
+
+The generator can reuse hash-verified installed runtime input files. It stages
+all originals before replacing that cache, including inputs referenced by a
+retained recipe declaration. Explicitly authored appended templates are checked
+without changing their bindings or assigning them base-template packed indexes.
+Reviewed binding identifiers and labels belong in
+`scripts/template-default-input-overrides.json`; they do not authorize different
+source bytes. Changed generated binding metadata follows the same immutable
+Dataset update procedure as other asset metadata.
 
 The maintainer-only `gallery:repair-evidence` command repairs one retained example
 from its original evidence. It requires the original per-run provenance and
@@ -189,6 +246,36 @@ or contradictory measurements remain blocked; old receipts are not rewritten
 to supply them. A conditional/preview profile still records an observation,
 not supported-profile qualification. Runtime installation tiers and CI checks
 alone do not establish physical model qualification.
+
+Resource qualification reads the locked baseline through its release receipt.
+A `/template-gallery/` reference resolves only inside the client or bundled
+Gallery cache; it names a reviewed provenance bundle whose original `run` is
+retained. A direct retained v2 file remains supported. Both readers verify the
+receipt's original content hash and exact template, task, graph, model, runtime,
+candidate, output, duration and peak-memory fields. Files are bounded and cannot
+escape their managed root or traverse symbolic links. A corrupt preferred cache
+is an error, not a reason to select a different copy or a newer run.
+Gallery hashes use the existing provenance canonicalization, including its
+case-sensitive key ordering; they are not interchangeable with workflow-graph
+hashes. When current retained and Gallery receipts share a completion time,
+the explicitly current canonical association takes precedence. A newer matching
+receipt still wins, and stale receipts remain excluded. Original private run
+fields are never filled from a redacted projection or today's checkout.
+
+This permits reuse of complete original resource evidence without inference.
+Reading a public baseline does not restore source attestation removed by
+redaction: the candidate run still needs the full provenance validator, unchanged
+workload, declared resource recipe and native measurements. Family qualification
+does not grant the separate exact-route two-proof lane, hardware qualification,
+Auto admission, visual approval or publication authority.
+
+Resource contracts distinguish the legacy catalog family from the selected
+backend execution class. `resourceRecipes.executionModelType` comes from the
+template's declared selection; an absent selection preserves the legacy type.
+Receipts retain the original runtime `modelType` and add a separate
+`resourceFamily` for family coverage. Different catalog families never merge
+merely because they use the same execution class. Old receipts without that
+field retain their original family identity; no alias is inferred from a run.
 
 Current health reports use a resource fingerprint, while completed tasks retain
 a separate execution fingerprint. Hardware registration compares the resource
@@ -378,8 +465,8 @@ public visibility and every managed asset byte, and only then updates
 
 ## Current publication state
 
-The checked complete manifest declares 395 files with no missing paths. Its
-rights ledger marks 391 approved and holds four ACE Chinese New Year / Ghibli media
+The checked complete manifest declares 522 files with no undeclared missing paths. Its
+rights ledger marks 518 approved and holds four ACE Chinese New Year / Ghibli media
 files while written permission is pending. The current source descriptor pins
 the public approved subset and names those four unavailable paths. These are
 contract counts, not a claim that every file is materialized in each checkout.
@@ -741,6 +828,36 @@ The maintainer-only Gallery runner may reuse a loaded pipeline only for consecut
 
 ## Retained whole-workflow Auto observations
 
+### Reviewed native media and qualitative acceptance
+
+The maintainer provenance reader also recognizes completed first-attempt Expert
+image/video graphs with explicit Encode Inputs, Denoise and Decode stages, and
+modular audio semantic-generation/denoise/decode graphs. It requires exact
+task, session, output, workflow, source, immutable model and captured resource
+joins. Connected controls must identify their actual source port. Additional
+terminal shot exports are allowed only as declared siblings of the selected
+film. A backend adapter's implicit model dependency requires a source-bound,
+immutable dependency audit; an extra model name alone is insufficient.
+
+This recovers an executed resource identity, not hardware qualification or a
+claim that every requested field was independently captured. In particular,
+lyrics missing from native consumption telemetry remain unverified. Historical
+forms, receipt flags and model versions are preserved unchanged.
+
+A reviewed asset may retain qualitative human acceptance with null numerical
+scores when a valid `maintainerAcceptance` binds the exact review. This does
+not waive technical proof, hard failures, playback requirements or explicitly
+rejected output identities. Accepted visual limitations remain in the review.
+
+A video-to-video showcase may declare `expectedOutput.sourceTiming` with the
+genuine input's byte hash, frame count and cadence. Only matching before-source
+and complete output timing permit a short source clip through the Gallery
+duration floor. Ordinary video checks keep their existing minimums. A short
+card derivative may repeat that clip; the full accepted output remains intact.
+Audio delivery-rate checks use the native stream rate, separately from the
+48 kHz PCM normalization used for comparison hashes. These are Gallery curation
+rules; they add no duration or time limit to user workflow execution.
+
 A normal graph Run can have a verified whole-workflow Auto receipt without a
 primary Studio candidate ID. For a completed, fresh, unquantized native modular
 text-to-image graph, the provenance reader can recover an observed resource
@@ -757,10 +874,13 @@ resource recipes; model pins, effective settings and geometry remain bound.
 Original tasks retain their original candidate fields, source and capture time.
 Native BF16 ordinary Expert graphs can recover a manual loading identity only
 from a completed first attempt with exact task/session/workflow/form joins,
-complete consumed owner controls, a freshly activated empty adapter state and
-the complete immutable installed model set. The supported graph is one connected
-text-to-image owner with optional Guider and Spandrel upscale, and one or two
-Preview leaves. The selected output must retain every ancestor; an unused base
+complete consumed owner controls, a freshly activated adapter state matched to
+every declared ordered adapter, and the complete immutable installed model set.
+The supported graph is one connected text-to-image owner with an optional ordered
+LoRA chain, Guider and Spandrel upscale, and one or two Preview leaves. The manual
+recipe names the concrete captured loader class; a historical Studio chooser alias
+stays unchanged in the original form. Missing, reordered or contradictory adapter
+applications fail closed. The selected output must retain every ancestor; an unused base
 Preview is the only permitted missing capture. A graph alone, reused owner or
 partial capture cannot supply this identity. Missing form weight format and
 ancillary profile identifiers remain absent; the explicit native loader format
@@ -840,6 +960,40 @@ negative prompt is captured as null. Neither value is rewritten in the receipt.
 Rehashed projections must still match the canonical graph, model set and final
 frame geometry. This maintainer-only observation adds no admission, execution,
 quality approval, resource fit or hardware qualification.
+
+The maintainer-only `observed-native-auto-video-stages-v1` reader records the
+explicit multi-shot LTX and pinned Wan 1.3B stage paths, including VACE's encoded
+render and retained-shot assembly. It joins the completed first-attempt task,
+output, native consumed inputs, original graph hash, immutable models and actual
+backend-resolved Auto placement. It retains the complete runtime preparation
+observation instead of describing prepared or scheduled work as an empty plan.
+Its derived resource identity binds the canonical graph, complete model set,
+input artifacts and backend source. Resource controls, native stage bindings
+and the upscaler's installed pin must
+also match the canonical graph; recomputing an observation hash cannot replace
+those controls or turn this record into hardware or full-field qualification.
+Existing closed LTX observation identities are preferred and remain unchanged.
+This reader does not execute, admit or
+qualify a model; full field accounting, input/media verification, output quality,
+independent memory evidence and publication approval remain separate checks.
+
+If a synchronized output omits the client's API graph snapshot, this reader can
+instead retain the exact separately captured loopback `POST /graph` body. The
+request must match the supplied API graph, completed task/session/run identities,
+native consumed inputs and backend Auto preparation. The observation explicitly
+records that the output snapshot was absent, preserves the original request and
+its byte hash, and rechecks its canonical graph when validating a saved proof.
+Missing capture, contradictory snapshots, altered requests and non-native paths
+remain rejected. Neither the output nor the original request is backfilled.
+For the pinned Wan video-to-video route, the encoded normalized source supplies
+the frame count; the sampler's unused form literal is not reported as consumed.
+Its captured source length and dimensions must match the connected normalization
+stage, and active strength must be captured. Source pixel hashes and unrecorded
+normalization details still require separate media verification.
+Release artifact declarations split an executed multi-model revision lock into
+its individual immutable repository pins. A generator/upscaler pair must never
+be emitted as one repository name; existing pins are retained and deduplicated,
+and malformed or conflicting locks fail the contract check.
 
 The `observed-workflow-auto-image-resource-v1` vocabulary covers one fresh,
 unquantized one-reference edit or two-reference modular image-conditioned graph: one literal pinned
@@ -991,6 +1145,30 @@ model, admit a resource recipe, qualify hardware, alter saved graphs or authoriz
 publication. Other image, video, repaint and variation routes need their own
 evidence review.
 
+`observed-native-modular-image-resource-v1` separately joins original completed
+single-reference edits, ordered two-reference edits with one native stitch,
+and three-layer image decompositions. It checks the original graph, immutable
+model bodies, source and contract fingerprints, native captured controls,
+ordered input identities and actual output bytes. Legacy form pipeline labels
+remain separate from the actual modular owner. Fields absent from native
+capture stay declared-only; unavailable adapter observations remain unavailable.
+This maintainer-only reader neither executes models nor establishes full field
+accounting, resource admission or hardware qualification.
+
+For an approved retained layer sheet, `template-gallery-retained-layer-sheet.py`
+can verify original lossless PNG exports by reproducing each native WebP byte
+stream at its recorded quality setting, then reproduce the approved sheet.
+Its derivative records both native and lossless identities, the recomposition
+error, processor hash and font metadata. An optional operator-supplied font is
+not redistributed. The original creation-time review caption is preserved;
+the separate accepted quality record supplies the current review decision.
+This reproduction does not claim the new processor created the original run.
+
+The compact generated input map preserves explicit binding IDs, asset IDs and
+filenames in optional packed metadata. Default identities retain their previous
+encoding. Changing a reference body must not silently rename another input or
+lose a versioned material-strip filename during JSON-to-TypeScript generation.
+
 `observed-retained-modular-image-resource-v1` covers a retained single- or
 two-reference modular edit with eight native leaves, or nine with one applied
 adapter. It joins the four original official encode/image/denoise/decode calls,
@@ -1047,3 +1225,27 @@ and upscaler. Active `denoise_strength` stays separate from the generic inactive
 uniform frame sampling remain visible limitations; neither a playback review nor
 photorealism follows from a matching pixel digest. Retained or canonical
 accounting records cannot substitute for this fresh native evidence.
+
+Accepted native recipes can declare bounded numeric-array encoding presets in
+`workflowBlockSettings.encodingInputs`. Fresh graphs use the existing JSON text
+utility inside **Encode Inputs**, wired to declared compatible encoder fields.
+The template lock includes these presets. This changes neither saved drafts nor
+the backend execution path. Redux's accepted 80/20 recipe binds the JSON literal
+to both original native consumer arrays; missing supplier controls remain absent.
+
+The retained `executed-expert-audiovisual-graph-v1` evidence reader covers the
+reviewed two-owner LTX/ACE composition, with immutable pins and original native
+loader/generator captures. It preserves missing historical preparation mode,
+audio graph-task and fitting-control captures as limitations. It supplies neither
+Auto admission nor hardware qualification. Unknown owners, extra suppliers,
+contradictory modes or altered captures fail closed.
+
+Quality checks take duration and caption applicability from the authoritative
+template declaration. Moonflower's accepted nine-scene recipe is 45 seconds with
+an empty, disabled lyric overlay; caption synchronisation is explicitly not
+applicable. Enabling lyrics retains the listening and cue-alignment requirements.
+Its accepted quiet garden motion uses the existing localized-subject profile:
+3% adjacent-frame coverage, 75% cumulative coverage, 80% active and 65% strong
+motion windows, with at most 50% low-motion frames. The previous 8% adjacent-frame
+expectation is retained in the pre-registration declaration. Petal changes and
+limited motion remain accepted visual limitations, not flawless geometry claims.

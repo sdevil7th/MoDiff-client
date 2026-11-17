@@ -4,6 +4,7 @@ import { useStudioStore } from '../stores/useStudioStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { RequestError, requestJson } from '../utils/requestJson';
 import { stableStringify } from './templateExactness';
+import { matchesCleanWorkflowHydrationBaseline, type WorkflowHydrationBaseline } from './workflowHydrationBaseline';
 import type { WorkflowTab } from './types';
 import { forgetFreshWorkflowId, isFreshWorkflowId } from './workflowDocumentOrigin';
 
@@ -51,6 +52,13 @@ function contentSignature(tab: WorkflowTab) {
 }
 
 const backendSignatures = new Map<string, string>();
+const backendBaselines = new Map<string, WorkflowHydrationBaseline>();
+
+function backendOwnsDocument(tab: WorkflowTab) {
+  if (backendSignatures.get(tab.id) === contentSignature(tab)) return true;
+  const baseline = backendBaselines.get(tab.id);
+  return Boolean(baseline && matchesCleanWorkflowHydrationBaseline(tab, baseline));
+}
 const pendingSignatures = new Map<string, string>();
 const saveChains = new Map<string, Promise<void>>();
 type BackendWorkflowChange = { id: string; tab: WorkflowTab | null };
@@ -104,6 +112,31 @@ export function markWorkflowTabOpen(id: string) {
 export function markBackendWorkflow(tab: WorkflowTab) {
   forgetFreshWorkflowId(tab.id);
   backendSignatures.set(tab.id, contentSignature(tab));
+  const registry = useNodesStore.getState().nodesRegistry;
+  // Capture only this document's definitions. Later registry changes cannot
+  // authorize ignoring fields absent from the acknowledged document.
+  const definitions = Object.fromEntries(
+    (Array.isArray(tab.snapshot.nodes) ? tab.snapshot.nodes : []).flatMap((node) => {
+      if (!isRecord(node) || !isRecord(node.data)) return [];
+      if (typeof node.data.module !== 'string' || typeof node.data.action !== 'string') return [];
+      const key = `${node.data.module}.${node.data.action}`;
+      return [[key, registry[key]]];
+    }),
+  );
+  if (Array.isArray(tab.snapshot.nodes)) {
+    backendBaselines.set(
+      tab.id,
+      JSON.parse(
+        JSON.stringify({
+          tab: { ...tab, dirty: false },
+          canvasEpoch: useStudioStore.getState().workflowCanvasEpoch,
+          registry: definitions,
+        }),
+      ) as WorkflowHydrationBaseline,
+    );
+  } else {
+    backendBaselines.delete(tab.id);
+  }
   pendingSignatures.delete(tab.id);
   backendWorkflowListeners.forEach((listener) => listener({ id: tab.id, tab }));
 }
@@ -111,6 +144,7 @@ export function markBackendWorkflow(tab: WorkflowTab) {
 export function forgetBackendWorkflow(id: string) {
   forgetFreshWorkflowId(id);
   backendSignatures.delete(id);
+  backendBaselines.delete(id);
   pendingSignatures.delete(id);
   closedWorkflowIds.delete(id);
   persistClosedWorkflowIds();
@@ -119,19 +153,19 @@ export function forgetBackendWorkflow(id: string) {
 
 /**
  * A delayed canvas checkpoint can mark a tab dirty after an explicit save
- * acknowledgement even when its document is still byte-identical to the
- * backend-owned revision. Clear only that exact false-positive marker; a
- * genuinely newer local document remains dirty.
+ * acknowledgement, or after registry hydration adds an empty preview or
+ * disconnected port metadata. Reuse the narrow restore comparison without
+ * changing saved values; a genuinely newer local document remains dirty.
  */
 export function clearDirtyMarkerForExactBackendDocument(id: string) {
   const current = useStudioStore.getState().workflowTabs.find((tab) => tab.id === id);
   if (!current?.dirty) return false;
   const signature = contentSignature(current);
-  if (backendSignatures.get(id) !== signature) return false;
+  if (!backendOwnsDocument(current)) return false;
   let cleared = false;
   useStudioStore.setState((state) => {
     const latest = state.workflowTabs.find((tab) => tab.id === id);
-    if (!latest?.dirty || contentSignature(latest) !== signature || backendSignatures.get(id) !== signature) {
+    if (!latest?.dirty || contentSignature(latest) !== signature || !backendOwnsDocument(latest)) {
       return state;
     }
     cleared = true;
@@ -239,7 +273,7 @@ export function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => 
       if (!current || contentSignature(current) !== signature) return;
       // An explicit Save or websocket acknowledgement may have persisted this
       // exact document while the autosave waited on the shared write chain.
-      if (backendSignatures.get(tab.id) === signature) {
+      if (backendOwnsDocument(current)) {
         if (pendingSignatures.get(tab.id) === signature) pendingSignatures.delete(tab.id);
         clearDirtyMarkerForExactBackendDocument(tab.id);
         return;
@@ -339,11 +373,7 @@ export function useWorkflowBackendSync() {
           }
           // Skip a missing read only when an exact acknowledgement overtook it.
           // An acknowledgement predating this GET cannot waive genuine recreation.
-          if (
-            !backendTab &&
-            (latestTab.backendRevision ?? 0) > readRevision &&
-            backendSignatures.get(tab.id) === contentSignature(latestTab)
-          ) {
+          if (!backendTab && (latestTab.backendRevision ?? 0) > readRevision && backendOwnsDocument(latestTab)) {
             clearDirtyMarkerForExactBackendDocument(tab.id);
             continue;
           }
@@ -376,7 +406,7 @@ export function useWorkflowBackendSync() {
       const current = useStudioStore.getState().workflowTabs;
       current.forEach((tab) => {
         const signature = contentSignature(tab);
-        if (backendSignatures.get(tab.id) === signature) {
+        if (backendOwnsDocument(tab)) {
           if (tab.dirty) clearDirtyMarkerForExactBackendDocument(tab.id);
           return;
         }

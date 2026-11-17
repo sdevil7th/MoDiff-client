@@ -28,7 +28,7 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
   await page.goto('/');
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 120_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
-  const advanced = page.getByRole('button', { name: /Advanced workflow/u });
+  const advanced = page.getByRole('button', { name: /Empty workflow/u });
   if (await advanced.isVisible()) await advanced.click();
   await page.getByTestId('workflow-tab-new').click();
   if (await advanced.isVisible()) await advanced.click();
@@ -44,7 +44,7 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
   });
   if (!(await page.getByLabel('Search nodes').isVisible())) await page.getByTestId('left-tab-nodes').click();
   await page.getByLabel('Search nodes').fill(entry.label);
-  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes').getByRole('button').first();
+  const group = page.getByTestId('node-group-Diffusers-Blocks').getByRole('button').first();
   if ((await group.getAttribute('aria-expanded')) !== 'true') await group.click();
   await page
     .getByTestId(`hugging-face-node-row-${entry.id.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')}`)
@@ -52,9 +52,6 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
   const root = page.locator('[data-block-source="diffusers_catalog"][data-block-schema-version="2"]');
   await expect(root).toHaveCount(1, { timeout: 60_000 });
   const rootId = (await root.getAttribute('data-testid'))!.replace(/^user-block-/u, '');
-  const auto = page.getByRole('radio', { name: 'Creator', exact: true });
-  if ((await auto.getAttribute('aria-checked')) === 'true')
-    await page.getByRole('radio', { name: 'Developer', exact: true }).click();
   const inspect = () =>
     page.evaluate(async (id) => {
       const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
@@ -82,20 +79,31 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
   await page.getByTestId('graph-fix').click();
   const dialog = page.getByTestId('graph-fix-dialog');
   await expect(dialog.getByText(/Connect an existing compatible value or add a matching source node/)).toHaveCount(0);
-  await expect(dialog.locator('[data-testid^="graph-fix-issue-"]')).toHaveCount(2);
+  await expect(
+    dialog.locator('[data-testid^="graph-fix-issue-"]').filter({
+      has: page.getByRole('radio', { name: /^Open required input /u }),
+    }),
+  ).toHaveCount(2);
   await expect(dialog.getByText('Open required input', { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: `${output}/missing-media-fix.png` });
   await page.getByTestId('graph-fix-apply').click();
   await expect(dialog).toHaveCount(0);
   expect((await inspect()).selected).toContain(rootId);
   expect((await inspect()).values).toEqual(initial.values);
-  const backend = process.env.MODIFF_LIVE_BACKEND_URL ?? 'http://127.0.0.1:8088';
-  for (const [field, label, source] of [
-    ['image', 'image', '@data/images/flux_fill_outpaint.reference_image_1.png'],
-    ['mask_image', 'mask image', '@data/images/flux_fill_outpaint.mask_image.png'],
+  // Self-contained synthetic PNGs: this UI proof must not require private Gallery files.
+  for (const [field, label, pngBase64] of [
+    [
+      'image',
+      'image',
+      'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKklEQVR4nGM4YaNBU8QwasGoBaMWjFowasGoBaMWjFowasGoBaMWDBULADahsD3faps9AAAAAElFTkSuQmCC',
+    ],
+    [
+      'mask_image',
+      'mask image',
+      'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKklEQVR4nGPQCDhBU8QwasGoBaMWjFowasGoBaMWjFowasGoBaMWDBULAFLBAExkyBMEAAAAAElFTkSuQmCC',
+    ],
   ]) {
-    const response = await page.request.get(`${backend}/file?file=${encodeURIComponent(source)}`);
-    expect(response.ok()).toBe(true);
+    const bytes = Buffer.from(pngBase64, 'base64');
     const picker = root
       .locator('.modiff-field')
       .filter({ has: page.getByLabel(label, { exact: true }) })
@@ -104,7 +112,7 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
     await picker.setInputFiles({
       name: `flux-required-${field}.png`,
       mimeType: 'image/png',
-      buffer: await response.body(),
+      buffer: bytes,
     });
     await expect.poll(async () => (await inspect()).issues.some((issue) => issue.fieldId === field)).toBe(false);
   }
@@ -153,10 +161,62 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
     return Object.keys(useFlowStore.getState().exportGraph('scope-proof', id).nodes).sort();
   }, rootId);
   await page.getByTestId('arrange-graph').click();
-  await page.getByTestId(`user-block-${rootId}`).locator('header').first().click({ timeout: 15_000 });
+  await page.getByTestId(`user-block-${rootId}`).locator('header > span').first().click({ timeout: 15_000 });
   await page.getByTestId('selection-toolbar-run-from-node').click({ timeout: 15_000 });
-  await expect.poll(() => submittedGraphs.length, { timeout: 15_000 }).toBe(1);
-  expect(Object.keys(submittedGraphs[0].nodes).sort()).toEqual(expectedIds);
+  let heldForModelSetup = false;
+  try {
+    const blockers = await page.evaluate(async (id) => {
+      const { useWebsocketStore } = await import('/src/stores/useWebsocketStore.ts');
+      const { collectRunReadinessIssues } = await import('/src/studio/runReadiness.ts');
+      const socket = useWebsocketStore.getState();
+      return collectRunReadinessIssues({
+        sid: socket.sid,
+        isConnected: socket.isConnected,
+        includeStudio: false,
+        targetNodeId: id,
+      }).filter((issue) => issue.blocking);
+    }, rootId);
+    if (blockers.length) {
+      // A fresh isolated profile need not download this gated checkpoint just
+      // to prove file repair. Its targeted guard must exclude both the other
+      // draft's missing files and the retained inactive Canny selection.
+      expect(blockers.every((issue) => issue.category === 'model')).toBe(true);
+      expect([...new Set(blockers.map((issue) => issue.repoId))]).toEqual(['black-forest-labs/FLUX.1-Fill-dev']);
+      expect(submittedGraphs).toEqual([]);
+      heldForModelSetup = true;
+      test.info().annotations.push({
+        type: 'evidence-scope',
+        description: 'Targeted model-setup guard verified; no selected-graph submission in this uncached profile.',
+      });
+    } else {
+      await expect.poll(() => submittedGraphs.length, { timeout: 15_000 }).toBe(1);
+    }
+  } finally {
+    const scoped = await page.evaluate(async (id) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const { useWebsocketStore } = await import('/src/stores/useWebsocketStore.ts');
+      const { collectRunReadinessIssues } = await import('/src/studio/runReadiness.ts');
+      const flow = useFlowStore.getState();
+      const socket = useWebsocketStore.getState();
+      const graph = flow.exportGraph('selected-media-diagnostic', id);
+      return {
+        selected: flow.nodes.filter((node) => node.selected).map((node) => node.id),
+        targetNodeId: id,
+        issues: collectRunReadinessIssues({
+          sid: socket.sid,
+          isConnected: socket.isConnected,
+          includeStudio: false,
+          targetNodeId: id,
+        }),
+        media: Object.entries(graph.nodes).filter(([, node]) => node.module === 'modules.Image'),
+      };
+    }, rootId);
+    await test.info().attach('selected-media-readiness', {
+      body: JSON.stringify(scoped, null, 2),
+      contentType: 'application/json',
+    });
+  }
+  if (!heldForModelSetup) expect(Object.keys(submittedGraphs[0].nodes).sort()).toEqual(expectedIds);
   expect((await inspect()).values).toEqual(repaired.values);
   await writeFile(
     `${output}/selected-branch.json`,
@@ -164,7 +224,8 @@ test('required Fill media is diagnosed before Run, Fix opens the input, picker r
       {
         scope: 'native selected Run reaches submission; HTTP graph request intercepted, no inference',
         expectedIds,
-        submittedIds: Object.keys(submittedGraphs[0].nodes).sort(),
+        submittedIds: submittedGraphs.length ? Object.keys(submittedGraphs[0].nodes).sort() : [],
+        heldForModelSetup,
         wholeGraphMissingMedia: (await inspect()).issues,
       },
       null,

@@ -9,6 +9,14 @@ import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resou
 import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
 import {
+  capturedNativeGraphSubmission,
+  executedNativeMediaPlan,
+  OBSERVED_NATIVE_AUTO_VIDEO_SOURCE,
+  observedNativeAutoVideoPlan,
+  observedNativeAutoVideoResourceId,
+  observedNativeAutoVideoProofMatches,
+} from './executed-native-media-resource.mjs';
+import {
   OBSERVED_WORKFLOW_AUTO_SOURCE,
   OBSERVED_WORKFLOW_AUTO_LORA_SOURCE,
   OBSERVED_WORKFLOW_AUTO_AUDIO_SOURCE,
@@ -60,6 +68,12 @@ import {
   observedRetainedModularImageProofMatches,
   observedRetainedModularImageResourceId,
 } from './retained-native-modular-image-resource.mjs';
+import {
+  OBSERVED_NATIVE_MODULAR_IMAGE_SOURCE,
+  observedNativeModularImagePlan,
+  observedNativeModularImageProofMatches,
+  observedNativeModularImageResourceId,
+} from './observed-native-modular-image-resource.mjs';
 export { validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
 
 export const LIVE_PROOF_PROVENANCE_SCHEMA_VERSION = 2;
@@ -551,7 +565,7 @@ function executedModularExpertPlanFromGraph(apiGraph, executionContext) {
     (form.modelRepo !== undefined && repo.value !== form.modelRepo) ||
     typeof revision !== 'string' ||
     !/^[0-9a-f]{40}$/u.test(revision) ||
-    apiParamValue(owner, 'model_type') !== form.modelType ||
+    (weightFormat === 'fp8r' && apiParamValue(owner, 'model_type') !== form.modelType) ||
     apiParamValue(owner, 'dtype') !== form.dtype ||
     !['native', 'fp8r'].includes(weightFormat) ||
     (weightFormat === 'fp8r' ? form.weightFormat !== 'fp8r' : ![undefined, 'native'].includes(form.weightFormat)) ||
@@ -577,6 +591,8 @@ function executedModularExpertPlanFromGraph(apiGraph, executionContext) {
   }
 
   if (weightFormat === 'native') {
+    // Keep historical chooser aliases in the original form. The captured concrete
+    // loader names this manual recipe; ordered adapters are verified separately.
     if (!nativeExpertOwnerCaptureMatches(apiGraph, executionContext, ownerId, owner)) return null;
     // Older ordinary native graphs need not retain an ancillary Studio profile.
     // The completed native owner supplies this manual loading recipe; absent
@@ -584,12 +600,12 @@ function executedModularExpertPlanFromGraph(apiGraph, executionContext) {
     return orderedValue({
       source: 'executed-expert-modular-graph-v1',
       device: form.device,
-      modelType: form.modelType,
+      modelType: apiParamValue(owner, 'model_type'),
       modelRepo: repo.value,
       resolvedModelRepo: repo.value,
       resolvedArtifact: repo.value,
       modelRevision: revision,
-      pipelineClass: form.modelType,
+      pipelineClass: apiParamValue(owner, 'model_type'),
       dtype: form.dtype,
       weightFormat,
       weightLoadingMode: 'cpu',
@@ -751,7 +767,7 @@ function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
     for (const [id, node] of entries) {
       const kind = node.module + '.' + node.action;
       assert(
-        ['ModelsLoader', 'EncodePrompt', 'Guider', 'Denoise', 'DecodeLatents']
+        ['ModelsLoader', 'EncodePrompt', 'Guider', 'Denoise', 'DecodeLatents', 'Lora']
           .map((a) => 'modules.ModularDiffusers.' + a)
           .concat('modules.Spandrel.Upscaler', 'modules.Image.Preview')
           .includes(kind),
@@ -860,7 +876,9 @@ function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
     const application = applied.proof.owners[0].application;
     assert.equal(application.status, 'complete');
     assert.equal(application.observation, 'activated');
-    same(application.adapters, []);
+    const adapterNodes = byScope.get('modules.ModularDiffusers.Lora') ?? [];
+    assert(adapterNodes.length <= 32);
+    assert.equal(application.adapters.length, adapterNodes.length);
     assert(Array.isArray(modelIdentities));
     same(modelIdentities.map((m) => m.repoId).sort(), resolvedModelReposFromOutput(output).sort());
     for (const m of modelIdentities) {
@@ -870,6 +888,17 @@ function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
     }
     const model = modelIdentities.find((m) => m.repoId === apiParamValue(owner, 'repo_id').value);
     assert.equal(model.selectedRevision, apiParamValue(owner, 'revision'));
+    assert.match(apiParamValue(owner, 'model_type'), /^[A-Za-z]\w*ModularPipeline$/u);
+    validateAppliedAdapterProof(
+      {
+        taskId: task.task_id,
+        graph: { canonicalGraph: canonicalizeApiGraph(apiGraph) },
+        models: { items: modelIdentities },
+        adapterApplications: applied.proof,
+        adapterApplicationsHash: applied.hash,
+      },
+      { required: true },
+    );
     return true;
   } catch {
     return false;
@@ -1304,6 +1333,10 @@ export function executionPlanIdentity(apiGraph, executionContext) {
     (field) => ['resourceMode', 'resolvedResourceMode'].includes(field) && declaredPlan[field] === 'expert',
   );
   const modularPlan = expertOnly ? executedModularExpertPlanFromGraph(apiGraph, executionContext) : null;
+  const nativeImagePlan =
+    executionContext?.retainedNativeEvidence === undefined
+      ? observedNativeModularImagePlan(apiGraph, executionContext)
+      : null;
   const observedAutoPlan =
     fields.length === 1 && declaredPlan.resourceMode === 'auto'
       ? (observedWorkflowAutoPlan(apiGraph, {
@@ -1313,7 +1346,20 @@ export function executionPlanIdentity(apiGraph, executionContext) {
         observedWorkflowAutoAudioPlan(apiGraph, executionContext) ??
         observedWorkflowAutoVideoPlan(apiGraph, executionContext) ??
         observedWorkflowAutoControlPlan(apiGraph, executionContext) ??
-        observedWorkflowAutoMaskedImagePlan(apiGraph, executionContext))
+        observedWorkflowAutoMaskedImagePlan(apiGraph, executionContext) ??
+        observedNativeAutoVideoPlan(apiGraph, {
+          ...executionContext,
+          resolvedModelRepos: resolvedModelReposFromOutput(
+            executionContext?.executedOutput,
+            executionContext?.nativeGraphSubmission ? apiGraph : undefined,
+          ),
+          nativeAutoBindings: {
+            canonicalGraphHash: canonicalGraphIdentity(apiGraph).hash,
+            modelSetHash: modelSetIdentity(executionContext?.modelIdentities ?? []).hash,
+            inputArtifactsHash: inputArtifactsIdentity(executionContext?.inputArtifacts ?? []).hash,
+            backendSourceFingerprint: executionContext?.backendSource?.fingerprint,
+          },
+        }))
       : null;
   const retainedPlan =
     executionContext?.retainedNativeEvidence === undefined
@@ -1327,11 +1373,18 @@ export function executionPlanIdentity(apiGraph, executionContext) {
   const plan =
     executionContext?.retainedNativeEvidence !== undefined
       ? (retainedPlan ?? {})
-      : (observedAutoPlan ??
+      : (nativeImagePlan ??
+        observedAutoPlan ??
         modularPlan ??
         (fields.length > 0
           ? declaredPlan
-          : (executedExpertPlanFromGraph(apiGraph) ?? executedDirectAudioPlanFromGraph(apiGraph) ?? {})));
+          : (executedExpertPlanFromGraph(apiGraph) ??
+            executedDirectAudioPlanFromGraph(apiGraph) ??
+            executedNativeMediaPlan(apiGraph, {
+              ...executionContext,
+              resolvedModelRepos: resolvedModelReposFromOutput(executionContext?.executedOutput),
+            }) ??
+            {})));
   return {
     hash: sha256Value('execution-plan-v1', plan),
     plan: orderedValue(plan),
@@ -1350,10 +1403,12 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
   const manualResourceCandidateId =
     !isObservedWorkflowAutoSource(executionPlan?.source) &&
     executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_VIDEO_SOURCE &&
+    executionPlan?.source !== OBSERVED_NATIVE_AUTO_VIDEO_SOURCE &&
     executionPlan?.source !== OBSERVED_WORKFLOW_AUTO_MASKED_IMAGE_SOURCE &&
     executionPlan?.source !== OBSERVED_RETAINED_EXPERT_TEXT_SOURCE &&
     executionPlan?.source !== OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE &&
     executionPlan?.source !== OBSERVED_RETAINED_MODULAR_IMAGE_SOURCE &&
+    executionPlan?.source !== OBSERVED_NATIVE_MODULAR_IMAGE_SOURCE &&
     executionPlan?.modelType &&
     executionPlan?.dtype
       ? `manual-resource-v1:${[
@@ -1369,11 +1424,13 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
       executionPlan?.autoResourceCandidateId ??
       observedWorkflowAutoResourceId(executionPlan) ??
       observedWorkflowAutoVideoResourceId(executionPlan) ??
+      observedNativeAutoVideoResourceId(executionPlan) ??
       observedWorkflowAutoControlResourceId(executionPlan) ??
       observedWorkflowAutoMaskedImageResourceId(executionPlan) ??
       observedRetainedExpertTextResourceId(executionPlan) ??
       observedRetainedDirectImageResourceId(executionPlan) ??
       observedRetainedModularImageResourceId(executionPlan) ??
+      observedNativeModularImageResourceId(executionPlan) ??
       manualResourceCandidateId,
     elapsedSeconds:
       Number.isFinite(measurement?.elapsedSeconds) && measurement.elapsedSeconds >= 0
@@ -1384,8 +1441,8 @@ export function executionReceiptIdentity(executionReceipt, executionPlan) {
   };
 }
 
-export function resolvedModelReposFromOutput(output) {
-  const graph = output?.apiGraphSnapshot;
+export function resolvedModelReposFromOutput(output, capturedSubmissionGraph) {
+  const graph = output?.apiGraphSnapshot ?? capturedSubmissionGraph;
   const loaderRepos = nodeEntries(graph).flatMap(([, node]) => {
     const params = node?.params ?? {};
     const action = String(node?.action ?? '').toLowerCase();
@@ -1918,6 +1975,16 @@ export function validateRunProvenance(provenance) {
       blockers.push('execution.resourceCandidateId is missing.');
     }
     if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_NATIVE_MODULAR_IMAGE_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedNativeModularImageResourceId(provenance.graph.executionPlan) ||
+        !observedNativeModularImageProofMatches(provenance.graph.executionPlan, provenance))
+    ) {
+      blockers.push(
+        'execution native image observation does not match its original graph/model/input/output/source bindings.',
+      );
+    }
+    if (
       isObservedWorkflowAutoSource(provenance?.graph?.executionPlan?.source) &&
       (!observedWorkflowAutoResourceId(provenance.graph.executionPlan) ||
         provenance.execution?.resourceCandidateId !== observedWorkflowAutoResourceId(provenance.graph.executionPlan))
@@ -1988,6 +2055,20 @@ export function validateRunProvenance(provenance) {
         !observedWorkflowAutoVideoProofMatches(provenance.graph.executionPlan, provenance))
     ) {
       blockers.push('execution video resource observation does not match the original graph/model/output proof.');
+    }
+    if (
+      provenance?.graph?.executionPlan?.source === OBSERVED_NATIVE_AUTO_VIDEO_SOURCE &&
+      (provenance.execution?.resourceCandidateId !==
+        observedNativeAutoVideoResourceId(provenance.graph.executionPlan) ||
+        !observedNativeAutoVideoProofMatches(provenance.graph.executionPlan, provenance, {
+          submittedGraphIdentity: provenance.graph.executionPlan.observation?.graphSubmission
+            ? canonicalGraphIdentity(
+                capturedNativeGraphSubmission(provenance.graph.executionPlan.observation.graphSubmission).api,
+              )
+            : undefined,
+        }))
+    ) {
+      blockers.push('Native video Auto observation differs from its graph, models, inputs or backend source.');
     }
     if (
       provenance?.graph?.executionPlan?.source === OBSERVED_RETAINED_DIRECT_IMAGE_SOURCE &&
@@ -2210,7 +2291,13 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     same(section.omittedFields, {}, 'Accounting fields were omitted.');
     same(section.unaccountedFields, [], 'Unaccounted graph fields remain.');
     assert.ok(JSON.stringify(section).length <= 65_536, 'Accounting section exceeds its bound.');
-    accountingKeys(section.fields, accountingFields[row.action], 'Accounting literal field set differs.');
+    const expectedFields = [
+      ...accountingFields[row.action],
+      ...(row.action === 'LoadPipeline' && Object.hasOwn(node.params, 'execution_profile_id')
+        ? ['execution_profile_id']
+        : []),
+    ];
+    accountingKeys(section.fields, expectedFields, 'Accounting literal field set differs.');
     for (const [key, field] of Object.entries(section.fields)) {
       const parameter = node.params[key];
       assert.ok(
@@ -2421,6 +2508,10 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
   assert.equal(value(owner, 'pipeline_class'), target.modelType);
   assert.equal(value(owner, 'mode'), target.task);
   assert.equal(value(owner, 'conditioning_kind'), 'none');
+  if (Object.hasOwn(fields(owner), 'execution_profile_id')) {
+    assert.equal(value(owner, 'execution_profile_id'), '', 'Selected image stage routes need separate accounting.');
+    check(owner, 'execution_profile_id', 'inactive', '', 'adapter-inactive');
+  }
   assert.equal(value(owner, 'quantization_mode'), 'none');
   same(value(owner, 'quantized_components'), [], 'Quantized components are unsupported.');
   assert.ok(immutableRevision(value(owner, 'revision')), 'Executed loader pin is unresolved.');
@@ -2558,6 +2649,8 @@ export function createRunProvenance({
   canonicalAccountingProof,
   retainedNativeEvidence,
   videoNormalizationEvidence,
+  modelDependencyEvidence,
+  nativeGraphSubmission,
   capturedAt = new Date().toISOString(),
 }) {
   assert.ok(
@@ -2593,6 +2686,8 @@ export function createRunProvenance({
           backendContract: backendContractIdentity(nodesPayload, graph.canonicalGraph),
           retainedNativeEvidence,
           videoNormalizationEvidence,
+          modelDependencyEvidence,
+          nativeGraphSubmission,
           inputArtifacts,
         })
       : canonicalAccountingProofPlan({

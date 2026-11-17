@@ -2687,12 +2687,68 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
   },
   {
-    definitionId: 'diffusers.modular:LTX2ModularPipeline:condition',
-    definitionContentHash: 'sha256:83cff50c6e67d44ee021db6f9119ea3f2277d25c015372cfbcb9dae1c89eddbd',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
     libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
+    boundary: {
+      inputs: [
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'conditions',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
+        {
+          portId: 'num_inference_steps_input',
+          inputName: 'num_inference_steps',
+          role: 'wanGenerate',
+          fieldId: 'num_inference_steps',
+        },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
+      ],
+      outputs: [
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
+      ],
+    },
+    definitionId: 'diffusers.modular:LTX2ModularPipeline:condition',
+    definitionContentHash: 'sha256:83cff50c6e67d44ee021db6f9119ea3f2277d25c015372cfbcb9dae1c89eddbd',
     pipelineClass: 'LTX2ModularPipeline',
     workflowId: 'condition',
     admissionId: 'diffusers.cluster-admission:LTX2ModularPipeline:condition:mode:equivalent_standard_route',
@@ -2703,70 +2759,149 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       executionProfileId: 'ltx2-modular:equivalent-standard',
       id: 'ltx2-modular:equivalent-standard-condition-images:v1',
     },
-    artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
+    artifact: {
+      repo: 'Lightricks/LTX-2',
+      revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a',
+    },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-38a0b5d5',
-    compiledDefinitionCanonicalSha256: 'sha256:498a6c2cda6d4c9ad08cae37a44c7d57673cd6222de29e583c1633afc676d112',
+    compiledDefinitionContentHash: 'block-definition-v2-ed2d176c',
+    compiledDefinitionCanonicalSha256: 'sha256:5653455fb47c040ffd83125d0fd6f1db235e6ac302103790493e5ec956362952',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
+  },
+  {
+    provider: 'diffusers',
+    surface: 'diffusers_cluster_nodes',
+    definitionKind: 'modular_pipeline_workflow',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     boundary: {
       inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        { portId: 'conditions', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'image',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
         {
           portId: 'num_inference_steps_input',
           inputName: 'num_inference_steps',
           role: 'wanGenerate',
           fieldId: 'num_inference_steps',
         },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
       ],
       outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
       ],
     },
-  },
-  {
     definitionId: 'diffusers.modular:LTX2ModularPipeline:image2video',
     definitionContentHash: 'sha256:a604ee6b1b1a25a598057c35ed358a77b0a23c9ebdaf100f4f36fa0d13a9ca39',
-    provider: 'diffusers',
-    surface: 'diffusers_cluster_nodes',
-    definitionKind: 'modular_pipeline_workflow',
-    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'LTX2ModularPipeline',
     workflowId: 'image2video',
     admissionId: 'diffusers.cluster-admission:LTX2ModularPipeline:image2video:mode:equivalent_standard_route',
@@ -2777,151 +2912,123 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       executionProfileId: 'ltx2-modular:equivalent-standard',
       id: 'ltx2-modular:equivalent-standard-image-to-video:v1',
     },
-    artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
+    artifact: {
+      repo: 'Lightricks/LTX-2',
+      revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a',
+    },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-5fd8a8da',
-    compiledDefinitionCanonicalSha256: 'sha256:a753c5dc2234d69d7f02c8236b142941a85c7a947b1b320ed59e03f98103a29f',
+    compiledDefinitionContentHash: 'block-definition-v2-e8827d75',
+    compiledDefinitionCanonicalSha256: 'sha256:195bc814d0ac49e0bb737eb79b2efb5d786489ce78961689158809844a5aaa69',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
-    boundary: {
-      inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        { portId: 'image', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
-        {
-          portId: 'num_inference_steps_input',
-          inputName: 'num_inference_steps',
-          role: 'wanGenerate',
-          fieldId: 'num_inference_steps',
-        },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
-      ],
-      outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
-      ],
-    },
   },
   {
-    definitionId: 'diffusers.modular:LTX2ModularPipeline:in_context',
-    definitionContentHash: 'sha256:fc84cf3b2b8d890c87b29a6a400df6da5721f96c1048c28b8739f81c06f33187',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
     libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
-    pipelineClass: 'LTX2ModularPipeline',
-    workflowId: 'in_context',
-    admissionId: 'diffusers.cluster-admission:LTX2ModularPipeline:in_context:mode:equivalent_standard_route',
-    studioMode: 'in_context_to_video',
-    adapterContractId: 'diffusers.modular-adapter:LTX2ModularPipeline:in_context:mode:equivalent_standard_route',
-    studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-c71e8a89',
-      executionProfileId: 'ltx2-modular:equivalent-in-context',
-      id: 'ltx2-modular:equivalent-standard-in-context-canny:v1',
-    },
-    artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
-    dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-34eb329c',
-    compiledDefinitionCanonicalSha256: 'sha256:56615efb7373062362a859d5adbbcdbfd89a05aecfd54be4689b19ed9691ee2a',
-    controlFanOuts: [
-      {
-        source: 'dtype',
-        persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
-      },
-      {
-        source: 'offloadMode',
-        persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
-      },
-      {
-        source: 'device',
-        persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
-      },
-      {
-        source: 'conditioningScale',
-        persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'conditioning_attention_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'conditioning_scale' }],
-      },
-      {
-        source: 'width',
-        persistence: 'instance_input',
-        primary: { role: 'normalizeReferenceVideo', fieldId: 'width' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'width' }],
-      },
-      {
-        source: 'height',
-        persistence: 'instance_input',
-        primary: { role: 'normalizeReferenceVideo', fieldId: 'height' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'height' }],
-      },
-      {
-        source: 'requiredNumFrames',
-        persistence: 'instance_input',
-        primary: { role: 'normalizeReferenceVideo', fieldId: 'num_frames' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'num_frames' }],
-      },
-      {
-        source: 'fps',
-        persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
-      },
-      {
-        source: 'strength',
-        persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [
-          { role: 'wanGenerate', fieldId: 'reference_strength' },
-          { role: 'wanGenerate', fieldId: 'strength' },
-        ],
-      },
-    ],
     boundary: {
       inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        { portId: 'height', role: 'normalizeReferenceVideo', fieldId: 'height' },
-        { portId: 'width', role: 'normalizeReferenceVideo', fieldId: 'width' },
-        { portId: 'num_frames', role: 'normalizeReferenceVideo', fieldId: 'num_frames' },
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'height',
+          role: 'normalizeReferenceVideo',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'normalizeReferenceVideo',
+          fieldId: 'width',
+        },
+        {
+          portId: 'num_frames',
+          role: 'normalizeReferenceVideo',
+          fieldId: 'num_frames',
+        },
         {
           portId: 'reference_conditions',
           role: 'loadReferenceVideo',
@@ -2935,20 +3042,230 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
           role: 'wanGenerate',
           fieldId: 'num_inference_steps',
         },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
       ],
       outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
       ],
     },
+    definitionId: 'diffusers.modular:LTX2ModularPipeline:in_context',
+    definitionContentHash: 'sha256:fc84cf3b2b8d890c87b29a6a400df6da5721f96c1048c28b8739f81c06f33187',
+    pipelineClass: 'LTX2ModularPipeline',
+    workflowId: 'in_context',
+    admissionId: 'diffusers.cluster-admission:LTX2ModularPipeline:in_context:mode:equivalent_standard_route',
+    studioMode: 'in_context_to_video',
+    adapterContractId: 'diffusers.modular-adapter:LTX2ModularPipeline:in_context:mode:equivalent_standard_route',
+    studioExecutionSpec: {
+      contentHash: 'studio-spec-v1-c71e8a89',
+      executionProfileId: 'ltx2-modular:equivalent-in-context',
+      id: 'ltx2-modular:equivalent-standard-in-context-canny:v1',
+    },
+    artifact: {
+      repo: 'Lightricks/LTX-2',
+      revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a',
+    },
+    dynamicFieldActions: [],
+    compiledDefinitionContentHash: 'block-definition-v2-7959cff7',
+    compiledDefinitionCanonicalSha256: 'sha256:2ee2d0886d5bb338d46c223ed334ff8de37367739ca13346e5081ed3842b79c9',
+    controlFanOuts: [
+      {
+        source: 'dtype',
+        persistence: 'execution_parameter',
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
+      },
+      {
+        source: 'offloadMode',
+        persistence: 'execution_parameter',
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
+      },
+      {
+        source: 'device',
+        persistence: 'execution_parameter',
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
+      },
+      {
+        source: 'conditioningScale',
+        persistence: 'execution_parameter',
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'conditioning_attention_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'conditioning_scale',
+          },
+        ],
+      },
+      {
+        source: 'width',
+        persistence: 'instance_input',
+        primary: {
+          role: 'normalizeReferenceVideo',
+          fieldId: 'width',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'width',
+          },
+        ],
+      },
+      {
+        source: 'height',
+        persistence: 'instance_input',
+        primary: {
+          role: 'normalizeReferenceVideo',
+          fieldId: 'height',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'height',
+          },
+        ],
+      },
+      {
+        source: 'requiredNumFrames',
+        persistence: 'instance_input',
+        primary: {
+          role: 'normalizeReferenceVideo',
+          fieldId: 'num_frames',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'num_frames',
+          },
+        ],
+      },
+      {
+        source: 'fps',
+        persistence: 'execution_parameter',
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
+      },
+      {
+        source: 'strength',
+        persistence: 'execution_parameter',
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'reference_strength',
+          },
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
+      },
+    ],
   },
   {
-    definitionId: 'diffusers.modular:LTX2ModularPipeline:text2video',
-    definitionContentHash: 'sha256:da393ebd9c6f2bbcaa60394a9a300b91f5c4dad7c5ef7744d56089e47b8212c7',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
     libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
+    boundary: {
+      inputs: [
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'num_inference_steps_input',
+          inputName: 'num_inference_steps',
+          role: 'wanGenerate',
+          fieldId: 'num_inference_steps',
+        },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
+      ],
+      outputs: [
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
+      ],
+    },
+    definitionId: 'diffusers.modular:LTX2ModularPipeline:text2video',
+    definitionContentHash: 'sha256:da393ebd9c6f2bbcaa60394a9a300b91f5c4dad7c5ef7744d56089e47b8212c7',
     pipelineClass: 'LTX2ModularPipeline',
     workflowId: 'text2video',
     admissionId: 'diffusers.cluster-admission:LTX2ModularPipeline:text2video:mode:equivalent_standard_route',
@@ -2959,69 +3276,146 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       executionProfileId: 'ltx2-modular:equivalent-standard',
       id: 'ltx2-modular:equivalent-standard-text-to-video:v1',
     },
-    artifact: { repo: 'Lightricks/LTX-2', revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a' },
+    artifact: {
+      repo: 'Lightricks/LTX-2',
+      revision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a',
+    },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-09dc4e30',
-    compiledDefinitionCanonicalSha256: 'sha256:18500eb0d20609cda7f44f9d86041dcf6efbdcdfffe137e32256eca7af6baf7e',
+    compiledDefinitionContentHash: 'block-definition-v2-ce5a8fbb',
+    compiledDefinitionCanonicalSha256: 'sha256:f9d36c7a406ffddc63a4fee71e504caba9862ef110f1bb2f333177442ecf1049',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
-    boundary: {
-      inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        {
-          portId: 'num_inference_steps_input',
-          inputName: 'num_inference_steps',
-          role: 'wanGenerate',
-          fieldId: 'num_inference_steps',
-        },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
-      ],
-      outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
-      ],
-    },
   },
   {
-    definitionId: 'diffusers.composite:WanTI2VPipeline:text_to_video',
-    definitionContentHash: 'sha256:489bd3435e1e4569b8c95349f1ef3744d7aa31c53db473903e0f0e5b8eede32e',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'studio_execution_composite',
     libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
+    boundary: {
+      inputs: [
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'num_frames',
+          role: 'wanGenerate',
+          fieldId: 'num_frames',
+        },
+        {
+          portId: 'num_inference_steps',
+          role: 'wanGenerate',
+          fieldId: 'num_inference_steps',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
+      ],
+      outputs: [
+        {
+          portId: 'video',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
+      ],
+    },
+    definitionId: 'diffusers.composite:WanTI2VPipeline:text_to_video',
+    definitionContentHash: 'sha256:489bd3435e1e4569b8c95349f1ef3744d7aa31c53db473903e0f0e5b8eede32e',
     pipelineClass: 'WanTI2VPipeline',
     workflowId: 'text_to_video',
     admissionId: 'diffusers.cluster-admission:WanTI2VPipeline:text_to_video:mode:text_to_video',
@@ -3032,65 +3426,153 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       executionProfileId: 'wan-22-ti2v-5b:direct',
       id: 'wan-22-ti2v-5b:text-to-video:v1',
     },
-    artifact: { repo: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers', revision: 'b8fff7315c768468a5333511427288870b2e9635' },
+    artifact: {
+      repo: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
+      revision: 'b8fff7315c768468a5333511427288870b2e9635',
+    },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-51eb948a',
-    compiledDefinitionCanonicalSha256: 'sha256:96ce722f1733ab353be2281084e34541bc2f944bc3b0cbe3d66711c869bc3718',
+    compiledDefinitionContentHash: 'block-definition-v2-91c605ad',
+    compiledDefinitionCanonicalSha256: 'sha256:3a6942caabdf1c6e5fe2e4cf40d322d6a831070e94679bbcbe59a05923bd56fa',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
-    boundary: {
-      inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'num_frames', role: 'wanGenerate', fieldId: 'num_frames' },
-        { portId: 'num_inference_steps', role: 'wanGenerate', fieldId: 'num_inference_steps' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
-      ],
-      outputs: [
-        { portId: 'video', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
-      ],
-    },
   },
   {
-    definitionId: 'diffusers.modular:Wan22Image2VideoModularPipeline:default',
-    definitionContentHash: 'sha256:248476fdfc8386db1421e9c682e57fd88673571838465e684366805b749e7c14',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
     libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
+    boundary: {
+      inputs: [
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'image',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
+        {
+          portId: 'num_frames',
+          role: 'wanGenerate',
+          fieldId: 'num_frames',
+        },
+        {
+          portId: 'num_inference_steps',
+          role: 'wanGenerate',
+          fieldId: 'num_inference_steps',
+        },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
+      ],
+      outputs: [
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
+      ],
+    },
+    definitionId: 'diffusers.modular:Wan22Image2VideoModularPipeline:default',
+    definitionContentHash: 'sha256:248476fdfc8386db1421e9c682e57fd88673571838465e684366805b749e7c14',
     pipelineClass: 'Wan22Image2VideoModularPipeline',
     workflowId: 'default',
     admissionId: 'diffusers.cluster-admission:Wan22Image2VideoModularPipeline:default:mode:equivalent_standard_route',
@@ -3102,127 +3584,235 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       executionProfileId: 'wan22-i2v:equivalent-standard',
       id: 'wan22-i2v:equivalent-standard-image-to-video:v1',
     },
-    artifact: { repo: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers', revision: '596658fd9ca6b7b71d5057529bbf319ecbc61d74' },
+    artifact: {
+      repo: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers',
+      revision: '596658fd9ca6b7b71d5057529bbf319ecbc61d74',
+    },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-7c1c3d43',
-    compiledDefinitionCanonicalSha256: 'sha256:46560417f8ee5e67fa37e13fd03ddbf696ca69866bdb046598b373f1139f218a',
+    compiledDefinitionContentHash: 'block-definition-v2-e5f9d448',
+    compiledDefinitionCanonicalSha256: 'sha256:e02050d693edaddab40a2a092b5dc3ed643240d2151efd57521c71172a080366',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
-    boundary: {
-      inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        { portId: 'image', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
-        { portId: 'num_frames', role: 'wanGenerate', fieldId: 'num_frames' },
-        { portId: 'num_inference_steps', role: 'wanGenerate', fieldId: 'num_inference_steps' },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
-      ],
-      outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
-      ],
-    },
   },
   {
-    definitionId: 'diffusers.modular:Wan22ModularPipeline:default',
-    definitionContentHash: 'sha256:188390a2fa13aa6c448d8f311fa77a53a0ddeea929800822e20afaa6e3c9bfd0',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
     libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
+    boundary: {
+      inputs: [
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'num_inference_steps',
+          role: 'wanGenerate',
+          fieldId: 'num_inference_steps',
+        },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
+        {
+          portId: 'num_frames',
+          role: 'wanGenerate',
+          fieldId: 'num_frames',
+        },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
+      ],
+      outputs: [
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
+      ],
+    },
+    definitionId: 'diffusers.modular:Wan22ModularPipeline:default',
+    definitionContentHash: 'sha256:8a21bc6f3e23265427e021bd467024677fecf9cec4fba84be8cf0ff3d1d9f885',
     pipelineClass: 'Wan22ModularPipeline',
     workflowId: 'default',
     admissionId: 'diffusers.cluster-admission:Wan22ModularPipeline:default:mode:equivalent_standard_route',
     studioMode: 'text_to_video',
     adapterContractId: 'diffusers.modular-adapter:Wan22ModularPipeline:default:mode:equivalent_standard_route',
     studioExecutionSpec: {
-      contentHash: 'studio-spec-v1-930a45bd',
+      contentHash: 'studio-spec-v1-644a53d1',
       executionProfileId: 'wan22:equivalent-standard',
       id: 'wan22:equivalent-standard-text-to-video:v1',
     },
-    artifact: { repo: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers', revision: '5be7df9619b54f4e2667b2755bc6a756675b5cd7' },
+    artifact: {
+      repo: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers',
+      revision: '5be7df9619b54f4e2667b2755bc6a756675b5cd7',
+    },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-6f35c578',
-    compiledDefinitionCanonicalSha256: 'sha256:dd50545749fcde2f5cbeeb9afac979f28c50c806f9138167e2a8a21a8b44d4af',
+    compiledDefinitionContentHash: 'block-definition-v2-7750e448',
+    compiledDefinitionCanonicalSha256: 'sha256:3601eb9ee87c2425934f6baef8773917da6d4bbd2c267699a16a01fcb92ad5e2',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
-    boundary: {
-      inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        { portId: 'num_inference_steps', role: 'wanGenerate', fieldId: 'num_inference_steps' },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
-        { portId: 'num_frames', role: 'wanGenerate', fieldId: 'num_frames' },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
-      ],
-      outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
-      ],
-    },
   },
   {
     definitionId: 'diffusers.modular:WanAnimate2DistilledModularPipeline:default',
@@ -4420,12 +5010,73 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
   },
   {
-    definitionId: 'diffusers.modular:LTXModularPipeline:image2video',
-    definitionContentHash: 'sha256:d781edf06296f86a964a2644fa1fd5ae83398b1a01d3d99ec7589e1728f18015',
     provider: 'diffusers',
     surface: 'diffusers_cluster_nodes',
     definitionKind: 'modular_pipeline_workflow',
     libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
+    boundary: {
+      inputs: [
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
+        {
+          portId: 'image',
+          role: 'loadImage',
+          fieldId: 'file',
+          adaptation: 'media_file_path',
+          mediaType: 'image',
+        },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
+        {
+          portId: 'num_inference_steps_input',
+          inputName: 'num_inference_steps',
+          role: 'wanGenerate',
+          fieldId: 'num_inference_steps',
+        },
+        {
+          portId: 'num_frames',
+          role: 'wanGenerate',
+          fieldId: 'num_frames',
+        },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
+      ],
+      outputs: [
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
+      ],
+    },
+    definitionId: 'diffusers.modular:LTXModularPipeline:image2video',
+    definitionContentHash: 'sha256:d781edf06296f86a964a2644fa1fd5ae83398b1a01d3d99ec7589e1728f18015',
     pipelineClass: 'LTXModularPipeline',
     workflowId: 'image2video',
     admissionId: 'diffusers.cluster-admission:LTXModularPipeline:image2video:mode:equivalent_standard_route',
@@ -4441,69 +5092,142 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-68763b53',
-    compiledDefinitionCanonicalSha256: 'sha256:47ddd5084b272956c5ba09ef27b864e13f5d74bca53909164af158ab64d2557a',
+    compiledDefinitionContentHash: 'block-definition-v2-289cb414',
+    compiledDefinitionCanonicalSha256: 'sha256:602d55ac24447ccc925b944ee02c330ac242b4e6efef2a4b1938a91333d3eb1e',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
+  },
+  {
+    provider: 'diffusers',
+    surface: 'diffusers_cluster_nodes',
+    definitionKind: 'modular_pipeline_workflow',
+    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     boundary: {
       inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        { portId: 'image', role: 'loadImage', fieldId: 'file', adaptation: 'media_file_path', mediaType: 'image' },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
+        {
+          portId: 'prompt',
+          role: 'wanGenerate',
+          fieldId: 'prompt',
+        },
+        {
+          portId: 'negative_prompt',
+          role: 'wanGenerate',
+          fieldId: 'negative_prompt',
+        },
+        {
+          portId: 'max_sequence_length',
+          role: 'wanGenerate',
+          fieldId: 'max_sequence_length',
+        },
         {
           portId: 'num_inference_steps_input',
           inputName: 'num_inference_steps',
           role: 'wanGenerate',
           fieldId: 'num_inference_steps',
         },
-        { portId: 'num_frames', role: 'wanGenerate', fieldId: 'num_frames' },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
+        {
+          portId: 'height',
+          role: 'wanGenerate',
+          fieldId: 'height',
+        },
+        {
+          portId: 'width',
+          role: 'wanGenerate',
+          fieldId: 'width',
+        },
+        {
+          portId: 'num_frames',
+          role: 'wanGenerate',
+          fieldId: 'num_frames',
+        },
+        {
+          portId: 'output_type',
+          role: 'wanGenerate',
+          fieldId: 'output_type',
+        },
       ],
       outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
+        {
+          portId: 'videos',
+          role: 'videoExport',
+          fieldId: 'file',
+          adaptation: 'media_file_export',
+          mediaType: 'video',
+        },
       ],
     },
-  },
-  {
     definitionId: 'diffusers.modular:LTXModularPipeline:text2video',
     definitionContentHash: 'sha256:3ce369dbcd268e5de29353353188d426cc56ed78a8544974d6961f569ecbc6e5',
-    provider: 'diffusers',
-    surface: 'diffusers_cluster_nodes',
-    definitionKind: 'modular_pipeline_workflow',
-    libraryRevision: '7ecb1e1b4fe500be7fb7381a7bb79a24d7fa3941',
     pipelineClass: 'LTXModularPipeline',
     workflowId: 'text2video',
     admissionId: 'diffusers.cluster-admission:LTXModularPipeline:text2video:mode:equivalent_standard_route',
@@ -4519,60 +5243,80 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       revision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd',
     },
     dynamicFieldActions: [],
-    compiledDefinitionContentHash: 'block-definition-v2-9e3d4432',
-    compiledDefinitionCanonicalSha256: 'sha256:eb3515e41c1cdf813038e5c90b473f6797ee5204604c22efeca2f097a4628d99',
+    compiledDefinitionContentHash: 'block-definition-v2-c0cf63b5',
+    compiledDefinitionCanonicalSha256: 'sha256:7701efc75a45e3140c77e3a05f33034174e00a635a4a93f1acea5a224dfc9107',
     controlFanOuts: [
       {
         source: 'dtype',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersQuantization', fieldId: 'dtype' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'dtype' }],
+        primary: {
+          role: 'diffusersQuantization',
+          fieldId: 'dtype',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'dtype',
+          },
+        ],
       },
       {
         source: 'offloadMode',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'offload_mode' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'offload_mode' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'offload_mode',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'offload_mode',
+          },
+        ],
       },
       {
         source: 'device',
         persistence: 'execution_parameter',
-        primary: { role: 'diffusersRecipe', fieldId: 'device' },
-        mirrors: [{ role: 'wanPipeline', fieldId: 'device' }],
+        primary: {
+          role: 'diffusersRecipe',
+          fieldId: 'device',
+        },
+        mirrors: [
+          {
+            role: 'wanPipeline',
+            fieldId: 'device',
+          },
+        ],
       },
       {
         source: 'fps',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'frame_rate' },
-        mirrors: [{ role: 'videoExport', fieldId: 'fps' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'frame_rate',
+        },
+        mirrors: [
+          {
+            role: 'videoExport',
+            fieldId: 'fps',
+          },
+        ],
       },
       {
         source: 'strength',
         persistence: 'execution_parameter',
-        primary: { role: 'wanGenerate', fieldId: 'denoise_strength' },
-        mirrors: [{ role: 'wanGenerate', fieldId: 'strength' }],
+        primary: {
+          role: 'wanGenerate',
+          fieldId: 'denoise_strength',
+        },
+        mirrors: [
+          {
+            role: 'wanGenerate',
+            fieldId: 'strength',
+          },
+        ],
       },
     ],
-    boundary: {
-      inputs: [
-        { portId: 'prompt', role: 'wanGenerate', fieldId: 'prompt' },
-        { portId: 'negative_prompt', role: 'wanGenerate', fieldId: 'negative_prompt' },
-        { portId: 'max_sequence_length', role: 'wanGenerate', fieldId: 'max_sequence_length' },
-        {
-          portId: 'num_inference_steps_input',
-          inputName: 'num_inference_steps',
-          role: 'wanGenerate',
-          fieldId: 'num_inference_steps',
-        },
-        { portId: 'height', role: 'wanGenerate', fieldId: 'height' },
-        { portId: 'width', role: 'wanGenerate', fieldId: 'width' },
-        { portId: 'num_frames', role: 'wanGenerate', fieldId: 'num_frames' },
-        { portId: 'output_type', role: 'wanGenerate', fieldId: 'output_type' },
-      ],
-      outputs: [
-        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
-      ],
-    },
   },
   {
     definitionId: 'diffusers.modular:ErnieImageModularPipeline:text2image',

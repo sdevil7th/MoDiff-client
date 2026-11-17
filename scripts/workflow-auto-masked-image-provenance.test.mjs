@@ -7,7 +7,7 @@ import {
   observedWorkflowAutoMaskedImageResourceId as resourceId,
   observedWorkflowAutoMaskedImageProofMatches as matches,
 } from './observed-workflow-auto-masked-image-resource.mjs';
-function fixture() {
+function fixture(actualOffload = 'group_cpu') {
   const lit = (value) => ({ value }),
     wire = (sourceId, sourceKey) => ({ sourceId, sourceKey }),
     mod = (action, params, module = 'modules.ModularDiffusers') => ({
@@ -64,7 +64,7 @@ function fixture() {
       trust_remote_code: false,
       workflow_id: 'image_conditioned_inpainting',
       auto_offload: true,
-      offload_mode: 'group_cpu',
+      offload_mode: actualOffload,
       weight_loading_mode: 'cpu',
       weight_format: 'native',
       unet: null,
@@ -171,7 +171,7 @@ function fixture() {
     appliedUpdates: [],
     releases: [],
     resolvedFields: {
-      owner: { inpaint_compatibility: 'whole_v1', offload_mode: 'group_cpu' },
+      owner: { inpaint_compatibility: 'whole_v1', offload_mode: actualOffload },
       guide: { guidance_scale: 4 },
       denoise: { width: 64, height: 64, num_inference_steps: 2, guidance_scale: 4, strength: 1 },
     },
@@ -252,6 +252,43 @@ test('whole-compatible native masked receipt preserves the actual graph and save
   assert.deepEqual(ordinary.plan, p);
   assert.equal(executionReceiptIdentity(f.context.executionReceipt, p).resourceCandidateId, resourceId(p));
 });
+test('model CPU masked receipts retain their distinct fully observed loading recipe', () => {
+  const f = fixture('model_cpu'),
+    p = derive(f.api, f.context);
+  assert(p);
+  assert.equal(p.offloadMode, 'model_cpu');
+  assert.equal(matches(p, f.provenance), true);
+  const grouped = fixture();
+  assert.notEqual(resourceId(p), resourceId(derive(grouped.api, grouped.context)));
+  assert.deepEqual(executionPlanIdentity(f.api, f.context).plan, p);
+  assert.equal(executionReceiptIdentity(f.context.executionReceipt, p).resourceCandidateId, resourceId(p));
+  const changed = structuredClone(p);
+  changed.offloadMode = 'group_cpu';
+  assert.equal(matches(changed, f.provenance), false);
+});
+for (const [name, mutate] of [
+  [
+    'submitted mode',
+    (f) => {
+      f.api.nodes.owner.params.offload_mode.value = 'group_cpu';
+      f.api.runtimeHints.workflowAutoPlan.graphHash = workerGraphHash(f.api);
+    },
+  ],
+  ['consumed mode', (f) => (f.rows.find((r) => r.nodeId === 'owner').fields.offload_mode.value = 'group_cpu')],
+  ['resolved mode', (f) => (f.auto.resolvedFields.owner.offload_mode = 'group_cpu')],
+])
+  test('model CPU masked reader rejects a mismatched ' + name, () => {
+    const f = fixture('model_cpu');
+    assert(derive(f.api, f.context));
+    mutate(f);
+    assert.equal(derive(f.api, f.context), null);
+  });
+test('masked reader rejects unsupported loading modes even with internally consistent observations', () => {
+  for (const mode of ['none', 'group_ssd', 'sequential_cpu', true, {}]) {
+    const f = fixture(mode);
+    assert.equal(derive(f.api, f.context), null);
+  }
+});
 for (const [name, mutate] of [
   ['wrong mask connection', (f) => (f.api.nodes.image.params.mask_image.sourceId = 'source')],
   [
@@ -298,7 +335,7 @@ for (const [name, mutate] of [
   });
 for (const [name, mutate] of [
   ['unknown hardware authority', (p) => (p.hardwareQualified = true)],
-  ['different root loading', (p) => (p.offloadMode = 'model_cpu')],
+  ['unsupported root loading', (p) => (p.offloadMode = 'group_ssd')],
   ['invented compatibility basis', (p) => (p.resourceObservation.compatibilityBasis = 'native_official_call')],
   ['invalid mask digest', (p) => (p.resourceObservation.inputs[1].contentHash = 'missing')],
 ])

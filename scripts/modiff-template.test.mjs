@@ -2996,7 +2996,7 @@ test('LTX templates use the qualified 13B distilled execution contract', () => {
           : template.id === 'ltx_video_multi_reference'
             ? 81
             : template.id === 'ltx_video_video_to_video'
-              ? 81
+              ? 25
               : 161;
       assert.equal(
         template.example.lockedSettings.numFrames,
@@ -4119,31 +4119,31 @@ test('ACE templates lock musical structure, metadata, and model-aware negative b
 
   for (const template of templates) {
     const locked = template.example.lockedSettings;
-    assert.equal(locked.steps, 8);
-    assert.equal(locked.guidanceScale, 1);
+    const isBaseCover = template.id === 'ace_step_audio_variation';
+    assert.equal(locked.steps, isBaseCover ? 50 : 8);
+    assert.equal(locked.guidanceScale, isBaseCover ? 7 : 1);
+    if (isBaseCover) {
+      assert.equal(template.modelArtifact.value, 'ACE-Step/acestep-v15-xl-base-diffusers');
+      assert.equal(template.modelArtifact.revision, '8f40447d21ee59ad4dcee6c99ce248027410bfec');
+    }
     assert.equal(locked.shift, 3);
     const expectedBpm =
       template.id === 'ace_step_lyric_music_video'
-        ? 100
+        ? 96
         : template.id === 'ace_step_chinese_new_year_lora'
           ? 96
           : template.id === 'ace_step_custom_lora'
             ? 92
             : 170;
-    const expectedKey =
-      template.id === 'ace_step_chinese_new_year_lora'
-        ? 'D major'
-        : template.id === 'ace_step_custom_lora'
-          ? 'A minor'
-          : 'C# minor';
+    const expectedKey = ['ace_step_chinese_new_year_lora', 'ace_step_lyric_music_video'].includes(template.id)
+      ? 'D major'
+      : template.id === 'ace_step_custom_lora'
+        ? 'A minor'
+        : 'C# minor';
     assert.equal(locked.bpm, expectedBpm);
     assert.equal(locked.keyscale, expectedKey);
     const expectedTimeSignature =
-      template.id === 'ace_step_text_to_audio' || template.id === 'ace_step_audio_continuation'
-        ? '3'
-        : template.id === 'ace_step_lyric_music_video'
-          ? '4'
-          : '4/4';
+      template.id === 'ace_step_text_to_audio' || template.id === 'ace_step_audio_continuation' ? '3' : '4/4';
     assert.equal(locked.timesignature, expectedTimeSignature);
     assert.equal(template.negativePrompt, '');
   }
@@ -4163,32 +4163,28 @@ test('ACE templates lock musical structure, metadata, and model-aware negative b
   const lyricVideo = templates.find((template) => template.id === 'ace_step_lyric_music_video');
   assert.ok(lyricVideo.workflowBlocks.includes('lyric_video'));
   assert.ok(lyricVideo.example.expectedOutput.durationSeconds >= 20);
-  assert.equal(lyricVideo.example.lockedSeed, 1201047366);
-  assert.equal(lyricVideo.example.lockedSettings.audioDuration, 30);
+  assert.equal(lyricVideo.example.lockedSeed, 20261106);
+  assert.equal(lyricVideo.example.lockedSettings.audioDuration, 45);
   assert.equal(lyricVideo.example.expectedOutput.requiresAudio, true);
   assert.ok(lyricVideo.requiredBackendCapabilities.includes('modules.Audio.FitDuration'));
   assert.deepEqual(lyricVideo.workflowBlockSettings.lyricVideo.audioFit, {
     sourceStartSeconds: 0,
-    sourceDurationSeconds: 30,
-    targetDurationSeconds: 381 / 16,
+    sourceDurationSeconds: 45,
+    targetDurationSeconds: 45,
     delaySeconds: 0,
     targetSampleRate: 48000,
     fadeInSeconds: 0,
     fadeOutSeconds: 0,
   });
-  assert.equal(lyricVideo.workflowBlockSettings.lyricVideo.audio.seed, 1201047366);
-  assert.equal(lyricVideo.workflowBlockSettings.lyricVideo.audio.bpm, 100);
-  assert.match(lyricVideo.workflowBlockSettings.lyricVideo.audio.lyrics, /^\[Verse\]/);
+  assert.equal(lyricVideo.workflowBlockSettings.lyricVideo.audio.seed, 20261106);
+  assert.equal(lyricVideo.workflowBlockSettings.lyricVideo.audio.bpm, 96);
+  assert.match(lyricVideo.workflowBlockSettings.lyricVideo.audio.lyrics, /^\[verse\]/);
+  assert.equal(lyricVideo.workflowBlockSettings.lyricVideo.lrc, '');
+  const scenes = JSON.parse(lyricVideo.workflowBlockSettings.lyricVideo.promptsJson);
+  assert.equal(scenes.length, 9);
   assert.equal(
-    lyricVideo.workflowBlockSettings.lyricVideo.lrc,
-    [
-      '[00:00.00]Daylight leaves the garden wall',
-      '[00:03.26]Silver buds begin to call',
-      '[00:07.44]White petals turn into the night',
-      '[00:11.38]Every vine unfolds its light',
-      '[00:15.08]Stars grow pale above the lawn',
-      '[00:18.90]Moonflowers hold until the dawn',
-    ].join('\n'),
+    scenes.reduce((total, shot) => total + shot.reference_count, 0),
+    10,
   );
 
   const textToAudio = templates.find((template) => template.mode === 'text_to_audio');
@@ -7954,6 +7950,30 @@ test('startup request caches recover manifest and plans at their startup readine
   );
   assert.match(browserSource, /shouldRetryStaticStartupRequest\(\{[\s\S]*?manifestStartupRetryAttempted\.current/);
   assert.doesNotMatch(browserSource, /templateManifestRequest\s*\?\?=/);
+});
+
+test('planning-only templates reject creation before changing the active document', async () => {
+  const { createWorkflowFromTemplate } = await server.ssrLoadModule('/src/studio/templateWorkflow.ts');
+  const studioStore = studioStoreModule.useStudioStore;
+  const previous = studioStore.getState();
+  let created = 0;
+  studioStore.setState({
+    createWorkflowTab: () => {
+      created += 1;
+      throw new Error('Unexpected planning-template document mutation');
+    },
+  });
+  try {
+    assert.ok(templatesModule.PLANNING_STUDIO_TEMPLATES.length > 0);
+    for (const template of templatesModule.PLANNING_STUDIO_TEMPLATES) {
+      await assert.rejects(createWorkflowFromTemplate(template), /Planning templates are for reference/);
+    }
+    assert.equal(created, 0);
+    assert.equal(studioStore.getState().activeWorkflowTabId, previous.activeWorkflowTabId);
+    assert.equal(studioStore.getState().workflowTabs, previous.workflowTabs);
+  } finally {
+    studioStore.setState(previous);
+  }
 });
 
 test('template creation waits for initial capabilities and cannot continue into another workflow', async () => {

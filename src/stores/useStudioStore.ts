@@ -614,17 +614,35 @@ function normalizeWorkflowSnapshot(
     // like one managed task graph.
     !ordinaryOperationGraph &&
     (!persistedGraphBinding || isInferredRecoveryBinding(persistedGraphBinding));
-  // Old whole-image exports carry presentation roles, but no execution-spec
+  // Whole-task exports carry presentation roles, but no execution-spec
   // receipt. Keep those exact ordinary nodes as the workflow authority rather
   // than inventing a managed binding which the current contract must reject.
-  const ordinaryImageImport =
+  const ordinaryTaskImport =
     shouldRecoverManagedIdentity &&
     nodes.some(
       (node) =>
-        (node.data.module === 'modules.DiffusersImage' && node.data.action === 'LoadPipeline') ||
+        ([
+          'modules.DiffusersImage',
+          'modules.DiffusersAudio',
+          'modules.DiffusersVideo',
+          'modules.DiffusersThreeD',
+        ].includes(node.data.module) &&
+          node.data.action === 'LoadPipeline') ||
         (node.data.module === 'modules.HuggingFaceTransformers' &&
-          ['LoadDepthEstimationModel', 'LoadImageTextToTextModel'].includes(node.data.action)) ||
-        (node.data.module === 'modules.ImageOperations' && node.data.action === 'ProcessImage') ||
+          [
+            'LoadDepthEstimationModel',
+            'LoadImageTextToTextModel',
+            'LoadTextGenerationModel',
+            'LoadAnyToAnyModel',
+          ].includes(node.data.action)) ||
+        (node.data.module === 'modules.HuggingFaceSpeech' &&
+          ['LoadSpeechRecognitionModel', 'LoadCTCSpeechRecognitionModel'].includes(node.data.action)) ||
+        [
+          'modules.ImageOperations.ProcessImage',
+          'modules.Audio.ProcessAudio',
+          'modules.Video.ProcessVideo',
+          'modules.Text.ProcessText',
+        ].includes(`${node.data.module}.${node.data.action}`) ||
         (node.data.module === 'modules.Spandrel' && node.data.action === 'Upscaler'),
     );
   const inferredManagedForm = shouldRecoverManagedIdentity
@@ -636,7 +654,7 @@ function normalizeWorkflowSnapshot(
       })
     : persistedStudioForm;
   const adoptedGraph =
-    shouldRecoverManagedIdentity && !ordinaryImageImport
+    shouldRecoverManagedIdentity && !ordinaryTaskImport
       ? adoptManagedWorkflowGraph(nodes, edges as import('@xyflow/react').Edge[], inferredManagedForm)
       : null;
   // Restoring an ordinary graph is not permission to replace its authored form
@@ -646,18 +664,18 @@ function normalizeWorkflowSnapshot(
     isRecord(value.studioForm) &&
     value.studioForm.mode === persistedStudioForm.mode &&
     value.studioForm.modelType === persistedStudioForm.modelType;
-  const inferOrdinaryForm = ordinaryImageImport && (intent === 'import' || !hasPersistedForm);
+  const inferOrdinaryForm = ordinaryTaskImport && (intent === 'import' || !hasPersistedForm);
   const studioForm = adoptedGraph || inferOrdinaryForm ? inferredManagedForm : persistedStudioForm;
   const normalizedNodes = adoptedGraph?.nodes ?? nodes;
   const executionNormalizedNodes =
-    ordinaryImageImport || ordinaryOperationGraph
+    ordinaryTaskImport || ordinaryOperationGraph
       ? nodes
       : normalizeManagedSnapshotExecutionPlan(
           normalizedNodes,
           studioForm,
           persistedGraphBinding ?? adoptedGraph?.binding ?? null,
         );
-  const studioGraphBinding = ordinaryImageImport
+  const studioGraphBinding = ordinaryTaskImport
     ? null
     : reconcileSnapshotGraphBinding(
         isInferredRecoveryBinding(persistedGraphBinding)
@@ -787,11 +805,16 @@ function sameWorkflowDocument(left: WorkflowTab, right: WorkflowTab) {
 }
 
 const MAX_LOCAL_WORKFLOW_TABS = 12;
+// Leave room for the active canvas and unsaved edits in the same page storage.
+// This bounds only redundant inactive saved copies, never workflow size.
+const MAX_INACTIVE_BACKEND_TAB_BYTES = 2 * 1024 * 1024;
 
 /**
  * Saved workflow documents are backend-owned. Keep their browser checkpoint
- * bounded, but retain every dirty document: its unsaved edits may exist only in
- * this browser. Preserve the original tab order in both cases.
+ * bounded by count and size, but retain the active, dirty and unacknowledged
+ * documents: their current edits may exist only in this browser. Omitted clean
+ * saved documents remain in My workflows, and acknowledged drafts remain in
+ * Recovery drafts. Only their redundant browser copies are omitted.
  */
 export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkflowTabId: string | null) {
   const ranked = [...tabs].sort((left, right) => {
@@ -806,6 +829,24 @@ export function workflowTabsForLocalCheckpoint(tabs: WorkflowTab[], activeWorkfl
     if (tab.dirty && !retainedIds.has(tab.id)) {
       retained.add(tab);
       retainedIds.add(tab.id);
+    }
+  }
+  let inactiveSavedBytes = 0;
+  for (const tab of retained) {
+    if (
+      tab.id === activeWorkflowTabId ||
+      tab.dirty ||
+      !(typeof tab.backendRevision === 'number' && tab.backendRevision > 0)
+    )
+      continue;
+    try {
+      // Web Storage accounts for UTF-16 strings. Serialization failure must
+      // preserve the document and let the existing checkpoint warning explain it.
+      const bytes = JSON.stringify(tab).length * 2;
+      if (inactiveSavedBytes + bytes > MAX_INACTIVE_BACKEND_TAB_BYTES) retained.delete(tab);
+      else inactiveSavedBytes += bytes;
+    } catch {
+      /* Never discard a document whose recoverability could not be measured. */
     }
   }
   return tabs.filter((tab) => retained.has(tab)).slice(0, Math.max(MAX_LOCAL_WORKFLOW_TABS, retained.size));

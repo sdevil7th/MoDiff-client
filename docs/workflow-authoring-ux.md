@@ -182,6 +182,11 @@ both their editor and optional socket. A connection supplies the execution value
 and disables the literal editor; disconnecting restores the saved fallback.
 The source is shown when available. Model and media inputs retain their sockets.
 
+Field callbacks follow declared aliases on containers and visual stages. An
+ordinary native leaf inside a user Block keeps its direct callback owner; its
+input or output socket is not another container interface. Cyclic projected
+aliases stop resolution without changing the Block or granting a new callback.
+
 For a custom graph using Auto memory, **Graph ready · Auto check at Run** means
 static graph checks passed. Run checks the exact backend resource plan before
 submission. Use **Resources → Check Auto execution plan** to inspect it earlier.
@@ -329,6 +334,13 @@ so closing a newly saved tab keeps its row available without Reload workflows.
 These summary updates do not refetch on canvas edits or overwrite newer unsaved
 tab contents. An older list response cannot undo a later save acknowledgement.
 
+Reopening an acknowledged document does not create a new backend revision just
+because the canvas adds disconnected-port metadata or the registry's exact empty
+image preview. Save comparison uses the same narrow hydration rules and captures
+the relevant node definitions at acknowledgement. It does not rewrite the stored
+snapshot or ignore authored inputs, nonempty previews, schema changes, wiring,
+positions or later registry changes. Actual edits still autosave normally.
+
 Shared select, combobox and multiselect menus use an 18rem preferred cap, further
 limited by available viewport space. The cap is passed through Headless UI's
 anchoring constraint so its inline styles cannot override the intended limit.
@@ -385,3 +397,25 @@ with a bookkeeping assertion that expected the still-open recovery draft in the
 mocked saved-document list; application execution, output capture and error checks
 had already passed, and only the explicitly saved workflow had correctly been
 written there.
+
+## Preview image framing
+
+Template image cards and their detail view keep the complete published image
+inside the existing preview frame. The image must be sized against the frame;
+`object-fit: contain` alone does not prevent intrinsic image height from
+overflowing a CSS grid and being clipped. Square, portrait and landscape media
+are covered by measured frame-boundary browser checks at narrow and wide sizes.
+This is presentation only: source media, approved recipes and generation
+parameters remain unchanged.
+
+## Large saved workflow checkpoints
+
+The browser recovery cache retains the active workflow, every dirty workflow,
+and unacknowledged documents. It bounds redundant inactive saved copies by
+count and serialized size so several large saved graphs cannot prevent the
+active tab checkpoint from being updated. This does not close live tabs, delete
+backend documents, trim their contents or limit workflow/model size. Saved
+documents omitted from the browser cache remain in My workflows; clean
+acknowledged drafts remain in Recovery drafts. If the active
+workflow or unsaved edits alone exceed browser capacity, the existing Save or
+export warning remains in effect.

@@ -198,6 +198,20 @@ test('refresh hydrates the durable current preview separately from previous outp
   );
 });
 
+test('preview history never borrows an unscoped or another workflow output with reused node ids', () => {
+  const records = [
+    { ...output('local'), workflowTabId: 'workflow-a' },
+    { ...output('other'), workflowTabId: 'workflow-b' },
+    output('legacy'),
+  ];
+  const previous = (workflow) =>
+    previewStateModule.previousOutputsForPreview(records, workflow, 'node-1', 'image', null).map((item) => item.id);
+  assert.deepEqual(previous('workflow-a'), ['local']);
+  assert.deepEqual(previous('fresh-workflow'), []);
+  assert.deepEqual(previous(null), ['legacy']);
+  assert.equal(records.length, 3, 'Unscoped historical outputs remain available in the gallery.');
+});
+
 test('a slower history response cannot replace a newer preview-state revision', async () => {
   const call = deferred();
   globalThis.fetch = () => call.promise;

@@ -100,8 +100,8 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
                 nodeId={node.id}
                 params={params}
                 updateStore={update}
-                module="MoDiff"
-                action="Encoding"
+                module={node.data.module}
+                action={node.data.action}
                 mode="connectors"
               />
               <BlockCrossingPortsV2 nodeId={node.id} />

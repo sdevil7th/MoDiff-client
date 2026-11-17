@@ -23,7 +23,9 @@ export function declaredImagePipelineStageContracts(
 ): string[] | null {
   const owner = nodes.find((node) => node.id === ownerId);
   const owning = owner && owner.operation;
-  if (!operationOwnsModel(owning) || edges.length !== 3 || new Set(edges.map((edge) => edge.target)).size !== 3)
+  const rendered = media === 'video' && edges.length === 2;
+  const count = rendered ? 2 : 3;
+  if (!operationOwnsModel(owning) || edges.length !== count || new Set(edges.map((edge) => edge.target)).size !== count)
     return null;
   const source = edges[0]!;
   const output = nodes.find((node) => node.id === source.source)?.params[source.sourceHandle ?? ''];
@@ -47,7 +49,9 @@ export function declaredImagePipelineStageContracts(
       operation.decomposition !== 'bundle' ||
       operation.pipelineClass !== owning.pipelineClass ||
       operation.task !== owning.task ||
-      ![`${media}_encoder`, 'denoise', 'decoder'].includes(operation.nodeType) ||
+      !(rendered ? ['video_encoder', 'denoise'] : [`${media}_encoder`, 'denoise', 'decoder']).includes(
+        operation.nodeType,
+      ) ||
       ports?.length !== 1 ||
       port?.types.length !== 1 ||
       port.types[0] !== `${media}_diffusion_pipeline` ||
@@ -66,8 +70,8 @@ export function declaredImagePipelineStageContracts(
   }
   const operations = stages.map((node) => node.operation!);
   if (
-    new Set(operations.map((operation) => operation.nodeType)).size !== 3 ||
-    new Set(operations.map((operation) => operation.operationId)).size !== 3
+    new Set(operations.map((operation) => operation.nodeType)).size !== count ||
+    new Set(operations.map((operation) => operation.operationId)).size !== count
   )
     return null;
   const stage = (kind: string) => stages.find((node) => node.operation!.nodeType === kind)!;
@@ -120,8 +124,14 @@ export function declaredImagePipelineStageContracts(
       suppliers[0]!.sourceHandle === output[0]!.name
     );
   };
+  if (!bound(encoder, denoiser, 'conditioning', `${media}_conditioning`)) return null;
+  if (rendered)
+    return denoiser.operation!.ports.some(
+      (port) => port.direction === 'output' && port.types.includes('video') && port.semantics?.kind === 'media',
+    )
+      ? stages.map((node) => node.id)
+      : null;
   if (
-    !bound(encoder, denoiser, 'conditioning', `${media}_conditioning`) ||
     !bound(denoiser, decoder, 'latents', 'tensor') ||
     !bound(denoiser, decoder, 'state', `${media}_latent_binding`) ||
     (media === 'image' &&

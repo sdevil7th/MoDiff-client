@@ -1,3 +1,4 @@
+import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -5,6 +6,45 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
+import { technicalMediaErrors } from './template-gallery-harness.mjs';
+
+test('accepted Moonflower garden motion keeps a local-subject gate and rejects a still film', () => {
+  const template = templates.find((item) => item.id === 'ace_step_lyric_music_video');
+  const expected = template.example.expectedOutput;
+  assert.equal(expected.motionReviewProfile, 'localized_subject');
+  const decoded = {
+    width: 1536,
+    height: 1024,
+    frames: 720,
+    durationSeconds: 45,
+    hasAudio: true,
+    embeddedAudio: { hash: 'pcm', peakAmplitude: 0.8, silenceRatio: 0.04, clippedSampleRatio: 0 },
+    audiovisualMediaHash: 'av',
+    lumaStdDev: 56,
+    nearBlackRatio: 0.05,
+    uniqueFrameRatio: 1,
+    isolatedLumaFlashRatio: 0,
+    cumulativeChangedPixelRatio: 1,
+    adjacentChangedPixelRatio: 0.049,
+    endToEndChangedPixelRatio: 0.91,
+    motionMetricsByProfile: {
+      localized_subject: { activeMotionWindowRatio: 1, strongMotionWindowRatio: 1, lowMotionFrameRatio: 0.01 },
+    },
+  };
+  assert.deepEqual(technicalMediaErrors(decoded, expected, 'video'), []);
+  assert.ok(
+    technicalMediaErrors(
+      { ...decoded, adjacentChangedPixelRatio: 0, cumulativeChangedPixelRatio: 0, uniqueFrameRatio: 0 },
+      expected,
+      'video',
+    ).length >= 3,
+  );
+  assert.ok(
+    technicalMediaErrors(decoded, { ...expected, minimumAdjacentMotionCoverage: 0.08 }, 'video').some((error) =>
+      error.includes('adjacent-frame'),
+    ),
+  );
+});
 
 let server,
   templates,
@@ -353,10 +393,16 @@ test('the real public capability and every selected starter response pass produc
 test('the 54 image templates preserve creator contracts except explicit versioned creative revisions', async () => {
   const baseline = JSON.parse(await readFile('tests/fixtures/image-template-creator-contracts.v1.json', 'utf8'));
   const revisions = JSON.parse(await readFile('tests/fixtures/image-template-creative-revisions.v1.json', 'utf8'));
+  const gallery = JSON.parse(await readFile('public/template-gallery/manifest.json', 'utf8'));
   assert.equal(revisions.schemaVersion, 1);
   assert.deepEqual(
     revisions.revisions.map((row) => row.templateId),
-    ['flux_lora_cinematic_octane_3d', 'z_image_cinematic_contact_sheet'],
+    [
+      'flux_lora_cinematic_octane_3d',
+      'z_image_cinematic_contact_sheet',
+      'flux_kontext_multi_reference',
+      'flux_redux_multi_reference',
+    ],
   );
   const images = templates.filter((template) => template.example?.mediaType === 'image');
   assert.equal(images.length, 54);
@@ -374,6 +420,27 @@ test('the 54 image templates preserve creator contracts except explicit versione
         assert.deepEqual(revision.lockedSettings, { guidanceScale: 1, resourceMode: 'expert' });
         assert.doesNotMatch(template.prompt, /\b(?:scar|wound|blood|bruise)\b/iu);
         assert.match(template.prompt, /healthy unmarked face/u);
+      } else if (template.id === 'flux_kontext_multi_reference') {
+        assert.equal(revision.recipeVersion, 2);
+        assert.deepEqual(
+          revision.lockedSettings,
+          {},
+          'the accepted preservation revision changes no generation control',
+        );
+        assert.match(template.prompt, /narrow RIGHT reference strip only/);
+        assert.match(template.prompt, /ASTERMIST and LAVENDER SLEEP SPRAY/);
+        assert.equal(revision.inputBindings[0].defaultAssets.length, 2);
+        assert.equal(
+          revision.inputBindings[0].defaultAssets[1].runtimeSha256,
+          'sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34',
+        );
+        expectedContract.inputBindings = revision.inputBindings;
+      } else if (template.id === 'flux_redux_multi_reference') {
+        assert.equal(revision.recipeVersion, 2);
+        assert.deepEqual(revision.lockedSettings, { seed: 8414, guidanceScale: 3.5 });
+        assert.deepEqual(revision.workflowBlockSettings, template.workflowBlockSettings);
+        assert.equal(revision.approvedOutputSha256, 'c50df8d364a6065443d8f790a347ad7baf84e8bacf91a15245d28619a9f54bd9');
+        expectedContract.workflowBlockSettings = revision.workflowBlockSettings;
       } else {
         assert.equal(template.id, 'z_image_cinematic_contact_sheet');
         assert.equal(revision.recipeVersion, 2);
@@ -381,9 +448,27 @@ test('the 54 image templates preserve creator contracts except explicit versione
         assert.match(template.prompt, /first three frames where his face is visible/iu);
         assert.match(template.prompt, /Frame four, lower right: a REAR-VIEW LONG SHOT from directly BEHIND/iu);
       }
-      assert.equal(template.example.status, 'unverified', 'creative review never grants public qualification');
+      if (template.id !== 'flux_redux_multi_reference')
+        assert.equal(template.example.status, 'unverified', 'creative review never grants public qualification');
       expectedContract.lockedSettings.prompt = template.prompt;
       Object.assign(expectedContract.lockedSettings, revision.lockedSettings);
+    }
+    // Registration can add a browser preview for the exact already-frozen input.
+    // Preserve the original snapshot, and allow only this additive presentation
+    // field after joining the approved Before path and unchanged source hash.
+    for (const binding of expectedContract.inputBindings) {
+      for (const asset of binding.defaultAssets ?? []) {
+        const current = template.inputBindings
+          ?.find((item) => item.id === binding.id)
+          ?.defaultAssets?.find((item) => item.id === asset.id);
+        if (asset.previewPath === undefined && current?.previewPath !== undefined) {
+          const entry = gallery.examples.find((item) => item.templateId === template.id);
+          assert.equal(current.previewPath, entry?.beforePath);
+          assert.equal(asset.runtimeSha256, entry?.beforeMediaHash);
+          assert.equal(current.runtimeSha256, asset.runtimeSha256);
+          asset.previewPath = current.previewPath;
+        }
+      }
     }
     assert.deepEqual(
       {
@@ -550,6 +635,52 @@ function selectedForm(template) {
     controlImage: 'control.png',
   };
 }
+
+test('fresh encoding presets share one JSON supplier inside Encode Inputs and preserve existing source declarations', () => {
+  const source = templates.find((t) => t.id === 'flux_redux_multi_reference');
+  const template = structuredClone(source);
+  template.workflowBlockSettings = {
+    ...template.workflowBlockSettings,
+    encodingInputs: {
+      role: 'imageEncode',
+      values: { prompt_embeds_scale: [0.8, 0.2], pooled_prompt_embeds_scale: [0.8, 0.2] },
+    },
+  };
+  const original = structuredClone(template),
+    row = fixture.recipes.find((r) => r.id === source.id);
+  const form = selectedForm(template);
+  const graph = builder.createTemplateOperationGraph(
+    template,
+    form,
+    row.starter,
+    fixture.registry,
+    row.spec,
+    row.capability,
+  );
+  const flat = groups.unpackVisualOperationGroups(graph).graph;
+  const weights = flat.nodes.filter((n) => n.data.module === 'modules.Text' && n.data.action === 'ProcessText');
+  assert.equal(weights.length, 1);
+  assert.equal(weights[0].data.params.source.value, '[0.8,0.2]');
+  const encode = flat.nodes.find((n) => n.data.module === 'modules.DiffusersImage' && n.data.action === 'EncodeInputs');
+  for (const targetHandle of ['prompt_embeds_scale', 'pooled_prompt_embeds_scale'])
+    assert(
+      flat.edges.some((e) => e.source === weights[0].id && e.target === encode.id && e.targetHandle === targetHandle),
+    );
+  const stage = graph.nodes.find((n) => n.data.label === 'Encode Inputs');
+  assert(stage?.data.blockInstanceV2);
+  assert(stage.data.blockInstanceV2.effectiveGraph.nodes.some((n) => n.data.action === 'ProcessText'));
+  assert.deepEqual(template, original);
+  const changedWeights = structuredClone(template);
+  changedWeights.workflowBlockSettings.encodingInputs.values.prompt_embeds_scale = [0.6, 0.4];
+  assert.notEqual(exactness.getTemplateLockHash(template), exactness.getTemplateLockHash(changedWeights));
+  for (const values of [{ nonexistent_input: [1] }, { prompt_embeds_scale: [Infinity] }, { prompt_embeds_scale: [] }]) {
+    const invalid = structuredClone(template);
+    invalid.workflowBlockSettings.encodingInputs.values = values;
+    assert.throws(() =>
+      builder.createTemplateOperationGraph(invalid, form, row.starter, fixture.registry, row.spec, row.capability),
+    );
+  }
+});
 
 test('shared execution bindings do not infer forced flash from a CUDA device', async () => {
   const cluster = await server.ssrLoadModule('/src/studio/huggingFaceClusterRuntime.ts');
@@ -2416,5 +2547,178 @@ test('ordinary image template hydration preserves provenance without recovering 
         nodeStore.setState(previous[1]);
         studioStore.useStudioStore.setState(previous[2]);
       }
+    });
+});
+
+test('native image sampling and decoding share Generate without changing executable values or edges', async (t) => {
+  let covered = 0;
+  for (const row of fixture.recipes) {
+    const template = templates.find((item) => item.id === row.id);
+    if (!template || template.executionSelection?.implementation !== 'native_stages') continue;
+    const graph = builder.createTemplateOperationGraph(
+      template,
+      selectedForm(template),
+      row.starter,
+      fixture.registry,
+      row.spec,
+      row.capability,
+    );
+    const flat = groups.unpackVisualOperationGroups(graph).graph;
+    if (!flat.nodes.some((node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === 'Denoise'))
+      continue;
+    covered++;
+    await t.test(row.id, () => {
+      assert.equal(graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'generate').length, 1);
+      assert(
+        !graph.nodes.some((node) => node.data.module === 'modules.ModularDiffusers' && node.data.action === 'Denoise'),
+      );
+      const generated = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+      assert.deepEqual(generated.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+        'DecodeLatents',
+        'Denoise',
+      ]);
+      const exportAPI = (sourceGraph) =>
+        flowStore.getState().exportGraph('image-stage-parity', undefined, { sourceGraph, randomizeSeeds: false });
+      const semantic = (api) => {
+        const canonical = canonicalGraphIdentity(api).canonicalGraph;
+        return {
+          ...canonical,
+          nodes: [...canonical.nodes].sort((a, b) => a.key.localeCompare(b.key)),
+          paths: canonical.paths
+            .map((ids) => [...ids].sort())
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+        };
+      };
+      assert.deepEqual(semantic(exportAPI(graph)), semantic(exportAPI(flat)));
+    });
+  }
+  assert.equal(covered, 48, 'Cover every retained component-based image template.');
+});
+
+test('component image Generate requires one matching owner and preserves latent fanout and saved layouts', () => {
+  const fresh = () => {
+    const template = templates.find((item) => item.id === 'flux_lora_cinematic_octane_3d');
+    const row = fixture.recipes.find((item) => item.id === template.id);
+    return groups.unpackVisualOperationGroups(
+      builder.createTemplateOperationGraph(
+        template,
+        selectedForm(template),
+        row.starter,
+        fixture.registry,
+        row.spec,
+        row.capability,
+      ),
+    ).graph;
+  };
+  const missing = fresh();
+  const decoder = missing.nodes.find((node) => node.data.action === 'DecodeLatents');
+  missing.edges = missing.edges.filter((edge) => !(edge.target === decoder.id && edge.targetHandle === 'vae'));
+  const missingBefore = structuredClone(missing);
+  assert(
+    !groups.groupNewOperationGraph(missing).nodes.some((node) => groups.visualOperationGroup(node) === 'generate'),
+  );
+  assert.deepEqual(missing, missingBefore, 'a missing owner is never repaired by visual grouping');
+
+  const ambiguous = fresh();
+  const originalDecoder = ambiguous.nodes.find((node) => node.data.action === 'DecodeLatents');
+  const extra = { ...structuredClone(originalDecoder), id: 'another-decoder' };
+  ambiguous.nodes.push(extra);
+  ambiguous.edges.push(
+    ...ambiguous.edges
+      .filter((edge) => edge.target === originalDecoder.id)
+      .map((edge) => ({ ...edge, id: edge.id + '-copy', target: extra.id })),
+  );
+  const ambiguousBefore = structuredClone(ambiguous);
+  assert.throws(() => groups.groupNewOperationGraph(ambiguous), /several instances of one stage/u);
+  assert.deepEqual(ambiguous, ambiguousBefore, 'ambiguous ownership is rejected without changing the graph');
+
+  const fanout = fresh();
+  const sampler = fanout.nodes.find((node) => node.data.action === 'Denoise');
+  const consumer = {
+    id: 'keep-latents',
+    type: 'custom',
+    position: { x: 2000, y: 400 },
+    data: {
+      type: 'custom',
+      module: 'modules.Example',
+      action: 'KeepLatents',
+      label: 'Keep latents',
+      category: 'Example',
+      params: { latents: { ...structuredClone(sampler.data.params.latents), display: 'input', isInput: true } },
+    },
+  };
+  fanout.nodes.push(consumer);
+  fanout.edges.push({
+    id: 'latent-fanout',
+    source: sampler.id,
+    sourceHandle: 'latents',
+    target: consumer.id,
+    targetHandle: 'latents',
+  });
+  const generated = groups.groupNewOperationGraph(fanout);
+  const generate = generated.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+  assert(
+    generate.data.blockInstanceV2.effectiveInterface.boundary.outputs.some(
+      (port) => port.binding.fieldOrPortId === 'latents',
+    ),
+  );
+  const flattened = groups.unpackVisualOperationGroups(generated).graph;
+  const retained = flattened.edges.find((edge) => edge.target === consumer.id && edge.targetHandle === 'latents');
+  assert.equal(flattened.nodes.find((node) => node.id === retained.source).data.action, 'Denoise');
+  assert.equal(retained.sourceHandle, 'latents');
+
+  const prior = fresh();
+  const owner = prior.nodes.find((node) => node.data.action === 'ModelsLoader');
+  const legacy = groups.groupOperationStages(prior, owner.id, ['setup', 'inputs', 'output'], true);
+  assert(legacy.nodes.some((node) => node.data.action === 'Denoise'));
+  assert.deepEqual(
+    groups.groupNewOperationGraph(legacy),
+    legacy,
+    'opening an existing stage layout does not migrate it',
+  );
+});
+
+test('direct image Fill, Control and Redux use the same Generate stage with exact executable parity', async (t) => {
+  for (const id of [
+    'flux_fill_inpaint',
+    'flux_fill_outpaint',
+    'flux_control_canny',
+    'flux_depth_control',
+    'flux_redux_edit',
+    'flux_redux_multi_reference',
+  ])
+    await t.test(id, () => {
+      const row = fixture.recipes.find((item) => item.id === id);
+      const template = templates.find((item) => item.id === id);
+      assert.ok(row && template, id);
+      const graph = builder.createTemplateOperationGraph(
+        template,
+        selectedForm(template),
+        row.starter,
+        fixture.registry,
+        row.spec,
+        row.capability,
+      );
+      const generated = graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'generate');
+      assert.equal(generated.length, 1);
+      assert.deepEqual(generated[0].data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+        'DecodeLatents',
+        'Denoise',
+      ]);
+      const flat = groups.unpackVisualOperationGroups(graph).graph;
+      const semantic = (sourceGraph) => {
+        const api = flowStore
+          .getState()
+          .exportGraph('direct-image-stage-parity', undefined, { sourceGraph, randomizeSeeds: false });
+        const canonical = canonicalGraphIdentity(api).canonicalGraph;
+        return {
+          ...canonical,
+          nodes: [...canonical.nodes].sort((a, b) => a.key.localeCompare(b.key)),
+          paths: canonical.paths
+            .map((ids) => [...ids].sort())
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+        };
+      };
+      assert.deepEqual(semantic(graph), semantic(flat));
     });
 });

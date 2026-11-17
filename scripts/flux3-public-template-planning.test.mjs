@@ -567,6 +567,19 @@ test('all ten reviewed cards create the unchanged ordinary FP8r task graphs', as
           workflowModelDescriptors: descriptors,
         });
       const groupedComposite = compose();
+      assert.deepEqual(
+        groupedComposite.nodes.map((node) => node.data.label).sort(),
+        [
+          'Model Setup',
+          'Reference Images',
+          'Prepare Mask',
+          'Encode Inputs',
+          'Generate',
+          'Composite',
+          'Image Output',
+        ].sort(),
+        `${id}: protected packaging has exactly the seven selected stages`,
+      );
       const composed = flow.expandFlowExecutionGraph(groupedComposite.nodes, groupedComposite.edges);
       const byAction = (module, action) =>
         composed.nodes.filter((node) => node.data.module === module && node.data.action === action);

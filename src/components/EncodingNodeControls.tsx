@@ -109,7 +109,7 @@ export default function EncodingNodeControls({
 
   return (
     <div
-      className="nodrag nowheel grid gap-2"
+      className="nodrag nowheel grid min-w-0 grid-cols-1 gap-2"
       data-encoding-content
       data-testid={`encoding-controls-${instance.instanceId}`}
     >
@@ -180,7 +180,7 @@ export default function EncodingNodeControls({
             label={group}
             defaultOpen
             unmount={false}
-            panelClassName="grid gap-2 px-1 pt-2"
+            panelClassName="grid min-w-0 grid-cols-1 gap-2 px-1 pt-2"
             aria-label={`${group} encoding controls`}
           >
             {group === 'Image' && optionalImage ? (

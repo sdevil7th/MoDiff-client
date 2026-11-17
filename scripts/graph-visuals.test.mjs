@@ -1246,6 +1246,278 @@ test('measurement waiting requires two consecutive frames with identical dimensi
   assert.ok(reads >= 3, `expected a changed signature plus two stable frames, received ${reads} reads`);
 });
 
+test('text and nested file-path controls associate their labels with distinct inputs', async () => {
+  const { default: InputField } = await server.ssrLoadModule('/src/fields/InputField.tsx');
+  const { default: FileBrowserField } = await server.ssrLoadModule('/src/fields/FileBrowserField.tsx');
+  for (const Component of [InputField, FileBrowserField]) {
+    const markup = renderToStaticMarkup(
+      createElement(
+        ReactFlowProvider,
+        null,
+        createElement(Component, {
+          nodeId: 'source',
+          fieldKey: 'file',
+          label: 'Source video',
+          dataType: 'string',
+          value: '@data/videos/owned.mp4',
+          fieldOptions: { fileTypes: ['video'] },
+          updateStore: () => {},
+        }),
+      ),
+    );
+    const labels = [...markup.matchAll(/<label[^>]*for="([^"]+)"/gu)].map((m) => m[1]);
+    const inputs = markup.match(/<input\b[^>]*>/gu) ?? [];
+    for (const input of inputs.filter((input) => !input.includes('type="file"'))) {
+      const id = input.match(/\bid="([^"]+)"/u)?.[1];
+      assert.ok(id && labels.includes(id), Component.name + ': the visible input must have its own label.');
+    }
+    const ids = inputs.map((input) => input.match(/\bid="([^"]+)"/u)?.[1]).filter(Boolean);
+    assert.equal(new Set(ids).size, ids.length, Component.name + ': hidden pickers cannot share visible input IDs.');
+  }
+});
+
+test('measurement waiting distinguishes real late bounds from an incomplete timeout', async () => {
+  const pending = node('late-controls', 0, 0);
+  let reads = 0;
+  assert.equal(
+    await graphLayout.waitForGraphNodeMeasurements(() => {
+      reads++;
+      return [{ ...pending, ...(reads >= 4 ? { measured: { width: 337, height: 541 } } : {}) }];
+    }, 100),
+    true,
+  );
+  assert.ok(reads >= 5, 'Read the actual bounds on two consecutive frames.');
+  assert.equal(
+    await graphLayout.waitForGraphNodeMeasurements(() => [pending], 1),
+    false,
+    'A timeout must not be treated as a successful measurement.',
+  );
+});
+
+for (const label of ['', false, null, undefined]) {
+  test(`an intentionally blank visual label ${String(label)} still names the file-path input accessibly`, async () => {
+    const { default: InputField } = await server.ssrLoadModule('/src/fields/InputField.tsx');
+    const markup = renderToStaticMarkup(
+      createElement(InputField, {
+        nodeId: 'source',
+        fieldKey: 'stage-node-source:file',
+        label,
+        dataType: 'string',
+        value: '@data/videos/owned.mp4',
+        updateStore: () => {},
+      }),
+    );
+    assert.ok(
+      markup.match(/<input\b[^>]*aria-label="File"/u),
+      'A blank caption must retain a readable accessible name.',
+    );
+  });
+}
+
+test('measurement waiting starts its deadline on the first available browser frame', async () => {
+  const previousNow = Date.now;
+  const previousFrame = window.requestAnimationFrame;
+  let clock = 0;
+  let frames = 0;
+  let reads = 0;
+  Date.now = () => clock;
+  window.requestAnimationFrame = (callback) =>
+    setTimeout(() => {
+      clock = frames++ === 0 ? 6_000 : clock + 1;
+      callback(clock);
+    }, 0);
+  try {
+    const pending = node('late-first-render', 0, 0);
+    const ready = await graphLayout.waitForGraphNodeMeasurements(() => {
+      reads++;
+      return [{ ...pending, ...(reads > 1 ? { measured: { width: 337, height: 541 } } : {}) }];
+    }, 5_000);
+    assert.equal(ready, true, 'A busy initial render must allow ResizeObserver and two measured frames.');
+    assert.equal(reads, 3);
+  } finally {
+    Date.now = previousNow;
+    window.requestAnimationFrame = previousFrame;
+  }
+});
+
+test('measurement readiness excludes hidden and folded Block projection leaves', async () => {
+  const root = node('measured-root', 0, 0);
+  root.data.blockInstanceV2 = {};
+  root.measured = { width: 400, height: 420 };
+  const internal = node('folded-leaf', 0, 0);
+  internal.data.blockProjectionOwnerId = root.id;
+  const hidden = node('hidden-node', 0, 0);
+  hidden.hidden = true;
+  assert.equal(
+    await graphLayout.waitForGraphNodeMeasurements(() => [root, internal, hidden], 100),
+    true,
+    'Only nodes owned by the ordinary layout need a live canvas measurement.',
+  );
+});
+
+test('fresh canonical utility examples do not acquire inferred managed-template authority', async () => {
+  const { exampleWorkflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
+  const { workflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  const graph = JSON.parse(
+    fs.readFileSync(
+      path.resolve(ROOT, '../MoDiff/data/graphs/studio/builtin-data-operation/data-conversion.json'),
+      'utf8',
+    ),
+  );
+  const original = structuredClone(graph);
+  const fallback = studioStoreModule.useStudioStore.getState().form;
+  assert.ok(
+    workflowSnapshotFromGraph(graph, 'default', fallback).studioGraphBinding,
+    'The old inference path recognizes managed role labels without a current receipt.',
+  );
+  const opened = exampleWorkflowSnapshotFromGraph(graph, 'default', fallback);
+  assert.equal(
+    opened.studioGraphBinding,
+    null,
+    'A fresh canonical Example is a graph, not an accepted managed-template receipt.',
+  );
+  const tabId = studioStoreModule.useStudioStore
+    .getState()
+    .createWorkflowTab('Native utility Example', opened, 'import', 'canonical-example');
+  assert.equal(
+    studioStoreModule.useStudioStore.getState().graphBinding,
+    null,
+    'Opening normalization must not recreate the inferred authority.',
+  );
+  assert.equal(
+    studioStoreModule.useStudioStore.getState().workflowTabs.find((tab) => tab.id === tabId).snapshot
+      .studioGraphBinding,
+    null,
+  );
+  assert.deepEqual(opened.nodes, workflowSnapshotFromGraph(graph, 'default', fallback).nodes);
+  assert.deepEqual(graph, original);
+});
+
+test('automatic form normalization reports a stale managed receipt without crashing or modifying its graph', async () => {
+  const { useStudioRunActions } = await server.ssrLoadModule('/src/studio/useStudioRunActions.ts');
+  const { workflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  const studio = studioStoreModule.useStudioStore,
+    flow = flowStoreModule.useFlowStore,
+    metadata = nodesStoreModule.useNodesStore;
+  const oldStudio = studio.getState(),
+    oldFlow = flow.getState(),
+    oldMetadata = metadata.getState();
+  try {
+    const graph = JSON.parse(
+      fs.readFileSync(
+        path.resolve(ROOT, '../MoDiff/data/graphs/studio/builtin-data-operation/data-conversion.json'),
+        'utf8',
+      ),
+    );
+    const opened = workflowSnapshotFromGraph(graph, 'default', { ...oldStudio.form, resourceMode: 'expert' });
+    const spec = {
+      schemaVersion: 1,
+      canonicalizationVersion: 1,
+      id: 'test-data-spec',
+      modelType: 'BuiltinDataOperation',
+      mode: 'data_conversion',
+      executionProfileId: 'test-data-profile',
+      loaderModule: 'modules.Text',
+      loaderAction: 'ProcessText',
+      executionPath: 'builtin-data-operation',
+      pipelineClass: 'BuiltinDataOperationV1',
+      defaultRepo: 'builtin://modiff/data-operations/v1',
+      roles: [],
+      edges: [],
+      bindings: [],
+      autoFields: [],
+      actions: [],
+      contentHash: 'studio-spec-v1-12345678',
+    };
+    metadata.setState({
+      studioExecutionSpecInvalid: false,
+      studioModelCapabilities: [
+        {
+          modelType: 'BuiltinDataOperation',
+          studioExecutionSpecSchemaVersion: 1,
+          studioExecutionSpecModes: ['data_conversion'],
+          studioExecutionSpecs: [spec],
+        },
+      ],
+    });
+    flow.setState({ nodes: opened.nodes, edges: opened.edges });
+    studio.setState({
+      form: opened.studioForm,
+      graphBinding: opened.studioGraphBinding,
+      graphFinalization: null,
+      lastError: null,
+    });
+    const before = structuredClone(flow.getState().nodes);
+    let actions;
+    function Harness() {
+      actions = useStudioRunActions({
+        isConnected: false,
+        missingInstallTarget: null,
+        installHfModel: async () => null,
+        setIsWorking: () => {},
+      });
+      return null;
+    }
+    renderToStaticMarkup(createElement(Harness));
+    assert.doesNotThrow(() => actions.updateAndSync({ device: 'cpu:0' }));
+    assert.match(studio.getState().lastError, /execution specification receipt is stale/);
+    assert.equal(studio.getState().graphFinalization.status, 'error');
+    assert.deepEqual(flow.getState().nodes, before, 'The rejected sync cannot rewrite executable inputs.');
+    assert.throws(
+      () => graphBridge.syncStudioGraphValues(studio.getState().form),
+      /execution specification receipt is stale/,
+      'The strict imperative guard remains in force.',
+    );
+  } finally {
+    studio.setState(oldStudio);
+    flow.setState(oldFlow);
+    metadata.setState(oldMetadata);
+  }
+});
+
+test('fresh example layout follows its document while initial form settings settle', async () => {
+  const { settleExampleWorkflowCanvas } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const studio = studioStoreModule.useStudioStore;
+  const oldFlow = flow.getState(),
+    oldStudio = studio.getState(),
+    oldFrame = window.requestAnimationFrame;
+  try {
+    for (const change of ['form', 'canvas', 'tab']) {
+      const measured = node('fresh-layout', 72, 91);
+      measured.measured = { width: 337, height: 541 };
+      flow.setState({ nodes: [measured], edges: [], layoutRevision: 0 });
+      studio.setState({ activeWorkflowTabId: null, workflowCanvasEpoch: 0, workflowFormEpoch: 0 });
+      let first = true;
+      window.requestAnimationFrame = (callback) =>
+        setTimeout(() => {
+          if (first) {
+            first = false;
+            studio.setState(
+              change === 'form'
+                ? { workflowFormEpoch: 1 }
+                : change === 'canvas'
+                  ? { workflowCanvasEpoch: 1 }
+                  : { activeWorkflowTabId: 'another-document' },
+            );
+          }
+          callback(Date.now());
+        }, 0);
+      assert.equal(await settleExampleWorkflowCanvas(), change === 'form', change);
+      assert.equal(flow.getState().layoutRevision, change === 'form' ? 1 : 0, change);
+      assert.deepEqual(
+        flow.getState().nodes[0].data.params,
+        measured.data.params,
+        'Layout never edits execution inputs.',
+      );
+    }
+  } finally {
+    window.requestAnimationFrame = oldFrame;
+    flow.setState(oldFlow);
+    studio.setState(oldStudio);
+  }
+});
+
 test('graph finalization wait preserves failures and reports a bounded timeout', async () => {
   const failed = graphFinalization.settleGraphFinalization(Promise.reject(new Error('dynamic field failure')));
   const failedResult = await graphFinalization.waitForSettledGraphFinalization(failed, 100);

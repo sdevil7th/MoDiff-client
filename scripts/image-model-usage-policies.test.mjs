@@ -27,6 +27,28 @@ before(async () => {
 
 after(async () => server?.close());
 
+test('Hunyuan 720p acknowledgements bind each full checkpoint independently of the 480p recipes', () => {
+  for (const [repository, revision] of [
+    ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v', 'f4dbc4a1efa4ac8ea56680cdf79d9f455105e814'],
+    ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v', 'dcf088ef4e420dd54bc25930ee810bb6613dfcb5'],
+  ]) {
+    const policy = policies.usagePolicyForRepository(repository);
+    assert.ok(policy);
+    assert.equal(policy.reviewedRevision, revision);
+    assert.equal(policy.acknowledgementRequired, true);
+    assert.equal(policy.useScope, 'license_review_required');
+    assert.match(policy.shortSummary, /territory exclusions/);
+    assert.match(policy.shortSummary, /100M/);
+    assert.equal(policy.reviewedAt, '2026-11-17');
+    const exact = policies.acknowledgementRequiredForRepository(repository, revision);
+    assert.equal(exact.length, 1);
+    assert.notEqual(
+      policies.usagePolicyAcknowledgementKey(exact),
+      policies.usagePolicyAcknowledgementKey([{ ...exact[0], revision: 'a'.repeat(40) }]),
+    );
+  }
+});
+
 test('full FLUX2 dev terms are distinct from FLUX1 and bind to the reviewed artifact', () => {
   const policy = policies.usagePolicyForRepository(profiles.FLUX2_DEV_REPO);
   const pin = artifactCatalog.repositoryPins.find((item) => item.repo === profiles.FLUX2_DEV_REPO);

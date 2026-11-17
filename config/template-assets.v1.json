@@ -45,7 +45,7 @@
     {
       "path": "template-gallery/ace_step_audio_variation.wav",
       "size": 5760044,
-      "sha256": "sha256:bytes:9cfcf80ef850634fa6f74c06609949b0f0a513e77d782409db8db48751bbe03a",
+      "sha256": "sha256:bytes:c74a4a00a39369cea14791f9590534d19402245646d842be34d0f7893ae4937b",
       "contentType": "audio/x-wav",
       "purposes": [
         "runtime"
@@ -95,8 +95,8 @@
     },
     {
       "path": "template-gallery/ace_step_lyric_music_video.card-preview.mp4",
-      "size": 443873,
-      "sha256": "sha256:bytes:840295a75bcaa7dec5a3ab33a997ceb7c58043543463c7a2ea26fb45c0a91b7e",
+      "size": 225876,
+      "sha256": "sha256:bytes:973958543be22907def60e7e4c68dcbea1e77b482e732149b8ff11e6d14ded7f",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -104,8 +104,8 @@
     },
     {
       "path": "template-gallery/ace_step_lyric_music_video.mp4",
-      "size": 221077208,
-      "sha256": "sha256:bytes:f2005a050e59405481db1f5a9b24f1b6de8912c92818112bfdc8cf3f8a50bbbb",
+      "size": 113352499,
+      "sha256": "sha256:bytes:59d40623926ebe0bcc5962a43d1885da6618a3ba95b4055e159cc743f9f81dc6",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -113,8 +113,8 @@
     },
     {
       "path": "template-gallery/ace_step_lyric_music_video.poster.png",
-      "size": 2368114,
-      "sha256": "sha256:bytes:edd5ca052421a6033a794a9b86028cf551279090cb78c63d510323343ba6b514",
+      "size": 1504675,
+      "sha256": "sha256:bytes:71c17ecd2a866566eb1a61684b0e6a3c17b36b46cb425f3dc07a00eec241424b",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -397,8 +397,8 @@
     },
     {
       "path": "template-gallery/flux_kontext_edit.webp",
-      "size": 248650,
-      "sha256": "sha256:bytes:dd459c5d656e4fd85d42513a615110842ee2784bd13becc94bc3fa9ecd743cd6",
+      "size": 211874,
+      "sha256": "sha256:bytes:323f190a20a5e99841d11d8a4a9f5077a22726656ff27747341a453f70e04e8f",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -408,8 +408,8 @@
     },
     {
       "path": "template-gallery/flux_kontext_multi_reference.webp",
-      "size": 205582,
-      "sha256": "sha256:bytes:c20e1c377c9ac7c4ea657daea23c6e3a9c494535e8f9c2a438fa32402eea50c9",
+      "size": 195986,
+      "sha256": "sha256:bytes:eec235576a904b885d651ec819f42e05cf78b2ce579ae3c0572c7899d339b8d4",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -433,6 +433,17 @@
       "path": "template-gallery/flux_lora_cinematic_octane_3d.card-poster.webp",
       "size": 193932,
       "sha256": "sha256:bytes:76d5c8873a12ba7f11366bff658c8d3ed257c557a9ae681c84708b3f52f0f74e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_lora_cinematic_octane_3d.webp",
+      "size": 139448,
+      "sha256": "sha256:bytes:93964b26fffcdbde39b2e9b23bedd10cdf3d13c2462914b553cefa431dcb899f",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -596,8 +607,8 @@
     },
     {
       "path": "template-gallery/flux_redux_edit.webp",
-      "size": 270600,
-      "sha256": "sha256:bytes:56174da5ed300722ee96edfd0b80149d869081cee801e8dbac517734dc56e4bf",
+      "size": 270200,
+      "sha256": "sha256:bytes:37dad69373b93c1a792156ccc44d185158dd0c62ca954d6c6f09cdb648947e82",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -607,8 +618,8 @@
     },
     {
       "path": "template-gallery/flux_redux_multi_reference.webp",
-      "size": 293786,
-      "sha256": "sha256:bytes:ea050772cf672d0b115310b1feac79bd435c7538ffcbdb36b83f9e3b219f324a",
+      "size": 245960,
+      "sha256": "sha256:bytes:c50df8d364a6065443d8f790a347ad7baf84e8bacf91a15245d28619a9f54bd9",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -638,6 +649,671 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/history/ace_step_audio_variation.v1/ace_step_audio_variation.quality-review.json",
+      "size": 3106,
+      "sha256": "sha256:bytes:b20bf6bd7042d9214f72db5125ff6e0ef3a686ed2ee15143739efe2e50051bb9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ace_step_audio_variation.v1/ace_step_audio_variation.reviewed-provenance.json",
+      "size": 44904,
+      "sha256": "sha256:bytes:f31768feb3e080c0e83ed8a0a982399fa64a38258620ba43214cc7514251948d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ace_step_audio_variation.v1/ace_step_audio_variation.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:9cfcf80ef850634fa6f74c06609949b0f0a513e77d782409db8db48751bbe03a",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ace_step_lyric_music_video.before-accepted-20261115/ace_step_lyric_music_video.card-preview.mp4",
+      "size": 443873,
+      "sha256": "sha256:bytes:840295a75bcaa7dec5a3ab33a997ceb7c58043543463c7a2ea26fb45c0a91b7e",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ace_step_lyric_music_video.before-accepted-20261115/ace_step_lyric_music_video.mp4",
+      "size": 221077208,
+      "sha256": "sha256:bytes:f2005a050e59405481db1f5a9b24f1b6de8912c92818112bfdc8cf3f8a50bbbb",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ace_step_lyric_music_video.before-accepted-20261115/ace_step_lyric_music_video.poster.png",
+      "size": 2368114,
+      "sha256": "sha256:bytes:edd5ca052421a6033a794a9b86028cf551279090cb78c63d510323343ba6b514",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/ace_step_lyric_music_video.before-accepted-20261115/entry-and-recipe.json",
+      "size": 4192,
+      "sha256": "sha256:bytes:01b07f17aede8913c646cd4e4d84d8e25455cab8f8632a3d07e7b1537d2d4b51",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ace_step_lyric_music_video.before-accepted-20261115/reviews/ace_step_lyric_music_video.quality-review.json",
+      "size": 8439,
+      "sha256": "sha256:bytes:4f51cfb385ed654b88b0cecb6b064b4a7c50d884a575b9d89c2224cf0916032d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ace_step_lyric_music_video.before-accepted-20261115/reviews/ace_step_lyric_music_video.reviewed-provenance.json",
+      "size": 93784,
+      "sha256": "sha256:bytes:ff73d620c0d459d7cd4e7e69e237ac9d805d579ad75813dedab3445f60326d65",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/flux_redux_edit.v1/flux_redux_edit.before.webp",
+      "size": 330492,
+      "sha256": "sha256:bytes:2e0ec8892660785e322468d0153fd2dadf7a4d920fce2d7d4a0b686a8fe8515d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/flux_redux_edit.v1/flux_redux_edit.quality-review.json",
+      "size": 4321,
+      "sha256": "sha256:bytes:ecd1f9a9365ddf28ae4c200e4c040d3f2f48c0429d380f35f099f85530dc617b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/flux_redux_edit.v1/flux_redux_edit.reviewed-provenance.json",
+      "size": 42445,
+      "sha256": "sha256:bytes:73c4395d30e0db765215ff48dd521c269c6b58d1e3fdc42e030ca230f51a2477",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/flux_redux_edit.v1/flux_redux_edit.webp",
+      "size": 270600,
+      "sha256": "sha256:bytes:56174da5ed300722ee96edfd0b80149d869081cee801e8dbac517734dc56e4bf",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/flux_redux_multi_reference.before-accepted-20261115/entry-and-recipe.json",
+      "size": 3633,
+      "sha256": "sha256:bytes:ebb4bfa92cf95667679aae9289f34bbb31d41d8a00aab6b480ae5a1f4e6dcbaf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/flux_redux_multi_reference.before-accepted-20261115/flux_redux_multi_reference.webp",
+      "size": 293786,
+      "sha256": "sha256:bytes:ea050772cf672d0b115310b1feac79bd435c7538ffcbdb36b83f9e3b219f324a",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/flux_redux_multi_reference.before-accepted-20261115/inputs/flux_redux_multi_reference.before.webp",
+      "size": 477366,
+      "sha256": "sha256:bytes:7f1ea58485fa7802765b9fbbf0e6957e8607261c91669fdcc44cbed80c6fb309",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/flux_redux_multi_reference.before-accepted-20261115/reviews/flux_redux_multi_reference.quality-review.json",
+      "size": 4379,
+      "sha256": "sha256:bytes:6d1a2b1cd59643e756167a31b4b7fb96242f3775317f05c9139883468cff5c93",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/flux_redux_multi_reference.before-accepted-20261115/reviews/flux_redux_multi_reference.reviewed-provenance.json",
+      "size": 53054,
+      "sha256": "sha256:bytes:0e30224ab60a14f2d040e4104454f3cf1867ebf3fb152e7554ee295b9cc69914",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_animated_story.before-native-20261115/entry-and-recipe.json",
+      "size": 7881,
+      "sha256": "sha256:bytes:3d95c081047dce79ac3cd52a24fbbafbe2a00170d99606999f5fb5d8b8859eab",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_animated_story.before-native-20261115/ltx_video_animated_story.card-preview.mp4",
+      "size": 493622,
+      "sha256": "sha256:bytes:e73844b15d89acf4ee20fa7c9b3a374951016fabdd117f86cdf6c1b35b5c0d00",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_animated_story.before-native-20261115/ltx_video_animated_story.mp4",
+      "size": 4548147,
+      "sha256": "sha256:bytes:974e2d08f28bb2613e6f4195dd016d0c9fc87e8a6d39f677b0afdcc6a00b0950",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_animated_story.before-native-20261115/ltx_video_animated_story.poster.png",
+      "size": 2139783,
+      "sha256": "sha256:bytes:fb7d322ad8d64ea7b34acf5ac99822dfb089b160dce07857409a305d984cb662",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/ltx_video_animated_story.before-native-20261115/reviews/ltx_video_animated_story.quality-review.json",
+      "size": 5696,
+      "sha256": "sha256:bytes:7520a8a1a714f7ed2943abd482189e83593bfa2a85afe48701c65505986d036b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_animated_story.before-native-20261115/reviews/ltx_video_animated_story.reviewed-provenance.json",
+      "size": 62383,
+      "sha256": "sha256:bytes:42d1d53a66c603446963ff929f1493eea420dca97c45f225bd7d100ab64d6982",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_long_showcase.before-native-20261115/entry-and-recipe.json",
+      "size": 10071,
+      "sha256": "sha256:bytes:d916bb54031b193737e834f3629f02dfdbb613e33424aaceed862ea2193761c9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_long_showcase.before-native-20261115/ltx_video_long_showcase.card-preview.mp4",
+      "size": 452347,
+      "sha256": "sha256:bytes:c3868d87687b20cbe2df2187da05c0eb6ce7feeb3150b395ad29ed26b178e07d",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_long_showcase.before-native-20261115/ltx_video_long_showcase.mp4",
+      "size": 24799133,
+      "sha256": "sha256:bytes:e4adfedfc81f21dae0d5a415698a17aabcbadf2ccc8f63550a1e24539b00997a",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_long_showcase.before-native-20261115/ltx_video_long_showcase.poster.png",
+      "size": 1611293,
+      "sha256": "sha256:bytes:a82c4ec15dea4ab6cc2fc5cc85cfa4e4f21abac8b230920fa7964b01acba965c",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/ltx_video_long_showcase.before-native-20261115/reviews/ltx_video_long_showcase.quality-review.json",
+      "size": 8425,
+      "sha256": "sha256:bytes:9522f4f25ec827402e5e0ce1e2a0c9058d518ffa9c5c33c3a77f5f789bab4692",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_long_showcase.before-native-20261115/reviews/ltx_video_long_showcase.reviewed-provenance.json",
+      "size": 74319,
+      "sha256": "sha256:bytes:dac558b12c55e74678c33785a4f0d8affd542b96c0bcc70c9a10bf0dfdca4d33",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_video_to_video.v1/ltx_video_video_to_video.before.mp4",
+      "size": 257812,
+      "sha256": "sha256:bytes:496fde9e4410d1b1b0ea659fbf0b29d486537d56eefa43f61052a5c6d1808de8",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_video_to_video.v1/ltx_video_video_to_video.card-preview.mp4",
+      "size": 116837,
+      "sha256": "sha256:bytes:2b50fa4dbb61316914b39c6ac0990e2f8b069186f7f4012ea5b5342b000b6ce3",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_video_to_video.v1/ltx_video_video_to_video.mp4",
+      "size": 498170,
+      "sha256": "sha256:bytes:b6ab8245f0546512215b6eb271d2ef51bd34fa6ac6e22c126c8f359e0be28fdc",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_video_to_video.v1/ltx_video_video_to_video.poster.png",
+      "size": 368903,
+      "sha256": "sha256:bytes:26d96f8085457388b724d4fc962cdbae3acc2b49be1aecf47b3a0efebac9abba",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/history/ltx_video_video_to_video.v1/ltx_video_video_to_video.quality-review.json",
+      "size": 7626,
+      "sha256": "sha256:bytes:940e6bab9cef2842792c9ebb5e2302f438a77acb8ee360ad17807183b932895f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/ltx_video_video_to_video.v1/ltx_video_video_to_video.reviewed-provenance.json",
+      "size": 62144,
+      "sha256": "sha256:bytes:45a8dd0c6cf29dc699b20d391c087aac8c62364715a84fb9b123427574e802b0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_cinematic_text_to_video.before-native-20261115/entry-and-recipe.json",
+      "size": 6444,
+      "sha256": "sha256:bytes:0b3a8d6b848052f54c743fed2261197f9719147060d470bb2ebcf8e388eb206c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_cinematic_text_to_video.before-native-20261115/reviews/wan_vace_cinematic_text_to_video.quality-review.json",
+      "size": 6217,
+      "sha256": "sha256:bytes:e7c7f1a212e20d0aba6dd29b4d4f799f4b32f07fd0ef91a45073a30874c59830",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_cinematic_text_to_video.before-native-20261115/reviews/wan_vace_cinematic_text_to_video.reviewed-provenance.json",
+      "size": 58734,
+      "sha256": "sha256:bytes:0c12b78137241cbce6851ae3221254f9e751964c96d4a1dff0792a99f1cf06e8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_cinematic_text_to_video.before-native-20261115/wan_vace_cinematic_text_to_video.card-preview.mp4",
+      "size": 935858,
+      "sha256": "sha256:bytes:58c230e968510c26bc2ea6131e64791a057d31ee3e3bd0fe6d7a062b0545b356",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_cinematic_text_to_video.before-native-20261115/wan_vace_cinematic_text_to_video.mp4",
+      "size": 3509355,
+      "sha256": "sha256:bytes:47a2f29152a5239d52d8625c8abe3b431d7ae6d834c0d6cd0c0b852071eec171",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_cinematic_text_to_video.before-native-20261115/wan_vace_cinematic_text_to_video.poster.png",
+      "size": 1742463,
+      "sha256": "sha256:bytes:427b6012590b1f010c3b77ee72bd350e84a4fccc84c65a8b0c5607d115adac55",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/history/wan_vace_grayscale_control.before-native-20261115/entry-and-recipe.json",
+      "size": 7009,
+      "sha256": "sha256:bytes:342d4e4899e40ad1a9054a4b7043025298648c4383c12108fba1f9bc0feb8bc2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_grayscale_control.before-native-20261115/inputs/wan_vace_grayscale_control.before.mp4",
+      "size": 289576,
+      "sha256": "sha256:bytes:748b164fd91bc2eed97f7c1d1125a04496a056f29cc016d7cc0da3734c2303b7",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_grayscale_control.before-native-20261115/reviews/wan_vace_grayscale_control.quality-review.json",
+      "size": 6963,
+      "sha256": "sha256:bytes:d135d69159418aecc6d0956b1ec64f2c7fc76137445679a4d4b11a54629c0932",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_grayscale_control.before-native-20261115/reviews/wan_vace_grayscale_control.reviewed-provenance.json",
+      "size": 64317,
+      "sha256": "sha256:bytes:0366fae2e916bf0c67a90b8e898b9b0f1a2ff66680bcd789b160566e5a462070",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_grayscale_control.before-native-20261115/wan_vace_grayscale_control.card-preview.mp4",
+      "size": 201263,
+      "sha256": "sha256:bytes:1ca73ab55f51fbe4eb08d4de5a2fa0c1c9654cf77909f2626aab0414a35f5985",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_grayscale_control.before-native-20261115/wan_vace_grayscale_control.mp4",
+      "size": 957106,
+      "sha256": "sha256:bytes:4a011e34131e9c3bc9b05621184a520f6fb85c282031acd35e2988dda105ff62",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_grayscale_control.before-native-20261115/wan_vace_grayscale_control.poster.png",
+      "size": 1080262,
+      "sha256": "sha256:bytes:81a77bbc5882c22ab8e76fce76d7a2084e57b938fff42e842e5e9894dbc3010d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/history/wan_vace_outpaint_reframe.before-native-20261115/entry-and-recipe.json",
+      "size": 6975,
+      "sha256": "sha256:bytes:2761544cfb268b53af298f7e2bb89b7367cd4471ecd17ed704fc827341332c8a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_outpaint_reframe.before-native-20261115/inputs/wan_vace_outpaint_reframe.before.mp4",
+      "size": 521627,
+      "sha256": "sha256:bytes:a8f28e04d03c9a6a2ba0b3ba4bf7db08f6ec99c45d962877cbc91aad5f3ad318",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_outpaint_reframe.before-native-20261115/reviews/wan_vace_outpaint_reframe.quality-review.json",
+      "size": 6916,
+      "sha256": "sha256:bytes:d6a2b3843f4581565adc30b9d16ee4a17f84751f0ef11d8b0b9b505ff5d57f66",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_outpaint_reframe.before-native-20261115/reviews/wan_vace_outpaint_reframe.reviewed-provenance.json",
+      "size": 67904,
+      "sha256": "sha256:bytes:c4cb91db649df41db5276bb58ea85257d77de542f6349942d07f7f5675788dec",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_outpaint_reframe.before-native-20261115/wan_vace_outpaint_reframe.card-preview.mp4",
+      "size": 324218,
+      "sha256": "sha256:bytes:37c1f4b3a9787c6c6dac081ed3cabd2a42d2d0a9c2db10f1ac33a7a98e1ecea2",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_outpaint_reframe.before-native-20261115/wan_vace_outpaint_reframe.mp4",
+      "size": 1352471,
+      "sha256": "sha256:bytes:f899d1af73bd95da7f3babe30c03d834b93c68c3f939eac0b8fb98df094c4d98",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_outpaint_reframe.before-native-20261115/wan_vace_outpaint_reframe.poster.png",
+      "size": 763693,
+      "sha256": "sha256:bytes:df7f715aaadf49fa3df62ef0eb4238e19befadfee6910970ba8eab9e80128f01",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_color_grade.before-native-20261115/entry-and-recipe.json",
+      "size": 6965,
+      "sha256": "sha256:bytes:0bd6c104810403f024832dc01a65312d5e7ceecd2c9f7f2ec19d4c10f2b5e479",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_color_grade.before-native-20261115/inputs/wan_vace_video_color_grade.before.mp4",
+      "size": 351753,
+      "sha256": "sha256:bytes:934b4494442c732bfc27f3de1e1a8e99adf0eb96572bd6405f1a9c72da148289",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_color_grade.before-native-20261115/reviews/wan_vace_video_color_grade.quality-review.json",
+      "size": 7054,
+      "sha256": "sha256:bytes:8aa386e846e98c6da6ed93369ff02ac9044df43af03a9e5fc109f0ae3e50c629",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_color_grade.before-native-20261115/reviews/wan_vace_video_color_grade.reviewed-provenance.json",
+      "size": 64258,
+      "sha256": "sha256:bytes:96b36b2d5b4a9212016d943b486240e0454ce2d30131a4bd39c83d932f865c88",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_color_grade.before-native-20261115/wan_vace_video_color_grade.card-preview.mp4",
+      "size": 127148,
+      "sha256": "sha256:bytes:aaa8905d5b7e2b1c0cd8b7d7bf62d334db0ec6a8d2a943f73bc82f17026fa9bd",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_color_grade.before-native-20261115/wan_vace_video_color_grade.mp4",
+      "size": 569543,
+      "sha256": "sha256:bytes:72a7538470942630455723c7ccd1725d29ed662276e05ef647f4304e16e44d63",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_color_grade.before-native-20261115/wan_vace_video_color_grade.poster.png",
+      "size": 572909,
+      "sha256": "sha256:bytes:5cb855c7951e6aa0e42b04e5583165f02e9fcc978cbcfe5c23b041d92f94f554",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_to_video.before-native-20261115/entry-and-recipe.json",
+      "size": 6918,
+      "sha256": "sha256:bytes:f930a76e1cebc4e7bf890b791eec17aebb2b36983709092950cdba12ecdbac47",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_to_video.before-native-20261115/inputs/wan_vace_video_to_video.before.mp4",
+      "size": 1164611,
+      "sha256": "sha256:bytes:1f5cd051f787fc878bed50d3c26cce840abe00c942d32e49492e544ac2f88cff",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_to_video.before-native-20261115/reviews/wan_vace_video_to_video.quality-review.json",
+      "size": 6952,
+      "sha256": "sha256:bytes:88168ad146f317c2fd68f5a0db8f369dd398cbbf87073af8fdc6c680e7384a90",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_to_video.before-native-20261115/reviews/wan_vace_video_to_video.reviewed-provenance.json",
+      "size": 63294,
+      "sha256": "sha256:bytes:ee0ba628fb26f4789bfd9729bb534c11479aa170e489fbc3a7174c9c460d3cc2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_to_video.before-native-20261115/wan_vace_video_to_video.card-preview.mp4",
+      "size": 355050,
+      "sha256": "sha256:bytes:7c0738aa477caae0852e7f4fad7fcfb36e9281dd1dbdc0ca091477876d38a074",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_to_video.before-native-20261115/wan_vace_video_to_video.mp4",
+      "size": 1542178,
+      "sha256": "sha256:bytes:99ccd9e6863e53c76f0a959b6b8953db3001cf3bf90b728d840b3d3a3e48e541",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/history/wan_vace_video_to_video.before-native-20261115/wan_vace_video_to_video.poster.png",
+      "size": 1768482,
+      "sha256": "sha256:bytes:a893c3eab103355212373709510267ecfa831a2d0b46dfd9e8ca795e06503782",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
+      "path": "template-gallery/inputs/ace_step_audio_variation.before.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
     },
     {
       "path": "template-gallery/inputs/character_edit.before.webp",
@@ -789,10 +1465,22 @@
       "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
       "contentType": "image/webp",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_kontext_multi_reference.material-strip.v2.png",
+      "size": 3714,
+      "sha256": "sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 32,
+      "height": 96
     },
     {
       "path": "template-gallery/inputs/flux_redux_edit.before.webp",
@@ -951,6 +1639,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/qwen_layered_portrait.before.webp",
+      "size": 298906,
+      "sha256": "sha256:bytes:965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/qwen_logo_texture.before.webp",
       "size": 57604,
       "sha256": "sha256:bytes:124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c",
@@ -1097,6 +1796,72 @@
       ]
     },
     {
+      "path": "template-gallery/layers/qwen_layered_portrait.native-layer-00.webp",
+      "size": 103484,
+      "sha256": "sha256:bytes:ba904a37ab5bc2905458dfab79179aba4c268bcf409aa0444549664797eb5dea",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 640,
+      "height": 640
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_portrait.native-layer-01.webp",
+      "size": 70932,
+      "sha256": "sha256:bytes:abb3ae59bfd0395c477d2e20c7725ba75e4acef318f030cb0adb98837639e898",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 640,
+      "height": 640
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_portrait.native-layer-02.webp",
+      "size": 71524,
+      "sha256": "sha256:bytes:4ad39d3025e3421834d92b32ab5e1e49e4a3ce79602acf614758514f78e6db33",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 640,
+      "height": 640
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_portrait.preview-layer-00.png",
+      "size": 510676,
+      "sha256": "sha256:bytes:b9decdea3edb455655594b73d42e5c053f961500e7ff7d65367a2ca855692c87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 640,
+      "height": 640
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_portrait.preview-layer-01.png",
+      "size": 383418,
+      "sha256": "sha256:bytes:52756ca48a3b51ccb16dc4859207a89cf7c2e38ccc4c0efc325f77718eaeb645",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 640,
+      "height": 640
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_portrait.preview-layer-02.png",
+      "size": 398851,
+      "sha256": "sha256:bytes:58cb19db09e8bfd29a74ce6edb8d7485960abb298659ec8826d4d8ebcc62930a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 640,
+      "height": 640
+    },
+    {
       "path": "template-gallery/low_vram.webp",
       "size": 230540,
       "sha256": "sha256:bytes:a69d58bfa342f850d807690080ca9aac583ca9fb69115e55904de315f71938e1",
@@ -1120,8 +1885,8 @@
     },
     {
       "path": "template-gallery/ltx_video_animated_story.card-preview.mp4",
-      "size": 493622,
-      "sha256": "sha256:bytes:e73844b15d89acf4ee20fa7c9b3a374951016fabdd117f86cdf6c1b35b5c0d00",
+      "size": 508410,
+      "sha256": "sha256:bytes:54935c2d3e0db8f926e05f7aacc8bc025f2c1d589951533d5aa32aab1a5e6f1d",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1129,8 +1894,8 @@
     },
     {
       "path": "template-gallery/ltx_video_animated_story.mp4",
-      "size": 4548147,
-      "sha256": "sha256:bytes:974e2d08f28bb2613e6f4195dd016d0c9fc87e8a6d39f677b0afdcc6a00b0950",
+      "size": 35900274,
+      "sha256": "sha256:bytes:ca548363a0a64ea2011eb0e63e3fd65383c3e8fbbb6fa32126044c13720246f7",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1138,8 +1903,8 @@
     },
     {
       "path": "template-gallery/ltx_video_animated_story.poster.png",
-      "size": 2139783,
-      "sha256": "sha256:bytes:fb7d322ad8d64ea7b34acf5ac99822dfb089b160dce07857409a305d984cb662",
+      "size": 1435568,
+      "sha256": "sha256:bytes:969f826c9943ba6c4e07507995d12566e9d31d7e32e47e1498f8d4697cb9a223",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -1189,8 +1954,8 @@
     },
     {
       "path": "template-gallery/ltx_video_long_showcase.card-preview.mp4",
-      "size": 452347,
-      "sha256": "sha256:bytes:c3868d87687b20cbe2df2187da05c0eb6ce7feeb3150b395ad29ed26b178e07d",
+      "size": 506890,
+      "sha256": "sha256:bytes:0dc4052d30ff6e11c31ba7ee869d14570739462e01426b6830d9e62c8e5379c7",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1198,8 +1963,8 @@
     },
     {
       "path": "template-gallery/ltx_video_long_showcase.mp4",
-      "size": 24799133,
-      "sha256": "sha256:bytes:e4adfedfc81f21dae0d5a415698a17aabcbadf2ccc8f63550a1e24539b00997a",
+      "size": 25330013,
+      "sha256": "sha256:bytes:ba1614fa9b86accd706d8fbc6c92818c43c058f9343cd97431711a47d9bef609",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1207,8 +1972,8 @@
     },
     {
       "path": "template-gallery/ltx_video_long_showcase.poster.png",
-      "size": 1611293,
-      "sha256": "sha256:bytes:a82c4ec15dea4ab6cc2fc5cc85cfa4e4f21abac8b230920fa7964b01acba965c",
+      "size": 1038095,
+      "sha256": "sha256:bytes:729b368a30f479ebfa304116f4f60d00881b7935886a3683701f159cc2f51588",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -1309,8 +2074,8 @@
     },
     {
       "path": "template-gallery/ltx_video_video_to_video.card-preview.mp4",
-      "size": 116837,
-      "sha256": "sha256:bytes:2b50fa4dbb61316914b39c6ac0990e2f8b069186f7f4012ea5b5342b000b6ce3",
+      "size": 126116,
+      "sha256": "sha256:bytes:f414aaca530e5c7cf7792647a2a0c0efce2792de518e776f9efc3632f0d99306",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1318,8 +2083,8 @@
     },
     {
       "path": "template-gallery/ltx_video_video_to_video.mp4",
-      "size": 498170,
-      "sha256": "sha256:bytes:b6ab8245f0546512215b6eb271d2ef51bd34fa6ac6e22c126c8f359e0be28fdc",
+      "size": 8288321,
+      "sha256": "sha256:bytes:7ecb7be76078fd602869629b2eba4534382afff58e779e0c70287041e0934b44",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -1327,8 +2092,8 @@
     },
     {
       "path": "template-gallery/ltx_video_video_to_video.poster.png",
-      "size": 368903,
-      "sha256": "sha256:bytes:26d96f8085457388b724d4fc962cdbae3acc2b49be1aecf47b3a0efebac9abba",
+      "size": 968461,
+      "sha256": "sha256:bytes:a51e109af8d0f913b6577a9a3f069629db849a895878c893c7c57b2a2292e033",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -1338,9 +2103,19 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 206161,
-      "sha256": "sha256:bytes:6fbc9dfe54f27a7d51b1c7d8fa588dc8234df5ef8324ba422816dbc6ec7f48b1",
+      "size": 227953,
+      "sha256": "sha256:bytes:5e3a95bb97bc8a83bfa2e7a45bef2e1bf7566c4f36308dbaa16503cd5043d1a2",
       "contentType": "application/json",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ]
+    },
+    {
+      "path": "template-gallery/minimax_music3_chamber_pop.wav",
+      "size": 10596396,
+      "sha256": "sha256:bytes:f98a748584966f463bbac263c2b3a00769c70e074e26b2f91567e76381b7fd6b",
+      "contentType": "audio/x-wav",
       "purposes": [
         "runtime"
       ]
@@ -1412,10 +2187,10 @@
       "height": 1024
     },
     {
-      "path": "template-gallery/qwen_layered_portrait.webp",
-      "size": 230522,
-      "sha256": "sha256:bytes:6429d7f3d201d2d160cccf9911bcf124bcc03ae63ca4419503bceeb7ff4e71cb",
-      "contentType": "image/webp",
+      "path": "template-gallery/qwen_layered_portrait.png",
+      "size": 1079459,
+      "sha256": "sha256:bytes:bcad98e6acbe9ea500f722977a33b72953c3991170ce346bff1f3455803ab4d8",
+      "contentType": "image/png",
       "purposes": [
         "runtime"
       ],
@@ -1590,6 +2365,195 @@
       "height": 2048
     },
     {
+      "path": "template-gallery/recipes/ace_step_audio_variation.v1.json",
+      "size": 11279,
+      "sha256": "sha256:bytes:f6e8868f1b1990ae8f45c336edd77d47b837e9e4b313232f166628f6b0e4acb0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/ace_step_audio_variation.v2.json",
+      "size": 11947,
+      "sha256": "sha256:bytes:f3edd6c987c5ded9cfb03e713a12ea38f4981d15dadc94d8db4c63d25c427f3a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/ace_step_lyric_music_video.accepted-20261115.json",
+      "size": 18385,
+      "sha256": "sha256:bytes:6764457ab58b9b8c2a289a3912f336f01b10f5bfca1bd11d9bea27ec507bc667",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/ace_step_lyric_music_video.inputs-20261115.json",
+      "size": 22933,
+      "sha256": "sha256:bytes:5bd98a0e2e48c331efb732fac1140d47c6f4272419999b6d0e0ee78a5fa99bbb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/flux_kontext_multi_reference.v1.json",
+      "size": 9622,
+      "sha256": "sha256:bytes:38697d00973bb332113175f8671f8a4dfb3ee08ff2c498f83968a35c518fcf09",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/flux_kontext_multi_reference.v2.json",
+      "size": 11527,
+      "sha256": "sha256:bytes:44eb1ccfef00a503e210d2ec908ba4156900f973cf79097d9d089b7508e5b937",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/flux_lora_cinematic_octane_3d.v2.json",
+      "size": 10244,
+      "sha256": "sha256:bytes:3a351220f925b9bd2651f944804cb3758057d88ae6262e8435793ff1b3f2dec8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/flux_redux_edit.v1.json",
+      "size": 10999,
+      "sha256": "sha256:bytes:bf1c6726baec3572b2cbbddc9c09f4bd84d13476209db5e2ee638848e122b673",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/flux_redux_edit.v2.json",
+      "size": 10127,
+      "sha256": "sha256:bytes:f7abf4561990b1d1fa83c65253eee8752dd7b9b8e9439cfe8f7912891429f263",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/flux_redux_multi_reference.accepted-20261115.json",
+      "size": 13108,
+      "sha256": "sha256:bytes:bf59cee1809a664b6b8c94dc47c21ef3c43b2562d6857d5a1786845ad3071dbe",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/ltx_video_animated_story.native-20261115.json",
+      "size": 13416,
+      "sha256": "sha256:bytes:a9b841a1a155441e2d9e224fc7cd09c27840702f7dfc9c9f8655df46e200dd0f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/ltx_video_long_showcase.native-20261115.json",
+      "size": 19254,
+      "sha256": "sha256:bytes:a5885f61526e138f6c4a8a364f1b400cbeceb342db4d8ed0ff3cecf6a58ae3c8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/ltx_video_video_to_video.v1.json",
+      "size": 14717,
+      "sha256": "sha256:bytes:f83109ce73e45a5656056ed71ae8b6dcda302f2d0c976a01d91954298fa01c9d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/ltx_video_video_to_video.v2.json",
+      "size": 13196,
+      "sha256": "sha256:bytes:c6d4f4541870e99870cda26b52f410f6019474ebe65b14221528121f90561c65",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/minimax_music3_chamber_pop.v2.json",
+      "size": 9873,
+      "sha256": "sha256:bytes:bf5cfe8e8d0f01e9b87e681841496bbb3c6582f77d9744c400c3895b50fa23aa",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/wan_vace_cinematic_text_to_video.native-20261115.json",
+      "size": 12812,
+      "sha256": "sha256:bytes:e9d58fc801611410b05c2ebcd4fdd279f0fc34cb64339806f7b71d95ed1cd61b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/wan_vace_grayscale_control.native-20261115.json",
+      "size": 14961,
+      "sha256": "sha256:bytes:0fcf4b5c9de98f033f0c8164eb72d1bff452797deaaba56be247372bdf578ed4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/wan_vace_outpaint_reframe.native-20261115.json",
+      "size": 15549,
+      "sha256": "sha256:bytes:447d4ec31e3650bda447a796ef399e743e782c66e4e81340d3747b1175c5aac4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/wan_vace_video_color_grade.native-20261115.json",
+      "size": 15134,
+      "sha256": "sha256:bytes:698f7323acf85d3742d5e944776879a07e7a7e5574a38eb6e91950c5dcddbfc3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/wan_vace_video_to_video.native-20261115.json",
+      "size": 14048,
+      "sha256": "sha256:bytes:33f855f3e17faaf2706294b7ed567f7f84ecaa39d62a41452077ffba45e4d5ca",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/recipes/wan_video_long_showcase.v2.json",
+      "size": 14658,
+      "sha256": "sha256:bytes:043dd704245e919f6359a944b50f37e770406b47b07bd2f2378cbd09143b5f46",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reference_fusion.webp",
       "size": 322954,
       "sha256": "sha256:bytes:fcce19c98e3931e5b15de0b7deee704fff89276b3dabbef53de49c73cf08c155",
@@ -1638,8 +2602,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_variation.quality-review.json",
-      "size": 3106,
-      "sha256": "sha256:bytes:b20bf6bd7042d9214f72db5125ff6e0ef3a686ed2ee15143739efe2e50051bb9",
+      "size": 3440,
+      "sha256": "sha256:bytes:10b071cd644d24c32029c89dfb2401bc9bb195e9ba928cd6e62303055b6ff032",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1647,8 +2611,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_audio_variation.reviewed-provenance.json",
-      "size": 44904,
-      "sha256": "sha256:bytes:f31768feb3e080c0e83ed8a0a982399fa64a38258620ba43214cc7514251948d",
+      "size": 129403,
+      "sha256": "sha256:bytes:d743875e83f219845db75512205f034b1f8de9e680c72d9766bfd7b2e78d2b25",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1656,8 +2620,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_lyric_music_video.quality-review.json",
-      "size": 8439,
-      "sha256": "sha256:bytes:4f51cfb385ed654b88b0cecb6b064b4a7c50d884a575b9d89c2224cf0916032d",
+      "size": 7001,
+      "sha256": "sha256:bytes:9cddab829fa0930e41283d50058e3226f72ae8c49cca2272c89f8ed25785ea1a",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -1665,8 +2629,8 @@
     },
     {
       "path": "template-gallery/reviews/ace_step_lyric_music_video.reviewed-provenance.json",
-      "size": 93784,
-      "sha256": "sha256:bytes:ff73d620c0d459d7cd4e7e69e237ac9d805d579ad75813dedab3445f60326d65",
+      "size": 596523,
+      "sha256": "sha256:bytes:2b945109bd2623d85e91667d4c4aa77aeddb19db1ac152493e12ac951a79f49a",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2052,8 +3016,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_kontext_edit.quality-review.json",
-      "size": 4452,
-      "sha256": "sha256:bytes:30230abb20489156c64b2ef814908ecf37df4420c640ad93f3b38f17a2c7b6fa",
+      "size": 4081,
+      "sha256": "sha256:bytes:b4ecdefeee42100d34df1f4a1d05c944c3c950e586a7d644496d36961e66c593",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2061,8 +3025,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_kontext_edit.reviewed-provenance.json",
-      "size": 40285,
-      "sha256": "sha256:bytes:1365b82eaf2be81ba3b798c0653ecce7fe7258ead2e5536523ac7f0100872d83",
+      "size": 115594,
+      "sha256": "sha256:bytes:a1d3b7605879400b4675dbb92e52b510648d331cbdc715026695b951a4f9970f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2070,8 +3034,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_kontext_multi_reference.quality-review.json",
-      "size": 4584,
-      "sha256": "sha256:bytes:4b38ec98a5f21801d6adf939a96705352dff3fa0005a46b193f152d850cf82e5",
+      "size": 4298,
+      "sha256": "sha256:bytes:e81c8ef5da7e3e2a0d6b511c093052c6edcc5dff6c5ca59db393450ed2a1cb06",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2079,8 +3043,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_kontext_multi_reference.reviewed-provenance.json",
-      "size": 40954,
-      "sha256": "sha256:bytes:2366ddac33df43abb21095bd51ba395a29a69d7911568fc3ed4036195c3899cf",
+      "size": 132915,
+      "sha256": "sha256:bytes:14db077ec2ae9cbc640bab2585a5105d2b129eafded32e7ea7be2464b412bb25",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2099,6 +3063,24 @@
       "path": "template-gallery/reviews/flux_krea_text_to_image.reviewed-provenance.json",
       "size": 89106,
       "sha256": "sha256:bytes:6cc4951f1e036aa80a7e92f80be0c40d37336f0f76ca7fe3dc118679f3cd08f3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_cinematic_octane_3d.quality-review.json",
+      "size": 3502,
+      "sha256": "sha256:bytes:b145a9798d1ac5c44516f02308008140a08bb99ae35a014dd381a650cb30c7f9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_lora_cinematic_octane_3d.reviewed-provenance.json",
+      "size": 110364,
+      "sha256": "sha256:bytes:62bf8f0c28985cd8be0da00e7c74548a63dc0daa2893e1aaef7bb7a370b6aa35",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2232,8 +3214,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_redux_edit.quality-review.json",
-      "size": 4321,
-      "sha256": "sha256:bytes:ecd1f9a9365ddf28ae4c200e4c040d3f2f48c0429d380f35f099f85530dc617b",
+      "size": 3943,
+      "sha256": "sha256:bytes:10afc2e145791fb240bdcce1bcfbcee80280f5bec4cd15afe64985da51129788",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2241,8 +3223,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_redux_edit.reviewed-provenance.json",
-      "size": 42445,
-      "sha256": "sha256:bytes:73c4395d30e0db765215ff48dd521c269c6b58d1e3fdc42e030ca230f51a2477",
+      "size": 180120,
+      "sha256": "sha256:bytes:88dc41a06a6fa368953d24f0d20c0700a375465b6c49591653c5471754690c00",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2250,8 +3232,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_redux_multi_reference.quality-review.json",
-      "size": 4379,
-      "sha256": "sha256:bytes:6d1a2b1cd59643e756167a31b4b7fb96242f3775317f05c9139883468cff5c93",
+      "size": 5103,
+      "sha256": "sha256:bytes:1e4c83b2db81df7e43b8e79a9a01cc8eadfd2de6c826c218d0c31b50d95b7441",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2259,8 +3241,8 @@
     },
     {
       "path": "template-gallery/reviews/flux_redux_multi_reference.reviewed-provenance.json",
-      "size": 53054,
-      "sha256": "sha256:bytes:0e30224ab60a14f2d040e4104454f3cf1867ebf3fb152e7554ee295b9cc69914",
+      "size": 189567,
+      "sha256": "sha256:bytes:dd1ea7815bc1bc51589ef774cc1f412b3f8bc2f16a7204a8efe56469913d8179",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2322,8 +3304,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_animated_story.quality-review.json",
-      "size": 5696,
-      "sha256": "sha256:bytes:7520a8a1a714f7ed2943abd482189e83593bfa2a85afe48701c65505986d036b",
+      "size": 5831,
+      "sha256": "sha256:bytes:1ec83b229ba5c7995c8ada2629c448334965939304ffddc7a70161c8b7e1b7f1",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2331,8 +3313,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_animated_story.reviewed-provenance.json",
-      "size": 62383,
-      "sha256": "sha256:bytes:42d1d53a66c603446963ff929f1493eea420dca97c45f225bd7d100ab64d6982",
+      "size": 256227,
+      "sha256": "sha256:bytes:3910ae6f164eb978e38b16e1eab92d73fe7f55dac543b681416ba0b8c43b440d",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2358,8 +3340,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_long_showcase.quality-review.json",
-      "size": 8425,
-      "sha256": "sha256:bytes:9522f4f25ec827402e5e0ce1e2a0c9058d518ffa9c5c33c3a77f5f789bab4692",
+      "size": 5986,
+      "sha256": "sha256:bytes:60cbabfbf56d499a45000cdbabc3c4d64733de27638c1e8b127ba067f1918b9c",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2367,8 +3349,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_long_showcase.reviewed-provenance.json",
-      "size": 74319,
-      "sha256": "sha256:bytes:dac558b12c55e74678c33785a4f0d8affd542b96c0bcc70c9a10bf0dfdca4d33",
+      "size": 444547,
+      "sha256": "sha256:bytes:c2566ed4233b850092727e2bfc805d1be849c2b11cd9424e42283ff9e19b15d0",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2412,8 +3394,8 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_video_to_video.quality-review.json",
-      "size": 7626,
-      "sha256": "sha256:bytes:940e6bab9cef2842792c9ebb5e2302f438a77acb8ee360ad17807183b932895f",
+      "size": 6549,
+      "sha256": "sha256:bytes:819fd6d872b8e86bbb091980a435bd363216d069223dd694f65d7942aeb05178",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2421,8 +3403,26 @@
     },
     {
       "path": "template-gallery/reviews/ltx_video_video_to_video.reviewed-provenance.json",
-      "size": 62144,
-      "sha256": "sha256:bytes:45a8dd0c6cf29dc699b20d391c087aac8c62364715a84fb9b123427574e802b0",
+      "size": 146951,
+      "sha256": "sha256:bytes:9de3b2659acc8383ab86923bc7c9c87be3e53f3d894a06c77af8a16a155795a4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/minimax_music3_chamber_pop.quality-review.json",
+      "size": 3481,
+      "sha256": "sha256:bytes:cd83b77fc2ccb4b11263406c12dc9d0d222af582e52dc47b77c18a4243462502",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/minimax_music3_chamber_pop.reviewed-provenance.json",
+      "size": 96233,
+      "sha256": "sha256:bytes:1b2c91a45c40a7d6621bee54083d3e02d9b843d1034c06e3284ff8f1a2e44270",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2538,8 +3538,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_layered_portrait.quality-review.json",
-      "size": 6007,
-      "sha256": "sha256:bytes:01804ef72a061832915725a6aeff8385850f3347489fdec7c1592c313710db76",
+      "size": 5507,
+      "sha256": "sha256:bytes:2ef67ce5c77e09b88d8a33d6759edbc3ccbfe910bfad17d638dc5ce99794ea7f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2547,8 +3547,8 @@
     },
     {
       "path": "template-gallery/reviews/qwen_layered_portrait.reviewed-provenance.json",
-      "size": 46147,
-      "sha256": "sha256:bytes:ee99d6eff080c78f00846a5dc8123d02ec3dfd84b1b48909873b35fb4447f2e9",
+      "size": 130355,
+      "sha256": "sha256:bytes:f1f8f884f1a797e5918e01f9b47d1f93d39cd6a305a7d3ca46c9f9b349d18f01",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2862,8 +3862,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_cinematic_text_to_video.quality-review.json",
-      "size": 6217,
-      "sha256": "sha256:bytes:e7c7f1a212e20d0aba6dd29b4d4f799f4b32f07fd0ef91a45073a30874c59830",
+      "size": 6183,
+      "sha256": "sha256:bytes:3d564d7a20781eb6a2020f9713270acb01e067a47d7570b8532b252d92b33be1",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2871,8 +3871,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_cinematic_text_to_video.reviewed-provenance.json",
-      "size": 58734,
-      "sha256": "sha256:bytes:0c12b78137241cbce6851ae3221254f9e751964c96d4a1dff0792a99f1cf06e8",
+      "size": 154971,
+      "sha256": "sha256:bytes:33a8867f911b54baf18359735e43aed771dc371516661321cf34cd6b84a65244",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2880,8 +3880,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_grayscale_control.quality-review.json",
-      "size": 6963,
-      "sha256": "sha256:bytes:d135d69159418aecc6d0956b1ec64f2c7fc76137445679a4d4b11a54629c0932",
+      "size": 7297,
+      "sha256": "sha256:bytes:f2b8a46ff87c971bd9b78faa55a8965ae4591789bac92db05998878d52ddd36e",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2889,8 +3889,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_grayscale_control.reviewed-provenance.json",
-      "size": 64317,
-      "sha256": "sha256:bytes:0366fae2e916bf0c67a90b8e898b9b0f1a2ff66680bcd789b160566e5a462070",
+      "size": 170250,
+      "sha256": "sha256:bytes:32a06c926d52bf16fb3de077275d097978e75a57494a2b575335973aa5b538a5",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2898,8 +3898,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_outpaint_reframe.quality-review.json",
-      "size": 6916,
-      "sha256": "sha256:bytes:d6a2b3843f4581565adc30b9d16ee4a17f84751f0ef11d8b0b9b505ff5d57f66",
+      "size": 7198,
+      "sha256": "sha256:bytes:837f3092922cff1c26a1ef17da195fcc3d0dd1ca66b282c5baee93a12c85c643",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2907,8 +3907,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_outpaint_reframe.reviewed-provenance.json",
-      "size": 67904,
-      "sha256": "sha256:bytes:c4cb91db649df41db5276bb58ea85257d77de542f6349942d07f7f5675788dec",
+      "size": 175153,
+      "sha256": "sha256:bytes:05f0ed9a25e8c162397f0fa291c0cec908c093d499844e3fee9b7e38862e9c62",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2916,8 +3916,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_video_color_grade.quality-review.json",
-      "size": 7054,
-      "sha256": "sha256:bytes:8aa386e846e98c6da6ed93369ff02ac9044df43af03a9e5fc109f0ae3e50c629",
+      "size": 6948,
+      "sha256": "sha256:bytes:c51237d1857467ecc3d41dc5cc9394734d44ab67fbdd717c4e1ac3ee42c6173d",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2925,8 +3925,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_video_color_grade.reviewed-provenance.json",
-      "size": 64258,
-      "sha256": "sha256:bytes:96b36b2d5b4a9212016d943b486240e0454ce2d30131a4bd39c83d932f865c88",
+      "size": 384006,
+      "sha256": "sha256:bytes:2a5f97b9fee2b3281086ece08aac774ac716faa4b185f908146535f3dcbe30ec",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2934,8 +3934,8 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_video_to_video.quality-review.json",
-      "size": 6952,
-      "sha256": "sha256:bytes:88168ad146f317c2fd68f5a0db8f369dd398cbbf87073af8fdc6c680e7384a90",
+      "size": 7090,
+      "sha256": "sha256:bytes:1dba7702a6b9d474e807c503eb6af9214fb7f473e25735da39eee56bcc0fe93e",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -2943,8 +3943,26 @@
     },
     {
       "path": "template-gallery/reviews/wan_vace_video_to_video.reviewed-provenance.json",
-      "size": 63294,
-      "sha256": "sha256:bytes:ee0ba628fb26f4789bfd9729bb534c11479aa170e489fbc3a7174c9c460d3cc2",
+      "size": 161379,
+      "sha256": "sha256:bytes:befa2e12c5fa698bcb467fc9f954bcd6967d68c2fa8542357d3bc8144753afb6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_video_long_showcase.quality-review.json",
+      "size": 6168,
+      "sha256": "sha256:bytes:ce34b17a445aeea573275f45ac2e3ea0578b6e8458b12191d6884d6d5f28e0b4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_video_long_showcase.reviewed-provenance.json",
+      "size": 308774,
+      "sha256": "sha256:bytes:4e355061c502c865d206fe9cbddd4c74984385d4d78254af5b629202b18ad1be",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3039,6 +4057,17 @@
       "purposes": [
         "runtime"
       ]
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/0ea2dd6fd5c75c7b49e5677c3ff74666b6e8b3d3cf7f62ba1ad416253a76f63b.webp",
+      "size": 91186,
+      "sha256": "sha256:bytes:0ea2dd6fd5c75c7b49e5677c3ff74666b6e8b3d3cf7f62ba1ad416253a76f63b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
     },
     {
       "path": "template-gallery/runtime-inputs/assets/101d50449cc4d74257e88e87fb750363bfe538c58b601b340fb3ce9031c2ed03.mp4",
@@ -3145,6 +4174,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/runtime-inputs/assets/379cdf80a147cdbe84ccad4b97daec4a734c0a274761da9900e658a09ca48d28.webp",
+      "size": 345792,
+      "sha256": "sha256:bytes:379cdf80a147cdbe84ccad4b97daec4a734c0a274761da9900e658a09ca48d28",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/runtime-inputs/assets/3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230.wav",
       "size": 14400044,
       "sha256": "sha256:bytes:3807d712e24a94c4b445c2fa950a784bba334f5f665e74964fe4d47a43856230",
@@ -3185,6 +4225,17 @@
       ]
     },
     {
+      "path": "template-gallery/runtime-inputs/assets/3c77210d30a5954105564bbf3025322eb5b3cfb839717185eed8f4f3bac12c3c.webp",
+      "size": 228950,
+      "sha256": "sha256:bytes:3c77210d30a5954105564bbf3025322eb5b3cfb839717185eed8f4f3bac12c3c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/runtime-inputs/assets/3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339.png",
       "size": 22013,
       "sha256": "sha256:bytes:3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339",
@@ -3194,6 +4245,17 @@
       ],
       "width": 1344,
       "height": 768
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/424477289e9872767f3d880913cbe89a55fd765a4c7a78cc05e16543d57f5da9.webp",
+      "size": 154336,
+      "sha256": "sha256:bytes:424477289e9872767f3d880913cbe89a55fd765a4c7a78cc05e16543d57f5da9",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
     },
     {
       "path": "template-gallery/runtime-inputs/assets/47e56fd165fd2610f34e952191d74e061269b9703ae9fd7f571491f38ce4992c.webp",
@@ -3229,6 +4291,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/runtime-inputs/assets/4fcc47b98431770a667597cca11ca0d7de82dd340ab999e4c5057a07fc46c6e6.webp",
+      "size": 163442,
+      "sha256": "sha256:bytes:4fcc47b98431770a667597cca11ca0d7de82dd340ab999e4c5057a07fc46c6e6",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/runtime-inputs/assets/52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d.webp",
       "size": 62370,
       "sha256": "sha256:bytes:52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d",
@@ -3249,6 +4322,18 @@
       ],
       "width": 1344,
       "height": 768
+    },
+    {
+      "path": "template-gallery/runtime-inputs/assets/70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34.png",
+      "size": 3714,
+      "sha256": "sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime",
+        "tooling"
+      ],
+      "width": 32,
+      "height": 96
     },
     {
       "path": "template-gallery/runtime-inputs/assets/73123a5bb6e8c1367eced6a7fbee6b0e5500ecbabf769ba9d9c18fd10623e36e.webp",
@@ -3306,6 +4391,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/runtime-inputs/assets/923228d65b793a2c9b4007d067309ba38aa1384a5692f5e89ceadb20e53655e7.png",
+      "size": 723414,
+      "sha256": "sha256:bytes:923228d65b793a2c9b4007d067309ba38aa1384a5692f5e89ceadb20e53655e7",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/runtime-inputs/assets/930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26.webp",
       "size": 301384,
       "sha256": "sha256:bytes:930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26",
@@ -3331,17 +4427,6 @@
       "path": "template-gallery/runtime-inputs/assets/965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de.webp",
       "size": 298906,
       "sha256": "sha256:bytes:965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de",
-      "contentType": "image/webp",
-      "purposes": [
-        "runtime"
-      ],
-      "width": 1024,
-      "height": 1024
-    },
-    {
-      "path": "template-gallery/runtime-inputs/assets/9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897.webp",
-      "size": 270072,
-      "sha256": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -3388,7 +4473,8 @@
       "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
       "contentType": "image/webp",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ],
       "width": 1024,
       "height": 1024
@@ -3542,6 +4628,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/runtime-inputs/assets/e7445aefeb2c248ff76caa56c1da1a29129ac57994b4d62fcb8cb0bcfe6a0734.png",
+      "size": 681985,
+      "sha256": "sha256:bytes:e7445aefeb2c248ff76caa56c1da1a29129ac57994b4d62fcb8cb0bcfe6a0734",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/runtime-inputs/assets/e90e99e27cdd9b6ab7478a05199df2fdf7dce650d700ef2ceb55da7fb206b715.webp",
       "size": 32852,
       "sha256": "sha256:bytes:e90e99e27cdd9b6ab7478a05199df2fdf7dce650d700ef2ceb55da7fb206b715",
@@ -3564,6 +4661,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/runtime-inputs/assets/f92394469d782bfcc9e00fdda22a9aff3ce0f0cfd9c3258ef9ff0a7ed2b2b89b.png",
+      "size": 472482,
+      "sha256": "sha256:bytes:f92394469d782bfcc9e00fdda22a9aff3ce0f0cfd9c3258ef9ff0a7ed2b2b89b",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/runtime-inputs/assets/fc326ed56f9e5de83262a0a1bc4ce85f4b4b291d654a05efa4a32fc133f97a3f.webp",
       "size": 535240,
       "sha256": "sha256:bytes:fc326ed56f9e5de83262a0a1bc4ce85f4b4b291d654a05efa4a32fc133f97a3f",
@@ -3575,9 +4683,20 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/runtime-inputs/assets/fcca725348f3a6ffbb0f4db657c52e16216dbe6735305fbcc5e164f1fee49ab4.webp",
+      "size": 259764,
+      "sha256": "sha256:bytes:fcca725348f3a6ffbb0f4db657c52e16216dbe6735305fbcc5e164f1fee49ab4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/runtime-inputs/default-input-bindings.json",
-      "size": 43140,
-      "sha256": "sha256:bytes:84f8c3bd524f5a1b72d4c2fc166d670f1435c506a845356a9a83b2916eb1359c",
+      "size": 48499,
+      "sha256": "sha256:bytes:a09ede412c08ff3ff701506e3d3de52a7fbff3dfbec105de73dbb30a69849966",
       "contentType": "application/json",
       "purposes": [
         "tooling"
@@ -3958,8 +5077,8 @@
     },
     {
       "path": "template-gallery/wan_vace_cinematic_text_to_video.card-preview.mp4",
-      "size": 935858,
-      "sha256": "sha256:bytes:58c230e968510c26bc2ea6131e64791a057d31ee3e3bd0fe6d7a062b0545b356",
+      "size": 993020,
+      "sha256": "sha256:bytes:2293ea940f855c1defa2616d27da0aeb1362c429b1c0de1fc5a97d035c367620",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -3967,8 +5086,8 @@
     },
     {
       "path": "template-gallery/wan_vace_cinematic_text_to_video.mp4",
-      "size": 3509355,
-      "sha256": "sha256:bytes:47a2f29152a5239d52d8625c8abe3b431d7ae6d834c0d6cd0c0b852071eec171",
+      "size": 21231435,
+      "sha256": "sha256:bytes:5db74e68b3321474b5abdf145bdda486ac3fe7d18735e6ef3a5bce318e89ed49",
       "contentType": "video/mp4",
       "purposes": [
         "runtime",
@@ -3977,8 +5096,8 @@
     },
     {
       "path": "template-gallery/wan_vace_cinematic_text_to_video.poster.png",
-      "size": 1742463,
-      "sha256": "sha256:bytes:427b6012590b1f010c3b77ee72bd350e84a4fccc84c65a8b0c5607d115adac55",
+      "size": 1484044,
+      "sha256": "sha256:bytes:34d6179828466121c5352e1b72e4e73d1b723be48f2d3e4a85c8acd0dd950cf5",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -4010,8 +5129,8 @@
     },
     {
       "path": "template-gallery/wan_vace_grayscale_control.card-preview.mp4",
-      "size": 201263,
-      "sha256": "sha256:bytes:1ca73ab55f51fbe4eb08d4de5a2fa0c1c9654cf77909f2626aab0414a35f5985",
+      "size": 195025,
+      "sha256": "sha256:bytes:9304d9a3047069720679a6035132b364bca408a6328b373a7386afa86bd9bf12",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -4019,8 +5138,8 @@
     },
     {
       "path": "template-gallery/wan_vace_grayscale_control.mp4",
-      "size": 957106,
-      "sha256": "sha256:bytes:4a011e34131e9c3bc9b05621184a520f6fb85c282031acd35e2988dda105ff62",
+      "size": 16554516,
+      "sha256": "sha256:bytes:de6511454dd028b570c4b4d11f99b55c6c2f037f3b0befa5867fb37f513183ad",
       "contentType": "video/mp4",
       "purposes": [
         "runtime",
@@ -4029,8 +5148,8 @@
     },
     {
       "path": "template-gallery/wan_vace_grayscale_control.poster.png",
-      "size": 1080262,
-      "sha256": "sha256:bytes:81a77bbc5882c22ab8e76fce76d7a2084e57b938fff42e842e5e9894dbc3010d",
+      "size": 1228710,
+      "sha256": "sha256:bytes:c4c0b351c43fd53d3656294a9fc15689394a06e2b70b81248da2254386fa1f04",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -4062,8 +5181,8 @@
     },
     {
       "path": "template-gallery/wan_vace_outpaint_reframe.card-preview.mp4",
-      "size": 324218,
-      "sha256": "sha256:bytes:37c1f4b3a9787c6c6dac081ed3cabd2a42d2d0a9c2db10f1ac33a7a98e1ecea2",
+      "size": 334202,
+      "sha256": "sha256:bytes:d66c6566b92c98fd7dba24d9fbe34ada9dfd3e49ffc153d290b9b447b9e21232",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -4071,8 +5190,8 @@
     },
     {
       "path": "template-gallery/wan_vace_outpaint_reframe.mp4",
-      "size": 1352471,
-      "sha256": "sha256:bytes:f899d1af73bd95da7f3babe30c03d834b93c68c3f939eac0b8fb98df094c4d98",
+      "size": 20176692,
+      "sha256": "sha256:bytes:d2d642aecce780056363e8cef15fa9129e458689b89f82c2024d01180c32feea",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -4080,8 +5199,8 @@
     },
     {
       "path": "template-gallery/wan_vace_outpaint_reframe.poster.png",
-      "size": 763693,
-      "sha256": "sha256:bytes:df7f715aaadf49fa3df62ef0eb4238e19befadfee6910970ba8eab9e80128f01",
+      "size": 1183345,
+      "sha256": "sha256:bytes:3c6d7b078c9f7b90d10e5af4b935a92b520e3256df2f5d938e3c94a2f1d62789",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -4102,8 +5221,8 @@
     },
     {
       "path": "template-gallery/wan_vace_video_color_grade.card-preview.mp4",
-      "size": 127148,
-      "sha256": "sha256:bytes:aaa8905d5b7e2b1c0cd8b7d7bf62d334db0ec6a8d2a943f73bc82f17026fa9bd",
+      "size": 131520,
+      "sha256": "sha256:bytes:9d86c293d91ea1f693901bffbafb1bc60899b577a01431a59fa9c0633b64f07a",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -4111,8 +5230,8 @@
     },
     {
       "path": "template-gallery/wan_vace_video_color_grade.mp4",
-      "size": 569543,
-      "sha256": "sha256:bytes:72a7538470942630455723c7ccd1725d29ed662276e05ef647f4304e16e44d63",
+      "size": 19216367,
+      "sha256": "sha256:bytes:720aa30d4537298bc9ca454a146dc8ca44288c4e2f2233c34ce5756a03fd2656",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -4120,8 +5239,8 @@
     },
     {
       "path": "template-gallery/wan_vace_video_color_grade.poster.png",
-      "size": 572909,
-      "sha256": "sha256:bytes:5cb855c7951e6aa0e42b04e5583165f02e9fcc978cbcfe5c23b041d92f94f554",
+      "size": 1145745,
+      "sha256": "sha256:bytes:4d459d51e3e60aeeace7688ccb7fad10f2cc9f3a9afb61ff59d3b505bf2c3cc5",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -4142,8 +5261,8 @@
     },
     {
       "path": "template-gallery/wan_vace_video_to_video.card-preview.mp4",
-      "size": 355050,
-      "sha256": "sha256:bytes:7c0738aa477caae0852e7f4fad7fcfb36e9281dd1dbdc0ca091477876d38a074",
+      "size": 383310,
+      "sha256": "sha256:bytes:1770ee434817acf2ebb504499b2201622b8d5a7597d0104b21f53f34e7151cb9",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -4151,8 +5270,8 @@
     },
     {
       "path": "template-gallery/wan_vace_video_to_video.mp4",
-      "size": 1542178,
-      "sha256": "sha256:bytes:99ccd9e6863e53c76f0a959b6b8953db3001cf3bf90b728d840b3d3a3e48e541",
+      "size": 19212627,
+      "sha256": "sha256:bytes:ccbbf1496a3bd3e73bdbd81f4ebe376829cf6ed2c5a89c748a8e07e4fe091cb1",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -4160,8 +5279,8 @@
     },
     {
       "path": "template-gallery/wan_vace_video_to_video.poster.png",
-      "size": 1768482,
-      "sha256": "sha256:bytes:a893c3eab103355212373709510267ecfa831a2d0b46dfd9e8ca795e06503782",
+      "size": 1508753,
+      "sha256": "sha256:bytes:074df4975b809405acd262052f7481aad8d71adb3b1e670b68a337fea0d861a5",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -4179,6 +5298,35 @@
       ],
       "width": 1672,
       "height": 941
+    },
+    {
+      "path": "template-gallery/wan_video_long_showcase.card-preview.mp4",
+      "size": 451699,
+      "sha256": "sha256:bytes:b22af0bdf2f24727378d08ce00bd3700091c3595d99c5a9774d3ea4a01d790ce",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_video_long_showcase.mp4",
+      "size": 84872855,
+      "sha256": "sha256:bytes:8c11448cdae831396c0ba01e3d180afa6b92c2abb0f386e3bcedc046029e2d1b",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_video_long_showcase.poster.png",
+      "size": 1400753,
+      "sha256": "sha256:bytes:4e2e0c44ddca2e4669ac3ee3c67edea7e50d4f49c799ca2e99d35fa06a95c67d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
     },
     {
       "path": "template-gallery/z_image_cinematic_contact_sheet.webp",
@@ -4248,9 +5396,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:9156288012f87fe7d3d312e39b7f46f399cf5e1e46d6d53ee6892f4cc7bc52cf",
+  "assetSetId": "sha256:canonical-json:d0af645687892b845db969b7acf14c7941c04012dd44595c072fd4ad63143b68",
   "status": "ready",
-  "assetCount": 425,
-  "totalBytes": 593439882,
+  "assetCount": 545,
+  "totalBytes": 1010209627,
   "missingAssets": []
 }

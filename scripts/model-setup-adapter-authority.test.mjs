@@ -217,8 +217,8 @@ test('all eight curated FLUX templates retain their original adapters while the 
       assert.equal(adapters.modelSetupAdapterEditUnavailable(chain, authority), null);
       assert.equal(chain.adapters.length, id === curatedFluxIds[0] ? 2 : 1);
       assert.deepEqual(graph.nodes.map((node) => node.data.label).sort(), [
-        'Denoise',
         'Encode Inputs',
+        'Generate',
         'Image Output',
         'Model Setup',
       ]);
@@ -1065,7 +1065,7 @@ const editPolicySelections = [
     tasks: ['edit_image'],
     repo: 'black-forest-labs/FLUX.1-Kontext-dev',
     revision: '24e9dedc4ef646698dc8eb4e18ae2cec3c9fea0d',
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    visibleLabels: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
     referenceCount: 1,
     embeddedGuidance: 3.5,
     guiderEnabled: true,
@@ -1077,7 +1077,7 @@ const editPolicySelections = [
     tasks: ['edit_image'],
     repo: 'black-forest-labs/FLUX.1-Kontext-dev',
     revision: '24e9dedc4ef646698dc8eb4e18ae2cec3c9fea0d',
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup', 'Reference Images'],
+    visibleLabels: ['Encode Inputs', 'Generate', 'Image Output', 'Model Setup', 'Reference Images'],
     referenceCount: 2,
     embeddedGuidance: 3.5,
     guiderEnabled: true,
@@ -1095,7 +1095,7 @@ const editPolicySelections = [
     repo: 'black-forest-labs/FLUX.2-klein-4B',
     revision: 'e7b7dc27f91deacad38e78976d1f2b499d76a294',
     visibleLabels: [
-      'Denoise',
+      'Generate',
       'Encode Inputs',
       'Image Output',
       'Model Setup',
@@ -1531,7 +1531,7 @@ test('six actual staged image starters keep all three owned consumers through ad
       }
       const visible = saved.nodes.filter((node) => !node.parentId && !node.data.blockProjectionOwnerId);
       assert.equal(visible.length, id.includes('fill') ? 6 : 5);
-      for (const label of ['Model Setup', 'Encode Inputs', 'Denoise', 'Image Output'])
+      for (const label of ['Model Setup', 'Encode Inputs', 'Generate', 'Image Output'])
         assert.equal(visible.filter((node) => node.data.label === label).length, 1);
       const firstRemoved = adapters.planModelSetupAdapterEdit(saved, root.id, {
         kind: 'remove',

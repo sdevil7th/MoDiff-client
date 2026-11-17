@@ -496,6 +496,74 @@ test('the browser crash checkpoint bounds saved tabs and retains every dirty and
   assert.equal(studioStoreModule.workflowTabsForLocalCheckpoint(Array(40).fill(tabs[0]), null).length, 12);
 });
 
+for (const intent of ['saved', 'draft']) {
+  test(`large inactive ${intent} graphs cannot crowd the active workflow out of its browser checkpoint`, () => {
+    const store = studioStoreModule.useStudioStore;
+    const before = store.getState();
+    const originalWrite = sessionStorage.setItem;
+    const originalWarn = console.warn;
+    const tabs = Array.from({ length: 4 }, (_, index) => ({
+      id: `large-saved-${index}`,
+      title: `Large saved ${index}`,
+      createdAt: index,
+      updatedAt: index,
+      dirty: false,
+      intent,
+      backendRevision: 1,
+      snapshot: { nodes: [{ text: 'x'.repeat(700_000) }], edges: [] },
+    }));
+    const dirty = { ...tabs[0], id: 'unsaved-edit', dirty: true, snapshot: { nodes: [{ text: 'keep' }], edges: [] } };
+    tabs.push(dirty);
+    try {
+      // Deterministic quota fault, without allocating or filling physical browser storage.
+      sessionStorage.setItem = (key, value) => {
+        if (key === 'modiff.studio' && value.length > 2_000_000) throw new Error('UNIT checkpoint quota');
+        originalWrite(key, value);
+      };
+      console.warn = () => {};
+      store.setState({ workflowTabs: tabs, activeWorkflowTabId: 'large-saved-3' });
+      const saved = JSON.parse(sessionStorage.getItem('modiff.studio')).state;
+      assert.equal(saved.activeWorkflowTabId, 'large-saved-3');
+      assert.ok(saved.workflowTabs.some((tab) => tab.id === 'large-saved-3'));
+      assert.deepEqual(
+        saved.workflowTabs.find((tab) => tab.id === dirty.id),
+        dirty,
+      );
+      assert.equal(
+        store.getState().workflowTabs,
+        tabs,
+        'cache trimming must not close live tabs or change their documents',
+      );
+      assert.ok(saved.workflowTabs.length < tabs.length);
+    } finally {
+      sessionStorage.setItem = originalWrite;
+      console.warn = originalWarn;
+      store.setState(before);
+    }
+  });
+}
+
+test('checkpoint size trimming preserves dirty, active and unacknowledged documents', () => {
+  const base = {
+    title: 'Large',
+    createdAt: 0,
+    updatedAt: 0,
+    dirty: false,
+    intent: 'saved',
+    backendRevision: 1,
+    snapshot: { nodes: [{ text: 'x'.repeat(1_200_000) }], edges: [] },
+  };
+  const tabs = [
+    { ...base, id: 'old-saved' },
+    { ...base, id: 'active' },
+    { ...base, id: 'dirty', dirty: true },
+    { ...base, id: 'unacknowledged', backendRevision: undefined },
+    { ...base, id: 'draft', intent: 'draft' },
+  ];
+  const checkpoint = studioStoreModule.workflowTabsForLocalCheckpoint(tabs, 'active');
+  assert.deepEqual(checkpoint, tabs.slice(1, 4));
+});
+
 test('reordering tabs changes only their order and persists that order', () => {
   const store = studioStoreModule.useStudioStore;
   store.getState().ensureWorkflowTabs();

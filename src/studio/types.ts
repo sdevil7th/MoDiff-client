@@ -1336,6 +1336,8 @@ export type StudioTemplateLoraSettings = {
 };
 
 export type StudioTemplateWorkflowBlockSettings = {
+  /** Fresh graph only: bounded JSON arrays wired to declared encoding inputs. */
+  encodingInputs?: { role: StudioGraphRole; values: Record<string, number[]> };
   maskedComposite?: {
     backgroundReferenceIndex: number;
     foregroundSize: { width: number; height: number };
@@ -1353,6 +1355,7 @@ export type StudioTemplateWorkflowBlockSettings = {
   videoSequence?: {
     promptsJson: string;
     transitionSeconds: number;
+    trimFrames?: number;
   };
   qualityVideoSequence?: {
     shotsJson: string;
@@ -1381,6 +1384,8 @@ export type StudioTemplateWorkflowBlockSettings = {
     audioFit: StudioAudioFitSettings;
   };
   lyricVideo?: {
+    recipeVersion?: 'nine-scenes:v2';
+    visualExecutionSelection?: StudioTemplateExecutionSelection;
     visualModel: StudioTemplateModelArtifact;
     promptsJson: string;
     lrc: string;
@@ -1577,6 +1582,8 @@ export type StudioTemplateLockedSettings = Pick<
 export type TemplateMotionReviewProfile = 'global_camera' | 'localized_subject';
 
 export type TemplateExpectedOutput = {
+  /** Complete source timing, SHA-bound to the published before/source input. */
+  sourceTiming?: { schemaVersion: 1; sourceMediaHash: string; frames: number; fps: number };
   width?: number;
   height?: number;
   frames?: number;

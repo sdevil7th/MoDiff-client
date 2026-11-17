@@ -108,7 +108,11 @@ const HUNYUAN_DIT_POLICY: ModelUsagePolicy = {
   reviewedAt: '2026-08-13',
 };
 
-function hunyuanVideo15Policy(repository: string, reviewedRevision: string): ModelUsagePolicy {
+function hunyuanVideo15Policy(
+  repository: string,
+  reviewedRevision: string,
+  reviewedAt = '2026-09-02',
+): ModelUsagePolicy {
   return {
     id: `hunyuanvideo-1.5-community-license:${repository}`,
     repository,
@@ -119,8 +123,8 @@ function hunyuanVideo15Policy(repository: string, reviewedRevision: string): Mod
     termsUrl: `https://huggingface.co/${HUNYUAN_VIDEO_15_LICENSE_REPO}/blob/${HUNYUAN_VIDEO_15_LICENSE_REVISION}/LICENSE`,
     access: 'public',
     reviewedRevision,
-    policyVersion: '2026-09-02',
-    reviewedAt: '2026-09-02',
+    policyVersion: reviewedAt,
+    reviewedAt,
   };
 }
 
@@ -174,6 +178,14 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
   [HUNYUAN_DIT_CONTROLNET_CANNY_REPO]: HUNYUAN_DIT_POLICY,
   [HUNYUAN_VIDEO_15_T2V_REPO]: hunyuanVideo15Policy(HUNYUAN_VIDEO_15_T2V_REPO, HUNYUAN_VIDEO_15_T2V_REVISION),
   [HUNYUAN_VIDEO_15_I2V_REPO]: hunyuanVideo15Policy(HUNYUAN_VIDEO_15_I2V_REPO, HUNYUAN_VIDEO_15_I2V_REVISION),
+  ...Object.fromEntries(
+    (
+      [
+        ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v', 'f4dbc4a1efa4ac8ea56680cdf79d9f455105e814'],
+        ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v', 'dcf088ef4e420dd54bc25930ee810bb6613dfcb5'],
+      ] as const
+    ).map(([repository, revision]) => [repository, hunyuanVideo15Policy(repository, revision, '2026-11-17')]),
+  ),
   [COSMOS3_GUARDRAIL_REPO]: {
     id: 'nvidia-open-model-license:cosmos-guardrail1',
     repository: COSMOS3_GUARDRAIL_REPO,

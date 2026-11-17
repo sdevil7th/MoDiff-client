@@ -1,4 +1,5 @@
 import type { NodeParams } from '../stores/useNodeStore';
+import { useMemo } from 'react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { blockOperationGraphV2, blockViewModelV2 } from '../studio/blockRuntimeV2';
 import { operationOwnsModel } from '../workflow/operationContracts';
@@ -19,43 +20,52 @@ export default function StageNodeControls({
   updateStore: (param: string, value: unknown, key?: keyof NodeParams) => void;
 }) {
   const instance = node.data.blockInstanceV2!;
-  const view = blockViewModelV2(instance);
   const setup = visualOperationGroup(node) === 'setup';
-  const owners = new Set(
-    blockOperationGraphV2(instance)
-      .nodes.filter((n) => operationOwnsModel(n.data.operationAuthoring?.operation))
-      .map((n) => n.data.blockProjectionNodeId),
-  );
-  const adapters = new Set(
-    blockOperationGraphV2(instance)
-      .nodes.filter(isModelSetupAdapter)
-      .map((node) => node.data.blockProjectionNodeId),
-  );
-  const controls = instance.effectiveInterface.controls.filter(
-    (control) =>
-      !(
-        setup &&
-        owners.has(control.binding.nodeId) &&
-        ['repo_id', 'model_id', 'model_type'].includes(control.binding.fieldId)
-      ) && !(setup && adapters.has(control.binding.nodeId)),
-  );
-  const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))];
+  const { view, groups } = useMemo(() => {
+    const view = blockViewModelV2(instance);
+    const graph = blockOperationGraphV2(instance);
+    const owners = new Set(
+      graph.nodes
+        .filter((n) => operationOwnsModel(n.data.operationAuthoring?.operation))
+        .map((n) => n.data.blockProjectionNodeId),
+    );
+    const adapters = new Set(graph.nodes.filter(isModelSetupAdapter).map((node) => node.data.blockProjectionNodeId));
+    const controls = instance.effectiveInterface.controls.filter(
+      (control) =>
+        !(
+          setup &&
+          owners.has(control.binding.nodeId) &&
+          ['repo_id', 'model_id', 'model_type'].includes(control.binding.fieldId)
+        ) && !(setup && adapters.has(control.binding.nodeId)),
+    );
+    const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))].map((group) => ({
+      label: group,
+      params: Object.fromEntries(
+        controls
+          .filter((control) => (control.group ?? 'Settings') === group)
+          .map((control) => [control.controlId, view.controlParams[control.controlId]!]),
+      ),
+    }));
+    return { view, groups };
+  }, [instance, setup]);
   return (
-    <div className="nodrag nowheel grid gap-2">
+    <div className="nodrag nowheel grid min-w-0 grid-cols-1 gap-2">
       {setup ? <BlockOwnerChoices node={node} /> : null}
       {setup ? <ModelSetupAdapterControls node={node} updateStore={updateStore} /> : null}
       {groups.map((group) => (
-        <ModiffDisclosure key={group} label={group} defaultOpen unmount={false} panelClassName="grid gap-2 px-1 pt-2">
+        <ModiffDisclosure
+          key={group.label}
+          label={group.label}
+          defaultOpen
+          unmount={false}
+          panelClassName="grid min-w-0 grid-cols-1 gap-2 px-1 pt-2"
+        >
           <NodeContent
             nodeId={node.id}
-            params={Object.fromEntries(
-              controls
-                .filter((control) => (control.group ?? 'Settings') === group)
-                .map((control) => [control.controlId, view.controlParams[control.controlId]!]),
-            )}
+            params={group.params}
             updateStore={updateStore}
-            module="MoDiff"
-            action="Stage"
+            module={node.data.module}
+            action={node.data.action}
             mode="controls"
           />
         </ModiffDisclosure>

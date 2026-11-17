@@ -200,7 +200,26 @@ export function useStudioRunActions({
     // invalid CPU/MPS/XPU + CPU-offload combination into managed nodes.
     const nextForm = useStudioStore.getState().form;
     const nextShapeKey = getStudioGraphShapeKey(nextForm);
-    syncStudioGraphValues(nextForm);
+    try {
+      syncStudioGraphValues(nextForm);
+    } catch (error) {
+      // Runtime normalization can call this from a React effect. A rejected
+      // saved receipt must remain blocked without taking down the whole view.
+      const studio = useStudioStore.getState();
+      const message = error instanceof Error ? error.message : String(error);
+      studio.setLastError(message);
+      const binding = studio.graphBinding;
+      if (binding)
+        studio.setGraphFinalization({
+          status: 'error',
+          bindingFingerprint: binding.fingerprint,
+          startedAt: Date.now(),
+          timedOutGroups: [],
+          managedEdgeCount: binding.managedEdgeIds.length,
+          message,
+        });
+      return;
+    }
     if (previousShapeKey !== nextShapeKey || useStudioStore.getState().graphFinalization?.status === 'pending') {
       scheduleManagedGraphRebuild();
     }

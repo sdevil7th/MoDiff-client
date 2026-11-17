@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import { createServer } from 'vite';
 
-let server, flow, readiness;
+let server, flow, readiness, nodesStore;
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -25,6 +25,7 @@ before(async () => {
   });
   ({ useFlowStore: flow } = await server.ssrLoadModule('/src/stores/useFlowStore.ts'));
   readiness = await server.ssrLoadModule('/src/studio/runReadiness.ts');
+  ({ useNodesStore: nodesStore } = await server.ssrLoadModule('/src/stores/useNodeStore.ts'));
 });
 after(async () => server?.close());
 beforeEach(() => flow.getState().replaceGraph({ nodes: [], edges: [] }));
@@ -115,4 +116,69 @@ test('disabled and disconnected declared outputs still block Run', () => {
   disabled.nodes[1].data.uiState = { disabled: true };
   flow.getState().replaceGraph(disabled);
   assert.equal(structuralIssues()[0]?.code, 'graph_output_missing');
+});
+
+test('readiness excludes descendants of disabled containers just as API export does', () => {
+  const current = graph();
+  current.nodes.forEach((node) => {
+    node.parentId = 'disabled-stage';
+  });
+  current.nodes.unshift({
+    id: 'disabled-stage',
+    type: 'group',
+    position: { x: 0, y: 0 },
+    data: { type: 'group', module: '', action: '', params: {}, uiState: { disabled: true } },
+  });
+  flow.getState().replaceGraph(current);
+  const before = structuredClone(flow.getState().toObject());
+  const inspection = readiness.inspectCurrentGraph();
+  assert.equal(inspection.enabledExecutableCount, 0);
+  assert.deepEqual(inspection.outputNodeIds, []);
+  assert.deepEqual(flow.getState().toObject(), before);
+});
+
+test('only registry-declared inactive model fields are omitted from setup references', () => {
+  const key = 'modules.TestLoader.Load';
+  const previous = nodesStore.getState().nodesRegistry;
+  const node = {
+    id: 'loader',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      module: 'modules.TestLoader',
+      action: 'Load',
+      params: {
+        model_id: { display: 'modelselect', hidden: true, value: { source: 'hub', value: 'publisher/base' } },
+        auxiliary_model_id: {
+          display: 'modelselect',
+          hidden: true,
+          value: { source: 'hub', value: 'publisher/auxiliary' },
+          fieldOptions: { modelReferenceInactiveWhenHidden: true },
+        },
+      },
+    },
+  };
+  try {
+    nodesStore.setState({ nodesRegistry: { [key]: { params: { model_id: {}, auxiliary_model_id: {} } } } });
+    assert.equal(readiness.collectNodeModelReferences(node).length, 2, 'Imported metadata cannot opt itself out.');
+    nodesStore.setState({
+      nodesRegistry: {
+        [key]: {
+          params: { model_id: {}, auxiliary_model_id: { fieldOptions: { modelReferenceInactiveWhenHidden: true } } },
+        },
+      },
+    });
+    const before = structuredClone(node);
+    assert.deepEqual(
+      readiness.collectNodeModelReferences(node).map((r) => r.value),
+      ['publisher/base'],
+    );
+    assert.deepEqual(node, before, 'Inspection cannot clear retained model choices.');
+    node.data.params.auxiliary_model_id.hidden = false;
+    assert.equal(readiness.collectNodeModelReferences(node).length, 2, 'An active auxiliary remains required.');
+    delete node.data.params.auxiliary_model_id.hidden;
+    assert.equal(readiness.collectNodeModelReferences(node).length, 2, 'Unknown visibility remains conservative.');
+  } finally {
+    nodesStore.setState({ nodesRegistry: previous });
+  }
 });

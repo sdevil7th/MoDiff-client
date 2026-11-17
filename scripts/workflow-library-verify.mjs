@@ -6,11 +6,14 @@ import { createServer } from 'vite';
 import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
 import {
   workflowNodeAttentionBackendError,
+  hasMachineSpecificWorkflowState,
+  workflowVideoAttentionRecipeError,
   workflowNodeDeviceOffloadError,
   verifyCanonicalImagePipelineStages,
 } from './workflow-library-contract.mjs';
 import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
 import { parseCanonicalAuxiliarySources } from './workflow-library-auxiliary-sources.mjs';
+import { canonicalExecutableWorkflowGraph, loadCanonicalWorkflowExpander } from './canonical-workflow-execution.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -41,6 +44,7 @@ if (!Array.isArray(manifest.workflows) || manifest.workflows.length !== expected
 const pairs = new Set();
 let authoritativeAuxiliarySources = new Map();
 let unpackCanonicalGraph;
+let expandCanonicalBlocks;
 
 function graphLayoutSignature(graph) {
   return stable(
@@ -142,7 +146,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
   const graph = JSON.parse(raw);
   verifyCanonicalLayout(workflow, graph, graphLayout);
   verifyCanonicalImagePipelineStages(workflow, graph, imageStageContracts);
-  const dependencyGraph = workflow.auxiliaryTerminalBinding ? unpackCanonicalGraph(graph) : graph;
+  const executableGraph = canonicalExecutableWorkflowGraph(graph, expandCanonicalBlocks);
+  const dependencyGraph = workflow.auxiliaryTerminalBinding ? unpackCanonicalGraph(executableGraph) : executableGraph;
   verifyNoDeadWorkflowNodes(
     workflow,
     dependencyGraph,
@@ -578,14 +583,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           throw new Error(`${workflow.id} video generator ${generate.id} does not preserve mode ${workflow.mode}.`);
         }
       }
-      if (['WanPipeline', 'Wan22Pipeline', 'WanTI2VPipeline'].includes(pipelineClass)) {
-        if (
-          recipeParams.attention_backend?.value !== '_native_flash' ||
-          recipeParams.attention_components?.value !== 'transformer'
-        ) {
-          throw new Error(`${workflow.id} Wan text pipeline must select native flash on the transformer.`);
-        }
-      }
+      const attentionError = workflowVideoAttentionRecipeError(pipelineClass, recipeParams);
+      if (attentionError) throw new Error(`${workflow.id} ${attentionError}.`);
     }
   }
   if (workflow.mediaKind === 'image' || workflow.mediaKind === 'audio') {
@@ -712,11 +711,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
   }
   const digest = canonicalJsonHash(graph);
   if (digest !== workflow.graphHash) throw new Error(`${workflow.id} graph hash does not match its manifest.`);
-  if (
-    /(?:file:\/\/|\/(?:home|Users|root|tmp|mnt|workspace)(?:\/|$)|[A-Za-z]:[\\/]|\\\\|localhost|127\.0\.0\.1|\/cache\/)/i.test(
-      raw,
-    )
-  ) {
+  if (hasMachineSpecificWorkflowState(raw)) {
     throw new Error(`${workflow.id} contains machine-specific state.`);
   }
   if (/modules\.WanVACE\.(?:LoadPipeline|Generate)/.test(raw)) {
@@ -733,6 +728,7 @@ const layoutModuleServer = await createServer({
   appType: 'custom',
 });
 try {
+  expandCanonicalBlocks = await loadCanonicalWorkflowExpander(layoutModuleServer);
   const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
   const imageStageContracts = {
     ...(await layoutModuleServer.ssrLoadModule('/src/workflow/imagePipelineStageContracts.ts')),

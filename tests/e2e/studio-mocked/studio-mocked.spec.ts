@@ -26,6 +26,23 @@ import type { PipelineSupport } from '../../../src/workflow/operationCatalog';
 import type { ApiGraphExport } from '../../../src/types/api';
 import { audioPreviewFixture, videoPreviewFixture } from './mediaInputPreviewFixture';
 
+test('recommended showcases lead with accepted MiniMax media while retaining its separate recipe notice', async ({
+  page,
+}) => {
+  await bootMockedTemplateBrowser(page);
+  const cards = page.getByTestId(/^template-browser-card-/u);
+  await expect(cards.first()).toHaveAttribute('data-testid', 'template-browser-card-minimax_h3_image_old_town_cat');
+  await expect(cards.first().getByText('Approved showcase · separate recipe')).toBeVisible();
+  await expect(cards.first().locator('img').first()).toHaveAttribute('src', /h3-emerald-material-transfer\.webp/u);
+  await expect(cards.first().locator('img').first()).toHaveCSS('object-fit', 'contain');
+  await expect(page.getByTestId('template-browser-card-minimax_music3_chamber_pop')).toBeVisible();
+  await cards
+    .first()
+    .getByRole('button', { name: /^View details for /u })
+    .click();
+  await expect(page.getByTestId('template-approved-showcase')).toContainText('template defaults below are unchanged');
+});
+
 for (const [templateId, search, file] of [
   ['flux3_klein_fp8r512_text_to_image', 'Ceramic Radio', 'flux3-pine-lake-mountains-pup.v1.webp'],
   ['minimax_h3_image_old_town_cat', 'Old Town', 'h3-emerald-material-transfer.webp'],
@@ -41,12 +58,69 @@ for (const [templateId, search, file] of [
     const card = page.getByTestId(`template-browser-card-${templateId}`);
     await expect(card.getByText('Approved showcase · separate recipe')).toBeVisible();
     await expect(card.locator('img').first()).toHaveAttribute('src', new RegExp(file.replaceAll('.', '\\.')));
+    await expect(card.locator('img').first()).toHaveCSS('object-fit', 'contain');
     await card.getByRole('button', { name: /^View details for /u }).click();
     const review = page.getByTestId('template-approved-showcase');
     await expect(review).toContainText('template defaults below are unchanged');
     await expect(review.getByRole('link')).toHaveAttribute('href', /\/showcases\/[a-z0-9.-]+\.json$/u);
     await expect(review.getByRole('link')).toHaveAttribute('rel', 'noreferrer');
     expect(writes).toBe(0);
+  });
+}
+
+for (const [width, imageWidth, imageHeight] of [
+  [1280, 2048, 2048],
+  [1920, 2048, 2048],
+  [1280, 800, 1200],
+  [1920, 800, 1200],
+  [1280, 2048, 1024],
+  [1920, 2048, 1024],
+] as const) {
+  test(`approved image stays inside its card and detail frame at ${width}px with ${imageWidth}x${imageHeight} media`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1080 });
+    await ensureFrontend();
+    await installMockRoutes(page);
+    await page.route('**/showcases/h3-emerald-material-transfer.webp', (route) =>
+      route.fulfill({
+        contentType: 'image/svg+xml',
+        body: `<svg xmlns="http://www.w3.org/2000/svg" width="${imageWidth}" height="${imageHeight}"><rect width="100%" height="100%" fill="#268252"/><rect x="2%" y="2%" width="96%" height="96%" fill="none" stroke="white" stroke-width="10"/></svg>`,
+      }),
+    );
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+    await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+    await openTemplateBrowser(page);
+    const assertFitted = async (image: Locator) => {
+      await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(imageWidth);
+      const bounds = await image.evaluate((element) => {
+        const image = element.getBoundingClientRect();
+        const frame = element.parentElement!.getBoundingClientRect();
+        return {
+          left: image.left - frame.left,
+          top: image.top - frame.top,
+          right: frame.right - image.right,
+          bottom: frame.bottom - image.bottom,
+          imageHeight: image.height,
+          frameHeight: frame.height,
+        };
+      });
+      expect(bounds.imageHeight).toBeGreaterThan(0);
+      expect(bounds.frameHeight).toBeGreaterThan(0);
+      for (const edge of [bounds.left, bounds.top, bounds.right, bounds.bottom])
+        expect(edge).toBeGreaterThanOrEqual(-1);
+      await expect(image).toHaveCSS('object-fit', 'contain');
+    };
+    const card = page.getByTestId('template-browser-card-minimax_h3_image_old_town_cat');
+    await assertFitted(card.locator('img').first());
+    await card.getByRole('button', { name: /^View details for /u }).click();
+    await assertFitted(
+      page
+        .getByTestId('template-detail-minimax_h3_image_old_town_cat')
+        .locator('img:not([aria-hidden="true"])')
+        .first(),
+    );
   });
 }
 
@@ -129,6 +203,26 @@ for (const [viewport, deviceScaleFactor] of [
       const shelf = page.getByTestId('run-session-shelf');
       const list = page.getByTestId('run-session-scrollport');
       await expect(list.locator('[data-testid^="session-run-viewport-history-"]')).toHaveCount(7);
+      // Arrange fits on deferred animation frames. Measuring before that fit
+      // pans from stale coordinates, especially on an unscaled 4K viewport.
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const pane = document.querySelector('.react-flow__pane')!.getBoundingClientRect();
+            const nodes = [...document.querySelectorAll('.react-flow__node')].map((node) =>
+              node.getBoundingClientRect(),
+            );
+            const centerX =
+              (Math.min(...nodes.map((node) => node.left)) + Math.max(...nodes.map((node) => node.right))) / 2;
+            const centerY =
+              (Math.min(...nodes.map((node) => node.top)) + Math.max(...nodes.map((node) => node.bottom))) / 2;
+            return (
+              Math.abs(centerX - (pane.left + pane.width / 2)) < 1 &&
+              Math.abs(centerY - (pane.top + pane.height / 2)) < 1
+            );
+          }),
+        )
+        .toBe(true);
       // Ordinary pan can place an editable control under this fixed overlay even
       // on an unscaled 4K canvas. Capture the actual hit target before recovering.
       const listBox = await list.boundingBox();
@@ -370,6 +464,13 @@ test('arranged stage controls remain reachable at 4K, scaled and compact canvas 
         }),
       ).toBe(true);
     }
+    const generate = page.locator('.react-flow__node').filter({ has: page.getByText('Generate', { exact: true }) });
+    await generate.getByRole('button', { name: 'Expand block', exact: true }).click();
+    await expect(page.getByText('Denoise', { exact: true })).toBeVisible();
+    await expect(page.getByText('Decode Latents', { exact: true })).toBeVisible();
+    expect(await optionalStageApi(page)).toEqual(before);
+    await generate.getByRole('button', { name: 'Collapse block', exact: true }).click();
+    expect(await optionalStageApi(page)).toEqual(before);
     await page.getByTestId('topbar-save-workflow').click({ trial: true });
     await page.getByTestId('topbar-export').click();
     await expect(page.getByRole('menuitem', { name: 'Workflow package', exact: true })).toBeVisible();
@@ -677,6 +778,86 @@ test('renamed declared video output stays runnable after ordinary import Save an
   await input.fill('');
   await input.blur();
   await expect(page.getByTestId('studio-run')).toBeDisabled();
+  expect(submissions).toBe(0);
+});
+
+test('nested Image Input stages use the selected leaf files after import Save and reload', async ({ page }) => {
+  test.setTimeout(120_000);
+  const fixture = await generateTemplateSchemas([]);
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  let submissions = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') submissions++;
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  const prepared = await page.evaluate(async (registry) => {
+    const [{ createNodeFromRegistry }, { groupVisualStages }, blocks, profiles, packages] = await Promise.all([
+      import('/src/workflow/nodeFactory.ts'),
+      import('/src/workflow/visualOperationGroups.ts'),
+      import('/src/studio/userBlockCreationV2.ts'),
+      import('/src/studio/modelProfiles.ts'),
+      import('/src/studio/workflowPackage.ts'),
+    ]);
+    const source = createNodeFromRegistry('modules.Image.Load', registry, { x: 0, y: 0 })!;
+    const preview = createNodeFromRegistry('modules.Image.Preview', registry, { x: 500, y: 0 })!;
+    source.data.params.file!.value = [];
+    const grouped = groupVisualStages(
+      {
+        nodes: [source, preview],
+        edges: [
+          { id: 'source-preview', source: source.id, sourceHandle: 'image', target: preview.id, targetHandle: 'image' },
+        ],
+      },
+      [source.id],
+      'imageInput',
+    );
+    const draft = blocks.createUserBlockDraftV2(
+      { ...grouped, nodes: grouped.nodes.map((node) => ({ ...node, selected: true })) },
+      [],
+    );
+    if (!draft.ok) throw new Error(draft.reason);
+    const nested = blocks.prepareUserBlockCreationV2(draft, { ...draft.block, name: 'Shot 1 · Source' });
+    const shot = nested.graph.nodes.find((node) => node.data.blockInstanceV2)!;
+    const form = {
+      ...profiles.getFormDefaultsForMode('video_stitch', 'BuiltinVideoOperation'),
+      resourceMode: 'expert' as const,
+      device: 'cpu',
+      autoOffload: false,
+      offloadMode: 'none' as const,
+    };
+    return { shotId: shot.id, packageData: packages.buildWorkflowPackage({ form, graph: nested.graph }) };
+  }, fixture.registry);
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'nested-source-stage.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(prepared.packageData)),
+  });
+  await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect(page.getByTestId('studio-run')).toBeDisabled();
+  await page.getByTestId(`user-block-toggle-${prepared.shotId}`).click();
+  const file = page.locator('.react-flow').getByRole('textbox', { name: 'file', exact: true }).first();
+  await file.fill('@data/images/nested-source.png');
+  await file.blur();
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Nested source stage');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect(page.getByTestId('studio-run')).toBeEnabled();
+  await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
   expect(submissions).toBe(0);
 });
 
@@ -7080,6 +7261,9 @@ function includeImageTemplateBindings(capabilities: StudioModelProfile[], fixtur
 }
 
 async function installMockRoutes(page: Page, options: { graphQualifiedQwenCluster?: boolean } = {}) {
+  // HTTP mocks must not inherit a live backend socket from a reused dev server.
+  // Protocol tests register their explicit socket route after this default.
+  await page.routeWebSocket('**/ws**', (socket) => socket.close());
   mockAdvertiseStudioExecutionSpecs = true;
   mockFileUploadCalls = 0;
   const assetCache = process.env.MODIFF_E2E_TEMPLATE_INPUT_CACHE;
@@ -11107,6 +11291,9 @@ test('template details use one narrow scroll pane and split only when the modal 
 
   await page.setViewportSize({ width: 1920, height: 1400 });
   await expect.poll(async () => (await measureDetailLayout()).galleryDisplay).toBe('block');
+  // Revealing the gallery can trigger its next IntersectionObserver batch.
+  // Measure the settled scroll area, not only the first visible CSS frame.
+  await expect.poll(async () => (await measureDetailLayout()).galleryScrollable).toBe(true);
   const wide = await measureDetailLayout();
   expect(wide.content.width).toBeGreaterThanOrEqual(1024);
   expect(wide.gallery.width).toBeGreaterThan(0);
@@ -11141,6 +11328,13 @@ test('template browser attaches Recommended infinite scroll when the dialog port
   await expect(page.getByTestId('template-browser-category-recommended')).toHaveAttribute('aria-pressed', 'true');
   const cards = page.locator('[data-testid^="template-browser-card-"]');
   const gallery = page.getByTestId('template-browser-gallery-scroll');
+  // Approved featured cards can render before the independent manifest request
+  // settles. The infinite-scroll assertion needs the loaded catalogue count.
+  await expect
+    .poll(async () =>
+      Number((await page.getByTestId('template-browser-category-recommended').textContent())?.match(/\d+/)?.[0] ?? 0),
+    )
+    .toBeGreaterThan(12);
   const totalTemplates = Number(
     (await page.getByTestId('template-browser-category-recommended').textContent())?.match(/\d+/)?.[0] ?? 0,
   );
@@ -11256,7 +11450,36 @@ test('Wan outpaint uploads its reviewed source and mask defaults before creating
   mockFileUploadCalls = 0;
   mockIncludeQuantizationNode = true;
   mockIncludeOutpaintNode = true;
-  await bootMockedTemplateBrowser(page);
+  const templateId = 'wan_vace_outpaint_reframe';
+  const selection = VIDEO_TEMPLATE_EXECUTION_SELECTIONS[templateId]!;
+  const fixture = await generateTemplateSchemas([{ id: templateId, selection }]);
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.route('**/runtime/status**', (route) =>
+    route.fulfill({
+      json: {
+        ready: true,
+        config: { hf_token_configured: false },
+        packages: { torch: { available: true, cuda_available: false, cuda_device_count: 0, cuda_devices: [] } },
+      },
+    }),
+  );
+  await page.route('**/operations/starter', (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      pipelineClass: selection.pipelineClass,
+      task: selection.task,
+      executionProfileId: selection.executionProfileId,
+    });
+    return route.fulfill({ json: fixture.recipes[0]!.starter });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await openTemplateBrowser(page);
   await page.getByTestId('template-browser-category-all').click();
   await page.getByTestId('template-browser-search').fill('Wider Robotics Workcell');
   await page.getByTestId('template-browser-use-wan_vace_outpaint_reframe').click();
@@ -11273,42 +11496,66 @@ test('Wan outpaint uploads its reviewed source and mask defaults before creating
   // Closing the chooser starts asynchronous default-media uploads; it is not
   // a graph-finalization signal. Wait for the actual two file bindings before
   // taking the immutable assertion snapshot below.
+  const uploadedBindings = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const form = window.__MODIFF_E2E__!.getState().studio.form;
+      const graph = useFlowStore
+        .getState()
+        .exportGraph('outpaint-default-upload', undefined, { randomizeSeeds: false });
+      const video = Object.values(graph.nodes).filter(
+        (node) => node.module === 'modules.Video' && node.action === 'Load',
+      );
+      const canvas = Object.values(graph.nodes).find(
+        (node) => node.module === 'modules.VideoConditioning' && node.action === 'OutpaintCanvas',
+      );
+      return {
+        sourceVideo: form.sourceVideo,
+        maskVideo: form.maskVideo,
+        sourceBinding: video[0]?.params.file?.value,
+        maskBinding: canvas?.params.prepared_mask_file?.value,
+        preparation: canvas?.params.preparation?.value,
+        sourceLoads: video.length,
+      };
+    });
   await expect
     .poll(async () => {
-      const current = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
-      const { sourceVideo, maskVideo } = current.studio.form;
+      const current = await uploadedBindings();
+      const { sourceVideo, maskVideo } = current;
       return Boolean(
         sourceVideo &&
         maskVideo &&
-        current.flow.nodes.find((node) => node.studioRole === 'loadVideo')?.params.file?.value === sourceVideo &&
-        current.flow.nodes.find((node) => node.studioRole === 'loadMaskVideo')?.params.file?.value === maskVideo,
+        current.sourceBinding === sourceVideo &&
+        current.maskBinding === maskVideo &&
+        current.preparation === 'prepared',
       );
     })
     .toBe(true);
 
-  const state = (await page.evaluate(() => window.__MODIFF_E2E__!.getState())) as {
-    flow: {
-      nodes: Array<{
-        studioRole?: string;
-        params: Record<string, { value?: unknown }>;
-      }>;
-    };
-    studio: {
-      activeTemplateId: string | null;
-      form: { sourceVideo: string; maskVideo: string };
-    };
-  };
-  expect(state.studio.activeTemplateId).toBe('wan_vace_outpaint_reframe');
-  expect(state.studio.form.sourceVideo).toBeTruthy();
-  expect(state.studio.form.maskVideo).toBeTruthy();
-  expect(state.studio.form.sourceVideo).not.toBe(state.studio.form.maskVideo);
-  expect(state.flow.nodes.find((node) => node.studioRole === 'loadVideo')?.params.file?.value).toBe(
-    state.studio.form.sourceVideo,
+  const state = await uploadedBindings();
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeTemplateId)).toBe(
+    'wan_vace_outpaint_reframe',
   );
-  expect(state.flow.nodes.find((node) => node.studioRole === 'loadMaskVideo')?.params.file?.value).toBe(
-    state.studio.form.maskVideo,
-  );
+  expect(state.sourceVideo).toBeTruthy();
+  expect(state.maskVideo).toBeTruthy();
+  expect(state.sourceVideo).not.toBe(state.maskVideo);
+  expect(state.sourceBinding).toBe(state.sourceVideo);
+  expect(state.maskBinding).toBe(state.maskVideo);
+  expect(state.sourceLoads).toBe(1);
   expect(mockFileUploadCalls).toBe(2);
+  // Read the actual Run closure after native template creation and uploads.
+  // Model availability is a separate issue in this fixture; raw media must
+  // not be demanded again by the encoded Generate consumer.
+  const inputIssues = () =>
+    page.evaluate(async () => {
+      const { collectRunReadinessIssues } = await import('/src/studio/runReadiness.ts');
+      return collectRunReadinessIssues({ sid: 'mock-sid', isConnected: true }).filter((issue) =>
+        ['operation_media_input_missing', 'required_graph_input_missing', 'media_file_input_missing'].includes(
+          issue.code,
+        ),
+      );
+    });
+  await expect.poll(inputIssues).toEqual([]);
 });
 
 test('model downloads show topbar activity, session progress, and completion notification', async ({ page }) => {
@@ -12915,7 +13162,9 @@ test('Experimental public cards create the exact FLUX3 Ceramic Radio graph throu
   await expect(page.locator('[data-testid^="template-browser-card-flux3_"]')).toHaveCount(2);
   const template = STUDIO_TEMPLATES.find((item) => item.id === 'flux3_klein_fp8r512_text_to_image')!;
   const previousWorkflow = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
-  await expect(page.getByTestId(`template-browser-card-${template.id}`)).toContainText('No preview yet');
+  await expect(page.getByTestId(`template-browser-card-${template.id}`)).toContainText(
+    'Approved showcase · separate recipe',
+  );
   await page.getByTestId(`template-browser-create-card-${template.id}`).click();
   await expect(search).toHaveCount(0);
   await expect
@@ -14218,16 +14467,37 @@ for (const textEncoderNf4 of [false, true])
       const prompt = page.locator('.react-flow__node').getByLabel('Prompt *', { exact: true });
       await prompt.fill('A ceramic teapot on a wooden table, soft morning light.');
       await prompt.blur();
-      const denoiseId = await page.evaluate(
-        () => window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.action === 'Denoise')!.id,
-      );
-      const denoise = page.locator(`.react-flow__node[data-id="${denoiseId}"]`);
-      for (const dimension of ['width', 'height']) {
-        const input = denoise.locator(`[data-key="${dimension}"] input`);
+      const generate = await page.evaluate(async () => {
+        const { blockOperationGraphV2 } = await import('/src/studio/blockRuntimeV2.ts');
+        const root = window.__MODIFF_E2E__!.getState().flow.nodes.find((node) => node.label === 'Generate');
+        if (!root?.blockInstanceV2) throw new Error('The native Generate stage is missing.');
+        const sampler = blockOperationGraphV2(root.blockInstanceV2).nodes.find(
+          (node) => node.data.action === 'Denoise',
+        );
+        if (!sampler) throw new Error('Generate has no executable sampler.');
+        const control = (field: string) => {
+          const binding = root.blockInstanceV2!.effectiveInterface.controls.find(
+            (item) => item.binding.nodeId === sampler.data.blockProjectionNodeId && item.binding.fieldId === field,
+          );
+          if (!binding) throw new Error(`Generate does not expose ${field}.`);
+          return binding.controlId;
+        };
+        return {
+          rootId: root.id,
+          denoiseId: sampler.id,
+          width: control('width'),
+          height: control('height'),
+          seed: control('seed'),
+        };
+      });
+      const denoiseId = generate.denoiseId;
+      const denoise = page.locator(`.react-flow__node[data-id="${generate.rootId}"]`);
+      for (const dimension of ['width', 'height'] as const) {
+        const input = denoise.locator(`[data-key="${generate[dimension]}"] input`);
         await input.fill('512');
         await input.blur();
       }
-      const seed = page.locator('.react-flow__node [data-key="seed"] input');
+      const seed = denoise.locator(`[data-key="${generate.seed}"] input`);
       const randomSeed = page.getByRole('button', { name: 'Toggle random Seed', exact: true });
       if ((await randomSeed.getAttribute('aria-pressed')) === 'true') await randomSeed.click();
       await seed.fill('4109');
@@ -15653,6 +15923,8 @@ test('new workflows stay neutral and ordinary node clicks dismiss the launcher',
   await page.getByTestId('topbar-new-workflow').click();
   await expect(page.getByTestId('task-launcher')).toBeVisible();
   await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-search').fill('Quick Concept');
   await page.getByTestId('template-browser-create-card-z_image_quick_concept').click();
   await expect
     .poll(async () => {
@@ -17849,7 +18121,7 @@ test('mocked Studio switches managed recipes to compact custom graph inspector a
   await expect(page.getByTestId('studio-run')).toBeEnabled({ timeout: 30_000 });
 });
 
-test('mocked template workflow blocks stay managed and restore with Studio prompt tools', async ({ page }) => {
+test('legacy mocked template workflow blocks stay managed and restore with Studio prompt tools', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
   mockInstalledRepos.add('nateraw/real-esrgan');
@@ -17864,7 +18136,7 @@ test('mocked template workflow blocks stay managed and restore with Studio promp
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
 
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video');
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('wan_vace_cinematic_text_to_video');
   });
 
   await expect
@@ -18153,7 +18425,9 @@ test('controlled LoRA labels base-only Auto history until its exact artifacts ar
   await expect(compatibility).toContainText('MoDiff verifies this exact controlled artifact set when Run starts.');
 });
 
-test('controlled workflow transactions are idempotent across supported reverse compositions', async ({ page }) => {
+test('legacy controlled workflow transactions are idempotent across supported reverse compositions', async ({
+  page,
+}) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
   mockInstalledRepos.add('Wan-AI/Wan2.2-TI2V-5B-Diffusers');
@@ -18178,7 +18452,7 @@ test('controlled workflow transactions are idempotent across supported reverse c
       .toEqual({ proof: 3, contracts: expected, divergence: null });
   };
 
-  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video'));
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('wan_vace_cinematic_text_to_video'));
   await page.evaluate(() =>
     window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('video_sequence', 'ltx_video_animated_story'),
   );
@@ -18195,7 +18469,7 @@ test('controlled workflow transactions are idempotent across supported reverse c
   );
   await assertContracts(['soundtrack.v1', 'upscale.video.v1']);
 
-  await page.evaluate(() => window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video'));
+  await page.evaluate(() => window.__MODIFF_E2E__!.applyLegacyTemplateForTest('wan_vace_cinematic_text_to_video'));
   await page.evaluate(() =>
     window.__MODIFF_E2E__!.applyControlledWorkflowBlockForTest('quality_video_sequence', 'wan_21_t2v_13b_seed_vault'),
   );
@@ -18551,7 +18825,7 @@ test('legacy LTX workflow keeps its model identity and renders numeric Export Vi
   expect(pageErrors).toEqual([]);
 });
 
-test('active workflow snapshot wins when the fast canvas cache belongs to another tab', async ({ page }) => {
+test('legacy active workflow snapshot wins when the fast canvas cache belongs to another tab', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('ACE-Step/acestep-v15-xl-turbo-diffusers');
   mockInstalledRepos.add('Wan-AI/Wan2.1-T2V-1.3B-Diffusers');
@@ -18578,7 +18852,7 @@ test('active workflow snapshot wins when the fast canvas cache belongs to anothe
   });
 
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('wan_vace_cinematic_text_to_video');
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('wan_vace_cinematic_text_to_video');
   });
   await expect
     .poll(() =>
@@ -18893,9 +19167,12 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
     0,
   );
   await expect(page.getByTestId('template-browser-dialog').getByText(/^Current task:/)).toHaveCount(0);
+  await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-search').fill('Quick Concept');
   await expect(page.getByTestId('template-browser-use-z_image_quick_concept')).toBeVisible();
   await expect(page.getByTestId('template-browser-card-z_image_quick_concept')).not.toContainText('20-45 sec');
   await expect(page.getByTestId('template-runtime-z_image_quick_concept')).toHaveCount(0);
+  await page.getByTestId('template-browser-search').fill('');
   await page.getByTestId('template-browser-category-all').click();
   await expect(page.getByTestId('template-browser-pagination')).toHaveCount(0);
   await expect(page.getByTestId('template-browser-load-sentinel')).toHaveCount(1);
@@ -18913,23 +19190,24 @@ test('mocked Studio blocks missing models, marks loader red, and keeps local tab
   expect(firstRowCtaBottoms.length).toBeGreaterThan(1);
   expect(Math.max(...firstRowCtaBottoms) - Math.min(...firstRowCtaBottoms)).toBeLessThanOrEqual(1);
   const templateSearch = page.getByTestId('template-browser-search');
-  for (const [templateId, query, posterPath] of [
-    [
-      'ltx_video_image_to_video',
-      'Rally Car Tracking Shot',
-      /\/template-gallery\/ltx_video_image_to_video\.poster\.png$/,
-    ],
-    [
-      'wan_vace_masked_object_replace',
-      'Amber Glass Replacement',
-      /\/template-gallery\/wan_vace_masked_object_replace\.poster\.png$/,
-    ],
+  for (const [templateId, query] of [
+    ['ltx_video_image_to_video', 'Rally Car Tracking Shot'],
+    ['wan_vace_masked_object_replace', 'Amber Glass Replacement'],
   ] as const) {
     await templateSearch.fill(query);
-    await expect(page.getByTestId(`template-browser-card-${templateId}`).locator('img').last()).toHaveAttribute(
-      'src',
-      posterPath,
-    );
+    const card = page.getByTestId(`template-browser-card-${templateId}`);
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('video');
+    // Gallery source availability is independent of this missing-model
+    // fixture. Dedicated video-card tests check exact media and playback;
+    // this catalogue must show media or an explicit pending-preview state.
+    await expect
+      .poll(
+        async () =>
+          (await card.locator('img, video').count()) > 0 ||
+          (await card.getByText('No preview yet', { exact: true }).first().isVisible()),
+      )
+      .toBe(true);
   }
   await templateSearch.fill('Aspect-Ratio Expansion');
   const comparison = page.getByTestId('template-ab-comparison').first();
@@ -19331,11 +19609,13 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
       };
     })
     .toEqual({
-      nodeCount: 5,
+      nodeCount: 4,
       transition: null,
     });
 
   await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-search').fill('Quick Concept');
   await page.getByTestId('template-browser-use-z_image_quick_concept').click();
   await expect(page.getByTestId('template-detail-z_image_quick_concept')).toBeVisible();
 
@@ -19393,7 +19673,7 @@ test('mocked Studio blanks the canvas while creating a template workflow', async
     .toEqual({
       activeTemplateId: 'z_image_quick_concept',
       transition: null,
-      visibleNodeCount: 5,
+      visibleNodeCount: 4,
     });
   const transitionSamples = await page.evaluate(() => {
     type TemplateGraphSample = {
@@ -19969,7 +20249,7 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
       transition: null,
       // This mixed legacy registry declares selected_image rather than the
       // actual preview field, so its ordinary Preview remains external.
-      visibleNodeCount: 5,
+      visibleNodeCount: 4,
       finalization: undefined,
     });
 
@@ -19985,9 +20265,12 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
             blockOperationGraphV2(setup.blockInstanceV2).nodes.find(
               (node) => node.data.action === 'ModelsLoader' && node.data.module === 'modules.ModularDiffusers',
             );
-          const generateNode = current.flow.nodes.find(
-            (node) => node.action === 'Denoise' && node.module === 'modules.ModularDiffusers',
-          );
+          const generate = current.flow.nodes.find((node) => node.label === 'Generate');
+          const generateNode =
+            generate?.blockInstanceV2 &&
+            blockOperationGraphV2(generate.blockInstanceV2).nodes.find(
+              (node) => node.data.action === 'Denoise' && node.data.module === 'modules.ModularDiffusers',
+            );
           const encoding = current.flow.nodes.find((node) => node.label === 'Encode Inputs');
           const promptNode =
             encoding?.blockInstanceV2 &&
@@ -19995,9 +20278,9 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
           const pipelineEdge = current.flow.edges.find(
             (edge) =>
               edge.source === setup?.id &&
-              edge.target === generateNode?.id &&
+              edge.target === generate?.id &&
               edge.sourceHandle === `${pipelineNode?.data.blockProjectionNodeId}:unet_out` &&
-              edge.targetHandle === 'unet',
+              edge.targetHandle === `${generateNode?.data.blockProjectionNodeId}:unet`,
           );
           return {
             finalization: current.studio.graphFinalization?.status,
@@ -20018,7 +20301,7 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
     });
 });
 
-test('Wan A14B resident I2V templates retain VAE tiling and automatic attention', async ({ page }) => {
+test('legacy Wan A14B resident I2V templates retain VAE tiling and automatic attention', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Wan-AI/Wan2.2-I2V-A14B-Diffusers');
   mockDownloadCalls = 0;
@@ -20043,7 +20326,7 @@ test('Wan A14B resident I2V templates retain VAE tiling and automatic attention'
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
 
   await page.evaluate(async () => {
-    await window.__MODIFF_E2E__!.applyTemplate('wan_22_i2v_seed_vault', {
+    await window.__MODIFF_E2E__!.applyLegacyTemplateForTest('wan_22_i2v_seed_vault', {
       referenceImages: ['mock-rally-keyframe.webp'],
       resourceMode: 'expert',
       autoOffload: false,
@@ -23265,7 +23548,7 @@ test('startup run recovery preserves the selected saved workflow until explicit 
     useStudioStore.getState().saveActiveWorkflowTab(false);
     return { selectedId: selected.id, remoteId, snapshot: selected.snapshot };
   });
-  await page.route('http://127.0.0.1:65531/queue', async (route) => {
+  await page.route('**/queue', async (route) => {
     await route.fulfill({
       json: {
         current: {
@@ -23316,7 +23599,7 @@ test('disconnected supervisor recovery never overlaps queue polls', async ({ pag
   let activeRequests = 0;
   let maxActiveRequests = 0;
   let requestCount = 0;
-  await page.route('http://127.0.0.1:65531/queue', async (route) => {
+  await page.route('**/queue', async (route) => {
     requestCount += 1;
     activeRequests += 1;
     maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
@@ -23577,7 +23860,7 @@ test('active node execution follows its exact workflow across tabs, notification
       ),
     )
     .toBe(true);
-  await page.route('http://127.0.0.1:65531/queue', async (route) => {
+  await page.route('**/queue', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -32248,7 +32531,8 @@ test('one editor starts in Workflows and offers Templates explicitly', async ({ 
   await expect(page.getByTestId('task-launcher').getByLabel('Search workflow tasks')).toBeVisible();
   await dismissTaskLauncher(page);
   await page.getByRole('button', { name: 'Templates', exact: true }).click();
-  await expect(page.getByTestId('template-browser-create-card-z_image_quick_concept')).toBeVisible();
+  await expect(page.getByTestId('template-browser-dialog')).toBeVisible();
+  await expect(page.locator('[data-testid^="template-browser-card-"]').first()).toBeVisible();
 });
 
 test('Gallery creation survives CPU runtime discovery while capabilities are pending', async ({ page }) => {
@@ -32300,6 +32584,8 @@ test('Gallery creation survives CPU runtime discovery while capabilities are pen
       void useNodesStore.getState().fetchRuntimeStatus();
     });
     const modal = page.getByTestId('template-browser-dialog');
+    await page.getByTestId('template-browser-category-all').click();
+    await modal.getByTestId('template-browser-search').fill('Quick Concept');
     await modal.getByTestId('template-browser-create-card-z_image_quick_concept').click();
     await page.waitForFunction(
       () => window.__MODIFF_E2E__?.getState().studio.canvasTransition?.type === 'template_graph_building',
@@ -32370,6 +32656,33 @@ test('Gallery creation survives CPU runtime discovery while capabilities are pen
   }
 });
 
+test('planning templates expose their notes without offering empty workflow creation', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await openTemplateBrowser(page);
+  const modal = page.getByTestId('template-browser-dialog');
+  await modal.getByTestId('template-browser-category-experimental').click();
+  const before = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId);
+  for (const [id, query] of [
+    ['wan_vace_direct_text_to_video', 'Working Print Press'],
+    ['wan_vace_animate_product_still', 'Sparkling Lemon Drink'],
+    ['wan_vace_reference_motion', 'Subject Motion'],
+  ]) {
+    await modal.getByTestId('template-browser-search').fill(query);
+    const create = modal.getByTestId(`template-browser-create-card-${id}`);
+    await expect(create).toBeDisabled();
+    await expect(create).toHaveText('Planning only');
+    await modal.getByTestId(`template-browser-use-${id}`).click();
+    const detail = modal.getByTestId(`template-detail-${id}`);
+    await expect(detail.getByTestId(`template-browser-create-${id}`)).toBeDisabled();
+    await expect(detail.getByTestId(`template-browser-create-${id}`)).toHaveText('Planning only');
+    await expect(detail).toContainText('Planning template');
+    await detail.getByRole('button', { name: 'Templates', exact: true }).click();
+  }
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId)).toBe(before);
+});
+
 test('Templates opens an editable workflow in the unified editor', async ({ page }) => {
   mockInstalledRepos.clear();
   mockInstalledRepos.add('Tongyi-MAI/Z-Image-Turbo');
@@ -32380,6 +32693,8 @@ test('Templates opens an editable workflow in the unified editor', async ({ page
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await openTemplateBrowser(page);
   const modal = page.getByTestId('template-browser-dialog');
+  await page.getByTestId('template-browser-category-all').click();
+  await modal.getByTestId('template-browser-search').fill('Quick Concept');
   await modal.getByTestId('template-browser-create-card-z_image_quick_concept').click();
   await expect(modal).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().flow.nodes.length)).toBeGreaterThan(0);
@@ -35782,8 +36097,8 @@ test('fresh image four-stage controls keep Guidance execution distinct from disc
   await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
   const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   expect((await graph()).nodes.map((node) => node.data.label).sort()).toEqual([
-    'Denoise',
     'Encode Inputs',
+    'Generate',
     'Image Output',
     'Model Setup',
   ]);
@@ -36010,8 +36325,8 @@ test('selected FLUX image adapter policy enables original two-row editing, reord
   await expect(node).toBeVisible();
   await expect.poll(orderedAdapters).toEqual([...unchanged].reverse());
   expect((await graph()).nodes.map((entry) => entry.data.label).sort()).toEqual([
-    'Denoise',
     'Encode Inputs',
+    'Generate',
     'Image Output',
     'Model Setup',
   ]);
@@ -36193,7 +36508,7 @@ async function assertSelectedAliasAdapterAuthoring(
     (await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).nodes
       .map((entry) => entry.data.label)
       .sort(),
-  ).toEqual(selection.visibleLabels ?? ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup']);
+  ).toEqual(selection.visibleLabels ?? ['Encode Inputs', 'Generate', 'Image Output', 'Model Setup']);
   expect(mutations).toEqual([]);
 }
 
@@ -37473,7 +37788,7 @@ test('selected Kontext edit image policy preserves media, guidance and stages th
     reviewTerms: true,
     task: 'edit_image',
     policyTasks: ['edit_image'],
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    visibleLabels: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
     embeddedGuidance: 3.5,
     guiderEnabled: true,
   });
@@ -37490,7 +37805,7 @@ test('selected Kontext multi-reference image policy preserves composition, guida
     reviewTerms: true,
     task: 'multi_image_reference_edit',
     policyTasks: ['edit_image'],
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup', 'Reference Images'],
+    visibleLabels: ['Encode Inputs', 'Generate', 'Image Output', 'Model Setup', 'Reference Images'],
     embeddedGuidance: 3.5,
     guiderEnabled: true,
   });
@@ -37506,7 +37821,7 @@ test('selected Klein text-to-image policy preserves guidance and stages through 
     reviewTerms: false,
     task: 'text_to_image',
     policyTasks: ['text_to_image', 'edit_image'],
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup'],
+    visibleLabels: ['Encode Inputs', 'Generate', 'Image Output', 'Model Setup'],
     embeddedGuidance: 1,
     guiderEnabled: null,
   });
@@ -37522,7 +37837,7 @@ test('selected Klein edit image policy preserves media, guidance and stages thro
     reviewTerms: false,
     task: 'edit_image',
     policyTasks: ['text_to_image', 'edit_image'],
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    visibleLabels: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
     embeddedGuidance: 1,
     guiderEnabled: null,
   });
@@ -37539,19 +37854,19 @@ test('selected Klein multi-reference image policy preserves media, guidance and 
     reviewTerms: false,
     task: 'multi_image_reference_edit',
     policyTasks: ['text_to_image', 'edit_image'],
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+    visibleLabels: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
     embeddedGuidance: 1,
     guiderEnabled: null,
   });
 });
 
 const stagedTemplateExpectedLabels: Record<string, string[]> = {
-  flux_fill_inpaint: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Load Image', 'Model Setup'],
-  flux_fill_outpaint: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Load Image', 'Model Setup'],
-  flux_control_canny: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
-  flux_depth_control: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
-  flux_redux_edit: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
-  flux_redux_multi_reference: ['Denoise', 'Encode Inputs', 'Image Output', 'Load Image', 'Model Setup'],
+  flux_fill_inpaint: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Load Image', 'Model Setup'],
+  flux_fill_outpaint: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Load Image', 'Model Setup'],
+  flux_control_canny: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
+  flux_depth_control: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
+  flux_redux_edit: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
+  flux_redux_multi_reference: ['Encode Inputs', 'Generate', 'Image Output', 'Load Image', 'Model Setup'],
 };
 
 /** Normal UI authoring, persistence and ordinary API export only. The immutable
@@ -37785,6 +38100,7 @@ test('selected Cosmos NONE policy preserves actual stages through adapter Add, e
     reviewTerms: acknowledgementRequiredForTemplate(template).length > 0,
     embeddedGuidance: Number(denoise.params.guidance_scale!.value ?? denoise.params.guidance_scale!.default),
     guiderEnabled: null,
+    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup'],
   });
   const setup = (await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).nodes.find(
     (entry) => entry.data.label === 'Model Setup',
@@ -37907,7 +38223,7 @@ async function audioTemplateSchemas(page: Page) {
       { payload: authority.publicPayload, ids: initial.map(({ id }) => id) },
     );
     const selections: AudioTemplateSchemaFixture['selections'] = {};
-    const selected = initial.map(({ id, selection }) => {
+    const selected: Array<{ id: string; selection: object }> = initial.map(({ id, selection }) => {
       const model = parsed.repositories.find((item) => item.id === id);
       if (!model) throw new Error(`No current immutable audio template selection for ${id}.`);
       selections[id] = {
@@ -37919,6 +38235,18 @@ async function audioTemplateSchemas(page: Page) {
       };
       return { id, selection: { ...selection, repository: model.repository } };
     });
+    const lyric = STUDIO_TEMPLATES.find((item) => item.id === 'ace_step_lyric_music_video')!.workflowBlockSettings!
+      .lyricVideo!;
+    const visual = lyric.visualExecutionSelection!;
+    const secondary = {
+      pipelineClass: visual.pipelineClass,
+      task: visual.task,
+      executionProfileId: visual.executionProfileId!,
+      repository: lyric.visualModel.value,
+      authoringRecipeId: visual.authoringRecipeId,
+    };
+    selections['lyric-video-secondary'] = secondary;
+    selected.push({ id: 'lyric-video-secondary', selection: { ...secondary, bindingSpec: visual.bindingSpec } });
     return { ...(await capture(selected)), capabilities: parsed.capabilities, selections };
   })();
   return structuredClone(await audioTemplateSchemaPromise);
@@ -38389,14 +38717,22 @@ it('fresh lyric template preserves its full composite branch brief through ordin
   const original = await audioApiSnapshot(page);
   const brief = STUDIO_TEMPLATES.find((item) => item.id === 'ace_step_lyric_music_video')!.workflowBlockSettings!
     .lyricVideo!;
-  expect(Object.keys(original.nodes)).toHaveLength(14);
+  const shots = Object.values(original.nodes).filter(
+    (node) => node.module === 'modules.DiffusersVideo' && node.action === 'Denoise',
+  );
+  expect(shots).toHaveLength(9);
+  expect(
+    Object.values(original.nodes).some((node) =>
+      ['GenerateSequence', 'GenerateShotJob', 'BuildShotJobs'].includes(node.action),
+    ),
+  ).toBe(false);
   const audio = Object.values(original.nodes).find(
     (node) => node.module === 'modules.DiffusersAudio' && node.action === 'Generate',
   )!;
   expect(audioApiValue(audio, 'prompt')).toBe(brief.audio.prompt);
-  expect(audioApiValue(audio, 'bpm')).toBe(100);
+  expect(audioApiValue(audio, 'bpm')).toBe(96);
   expect(audioApiValue(audio, 'lyrics')).toBe(brief.audio.lyrics);
-  expect(audioApiValue(audio, 'audio_duration')).toBe(30);
+  expect(audioApiValue(audio, 'audio_duration')).toBe(45);
   const recipes = Object.values(original.nodes).filter((node) => node.action === 'DiffusersExecutionRecipe');
   expect(recipes).toHaveLength(2);
   for (const recipe of recipes) expect(audioApiValue(recipe, 'attention_backend')).toBe('auto');
@@ -38405,10 +38741,23 @@ it('fresh lyric template preserves its full composite branch brief through ordin
   )!;
   expect(audioApiValue(visual, 'model_id')).toEqual({ source: 'hub', value: brief.visualModel.value });
   expect(audioApiValue(visual, 'revision')).toBe(brief.visualModel.revision);
-  const sequence = Object.values(original.nodes).find((node) => node.action === 'GenerateSequence')!;
-  expect(audioApiValue(sequence, 'prompts_json')).toBe(brief.promptsJson);
-  expect(audioApiValue(sequence, 'num_frames')).toBe(81);
-  expect(audioApiValue(sequence, 'frame_rate')).toBe(16);
+  for (const shot of shots) {
+    expect(audioApiValue(shot, 'num_frames')).toBe(81);
+    expect(audioApiValue(shot, 'width')).toBe(768);
+    expect(audioApiValue(shot, 'height')).toBe(512);
+  }
+  expect(
+    audioApiValue(
+      Object.values(original.nodes).find((node) => node.action === 'Trim')!,
+      'end',
+    ),
+  ).toBe(720);
+  expect(
+    audioApiValue(
+      Object.values(original.nodes).find((node) => node.action === 'LyricOverlay')!,
+      'enabled',
+    ),
+  ).toBe(false);
   expect(
     audioApiValue(
       Object.values(original.nodes).find((node) => node.action === 'LyricOverlay')!,

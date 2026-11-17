@@ -32,6 +32,7 @@ import {
   blockMediaFileBoundaryIsCompatibleV2,
   blockValueTypeMatchesMediaV2,
   blockValueTypesAreCompatibleV2,
+  normalizeBlockValueTypeV2,
 } from './blockValueTypeCompatibilityV2';
 import {
   blockContainerControlTargetsV1,
@@ -348,6 +349,10 @@ function projectedBindingFieldOptions(
 ) {
   return {
     ...(isRecord(base?.fieldOptions) ? cloneJson(base.fieldOptions) : {}),
+    ...(instance.definitionSnapshot.ownership.kind === 'user' &&
+    instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+      ? { suppressInitialFieldAction: true, suppressAutomaticSignalAction: true }
+      : {}),
     blockBindingV2: {
       schemaVersion: 2,
       ownerId: instance.instanceId,
@@ -414,11 +419,14 @@ function controlParamsForNormalizedInstanceV2(instance: BlockInstanceV2): Record
           ...(base ? cloneJson(base) : {}),
           label: control.label,
           type: control.valueType,
-          // Effective-interface controls are explicitly public body controls.
-          // A source node may keep the backing field hidden until its dynamic
-          // options are resolved, but that implementation detail must not hide
-          // the declared Block control on the collapsed or expanded root.
-          hidden: false,
+          // User/registered Block interfaces remain explicitly public. Ordinary
+          // visual stages follow the selected native model's dynamic contract,
+          // retaining inactive values without showing inapplicable editors.
+          hidden:
+            instance.definitionSnapshot.ownership.kind === 'user' &&
+            instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+              ? Boolean(base?.hidden)
+              : false,
           ...(display ? { display } : { display: undefined }),
           ...optionalValue(blockInstanceValueV2(instance, control.controlId)),
           // Older creation dialogs also exposed output previews as controls.
@@ -468,10 +476,11 @@ function connectorParam(instance: BlockInstanceV2, port: BlockPortV2, direction:
     base.signalCompatibility.action = action;
   }
   const value = direction === 'input' ? blockInstanceValueV2(instance, port.portId) : undefined;
+  const union = normalizeBlockValueTypeV2(port.valueType);
   return {
     ...(base ? cloneJson(base) : {}),
     label: port.label,
-    type: port.valueType,
+    type: Array.isArray(union) ? (union as string[]) : port.valueType,
     display: direction,
     required: port.required,
     isInput: direction === 'input',
@@ -1472,6 +1481,13 @@ function projectedNodeData(
     resizable: true,
     ...(typeof raw.description === 'string' ? { description: raw.description } : {}),
     ...(typeof raw.skipParamsCheck === 'boolean' ? { skipParamsCheck: raw.skipParamsCheck } : {}),
+    // Workflow-local stage grouping preserves advisory output/authoring roles.
+    // It never adopts managed ownership or grants execution authority.
+    ...(typeof raw.studioRole === 'string' &&
+    /^[A-Za-z][A-Za-z0-9:_-]{0,127}$/u.test(raw.studioRole) &&
+    instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+      ? { studioRole: raw.studioRole }
+      : {}),
     ...(visualStageSourceIndex(raw.visualStageSourceIndex) &&
     instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
       ? { visualStageSourceIndex: raw.visualStageSourceIndex }

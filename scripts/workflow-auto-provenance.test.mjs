@@ -1928,3 +1928,132 @@ test('historical Guider configurations require all native controls and both cons
   delete proof.graph.canonicalGraph.nodes.find((n) => n.action === 'EncodePrompt').params.guider;
   assert.equal(observedWorkflowAutoLegacyProofMatches(plan, proof), false);
 });
+
+function nativeExpertOrderedAdapterWitness({ count = 2, legacyChooser = true } = {}) {
+  const w = nativeExpertWitness({ guider: true });
+  if (legacyChooser) w.executedOutput.formSnapshot.modelType = 'ExampleLegacyChooser';
+  const receipt = w.executedOutput.resolvedExecutionInputs;
+  const application = receipt.nodes.find((r) => r.nodeId === w.ids.owner).appliedAdapters;
+  for (let index = 0; index < count; index++) {
+    const id = 'native-adapter-' + index;
+    const artifact = {
+      source: 'hub',
+      repository: 'example/style-adapter-' + index,
+      revision: String(index + 2).repeat(40),
+      weightName: 'style-' + index + '.safetensors',
+      sha256: String(index + 3).repeat(64),
+    };
+    const adapter = {
+      adapterName: 'style_' + index,
+      scale: index === 0 ? 0.8 : 0.18,
+      descriptorSha256: String(index + 4).repeat(64),
+      artifact,
+      scheduler: null,
+    };
+    w.apiGraph.nodes[id] = {
+      module: 'modules.ModularDiffusers',
+      action: 'Lora',
+      params: {
+        model: literal({ source: 'hub', value: artifact.repository }),
+        revision: literal(artifact.revision),
+        weight_name: literal(artifact.weightName),
+        expected_sha256: literal(artifact.sha256),
+        scale: literal(adapter.scale),
+        adapter_name: literal(adapter.adapterName),
+        previous_loras: index ? { sourceId: 'native-adapter-' + (index - 1), sourceKey: 'lora' } : {},
+        scheduler_class: literal(''),
+        scheduler_config: literal('{}'),
+      },
+    };
+    w.apiGraph.paths[0].splice(index, 0, id);
+    receipt.nodes.push({
+      nodeId: id,
+      module: 'modules.ModularDiffusers',
+      action: 'Lora',
+      fields: { revision: { value: artifact.revision, source: 'literal' } },
+      omittedFields: {},
+    });
+    application.adapters.push(adapter);
+    w.modelIdentities.push({
+      repoId: artifact.repository,
+      selectedRevision: artifact.revision,
+      modelRevision: artifact.repository + '@' + artifact.revision,
+      fingerprint: 'sha256:adapter-' + index,
+    });
+  }
+  if (count)
+    w.apiGraph.nodes[w.ids.owner].params.lora_list = { sourceId: 'native-adapter-' + (count - 1), sourceKey: 'lora' };
+  application.stateSha256 = 'sha256:applied-adapters-v1:' + canonicalJsonHash({ adapters: application.adapters });
+  return w;
+}
+
+test('native Expert ordered adapters bind the actual loader and preserve the legacy chooser without raw rewrites', () => {
+  for (const count of [0, 1, 2])
+    for (const legacyChooser of [false, true]) {
+      const w = nativeExpertOrderedAdapterWitness({ count, legacyChooser }),
+        before = structuredClone(w),
+        plan = planFor(w);
+      assert.equal(plan.source, 'executed-expert-modular-graph-v1');
+      assert.equal(plan.modelType, 'ExampleModularPipeline');
+      assert.equal(plan.pipelineClass, 'ExampleModularPipeline');
+      assert.equal(
+        executionReceiptIdentity(w.executionReceipt, plan).resourceCandidateId,
+        'manual-resource-v1:ExampleModularPipeline|bfloat16|model_cpu|none',
+      );
+      assert.deepEqual(w, before);
+      assert.equal(
+        w.executedOutput.formSnapshot.modelType,
+        legacyChooser ? 'ExampleLegacyChooser' : 'ExampleModularPipeline',
+      );
+    }
+});
+
+test('native Expert ordered adapters reject missing contradictory reordered and unactivated proof', () => {
+  for (const mutate of [
+    (w) => {
+      w.apiGraph.nodes[w.ids.owner].params.model_type.value = 'UnknownPipeline';
+      w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).fields.model_type.value =
+        'UnknownPipeline';
+      w.executedOutput.resolvedExecutionInputs.graphTasks[0].pipelineClass = 'UnknownPipeline';
+    },
+    (w) => {
+      w.modelIdentities.pop();
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.pop();
+    },
+    (w) => {
+      w.apiGraph.nodes['native-adapter-1'].params.previous_loras.sourceId = w.ids.decode;
+    },
+    (w) => {
+      w.apiGraph.nodes['native-adapter-0'].params.scale.value = 0.7;
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).fields.model_type.value =
+        'OtherModularPipeline';
+    },
+    (w) => {
+      w.executedOutput.formSnapshot.offloadMode = 'group_cpu';
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).appliedAdapters.observation =
+        'reused';
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes
+        .find((r) => r.nodeId === w.ids.owner)
+        .appliedAdapters.adapters.reverse();
+    },
+    (w) => {
+      w.executedOutput.resolvedExecutionInputs.nodes
+        .find((r) => r.nodeId === w.ids.owner)
+        .appliedAdapters.adapters.pop();
+    },
+  ]) {
+    const w = nativeExpertOrderedAdapterWitness();
+    mutate(w);
+    const app = w.executedOutput.resolvedExecutionInputs.nodes.find((r) => r.nodeId === w.ids.owner).appliedAdapters;
+    app.stateSha256 = 'sha256:applied-adapters-v1:' + canonicalJsonHash({ adapters: app.adapters });
+    assert.equal(executionReceiptIdentity(w.executionReceipt, planFor(w)).resourceCandidateId, null);
+  }
+});

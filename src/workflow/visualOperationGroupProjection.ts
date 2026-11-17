@@ -4,6 +4,7 @@ import type { NodeData } from '../stores/useNodeStore';
 import { blockInstancePreviewBindingsV2, type BlockJsonValue } from '../studio/blockSchemaV2';
 import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { blockConnectionTargetsV2 } from '../studio/blockCrossingConnectionsV2';
+import { blockControlBindingV2 } from '../studio/blockControlConnectionsV2';
 import { setBlockFieldValuesV1 } from '../studio/blockContainerEditingV1';
 import type { OperationGraph } from './operationAuthoring';
 import { remapOperationAuthoring, sharedOperationInput } from './operationSharedInputs';
@@ -14,6 +15,8 @@ export type VisualOperationGroup = keyof typeof VISUAL_STAGE_LABELS;
 export const VISUAL_STAGE_PROVIDER = 'modiff.visual-stages.v1/';
 export const COMBINED_INPUT_PROVIDER = 'modiff.visual-stages.v2/inputs';
 export const VISUAL_STAGE_LABELS = {
+  composite: 'Composite',
+  imageInput: 'Image Input',
   videoInput: 'Video Input',
   references: 'Reference Images',
   generate: 'Generate',
@@ -24,6 +27,8 @@ export const VISUAL_STAGE_LABELS = {
   output: 'Image Output',
 };
 export const VISUAL_STAGE_NAMES = {
+  composite: 'image composition',
+  imageInput: 'image input',
   videoInput: 'video input',
   references: 'reference image',
   generate: 'generation',
@@ -94,6 +99,17 @@ export function visualOperationGroup(node: CustomNodeType): VisualOperationGroup
   );
 }
 
+/** Value edits may cross disclosure containers without adapting their graph. */
+function readableUserBlockRoot(node: CustomNodeType) {
+  const instance = node.data.blockInstanceV2;
+  return Boolean(
+    instance &&
+    node.id === instance.instanceId &&
+    instance.definitionSnapshot.source.kind === 'user' &&
+    instance.definitionSnapshot.ownership.kind === 'user',
+  );
+}
+
 /** A projected visual loader still owns the complete surrounding workflow. */
 export function visualOperationOwnerId(graph: OperationGraph, ownerId: string, blockId?: string) {
   const root = blockId && graph.nodes.find((node) => node.id === blockId);
@@ -124,7 +140,10 @@ function projectVisualOperationGroups(
   onlyIds: ReadonlySet<string> | undefined,
   adapting: boolean,
 ) {
-  const roots = graph.nodes.filter((node) => visualOperationGroup(node) && (!onlyIds || onlyIds.has(node.id)));
+  const roots = graph.nodes.filter(
+    (node) =>
+      (visualOperationGroup(node) || (!adapting && readableUserBlockRoot(node))) && (!onlyIds || onlyIds.has(node.id)),
+  );
   const ids = new Set(roots.map((node) => node.id));
   const members = new Map<string, string[]>();
   const projected = new Map<string, string>();
@@ -223,6 +242,31 @@ function projectVisualOperationGroups(
     ),
     edges: [...edges, ...internalEdges],
   };
+  if (onlyIds && graph.nodes.some((node) => visualOperationGroup(node) && !ids.has(node.id))) {
+    // Remaining roots (including Shot containers) represent several leaf
+    // positions, not one slot. Use the compiler's existing source-order hints
+    // as placeholders, without importing another group's values or references.
+    const allRoots = graph.nodes.filter((node) => node.data.blockInstanceV2);
+    const allRootIds = new Set(allRoots.map((node) => node.id));
+    const order = insertStageLeaves(
+      graph.nodes
+        .filter((node) => !allRootIds.has(node.id) && !allRootIds.has(node.data.blockProjectionOwnerId ?? ''))
+        .map((node) => ({ id: node.id })),
+      allRoots.flatMap((root) =>
+        root.data.blockInstanceV2!.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+          ? root.data.blockInstanceV2!.effectiveGraph.nodes.flatMap((child) =>
+              visualStageSourceIndex(child.data.visualStageSourceIndex)
+                ? [{ index: child.data.visualStageSourceIndex, leaf: { id: `${root.id}/${child.nodeId}` } }]
+                : [],
+            )
+          : [],
+      ),
+    );
+    const byId = new Map(result.nodes.map((node) => [node.id, node]));
+    const ordered = order.flatMap((node) => (byId.has(node.id) ? [byId.get(node.id)!] : []));
+    const placed = new Set(ordered.map((node) => node.id));
+    result.nodes = [...ordered, ...result.nodes.filter((node) => !placed.has(node.id))];
+  }
   if (new Set(nodes.map((node) => node.id)).size !== nodes.length)
     throw new Error('Visual group node identity collision.');
   return { graph: result, roots, members };
@@ -230,38 +274,68 @@ function projectVisualOperationGroups(
 
 /** Shared seed/value edits still span the loader's complete ordinary graph. */
 export function planVisualSharedInput(graph: OperationGraph, nodeId: string, field: string, value: unknown) {
-  if (!graph.nodes.some(visualOperationGroup)) return null;
+  if (!graph.nodes.some(readableUserBlockRoot)) return null;
   const source = graph.nodes.find((node) => node.id === nodeId);
-  let targetId = nodeId;
+  let targets = [{ nodeId, field }];
   if (source?.data.blockProjectionOwnerId) {
     const owner = graph.nodes.find((node) => node.id === source.data.blockProjectionOwnerId);
-    if (!owner || !visualOperationGroup(owner)) return null;
-    targetId = `${owner.id}/${source.data.blockProjectionNodeId}`;
-  } else if (source && visualOperationGroup(source)) {
+    if (!owner || !readableUserBlockRoot(owner)) return null;
+    const param = source.data.params[field];
+    if (!param) return null;
+    const bound = blockControlBindingV2(source, field, param, graph.nodes);
+    if (bound) {
+      targets = [bound.control.binding, ...(bound.control.mirrorBindings ?? [])].map((binding) => ({
+        nodeId: `${owner.id}/${binding.nodeId}`,
+        field: binding.fieldId,
+      }));
+    } else {
+      if (param.fieldOptions?.blockContainerControlV1 !== undefined)
+        throw new Error('This internal control has an invalid binding. Reopen the Block.');
+      targets = [{ nodeId: `${owner.id}/${source.data.blockProjectionNodeId}`, field }];
+    }
+  } else if (source && readableUserBlockRoot(source)) {
     const surface = source.data.blockInstanceV2!.effectiveInterface;
     const control = surface.controls.find((item) => item.controlId === field);
     const port = surface.boundary.inputs.find((item) => item.portId === field);
-    const binding = control
-      ? { nodeId: control.binding.nodeId, fieldId: control.binding.fieldId }
+    const bindings = control
+      ? [control.binding, ...(control.mirrorBindings ?? [])]
       : port
-        ? { nodeId: port.binding.nodeId, fieldId: port.binding.fieldOrPortId }
-        : null;
-    if (!binding) return null;
-    targetId = `${source.id}/${binding.nodeId}`;
-    field = binding.fieldId;
+        ? blockConnectionTargetsV2(source, field, 'input').map((binding) => ({
+            nodeId: binding.nodeId,
+            fieldId: binding.fieldOrPortId,
+          }))
+        : [];
+    if (!bindings.length) return null;
+    targets = bindings.map((binding) => ({ nodeId: `${source.id}/${binding.nodeId}`, field: binding.fieldId }));
   } else if (!source?.data.operationAuthoring?.sharedInputs?.some((item) => item.field === field)) return null;
   const unpacked = projectVisualOperationGroups(graph, undefined, false);
-  const shared = sharedOperationInput(unpacked.graph.nodes, unpacked.graph.edges, targetId, field);
-  if (!shared) return null;
+  if (new Set(unpacked.graph.nodes.map((node) => node.id)).size !== unpacked.graph.nodes.length)
+    throw new Error('The grouped input references collide. Reopen the workflow before editing it.');
+  const groups = targets.map((target) =>
+    sharedOperationInput(unpacked.graph.nodes, unpacked.graph.edges, target.nodeId, target.field),
+  );
+  if (!groups.some(Boolean)) return null;
+  const members = new Map(
+    groups.flatMap((group) => group?.members ?? []).map((member) => [`${member.node.id}\0${member.field}`, member]),
+  );
+  for (const target of targets) {
+    const node = unpacked.graph.nodes.find((node) => node.id === target.nodeId);
+    if (!node?.data.params[target.field])
+      throw new Error('This shared control target no longer exists. Reopen the Block.');
+    members.set(`${node.id}\0${target.field}`, { node, field: target.field });
+  }
   const updates = new Map<string, Array<{ nodeId: string; fieldId: string }>>();
   const ordinary = new Map<string, string>();
-  for (const member of shared.members) {
+  for (const member of members.values()) {
     const root = unpacked.roots.find((root) => unpacked.members.get(root.id)?.includes(member.node.id));
     if (root) {
       const targets = updates.get(root.id) ?? [];
       targets.push({ nodeId: member.node.id.slice(root.id.length + 1), fieldId: member.field });
       updates.set(root.id, targets);
     } else {
+      if (member.node.data.blockProjectionOwnerId)
+        throw new Error('Cannot edit a shared input through an unresolved or protected Block interface.');
+      if (member.node.data.params[member.field]?.disabled) throw new Error('Cannot change a disabled shared input.');
       ordinary.set(member.node.id, member.field);
     }
   }

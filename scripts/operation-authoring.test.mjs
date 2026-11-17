@@ -1169,6 +1169,55 @@ test('workflow drafts keep unsupported or latent outputs explicit instead of inv
   assert.match(result.notices[0], /No compatible output/);
 });
 
+test('fresh video exporters inherit the declared generation frame rate without changing the starter', async () => {
+  for (const paired of [false, true]) {
+    const s = starter('FutureVideoPipeline', 'text_to_video');
+    const source = s.nodes[1];
+    source.node.params.frame_rate = { type: 'float', default: 24, value: 24 };
+    source.node.params.result = { type: 'video', display: 'output' };
+    source.operation.ports.push(
+      {
+        name: 'frame_rate',
+        semanticName: 'frame_rate',
+        direction: 'input',
+        types: ['float'],
+        hidden: false,
+        semantics: { kind: 'value' },
+      },
+      { name: 'result', direction: 'output', types: ['video'], hidden: false, semantics: { kind: 'media' } },
+    );
+    if (paired) {
+      source.node.params.audio = { type: 'audio', display: 'output' };
+      source.operation.ports.push({
+        name: 'audio',
+        direction: 'output',
+        types: ['audio'],
+        hidden: false,
+        semantics: { kind: 'media' },
+      });
+    }
+    const action = paired ? 'ExportWithAudio' : 'ExportAsset';
+    const registry = {
+      [`modules.Video.${action}`]: {
+        module: 'modules.Video',
+        action,
+        label: 'Video Output',
+        params: {
+          video: { type: 'video', display: 'input' },
+          fps: { type: 'float', default: 16 },
+          ...(paired ? { audio: { type: 'audio', display: 'input' } } : {}),
+        },
+      },
+    };
+    const before = structuredClone(s);
+    const { unpackVisualOperationGroups } = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+    const graph = unpackVisualOperationGroups(drafts.createWorkflowDraft(s, registry).graph).graph;
+    const output = graph.nodes.find((node) => node.data.action === action);
+    assert.equal(output.data.params.fps.value, 24);
+    assert.deepEqual(s, before);
+  }
+});
+
 test('workflow choices join exact execution profiles and retain task and pipeline distinctions', () => {
   const support = [
     {
@@ -3094,6 +3143,39 @@ test('runtime option presentation preserves dynamic authority, dictionary member
   assert.deepEqual(options.runtimeOptionEntries(['legacy'], ['new']), options.runtimeOptionEntries(['legacy']));
 });
 
+test('only current registry runtime scopes refresh hardware choices across unrelated dynamic actions', async () => {
+  const options = await server.ssrLoadModule('/src/studio/runtimeOptions.ts');
+  const ready = (value, enabled = true) => ({
+    schemaVersion: 1,
+    value,
+    label: value,
+    compatibility: enabled ? 'compatible' : 'incompatible',
+    availability: enabled ? 'installed' : 'unavailable',
+    installationState: enabled ? 'installed' : 'unavailable',
+  });
+  const saved = [ready('float32'), ready('float16', false)];
+  const current = {
+    dtype: { runtimeOptions: 'availability', options: [ready('float32'), ready('float16'), ready('bfloat16')] },
+    model: { onChange: 'opaque_model_schema_action' },
+  };
+  const shown = options.registeredRuntimeOptionPresentation(saved, 'dtype', current);
+  assert.deepEqual(options.runtimeOptionValues(shown), ['float32', 'float16']);
+  assert.deepEqual(saved, [ready('float32'), ready('float16', false)]);
+  const device = options.registeredRuntimeOptionPresentation([ready('cpu')], 'device', {
+    device: { runtimeOptions: 'choices', options: [ready('cpu'), ready('cuda:0')] },
+    model: { onChange: 'opaque_model_schema_action' },
+  });
+  assert.deepEqual(options.runtimeOptionValues(device), ['cpu', 'cuda:0']);
+  assert.equal(
+    options.registeredRuntimeOptionPresentation(saved, 'dtype', {
+      ...current,
+      dtype: { ...current.dtype, optionsSource: {} },
+    }),
+    saved,
+    'A dynamic options provider still owns its choices.',
+  );
+});
+
 test('generic model default weight format requires its exact declared immutable selection', async () => {
   const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
   const model = {
@@ -3704,6 +3786,78 @@ test('integrated model operations author, parse and replace without a synthetic 
       entry.operation,
     ]),
   );
+});
+
+test('implementation changes reconnect uniquely declared media aliases and retain ambiguous branches for review', () => {
+  for (const media of ['image', 'audio', 'video'])
+    for (const ambiguous of [false, true]) {
+      const old = starter('OldMediaPipeline');
+      const output = (entry, name) => {
+        entry.node.params[name] = { type: media, display: 'output' };
+        entry.operation.ports.push({
+          name,
+          semanticName: name,
+          direction: 'output',
+          roles: ['value'],
+          types: [media],
+          required: false,
+          hidden: false,
+          semantics: { kind: 'media', scope: null, state: null, owner: 'none', members: [] },
+        });
+      };
+      output(old.nodes[1], 'decoded_result');
+      const next = structuredClone(old);
+      next.pipelineClass = 'NewMediaPipeline';
+      for (const entry of next.nodes) {
+        entry.operation.pipelineClass = next.pipelineClass;
+        entry.operation.binding.pipelineClass = next.pipelineClass;
+      }
+      next.nodes[0].operation.binding.values.pipeline_class = next.pipelineClass;
+      const generation = next.nodes[1];
+      generation.operation.operationId = 'diffusion.generate_media';
+      generation.operation.nodeType = 'pipeline';
+      generation.operation.decomposition = 'pipeline';
+      generation.operation.blockName = null;
+      generation.operation.ports = generation.operation.ports.filter((p) => p.name !== 'decoded_result');
+      delete generation.node.params.decoded_result;
+      output(generation, 'generated_media_out');
+      if (ambiguous) output(generation, 'alternate_media_out');
+      next.edges[0].target = generation.operation.operationId;
+      const graph = authoring.createOperationStarter(old, { x: 80, y: 120 });
+      const owner = graph.nodes[0];
+      graph.nodes.push({
+        id: 'external-output',
+        type: 'custom',
+        position: { x: 1500, y: 120 },
+        data: {
+          module: 'custom.Output',
+          action: 'Preview',
+          label: 'Keep this output',
+          params: { media: { type: media, display: 'input' } },
+        },
+      });
+      graph.edges.push({
+        id: 'retained-output-wire',
+        source: graph.nodes[1].id,
+        sourceHandle: 'decoded_result',
+        target: 'external-output',
+        targetHandle: 'media',
+      });
+      const before = structuredClone(graph);
+      const plan = authoring.planOperationChange(graph, owner.id, next, { replaceModel: true });
+      assert.deepEqual(graph, before);
+      const wire = plan.graph.edges.find((e) => e.target === 'external-output');
+      assert.equal(Boolean(wire), !ambiguous, media);
+      if (wire) assert.equal(wire.sourceHandle, 'generated_media_out');
+      assert.equal(
+        plan.review.attention.some((text) => text.includes('cannot be reconnected')),
+        ambiguous,
+      );
+      assert.deepEqual(
+        plan.graph.nodes.find((n) => n.id === 'external-output'),
+        graph.nodes.at(-1),
+      );
+    }
 });
 
 test('pristine route replacement reconnects preview across decomposition and refuses authored graphs', () => {

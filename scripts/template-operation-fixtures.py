@@ -98,9 +98,10 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                     describe(key)
                 rows.append({"id": item["id"], "starter": starter, "spec": spec,
                              "capability": STUDIO_MODEL_CAPABILITIES[binding["modelType"]] if binding else None})
-            for key in ("modules.ImageOperations.ProcessImage", "modules.ModularDiffusers.Lora",
+            for key in ("modules.Text.ProcessText", "modules.ImageOperations.ProcessImage", "modules.ModularDiffusers.Lora",
                         "modules.ModularDiffusers.QuantizationConfigNode",
-                        "modules.DiffusersImage.LoadAdapter",
+                        "modules.DiffusersImage.LoadAdapter", "modules.DiffusersImage.Generate",
+                        "modules.HuggingFaceTransformers.GenerateImageVideoText", "modules.ModularDiffusers.ModelsLoader",
                         "modules.Spandrel.Upscaler", "modules.Image.Preview", "modules.Image.Resize",
                         "modules.Image.Save", "modules.ImageOperations.CropImage", "modules.ImageOperations.MaskComposite",
                         "modules.DiffusersImage.OutpaintCanvas", "modules.Audio.Export", "modules.Audio.Load", "modules.Image.Load",
@@ -108,6 +109,9 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                         "modules.Audio.FitDuration", "modules.DiffusersAudio.LoadPipeline", "modules.DiffusersAudio.Generate",
                         "modules.DiffusersVideo.LoadPipeline", "modules.DiffusersVideo.GenerateSequence",
                         "modules.Video.Compose", "modules.Video.LyricOverlay",
+                        "modules.VideoConditioning.Storyboard", "modules.VideoConditioning.ShotPrompt",
+                        "modules.VideoConditioning.ShotInputs", "modules.VideoConditioning.OutpaintCanvas", "modules.Primitive.ToList",
+                        "modules.Video.Concatenate", "modules.Video.ConcatenateAssets", "modules.Video.Trim",
                         "modules.DiffusersRuntime.PipelineQuantizationConfigV2", "modules.DiffusersRuntime.DiffusersExecutionRecipe"):
                 describe(key)
             if any(item["selection"]["pipelineClass"] == "Cosmos3OmniModularPipeline" for item in selections):

@@ -1025,6 +1025,7 @@ export function installE2EHooks() {
     getState: () =>
       cloneJson({
         flow: {
+          layoutRevision: useFlowStore.getState().layoutRevision,
           visibleNodeCount:
             useStudioStore.getState().canvasTransition?.workflowTabId === useStudioStore.getState().activeWorkflowTabId
               ? 0
@@ -1036,6 +1037,9 @@ export function installE2EHooks() {
             parentId: node.parentId,
             selected: node.selected,
             position: node.position,
+            width: node.width,
+            height: node.height,
+            measured: node.measured,
             module: node.data.module,
             action: node.data.action,
             label: node.data.label,
@@ -1087,6 +1091,7 @@ export function installE2EHooks() {
         },
         studio: {
           workflowCanvasEpoch: useStudioStore.getState().workflowCanvasEpoch,
+          workflowFormEpoch: useStudioStore.getState().workflowFormEpoch,
           workflowCanvasHydrated: useStudioStore.getState().workflowCanvasHydrated,
           launcherDismissed: useStudioStore.getState().launcherDismissed,
           form: useStudioStore.getState().form,

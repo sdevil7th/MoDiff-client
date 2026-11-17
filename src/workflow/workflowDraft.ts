@@ -19,6 +19,20 @@ const MEDIA_LOADERS = {
   video: 'modules.Video.Load',
 };
 
+function seedVideoFrameRate(source: ReturnType<typeof createOperationStarter>['nodes'][number], target: typeof source) {
+  const rates = source.data.operationAuthoring?.operation.ports.filter(
+    (port) =>
+      port.direction === 'input' &&
+      !port.hidden &&
+      port.semanticName === 'frame_rate' &&
+      port.semantics?.kind === 'value',
+  );
+  const field = rates?.length === 1 ? source.data.params[rates[0]!.name] : undefined;
+  const value = field?.value ?? field?.default;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0 && target.data.params.fps)
+    target.data.params.fps = { ...target.data.params.fps, value };
+}
+
 /** Add ordinary typed output nodes, without turning metadata into execution permission. */
 export function createWorkflowDraft(starter: OperationStarter, registry: Record<string, NodeData>) {
   const graph = createOperationStarter(starter, { x: 80, y: 120 });
@@ -122,6 +136,7 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
           x: 80 + sources.length * 420,
           y: 120 + outputCount * 340,
         })!;
+        seedVideoFrameRate(node, target);
         graph.nodes.push(target);
         for (const [port, input] of pair)
           graph.edges.push({
@@ -160,6 +175,7 @@ export function createWorkflowDraft(starter: OperationStarter, registry: Record<
         x: 80 + sources.length * 420,
         y: 120 + outputCount * 340,
       })!;
+      if (output.type === 'video' || output.type === 'video_asset') seedVideoFrameRate(node, target);
       graph.nodes.push(target);
       graph.edges.push({
         id: `edge-${nanoid()}`,

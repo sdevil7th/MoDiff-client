@@ -17,6 +17,7 @@ import { compareRunProvenance, runtimeLockFromProvenance } from './live-proof-pr
 import templateGalleryContract from '../src/studio/templateGalleryContract.json' with { type: 'json' };
 import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
 import { validateTemplateAssetRelease, validateTemplateAssetSource } from './template-asset-source-contract.ts';
+import { sourceVideoTimingMatches } from '../src/studio/sourceVideoTiming.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_GALLERY_DIR = join(ROOT, 'public', 'template-gallery');
@@ -358,7 +359,7 @@ export function decodedMediaHashMatches(decoded, expected) {
 
 function redactLocalPath(value) {
   const isWindowsPath = /^[a-z]:[\\/]/i.test(value);
-  const isUserScopedPosixPath = /^\/(?:Users|home|tmp|private\/tmp|var\/tmp)\//.test(value);
+  const isUserScopedPosixPath = /^\/(?:Users|home|tmp|private\/tmp|var\/tmp|run\/media|media|mnt)\//.test(value);
   if (!isWindowsPath && !isUserScopedPosixPath) return value;
   const fileName = value.split(/[\\/]/).filter(Boolean).at(-1) ?? 'path';
   return `<local-path>/${fileName}`;
@@ -542,6 +543,29 @@ export function validateReviewedDerivative(provenance, derivative, expected) {
 
   if (derivativeKind === 'layered_contact_sheet') {
     validateProcessor();
+    if (derivative.losslessExports !== undefined) {
+      const exports = derivative.losslessExports;
+      const originals = provenance?.output?.items ?? [];
+      const valid =
+        exports?.schemaVersion === 1 &&
+        exports.verification === 'native-webp-quality-100-byte-reproduction' &&
+        Array.isArray(exports.items) &&
+        exports.items.length === originals.length &&
+        derivative.processor?.role === 'byte-identical-retained-sheet-reproduction' &&
+        derivative.processor?.path === 'scripts/template-gallery-retained-layer-sheet.py' &&
+        derivative.creationTimeReviewCaptionPreserved === true &&
+        exports.items.every(
+          (item, index) =>
+            item.index === index &&
+            item.mode === 'RGBA' &&
+            /^sha256:bytes:[a-f0-9]{64}$/u.test(item.encodedSha256 ?? '') &&
+            /^[a-f0-9]{64}$/u.test(item.rgbaPixelSha256 ?? '') &&
+            item.nativeEncodedSha256 === originals[index].encodedSha256 &&
+            item.width === originals[index].width &&
+            item.height === originals[index].height,
+        );
+      if (!valid) errors.push('reviewed derivative lossless exports must reproduce every original native image');
+    }
     const expectedItemHashes = (provenance?.output?.items ?? []).map((item) => item.decodedSha256);
     if (stableStringify(derivative.sourceItemHashes ?? []) !== stableStringify(expectedItemHashes)) {
       errors.push('reviewed derivative sourceItemHashes mismatch');
@@ -813,7 +837,23 @@ const ACCEPTABLE_VISUAL_FINDINGS = new Set([
   'photoreal video requires plausible lighting, materials, and dynamics',
 ]);
 
-export function validateQualityReview(review, expected, requiredStatus = EXACT_QUALITY_REVIEW_STATUS) {
+export function qualityReviewContractForTemplate(template) {
+  const lrc = template.workflowBlockSettings?.lyricVideo?.lrc;
+  return {
+    expectedDurationSeconds: template.example?.expectedOutput?.durationSeconds,
+    ...(template.id === 'ace_step_lyric_music_video' && typeof lrc === 'string'
+      ? { lyricOverlayEnabled: Boolean(lrc.trim()) }
+      : {}),
+  };
+}
+
+export function validateQualityReview(
+  review,
+  expected,
+  requiredStatus = EXACT_QUALITY_REVIEW_STATUS,
+  sourceTiming,
+  reviewContract = {},
+) {
   const errors = [];
   if (!review || typeof review !== 'object' || Array.isArray(review)) {
     return ['Quality review must be a JSON object.'];
@@ -823,6 +863,7 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
       ? validateMaintainerAcceptance(review)
       : { accepted: false, errors: [] };
   errors.push(...acceptance.errors);
+  const qualitativeAcceptance = acceptance.accepted && review.ratingMethod === 'maintainer_qualitative_acceptance';
   const strictVisualReview =
     requiredStatus === REVIEWED_QUALITY_REVIEW_STATUS &&
     (STRICT_VISUAL_REVIEW_TEMPLATES.has(expected.templateId) ||
@@ -877,6 +918,7 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
   } else {
     for (const requiredScore of ['taskAdherence', 'artifactControl', 'modalityQuality']) {
       const score = review.rubric[requiredScore];
+      if (qualitativeAcceptance && score === null) continue;
       if (!Number.isFinite(score) || score < 1 || score > 5) {
         errors.push(`quality review rubric.${requiredScore} must be between 1 and 5`);
       }
@@ -892,6 +934,7 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
     const minimumScore = acceptance.accepted ? 1 : 4;
     for (const field of ['promptAdherence', 'composition', 'technicalExecution', 'templateUsefulness']) {
       const score = review.scores?.[field];
+      if (qualitativeAcceptance && score === null) continue;
       if (!Number.isFinite(score) || score < minimumScore || score > 5) {
         errors.push(`reviewed quality review scores.${field} must be between ${minimumScore} and 5`);
       }
@@ -948,21 +991,42 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
         if (review.motionReview?.fullPlaybackReviewed !== true) {
           errors.push('dynamic video review must confirm full playback review');
         }
-        if (!Number.isFinite(review.motionReview?.frameCount) || review.motionReview.frameCount < 81) {
+        const sourceTimingPreserved =
+          acceptance.accepted &&
+          stableStringify(review.sourceTimingReview) === stableStringify(sourceTiming) &&
+          sourceVideoTimingMatches(sourceTiming, {
+            frames: review.motionReview?.frameCount,
+            durationSeconds: review.motionReview?.durationSeconds,
+          });
+        if (
+          !Number.isFinite(review.motionReview?.frameCount) ||
+          (!sourceTimingPreserved && review.motionReview.frameCount < 81)
+        ) {
           errors.push('dynamic video review requires at least 81 reviewed frames');
         }
         if (
           !Number.isFinite(review.motionReview?.durationSeconds) ||
-          review.motionReview.durationSeconds < MINIMUM_TEMPLATE_VIDEO_SECONDS
+          (!sourceTimingPreserved && review.motionReview.durationSeconds < MINIMUM_TEMPLATE_VIDEO_SECONDS)
         ) {
           errors.push('dynamic video review requires at least five seconds of reviewed output');
         }
         if (
           LONG_VIDEO_REVIEW_TEMPLATES.has(expected.templateId) &&
+          reviewContract.expectedDurationSeconds === undefined &&
           (review.motionReview?.durationSeconds < 20 || review.motionReview?.durationSeconds > 35)
         ) {
           errors.push('long-form video review requires a duration between 20 and 35 seconds');
         }
+        if (
+          reviewContract.expectedDurationSeconds !== undefined &&
+          (!Number.isFinite(reviewContract.expectedDurationSeconds) ||
+            reviewContract.expectedDurationSeconds <= 0 ||
+            !Number.isFinite(review.motionReview?.durationSeconds) ||
+            Math.abs(review.motionReview.durationSeconds - reviewContract.expectedDurationSeconds) > 0.2)
+        )
+          errors.push(
+            `video review must match the declared ${reviewContract.expectedDurationSeconds}-second recipe duration`,
+          );
         if (
           !Number.isFinite(review.motionReview?.sceneMotionCoveragePercent) ||
           review.motionReview.sceneMotionCoveragePercent < 50
@@ -1046,7 +1110,14 @@ export function validateQualityReview(review, expected, requiredStatus = EXACT_Q
         } else {
           errors.push('dynamic video review visualIntent must be photoreal or animation');
         }
-        if (expected.templateId === 'ace_step_lyric_music_video') {
+        if (expected.templateId === 'ace_step_lyric_music_video' && reviewContract.lyricOverlayEnabled === false) {
+          if (
+            review.lyricSyncReview?.status !== 'not_applicable' ||
+            review.lyricSyncReview.overlayEnabled !== false ||
+            review.lyricSyncReview.emptyLrc !== true
+          )
+            errors.push('disabled lyric overlay requires an explicit not-applicable caption review');
+        } else if (expected.templateId === 'ace_step_lyric_music_video') {
           if (review.lyricSyncReview?.status !== 'pass' || review.lyricSyncReview?.fullPlaybackReviewed !== true) {
             errors.push('lyric music video requires a passing full-playback lyric sync review');
           }
@@ -1152,7 +1223,13 @@ function loadQualityReview(args, template, expected, requiredStatus = EXACT_QUAL
   if (!existsSync(filePath)) return { errors: [`Quality review file is missing: ${filePath}`] };
   try {
     const review = JSON.parse(readFileSync(filePath, 'utf8'));
-    const errors = validateQualityReview(review, expected, requiredStatus);
+    const errors = validateQualityReview(
+      review,
+      expected,
+      requiredStatus,
+      galleryExpectedOutput(template).sourceTiming,
+      qualityReviewContractForTemplate(template),
+    );
     return { filePath, review, errors, hash: canonicalJsonHash(review) };
   } catch (error) {
     return { errors: [`Could not read quality review ${filePath}: ${error instanceof Error ? error.message : error}`] };
@@ -1253,6 +1330,7 @@ export async function loadTemplateRuntime(root = ROOT, { includePlanning = false
         return exactnessModule.getPromptSettingsHash(exactnessModule.getTemplateLockedSettings(template));
       },
       findManifestEntry: exactnessModule.findManifestEntry,
+      findHistoricalTemplateRecipe: exactnessModule.findHistoricalTemplateRecipe,
     };
   } finally {
     await server.close();
@@ -1580,6 +1658,7 @@ function decodedVideoHash(videoPath, args) {
     pixelFormat: metadata.pixelFormat,
     frames: frameCount,
     durationSeconds: metadata.durationSeconds || (metadata.fps > 0 ? frameCount / metadata.fps : 0),
+    fps: metadata.fps,
     hasAudio: metadata.hasAudio,
     embeddedAudio,
     uniqueFrameRatio: new Set(frameHashes).size / frameCount,
@@ -1730,8 +1809,12 @@ export function beforePreviewContractErrors(decoded, contract = templateGalleryC
 export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image') {
   const errors = [];
   for (const field of ['width', 'height', 'frames', 'sampleRate']) {
-    if (expected[field] !== undefined && Number(decoded[field]) !== Number(expected[field])) {
-      errors.push(`${field} must be ${expected[field]}, got ${decoded[field] ?? 'missing'}`);
+    const measured =
+      field === 'sampleRate' && mediaType === 'audio'
+        ? (decoded.sourceSampleRate ?? decoded.sampleRate)
+        : decoded[field];
+    if (expected[field] !== undefined && Number(measured) !== Number(expected[field])) {
+      errors.push(`${field} must be ${expected[field]}, got ${measured ?? 'missing'}`);
     }
   }
   if (expected.durationSeconds !== undefined) {
@@ -1780,7 +1863,10 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
         }
       }
     }
-    if (Number(decoded.durationSeconds ?? 0) < MINIMUM_TEMPLATE_VIDEO_SECONDS) {
+    if (
+      Number(decoded.durationSeconds ?? 0) < MINIMUM_TEMPLATE_VIDEO_SECONDS &&
+      !sourceVideoTimingMatches(expected.sourceTiming, decoded)
+    ) {
       errors.push(`video duration must be at least ${MINIMUM_TEMPLATE_VIDEO_SECONDS} seconds`);
     }
     const shortEdge = Math.min(Number(decoded.width ?? 0), Number(decoded.height ?? 0));
@@ -2385,12 +2471,30 @@ function galleryVerificationScope(root) {
 export async function verifyGallery(
   args,
   artifactDir,
-  { root = ROOT, runtime: suppliedRuntime, decodeMedia = decodedMediaHash } = {},
+  { root = ROOT, runtime: suppliedRuntime, decodeMedia = decodedMediaHash, templateIds } = {},
 ) {
   const runtime = suppliedRuntime ?? (await loadTemplateRuntime(root));
   const templatesById = new Map(runtime.templates.map((template) => [template.id, template]));
-  const manifest = readManifest(join(root, 'public', 'template-gallery', 'manifest.json'));
-  const errors = validateManifestShape(manifest);
+  const completeManifest = readManifest(join(root, 'public', 'template-gallery', 'manifest.json'));
+  const errors = validateManifestShape(completeManifest);
+  if (
+    templateIds !== undefined &&
+    (!Array.isArray(templateIds) ||
+      !templateIds.length ||
+      new Set(templateIds).size !== templateIds.length ||
+      templateIds.some(
+        (id) => typeof id !== 'string' || !completeManifest.examples.some((entry) => entry.templateId === id),
+      ))
+  ) {
+    throw new Error('Gallery verification scope must name distinct existing examples and cannot be empty.');
+  }
+  const manifest =
+    templateIds === undefined
+      ? completeManifest
+      : {
+          ...completeManifest,
+          examples: completeManifest.examples.filter((entry) => templateIds.includes(entry.templateId)),
+        };
   const decodedHashCompatibilityMatches = [];
   const scope = galleryVerificationScope(root);
   const unavailable = new Set(scope.withheld.map((asset) => asset.path));
@@ -2543,6 +2647,14 @@ export async function verifyGallery(
           : []
         ).map((error) => `${entry.templateId} technical media gate: ${error}`),
       );
+      const sourceTiming = galleryExpectedOutput(template).sourceTiming;
+      if (
+        sourceTiming &&
+        (template.mode !== 'video_to_video' ||
+          (entry.beforeSourceMediaHash ?? entry.beforeMediaHash) !== sourceTiming.sourceMediaHash)
+      ) {
+        errors.push(`${entry.templateId} short-source timing requires its exact published source input`);
+      }
       if (requiresBeforeMedia(template) && (!entry.beforePath || !entry.afterPath || !entry.beforeMediaHash)) {
         errors.push(
           `${entry.templateId} comparison publication requires genuine beforePath, afterPath and beforeMediaHash`,
@@ -2698,6 +2810,8 @@ export async function verifyGallery(
           ...(entry.audiovisualMediaHash ? { audiovisualMediaHash: entry.audiovisualMediaHash } : {}),
         },
         requiredReviewStatus,
+        galleryExpectedOutput(template).sourceTiming,
+        qualityReviewContractForTemplate(template),
       );
       errors.push(...reviewErrors.map((error) => `${entry.templateId} ${error}`));
     } catch (error) {
@@ -2716,6 +2830,14 @@ export async function verifyGallery(
     verificationScope:
       scope.source.mode === 'huggingface' ? 'pinned-remote-assets-materialized-locally' : 'complete-local',
     verifiedExamples: errors.length === 0 ? availableExamples : 0,
+    ...(templateIds === undefined
+      ? {}
+      : {
+          explicitlyScoped: true,
+          excludedExamples: completeManifest.examples
+            .filter((entry) => !templateIds.includes(entry.templateId))
+            .map((entry) => entry.templateId),
+        }),
     withheldExamples,
     withheldAssets: scope.withheld,
     decodedHashCompatibilityMatches,

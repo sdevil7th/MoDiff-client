@@ -413,6 +413,9 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,383}$/u;
 // port/control ids still use ID; graph-field bindings must preserve the exact
 // backend field key instead of renaming it.
 const FIELD_ID = /^[A-Za-z_][A-Za-z0-9_.:/-]{0,383}$/u;
+// Native spawned fields keep their one opaque item suffix. Public identities
+// and workflow selectors remain under their existing stricter grammar.
+const PARAM_FIELD_ID = /^[A-Za-z_][A-Za-z0-9_.:/-]*(?:>>>[A-Za-z0-9_-]+)?$/u;
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
 const HASH = /^[A-Za-z0-9][A-Za-z0-9_.:-]{1,511}$/u;
@@ -767,9 +770,9 @@ function graphEdgeAt(value: unknown, label: string): BlockGraphEdgeV2 {
   keysAt(edge, label, ['edgeId', 'sourceNodeId', 'sourcePortId', 'targetNodeId', 'targetPortId']);
   textAt(edge.edgeId, `${label}.edgeId`, ID, 384);
   textAt(edge.sourceNodeId, `${label}.sourceNodeId`, ID, 384);
-  textAt(edge.sourcePortId, `${label}.sourcePortId`, ID, 384);
+  textAt(edge.sourcePortId, `${label}.sourcePortId`, ID.test(String(edge.sourcePortId)) ? ID : PARAM_FIELD_ID, 384);
   textAt(edge.targetNodeId, `${label}.targetNodeId`, ID, 384);
-  textAt(edge.targetPortId, `${label}.targetPortId`, ID, 384);
+  textAt(edge.targetPortId, `${label}.targetPortId`, ID.test(String(edge.targetPortId)) ? ID : PARAM_FIELD_ID, 384);
   return edge as BlockGraphEdgeV2;
 }
 
@@ -851,7 +854,7 @@ function portAt(value: unknown, label: string, graph: BlockGraphV2, direction: '
   const nodeId = textAt(binding.nodeId, `${label}.binding.nodeId`, ID, 384);
   const nodeIds = new Set(graph.nodes.map(({ nodeId: graphNodeId }) => graphNodeId));
   if (!nodeIds.has(nodeId)) invalid(`${label}.binding`, `references unknown node ${nodeId}.`);
-  const fieldOrPortId = textAt(binding.fieldOrPortId, `${label}.binding.fieldOrPortId`, FIELD_ID, 384);
+  const fieldOrPortId = textAt(binding.fieldOrPortId, `${label}.binding.fieldOrPortId`, PARAM_FIELD_ID, 384);
   if (port.mirrorBindings !== undefined) {
     if (direction !== 'input') invalid(`${label}.mirrorBindings`, 'is supported only for public inputs.');
     if (!Array.isArray(port.mirrorBindings) || port.mirrorBindings.length === 0)
@@ -863,7 +866,7 @@ function portAt(value: unknown, label: string, graph: BlockGraphV2, direction: '
       const mirror = objectAt(candidate, mirrorLabel);
       keysAt(mirror, mirrorLabel, ['nodeId', 'fieldOrPortId']);
       const mirrorNodeId = textAt(mirror.nodeId, `${mirrorLabel}.nodeId`, ID, 384);
-      const mirrorFieldId = textAt(mirror.fieldOrPortId, `${mirrorLabel}.fieldOrPortId`, FIELD_ID, 384);
+      const mirrorFieldId = textAt(mirror.fieldOrPortId, `${mirrorLabel}.fieldOrPortId`, PARAM_FIELD_ID, 384);
       const key = `${mirrorNodeId}\0${mirrorFieldId}`;
       if (seen.has(key))
         invalid(`${label}.mirrorBindings`, 'must not duplicate the primary or another mirror binding.');
@@ -954,7 +957,7 @@ function controlAt(value: unknown, label: string, graph: BlockGraphV2): BlockCon
   const nodeId = textAt(binding.nodeId, `${label}.binding.nodeId`, ID, 384);
   const nodeIds = new Set(graph.nodes.map(({ nodeId: graphNodeId }) => graphNodeId));
   if (!nodeIds.has(nodeId)) invalid(`${label}.binding`, `references unknown node ${nodeId}.`);
-  const fieldId = textAt(binding.fieldId, `${label}.binding.fieldId`, FIELD_ID, 384);
+  const fieldId = textAt(binding.fieldId, `${label}.binding.fieldId`, PARAM_FIELD_ID, 384);
   if (control.mirrorBindings !== undefined) {
     if (!Array.isArray(control.mirrorBindings) || control.mirrorBindings.length === 0)
       invalid(`${label}.mirrorBindings`, 'must be a non-empty array when present.');
@@ -966,7 +969,7 @@ function controlAt(value: unknown, label: string, graph: BlockGraphV2): BlockCon
       const mirror = objectAt(candidate, mirrorLabel);
       keysAt(mirror, mirrorLabel, ['nodeId', 'fieldId']);
       const mirrorNodeId = textAt(mirror.nodeId, `${mirrorLabel}.nodeId`, ID, 384);
-      const mirrorFieldId = textAt(mirror.fieldId, `${mirrorLabel}.fieldId`, FIELD_ID, 384);
+      const mirrorFieldId = textAt(mirror.fieldId, `${mirrorLabel}.fieldId`, PARAM_FIELD_ID, 384);
       const key = `${mirrorNodeId}\0${mirrorFieldId}`;
       if (seen.has(key))
         invalid(`${label}.mirrorBindings`, 'must not duplicate the primary or another mirror binding.');
@@ -1161,7 +1164,7 @@ function previewBindingAt(value: unknown, label: string, graph: BlockGraphV2): B
   keysAt(preview, label, ['nodeId', 'outputPortId', 'mediaType'], ['primary']);
   const nodeId = textAt(preview.nodeId, `${label}.nodeId`, ID, 384);
   if (!graph.nodes.some((node) => node.nodeId === nodeId)) invalid(label, `references unknown node ${nodeId}.`);
-  textAt(preview.outputPortId, `${label}.outputPortId`, FIELD_ID, 384);
+  textAt(preview.outputPortId, `${label}.outputPortId`, PARAM_FIELD_ID, 384);
   if (!['image', 'video', 'audio', 'text', 'file'].includes(String(preview.mediaType)))
     invalid(`${label}.mediaType`, 'is unsupported.');
   if (preview.primary !== undefined) booleanAt(preview.primary, `${label}.primary`);

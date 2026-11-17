@@ -207,6 +207,8 @@ export type NodeParams = {
   isConnected?: boolean;
   spawn?: boolean;
   options?: NodeParamOptions;
+  /** Current registry only: host devices may change choices; other enums keep authored membership. */
+  runtimeOptions?: 'availability' | 'choices';
   optionsSource?: Record<string, unknown>;
   min?: number;
   max?: number;

@@ -34,12 +34,10 @@ export default function NumberField(props: FieldProps) {
   const inputId = props.inputId ?? `${props.nodeId}-${props.fieldKey}`;
 
   const formatValue = useCallback(
-    (value: number | string, useStepPrecision = !isFloat) => {
+    (value: number | string, useStepPrecision = !isFloat, clamp = true) => {
       const newValue = Number(value);
-      const boundedValue = Math.min(
-        maxValue,
-        Math.max(minValue, Number.isFinite(newValue) ? newValue : numericDefault),
-      );
+      const resolved = Number.isFinite(newValue) ? newValue : numericDefault;
+      const boundedValue = clamp ? Math.min(maxValue, Math.max(minValue, resolved)) : resolved;
       return decimals <= 100 && (useStepPrecision || getDecimalPlaces(boundedValue) <= decimals)
         ? boundedValue.toFixed(decimals)
         : String(boundedValue);
@@ -48,7 +46,10 @@ export default function NumberField(props: FieldProps) {
   );
   const committedValue = formatValue(
     typeof fieldValue === 'number' || typeof fieldValue === 'string' ? fieldValue : numericDefault,
+    !isFloat,
+    false,
   );
+  const outsideBounds = Number(committedValue) < minValue || Number(committedValue) > maxValue;
   const [draftValue, setDraftValue] = useState(committedValue);
 
   useEffect(() => {
@@ -61,9 +62,11 @@ export default function NumberField(props: FieldProps) {
     (value: number | string) => {
       const nextValue = formatValue(value);
       setDraftValue(nextValue);
-      updateStore(fieldKey, Number(nextValue));
+      if (Number(nextValue) !== Number(fieldValue ?? numericDefault)) {
+        updateStore(fieldKey, Number(nextValue));
+      }
     },
-    [fieldKey, formatValue, updateStore],
+    [fieldKey, fieldValue, formatValue, numericDefault, updateStore],
   );
 
   const handleChevronClick = useCallback(
@@ -182,6 +185,7 @@ export default function NumberField(props: FieldProps) {
 
       if (e.key === 'Enter' || e.key === 'Escape') {
         if (e.key === 'Enter') {
+          skipNextCommitRef.current = true;
           commitValue(input.value);
         } else {
           skipNextCommitRef.current = true;
@@ -206,8 +210,10 @@ export default function NumberField(props: FieldProps) {
       return;
     }
 
-    commitValue(inputRef.current.value);
-  }, [commitValue]);
+    // A model switch can make a retained value invalid. Merely visiting its
+    // editor must neither hide that value nor turn it into an authored repair.
+    if (inputRef.current.value !== committedValue) commitValue(inputRef.current.value);
+  }, [commitValue, committedValue]);
 
   const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button')) return;
@@ -260,6 +266,8 @@ export default function NumberField(props: FieldProps) {
             ref={inputRef}
             id={inputId}
             value={draftValue}
+            aria-invalid={outsideBounds || undefined}
+            title={outsideBounds ? `Current value must be between ${minValue} and ${maxValue}.` : undefined}
             onChange={(event) => setDraftValue(event.target.value)}
             autoComplete="off"
             className="nodrag min-w-0 flex-1 cursor-default bg-transparent p-0 text-right text-sm text-modiff-text outline-none disabled:cursor-not-allowed"

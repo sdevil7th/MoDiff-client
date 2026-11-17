@@ -1,6 +1,9 @@
 import { attachPromptEnhancementParents } from './promptEnhancementAuthoring';
 import { attachTemplateImageComposite } from './templateImageComposite';
 import { attachTemplateLyricVideo } from './templateLyricVideo';
+import { createTemplateVideoSequence } from './templateVideoSequence';
+import { createTemplateLyricStages } from './templateLyricStages';
+import type { TemplateSecondaryVideo } from './templateSecondaryStages';
 import { selectedAudioAdapterPolicy } from '../workflow/selectedAudioAdapterAuthority';
 import {
   validateModelSetupAdapterSelection,
@@ -20,7 +23,7 @@ import {
 import { operationOwnsModel } from '../workflow/operationContracts';
 import { acceptsOperationValue } from '../workflow/operationFieldValue';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
-import { groupNewOperationGraph } from '../workflow/visualOperationGroups';
+import { groupNewOperationGraph, groupVisualStages } from '../workflow/visualOperationGroups';
 import { CONTROLLED_WORKFLOW_NODE_KEYS } from './controlledWorkflowContracts';
 import {
   loraWorkflowFieldValues,
@@ -76,6 +79,7 @@ export function createTemplateOperationGraph(
   spec: StudioExecutionSpec,
   capability: StudioModelProfile,
   authority?: ModelSetupAdapterAuthority,
+  options: { group?: boolean; secondaryVideo?: TemplateSecondaryVideo } = {},
 ): OperationGraph {
   const selection = template.executionSelection;
   if (
@@ -88,6 +92,32 @@ export function createTemplateOperationGraph(
   ) {
     throw new Error('The template operation recipe does not match its backend execution contract.');
   }
+  if (template.workflowBlocks?.some((block) => ['video_sequence', 'quality_video_sequence'].includes(block)))
+    return createTemplateVideoSequence(template, form, registry, (single, values) =>
+      createTemplateOperationGraph(single, values, starter, registry, spec, capability, authority, { group: false }),
+    );
+  if (
+    template.workflowBlocks?.includes('lyric_video') &&
+    template.workflowBlockSettings?.lyricVideo?.recipeVersion === 'nine-scenes:v2'
+  )
+    return createTemplateLyricStages(
+      template,
+      form,
+      registry,
+      options.secondaryVideo,
+      (single, values) =>
+        createTemplateOperationGraph(single, values, starter, registry, spec, capability, authority, { group: false }),
+      (single, values, context) =>
+        createTemplateOperationGraph(
+          single,
+          values,
+          context.starter,
+          registry,
+          context.spec,
+          context.capability,
+          authority,
+        ),
+    );
   const graph = createOperationStarter(starter, { x: 80, y: 120 });
   const owners = graph.nodes.filter((node) => operationOwnsModel(operationAuthoring(node)?.operation));
   if (owners.length !== 1) throw new Error('The template needs exactly one declared model owner.');
@@ -418,6 +448,114 @@ export function createTemplateOperationGraph(
     graph.nodes.push(node);
     return node;
   };
+  let encodingPresentation: ((current: OperationGraph) => OperationGraph) | undefined;
+  const encodingInputs = template.workflowBlockSettings?.encodingInputs;
+  if (encodingInputs) {
+    const encoder = roles.get(encodingInputs.role);
+    const inputs = Object.entries(encodingInputs.values);
+    if (
+      !encoder ||
+      encoder.id === owner.id ||
+      inputs.length < 1 ||
+      inputs.length > 16 ||
+      ![
+        'text_encoder',
+        'image_encoder',
+        'reference_encoder',
+        'video_encoder',
+        'condition_encoder',
+        'before_encode',
+      ].includes(operationAuthoring(encoder)?.operation.nodeType ?? '')
+    )
+      throw new Error('Encoding presets require a declared encoder in this fresh workflow.');
+    const suppliers = new Map<string, CustomNodeType>();
+    for (const [field, values] of inputs) {
+      if (
+        !/^[a-z][a-z0-9_]{0,63}$/.test(field) ||
+        !Array.isArray(values) ||
+        values.length < 1 ||
+        values.length > 32 ||
+        values.some((value) => typeof value !== 'number' || !Number.isFinite(value))
+      )
+        throw new Error('Encoding presets require bounded arrays of finite numbers.');
+      const json = JSON.stringify(values);
+      let supplier = suppliers.get(json);
+      if (!supplier) {
+        supplier = utility('modules.Text.ProcessText', suppliers.size);
+        supplier.data.label = 'Encoding values';
+        set(supplier, ['pipeline_class'], 'BuiltinDataOperationV1');
+        set(supplier, ['operation'], 'data_conversion');
+        set(supplier, ['target_type'], 'json');
+        set(supplier, ['source'], json);
+        suppliers.set(json, supplier);
+      }
+      connect(supplier, ['output'], encoder, [field]);
+    }
+    const ids = [...suppliers.values()].map((node) => node.id);
+    encodingPresentation = (current) =>
+      groupVisualStages(current, [encoder.id, ...ids], 'inputs', undefined, {
+        implicitScalarControlNodeIds: ids,
+      });
+  }
+  if (selection.task === 'video_outpaint') {
+    const align = graph.nodes.find(
+      (node) => node.data.module === 'modules.VideoConditioning' && node.data.action === 'AlignMask',
+    );
+    const encoder = graph.nodes.find((node) => operationAuthoring(node)?.operation.nodeType === 'video_encoder');
+    const sampler = graph.nodes.find((node) => operationAuthoring(node)?.operation.nodeType === 'denoise');
+    const maskWire = graph.edges.find((edge) => edge.target === align?.id && edge.targetHandle === 'mask');
+    const sourceWire = graph.edges.find((edge) => edge.target === align?.id && edge.targetHandle === 'video');
+    const maskLoad = graph.nodes.find((node) => node.id === maskWire?.source);
+    if (
+      !align ||
+      !encoder ||
+      !sampler ||
+      !maskLoad ||
+      !sourceWire ||
+      maskLoad.data.module !== 'modules.Video' ||
+      maskLoad.data.action !== 'Load'
+    )
+      throw new Error('Video outpainting needs its resolved source and prepared boundary mask.');
+    const canvas = utility('modules.VideoConditioning.OutpaintCanvas', 0);
+    set(canvas, ['preparation'], 'prepared');
+    set(canvas, ['prepared_mask_file'], maskLoad.data.params.file!.value ?? maskLoad.data.params.file!.default);
+    for (const field of ['invert', 'threshold', 'grow_pixels'])
+      set(canvas, [field], align.data.params[field]!.value ?? align.data.params[field]!.default);
+    for (const [field, value] of [
+      ['left', form.outpaintLeft],
+      ['right', form.outpaintRight],
+      ['top', form.outpaintTop],
+      ['bottom', form.outpaintBottom],
+    ] as const)
+      set(canvas, [field], value);
+    set(canvas, ['fill_color'], form.outpaintFillColor);
+    graph.nodes = graph.nodes.filter((node) => node.id !== align.id && node.id !== maskLoad.id);
+    graph.edges = graph.edges
+      .filter((edge) => ![align.id, maskLoad.id].includes(edge.target) && edge.source !== maskLoad.id)
+      .map((edge) =>
+        edge.source === align.id
+          ? { ...edge, source: canvas.id, sourceHandle: 'mask' }
+          : edge.target === encoder.id && edge.targetHandle === 'video'
+            ? { ...edge, source: canvas.id, sourceHandle: 'canvas' }
+            : edge,
+      );
+    connect(
+      graph.nodes.find((node) => node.id === sourceWire.source)!,
+      [sourceWire.sourceHandle!],
+      canvas,
+      ['video'],
+    );
+    for (const [output, input] of [
+      ['width', 'width'],
+      ['height', 'height'],
+      ['frames', 'num_frames'],
+    ] as const)
+      if (sampler.data.params[input]) {
+        sampler.data.params[input]!.isInput = true;
+        connect(canvas, [output], sampler, [input]);
+      }
+  }
+  let compositePresentation: ((graph: OperationGraph) => OperationGraph) | undefined;
   for (const block of template.workflowBlocks ?? []) {
     if (block === 'lora') {
       const settings = template.workflowBlockSettings?.lora;
@@ -513,7 +651,7 @@ export function createTemplateOperationGraph(
         connect,
       });
     } else if (block === 'masked_composite') {
-      attachTemplateImageComposite({
+      compositePresentation = attachTemplateImageComposite({
         graph,
         form,
         settings: template.workflowBlockSettings?.maskedComposite,
@@ -593,5 +731,10 @@ export function createTemplateOperationGraph(
       );
     } else throw new Error(`The template does not declare support for ${block}.`);
   }
-  return groupNewOperationGraph(attachPromptEnhancementParents(graph, recipe));
+  const annotated = attachPromptEnhancementParents(graph, recipe);
+  if (options.group === false) return annotated;
+  const composed = compositePresentation ? compositePresentation(annotated) : annotated;
+  return groupNewOperationGraph(encodingPresentation ? encodingPresentation(composed) : composed, {
+    legacyStageOrder: true,
+  });
 }

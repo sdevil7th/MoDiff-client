@@ -1,3 +1,44 @@
+// Native legacy setup/caption field preservation, pure Block movement planning,
+// workflow-scoped preview history and approved MiniMax showcase curation measure
+// 507642/686129/349717 largest/startup/deferred gzip bytes, versus the preceding
+// 507641/686124/349257 checkpoint. Keep both startup caps and the independent
+// 64 KiB deferred chunk cap unchanged; add only the measured 460 deferred bytes,
+// retaining 103 bytes of deferred headroom. Same 96 JS assets/four startup paths,
+// dependency set, compiler and minifier. The pure reducer replaces the prior
+// browser-store dependency in self-contained Block creation; no second executor.
+// Final whole-task import parity and historical creator compatibility measure
+// 507641/686124/349257 largest/startup/deferred gzip. The existing measured
+// allowance below still passes, with 66/66/103 bytes of headroom; no extra cap
+// increase is needed. Dependencies, memberships and individual chunk cap stay.
+// Fresh Example stage adoption, exact legacy Generate boundaries, measured
+// layout and bounded input previews measure largest/startup/deferred gzip
+// 507459/685944/349238 versus the packaged 506948/685436/346612 baseline.
+// Add exactly 511/508/2626 bytes and retain 248/246/122 bytes of headroom.
+// There are 96 JS assets (four startup, 92 deferred): exampleWorkflow and
+// storyboardShotPresentation are lazy additions; operationScope is folded into
+// the authoring dependency graph. Dependencies and build/minifier rules are
+// unchanged. Keep the independent 65536-byte deferred chunk ceiling unchanged.
+// Optional strict native media-evidence persistence measures largest/startup/
+// deferred gzip 506948/685436/346612 versus 505922/684410/346546. Add exactly
+// 1026/1026/66 bytes, preserving 248/246/122 bytes of headroom. Only
+// studio-templates.js differs after import URL normalization; all 95 names,
+// four startup/91 deferred memberships, dependency/build rules and the separate
+// 65536-byte deferred chunk cap remain unchanged.
+// Accepted two-wheel Redux controls, generic encoding presets and the recovered
+// nine-image / ten-slot Moonflower defaults measure largest/startup/deferred gzip
+// 505922/684410/346546 versus 505304/683793/346215. Add only the measured
+// 618/617/331 bytes, retaining 248/246/122 bytes of headroom. After versioned
+// import-URL normalization only studio-templates and operation-authoring-tools
+// differ. All 95 JS names, four startup/91 deferred memberships, dependencies,
+// loading/minifier rules and the independent 65536-byte deferred chunk cap stay
+// unchanged. No validator or runtime limit is relaxed.
+// The accepted Kontext preservation prompt, exact input metadata and new
+// immutable Gallery descriptor measure largest/startup gzip 501249/679735
+// versus 500718/679207. Only studio-templates.js differs after import-URL
+// normalization. Add exactly 531/528 bytes, preserving 9/13-byte headroom.
+// All 94 JS names, four startup/90 deferred memberships, dependencies, loading
+// and minifier rules remain unchanged; deferred gzip decreases by 197 bytes.
+// Both deferred ceilings, including the independent 64 KiB chunk cap, stay fixed.
 // Node-local audio dispatch history plus the approved retained Schnell asset
 // measure largest/startup/deferred gzip 498243/676733/336133 over the closed
 // 38-template build's 498146/676633/336052. Add only the measured 97/100/81
@@ -414,7 +455,75 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 1664/1664 startup bytes. One labeled editorial PNG brings the bundle to 120
 // assets; deferred limits, four startup/90 deferred memberships, dependencies,
 // loading boundaries and the 64 KiB cap stay fixed.
+// Final direct-control and compact-tray corrections measure
+// 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
+// migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Two exact Hunyuan 720p usage notices: 511385 -> 511521 (+136).
+  // Retain 12-byte headroom, the same startup paths and both deferred limits.
+  136 +
+  // Native joint-video receipt parsing and shared task-field aliases measure
+  // 511334 -> 511385 gzip bytes (+51); retain the existing 12-byte headroom.
+  // Startup membership, dependencies, loading boundaries and deferred caps stay.
+  51 +
+  // Native user-Block leaf termination and cycle-safe alias resolution:
+  // 511183 -> 511276 gzip (+93). Keep 70-byte headroom, the same 96 JS
+  // names/four startup paths, dependencies and both deferred ceilings.
+  93 +
+  // Narrow acknowledged-document hydration comparison reuses the existing
+  // restore comparator: 510994 -> 511183 gzip bytes (+189). Preserve 70 bytes
+  // of headroom, all 96 JS names/four startup paths and both deferred caps.
+  189 +
+  // Connected nested guidance, shared ordered storyboards and complete preview
+  // framing: 510619 -> 510994 gzip bytes (+375). Preserve 70 bytes of
+  // headroom, all 96 JS assets/four startup paths and both deferred caps.
+  375 +
+  // Registry-owned inactive auxiliary references and accessible hidden-caption
+  // controls: v18 -> v23 510482 -> 510625 gzip bytes (+143). Retain 64 bytes
+  // of headroom, all 96 JS names/four startup paths and both deferred caps.
+  143 +
+  // Scoped native signal refresh and first-frame measurement readiness:
+  // v16 -> v18 510207 -> 510482 gzip bytes (+275). Preserve the existing
+  // 64-byte headroom, memberships, dependencies and both deferred caps.
+  275 +
+  // Dynamic model-contract controls, honest retained-number display and native
+  // metadata authoring/restore semantics: v11 -> v15 509483 -> 510202 bytes. Add
+  // the measured 719 bytes, retaining 69 bytes of headroom. Same 96 assets, four
+  // startup/92 deferred memberships, dependencies and build/minifier rules.
+  // Deferred gzip decreases to 349724; both deferred caps remain unchanged.
+  719 +
+  // Shared numeric Undo, current-host option bindings and native callbacks for
+  // collapsed ordinary stages: measured v8 -> v11 507638 -> 509483 gzip bytes.
+  // Add only 1845 bytes, preserving 69 bytes of prior headroom. All 96 JS assets,
+  // four startup/92 deferred memberships, dependencies and loading/minifier
+  // rules remain fixed. Deferred total is 349784, within its existing cap;
+  // neither deferred ceiling is raised.
+  1845 +
+  511 +
+  1026 +
+  618 +
+  // Native profile-field parsing and prepared-seed preservation: 505518 ->
+  // 505546 gzip bytes. Preserve six-byte headroom, memberships, dependencies
+  // and loading/minifier rules; neither deferred ceiling changes.
+  28 +
+  // Explicit historical selection metadata and lookup: 504983 -> 505518 gzip
+  // bytes. Preserve six-byte headroom; memberships and dependencies unchanged.
+  535 +
+  // Accepted recipe metadata and strict short-source Gallery timing add exactly
+  // 424 gzip bytes (504559 -> 504983), retaining six bytes of headroom. After
+  // cache-URL normalization only studio-templates.js changes; all 95 JS assets,
+  // four startup/91 deferred memberships and loading/dependency rules stay fixed.
+  // Deferred gzip decreases by 72 bytes; both deferred ceilings stay unchanged.
+  424 +
+  // Exact backend-selected bundle requiredness reuses the Block inspector.
+  // Measured 504492 -> 504557 bytes; retain the prior eight-byte headroom.
+  // The same four startup assets, dependencies and loading policy remain.
+  65 +
+  // Measured visual-stage migration: exact old/new 501249/504491 bytes.
+  // Nine-scene recipe data, shared nested fields and scoped value bindings;
+  // retain the prior nine-byte headroom, dependencies and loading policy.
+  3242 +
+  531 +
   1664 +
   156 +
   297 +
@@ -573,6 +682,51 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // Same measured build: 689872 -> 690009 (+137), retaining 11-byte headroom.
+  // Deferred gzip decreases to 349882; no dependency or loading-boundary change.
+  137 +
+  // Same measured build: 689820 -> 689872 (+52), retaining 11-byte headroom.
+  // Four startup paths are unchanged; deferred gzip is 349947, below its cap.
+  52 +
+  // Same build: 689669 -> 689763 (+94), preserving 68-byte headroom.
+  // Deferred total is 349628 and retains its existing aggregate ceiling.
+  94 +
+  // Same build: 689480 -> 689669 startup gzip (+189), retaining 68 bytes of
+  // headroom. Deferred gzip is 349598, within its unchanged aggregate cap.
+  189 +
+  // Same measured build: 689104 -> 689480 startup gzip (+376), keeping
+  // 68 bytes of headroom. Deferred gzip decreases to 349544 bytes; its
+  // aggregate and independent 64 KiB chunk ceilings remain unchanged.
+  376 +
+  // Same v18 -> v23 build: 688967 -> 689112 (+145), retaining 60 bytes
+  // of headroom. Deferred gzip is 349917, below its unchanged allowance.
+  145 +
+  // Same frozen v16 -> v18 build: 688694 -> 688967 (+273), retaining
+  // 60-byte headroom. Deferred total decreases to 349744 gzip bytes.
+  273 +
+  // The same v11 -> v15 changes measure 687972 -> 688688 bytes; retain 66
+  // bytes of headroom with the measured 716-byte increase.
+  716 +
+  // Same source-bound controls/callback correction: 686124 -> 687972 (+1848).
+  // Preserve the prior 66-byte headroom and independent deferred limits.
+  1848 +
+  508 +
+  1026 +
+  617 +
+  // Same frozen build: aggregate startup 684004 -> 684033 gzip bytes.
+  // Add only the measured 29 bytes and preserve six bytes of headroom.
+  29 +
+  // The same compact history index: 683468 -> 684004 gzip bytes. Preserve
+  // six-byte headroom and both deferred ceilings (deferred decreases by 10).
+  536 +
+  // Same measured build: 683047 -> 683468. Keep six bytes of headroom.
+  421 +
+  // Same readiness correction: 682980 -> 683041 bytes. Retain twelve bytes
+  // of headroom and both deferred limits; no startup membership change.
+  61 +
+  // Same frozen build: 679735 -> 682979 across the same four startup assets.
+  3244 +
+  528 +
   1664 +
   155 +
   296 +
@@ -816,6 +970,19 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  // Planning-only template creation guards add 181 gzip bytes versus tested v15
+  // (349724 -> 349905). Keep startup caps and the independent 64 KiB chunk cap;
+  // preserve the prior 96-byte deferred headroom. No dependencies/build-rule changes.
+  181 +
+  460 +
+  2626 +
+  66 +
+  331 +
+  // Actual stage/sequence/composite authoring and secondary model resolution:
+  // 338225 -> 345885 gzip bytes. One new templateSecondaryStages lazy chunk
+  // makes 91 deferred assets; retain prior headroom and the independent 64 KiB
+  // per-chunk cap. No runtime dependency, minifier or accelerator change.
+  7660 +
   960 +
   263 +
   1258 +

@@ -51,6 +51,18 @@ The implementation and proof boundaries are described in the paired backend's
 authoring behavior, not successful video generation. A testable release needs
 native task completion and playback on the deployed source pair.
 
+For a separately encoded Generate stage, select the source video, mask and
+references at its input stages. Generate requires their connected encoded result
+instead of asking for those files again. Current backend declarations govern
+readiness after reopening a saved workflow; the saved fields and values remain
+unchanged. A disconnected or disabled encoder continues to block Run.
+
+Inside Shot groups, input-stage file controls are aliases of the actual loader.
+Run validates the selected files on that loader and the resolved Block boundary;
+an empty structural control alias does not add another file requirement. This
+also applies to nested image, audio and video input stages. Empty or disabled
+real suppliers still leave their consumers blocked.
+
 New successful stage runs capture the actual video task, encoded prompt and final
 frame format in output history. The optional `graphTasksVersion: 2` distinguishes
 the added video-owner vocabulary from older receipts. Existing receipts and saved

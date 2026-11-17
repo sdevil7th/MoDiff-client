@@ -35,7 +35,7 @@
         "creationMethod": "base_installation",
         "name": "model_runtime",
         "reuseKey": ["model_runtime"],
-        "type": "modiff.base-model-runtime@sha256:cc7a00bd6942e5d4e95f6cc8a80efab42b1e26c9c4df9862568cd7b6af15f32c"
+        "type": "modiff.base-model-runtime@sha256:111b6c7b46b8e674c8f5abf2c24b90494ab16c511064b9c3286704de5ba87d95"
       },
       {
         "creationMethod": "from_pretrained",
@@ -44,7 +44,7 @@
         "type": "AutoModelForCTC"
       }
     ],
-    "contentHash": "sha256:d57f7ecdb741ec9d41a4d6bbd0c9769c99cd69495770616f0fd2e91d60aa6bfe",
+    "contentHash": "sha256:7e8d62f390f900af7a6a4550a197615bd5e57d50c9a0add57ab9131ea4f0ddce",
     "definitionKind": "studio_execution_composite",
     "description": "Cluster Node containing an exact reviewed ASR loader, local audio input, bounded transcription action, and preview.",
     "executionAdmissions": [
@@ -188,7 +188,7 @@
       }
     ],
     "integrationStatus": "reviewed_transformers_contract",
-    "label": "Wav2Vec2 Base 960h \u2014 Speech to Text",
+    "label": "Wav2Vec2 Base 960h — Speech to Text",
     "libraryRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
     "mutable": false,
     "outputs": [
@@ -253,13 +253,13 @@
   },
   "compiledEntry": {
     "catalogDefinitionId": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
-    "catalogDefinitionContentHash": "sha256:d57f7ecdb741ec9d41a4d6bbd0c9769c99cd69495770616f0fd2e91d60aa6bfe",
+    "catalogDefinitionContentHash": "sha256:7e8d62f390f900af7a6a4550a197615bd5e57d50c9a0add57ab9131ea4f0ddce",
     "admissionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
-    "compiledDefinitionCanonicalSha256": "sha256:dcc4b55efd51fba2716eb39a1cedfdf5eb8d2be3a35a197c30c2cf903bdfe16f",
+    "compiledDefinitionCanonicalSha256": "sha256:6bebaf807e15ca3965ffeb6a8a0ceaeb89769dec1cc434cc4a01f283a73de68c",
     "definition": {
       "schemaVersion": 2,
       "definitionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
-      "displayName": "Wav2Vec2 Base 960h \u2014 Speech to Text",
+      "displayName": "Wav2Vec2 Base 960h — Speech to Text",
       "description": "Cluster Node containing an exact reviewed ASR loader, local audio input, bounded transcription action, and preview.",
       "source": {
         "kind": "transformers_catalog",
@@ -271,7 +271,7 @@
         "blocksClass": "AutoModelForCTC",
         "workflow": "speech_to_text",
         "manifestDefinitionId": "transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
-        "manifestContentHash": "sha256:d57f7ecdb741ec9d41a4d6bbd0c9769c99cd69495770616f0fd2e91d60aa6bfe",
+        "manifestContentHash": "sha256:7e8d62f390f900af7a6a4550a197615bd5e57d50c9a0add57ab9131ea4f0ddce",
         "executionAdmissionId": "transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
         "repository": "facebook/wav2vec2-base-960h",
         "repositoryRevision": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
@@ -777,7 +777,7 @@
         "kind": "registered",
         "definitionMutable": false
       },
-      "contentHash": "block-definition-v2-5a91bee4"
+      "contentHash": "block-definition-v2-08accc6d"
     },
     "values": {
       "dtype": "float32",

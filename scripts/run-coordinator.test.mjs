@@ -67,6 +67,13 @@ before(async () => {
   runPreparationModule = await server.ssrLoadModule('/src/studio/runPreparation.ts');
   snackbarModule = await server.ssrLoadModule('/src/ui/snackbar.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
+  const connections = await server.ssrLoadModule('/src/stores/flowConnectionMutations.ts');
+  connections.configureStageFieldRuntime({
+    capture: studioStoreModule.captureWorkflowOperationContext,
+    isCurrent: studioStoreModule.workflowOperationContextIsCurrent,
+    field: (module, action, key) =>
+      nodesStoreModule.useNodesStore.getState().nodesRegistry[`${module}.${action}`]?.params[key],
+  });
   taskStoreModule = await server.ssrLoadModule('/src/stores/useTaskStore.ts');
   websocketModule = await server.ssrLoadModule('/src/stores/websocketMessageHandler.ts');
   websocketStoreModule = await server.ssrLoadModule('/src/stores/useWebsocketStore.ts');
@@ -652,6 +659,36 @@ test('Studio submission sends the same correlation identity that the store captu
     studioStoreModule.useStudioStore.getState().runContextsByTaskId['task-correlated'].clientRunId,
     result.context.clientRunId,
   );
+});
+
+test('prepared submission does not randomize an unused current export or change its captured canvas seed', async () => {
+  const flow = flowStoreModule.useFlowStore;
+  const nodes = structuredClone(flow.getState().nodes);
+  nodes[0].data.params.seed = { type: 'int', display: 'random', value: { value: 42, isRandom: true } };
+  flow.setState({ nodes });
+  const prepared = flow.getState().exportGraph('session-1', undefined, { randomizeSeeds: false });
+  const before = structuredClone(flow.getState().nodes[0].data.params.seed);
+  let submitted;
+  globalThis.fetch = async (_url, init) => {
+    submitted = JSON.parse(init.body);
+    return jsonResponse({ task_id: 'prepared-seed', sid: 'session-1', message: 'queued' });
+  };
+  const random = Math.random;
+  Math.random = () => 0.25;
+  try {
+    const result = await coordinatorModule.coordinateGraphRun({ sid: 'session-1', preparedGraph: prepared });
+    assert.deepEqual(
+      submitted.nodes.preview.params.seed,
+      JSON.parse(JSON.stringify(prepared.nodes.preview.params.seed)),
+    );
+    assert.deepEqual(flow.getState().nodes[0].data.params.seed, before);
+    assert.deepEqual(result.context.graph.nodes[0].data.params.seed, before);
+    assert.equal(result.context.apiGraph.nodes.preview.params.seed.value, 42);
+    await coordinatorModule.coordinateGraphRun({ sid: 'session-1' });
+    assert.equal(submitted.nodes.preview.params.seed.value, 1073741824, 'Ordinary Run still resolves a fresh seed.');
+  } finally {
+    Math.random = random;
+  }
 });
 
 test('Expert Studio submission retains its executed resource recipe while imported graphs stay generic', async () => {
@@ -4983,4 +5020,511 @@ test('collapsed legacy inspector controls dispatch the same internal callback as
   assert.equal(calls[0].action, 'Processor');
   assert.equal(calls[0].fieldKey, 'model');
   assert.deepEqual(calls[0].values, { model: 'new', strength: 0.5 });
+});
+
+test('ordinary stage metadata exposes newly supported controls without rewriting their values or reusable definition', async () => {
+  const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const graph = groups.groupVisualStages(
+    {
+      nodes: [
+        {
+          id: 'generate',
+          type: 'custom',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'custom',
+            module: 'modules.Test',
+            action: 'Generate',
+            operationAuthoring: {
+              schemaVersion: 1,
+              defaults: {},
+              retained: [],
+              authored: [],
+              operation: {
+                pipelineClass: 'ExamplePipeline',
+                task: 'text_to_image',
+                operationId: 'diffusion.generate',
+                nodeKey: 'modules.Test.Generate',
+                nodeType: 'custom',
+                blockName: 'Generate',
+                decomposition: 'block',
+                support: 'declared',
+                workflowId: null,
+                binding: { pipelineClass: 'ExamplePipeline', values: {} },
+                ports: [],
+              },
+            },
+            params: {
+              prompt: { type: 'string', value: 'Keep my prompt' },
+              internal_backend_value: { type: 'int', value: 1, hidden: true },
+              max_sequence_length: {
+                type: 'int',
+                label: 'Max Sequence Length',
+                value: 512,
+                default: 256,
+                hidden: true,
+              },
+            },
+          },
+        },
+      ],
+      edges: [],
+    },
+    ['generate'],
+    'generate',
+  );
+  flow.getState().replaceGraph(graph);
+  const root = flow.getState().nodes.find((n) => n.data.blockInstanceV2);
+  const instance = root.data.blockInstanceV2;
+  const member = instance.effectiveGraph.nodes[0];
+  const runtimeId = blockRuntimeModule.blockProjectionNodeIdV2(root.id, member.nodeId);
+  const definition = structuredClone(instance.definitionSnapshot);
+  const control = () =>
+    flow
+      .getState()
+      .nodes.find((n) => n.id === root.id)
+      .data.blockInstanceV2.effectiveInterface.controls.find((c) => c.binding.fieldId === 'max_sequence_length');
+  const publicParam = () =>
+    blockRuntimeModule.blockControlParamsV2(flow.getState().nodes.find((n) => n.id === root.id).data.blockInstanceV2)[
+      control().controlId
+    ];
+  assert.equal(control(), undefined);
+  flow.getState().withHistory('Change model controls', () => {
+    flow.getState().setParam(runtimeId, 'max_sequence_length', false, 'hidden');
+    flow.getState().setParam(runtimeId, 'max_sequence_length', 256, 'max');
+  });
+  assert.ok(control(), 'a newly unhidden native field must be editable in the collapsed stage');
+  assert.equal(
+    flow.getState().getParam(runtimeId, 'max_sequence_length', 'value'),
+    512,
+    'preserve authored values; do not silently clamp them',
+  );
+  assert.equal(publicParam().max, 256);
+  assert.deepEqual(
+    flow.getState().nodes.find((n) => n.id === root.id).data.blockInstanceV2.definitionSnapshot,
+    definition,
+  );
+  const durable = flow.getState().toObject();
+  flow.getState().undo();
+  assert.equal(control(), undefined);
+  flow.getState().redo();
+  assert.ok(control());
+  flow.getState().replaceGraph(JSON.parse(JSON.stringify(durable)));
+  assert.ok(control());
+  const settled = flow.getState().nodes;
+  flow.getState().setParam(runtimeId, 'max_sequence_length', false, 'hidden');
+  assert.equal(flow.getState().nodes, settled, 'replayed metadata must remain a no-op');
+  flow.getState().setParam(runtimeId, 'max_sequence_length', true, 'hidden');
+  assert.ok(control(), 'retain the control identity and its authored value for a later compatible model');
+  assert.equal(publicParam().hidden, true);
+  flow.getState().setParam(runtimeId, 'max_sequence_length', false, 'hidden');
+  assert.equal(publicParam().value, 512);
+  const current = flow.getState().nodes.find((n) => n.id === root.id).data.blockInstanceV2;
+  const removed = blockRuntimeModule.replaceBlockEffectiveInterfaceV2(
+    current,
+    {
+      boundary: current.effectiveInterface.boundary,
+      controls: current.effectiveInterface.controls.filter((c) => c.binding.fieldId !== 'max_sequence_length'),
+    },
+    { rememberRemovedControls: true },
+  );
+  flow.getState().replaceGraph({ nodes: [blockRuntimeModule.createBlockRootNodeV2(removed)], edges: [] });
+  flow.getState().setParam(runtimeId, 'max_sequence_length', false, 'hidden');
+  assert.equal(control(), undefined, 'backend metadata must respect a deliberately removed editor');
+  flow.getState().setParam(runtimeId, 'internal_backend_value', 2);
+  const native = flow.getState().nodes.find((n) => n.id === root.id).data.blockInstanceV2.effectiveGraph.nodes[0];
+  const hints = await server.ssrLoadModule('/src/workflow/operationAuthoringHint.ts');
+  assert.ok(
+    hints.operationAuthoring({ id: native.nodeId, type: 'custom', position: { x: 0, y: 0 }, data: native.data }),
+  );
+  assert.equal(native.data.params.internal_backend_value.value, 2);
+  assert.deepEqual(
+    native.data.operationAuthoring.authored,
+    [],
+    'backend values must not masquerade as user-authored controls',
+  );
+});
+
+test('ordinary visual stages dispatch native callbacks and retain hidden metadata through Undo and export', async () => {
+  const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const native = {
+    id: 'loader',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'Loader',
+      params: {
+        model: { type: 'string', value: 'old', onChange: 'inspect' },
+        revision: { type: 'string', value: 'old-pin' },
+        output: { type: 'pipeline', display: 'output', signal: { direction: 'output', value: 'old' } },
+      },
+    },
+  };
+  const grouped = groups.groupVisualStages({ nodes: [native], edges: [] }, ['loader'], 'setup');
+  const root = grouped.nodes.find((node) => node.data.blockInstanceV2);
+  const instance = root.data.blockInstanceV2;
+  const control = instance.effectiveInterface.controls.find((entry) => entry.binding.fieldId === 'model');
+  const runtimeId = blockRuntimeModule.blockProjectionNodeIdV2(root.id, control.binding.nodeId);
+  flow.getState().replaceGraph(grouped);
+  const initial = flow.getState().toObject();
+  const definition = structuredClone(instance.definitionSnapshot);
+  flow.getState().setBlockInstanceValueV2(root.id, control.controlId, 'new');
+  const calls = [];
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    return jsonResponse({ error: false });
+  };
+  const props = {
+    nodeId: root.id,
+    fieldKey: control.controlId,
+    module: root.data.module,
+    action: root.data.action,
+    onChange: 'inspect',
+    updateStore: () => assert.fail('native callback must not write facade metadata'),
+  };
+  assert.equal(fieldActionModule.fieldActionSource(props)?.node.id, runtimeId);
+  await fieldActionModule.default(props, 'new');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].node, runtimeId);
+  assert.equal(calls[0].module, 'modules.Test');
+  assert.equal(calls[0].action, 'Loader');
+  assert.deepEqual(calls[0].values, { model: 'new', revision: 'old-pin' });
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  const owned = {
+    node: runtimeId,
+    sid: 'session-1',
+    workflow_tab_id: 'workflow-origin',
+    workflow_canvas_epoch: 0,
+    workflow_form_epoch: 0,
+  };
+  websocketModule.handleWebsocketMessage(
+    { ...owned, type: 'set_field_value', fields: { revision: 'new-pin' }, workflow_canvas_epoch: 99 },
+    context,
+  );
+  assert.equal(flow.getState().getParam(runtimeId, 'revision', 'value'), 'old-pin');
+  websocketModule.handleWebsocketMessage(
+    { ...owned, type: 'set_field_value', fields: { revision: 'new-pin' } },
+    context,
+  );
+  websocketModule.handleWebsocketMessage(
+    {
+      ...owned,
+      type: 'set_field_params',
+      field: 'output',
+      params: { signal: { direction: 'output', value: 'new-contract' } },
+    },
+    context,
+  );
+  assert.equal(flow.getState().getParam(runtimeId, 'revision', 'value'), 'new-pin');
+  assert.equal(flow.getState().getParam(runtimeId, 'output', 'signal').value, 'new-contract');
+  const settledNodes = flow.getState().nodes;
+  flow
+    .getState()
+    .setParam(runtimeId, 'output', { direction: 'output', value: 'new-contract', origin: undefined }, 'signal');
+  assert.equal(flow.getState().nodes, settledNodes, 'JSON-equivalent signal metadata must be a durable no-op');
+  const durable = flow.getState().toObject();
+  assert.deepEqual(durable.nodes[0].data.blockInstanceV2.definitionSnapshot, definition);
+  flow.getState().replaceGraph(JSON.parse(JSON.stringify(durable)));
+  assert.equal(flow.getState().getParam(runtimeId, 'revision', 'value'), 'new-pin');
+  flow.getState().undo();
+  assert.deepEqual(flow.getState().toObject(), initial);
+  flow.getState().replaceGraph({ nodes: [], edges: [] });
+  await fieldActionModule.default(props, 'late');
+  websocketModule.handleWebsocketMessage({ ...owned, type: 'set_field_value', fields: { revision: 'late' } }, context);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(flow.getState().nodes, []);
+});
+
+test('ordinary imported stage schemas recover registered hooks only for edits and solicited signal changes', async () => {
+  const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const make = (id, action, params) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: { type: 'custom', module: 'modules.Test', action, params },
+  });
+  const loader = make('loader', 'Loader', {
+    model: { type: 'string', value: 'old' },
+    output: { type: 'pipeline', display: 'output', signal: { direction: 'output', value: 'old' } },
+  });
+  const generate = make('generate', 'Generator', {
+    pipeline: { type: 'pipeline', display: 'input', disabled: true, signal: { direction: 'input' } },
+    contract: { type: 'string', value: 'old' },
+  });
+  nodesStoreModule.useNodesStore.setState({
+    nodesRegistry: {
+      'modules.Test.Loader': {
+        ...loader.data,
+        params: { ...loader.data.params, model: { ...loader.data.params.model, onChange: 'inspect' } },
+      },
+      'modules.Test.Generator': {
+        ...generate.data,
+        params: {
+          ...generate.data.params,
+          pipeline: { type: 'pipeline', display: 'input', onSignal: [{ action: 'value', target: 'contract' }] },
+        },
+      },
+    },
+  });
+  let grouped = groups.groupVisualStages(
+    {
+      nodes: [loader, generate],
+      edges: [{ id: 'wire', source: 'loader', sourceHandle: 'output', target: 'generate', targetHandle: 'pipeline' }],
+    },
+    ['loader'],
+    'setup',
+  );
+  grouped = groups.groupVisualStages(grouped, ['generate'], 'generate');
+  flow.getState().replaceGraph(grouped);
+  const root = grouped.nodes.find((n) =>
+    n.data.blockInstanceV2?.effectiveInterface.controls.some((c) => c.binding.fieldId === 'model'),
+  );
+  const control = root.data.blockInstanceV2.effectiveInterface.controls.find((c) => c.binding.fieldId === 'model');
+  const nativeId = blockRuntimeModule.blockProjectionNodeIdV2(root.id, control.binding.nodeId);
+  const consumer = grouped.nodes.find((n) => n.id !== root.id && n.data.blockInstanceV2);
+  const consumerId = blockRuntimeModule.blockProjectionNodeIdV2(
+    consumer.id,
+    consumer.data.blockInstanceV2.effectiveGraph.nodes[0].nodeId,
+  );
+  const calls = [];
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse({ error: false });
+  };
+  flow.getState().updateSignalValues(flow.getState().edges);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, []);
+  assert.equal(flow.getState().getParam(consumerId, 'contract', 'value'), 'old');
+  flow.getState().setBlockInstanceValueV2(root.id, control.controlId, 'new');
+  await fieldActionModule.default(
+    {
+      nodeId: root.id,
+      fieldKey: control.controlId,
+      module: root.data.module,
+      action: root.data.action,
+      updateStore: () => {},
+    },
+    'new',
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].fn, 'inspect');
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} };
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'set_field_params',
+      node: nativeId,
+      field: 'output',
+      params: { signal: { direction: 'output', origin: 'model', value: 'new' } },
+      sid: 'session-1',
+      workflow_tab_id: 'workflow-origin',
+      workflow_canvas_epoch: 0,
+      workflow_form_epoch: 0,
+    },
+    context,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(flow.getState().getParam(consumerId, 'contract', 'value'), 'new');
+  assert.equal(calls.length, 1);
+  assert.equal(flow.getState().getParam(consumerId, 'pipeline', 'disabled'), true);
+});
+
+test('solicited stage signals refresh hookless or suppressed ordinary consumers without replaying on restore', async () => {
+  const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const callback = [{ action: 'value', target: 'contract' }];
+  for (const variant of [
+    { hook: false, suppressed: false, registeredDisabled: false, refreshed: true },
+    { hook: true, suppressed: true, registeredDisabled: false, refreshed: true },
+    { hook: true, suppressed: false, registeredDisabled: false, refreshed: false },
+    { hook: false, suppressed: false, registeredDisabled: true, refreshed: false },
+  ]) {
+    const loader = {
+      id: 'loader',
+      type: 'custom',
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'custom',
+        module: 'modules.Test',
+        action: 'Loader',
+        params: {
+          model: { type: 'string', value: 'old' },
+          output: {
+            type: 'pipeline',
+            display: 'output',
+            signal: { direction: 'output', origin: 'model', value: 'old' },
+          },
+        },
+      },
+    };
+    const generate = {
+      id: 'generate',
+      type: 'custom',
+      position: { x: 500, y: 0 },
+      data: {
+        type: 'custom',
+        module: 'modules.Test',
+        action: 'Generator',
+        params: {
+          pipeline: {
+            type: 'pipeline',
+            display: 'input',
+            disabled: true,
+            signal: { direction: 'input' },
+            ...(variant.hook ? { onSignal: callback } : {}),
+            fieldOptions: { suppressAutomaticSignalAction: variant.suppressed },
+          },
+          contract: { type: 'string', value: 'old' },
+        },
+      },
+    };
+    nodesStoreModule.useNodesStore.setState({
+      nodesRegistry: {
+        'modules.Test.Generator': {
+          ...generate.data,
+          params: {
+            ...generate.data.params,
+            pipeline: { type: 'pipeline', display: 'input', onSignal: callback, disabled: variant.registeredDisabled },
+          },
+        },
+      },
+    });
+    const grouped = groups.groupVisualStages(
+      {
+        nodes: [loader, generate],
+        edges: [{ id: 'wire', source: 'loader', sourceHandle: 'output', target: 'generate', targetHandle: 'pipeline' }],
+      },
+      ['loader'],
+      'setup',
+    );
+    flow.getState().replaceGraph(grouped);
+    // Current construction may enrich a raw schema. Reproduce a later legacy
+    // or dynamic schema that omitted its hook, without inventing a new executor.
+    flow.getState().setParam('generate', 'pipeline', variant.hook ? callback : undefined, 'onSignal');
+    flow
+      .getState()
+      .setParam('generate', 'pipeline', { suppressAutomaticSignalAction: variant.suppressed }, 'fieldOptions');
+    const owner = grouped.nodes.find((node) => node.data.blockInstanceV2);
+    const nativeId = blockRuntimeModule.blockProjectionNodeIdV2(
+      owner.id,
+      owner.data.blockInstanceV2.effectiveGraph.nodes[0].nodeId,
+    );
+    flow.getState().updateSignalValues(flow.getState().edges);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(flow.getState().getParam('generate', 'contract', 'value'), 'old', 'restore is not an action');
+    flow.getState().setParam(nativeId, 'model', 'new');
+    // A rendered relay can deliver first while its automatic action is absent
+    // or suppressed. The publisher's scoped reply must still refresh consumers.
+    flow.getState().setParam('generate', 'pipeline', { direction: 'output', value: 'new' }, 'signal');
+    websocketModule.handleWebsocketMessage(
+      {
+        type: 'set_field_params',
+        node: nativeId,
+        field: 'output',
+        params: { signal: { direction: 'output', origin: 'model', value: 'new' } },
+        sid: 'session-1',
+        workflow_tab_id: 'workflow-origin',
+        workflow_canvas_epoch: 0,
+        workflow_form_epoch: 0,
+      },
+      { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid: () => {}, setLoopTimer: () => {} },
+    );
+    if (variant.refreshed) {
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline && flow.getState().getParam('generate', 'contract', 'value') !== 'new') {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    } else await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      flow.getState().getParam('generate', 'contract', 'value'),
+      variant.refreshed ? 'new' : 'old',
+      JSON.stringify({
+        variant,
+        source: flow.getState().getParam(nativeId, 'output', 'signal'),
+        target: flow.getState().getParam('generate', 'pipeline', 'signal'),
+      }),
+    );
+    flow.getState().setParam('generate', 'contract', 'marker');
+    flow.getState().updateSignalValues(flow.getState().edges, { dispatchStageActions: true });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(flow.getState().getParam('generate', 'contract', 'value'), 'marker', 'equivalent signals are no-ops');
+    flow.getState().updateSignalValues(flow.getState().edges, {
+      dispatchStageActions: true,
+      changedSignal: { nodeId: nativeId, fieldKey: 'output', value: 'old' },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      flow.getState().getParam('generate', 'contract', 'value'),
+      'marker',
+      'superseded source replies are no-ops',
+    );
+  }
+});
+
+test('shared visual controls dispatch each declared native callback and reject unrelated stage identities', async () => {
+  const groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  const flow = flowStoreModule.useFlowStore;
+  const natives = ['left', 'right'].map((id) => ({
+    id,
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.Test',
+      action: 'Loader',
+      params: { model: { type: 'string', value: 'old', onChange: { action: 'exec', data: 'inspect' } } },
+    },
+  }));
+  const grouped = groups.groupVisualStages({ nodes: natives, edges: [] }, ['left', 'right'], 'setup');
+  const root = grouped.nodes[0];
+  const instance = root.data.blockInstanceV2;
+  const [left, right] = instance.effectiveInterface.controls;
+  const control = { ...left, mirrorBindings: [right.binding] };
+  const shared = blockRuntimeModule.replaceBlockEffectiveInterfaceV2(instance, {
+    boundary: instance.effectiveInterface.boundary,
+    controls: [control],
+  });
+  flow.getState().replaceGraph({ nodes: [blockRuntimeModule.createBlockRootNodeV2(shared)], edges: [] });
+  flow.getState().setBlockInstanceValueV2(root.id, control.controlId, 'new');
+  const calls = [];
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    return jsonResponse({ error: false });
+  };
+  const props = {
+    nodeId: root.id,
+    fieldKey: control.controlId,
+    module: root.data.module,
+    action: root.data.action,
+    updateStore: () => {},
+  };
+  await fieldActionModule.default({ ...props, action: 'unrelated' }, 'new');
+  assert.deepEqual(calls, []);
+  await fieldActionModule.default(props, 'new');
+  assert.deepEqual(
+    calls.map((call) => call.node).sort(),
+    [left.binding, right.binding]
+      .map((binding) => blockRuntimeModule.blockProjectionNodeIdV2(root.id, binding.nodeId))
+      .sort(),
+  );
+  assert.ok(calls.every((call) => call.fn === 'inspect' && call.values.model === 'new'));
+  const unrelated = resourceInputBlock(false, 'model', true);
+  flow.getState().replaceGraph({ nodes: [unrelated], edges: [] });
+  await fieldActionModule.default(
+    {
+      nodeId: unrelated.id,
+      fieldKey: 'resource',
+      module: unrelated.data.module,
+      action: unrelated.data.action,
+      onChange: 'inspect',
+      updateStore: () => {},
+    },
+    'new',
+  );
+  assert.equal(calls.length, 2);
 });

@@ -1,17 +1,422 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 
 import { canonicalJsonHash } from './canonical-json.mjs';
+import { builtinDataQualificationTarget, validateBuiltinDataExecution } from './builtin-data-qualification.mjs';
 import {
   assessHistoricalEvidence,
+  selectCurrentHistoricalEvidence,
   canonicalWorkflowContract,
+  exportCanonicalWorkflowGraphs,
+  readCanonicalWorkflowEvidence,
   findCanonicalWorkflowRecord,
+  templateResourceExecutionModelType,
+  qualificationModelArtifacts,
+  assessGalleryReleaseApproval,
   canonicalWorkflowAuthoringContract,
+  canonicalWorkflowDeclaredModelRevision,
   validateCanonicalWorkflowEvidence,
 } from './release-contract-core.mjs';
 import { canonicalGraphIdentity, createRunProvenance, sha256Value } from './live-proof-provenance.mjs';
-import { galleryEvidenceCandidates } from './release-evidence-paths.mjs';
+import { galleryEvidenceCandidates, readReleaseRunProvenance } from './release-evidence-paths.mjs';
+import {
+  selectCanonicalWorkflowVariantTemplates,
+  retainUnselectedCurrentWorkflowRecords,
+  canonicalWorkflowVariantTemplateIds,
+  parseCanonicalWorkflowGenerationScope,
+  selectCanonicalWorkflowCapabilities,
+  selectReviewedExperimentalWorkflows,
+} from './workflow-library-manifest-state.mjs';
+
+test('qualification model artifacts preserve each immutable member of an aggregate revision lock', () => {
+  const model = { repo: 'Example/model', revision: 'a'.repeat(40), role: 'model' };
+  const upscaler = { repo: 'Example/upscaler', revision: 'b'.repeat(40), role: 'qualification_model' };
+  const lock = `${model.repo}@${model.revision} | ${upscaler.repo}@${upscaler.revision}`;
+  const before = JSON.stringify(model);
+  assert.deepEqual(qualificationModelArtifacts(lock, [model]), [upscaler]);
+  assert.deepEqual(qualificationModelArtifacts(lock), [{ ...model, role: 'qualification_model' }, upscaler]);
+  assert.deepEqual(qualificationModelArtifacts(`${model.repo}@${model.revision}`, [model]), []);
+  assert.equal(JSON.stringify(model), before);
+});
+
+test('canonical source pins close reporting associations without granting run or review evidence', () => {
+  const fixture = canonicalEvidenceFixture({ auxiliary: true });
+  const before = structuredClone(fixture);
+  assert.equal(
+    canonicalWorkflowDeclaredModelRevision(fixture.manifest, fixture.graph, fixture.authoring),
+    `example/adapter@${'b'.repeat(40)} | example/base@${'a'.repeat(40)}`,
+  );
+  assert.deepEqual(fixture, before);
+  const stale = structuredClone(fixture);
+  stale.graph.nodes[0].data.params.revision.value = 'main';
+  assert.throws(() => canonicalWorkflowDeclaredModelRevision(stale.manifest, stale.graph, stale.authoring), /hash/);
+  stale.manifest.graphHash = canonicalJsonHash(stale.graph);
+  stale.authoring.canonicalGraph.sha256 = stale.manifest.graphHash;
+  stale.authoring.defaultsPlan.sourceGraphSha256 = stale.manifest.graphHash;
+  assert.throws(
+    () => canonicalWorkflowDeclaredModelRevision(stale.manifest, stale.graph, stale.authoring),
+    /immutable model pin/,
+  );
+});
+
+test('canonical model file pins bind exact bytes to their declared repository', () => {
+  const fixture = () => {
+    const f = canonicalEvidenceFixture();
+    f.graph.nodes[0].data.params.model_id.value = {
+      source: 'hub',
+      value: 'example/base/weights/model.safetensors',
+      revision: 'a'.repeat(40),
+      sha256: 'c'.repeat(64),
+      byteSize: 1024,
+    };
+    return f;
+  };
+  const resolve = (f) => {
+    f.manifest.graphHash = canonicalJsonHash(f.graph);
+    f.authoring.canonicalGraph.sha256 = f.manifest.graphHash;
+    f.authoring.defaultsPlan.sourceGraphSha256 = f.manifest.graphHash;
+    return canonicalWorkflowDeclaredModelRevision(f.manifest, f.graph, f.authoring);
+  };
+  assert.equal(resolve(fixture()), `example/base@${'a'.repeat(40)}`);
+  for (const change of [
+    (v) => {
+      delete v.sha256;
+    },
+    (v) => {
+      v.byteSize = 0;
+    },
+    (v) => {
+      v.revision = 'main';
+    },
+    (v) => {
+      v.value = 'example/base/../model.safetensors';
+    },
+    (v) => {
+      v.value = 'other/repository/model.safetensors';
+    },
+  ]) {
+    const f = fixture();
+    change(f.graph.nodes[0].data.params.model_id.value);
+    assert.throws(() => resolve(f));
+  }
+});
+
+test('qualification model artifacts reject malformed, mutable and conflicting pins without inventing repositories', () => {
+  const pin = `Example/model@${'a'.repeat(40)}`;
+  assert.deepEqual(qualificationModelArtifacts(), []);
+  assert.deepEqual(qualificationModelArtifacts(`${pin} | ${pin}`), [
+    { repo: 'Example/model', revision: 'a'.repeat(40), role: 'qualification_model' },
+  ]);
+  for (const invalid of [
+    '',
+    'Example/model@main',
+    `${pin} | `,
+    `../model@${'a'.repeat(40)}`,
+    `${pin} | Example/model@${'b'.repeat(40)}`,
+    Array(65).fill(pin).join(' | '),
+    {},
+  ]) {
+    assert.throws(() => qualificationModelArtifacts(invalid));
+  }
+});
+
+test('reviewed experimental recipes retain their tier and require an exact named association', () => {
+  const declaration = {
+    id: 'reviewed_edit',
+    reason: 'Exact reviewed composition',
+    experimentalRecipe: { modelType: 'ExamplePipeline', mode: 'edit_image', runtimeProfileId: 'reviewed-provider-v1' },
+  };
+  const policy = { schemaVersion: 1, format: 'modiff.canonical-template-variants.v1', templates: [declaration] };
+  const record = {
+    id: 'ExamplePipeline:edit_image:reviewed_edit',
+    modelType: 'ExamplePipeline',
+    mode: 'edit_image',
+    sourceTemplateId: 'reviewed_edit',
+    variant: 'template-recipe',
+    supportTier: 'experimental',
+    graphPath: 'experimental/example/edit.json',
+    experimentalRecipe: declaration.experimentalRecipe,
+  };
+  assert.deepEqual(selectReviewedExperimentalWorkflows([record], policy), [record]);
+  assert.equal(record.supportTier, 'experimental');
+  assert.deepEqual(
+    selectReviewedExperimentalWorkflows(
+      [
+        {
+          ...record,
+          experimentalRecipe: {
+            runtimeProfileId: 'reviewed-provider-v1',
+            mode: 'edit_image',
+            modelType: 'ExamplePipeline',
+          },
+        },
+      ],
+      policy,
+    ).map((row) => row.id),
+    [record.id],
+  );
+  assert.deepEqual(selectReviewedExperimentalWorkflows([record], { ...policy, templates: [] }), []);
+  for (const patch of [
+    { id: 'ExamplePipeline:edit_image' },
+    { modelType: 'OtherPipeline' },
+    { mode: 'text_to_image' },
+    { supportTier: 'supported' },
+    { graphPath: 'studio/example/edit.json' },
+    { graphPath: 'experimental/../outside.json' },
+    { graphPath: 'experimental/example/../../outside.json' },
+    { graphPath: 'experimental/example/%2e%2e.json' },
+    { graphPath: 'experimental/example/edit.json/extra' },
+    { experimentalRecipe: { ...declaration.experimentalRecipe, runtimeProfileId: 'other-provider' } },
+  ])
+    assert.throws(() => selectReviewedExperimentalWorkflows([{ ...record, ...patch }], policy), /experimental/i);
+  assert.throws(() => selectReviewedExperimentalWorkflows([record, record], policy), /ambiguous/i);
+});
+
+test('experimental recipe declarations reject missing, unknown and malformed authority', () => {
+  const declaration = { id: 'reviewed_edit', reason: 'Reviewed composition' };
+  const policy = { schemaVersion: 1, format: 'modiff.canonical-template-variants.v1', templates: [] };
+  for (const experimentalRecipe of [
+    null,
+    {},
+    { modelType: 'ExamplePipeline', mode: 'edit_image' },
+    { modelType: 'ExamplePipeline', mode: '../edit', runtimeProfileId: 'provider' },
+    { modelType: 'ExamplePipeline', mode: 'edit_image', runtimeProfileId: 'provider', autoEligible: true },
+  ])
+    assert.throws(
+      () => canonicalWorkflowVariantTemplateIds({ ...policy, templates: [{ ...declaration, experimentalRecipe }] }),
+      /experimental/i,
+    );
+});
+
+test('canonical variant generation includes reviewed exact recipes without replacing the default pair', () => {
+  const templates = [
+    { id: 'default', category: 'generation', modelType: 'Example', mode: 'text_to_image' },
+    { id: 'theme', category: 'lora', modelType: 'Example', mode: 'text_to_image' },
+    { id: 'finish', category: 'upscale', modelType: 'Example', mode: 'text_to_image' },
+    { id: 'sequence', category: 'video_generation', modelType: 'Video', mode: 'text_to_video' },
+  ];
+  assert.deepEqual(
+    selectCanonicalWorkflowVariantTemplates(templates, ['finish', 'sequence']).map((row) => row.id),
+    ['theme', 'finish', 'sequence'],
+  );
+  assert.deepEqual(
+    selectCanonicalWorkflowVariantTemplates(templates, ['finish', 'sequence'], { requestedTemplateId: 'finish' }),
+    [templates[2]],
+  );
+  const records = [
+    { id: 'Example:text_to_image', sourceTemplateId: 'finish', modelType: 'Example', mode: 'text_to_image' },
+    {
+      id: 'Example:text_to_image:finish',
+      sourceTemplateId: 'finish',
+      modelType: 'Example',
+      mode: 'text_to_image',
+      variant: 'template-recipe',
+    },
+    {
+      id: 'Example:text_to_image:theme',
+      sourceTemplateId: 'theme',
+      modelType: 'Example',
+      mode: 'text_to_image',
+      variant: 'lora-theme',
+    },
+    { id: 'Video:text_to_video', sourceTemplateId: 'default-video', modelType: 'Video', mode: 'text_to_video' },
+  ];
+  const capabilities = [
+    { modelType: 'Example', runnableModes: ['text_to_image'] },
+    { modelType: 'Video', runnableModes: ['text_to_video'] },
+  ];
+  assert.deepEqual(retainUnselectedCurrentWorkflowRecords(records, capabilities, null, 'finish'), [
+    records[0],
+    records[2],
+    records[3],
+  ]);
+});
+
+test('canonical variant scope rejects unknown, malformed and ambiguous declarations before mutation', () => {
+  const policy = {
+    schemaVersion: 1,
+    format: 'modiff.canonical-template-variants.v1',
+    templates: [{ id: 'finish', reason: 'Pinned finishing recipe' }],
+  };
+  assert.deepEqual(canonicalWorkflowVariantTemplateIds(policy), ['finish']);
+  assert.throws(
+    () => canonicalWorkflowVariantTemplateIds({ ...policy, templates: [policy.templates[0], policy.templates[0]] }),
+    /duplicated/,
+  );
+  for (const id of ['../finish', 'finish/else', '', 'x'.repeat(129)])
+    assert.throws(
+      () => canonicalWorkflowVariantTemplateIds({ ...policy, templates: [{ id, reason: 'reviewed' }] }),
+      /invalid/,
+    );
+  const templates = [{ id: 'finish', category: 'upscale', modelType: 'Example', mode: 'text_to_image' }];
+  assert.throws(() => selectCanonicalWorkflowVariantTemplates(templates, ['missing']), /missing or ambiguous/);
+  assert.throws(() => selectCanonicalWorkflowVariantTemplates([...templates, ...templates], ['finish']), /ambiguous/);
+  assert.throws(
+    () => selectCanonicalWorkflowVariantTemplates(templates, [], { requestedTemplateId: 'finish' }),
+    /no reviewed/,
+  );
+  assert.deepEqual(parseCanonicalWorkflowGenerationScope(['--template=finish']), {
+    requestedPair: null,
+    requestedTemplateId: 'finish',
+  });
+  assert.deepEqual(parseCanonicalWorkflowGenerationScope(['--pair=Example|text_to_image']), {
+    requestedPair: 'Example|text_to_image',
+    requestedTemplateId: null,
+  });
+  for (const args of [
+    ['--template=../finish'],
+    ['--template=finish', '--template=finish'],
+    ['--unknown'],
+    ['--template=finish', '--pair=Example|text_to_image'],
+  ])
+    assert.throws(() => parseCanonicalWorkflowGenerationScope(args), /scope/);
+});
+
+test('one named canonical recipe does not require unrelated new backend families to have Studio skeletons', () => {
+  const selected = { modelType: 'Example', runnableModes: ['text_to_image', 'unmapped_task'] };
+  const unrelated = { modelType: 'NewUpstreamFamily', runnableModes: ['unmapped_task'] };
+  const templates = [{ id: 'finish', category: 'upscale', modelType: 'Example', mode: 'text_to_image' }];
+  const scope = { requestedPair: null, requestedTemplateId: 'finish' };
+  assert.deepEqual(selectCanonicalWorkflowCapabilities([selected, unrelated], templates, ['finish'], scope), [
+    { ...selected, runnableModes: ['text_to_image'] },
+  ]);
+  assert.deepEqual(selected.runnableModes, ['text_to_image', 'unmapped_task']);
+  assert.throws(
+    () => selectCanonicalWorkflowCapabilities([unrelated], templates, ['finish'], scope),
+    /not uniquely runnable/,
+  );
+  assert.throws(
+    () => selectCanonicalWorkflowCapabilities([selected, selected], templates, ['finish'], scope),
+    /not uniquely runnable/,
+  );
+});
+
+test('current retained receipts win same-time Gallery projections without overriding newer evidence', () => {
+  const direct = {
+    candidate: { capturedAt: '2026-11-12T02:00:00.000Z', provenancePath: 'original.json' },
+    assessment: { matches: true, status: 'current' },
+  };
+  const gallery = {
+    candidate: { capturedAt: direct.candidate.capturedAt, provenancePath: '/template-gallery/public.json' },
+    assessment: { matches: true, status: 'legacy_node_contract_match' },
+  };
+  const stale = {
+    candidate: { capturedAt: '2026-11-14T02:00:00.000Z' },
+    assessment: { matches: false, status: 'stale' },
+  };
+  const input = [direct, gallery, stale];
+  assert.equal(selectCurrentHistoricalEvidence(input), direct);
+  assert.deepEqual(input, [direct, gallery, stale]);
+  const newer = { ...gallery, candidate: { ...gallery.candidate, capturedAt: '2026-11-13T02:00:00.000Z' } };
+  assert.equal(selectCurrentHistoricalEvidence([direct, newer]), newer);
+  assert.equal(selectCurrentHistoricalEvidence([stale]), undefined);
+});
+
+test('release baseline reader binds managed Gallery bundles and direct proofs to the original receipt', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-release-baseline-'));
+  t.after(() => {
+    assert.equal(resolve(root, '..'), resolve(tmpdir()));
+    rmSync(root, { recursive: true, force: true });
+  });
+  const clientRoot = join(root, 'client');
+  const backendRoot = join(root, 'backend');
+  const provenance = {
+    schemaVersion: 2,
+    format: 'modiff.live-proof.provenance.v2',
+    template: { id: 'baseline-template' },
+    taskId: 'original-task',
+    graphHash: 'original-graph',
+    modelRevision: `owner/model@${'a'.repeat(40)}`,
+    runtimeFingerprint: 'original-runtime',
+    mediaHash: 'original-output',
+    execution: { resourceCandidateId: 'original-candidate', elapsedSeconds: 12, peakMemoryBytes: 345 },
+  };
+  const receipt = {
+    templateId: provenance.template.id,
+    taskId: provenance.taskId,
+    graphHash: provenance.graphHash,
+    modelRevision: provenance.modelRevision,
+    runtimeFingerprint: provenance.runtimeFingerprint,
+    outputHash: provenance.mediaHash,
+    resourceCandidateId: provenance.execution.resourceCandidateId,
+    executionDurationSeconds: provenance.execution.elapsedSeconds,
+    peakMemoryBytes: provenance.execution.peakMemoryBytes,
+  };
+  const bundle = {
+    schemaVersion: 1,
+    format: 'modiff.gallery.reviewed-provenance.v1',
+    templateId: receipt.templateId,
+    originalCapture: { _native: true, Alpha: 'retained', alpha: 'retained' },
+    run: provenance,
+  };
+  const publicPath = '/template-gallery/reviews/baseline.json';
+  const write = (filename, body) => {
+    mkdirSync(resolve(filename, '..'), { recursive: true });
+    writeFileSync(filename, JSON.stringify(body) + '\n');
+  };
+  const publicReceipt = {
+    ...receipt,
+    provenancePath: publicPath,
+    provenanceHash: sha256Value('canonical-json', bundle),
+  };
+  const backendPublic = join(backendRoot, 'web', publicPath.slice(1));
+  write(backendPublic, bundle);
+  const load = (row = publicReceipt) => readReleaseRunProvenance({ clientRoot, backendRoot, receipt: row });
+  assert.deepEqual(load(), provenance, 'backend-owned Gallery cache is supported');
+  const clientPublic = join(clientRoot, 'public', publicPath.slice(1));
+  write(clientPublic, bundle);
+  assert.deepEqual(load(), provenance, 'client Gallery cache is supported');
+  write(clientPublic, { ...bundle, run: { ...provenance, taskId: 'different-task' } });
+  assert.throws(() => load(), /hash differs/, 'do not hide a corrupt preferred cache with another copy');
+  assert.throws(
+    () =>
+      load({
+        ...publicReceipt,
+        provenanceHash: sha256Value('canonical-json', JSON.parse(readFileSync(clientPublic, 'utf8'))),
+      }),
+    /taskId differs/,
+  );
+  write(clientPublic, bundle);
+  for (const field of Object.keys(receipt)) {
+    const changed = { ...publicReceipt, [field]: 'different' };
+    assert.throws(() => load(changed), new RegExp(`${field} differs`), field);
+  }
+  assert.throws(() => load({ ...publicReceipt, provenanceHash: undefined }), /hash differs/);
+  const directPath = 'data/qualification/release/proof.json';
+  const directFile = join(backendRoot, directPath);
+  write(directFile, provenance);
+  const directReceipt = {
+    ...receipt,
+    provenancePath: directPath,
+    provenanceHash: `sha256:${createHash('sha256').update(readFileSync(directFile)).digest('hex')}`,
+  };
+  assert.deepEqual(load(directReceipt), provenance);
+  write(directFile, { ...provenance, mediaHash: 'different' });
+  assert.throws(() => load(directReceipt), /hash differs/);
+  const outside = join(root, 'outside');
+  const escaped = join(outside, 'proof.json');
+  write(escaped, provenance);
+  assert.throws(() => load({ ...directReceipt, provenancePath: escaped }), /escapes its managed root/);
+  const link = join(clientRoot, 'public', 'template-gallery', 'linked');
+  symlinkSync(outside, link, 'junction');
+  assert.throws(
+    () => load({ ...directReceipt, provenancePath: '/template-gallery/linked/proof.json' }),
+    /symbolic links/,
+  );
+  const emptyRun = { ...bundle, run: undefined, runs: [provenance] };
+  write(clientPublic, emptyRun);
+  assert.throws(
+    () => load({ ...publicReceipt, provenanceHash: sha256Value('canonical-json', emptyRun) }),
+    /unambiguous original v2 run/,
+  );
+  writeFileSync(clientPublic, Buffer.alloc(16 * 1024 ** 2 + 1, 32));
+  assert.throws(() => load(), /bounded JSON file/);
+});
 
 function graphHash(graph) {
   return canonicalJsonHash(graph);
@@ -28,6 +433,47 @@ test('Gallery evidence lookup includes the backend-owned runtime media tree', ()
     () => galleryEvidenceCandidates(clientRoot, backendRoot, '../../outside.json'),
     /escapes its managed root/,
   );
+});
+
+test('resource requirements retain the selected execution identity separately from the catalog family', () => {
+  assert.equal(
+    templateResourceExecutionModelType({
+      modelType: 'AudioDisplay',
+      executionSelection: { pipelineClass: 'ActualAudioPipeline' },
+    }),
+    'ActualAudioPipeline',
+  );
+  assert.equal(templateResourceExecutionModelType({ modelType: 'LegacyPipeline' }), 'LegacyPipeline');
+  assert.equal(
+    templateResourceExecutionModelType({ modelType: 'LegacyPipeline', executionSelection: { pipelineClass: '' } }),
+    'LegacyPipeline',
+  );
+});
+
+test('execution evidence cannot approve a different recipe or publicly withheld Gallery media', () => {
+  const entry = {
+    qualityReviewStatus: 'approved_reviewed',
+    outputPath: '/template-gallery/result.webp',
+    thumbnailPath: '/template-gallery/result.card.webp',
+  };
+  assert.equal(assessGalleryReleaseApproval(entry, { matchesCurrentRecipe: true }).approved, true);
+  const historical = assessGalleryReleaseApproval(entry, { matchesCurrentRecipe: false });
+  assert.equal(historical.approved, false);
+  assert.deepEqual(historical.reasons, ['current_recipe_example']);
+  for (const path of [entry.outputPath, entry.thumbnailPath]) {
+    const held = assessGalleryReleaseApproval(entry, {
+      matchesCurrentRecipe: true,
+      unavailableAssets: [path.slice(1)],
+    });
+    assert.equal(held.approved, false);
+    assert.deepEqual(held.reasons, ['unavailable_asset:' + path]);
+  }
+  assert.equal(
+    assessGalleryReleaseApproval({ ...entry, qualityReviewStatus: 'approved_proposed' }, { matchesCurrentRecipe: true })
+      .approved,
+    false,
+  );
+  assert.equal(assessGalleryReleaseApproval(undefined, { matchesCurrentRecipe: false }).approved, false);
 });
 
 test('canonical workflow identity comes from current graph bytes and historical evidence must match it', () => {
@@ -426,6 +872,372 @@ test('standalone canonical receipts bind real authoring, exact execution and ful
       rightsApproved: false,
       hardwareQualified: false,
     });
+  }
+});
+
+async function builtinEvidenceFixture(mode = 'data_conversion') {
+  const backend = resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const read = (file) => JSON.parse(readFileSync(join(backend, file), 'utf8'));
+  const manifest = read('data/workflow-library-manifest.json').workflows.find(
+    (row) => row.id === `BuiltinDataOperation:${mode}`,
+  );
+  const graph = read(`data/graphs/${manifest.graphPath}`);
+  const authoring = read('data/template-authoring-specs.v1.json').specifications.find(
+    (row) => row.canonicalWorkflowId === manifest.id,
+  );
+  const target = builtinDataQualificationTarget(manifest, graph, authoring);
+  const [expectedApiGraph] = await exportCanonicalWorkflowGraphs(resolve('.'), [target.boundGraph]);
+  const task = canonicalEvidenceFixture().run.task;
+  task.started_at = Date.parse('2026-10-27T00:00:01.000Z') / 1000;
+  task.completed_at = task.started_at + 12.5;
+  task.sid = expectedApiGraph.sid;
+  task.runtimeMeasurement = {
+    backend: 'cpu',
+    device: 'cpu:0',
+    peakMeasurementVersion: 2,
+    elapsedSeconds: 12.5,
+    processRssBytes: 4096,
+  };
+  const sourceInventory = {
+    gitCommit: 'd'.repeat(40),
+    files: [{ path: 'main.py', sha256: 'c'.repeat(64) }],
+    fingerprint: task.runtimeFingerprint.backendSource.fingerprint,
+  };
+  const expected = {
+    data_conversion: {
+      project: 'footbridge repair',
+      shot_count: 5,
+      approved: false,
+      tags: ['documentary', 'community'],
+    },
+    graph_utility: 'Primary branch: the repaired footbridge is ready for the morning crossing.',
+    text_select: 'Wide establishing shot at dawn',
+  }[mode];
+  const text = typeof expected === 'string' ? expected : JSON.stringify(expected, null, 2);
+  const exportText = JSON.stringify(expected, null, 2);
+  const messages = Object.entries(expectedApiGraph.nodes).map(([node, value]) => ({
+    type: 'executed',
+    task_id: task.task_id,
+    attempt_index: 0,
+    node,
+    name: `${value.module}.${value.action}`,
+    status: 'succeeded',
+  }));
+  const outputs = [],
+    durableOutputs = [];
+  for (const node of [target.roles.DataViewer, target.roles.ExportData]) {
+    const value = [node === target.roles.ExportData ? exportText : text];
+    const bytes = Buffer.from(JSON.stringify(value));
+    const backendPath = `@data/synthetic-${node}.txt`;
+    const consumed = {
+      source: 'backend-execution',
+      taskId: task.task_id,
+      attemptIndex: 0,
+      nodeId: node,
+      truncated: false,
+      uncapturedNodeIds: [],
+      nodes: [
+        target.roles.ProcessText,
+        target.roles.DataViewer,
+        ...(node === target.roles.ExportData ? [target.roles.ExportData] : []),
+      ].map((nodeId) => ({
+        nodeId,
+        module: expectedApiGraph.nodes[nodeId].module,
+        action: expectedApiGraph.nodes[nodeId].action,
+        fields:
+          nodeId === target.roles.ProcessText
+            ? { pipeline_class: { value: 'BuiltinDataOperationV1', source: 'literal' } }
+            : {},
+        omittedFields: {},
+      })),
+    };
+    outputs.push({
+      id: node,
+      taskId: task.task_id,
+      attemptIndex: 0,
+      nodeId: node,
+      value,
+      resolvedExecutionInputs: consumed,
+      mediaItems: [
+        {
+          backendPath,
+          taskId: task.task_id,
+          attemptIndex: 0,
+          byteSize: bytes.length,
+          mediaHash: `sha256:bytes:${createHash('sha256').update(bytes).digest('hex')}`,
+        },
+      ],
+    });
+    messages.push({
+      type: 'update_value',
+      task_id: task.task_id,
+      attempt_index: 0,
+      node,
+      key: 'preview',
+      backend_persisted: true,
+      value,
+      output_id: node,
+      runtimeFingerprint: task.runtimeFingerprint.fingerprint,
+      resolved_execution_inputs: consumed,
+    });
+    durableOutputs.push({ nodeId: node, backendPath, bytes });
+  }
+  messages.push({
+    type: 'graph_completed',
+    task_id: task.task_id,
+    runtimeFingerprint: task.runtimeFingerprint,
+    runtimeMeasurement: task.runtimeMeasurement,
+    runtimeHints: null,
+    resourceRetryHistory: [],
+  });
+  return {
+    target,
+    expectedApiGraph,
+    submittedApiGraph: structuredClone(expectedApiGraph),
+    acceptedGraph: { taskId: task.task_id, graph: structuredClone(expectedApiGraph) },
+    run: { task, outputs },
+    messages,
+    sourceBefore: { identity: structuredClone(task.runtimeFingerprint.backendSource) },
+    sourceAfter: { identity: { ...task.runtimeFingerprint.backendSource, capturedAt: '2026-10-27T00:00:20.000Z' } },
+    sourceInventory,
+    exportedBytes: Buffer.from(exportText + '\n'),
+    durableOutputs,
+    manifest,
+    graph,
+    authoring,
+  };
+}
+
+test('model-free canonical data proofs bind all three exact deterministic results without model or publication claims', async () => {
+  for (const mode of ['data_conversion', 'graph_utility', 'text_select']) {
+    const f = await builtinEvidenceFixture(mode);
+    const original = JSON.stringify(f.graph);
+    assert.throws(
+      () => canonicalWorkflowAuthoringContract(f.manifest, f.graph, f.authoring),
+      /builtin qualification is unsupported/,
+    );
+    const receipt = validateBuiltinDataExecution(f);
+    assert.equal(receipt.proofKind, 'real_backend_deterministic_data');
+    assert.equal(receipt.deterministicCorrectness, 'verified_exact_result');
+    assert.deepEqual(receipt.modelSet, []);
+    assert.equal(receipt.resourceCandidateId, null);
+    assert.ok(Object.values(receipt.qualificationClaims).every((value) => value === false));
+    assert.equal(receipt.observationLimits.fullConsumedFieldAccounting, false);
+    assert.equal(JSON.stringify(f.graph), original, 'Canonical source/defaults must not be edited');
+  }
+});
+
+test('deterministic data proofs reject graph, authority, task, output and source substitutions', async (t) => {
+  const original = await builtinEvidenceFixture();
+  const cases = [
+    [
+      'changed selector',
+      (f) => {
+        f.submittedApiGraph.nodes[f.target.roles.ProcessText].params.index.value = 1;
+      },
+    ],
+    [
+      'runtime authority',
+      (f) => {
+        f.submittedApiGraph.runtimeHints = { resourceMode: 'auto' };
+      },
+    ],
+    [
+      'service authority',
+      (f) => {
+        f.acceptedGraph.graph.servicePackage = {};
+      },
+    ],
+    [
+      'failed task',
+      (f) => {
+        f.run.task.status = 'failed';
+      },
+    ],
+    [
+      'fallback',
+      (f) => {
+        f.run.task.attempt_index = 1;
+      },
+    ],
+    [
+      'unrelated accepted graph',
+      (f) => {
+        f.acceptedGraph.taskId = 'other';
+      },
+    ],
+    [
+      'cached execution',
+      (f) => {
+        f.messages.find((row) => row.type === 'executed').status = 'cached';
+      },
+    ],
+    [
+      'missing execution',
+      (f) => {
+        f.messages.splice(0, 1);
+      },
+    ],
+    [
+      'unrelated preview',
+      (f) => {
+        f.messages.find((row) => row.type === 'update_value').task_id = 'other';
+      },
+    ],
+    [
+      'unpersisted preview',
+      (f) => {
+        f.messages.find((row) => row.type === 'update_value').backend_persisted = false;
+      },
+    ],
+    [
+      'wrong export',
+      (f) => {
+        f.exportedBytes = Buffer.from('{}\n');
+      },
+    ],
+    [
+      'corrupt durable file',
+      (f) => {
+        f.durableOutputs[0].bytes = Buffer.from('[]');
+      },
+    ],
+    [
+      'missing durable file',
+      (f) => {
+        f.durableOutputs.pop();
+      },
+    ],
+    [
+      'different source',
+      (f) => {
+        f.sourceInventory.files[0].sha256 = 'a'.repeat(64);
+      },
+    ],
+    [
+      'changed before source',
+      (f) => {
+        f.sourceBefore.identity.fingerprint = 'sha256:changed';
+      },
+    ],
+    [
+      'missing native measurement',
+      (f) => {
+        delete f.run.task.runtimeMeasurement.processRssBytes;
+      },
+    ],
+    [
+      'uncaptured owner',
+      (f) => {
+        f.messages.find((row) => row.type === 'update_value').resolved_execution_inputs.uncapturedNodeIds = ['absent'];
+      },
+    ],
+  ];
+  for (const [name, change] of cases)
+    await t.test(name, () => {
+      const f = structuredClone(original);
+      f.exportedBytes = Buffer.from(f.exportedBytes);
+      f.durableOutputs.forEach((row) => {
+        row.bytes = Buffer.from(row.bytes);
+      });
+      change(f);
+      assert.throws(() => validateBuiltinDataExecution(f));
+    });
+});
+
+test('builtin data admission rejects model/file-backed variants and stale authoring before execution', async () => {
+  const original = await builtinEvidenceFixture();
+  for (const change of [
+    (f) => {
+      f.manifest.modelType = 'BuiltinImageOperation';
+    },
+    (f) => {
+      f.manifest.requiredArtifacts.push('example/model');
+    },
+    (f) => {
+      f.authoring.inputPlan.items.push({ path: '@data/input.json' });
+    },
+    (f) => {
+      f.authoring.canonicalGraph.sha256 = 'stale';
+    },
+    (f) => {
+      f.authoring.promptPlan.prompt = '';
+    },
+  ]) {
+    const f = structuredClone(original);
+    change(f);
+    assert.throws(() => builtinDataQualificationTarget(f.manifest, f.graph, f.authoring));
+  }
+});
+
+test('the normal canonical recorder retains deterministic originals and rejects file or descriptor substitution', async () => {
+  const f = await builtinEvidenceFixture();
+  const root = mkdtempSync(join(tmpdir(), 'modiff-builtin-canonical-'));
+  try {
+    const backendRoot = join(root, 'backend');
+    const evidenceRoot = join(root, 'originals');
+    mkdirSync(join(backendRoot, 'data/graphs/studio/builtin-data-operation'), { recursive: true });
+    mkdirSync(evidenceRoot);
+    const write = (path, value) => writeFileSync(path, JSON.stringify(value));
+    write(join(backendRoot, 'data/workflow-library-manifest.json'), { workflows: [f.manifest] });
+    write(join(backendRoot, 'data/template-authoring-specs.v1.json'), { specifications: [f.authoring] });
+    write(join(backendRoot, 'data/graphs', f.manifest.graphPath), f.graph);
+    const retain = (path, value, raw = false) => {
+      const bytes = raw ? value : Buffer.from(JSON.stringify(value));
+      writeFileSync(join(evidenceRoot, path), bytes);
+      return { path, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+    };
+    const evidence = {
+      schemaVersion: 1,
+      format: 'modiff.canonical-builtin-data-evidence.v1',
+      workflowId: f.manifest.id,
+      submittedApiGraph: retain('submitted.json', f.submittedApiGraph),
+      acceptedGraph: retain('accepted.json', f.acceptedGraph),
+      runDetail: retain('run.json', f.run),
+      messages: retain('messages.json', f.messages),
+      sourceBefore: retain('before.json', f.sourceBefore),
+      sourceAfter: retain('after.json', f.sourceAfter),
+      sourceInventory: retain('source.json', f.sourceInventory),
+      exportedData: retain('data.json', f.exportedBytes, true),
+      durableOutputs: f.durableOutputs.map((row, i) => ({
+        nodeId: row.nodeId,
+        backendPath: row.backendPath,
+        file: retain(`output-${i}.txt`, row.bytes, true),
+      })),
+    };
+    const evidencePath = join(evidenceRoot, 'evidence.json');
+    write(evidencePath, evidence);
+    const args = { clientRoot: resolve('.'), backendRoot, workflowId: f.manifest.id, evidencePath };
+    const readback = await readCanonicalWorkflowEvidence(args);
+    assert.equal(readback.receipt.proofKind, 'real_backend_deterministic_data');
+    const recorded = spawnSync(process.execPath, ['scripts/template-qualification.mjs', '--workflow', f.manifest.id], {
+      cwd: resolve('.'),
+      env: { ...process.env, MODIFF_BACKEND_DIR: backendRoot, MODIFF_CANONICAL_WORKFLOW_EVIDENCE: evidencePath },
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+    assert.equal(recorded.status, 0, recorded.stderr);
+    const registry = JSON.parse(
+      readFileSync(join(backendRoot, 'data/qualification/release/canonical-workflow-run-receipts.v1.json')),
+    );
+    assert.equal(registry.receipts.length, 1);
+    const receipt = registry.receipts[0];
+    const retained = await readCanonicalWorkflowEvidence({
+      ...args,
+      evidencePath: join(backendRoot, receipt.evidencePath),
+    });
+    assert.deepEqual(retained.receipt, readback.receipt);
+    writeFileSync(join(evidenceRoot, 'data.json'), '{}');
+    await assert.rejects(() => readCanonicalWorkflowEvidence(args), /size|hash|bytes/i);
+    writeFileSync(join(evidenceRoot, 'data.json'), f.exportedBytes);
+    write(evidencePath, { ...evidence, modelObservations: [] });
+    await assert.rejects(() => readCanonicalWorkflowEvidence(args), /Unreviewed deterministic evidence fields/);
+    write(evidencePath, { ...evidence, exportedData: { ...evidence.exportedData, path: '../outside.json' } });
+    await assert.rejects(() => readCanonicalWorkflowEvidence(args));
+  } finally {
+    assert.equal(resolve(root, '..'), resolve(tmpdir()));
+    assert.ok(root.includes('modiff-builtin-canonical-'));
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

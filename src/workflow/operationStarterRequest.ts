@@ -104,8 +104,64 @@ export function parseOperationStarter(
     whole.length === 1 &&
     new Set(expected.map((operation) => operation.operationId)).size === 5 &&
     new Set(stages.map((operation) => operation.nodeType)).size === 3;
-  if (alternateImageRoutes) {
-    const media = stages.some((operation) => operation.nodeType === 'video_encoder') ? 'video' : 'image';
+  const encodedFrameRoute =
+    expected.length === 4 &&
+    owners.length === 1 &&
+    stages.length === 2 &&
+    whole.length === 1 &&
+    new Set(expected.map((operation) => operation.operationId)).size === 4 &&
+    new Set(stages.map((operation) => operation.nodeType)).size === 2 &&
+    stages.some((operation) => operation.nodeType === 'video_encoder') &&
+    stages.some(
+      (operation) =>
+        operation.nodeType === 'denoise' &&
+        operation.ports.some(
+          (port) => port.direction === 'output' && port.types.includes('video') && port.semantics?.kind === 'media',
+        ),
+    );
+  const alternateWholeVideoRoutes =
+    expected.length === 3 &&
+    owners.length === 1 &&
+    stages.length === 0 &&
+    whole.length === 2 &&
+    new Set(expected.map((operation) => operation.operationId)).size === 3 &&
+    whole.every((operation) =>
+      operation.ports.some(
+        (port) =>
+          port.direction === 'output' &&
+          port.types.length === 1 &&
+          port.types[0] === 'video' &&
+          port.semantics?.kind === 'media',
+      ),
+    ) &&
+    whole.filter((operation) =>
+      operation.ports.some(
+        (port) =>
+          port.direction === 'output' &&
+          port.types.length === 1 &&
+          port.types[0] === 'audio' &&
+          port.semantics?.kind === 'media',
+      ),
+    ).length === 1;
+  const singleWholeVideoRoute =
+    expected.length === 2 &&
+    owners.length === 1 &&
+    stages.length === 0 &&
+    whole.length === 1 &&
+    whole[0]!.ports.some(
+      (port) =>
+        port.direction === 'output' &&
+        port.types.length === 1 &&
+        port.types[0] === 'video' &&
+        port.semantics?.kind === 'media',
+    );
+  if (alternateImageRoutes || encodedFrameRoute || alternateWholeVideoRoutes || singleWholeVideoRoute) {
+    const media =
+      alternateWholeVideoRoutes ||
+      singleWholeVideoRoute ||
+      stages.some((operation) => operation.nodeType === 'video_encoder')
+        ? 'video'
+        : 'image';
     const owner = owners[0]!;
     const sameRoute = (route: OperationContract[]) =>
       route.length === nodes.length && route.every((operation) => byId.has(operation.operationId));
@@ -129,6 +185,7 @@ export function parseOperationStarter(
     );
     if (outgoing.length !== 1 || pipelineEdges.some((edge) => edge.sourceHandle !== outgoing[0]!.name)) invalid();
     if (sameRoute([owner, ...stages])) {
+      if (encodedFrameRoute && edges.length !== 3) invalid();
       if (
         !declaredImagePipelineStageContracts(
           nodes.map(({ operation, node }) => ({ id: operation.operationId, operation, params: node.params })),
@@ -139,8 +196,8 @@ export function parseOperationStarter(
         )
       )
         invalid();
-    } else if (sameRoute([owner, whole[0]!])) {
-      const consumer = whole[0]!;
+    } else if (whole.some((operation) => sameRoute([owner, operation]))) {
+      const consumer = whole.find((operation) => sameRoute([owner, operation]))!;
       const incoming = consumer.ports.filter(
         (port) =>
           port.direction === 'input' &&

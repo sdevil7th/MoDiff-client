@@ -11,6 +11,7 @@ import { useInitialFieldAction } from '../utils/useInitialFieldAction';
 export default function InputField(props: FieldProps) {
   const [isFocused, setIsFocused] = useState(false);
   const inputId = useId();
+  const fallbackFieldName = (props.fieldKey.split(':').slice(-1)[0] || 'value').replace(/_/g, ' ');
   const numeric = props.dataType.startsWith('int') || props.dataType === 'float' || props.dataType === 'number';
   const fieldValue = props.value === null || props.value === undefined ? '' : String(props.value);
   const [draftValue, setDraftValue] = useState(fieldValue);
@@ -52,6 +53,11 @@ export default function InputField(props: FieldProps) {
         )}
       >
         <GraphControlInput
+          aria-label={
+            typeof props.label === 'string' && props.label.trim()
+              ? undefined
+              : fallbackFieldName.charAt(0).toUpperCase() + fallbackFieldName.slice(1)
+          }
           value={draftValue}
           onChange={(event) => setDraftValue(event.target.value)}
           autoComplete="off"

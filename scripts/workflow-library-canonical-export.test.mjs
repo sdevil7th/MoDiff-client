@@ -1,10 +1,44 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 import { sanitizeCanonicalWorkflowGraph, canonicalizeGraphIds } from './workflow-library-generator.mjs';
 import { retainExistingCanonicalDeviceDefaults } from './workflow-library-contract.mjs';
+import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
+import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
+
+test('repeated shot processors retain only unanimous fallback defaults with unchanged multiplicity', () => {
+  const make = (id, fallback) => ({
+    id,
+    data: {
+      module: 'modules.Images',
+      action: 'Upscale',
+      params: { device: { value: 'cuda:0', default: fallback, options: ['cpu', 'cuda:0'] } },
+    },
+  });
+  const original = { nodes: [make('old-a', 'cpu'), make('old-b', 'cpu')] };
+  const fresh = { nodes: [make('new-b', 'cuda:0'), make('new-a', 'cuda:0')] };
+  retainExistingCanonicalDeviceDefaults(fresh, original);
+  assert.deepEqual(
+    fresh.nodes.map((n) => n.data.params.device.default),
+    ['cpu', 'cpu'],
+  );
+  assert.deepEqual(
+    fresh.nodes.map((n) => n.data.params.device.value),
+    ['cuda:0', 'cuda:0'],
+  );
+  assert.throws(
+    () => retainExistingCanonicalDeviceDefaults({ nodes: [make('one', 'cuda:0')] }, original),
+    /unambiguous/,
+  );
+  assert.throws(
+    () => retainExistingCanonicalDeviceDefaults(fresh, { nodes: [make('a', 'cpu'), make('b', 'cuda:0')] }),
+    /unambiguous/,
+  );
+});
+import { canonicalExecutableWorkflowGraph, loadCanonicalWorkflowExpander } from './canonical-workflow-execution.mjs';
 
 let server, hooks, flowStore, groups, blockSchema, fixture, templates, builder, defaults, exactness, operations;
 let requests;
@@ -213,6 +247,236 @@ function semanticApi(graph) {
     .sort((a, b) => a.identity.localeCompare(b.identity));
 }
 
+test('canonical library regrouping preserves ordered executable identity for independent inputs', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const manifest = JSON.parse(readFileSync(path.join(backend, 'data/workflow-library-manifest.json'), 'utf8'));
+  const witnesses = [
+    'AceStepAudioPipeline:audio_continuation',
+    'FluxCannyPipeline:control_image',
+    'FluxFillPipeline:inpaint',
+    'FluxReduxPipeline:multi_image_reference_edit',
+  ];
+  for (const id of witnesses) {
+    const row = manifest.workflows.find((item) => item.id === id);
+    assert.ok(row, id);
+    const graph = JSON.parse(readFileSync(path.join(backend, 'data/graphs', row.graphPath), 'utf8'));
+    const original = structuredClone(graph);
+    const grouped = groups.groupNewOperationGraph(graph);
+    const identity = (sourceGraph) =>
+      canonicalGraphIdentity(
+        flowStore
+          .getState()
+          .exportGraph('library-presentation-regression', undefined, { sourceGraph, randomizeSeeds: false }),
+      );
+    assert.deepEqual(identity(grouped), identity(graph), `${id}: inputs, references and execution order must survive`);
+    assert.deepEqual(graph, original, `${id}: the shipped source must not be mutated`);
+  }
+});
+
+test('whole-pipeline examples fold connected runtime settings into the shared Model Setup', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  for (const relative of [
+    'studio/sana-sprint-pipeline/text-to-image.json',
+    'studio/stable-diffusion-pipeline/text-to-image.json',
+  ]) {
+    const graph = JSON.parse(readFileSync(path.join(backend, 'data/graphs', relative), 'utf8'));
+    const original = structuredClone(graph);
+    const grouped = groups.groupNewOperationGraph(graph);
+    const setup = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+    assert.ok(setup, relative);
+    assert.deepEqual(setup.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+      'DiffusersExecutionRecipe',
+      'LoadPipeline',
+      'PipelineQuantizationConfigV2',
+    ]);
+    const identity = (sourceGraph) =>
+      canonicalGraphIdentity(
+        flowStore
+          .getState()
+          .exportGraph('whole-pipeline-presentation', undefined, { sourceGraph, randomizeSeeds: false }),
+      );
+    assert.deepEqual(identity(grouped), identity(graph));
+    assert.equal(
+      setup.data.blockInstanceV2.effectiveInterface.boundary.outputs.some((port) =>
+        ['execution_recipe', 'quantization_config'].includes(port.binding.fieldOrPortId),
+      ),
+      false,
+      'Connections used only inside Model Setup are not duplicate public sockets.',
+    );
+    const recipe = setup.data.blockInstanceV2.effectiveGraph.nodes.find(
+      (node) => node.data.action === 'DiffusersExecutionRecipe',
+    );
+    assert.ok(
+      setup.data.blockInstanceV2.effectiveInterface.controls.some(
+        (control) => control.binding.nodeId === recipe.nodeId && control.binding.fieldId === 'offload_mode',
+      ),
+    );
+    const shared = structuredClone(graph);
+    shared.edges.push({
+      ...shared.edges.find((edge) => edge.source === 'node-04'),
+      id: 'shared-recipe',
+      target: 'node-01',
+      targetHandle: 'other_recipe',
+    });
+    const sharedSetup = groups
+      .groupNewOperationGraph(shared)
+      .nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+    assert.ok(sharedSetup);
+    assert.deepEqual(
+      sharedSetup.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action),
+      ['LoadPipeline'],
+      'A shared supplier and its own supplier remain outside.',
+    );
+    const invalid = structuredClone(graph);
+    invalid.nodes.find((node) => node.data.action === 'LoadPipeline').data.params.pipeline.type = 'unreviewed_pipeline';
+    assert.equal(
+      groups.groupNewOperationGraph(invalid).nodes.some((node) => groups.visualOperationGroup(node) === 'setup'),
+      false,
+    );
+    assert.deepEqual(graph, original);
+  }
+});
+
+test('whole-pipeline video inputs combine their actual Load and Normalize operations', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  for (const relative of [
+    'studio/cog-video-x-video-to-video-pipeline/video-to-video.json',
+    'studio/animate-diff-video-to-video-pipeline/video-to-video.json',
+  ]) {
+    const graph = JSON.parse(readFileSync(path.join(backend, 'data/graphs', relative), 'utf8'));
+    const grouped = groups.groupNewOperationGraph(graph);
+    const input = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'videoInput');
+    assert.ok(input, relative);
+    assert.deepEqual(input.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+      'Load',
+      'Normalize',
+    ]);
+    const identity = (sourceGraph) =>
+      canonicalGraphIdentity(
+        flowStore.getState().exportGraph('video-input-presentation', undefined, { sourceGraph, randomizeSeeds: false }),
+      );
+    assert.deepEqual(identity(grouped), identity(graph));
+    const shared = structuredClone(graph);
+    const loader = shared.nodes.find((node) => node.data.module === 'modules.Video' && node.data.action === 'Load');
+    const wire = shared.edges.find((edge) => edge.source === loader.id);
+    shared.edges.push({ ...wire, id: 'shared-video', target: 'external-consumer' });
+    assert.equal(
+      groups.groupNewOperationGraph(shared).nodes.some((node) => groups.visualOperationGroup(node) === 'videoInput'),
+      false,
+      'A separately consumed original clip stays visible.',
+    );
+  }
+});
+
+test('whole-pipeline Generate retains its authored executable fields during live canvas replacement', async () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const graph = JSON.parse(
+    readFileSync(path.join(backend, 'data/graphs/studio/aura-flow-pipeline/text-to-image.json'), 'utf8'),
+  );
+  const { useNodesStore } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const previous = useNodesStore.getState().nodesRegistry;
+  const identity = (sourceGraph) =>
+    canonicalGraphIdentity(
+      flowStore.getState().exportGraph('live-legacy-fields', undefined, { sourceGraph, randomizeSeeds: false }),
+    );
+  const expected = identity(graph);
+  try {
+    assert.equal(fixture.registry['modules.DiffusersImage.Generate'].params.use_guidance_scale_2.hidden, true);
+    useNodesStore.setState({ nodesRegistry: fixture.registry });
+    flowStore.getState().replaceGraph(groups.groupNewOperationGraph(graph), { clearRemovedCache: false });
+    const live = { nodes: flowStore.getState().nodes, edges: flowStore.getState().edges };
+    assert.deepEqual(identity(live), expected, 'Opening a reviewed example must not add inactive guidance overrides.');
+    const generate = live.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+    assert.ok(generate, 'Whole native generation has the same editable Generate stage.');
+    assert.deepEqual(
+      generate.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action),
+      ['Generate'],
+    );
+  } finally {
+    useNodesStore.setState({ nodesRegistry: previous });
+  }
+});
+
+test('legacy modular setup and native caption stages retain their authored fields during canvas hydration', async () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const { useNodesStore } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const previous = useNodesStore.getState().nodesRegistry;
+  const identity = (sourceGraph) =>
+    canonicalGraphIdentity(
+      flowStore.getState().exportGraph('live-legacy-controls', undefined, { sourceGraph, randomizeSeeds: false }),
+    );
+  try {
+    useNodesStore.setState({ nodesRegistry: fixture.registry });
+    for (const file of [
+      'hugging-face-image-text-to-text-model/image-to-text.json',
+      'mini-max-music3-modular-pipeline/text-to-audio.json',
+      'wan-image2-video-modular-pipeline/image-to-video.json',
+    ]) {
+      const graph = JSON.parse(readFileSync(path.join(backend, 'data/graphs/studio', file), 'utf8'));
+      const expected = identity(graph);
+      flowStore.getState().replaceGraph(groups.groupNewOperationGraph(graph), { clearRemovedCache: false });
+      assert.deepEqual(
+        identity({ nodes: flowStore.getState().nodes, edges: flowStore.getState().edges }),
+        expected,
+        `${file}: opening must not introduce absent schema defaults`,
+      );
+    }
+  } finally {
+    useNodesStore.setState({ nodesRegistry: previous });
+  }
+});
+
+test('every bundled example opens as stages without changing its ordered API or rewriting saved presentation', async () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const manifest = JSON.parse(readFileSync(path.join(backend, 'data/workflow-library-manifest.json'), 'utf8'));
+  const variants = JSON.parse(readFileSync(path.resolve('config/canonical-template-variants.v1.json'), 'utf8'));
+  const rows = [
+    ...manifest.workflows,
+    ...selectReviewedExperimentalWorkflows(manifest.experimentalWorkflows, variants),
+  ];
+  const { exampleWorkflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
+  const { workflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  const identity = (sourceGraph) =>
+    canonicalGraphIdentity(
+      flowStore.getState().exportGraph('library-stage-restore', undefined, { sourceGraph, randomizeSeeds: false }),
+    );
+  assert.equal(rows.length, 220, 'Audit the full current library, including declared experimental examples.');
+  for (const row of rows) {
+    const graph = JSON.parse(readFileSync(path.join(backend, 'data/graphs', row.graphPath), 'utf8'));
+    const original = structuredClone(graph);
+    const expected = identity(graph);
+    let opened = exampleWorkflowSnapshotFromGraph(graph, 'default', defaults);
+    for (const node of opened.nodes.filter((node) => node.data.blockInstanceV2))
+      assert.deepEqual(
+        node.position,
+        node.data.blockInstanceV2.presentation.position,
+        `${row.id}: one durable position authority`,
+      );
+    assert.deepEqual(identity(opened), expected, row.id);
+    for (const stage of opened.nodes.filter(groups.visualOperationGroup)) {
+      const exposed = groups.unpackVisualOperationGroups(opened, new Set([stage.id])).graph;
+      assert.deepEqual(
+        identity(exposed),
+        expected,
+        `${row.id}: exposing ${stage.data.label} preserves all remaining groups' order`,
+      );
+    }
+    const saved = JSON.parse(JSON.stringify(opened));
+    for (let reload = 0; reload < 3; reload++) {
+      opened = workflowSnapshotFromGraph(JSON.parse(JSON.stringify(opened)), 'default', defaults);
+      assert.deepEqual(identity(opened), expected, `${row.id}: reload ${reload + 1}`);
+      assert.deepEqual(opened.nodes, saved.nodes, `${row.id}: saved nodes retain their presentation`);
+      assert.deepEqual(opened.edges, saved.edges, `${row.id}: saved wires retain their presentation`);
+    }
+    assert.deepEqual(graph, original, `${row.id}: shipped bytes retain their identity`);
+    if (row.id.includes('long_showcase') || row.id.includes('animated_story') || row.id.includes('lyric_music_video'))
+      assert.ok(
+        opened.nodes.some((node) => /^Shot \d+/.test(node.data.label ?? '')),
+        `${row.id}: separate Shot groups`,
+      );
+  }
+});
+
 test('canonical library projection preserves real Cosmos/Qwen controls, wires and owner identity without rewriting grouped saves', async () => {
   for (const id of ids) {
     const graph = build(id);
@@ -297,4 +561,28 @@ test('canonical projection leaves user Blocks intact and rejects malformed visua
   flowStore.getState().nodes.find(groups.visualOperationGroup).data.blockInstanceV2.definitionSnapshot.contentHash =
     'block-definition-v2-00000000';
   await assert.rejects(hooks.prepareWorkflowGraphForExport({ canonicalLibrary: true }), /contentHash/);
+});
+
+test('portable canonical IDs preserve executable Blocks without changing the grouped source or its definition', async () => {
+  const graph = build(ids[0]);
+  const root = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'inputs');
+  const definition = structuredClone(root.data.blockInstanceV2.definitionSnapshot);
+  definition.source.provider = 'operator-authored-example';
+  definition.contentHash = blockSchema.blockDefinitionContentHashV2(definition);
+  root.data.blockInstanceV2.definitionSnapshot = blockSchema.normalizeBlockDefinitionV2(definition);
+  root.data.blockInstanceV2.definitionRef.contentHash = definition.contentHash;
+  const before = structuredClone(graph);
+  const expectedApi = semanticApi(graph);
+  const expand = await loadCanonicalWorkflowExpander(server);
+  const portable = canonicalExecutableWorkflowGraph(graph, expand);
+  const canonical = canonicalizeGraphIds(sanitizeCanonicalWorkflowGraph(portable), shared.remapOperationAuthoring);
+  assert.deepEqual(semanticApi(canonical), expectedApi);
+  assert.equal(
+    canonical.nodes.some((node) => node.data.blockInstanceV2),
+    false,
+  );
+  assert.deepEqual(graph, before, 'Canonical publication does not rewrite the ordinary grouped canvas.');
+  const broken = structuredClone(graph);
+  broken.nodes.find((node) => node.data.blockInstanceV2).data.blockInstanceV2.instanceId = 'wrong-root';
+  assert.throws(() => canonicalExecutableWorkflowGraph(broken, expand), /canvas id/);
 });

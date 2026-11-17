@@ -495,7 +495,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
                         ),
                       )}
                       updateStore={updateStore}
-                      module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+                      module={node.data.module}
                       action="BlockV2"
                       mode="controls"
                     />
@@ -507,7 +507,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
                 nodeId={node.id}
                 params={view.controlParams}
                 updateStore={updateStore}
-                module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+                module={node.data.module}
                 action="BlockV2"
                 mode="controls"
               />
@@ -537,7 +537,7 @@ export const BlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
               nodeId={node.id}
               params={connectorParams}
               updateStore={updateStore}
-              module={view.source.library ?? view.source.provider ?? 'MoDiff'}
+              module={node.data.module}
               action="BlockV2"
               mode="connectors"
             />

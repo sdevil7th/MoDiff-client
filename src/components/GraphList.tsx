@@ -35,9 +35,10 @@ import { GraphControlButton } from '../ui/GraphControls';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
+import { STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { createLatestRequestGate, formatRequestError, requestJson, RequestError } from '../utils/requestJson';
-import type { WorkflowTab } from '../studio/types';
+import type { StudioModelType, WorkflowTab } from '../studio/types';
 import {
   backendWorkflowTab,
   deleteWorkflowNow,
@@ -121,6 +122,11 @@ function parseGraphList(value: unknown) {
 
 function workflowTestId(value: string) {
   return value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function workflowModelLabel(node: GraphData) {
+  const profile = STUDIO_MODEL_PROFILES[node.modelType as StudioModelType];
+  return profile?.displayName || profile?.family || node.modelType || '';
 }
 
 function GraphList() {
@@ -286,7 +292,17 @@ function GraphList() {
     if (!filtersActive) return visibleGraphs;
     return allWorkflowFiles.filter(
       (file) =>
-        file.name.toLowerCase().includes(search.toLowerCase()) &&
+        [
+          file.name,
+          file.modelType,
+          workflowModelLabel(file),
+          file.mode?.replace(/_/g, ' '),
+          ...(file.requiredArtifacts ?? []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(search.trim().toLowerCase()) &&
         (mediaFilter === 'all' || file.mediaKind === mediaFilter) &&
         (modelFilter === 'all' || file.modelType === modelFilter) &&
         (modeFilter === 'all' || file.mode === modeFilter) &&
@@ -319,12 +335,12 @@ function GraphList() {
             return value;
           },
         });
-        createWorkflowTab(
-          node.name || 'Imported graph',
-          workflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form),
-          'import',
-          node.path,
-        );
+        const example = node.modelType && node.mode ? await import('../studio/exampleWorkflow') : null;
+        const snapshot = example
+          ? example.exampleWorkflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form)
+          : workflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form);
+        createWorkflowTab(node.name || 'Imported graph', snapshot, 'import', node.path);
+        if (example && !(await example.settleExampleWorkflowCanvas())) return;
         setRightPanelOpen(true);
         setRightPanelTab('studio');
         enqueueSnackbar('Workflow opened as a new tab', { variant: 'success', autoHideDuration: 2200 });
@@ -488,13 +504,18 @@ function GraphList() {
           <FileJson2 size={15} className="shrink-0 text-modiff-subtle-text group-hover:text-hf-yellow" />
           <span
             draggable
-            className="min-w-0 flex-1 cursor-grab truncate"
+            className="min-w-0 flex-1 cursor-grab py-1"
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', node.path);
               e.dataTransfer.effectAllowed = 'move';
             }}
           >
-            {node.name}
+            <span className="block truncate">{node.name}</span>
+            {node.modelType ? (
+              <span className="block truncate text-xs text-modiff-subtle-text" title={node.modelType}>
+                {workflowModelLabel(node)}
+              </span>
+            ) : null}
           </span>
           {node.mediaKind ? (
             <span className="text-modiff-tiny rounded bg-modiff-surface-hover/50 px-1.5 py-0.5 uppercase text-modiff-subtle-text">

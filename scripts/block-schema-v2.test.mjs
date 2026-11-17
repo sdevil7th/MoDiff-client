@@ -8,6 +8,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const COMMIT = 'a'.repeat(40);
 
 let schema;
+let compatibility;
 let server;
 
 before(async () => {
@@ -20,6 +21,20 @@ before(async () => {
     appType: 'custom',
   });
   schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
+  compatibility = await server.ssrLoadModule('/src/studio/blockValueTypeCompatibilityV2.ts');
+});
+
+test('finite ordinary union sockets retain alternatives without flattening collection types', () => {
+  for (const [publicType, runtime, expected] of [
+    ['video|str|image', ['video', 'str', 'image'], true],
+    ['video|str|image', 'video', true],
+    ['video_asset|video|str', 'video_asset', true],
+    ['video|str', 'string', true],
+    ['video|str', 'audio', false],
+    ['list[video|image]', 'image', false],
+    ['video|opaque', 'audio', true],
+  ])
+    assert.equal(compatibility.blockValueTypesAreCompatibleV2(publicType, runtime), expected);
 });
 
 after(async () => {
@@ -200,6 +215,28 @@ test('V2 bindings preserve exact private-style backend field ids', () => {
   const parsed = schema.normalizeBlockDefinitionV2(fixture);
   assert.equal(parsed.boundary.inputs[0].binding.fieldOrPortId, '_auto_resize');
   assert.equal(parsed.controls[0].binding.fieldId, '_auto_resize');
+});
+
+test('native spawned fields survive Block boundaries and edges without widening public ids', () => {
+  for (const field of ['item>>>shot-2', 'item>>>_0-a']) {
+    const fixture = definition('user');
+    fixture.graph.nodes[1].data.params[field] = { type: 'string', default: 'starter prompt' };
+    fixture.boundary.inputs[0].binding.fieldOrPortId = field;
+    fixture.controls[0].binding.fieldId = field;
+    fixture.graph.edges[0].targetPortId = field;
+    fixture.graph.graphHash = schema.blockGraphHashV2(fixture.graph);
+    fixture.contentHash = schema.blockDefinitionContentHashV2(fixture);
+    assert.equal(schema.normalizeBlockDefinitionV2(fixture).boundary.inputs[0].binding.fieldOrPortId, field);
+    fixture.boundary.inputs[0].portId = field;
+    fixture.contentHash = schema.blockDefinitionContentHashV2(fixture);
+    assert.throws(() => schema.normalizeBlockDefinitionV2(fixture), /portId/);
+  }
+  for (const field of ['item>', 'item>>x', 'item>>>', 'item>>>>x', 'item>>>x>>>y']) {
+    const fixture = definition('user');
+    fixture.boundary.inputs[0].binding.fieldOrPortId = field;
+    fixture.contentHash = schema.blockDefinitionContentHashV2(fixture);
+    assert.throws(() => schema.normalizeBlockDefinitionV2(fixture), /fieldOrPortId/);
+  }
 });
 
 test('client hashes match the backend BlockDefinitionV2 parity fixture', () => {

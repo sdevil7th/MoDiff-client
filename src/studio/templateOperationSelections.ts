@@ -541,6 +541,12 @@ export const AUDIO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
 
 /** Fresh ordinary video stages retain the historical creative recipes. Older
  * saved whole-pipeline graphs keep their original executable structure. */
+const REGISTERED_NATIVE_VIDEO_V1 = new Set<StudioTemplateId>([
+  'ltx_video_text_to_video',
+  'ltx_video_image_to_video',
+  'ltx_video_multi_reference',
+]);
+
 export const VIDEO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateId, StudioTemplateExecutionSelection>> =
   Object.fromEntries(
     (
@@ -550,20 +556,54 @@ export const VIDEO_TEMPLATE_EXECUTION_SELECTIONS: Partial<Record<StudioTemplateI
         ['ltx_video_video_to_video', 'video_to_video'],
         ['ltx_video_multi_reference', 'reference_to_video'],
         ['wan_22_ti2v_5b_seed_vault', 'text_to_video'],
+        ['wan_vace_cinematic_text_to_video', 'text_to_video'],
+        ['wan_vace_video_color_grade', 'video_color_edit'],
+        ['wan_vace_video_to_video', 'video_to_video'],
+        ['wan_vace_masked_object_replace', 'video_inpaint'],
+        ['wan_vace_outpaint_reframe', 'video_outpaint'],
+        ['wan_vace_grayscale_control', 'control_to_video'],
+        ['wan_22_i2v_seed_vault', 'image_to_video'],
+        ['wan_21_t2v_13b_seed_vault', 'text_to_video'],
+        ['wan_video_long_showcase', 'text_to_video'],
+        ['ltx_video_long_showcase', 'image_to_video'],
+        ['ltx_video_animated_story', 'text_to_video'],
       ] as const satisfies readonly (readonly [StudioTemplateId, StudioMode])[]
     ).map(([id, mode]) => {
-      const wan = id === 'wan_22_ti2v_5b_seed_vault';
+      const routes: Partial<
+        Record<StudioTemplateId, [string, string, StudioTemplateExecutionSelection['bindingSpec']['modelType']]>
+      > = {
+        wan_22_ti2v_5b_seed_vault: ['WanTI2VPipeline', 'wan-22-ti2v-5b:direct', 'WanTI2VPipeline'],
+        wan_vace_cinematic_text_to_video: ['WanPipeline', 'wan-text-to-video:direct', 'WanVideoPipeline'],
+        wan_vace_video_color_grade: ['WanVideoToVideoPipeline', 'wan-video-to-video:direct', 'WanVideoPipeline'],
+        wan_vace_video_to_video: ['WanVideoToVideoPipeline', 'wan-video-to-video:direct', 'WanVideoPipeline'],
+        wan_vace_masked_object_replace: ['WanVACEPipeline', 'wan-vace:direct', 'WanVACEPipeline'],
+        wan_vace_outpaint_reframe: ['WanVACEPipeline', 'wan-vace:direct', 'WanVACEPipeline'],
+        wan_vace_grayscale_control: ['WanVACEPipeline', 'wan-vace:direct', 'WanVACEPipeline'],
+        wan_22_i2v_seed_vault: ['WanImageToVideoPipeline', 'wan-22-image-to-video:direct', 'WanImageToVideoPipeline'],
+        wan_21_t2v_13b_seed_vault: ['WanPipeline', 'wan-text-to-video:direct', 'WanVideoPipeline'],
+        wan_video_long_showcase: ['WanPipeline', 'wan-text-to-video:direct', 'WanVideoPipeline'],
+      };
+      const [pipelineClass, executionProfileId, modelType] = routes[id] ?? [
+        'LTXConditionPipeline',
+        'ltx-video:direct',
+        'LTXVideoPipeline',
+      ];
       return [
         id,
         {
           schemaVersion: 1,
-          pipelineClass: wan ? 'WanTI2VPipeline' : 'LTXConditionPipeline',
-          executionProfileId: wan ? 'wan-22-ti2v-5b:direct' : 'ltx-video:direct',
+          pipelineClass,
+          executionProfileId,
           task: mode,
-          bindingSpec: { modelType: wan ? 'WanTI2VPipeline' : 'LTXVideoPipeline', mode },
+          bindingSpec: { modelType, mode },
           implementation: 'pipeline_stages',
           authoringRecipeId: 'generic-video-stages:v1',
-          note: 'Encode Inputs reuses official text encoding and owns source media; the official Denoise call prepares media latents and Video Output decodes and exports the matching result.',
+          // This descriptor is part of the versioned recipe lock. Regrouping
+          // the same native stages must retain its registered declaration;
+          // current visual stage labels do not belong in a new recipe identity.
+          note: REGISTERED_NATIVE_VIDEO_V1.has(id)
+            ? 'Encode Inputs reuses official text encoding and owns source media; the official Denoise call prepares media latents and Video Output decodes and exports the matching result.'
+            : 'Encode Inputs owns official encoding and source media; Generate retains native sampling and decoding, including required continuity work. Video Output exports the result through ordinary typed connections.',
         } satisfies StudioTemplateExecutionSelection,
       ];
     }),

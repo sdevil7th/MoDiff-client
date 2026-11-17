@@ -43,6 +43,28 @@ import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
 
 let runtime;
 
+test('explicit Gallery selection keeps the default complete verification strict', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    const id = fixture.manifest.examples.find((entry) => entry.templateId !== 'withheld').templateId;
+    const result = await verifyGallery({}, 'synthetic-scope', { ...fixture.options, templateIds: [id] });
+    assert.equal(result.ok, true);
+    assert.equal(result.examples, 1);
+    assert.equal(result.explicitlyScoped, true);
+    for (const templateIds of [[], [id, id], ['missing']]) {
+      await assert.rejects(
+        () => verifyGallery({}, 'synthetic-scope', { ...fixture.options, templateIds }),
+        /distinct existing examples/u,
+      );
+    }
+    const complete = await verifyGallery({}, 'synthetic-complete', fixture.options);
+    assert.equal(complete.examples, fixture.manifest.examples.length);
+    assert.equal(complete.explicitlyScoped, undefined);
+  } finally {
+    fixture.dispose();
+  }
+});
+
 test('decoded video identity tolerates only the reviewed FFmpeg software banner difference', () => {
   const original = Buffer.from(
     '#format: frame checksums\n#version: 2\n#hash: MD5\n#software: Lavf61.1.100\n' +
@@ -894,6 +916,25 @@ test('public provenance redacts machine paths and source commit ids', () => {
   });
 });
 
+test('public provenance redacts removable Linux mounts while retaining public and logical media paths', () => {
+  assert.deepEqual(
+    redactPublicProvenance({
+      cache: '/run/media/example/External SSD/MoDiff/cache',
+      source: '/media/example/Archive/source.png',
+      scratch: '/mnt/private/offload',
+      gallery: '/template-gallery/runtime-inputs/assets/example.png',
+      logical: '@data/images/source.png',
+    }),
+    {
+      cache: '<local-path>/cache',
+      source: '<local-path>/source.png',
+      scratch: '<local-path>/offload',
+      gallery: '/template-gallery/runtime-inputs/assets/example.png',
+      logical: '@data/images/source.png',
+    },
+  );
+});
+
 test('gallery harness loads all Studio templates from the TypeScript runtime', () => {
   assert.equal(runtime.templates.length, 91);
   assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 91);
@@ -1269,6 +1310,41 @@ test('lyric video approval cannot bypass listening-based cue alignment review', 
   assert.match(errors.join('\n'), /at least six exact lyric overlay cues/);
 });
 
+test('a declared 45-second song with disabled lyric overlay needs no invented caption cues', () => {
+  const expected = { templateId: 'ace_step_lyric_music_video' };
+  const review = {
+    motionReview: { durationSeconds: 45 },
+    lyricSyncReview: {
+      status: 'not_applicable',
+      overlayEnabled: false,
+      emptyLrc: true,
+    },
+  };
+  const metadata = { expectedDurationSeconds: 45, lyricOverlayEnabled: false };
+  const errors = validateQualityReview(review, expected, 'approved_reviewed', undefined, metadata);
+  assert.equal(
+    errors.some((e) =>
+      /duration between 20 and 35|lyric sync|audio alignment|lyric overlay cues|preview-safe area/.test(e),
+    ),
+    false,
+  );
+  assert(
+    validateQualityReview(review, expected, 'approved_reviewed', undefined, {
+      ...metadata,
+      lyricOverlayEnabled: true,
+    }).some((e) => /lyric overlay cues/.test(e)),
+  );
+  assert(
+    validateQualityReview(
+      { ...review, motionReview: { durationSeconds: 30 } },
+      expected,
+      'approved_reviewed',
+      undefined,
+      metadata,
+    ).some((e) => /declared 45-second/.test(e)),
+  );
+});
+
 test('multi-reference product approval enforces human-scale bicycle geometry', () => {
   const expected = {
     templateId: 'qwen_multi_reference_product',
@@ -1532,6 +1608,82 @@ test('layered gallery derivatives stay bound to every captured layer and the sou
     ).join('\n'),
     /8\/255 mean-absolute-error boundary/,
   );
+});
+
+test('retained lossless layer exports reproduce every native output without replacing its identity', () => {
+  const processorPath = fileURLToPath(new URL('./template-gallery-retained-layer-sheet.py', import.meta.url));
+  const processorHash = 'sha256:bytes:' + createHash('sha256').update(readFileSync(processorPath)).digest('hex');
+  const items = Array.from({ length: 3 }, (_, index) => ({
+    width: 640,
+    height: 640,
+    encodedSha256: 'sha256:' + String(index + 1).repeat(64),
+    decodedSha256: 'sha256:layer:' + index,
+  }));
+  const provenance = {
+    template: { id: 'qwen_layered_portrait' },
+    inputs: { items: [{ contentHash: 'sha256:bytes:source' }] },
+    output: { collectionHash: 'sha256:collection:layers', items },
+  };
+  const derivative = {
+    schemaVersion: 1,
+    format: 'modiff.gallery.reviewed-derivative.v1',
+    templateId: 'qwen_layered_portrait',
+    kind: 'layered_contact_sheet',
+    layout: 'source-recomposition-three-layers-metrics-3x2',
+    sourceOutputCollectionHash: provenance.output.collectionHash,
+    sourceItemHashes: items.map((x) => x.decodedSha256),
+    sourceInputHash: 'sha256:bytes:source',
+    decodedMediaHash: 'sha256:decoded:sheet',
+    processor: {
+      path: 'scripts/template-gallery-retained-layer-sheet.py',
+      contentHash: processorHash,
+      role: 'byte-identical-retained-sheet-reproduction',
+    },
+    recomposition: { maxMeanAbsoluteError: 4.3, threshold: 8, status: 'pass' },
+    creationTimeReviewCaptionPreserved: true,
+    losslessExports: {
+      schemaVersion: 1,
+      verification: 'native-webp-quality-100-byte-reproduction',
+      items: items.map((item, index) => ({
+        index,
+        width: 640,
+        height: 640,
+        mode: 'RGBA',
+        nativeEncodedSha256: item.encodedSha256,
+        encodedSha256: 'sha256:bytes:' + String(index + 5).repeat(64),
+        rgbaPixelSha256: 'a'.repeat(64),
+      })),
+    },
+  };
+  const expected = { templateId: 'qwen_layered_portrait', decodedMediaHash: derivative.decodedMediaHash };
+  assert.deepEqual(validateReviewedDerivative(provenance, derivative, expected), []);
+  for (const mutate of [
+    (x) => {
+      x.losslessExports.items.reverse();
+    },
+    (x) => {
+      x.losslessExports.items.pop();
+    },
+    (x) => {
+      x.losslessExports.items[0].nativeEncodedSha256 = 'sha256:' + '0'.repeat(64);
+    },
+    (x) => {
+      x.losslessExports.items[0].rgbaPixelSha256 = 'invalid';
+    },
+    (x) => {
+      x.losslessExports.items[0].width = 1024;
+    },
+    (x) => {
+      x.creationTimeReviewCaptionPreserved = false;
+    },
+    (x) => {
+      x.processor.role = 'original-producer';
+    },
+  ]) {
+    const changed = structuredClone(derivative);
+    mutate(changed);
+    assert.match(validateReviewedDerivative(provenance, changed, expected).join('\n'), /lossless exports/);
+  }
 });
 
 test('reviewed audio remux derivatives bind source video, replacement audio, operation, and final AV identity', () => {

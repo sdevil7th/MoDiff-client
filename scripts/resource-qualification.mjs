@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { validateRunProvenance } from './live-proof-provenance.mjs';
 import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
+import { readReleaseRunProvenance } from './release-evidence-paths.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(SCRIPT_PATH);
@@ -243,7 +244,13 @@ export function validateResourceQualificationEvidence({ provenance, baseline, co
 
   const recipe = resourceRecipeFromProvenance(provenance);
   const declared = (contractTemplate?.resourceRecipes?.declaredRecipes ?? []).some((candidate) =>
-    sameDeclaredRecipe({ modelType: contractTemplate.modelType, ...candidate }, recipe),
+    sameDeclaredRecipe(
+      {
+        modelType: contractTemplate.resourceRecipes.executionModelType ?? contractTemplate.modelType,
+        ...candidate,
+      },
+      recipe,
+    ),
   );
   if (!declared) {
     throw new Error(
@@ -313,11 +320,11 @@ export async function recordResourceQualification({
   const templateId = provenance?.template?.id;
   const contractTemplate = contract.templates?.find((template) => template.id === templateId);
   if (!contractTemplate) throw new Error(`Template ${String(templateId)} is not in the release contract.`);
-  const baselinePath = required(
-    resolve(BACKEND_ROOT, contractTemplate.lastSuccessfulRealRun?.provenancePath ?? ''),
-    'Locked-template baseline provenance',
-  );
-  const baseline = readJson(baselinePath);
+  const baseline = readReleaseRunProvenance({
+    clientRoot: CLIENT_ROOT,
+    backendRoot: BACKEND_ROOT,
+    receipt: contractTemplate.lastSuccessfulRealRun,
+  });
   const validated = validateResourceQualificationEvidence({ provenance, baseline, contractTemplate });
 
   mkdirSync(provenanceDir, { recursive: true });
@@ -341,6 +348,7 @@ export async function recordResourceQualification({
     format: 'modiff.resource-run-receipt.v1',
     proofKind: 'real_backend_weights_full_locked_workload',
     templateId,
+    resourceFamily: contractTemplate.modelType,
     templateSchemaHash: contractTemplate.schemaHash,
     taskId: provenance.taskId,
     capturedAt: provenance.capturedAt,

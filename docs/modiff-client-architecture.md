@@ -1,5 +1,15 @@
 # MoDiff Client Architecture
 
+Ordinary visual stages follow native model-contract visibility. A scoped metadata
+reply that enables an editor omitted by the original model adds that editor to
+the effective instance interface, preserving its value, wires, reusable
+definition and any deliberate interface removal. Later incompatible models hide
+that editor while retaining its value for switching back. Explicit User Node and
+registered Block interfaces keep their existing public-control visibility policy.
+Numeric editors display retained values outside a newly selected model's bounds
+as invalid. Opening, focusing or leaving the editor does not silently clamp the
+execution value. An explicit edit uses the existing model bounds and participates
+in the normal Undo/Redo history.
 This document describes the current frontend structure, ownership boundaries, data flow, persistence, and extension points. Update it in the same change when a subsystem moves or a public contract changes.
 
 ## System Boundary
@@ -243,6 +253,17 @@ authoring behavior grants neither Auto admission nor model/output qualification.
 `operationAuthoring` is a versioned, advisory annotation on those ordinary nodes.
 It stores the selected operation, initial visible defaults and retained unsupported
 settings. It does not grant execution permission or replace node params.
+
+When an exact video owner publishes both video-only and synchronized AV operations,
+the backend starter selects the one generation operation in its reviewed source
+recipe. The wire parser accepts only the bounded owner-plus-one-consumer partition,
+with the same declared pipeline socket and a concrete video output. Both operation
+contracts remain available; a new starter does not imply two generation runs.
+Across an explicit implementation change, a renamed media output can retain an
+external connection when both contracts declare media, the former node has one
+compatible media output and the selected implementation has one best destination.
+Multiple compatible results remain a review issue. This does not infer tensor,
+model-weight or custom-code compatibility from a shared type.
 Backend-declared `sharedInputs` bind seed controls of stages that continue one
 generator. `operationSharedInputs` validates their loader scope and membership;
 ordinary parameter edits update the group under one history transaction. Export
@@ -369,6 +390,17 @@ integrated, and transcription retains text output. Backend-published selected
 adapter policies use the same strict profile/artifact/task join for image and
 audio; authoring permission does not enable Automatic memory planning or qualify
 model execution. See [audio workflow stages](audio-workflows.md).
+
+Fresh ordinary video drafts group their adjacent native sampler and decoder as
+Generate before grouping Video Output. An intervening upscale or an independent
+soundtrack keeps its own operation and feeds a separate file exporter. The
+encoded-frame alternative validates the same owner and conditioning chain when
+decoding must remain inside the native generator. Input file pickers retain their
+own media previews; those are distinct from execution output preview bindings.
+Image Input, Video Input and Prepare Mask retain their actual typed source and
+preparation nodes. Finite scalar/media union boundary types such as
+`video|str|image` preserve every native alternative in the canvas and both
+validators; nested collection expressions retain their exact identity.
 
 New eligible starters opt into grouping; saved workflows require an explicit
 group action. Complex manually nested/mirrored interfaces fail closed during
@@ -1915,6 +1947,16 @@ safe decimal strings from native controls can be displayed as numbers without
 rewriting the receipt or saved form. This presentation conversion never merges
 conflicting captures or fills missing values from form defaults.
 
+Versioned deterministic operation descriptors (`Builtin*OperationV1`) resolve
+to their existing built-in presentation profiles only when the validated receipt
+contains the exact native processor owner and matching summary identity. Their
+source is the versioned `builtin://` operation contract, not a Hub model inherited
+from a form. Without a graph-task declaration, a unique supported task can be
+displayed from complete native media call controls; missing, conflicting or
+unsupported controls remain uncaptured. Native receipts and historical forms stay
+unchanged through history, output packages and reload. Captured outputs with no
+prompt or model repository never borrow those fields from compatibility defaults.
+
 Block preview projections retain source-field artifact metadata only when its
 URL and available task identity match the current instance media reference.
 Older cached artifacts stay in the immutable source snapshot but cannot override
@@ -2094,3 +2136,121 @@ loads. Portrait clips remain fully visible inside that frame through
 `object-contain`; their intrinsic dimensions cannot enlarge an arranged node and
 cover neighbouring controls. This display sizing does not change the source
 file, authored node positions, wires or saved execution parameters.
+
+### Fresh example stage presentation
+
+Bundled Example workflows use the same V2 visual stages as fresh templates. The
+opener infers the form from the original graph, folds actual connected operations,
+and preserves the ordered executable graph. Whole-pipeline Diffusers paths combine
+the loader, private quantization and execution settings in Model Setup; their
+native generation operation sits inside the shared Generate stage and already
+performs its own encoding and decoding. The V2 boundary retains its authored call
+fields rather than hydrating inactive controls for other models from the generic
+root-node schema. Internal-only setup connections remain inside Model Setup.
+Shared suppliers stay external. Connected video Load and Normalize operations
+share Video Input unless another branch consumes the original clip. Storyboards
+retain separate Shot groups. These wrappers grant no new execution or editing
+authority, and ordinary imported files and saved documents retain their authored
+presentation.
+
+Fresh example and template layouts wait for two consecutive measurements of the
+visible layout nodes, with a bounded five-second deadline and an explicit retry
+error on timeout. Hidden nodes and owned projections are excluded consistently
+with the layout engine. Initial form inference may settle during this wait;
+switching the selected document or changing its canvas cancels the pending layout.
+The final arrangement updates the same durable Block presentation used by normal
+Arrange, before acknowledging the opening or creation.
+
+Whole-task legacy imports follow the same ordinary-graph policy across image,
+audio, video, 3D, speech, text and deterministic media. Presentation roles without
+a current managed receipt do not grant managed-template authority. Existing
+explicit managed receipts and template-owned documents keep their normal
+validation. A rejected automatic form synchronization reports its error instead
+of throwing through the React view; the strict imperative synchronization check
+and existing Auto/Custom submission policy remain in force.
+
+Existing decomposed template creators explicitly retain their historical stage
+traversal, including the original provenance factory byte vectors. Fresh bundled
+Examples instead preserve their canonical source order before folding any stages.
+This compatibility choice changes presentation ordering metadata only and does
+not reinterpret historical approvals or rewrite saved documents.
+
+Planning-only templates remain available for reading their notes. Their card and
+detail actions say “Planning only” and cannot create a workflow. The shared
+creation entry point checks the same policy before creating a tab or changing
+the active document, including callers outside the browser dialog. Model terms
+review is not requested for an unavailable creation action. This presentation
+guard does not change model execution, resource limits or historical assets.
+
+New self-contained Block creation uses the existing legacy movement reducer as
+a pure graph operation. The UI wrapper supplies reusable definitions and Cluster
+metadata for explicit legacy edits; importing a planner does not import browser
+configuration or read stores. The reducer and ordinary V2 compiler remain shared.
+
+Node preview history requires the same workflow identity as the current document.
+Unscoped legacy outputs remain in the gallery. Reusing canonical node IDs in a
+fresh example cannot attach those outputs to its input previews or expand its
+layout with unrelated media.
+<!-- Runtime option projection follow-up, 16 November 2026. -->
+
+Aliased Block controls resolve current runtime option presentation through the
+same declared control bindings used by connected-input hints. Every mirror must
+agree. The current backend may mark hardware status as
+`runtimeOptions: availability` or physical device enumeration as `choices`;
+saved/imported markers cannot grant this behavior. Dynamic options providers
+remain authoritative. This refresh never persists a second field schema or
+changes values, definition hashes, executable API or authority receipts.
+
+Numeric fields compare a committed value with the actual saved value/default
+before writing. Leaving an untouched field cannot add an Undo entry, and Enter
+commits once. Out-of-range saved values can still be corrected by an explicit
+commit. Native browser regressions cover Tab, Enter, Undo/Redo and Save/reload.
+
+Ordinary visual stages resolve field actions through their declared native
+bindings, including mirrors. Their renderer uses the real node identity; a
+presentation label is not an action owner. Imported schemas may omit callback
+hooks, so explicit edits resolve those hooks from the current native registry.
+Returned field values and metadata update the workflow-owned effective graph
+and public values through the existing Block reducers. Reusable definitions and
+registered Block editing policies remain intact.
+
+A changed native signal from a scoped metadata response or a user connection
+may dispatch its registered downstream metadata hook. Imported ordinary consumers
+with omitted or suppressed automatic hooks use the current registered hook for
+that explicit change too. A scoped reply identifies its exact publishing field
+and value; superseded payloads cannot replay callbacks, and a rendered relay
+copying the value early cannot swallow the downstream refresh. Opening or restoring a
+stage does not replay those hooks. Saved disabled presentation cannot veto a
+registered metadata refresh, but does not grant execution or bypass model,
+resource, consent or sealed-control checks. Stale session, tab, canvas and form
+responses retain the ordinary rejection rules. Browser regressions exercise
+model switching, downstream contract updates, Undo/Redo and Save/reload without
+submitting a graph or downloading weights.
+
+Fresh graph measurement waits start their bounded observation window on the first
+available browser frame. A large synchronous initial render must not exhaust that
+window before ResizeObserver can report its first bounds. Completion still requires
+two consecutive measured frames; incomplete graphs still fail instead of being
+laid out using invented dimensions. Example and template opening share this rule.
+
+Model-reference inspection reads `modelReferenceInactiveWhenHidden` only from the
+current native registry. An explicitly inactive auxiliary may retain its selected
+repository without being reported as a missing dependency. Imported opt-out hints,
+hidden primary models, active auxiliaries and unknown visibility remain conservative.
+Inspection never clears a selection or grants backend execution/resource admission.
+Stage control disclosures use a zero-minimum single-column grid. A long model
+identifier must shrink or truncate within its control rather than setting an
+intrinsic grid width larger than the node. Apply this constraint to both shared
+stage controls and Encode Inputs groups; clipping the parent alone hides the
+controls and does not correct their layout. This is presentation only and must
+preserve the native execution graph and authored values.
+
+# Expanded visual-stage field actions
+
+Projected containers expose declared local controls, not native callback owners.
+Resolve those controls through the owning instance and its exact container
+interface before looking up the native field action. This also applies when a
+visual stage is nested inside a storyboard shot. Stale renderer identities and
+foreign owners must fail closed. Hidden inherited aliases remain presentation
+metadata and must not be treated as additional visible controls or rewritten in
+the persisted execution graph.

@@ -1,4 +1,5 @@
 import { getFormDefaultsForMode } from './modelProfiles';
+import { sourceVideoTimingMatches } from './sourceVideoTiming';
 import { coerceStudioTemplateId } from './outputContracts';
 import templateGalleryContract from './templateGalleryContract.json';
 import { resolveTemplateAssetUrl } from './templateAssets';
@@ -12,6 +13,16 @@ import type {
 } from './types';
 import { hashString, stableStringify } from './stableHash';
 import { explicitStudioWeightFormat, persistedStudioWeightFormat } from './weightFormat';
+import historicalSelections from './templateHistoricalSelections.json';
+
+// The reviewed index can legitimately be empty after its recipes become
+// current again. Retain the record contract instead of inferring never[].
+const historicalSelectionRecords: readonly {
+  templateId: string;
+  currentTemplateLockHash: string;
+  templateLockHash: string;
+  executionSelection: unknown;
+}[] = historicalSelections.records;
 export { hashString, stableStringify } from './stableHash';
 
 export const TEMPLATE_GALLERY_MANIFEST_PATH = resolveTemplateAssetUrl('/template-gallery/manifest.json') as string;
@@ -316,12 +327,13 @@ export function getTemplateLockHash(
   template: StudioTemplate,
   modelRevision = template.example?.modelRevision ?? 'unlocked',
 ) {
-  const workflowLock = template.workflowBlocks?.length
-    ? {
-        blocks: template.workflowBlocks,
-        settings: template.workflowBlockSettings ?? {},
-      }
-    : undefined;
+  const workflowLock =
+    template.workflowBlocks?.length || template.workflowBlockSettings?.encodingInputs
+      ? {
+          blocks: template.workflowBlocks ?? [],
+          settings: template.workflowBlockSettings ?? {},
+        }
+      : undefined;
   return `tpl_${hashString(
     stableStringify({
       templateId: template.id,
@@ -379,9 +391,13 @@ function matchesTemplateMediaContract(template: StudioTemplate, entry: TemplateG
   const durationSeconds = Number(entry.durationSeconds ?? 0);
   const shortEdge = Math.min(width, height);
   const longEdge = Math.max(width, height);
+  const sourceTimingPreserved =
+    template.mode === 'video_to_video' &&
+    sourceVideoTimingMatches(expected.sourceTiming, { frames, durationSeconds }) &&
+    (entry.beforeSourceMediaHash ?? entry.beforeMediaHash) === expected.sourceTiming?.sourceMediaHash;
   if (
-    durationSeconds < contract.minimumDurationSeconds ||
-    frames < contract.minimumFrames ||
+    (!sourceTimingPreserved && durationSeconds < contract.minimumDurationSeconds) ||
+    (!sourceTimingPreserved && frames < contract.minimumFrames) ||
     shortEdge < contract.minimumShortEdge ||
     longEdge < contract.minimumLongEdge
   ) {
@@ -447,9 +463,19 @@ function historicalWorkflowSettings(value: unknown, recordedModels: readonly str
   // Keep all other artifact metadata in the lock, including its weight hash.
   const recordedRevision =
     artifact.source === 'hub' &&
+    typeof artifact.value === 'string' &&
+    !artifact.value.split('/').some((part) => !part || part === '.' || part === '..') &&
     typeof artifact.revision === 'string' &&
     /^[a-f0-9]{40}$/u.test(artifact.revision) &&
-    recordedModels.includes(`${artifact.value}@${artifact.revision}`);
+    recordedModels.some((identity) => {
+      const [repository, revision] = identity.split('@');
+      return (
+        typeof repository === 'string' &&
+        revision === artifact.revision &&
+        /^[^/@]+\/[^/@]+$/u.test(repository) &&
+        (artifact.value === repository || (artifact.value as string).startsWith(`${repository}/`))
+      );
+    });
   return Object.fromEntries(
     Object.entries(artifact).flatMap(([key, item]) =>
       key === 'revision' && recordedRevision ? [] : [[key, historicalWorkflowSettings(item, recordedModels)]],
@@ -459,32 +485,61 @@ function historicalWorkflowSettings(value: unknown, recordedModels: readonly str
 
 /** Approved media from an earlier creator lock. It is display provenance,
  * never proof of the current graph or execution selection. */
-export function findHistoricalTemplateManifestEntry(
+export function findHistoricalTemplateRecipe(
   template: StudioTemplate,
   manifest: TemplateGalleryManifest | null | undefined,
   options: { requireCardPreview?: boolean } = {},
 ) {
   if (!template.executionSelection || !manifest || manifest.schemaVersion !== 2) return undefined;
+  for (const record of historicalSelectionRecords) {
+    if (record.templateId !== template.id) continue;
+    const entry = manifest.examples.find((candidate) => candidate.templateId === template.id);
+    if (
+      !entry ||
+      entry.modelCommit !== entry.modelRevision ||
+      record.currentTemplateLockHash !== getTemplateLockHash(template, entry.modelRevision) ||
+      record.templateLockHash !== entry.templateLockHash
+    )
+      continue;
+    const candidate: StudioTemplate = {
+      ...template,
+      executionSelection: record.executionSelection as StudioTemplate['executionSelection'],
+    };
+    if (findManifestEntry(candidate, { ...manifest, examples: [entry] }, options)) {
+      return { template: candidate, entry };
+    }
+  }
   const previous = { ...template, executionSelection: undefined };
   const historical = findManifestEntry(previous, manifest, options);
-  if (historical || !template.workflowBlockSettings) return historical;
-  return manifest.examples.find(
-    (entry) =>
-      coerceStudioTemplateId(entry.templateId) === template.id &&
-      typeof entry.modelCommit === 'string' &&
-      entry.modelRevision === entry.modelCommit &&
-      findManifestEntry(
-        {
-          ...previous,
-          workflowBlockSettings: historicalWorkflowSettings(
-            template.workflowBlockSettings,
-            entry.modelCommit.split(' | '),
-          ) as StudioTemplate['workflowBlockSettings'],
-        },
-        { ...manifest, examples: [entry] },
-        options,
-      ),
-  );
+  if (historical) return { template: previous, entry: historical };
+  if (!template.workflowBlockSettings) return undefined;
+  for (const entry of manifest.examples) {
+    if (
+      coerceStudioTemplateId(entry.templateId) !== template.id ||
+      typeof entry.modelCommit !== 'string' ||
+      entry.modelRevision !== entry.modelCommit
+    )
+      continue;
+    const candidate = {
+      ...previous,
+      workflowBlockSettings: historicalWorkflowSettings(
+        template.workflowBlockSettings,
+        entry.modelCommit.split(' | '),
+      ) as StudioTemplate['workflowBlockSettings'],
+    };
+    if (findManifestEntry(candidate, { ...manifest, examples: [entry] }, options)) {
+      return { template: candidate, entry };
+    }
+  }
+  return undefined;
+}
+
+export function findHistoricalTemplateManifestEntry(
+  template: StudioTemplate,
+  manifest: TemplateGalleryManifest | null | undefined,
+  options: { requireCardPreview?: boolean } = {},
+) {
+  return findHistoricalTemplateRecipe(template, manifest, options)?.entry;
 }
 
 export function getTemplateExampleUiState(

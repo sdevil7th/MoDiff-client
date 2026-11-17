@@ -1,6 +1,7 @@
 import type { StudioMode, StudioModelType, StudioOutput } from './types';
-import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS } from './modelProfiles';
+import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS, STUDIO_MODEL_PROFILES } from './modelProfiles';
 import type { WeightLoadingMode } from '../types/api';
+import { parseBuiltinMediaEvidence, type BuiltinMediaEvidence } from './builtinMediaEvidence';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
 export type ModelWeightFormat = 'native' | 'fp8r' | 'nvfp4';
@@ -76,6 +77,7 @@ export type ResolvedExecutionInputs = {
     omittedFields: Record<string, string>;
     fieldAccounting?: ExecutionFieldAccounting;
     appliedAdapters?: AppliedAdapters;
+    mediaEvidence?: BuiltinMediaEvidence;
   }[];
   summary: Record<string, InputValue> & {
     weightLoadingMode?: WeightLoadingMode;
@@ -96,6 +98,7 @@ export type ResolvedExecutionInputs = {
   /** Optional accounting never changes the legacy consumed-input summary. */
   fieldAccountingStatus?: { schemaVersion: 1; truncated: boolean };
   appliedAdaptersStatus?: { schemaVersion: 1; truncated: boolean };
+  mediaEvidenceStatus?: { schemaVersion: 1; truncated: boolean };
 };
 
 const inputNames: Record<string, string> = {
@@ -148,6 +151,7 @@ const inputNames: Record<string, string> = {
   depth_convention: 'depthConvention',
   use_kv_cache: 'attentionContextReuse',
 };
+const taskInputNames = { ...inputNames, executed_task: 'executedTask' };
 // Mirror the backend's scoped capture contract. Auxiliary revisions must never
 // overwrite the base model's identity; unknown fields still reject the receipt.
 // These exact raw names are node-local and have no cross-node summary alias.
@@ -188,18 +192,23 @@ const nodeInputNames: Record<string, Record<string, string>> = {
   'ModularDiffusers.ModelsLoader': { ...inputNames, weight_format: 'weightFormat' },
   'DiffusersImage.LoadPipeline': { ...inputNames, mode: 'executionMode' },
   'DiffusersVideo.EncodeInputs': {
-    ...inputNames,
-    executed_task: 'executedTask',
+    ...taskInputNames,
     video_source_sha256: 'videoSourceSha256',
     video_source_frames: 'videoSourceFrames',
   },
   'DiffusersVideo.Denoise': {
-    ...inputNames,
-    executed_task: 'executedTask',
+    ...taskInputNames,
     conditioning_strength: 'conditioningStrength',
     denoise_strength: 'denoiseStrength',
+    secondary_guidance_scale: 'guidanceScale2',
   },
-  'DiffusersVideo.DecodeLatents': { ...inputNames, executed_task: 'executedTask' },
+  'DiffusersVideo.DecodeLatents': taskInputNames,
+  'DiffusersVideo.Generate': {
+    ...taskInputNames,
+    secondary_guidance_scale: 'guidanceScale2',
+    expand_prompt: 'expandPrompt',
+  },
+  'DiffusersVideo.GenerateVideoAudio': { ...taskInputNames, expand_prompt: 'expandPrompt' },
   ...Object.fromEntries(
     [
       'Generate',
@@ -214,12 +223,11 @@ const nodeInputNames: Record<string, Record<string, string>> = {
       'EncodeInputs',
       'Denoise',
       'DecodeLatents',
-    ].map((action) => [`DiffusersImage.${action}`, { ...inputNames, executed_task: 'executedTask' }]),
+    ].map((action) => [`DiffusersImage.${action}`, taskInputNames]),
   ),
-  'HuggingFaceTransformers.PredictDepth': { ...inputNames, executed_task: 'executedTask' },
+  'HuggingFaceTransformers.PredictDepth': taskInputNames,
   'HuggingFaceTransformers.GenerateImageVideoText': {
-    ...inputNames,
-    executed_task: 'executedTask',
+    ...taskInputNames,
     operation: 'textOperation',
     enhancement_max_new_tokens: 'enhancementMaxNewTokens',
     prompt_adapter_id: 'promptAdapterId',
@@ -234,7 +242,7 @@ const nodeInputNames: Record<string, Record<string, string>> = {
     processed_grid_sha256: 'processedGridSha256',
     processed_grid_shape: 'processedGridShape',
   },
-  'ImageOperations.ProcessImage': { ...inputNames, executed_task: 'executedTask' },
+  'ImageOperations.ProcessImage': taskInputNames,
   'ModularDiffusers.Guider': {
     ...inputNames,
     guider: 'guiderType',
@@ -399,7 +407,8 @@ function appliedAdapters(value: unknown, scope: string): AppliedAdapters | undef
 // Mirror only the backend's bounded accounting policy, not arbitrary objects or
 // new execution authority. Cryptographic and graph joins belong to the recorder.
 const accountingNames: Record<string, string[]> = {
-  'DiffusersImage.LoadPipeline': `model_id pipeline_class mode revision conditioning_kind conditioning_model_id
+  'DiffusersImage.LoadPipeline':
+    `model_id pipeline_class mode revision execution_profile_id conditioning_kind conditioning_model_id
     conditioning_revision dtype device quantization_mode quantized_components device_map auto_offload offload_mode
     enable_vae_slicing enable_vae_tiling low_cpu_mem_usage`.split(/\s+/u),
   'DiffusersRuntime.PipelineQuantizationConfigV2':
@@ -617,6 +626,7 @@ export function coerceResolvedExecutionInputs(
   const seen = new Set<string>();
   const accounting = new Map<string, ExecutionFieldAccounting>();
   const applications = new Map<string, AppliedAdapters>();
+  const media = new Map<string, BuiltinMediaEvidence>();
   const candidates = new Map<string, Set<string>>();
   const unavailable = new Set<string>();
   for (const node of value.nodes) {
@@ -632,6 +642,11 @@ export function coerceResolvedExecutionInputs(
       return undefined;
     seen.add(node.nodeId);
     const scope = `${node.module.replace(/^modules\./u, '')}.${node.action}`;
+    if (hasOwn(node, 'mediaEvidence')) {
+      const parsed = parseBuiltinMediaEvidence(node.mediaEvidence, scope);
+      if (!parsed) return undefined;
+      media.set(node.nodeId, parsed);
+    }
     const adapterDescriptor =
       scope === 'ModularDiffusers.Lora' ||
       scope === 'DiffusersImage.LoadAdapter' ||
@@ -781,6 +796,19 @@ export function coerceResolvedExecutionInputs(
       return undefined;
     appliedAdaptersStatus = { schemaVersion: 1, truncated: status.truncated };
   } else if (applications.size > 0) return undefined;
+  let mediaEvidenceStatus: ResolvedExecutionInputs['mediaEvidenceStatus'];
+  if (hasOwn(value, 'mediaEvidenceStatus')) {
+    const status = value.mediaEvidenceStatus;
+    if (
+      !record(status) ||
+      !exactKeys(status, ['schemaVersion', 'truncated']) ||
+      status.schemaVersion !== 1 ||
+      typeof status.truncated !== 'boolean' ||
+      (!status.truncated && media.size === 0)
+    )
+      return undefined;
+    mediaEvidenceStatus = { schemaVersion: 1, truncated: status.truncated };
+  } else if (media.size > 0) return undefined;
   // Shared backend bounds plus envelope/summary overhead. JSON input only;
   // never stringify live model objects or retain unknown extension fields.
   if (JSON.stringify(value).length > 800_000) return undefined;
@@ -815,6 +843,7 @@ export function coerceResolvedExecutionInputs(
         omittedFields: node.omittedFields,
         ...(accounting.has(node.nodeId) ? { fieldAccounting: accounting.get(node.nodeId) } : {}),
         ...(applications.has(node.nodeId) ? { appliedAdapters: applications.get(node.nodeId) } : {}),
+        ...(media.has(node.nodeId) ? { mediaEvidence: media.get(node.nodeId) } : {}),
       })),
       summary: value.summary,
       ...(scopedSummary ? { summaryScopeVersion: 2 } : {}),
@@ -824,6 +853,7 @@ export function coerceResolvedExecutionInputs(
       truncated: value.truncated,
       ...(fieldAccountingStatus ? { fieldAccountingStatus } : {}),
       ...(appliedAdaptersStatus ? { appliedAdaptersStatus } : {}),
+      ...(mediaEvidenceStatus ? { mediaEvidenceStatus } : {}),
     }),
   ) as ResolvedExecutionInputs;
 }
@@ -837,18 +867,19 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
     promptSettingsHash: undefined,
     exactTemplateCompatible: false,
   };
-  const tasks = new Set(receipt.graphTasks?.map((item) => item.task));
-  const task = [...tasks][0];
-  if (tasks.size === 1 && task && hasOwn(STUDIO_MODE_DESCRIPTIONS, task)) next.mode = task as StudioMode;
+  const task = outputTaskKey(next);
+  if (task) next.mode = task;
   const model = outputModelKey(next);
   if (hasOwn(STUDIO_MODEL_LABELS, model)) {
     next.modelType = model as StudioModelType;
     next.modelLabel = STUDIO_MODEL_LABELS[next.modelType];
   } else next.modelLabel = model === 'uncaptured-model' ? 'Model not uniquely captured' : model;
   for (const key of ['prompt', 'negativePrompt', 'repo'] as const) {
-    if (typeof receipt.summary[key] === 'string') next[key] = receipt.summary[key];
-    else if (resolvedInputUnavailable(receipt, key)) next[key] = '';
+    next[key] =
+      !resolvedInputUnavailable(receipt, key) && typeof receipt.summary[key] === 'string' ? receipt.summary[key] : '';
   }
+  const builtin = capturedBuiltinProfile(receipt);
+  if (builtin) next.repo = STUDIO_MODEL_PROFILES[builtin].defaultRepo;
   for (const key of ['seed', 'width', 'height', 'steps', 'guidanceScale'] as const) {
     const value = outputNumericInputValue(next, key);
     if (value !== undefined) next[key] = value;
@@ -858,6 +889,60 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
   return next;
 }
 
+// Versioned deterministic operation descriptors are not model classes. Resolve
+// their existing presentation profiles only from an exact captured owner and
+// summary; never strip arbitrary version suffixes or infer identity from a form.
+const builtinOutputOwners = {
+  'modules.ImageOperations.ProcessImage': 'BuiltinImageOperation',
+  'modules.Audio.ProcessAudio': 'BuiltinAudioOperation',
+  'modules.Video.ProcessVideo': 'BuiltinVideoOperation',
+  'modules.Text.ProcessText': 'BuiltinDataOperation',
+} as const;
+type BuiltinOutputProfile = (typeof builtinOutputOwners)[keyof typeof builtinOutputOwners];
+
+function capturedBuiltinProfile(receipt: ResolvedExecutionInputs): BuiltinOutputProfile | undefined {
+  if (receipt.truncated) return undefined;
+  const profiles = new Set<BuiltinOutputProfile>();
+  for (const node of receipt.nodes) {
+    const owner = `${node.module}.${node.action}`;
+    if (!hasOwn(builtinOutputOwners, owner)) continue;
+    const profile = builtinOutputOwners[owner as keyof typeof builtinOutputOwners];
+    if (node.fields.pipeline_class?.value === `${profile}V1`) profiles.add(profile);
+  }
+  const profile = [...profiles][0];
+  if (profiles.size !== 1 || !profile) return undefined;
+  const key = profile === 'BuiltinDataOperation' ? 'dataOperationType' : 'modelType';
+  if (profile === 'BuiltinDataOperation' && hasOwn(receipt.summary, 'modelType')) return undefined;
+  return !resolvedInputUnavailable(receipt, key) && receipt.summary[key] === `${profile}V1` ? profile : undefined;
+}
+
+/** A task needs an exact native declaration or complete deterministic call controls. */
+export function outputTaskKey(output: StudioOutput): StudioMode | undefined {
+  const receipt = output.resolvedExecutionInputs;
+  if (!receipt || receipt.truncated) return undefined;
+  if (receipt.graphTasks !== undefined) {
+    const task = receipt.graphTasks[0]?.task;
+    return task && hasOwn(STUDIO_MODE_DESCRIPTIONS, task) && receipt.graphTasks.every((item) => item.task === task)
+      ? (task as StudioMode)
+      : undefined;
+  }
+  const profile = capturedBuiltinProfile(receipt);
+  if (!profile) return undefined;
+  const tasks = new Set<StudioMode>();
+  for (const node of receipt.nodes) {
+    const owner = `${node.module}.${node.action}`;
+    if (!hasOwn(builtinOutputOwners, owner)) continue;
+    if (builtinOutputOwners[owner as keyof typeof builtinOutputOwners] !== profile) return undefined;
+    const evidence = node.mediaEvidence;
+    if (evidence?.status !== 'complete' || evidence.controls.pipeline_class !== `${profile}V1`) return undefined;
+    const task = evidence.controls.operation;
+    if (typeof task !== 'string' || !STUDIO_MODEL_PROFILES[profile].modes.includes(task as StudioMode))
+      return undefined;
+    tasks.add(task as StudioMode);
+  }
+  return tasks.size === 1 ? [...tasks][0] : undefined;
+}
+
 /** A custom or ambiguous captured model must not inherit the form's filter. */
 export function outputModelKey(output: StudioOutput): string {
   const receipt = output.resolvedExecutionInputs;
@@ -865,6 +950,8 @@ export function outputModelKey(output: StudioOutput): string {
     return output.legacyRecordedFields && !output.legacyRecordedFields.includes('modelType')
       ? 'uncaptured-model'
       : output.modelType;
+  const builtin = capturedBuiltinProfile(receipt);
+  if (builtin) return builtin;
   const model = receipt.summary.modelType;
   return !resolvedInputUnavailable(receipt, 'modelType') && typeof model === 'string' && model.trim()
     ? model

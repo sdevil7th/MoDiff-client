@@ -128,6 +128,23 @@ npm run preview -- --host 127.0.0.1 --port 4173
 
 This confirms that built assets load, but it is not a full MoDiff runtime test. Registry, file, queue, websocket, model, and generation behavior still require a compatible backend.
 
+The accepted Redux recipe, generic encoding presets and recovered Moonflower
+inputs measure 505922/684410/346546 gzip bytes for the largest startup chunk,
+startup total and deferred total, versus 505304/683793/346215 previously. The
+ceilings add only the measured 618/617/331 bytes and retain 248/246/122 bytes of
+headroom. All 95 JavaScript assets and four startup/91 deferred memberships are
+unchanged; only `studio-templates.js` and `operation-authoring-tools.js` differ
+after import-URL normalization. Dependencies, loading/minifier rules and the
+independent 64 KiB deferred chunk cap remain fixed.
+
+Strict optional media-evidence persistence adds 1026/1026/66 gzip bytes to the
+largest startup chunk, startup total and deferred total, respectively:
+506948/685436/346612 versus 505922/684410/346546. The measured ceilings preserve
+248/246/122 bytes of headroom. Only `studio-templates.js` differs after versioned
+import URL normalization; all 95 JavaScript assets and four startup/91 deferred
+memberships remain unchanged. Dependencies, build/loading rules and the separate
+64 KiB deferred chunk cap are unchanged.
+
 Run the bundle budget after changes that affect dependencies or code splitting:
 
 ```bash
@@ -370,3 +387,36 @@ Before publishing a client/backend pair:
 8. Confirm user/custom files in `web/` were not deleted by the sync.
 9. Document which model paths were mocked, schema-validated, or live-run; do not collapse those proof levels into one support claim.
 10. Keep the server on localhost unless the deployment has the controls listed under separate-origin hosting.
+
+### Fresh example stage layout cost
+
+The fresh Example opener, shared whole-pipeline Model Setup/Generate boundaries,
+measured layout, bounded media previews and utility history labels measure
+507459 bytes for the largest startup chunk, 685944 total startup bytes and
+349238 deferred bytes (gzip level 9). The packaged baseline measured
+506948/685436/346612. The budgets add exactly the measured 511/508/2626-byte
+cost, retaining 248/246/122 bytes of headroom. There are four startup and 92
+deferred JavaScript assets: two lazy presentation modules were added and the
+former operationScope chunk was folded into the authoring graph. No dependency,
+minifier or build rule changed; the individual deferred chunk cap remains
+65536 bytes. Native graph identity and browser layout checks remain separate
+from model execution and release qualification.
+
+The subsequent whole-task import recovery and historical creator compatibility
+checks measure 507641/686124/349257 bytes. They fit the same ceilings, leaving
+66/66/103 bytes of headroom; this follow-up does not raise a budget.
+
+Native legacy field preservation, the pure Block movement boundary, scoped
+preview history and approved MiniMax showcase curation measure
+507642/686129/349717 bytes. The startup ceilings and 65536-byte individual
+deferred ceiling remain unchanged. The aggregate deferred allowance adds exactly
+the measured 460-byte increase, retaining 103 bytes of headroom. All 96 JavaScript
+assets, four startup paths, dependencies and build/minifier rules are unchanged.
+
+Scoped native signal refresh and first-frame measurement readiness measure
+510482/688967/349744 bytes (largest/startup/deferred gzip), versus the v16
+510207/688694/349905 baseline. Add only the measured 275/273 startup bytes,
+retaining the existing 64/60 bytes of headroom. Deferred ceilings, all 96
+JavaScript assets, four startup/92 deferred memberships, dependencies and build
+rules stay fixed. Incompatible attention backends remain rejected; no model,
+resource, consent or qualification guard is relaxed by these UI changes.

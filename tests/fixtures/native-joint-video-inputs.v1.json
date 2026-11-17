@@ -1,0 +1,156 @@
+{
+  "generatedFrom": "Sanitized completed native AV input record; contract test only, no qualification or media included",
+  "receipt": {
+    "schemaVersion": 1,
+    "source": "backend-execution",
+    "taskId": "native-av-contract-fixture",
+    "attemptIndex": 0,
+    "nodeId": "exportwithaudio",
+    "nodes": [
+      {
+        "nodeId": "exportwithaudio",
+        "module": "modules.Video",
+        "action": "ExportWithAudio",
+        "fields": {
+          "fps": {
+            "value": 24,
+            "source": "literal"
+          }
+        },
+        "omittedFields": {}
+      },
+      {
+        "nodeId": "loadpipeline",
+        "module": "modules.DiffusersVideo",
+        "action": "LoadPipeline",
+        "fields": {
+          "model_id": {
+            "value": "kandinskylab/Kandinsky-6.0-Pro-5s-Diffusers",
+            "source": "literal"
+          },
+          "revision": {
+            "value": "7be18aed6fbd64653c0c4872fddfe4a3e3e109f5",
+            "source": "literal"
+          },
+          "dtype": {
+            "value": "bfloat16",
+            "source": "literal"
+          },
+          "device": {
+            "value": "cuda:0",
+            "source": "literal"
+          },
+          "auto_offload": {
+            "value": false,
+            "source": "literal"
+          },
+          "offload_mode": {
+            "value": "none",
+            "source": "literal"
+          },
+          "pipeline_class": {
+            "value": "Kandinsky6TI2VAPipeline",
+            "source": "literal"
+          }
+        },
+        "omittedFields": {}
+      },
+      {
+        "nodeId": "generatevideoaudio",
+        "module": "modules.DiffusersVideo",
+        "action": "GenerateVideoAudio",
+        "fields": {
+          "prompt": {
+            "value": "A tram on a rainy blue-hour street.",
+            "source": "literal"
+          },
+          "negative_prompt": {
+            "value": "Camera shake, captions.",
+            "source": "literal"
+          },
+          "conditioning_scale": {
+            "value": 1,
+            "source": "literal"
+          },
+          "width": {
+            "value": 864,
+            "source": "literal"
+          },
+          "height": {
+            "value": 480,
+            "source": "literal"
+          },
+          "num_frames": {
+            "value": 121,
+            "source": "literal"
+          },
+          "num_inference_steps": {
+            "value": 50,
+            "source": "literal"
+          },
+          "guidance_scale": {
+            "value": 5,
+            "source": "literal"
+          },
+          "seed": {
+            "value": 2026111711,
+            "source": "literal"
+          },
+          "output_type": {
+            "value": "pil",
+            "source": "literal"
+          },
+          "max_sequence_length": {
+            "value": 1024,
+            "source": "literal"
+          },
+          "frame_rate": {
+            "value": 24,
+            "source": "literal"
+          },
+          "strength": {
+            "value": 1,
+            "source": "literal"
+          },
+          "true_cfg_scale": {
+            "value": 1,
+            "source": "literal"
+          },
+          "expand_prompt": {
+            "value": false,
+            "source": "literal"
+          }
+        },
+        "omittedFields": {}
+      }
+    ],
+    "summary": {
+      "fps": 24,
+      "repo": "kandinskylab/Kandinsky-6.0-Pro-5s-Diffusers",
+      "revision": "7be18aed6fbd64653c0c4872fddfe4a3e3e109f5",
+      "dtype": "bfloat16",
+      "device": "cuda:0",
+      "autoOffload": false,
+      "offloadMode": "none",
+      "modelType": "Kandinsky6TI2VAPipeline",
+      "prompt": "A tram on a rainy blue-hour street.",
+      "negativePrompt": "Camera shake, captions.",
+      "conditioningScale": 1,
+      "width": 864,
+      "height": 480,
+      "numFrames": 121,
+      "steps": 50,
+      "guidanceScale": 5,
+      "seed": 2026111711,
+      "outputType": "pil",
+      "maxSequenceLength": 1024,
+      "strength": 1,
+      "trueCfgScale": 1,
+      "expandPrompt": false
+    },
+    "ambiguousFields": [],
+    "unavailableFields": [],
+    "uncapturedNodeIds": [],
+    "truncated": false
+  }
+}

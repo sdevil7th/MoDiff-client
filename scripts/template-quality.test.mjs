@@ -60,6 +60,24 @@ test('the contact-sheet identity brief permits the rear-view exit and declares f
   assert.equal(template.example.expectedOutput.height, 768);
 });
 
+test('the accepted material-transfer revision preserves the bottle and uses an ordered material-only strip', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'flux_kontext_multi_reference');
+  assert.match(template.prompt, /ASTERMIST and LAVENDER SLEEP SPRAY/);
+  assert.match(template.description, /material-only reference strip/);
+  assert.equal(template.inputBindings.length, 1);
+  const assets = template.inputBindings[0].defaultAssets;
+  assert.equal(assets.length, 2);
+  assert.equal(
+    assets[0].runtimeSha256,
+    'sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b',
+  );
+  assert.equal(
+    assets[1].runtimeSha256,
+    'sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34',
+  );
+  assert.equal(template.example.lockedSeed, 8407);
+});
+
 test('reviewed FLUX3 blank conditioning is scoped to its exact public profile', () => {
   for (const [id, declaration] of [
     ['flux3_klein_fp8r512_text_to_image', 'flux3-distilled-no-negative-input'],
@@ -76,6 +94,19 @@ test('reviewed FLUX3 blank conditioning is scoped to its exact public profile', 
       qualityModule.auditTemplateQuality(foreign).issues.some((issue) => issue.code === 'blank_negative_not_allowed'),
     );
   }
+});
+
+test('the ACE Base source-cover contract keeps blank negative input without claiming distilled CFG', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'ace_step_audio_variation');
+  assert.equal(template.example.lockedSettings.guidanceScale, 7);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.passed, true);
+  assert.equal(audit.negative.policy.declarationId, 'ace-no-negative-input');
+  assert.doesNotMatch(audit.negative.policy.reason, /guidance-distilled|CFG 1/);
+  assert.equal(
+    qualityModule.getTemplateNegativePolicy({ ...template, modelType: 'StableAudioPipeline' }).requirement,
+    'required',
+  );
 });
 
 test('literal layout prompts require a complete bounded caption, box and visual description', () => {

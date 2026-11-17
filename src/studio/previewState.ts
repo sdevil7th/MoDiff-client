@@ -15,10 +15,14 @@ export function previousOutputsForPreview(
   fieldKey: string,
   currentOutputId: string | null,
 ) {
-  return outputs
-    .filter((output) => output.nodeId === nodeId && output.fieldKey === fieldKey)
-    .filter((output) => !workflowTabId || !output.workflowTabId || output.workflowTabId === workflowTabId)
-    .filter((output) => output.id !== currentOutputId);
+  return (
+    outputs
+      .filter((output) => output.nodeId === nodeId && output.fieldKey === fieldKey)
+      // Canonical examples reuse local node IDs. Unscoped legacy results belong
+      // in the gallery, not every new document with the same node/field names.
+      .filter((output) => (output.workflowTabId ?? null) === workflowTabId)
+      .filter((output) => output.id !== currentOutputId)
+  );
 }
 
 export function useCurrentStudioPreview(nodeId: string, fieldKey: string) {

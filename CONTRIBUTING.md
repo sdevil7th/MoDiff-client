@@ -303,8 +303,9 @@ npm run gallery:coverage
 Do not publish a local artifact, private input, personal path, access token, or source revision through a Gallery bundle.
 
 The standalone, model-backed canonical execution recorder is separate from public
-templates. Its native integration remains incomplete; the command below does not
-establish that an unchanged canonical workflow can yet produce an accepted receipt:
+templates. The initial unchanged five-node DDIM route has a retained native
+execution capture. Other routes still require their own complete original
+evidence; the command alone is not proof that a workflow ran:
 
 ```bash
 MODIFF_CANONICAL_WORKFLOW_EVIDENCE=/absolute/path/evidence.json node scripts/template-qualification.mjs --workflow ModelPipeline:text_to_image
@@ -337,8 +338,62 @@ and fallback attempts remain held. Input-backed workflows need a durable,
 execution-bound input-byte receipt: a post-run file copy or a current cache hash
 alone is insufficient. The existing normal exporter must be able to export the
 unchanged canonical graph without an inferred execution scope. Deterministic
-builtin workflows remain explicitly unsupported because model identity is not
-applicable; do not invent a model for them.
+builtin media workflows remain unsupported by that model-backed path; do not
+invent a model for them. The three input-free data utilities have the separate
+deterministic path described below.
+
+The same recorder accepts `modiff.canonical-builtin-data-evidence.v1` only for
+`BuiltinDataOperation:data_conversion`, `graph_utility` and `text_select`.
+It fills only the empty text source from the versioned authoring brief, exports
+through the normal client exporter, and checks the original accepted queue graph,
+completed task, all fresh node-completion frames, both delivered/persisted text
+previews and exact exported bytes against an independent expected result. Other
+controls and the canonical source remain unchanged. Retain original before/after
+source observations plus the full source inventory matched to their native
+fingerprint and the executing process. Descriptors bind every retained file by
+relative path, size and SHA-256 through the ordinary containment validator.
+Run `template-qualification.mjs --workflow` with the same environment variable;
+it retains these records in the existing canonical registry. The release reader
+repeats the complete validation rather than trusting the registry row.
+
+These records use `real_backend_deterministic_data`, an empty model set and a
+null Auto candidate. Exact-result correctness can qualify these private utility
+recipes; it grants no public asset approval, complete consumed-field accounting,
+browser-interaction, model-resource or hardware claim. Model-backed receipts
+retain their existing requirements.
+
+The same canonical recorder also accepts
+`modiff.canonical-builtin-media-evidence.v1` for the 17 declared ordinary media
+utilities. It requires a baseline at the unchanged canonical defaults plus an
+explicit exercise from `config/builtin-media-qualification.v1.json`. Only root
+file bindings and those named exercise controls can differ from the source.
+Start the isolated backend with `MODIFF_CAPTURE_BUILTIN_MEDIA=1`; normal user
+execution leaves this bounded capture disabled. The native `mediaEvidence`
+section binds original file bytes, actual decoded images/audio, video snapshots,
+normalized controls and ordered processing/output identities. The client parser
+retains it without changing the legacy summary or treating it as model evidence.
+
+Retain original task/completion packets, accepted graphs, full before/after
+source inventories, all root bytes, durable outputs and raw image PNGs. The
+descriptor's two `runs` entries (`baseline`, `exercise`) bind each file using
+the same contained `{path, bytes, sha256}` references. The recorder repeats the
+graph/runtime/source/input/wire joins and independent image, PCM and video checks;
+codec tolerances and actual delivery dimensions/rate remain explicit. Its
+`real_backend_deterministic_media` record grants no public quality/rights,
+full consumed-field accounting, browser-interaction, model-resource or hardware
+claim. Existing approved model assets need no rerender. Unsupported capture,
+truncated evidence, converted unbound roots, incomplete collections, changed
+source/settings, retries and cached attempts remain held.
+
+The existing whole-compatible masked-image receipt reader accepts either
+`group_cpu` or `model_cpu` only when the submitted graph, native consumed values
+and actual Auto resolution agree. These produce distinct resource identities;
+neither implies hardware fit or qualifies an advertised family recipe. Keep
+the original public task and completion frame unchanged. A separately labelled
+derived receipt may join their matching task/session/run identities, runtime,
+measurements and observed preparation; it must not present added hints as part
+of the original public GET response. Input bytes still need execution-bound
+native source-hash, geometry and mode observations.
 
 The optional native `fieldAccounting` extension preserves requested literals,
 actual call controls, explicit inactive/superseded controls, and bounded recipe
@@ -366,10 +421,57 @@ top-level authority need separate accounting; the historical canonical identity
 alone does not cover them. Submitted and original completion hashes become part of the
 derived plan. The recorder retains the original frame unchanged, and the release
 projection repeats the same closed validation. Valid legacy unhinted descriptors and
-the default factory path remain unchanged. Input files, builtins, quantized
+the default factory path remain unchanged. Input files, builtin media, quantized
 configurations and other accounting policies remain unsupported by this initial
-join. A genuine unchanged native DDIM run is still required before a usability
-claim. Mocked protocol checks are not native, quality, hardware or release evidence.
+join. The initial DDIM route has been exercised with a native unchanged graph;
+this does not qualify other standalone routes. Mocked protocol checks are not
+native, quality, hardware or release evidence.
+
+Current exports include the optional `execution_profile_id` loader selector.
+The initial whole-pipeline DDIM accounting path accepts its empty value only
+when the native loader records it as inactive. A nonempty stage selection or a
+claim that the empty field reached the library remains rejected. Older proofs
+without this field retain their original schema and scope. Prepared submissions
+also preserve their already resolved seed; inspecting current execution scope
+must not randomize an unused export and change its saved canvas snapshot.
+
+Reviewed named compositions that differ from a model/task default belong in
+`config/canonical-template-variants.v1.json`. Regenerate one with
+`node scripts/workflow-library-generator.mjs --template=reviewed_template_id`;
+the default pair and unrelated definitions stay preserved. Template and pair
+scope flags are mutually exclusive and unknown flags fail closed. The portable
+export uses the existing Block execution compiler before assigning canonical
+IDs, including nested Shot stages. This export projection does not rewrite the
+ordinary grouped Studio canvas or grant execution/quality qualification.
+
+Treat an already registered execution-selection descriptor as versioned recipe
+metadata, including its note. Presentation-only grouping must preserve that
+declaration. The original native LTX text, opening-image and ordered-reference
+recipes keep their existing strict locks; whole-pipeline and sequence migrations
+still require their own actual native evidence. Distinct multi-shot compositions
+need named canonical variants rather than a single-shot model/task default.
+
+An explicitly reviewed experimental recipe can declare `experimentalRecipe`
+with its exact `modelType`, `mode` and `runtimeProfileId` in that same policy.
+Generation checks the backend's declared optional runtime and writes the marker
+only on the named variant. The release reader accepts only that exact variant,
+source template, model, task, runtime marker and experimental graph path. Default
+pairs and undeclared experimental records remain outside this association.
+The family stays experimental; runtime installation, Auto, hardware and feature
+qualification are unchanged. Complete native provenance, current recipe locks
+and an approved available Gallery example remain separate release requirements.
+The normal template writer fully validates these proofs; the historical
+`--allow-blocked-probe` path retains its execution-only scope.
+
+The native media resource reader also handles the closed text-to-image workflow
+chain ModelsLoader → WorkflowTextEncode → WorkflowImageDenoise →
+WorkflowDecodeImage → Preview. It joins actual task, graph, model, native fields
+and typed state wires; unbound quantization must be observed as null. It rejects
+extra owners, input-backed modes, borrowed components and changed native values.
+This resource identity does not claim full control accounting or native capture
+of an internally fixed sampler or workflow selector. Retained source recovery
+and later immutable model/registry observations must be labelled separately from
+original pre-run observations; never rewrite the raw task or media.
 
 The recorder copies original evidence under the backend's ignored
 `data/qualification/release/canonical-workflow-evidence/` directory and records

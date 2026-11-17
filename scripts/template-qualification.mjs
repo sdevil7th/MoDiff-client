@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 import { validateRunProvenance } from './live-proof-provenance.mjs';
+import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
 import {
   canonicalWorkflowContract,
   canonicalEvidenceWritePath,
@@ -172,7 +173,12 @@ const workflowManifest = readJson(
 // canonical graph. This lookup never promotes its catalog or qualification state.
 const scopedWorkflows = [
   ...(workflowManifest.workflows ?? []),
-  ...(allowBlockedProbe ? (workflowManifest.experimentalWorkflows ?? []) : []),
+  ...(allowBlockedProbe
+    ? (workflowManifest.experimentalWorkflows ?? [])
+    : selectReviewedExperimentalWorkflows(
+        workflowManifest.experimentalWorkflows ?? [],
+        readJson(join(CLIENT_ROOT, 'config/canonical-template-variants.v1.json')),
+      )),
 ];
 const workflowRecords = scopedWorkflows.map((manifest) => {
   const graph = readJson(required(join(BACKEND_ROOT, 'data', 'graphs', manifest.graphPath), manifest.id));
@@ -183,6 +189,10 @@ if (!canonicalWorkflow) {
   throw new Error(`Template ${String(templateId)} has no current canonical workflow.`);
 }
 const canonicalWorkflowHash = canonicalWorkflowContract(canonicalWorkflow.manifest, canonicalWorkflow.graph).graphHash;
+if (canonicalWorkflow.manifest.experimentalRecipe) {
+  const blockers = validateRunProvenance(provenance);
+  if (blockers.length) throw new Error(`Reviewed experimental recipe proof is incomplete: ${blockers.join(' ')}`);
+}
 
 const expectedCatalogLock = runtime.templateLockHash(template);
 const expectedPromptHash = runtime.promptSettingsHash(template);

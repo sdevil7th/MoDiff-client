@@ -53,6 +53,20 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
                                  and not ("video" in c["task"] or c["task"] == "flf2v"
                                           or "3d" in c["task"] or c["task"].startswith("character_"))
                                  and re.search(r"image|inpaint|outpaint|controlnet|ip_adapter|depth|layer_decomposition|mask_composite|audio|speech|music", c["task"])})
+        elif "--large-av" in sys.argv:
+            selections = (
+                ('Kandinsky6TI2VAPipeline', 'text_to_video'),
+                ('Kandinsky6TI2VAPipeline', 'image_to_video'),
+                ('Kandinsky6DistilledTI2VAPipeline', 'text_to_video'),
+                ('Kandinsky6DistilledTI2VAPipeline', 'image_to_video'),
+                ('Kandinsky6TI2VAPipeline', 'text_to_video_with_audio'),
+                ('Kandinsky6TI2VAPipeline', 'image_to_video_with_audio'),
+                ('Kandinsky6DistilledTI2VAPipeline', 'text_to_video_with_audio'),
+                ('Kandinsky6DistilledTI2VAPipeline', 'image_to_video_with_audio'),
+                ('LTX2Pipeline', 'text_to_video'),
+                ('LTX2ConditionPipeline', 'text_to_video'),
+                ('LTX2ConditionPipeline', 'image_to_video'),
+            )
         elif "--all-models" in sys.argv:
             selections = sorted({(c["pipelineClass"], c["task"]) for c in contracts if c["task"]
                                  and operation_owns_model(c)})
@@ -74,5 +88,8 @@ with contextlib.redirect_stdout(io.StringIO()), patch.object(ExtensionStore, "lo
                     f"{module}.Load": describer._describe_registered_node(module, "Load", MODULE_MAP[module]["Load"])
                     for module in ("modules.Image", "modules.Audio")
                 }
+            if "--large-av" in sys.argv:
+                result['testOperationContracts'] = [c for c in contracts
+                    if c['pipelineClass'] == pipeline and c['task'] == task]
             results.append(result)
 json.dump(results, sys.stdout)

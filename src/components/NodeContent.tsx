@@ -16,7 +16,11 @@ import { formPatchForAutoCandidate, selectedAutoCandidate } from '../studio/auto
 import { NodeParams, type NodeParamOptions, type NodeParamSignal, useNodesStore } from '../stores/useNodeStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { classifyManagedControl } from '../studio/managedControlPolicy';
-import { registeredRuntimeOptionPresentation, runtimeOptionValues } from '../studio/runtimeOptions';
+import {
+  blockRuntimeOptionPresentation,
+  registeredRuntimeOptionPresentation,
+  runtimeOptionValues,
+} from '../studio/runtimeOptions';
 import { sanitizeModiffFieldStyle, type ModiffFieldStyle } from '../theme';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { GraphControlButton } from '../ui/GraphControls';
@@ -154,6 +158,9 @@ const NodeContent = memo(function NodeContent({
   const studioResourceMode = studioForm.resourceMode;
   const studioGraphBinding = useStudioStore((state) => state.graphBinding);
   const graphNode = useFlowStore((state) => state.nodes.find((node) => node.id === nodeId));
+  const blockOwner = useFlowStore((state) =>
+    state.nodes.find((node) => node.id === graphNode?.data.blockProjectionOwnerId),
+  );
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const connectionNotes = useFlowStore(
     useShallow((state) =>
@@ -218,7 +225,8 @@ const NodeContent = memo(function NodeContent({
       module,
       key,
       display,
-      registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[`${module}.${action}`]?.params),
+      blockRuntimeOptionPresentation(data.options || [], key, data, graphNode, blockOwner, nodesRegistry) ??
+        registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[`${module}.${action}`]?.params),
     );
     const fieldType = getFieldType(display, dataType, options);
     // A managed model choice already resolves the repository, implementation

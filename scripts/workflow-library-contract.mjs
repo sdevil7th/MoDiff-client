@@ -1,5 +1,24 @@
 import { stableJsonValue } from './canonical-json.mjs';
 
+export function hasMachineSpecificWorkflowState(raw) {
+  // Do not read the final letter of an https: provenance URL as a drive.
+  // Real drive paths, local URLs, home/cache paths and UNC shares stay blocked.
+  return /(?:file:\/\/|\/(?:home|Users|root|tmp|mnt|workspace)(?:\/|$)|(?<![A-Za-z0-9+.-])[A-Za-z]:[\\/]|\\\\|localhost|127\.0\.0\.1|\/cache\/)/i.test(
+    raw,
+  );
+}
+
+export function workflowVideoAttentionRecipeError(pipelineClass, params) {
+  if (!['WanPipeline', 'Wan22Pipeline', 'WanTI2VPipeline'].includes(pipelineClass)) return null;
+  // Auto is the portable native policy; choosing it is not evidence that Flash
+  // exists on the generation or eventual execution host.
+  if (params.attention_backend?.value === 'auto' && ['', 'transformer'].includes(params.attention_components?.value))
+    return null;
+  if (params.attention_backend?.value !== '_native_flash' || params.attention_components?.value !== 'transformer')
+    return 'must select portable Auto attention or native flash on the transformer';
+  return null;
+}
+
 function paramValue(node, key) {
   return node?.data?.params?.[key]?.value;
 }
@@ -127,25 +146,34 @@ export function retainExistingCanonicalDeviceDefaults(graph, existingGraph) {
       [node.data.operationAuthoring?.defaults, 'device'],
     ]);
     if (!defaults.some(([owner, key]) => owner && Object.hasOwn(owner, key))) continue;
-    if (existingNodes.length !== 1 || freshNodes.length !== 1)
+    // Repeated shot processors need no positional pairing when every old
+    // fallback agrees. A changed count or conflicting fallback remains
+    // ambiguous; never transfer authored device values or match by ordinal.
+    const fallbackSignatures = new Set(
+      existingNodes.map((node) =>
+        JSON.stringify([node.data.params?.device?.default, node.data.operationAuthoring?.defaults?.device]),
+      ),
+    );
+    if (existingNodes.length !== freshNodes.length || fallbackSignatures.size !== 1)
       throw new Error('Canonical device defaults require an unambiguous unchanged executable node identity.');
     const existing = existingNodes[0];
-    const fresh = freshNodes[0];
-    const field = fresh.data.params?.device;
-    for (const [previousOwner, key, owner] of [
-      [existing.data.params?.device, 'default', field],
-      [existing.data.operationAuthoring?.defaults, 'device', fresh.data.operationAuthoring?.defaults],
-    ]) {
-      if (!previousOwner || !Object.hasOwn(previousOwner, key)) continue;
-      const value = previousOwner[key];
-      if (!owner || !field || typeof value !== 'string' || !/^(?:cuda|mps|cpu|xpu)(?::\d+)?$/i.test(value))
-        throw new Error('An existing canonical device default has no compatible declared destination.');
-      const options = Array.isArray(field.options)
-        ? field.options.map((option) => (typeof option === 'string' ? option : option?.value))
-        : Object.keys(field.options ?? {});
-      if (options.length > 0 && !options.includes(value))
-        throw new Error('An existing canonical device default is unavailable in the fresh field schema.');
-      updates.push([owner, key, value]);
+    for (const fresh of freshNodes) {
+      const field = fresh.data.params?.device;
+      for (const [previousOwner, key, owner] of [
+        [existing.data.params?.device, 'default', field],
+        [existing.data.operationAuthoring?.defaults, 'device', fresh.data.operationAuthoring?.defaults],
+      ]) {
+        if (!previousOwner || !Object.hasOwn(previousOwner, key)) continue;
+        const value = previousOwner[key];
+        if (!owner || !field || typeof value !== 'string' || !/^(?:cuda|mps|cpu|xpu)(?::\d+)?$/i.test(value))
+          throw new Error('An existing canonical device default has no compatible declared destination.');
+        const options = Array.isArray(field.options)
+          ? field.options.map((option) => (typeof option === 'string' ? option : option?.value))
+          : Object.keys(field.options ?? {});
+        if (options.length > 0 && !options.includes(value))
+          throw new Error('An existing canonical device default is unavailable in the fresh field schema.');
+        updates.push([owner, key, value]);
+      }
     }
   }
   for (const [owner, key, value] of updates) owner[key] = value;

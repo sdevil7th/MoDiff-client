@@ -376,7 +376,14 @@ test('required model inputs use current registry contracts inside collapsed Bloc
   assert.equal(missing.length, 1);
   assert.equal(missing[0].blocking, true);
   assert.equal(missing[0].nodeId, 'root');
-  const source = { id: 'loader', data: { params: { models: { type: 'models', display: 'output' } } } };
+  const source = {
+    id: 'loader',
+    data: {
+      module: 'modules.Test',
+      action: 'Load',
+      params: { models: { type: 'models', display: 'output' } },
+    },
+  };
   graph.nodes.push(source);
   graph.edges.push({ id: 'wire', source: source.id, sourceHandle: 'models', target: leaf.id, targetHandle: 'models' });
   assert.deepEqual(inspectRequiredGraphInputs(roots, graph, registry), []);
@@ -386,6 +393,44 @@ test('required model inputs use current registry contracts inside collapsed Bloc
   for (const literal of [0, false, 'provided']) {
     leaf.data.params.models.value = literal;
     assert.deepEqual(inspectRequiredGraphInputs(roots, { nodes: [leaf], edges: [] }, registry), []);
+  }
+});
+
+test('structural stage file aliases do not mask valid nested loaders or duplicate their missing-input errors', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  for (const kind of ['image', 'audio', 'video']) {
+    const f = fixture([`@data/${kind}/first`, `@data/${kind}/second`]);
+    f.instance.effectiveGraph.nodes = [{ nodeId: 'loadMask' }];
+    const container = {
+      id: 'stage-container',
+      data: {
+        type: 'group',
+        module: '',
+        action: 'stage-container',
+        label: `${kind} input`,
+        params: {
+          'load:file': { display: 'filebrowser', type: 'str', value: [], required: true },
+        },
+      },
+    };
+    f.graph.nodes.push(container);
+    const before = structuredClone(f);
+    assert.deepEqual(inspectRequiredGraphInputs(f.roots, f.graph, {}), [], kind);
+    assert.deepEqual(f, before, 'Readiness must not repair containers or rewrite selected files.');
+    f.leaf.data.params.file.value = [];
+    const missing = inspectRequiredGraphInputs(f.roots, f.graph, {});
+    assert.equal(missing.length, 1, kind);
+    assert.equal(missing[0].nodeId, 'root');
+    assert(missing[0].id.startsWith(`required-input:${f.leaf.id}:`));
+    container.data.params.file_out = { display: 'output', type: 'str' };
+    f.graph.edges.push({ source: container.id, sourceHandle: 'file_out', target: f.leaf.id, targetHandle: 'file' });
+    assert.equal(
+      inspectRequiredGraphInputs(f.roots, f.graph, {}).length,
+      1,
+      'A structural alias cannot supply a real file.',
+    );
+    f.leaf.data.uiState = { disabled: true };
+    assert.deepEqual(inspectRequiredGraphInputs(f.roots, f.graph, {}), [], kind);
   }
 });
 
