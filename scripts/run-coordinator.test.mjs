@@ -3446,6 +3446,86 @@ test('exact backend heartbeats with null telemetry still update the task and nod
   assert.equal(node.data.executionProgress?.resourceSnapshot, undefined);
 });
 
+for (const type of ['progress', 'task_progress', 'task_started', 'http_queue']) {
+  test(`${type} clears loading telemetry when the backend explicitly sends null`, () => {
+    const stale = {
+      task_id: 'task-phase-reset',
+      workflow_tab_id: 'workflow-origin',
+      name: 'Video generation',
+      status: 'running',
+      phase: 'shard_loading',
+      component: 'vae',
+      shard_current: 2,
+      shard_total: 2,
+      current_step: 4,
+      total_steps: 4,
+      eta_seconds: 3,
+      average_step_seconds: 2,
+      elapsed_seconds: 8,
+      resource_snapshot: { obsolete: true },
+      progress: 24,
+    };
+    const clear = {
+      component: null,
+      shard_current: null,
+      shard_total: null,
+      current_step: null,
+      total_steps: null,
+      eta_seconds: null,
+      average_step_seconds: null,
+      resource_snapshot: null,
+    };
+    const store = taskStoreModule.useTaskStore;
+    store.setState({ currentTask: stale, queuedTasks: {}, sessionRuns: [], taskCount: 1 });
+    store.getState().recordTaskSnapshot(stale, 'running');
+    const payload = {
+      type,
+      node: 'preview',
+      task_id: stale.task_id,
+      workflow_tab_id: 'workflow-origin',
+      status: 'running',
+      phase: 'denoising',
+      ...clear,
+      progress: type === 'progress' ? -1 : 24,
+      ...(type === 'progress' ? { overall_progress: 24 } : {}),
+      ...(type === 'task_started' ? { current: stale, queued: {} } : {}),
+    };
+    if (type === 'http_queue') {
+      const current = taskStoreModule.coerceTask({ ...stale, ...clear, phase: 'denoising' });
+      assert.ok(current);
+      store.getState().setTasks(current, {}, []);
+    } else {
+      const message = websocketModule.parseWebsocketMessage(payload);
+      assert.ok(message);
+      websocketModule.handleWebsocketMessage(message, {
+        sid: 'session-1',
+        ws: {},
+        getSid: () => 'session-1',
+        setSid: () => undefined,
+        setLoopTimer: () => undefined,
+      });
+    }
+    for (const task of [store.getState().currentTask, store.getState().sessionRuns[0]]) {
+      assert.equal(task.phase, 'denoising');
+      for (const key of Object.keys(clear)) assert.equal(task[key], null, key);
+    }
+    // Older/partial events omit telemetry; omission must not erase real new steps.
+    store.getState().updateProgress(stale.task_id, 25, undefined, { current_step: 0, total_steps: 50 });
+    websocketModule.handleWebsocketMessage(
+      { type: 'task_progress', task_id: stale.task_id, progress: 25 },
+      {
+        sid: 'session-1',
+        ws: {},
+        getSid: () => 'session-1',
+        setSid: () => undefined,
+        setLoopTimer: () => undefined,
+      },
+    );
+    assert.equal(store.getState().currentTask.current_step, 0);
+    assert.equal(store.getState().sessionRuns[0].total_steps, 50);
+  });
+}
+
 test('backend-captured output ids are reused when the frontend enriches history', () => {
   globalThis.fetch = async () => jsonResponse({ error: false, outputs: [] });
   const identity = { clientRunId: 'backend-output-client', runInputHash: 'backend-output-hash' };

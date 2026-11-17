@@ -369,6 +369,120 @@ for (const [viewport, deviceScaleFactor] of [
   });
 }
 
+test('sampler activity replaces loading details and clears steps when decoding begins', async ({ page }, testInfo) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  // The mocked queue must agree with websocket activity. Startup/reconnect
+  // polling otherwise correctly replaces currentTask with the empty fixture.
+  let progressTask: Record<string, unknown> = {
+    task_id: 'phase-progress',
+    name: 'Video generation',
+    status: 'running',
+    progress: 24,
+    phase: 'shard_loading',
+    component: 'vae',
+    shard_current: 2,
+    shard_total: 2,
+    current_step: 4,
+    total_steps: 4,
+  };
+  await page.route('**/queue', (route) => route.fulfill({ json: { current: progressTask, queued: {} } }));
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await dismissTaskLauncher(page);
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_started',
+      task_id: 'phase-progress',
+      queued: {},
+      current: {
+        task_id: 'phase-progress',
+        name: 'Video generation',
+        status: 'running',
+        progress: 24,
+        phase: 'shard_loading',
+        component: 'vae',
+        shard_current: 2,
+        shard_total: 2,
+        current_step: 4,
+        total_steps: 4,
+      },
+    });
+  });
+  const activity = page.getByTestId('session-run-phase-progress');
+  await activity.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Component: vae');
+  await expect(page.getByRole('tooltip')).toContainText('Shard 2/2');
+  progressTask = {
+    ...progressTask,
+    phase: 'denoising',
+    current_step: 47,
+    total_steps: 50,
+    component: null,
+    shard_current: null,
+    shard_total: null,
+    eta_seconds: 276,
+    average_step_seconds: 92,
+  };
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'phase-progress',
+      node: 'sampler',
+      status: 'running',
+      progress: 94,
+      overall_progress: 75,
+      phase: 'denoising',
+      message: 'Denoising 47/50',
+      component: null,
+      shard_current: null,
+      shard_total: null,
+      current_step: 47,
+      total_steps: 50,
+      average_step_seconds: 92,
+      eta_seconds: 276,
+    });
+  });
+  await testInfo.attach('sampler-task-state', {
+    body: JSON.stringify(await page.evaluate(() => window.__MODIFF_E2E__!.getState().tasks)),
+    contentType: 'application/json',
+  });
+  await expect(page.getByRole('tooltip')).toContainText('Step 47/50');
+  await expect(page.getByRole('tooltip')).toContainText('ETA 4m 36s');
+  await expect(page.getByRole('tooltip')).not.toContainText('Component:');
+  await expect(page.getByRole('tooltip')).not.toContainText('Shard');
+  await testInfo.attach('sampler-progress', { body: await page.screenshot(), contentType: 'image/png' });
+  progressTask = {
+    ...progressTask,
+    phase: 'decoding',
+    current_step: null,
+    total_steps: null,
+    eta_seconds: null,
+    average_step_seconds: null,
+  };
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'progress',
+      task_id: 'phase-progress',
+      node: 'decoder',
+      status: 'running',
+      progress: -1,
+      overall_progress: 79,
+      phase: 'decoding',
+      message: 'Decoding video',
+      component: null,
+      shard_current: null,
+      shard_total: null,
+      current_step: null,
+      total_steps: null,
+      average_step_seconds: null,
+      eta_seconds: null,
+    });
+  });
+  await expect(page.getByRole('tooltip')).toContainText('Phase: decoding');
+  await expect(page.getByRole('tooltip')).not.toContainText('Step');
+  await expect(page.getByRole('tooltip')).not.toContainText('ETA');
+});
+
 test('collapsed canvas activity retains active work, failures and explicit download navigation', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await ensureFrontend();

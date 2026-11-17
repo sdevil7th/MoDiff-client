@@ -45,7 +45,7 @@ function formatDuration(ms: number | undefined) {
   return `${minutes}:${remainder}`;
 }
 
-function formatSeconds(seconds: number | undefined) {
+function formatSeconds(seconds: number | null | undefined) {
   return typeof seconds === 'number' && Number.isFinite(seconds) ? formatDuration(seconds * 1000) : null;
 }
 

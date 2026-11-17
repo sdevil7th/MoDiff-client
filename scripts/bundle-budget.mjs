@@ -459,6 +459,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Explicit null telemetry resets add 35 gzip bytes (511521 -> 511556).
+  // Preserve the existing 12-byte headroom and every loading/chunk boundary.
+  35 +
   // Two exact Hunyuan 720p usage notices: 511385 -> 511521 (+136).
   // Retain 12-byte headroom, the same startup paths and both deferred limits.
   136 +
@@ -682,6 +685,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same phase-reset correction adds 33 startup bytes (690009 -> 690042).
+  // Preserve the existing 11-byte headroom; deferred limits stay unchanged.
+  33 +
   // Same measured build: 689872 -> 690009 (+137), retaining 11-byte headroom.
   // Deferred gzip decreases to 349882; no dependency or loading-boundary change.
   137 +

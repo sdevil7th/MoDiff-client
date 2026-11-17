@@ -35,6 +35,13 @@ MoDiff Python backend
 
 The frontend treats backend responses, websocket messages, local storage, dynamic node definitions, and imported packages as untrusted data at their boundaries. Use parsers/type guards before storing or rendering them.
 
+Task telemetry distinguishes omission from explicit `null`. Omitted fields in a
+partial or legacy message preserve the previous observation; `null` clears it.
+Keep that distinction through websocket handling, HTTP queue coercion, current
+tasks and session-history merges. Otherwise loader component/shard/step details
+can remain visible after sampling or decoding starts. The task store retains
+nullable observations, and presentation omits them rather than substituting zero.
+
 Backend field metadata may declare `requiredWhen: { field, equals }` alongside
 an optional static `required` value. Graph Fix and Run readiness evaluate the
 same read-only string-selector condition against the current registry. They

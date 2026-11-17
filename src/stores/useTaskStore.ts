@@ -27,16 +27,16 @@ export type Task = {
   current_node?: string;
   current_node_name?: string;
   phase?: string;
-  current_step?: number;
-  total_steps?: number;
-  component?: string;
-  shard_current?: number;
-  shard_total?: number;
-  eta_seconds?: number;
-  average_step_seconds?: number;
-  elapsed_seconds?: number;
+  current_step?: number | null;
+  total_steps?: number | null;
+  component?: string | null;
+  shard_current?: number | null;
+  shard_total?: number | null;
+  eta_seconds?: number | null;
+  average_step_seconds?: number | null;
+  elapsed_seconds?: number | null;
   last_heartbeat_at?: number;
-  resource_snapshot?: Record<string, unknown>;
+  resource_snapshot?: Record<string, unknown> | null;
   phase_timings?: Record<string, number>;
   sid?: string;
   task_id?: string;
@@ -128,16 +128,18 @@ export function coerceTask(value: unknown): Task | undefined {
     current_node: optionalString(value.current_node) ?? optionalString(value.node),
     current_node_name: optionalString(value.current_node_name) ?? optionalString(value.node_name),
     phase: optionalString(value.phase),
-    current_step: optionalNumber(value.current_step),
-    total_steps: optionalNumber(value.total_steps),
-    component: optionalString(value.component),
-    shard_current: optionalNumber(value.shard_current),
-    shard_total: optionalNumber(value.shard_total),
-    eta_seconds: optionalNumber(value.eta_seconds),
-    average_step_seconds: optionalNumber(value.average_step_seconds),
-    elapsed_seconds: optionalNumber(value.elapsed_seconds),
+    // null explicitly clears a previous phase's telemetry; omission preserves it.
+    current_step: value.current_step === null ? null : optionalNumber(value.current_step),
+    total_steps: value.total_steps === null ? null : optionalNumber(value.total_steps),
+    component: value.component === null ? null : optionalString(value.component),
+    shard_current: value.shard_current === null ? null : optionalNumber(value.shard_current),
+    shard_total: value.shard_total === null ? null : optionalNumber(value.shard_total),
+    eta_seconds: value.eta_seconds === null ? null : optionalNumber(value.eta_seconds),
+    average_step_seconds: value.average_step_seconds === null ? null : optionalNumber(value.average_step_seconds),
+    elapsed_seconds: value.elapsed_seconds === null ? null : optionalNumber(value.elapsed_seconds),
     last_heartbeat_at: optionalNumber(value.last_heartbeat_at),
-    resource_snapshot: isRecord(value.resource_snapshot) ? value.resource_snapshot : undefined,
+    resource_snapshot:
+      value.resource_snapshot === null ? null : isRecord(value.resource_snapshot) ? value.resource_snapshot : undefined,
     phase_timings: isRecord(value.phase_timings)
       ? Object.fromEntries(
           Object.entries(value.phase_timings).filter(
