@@ -154,7 +154,7 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
             </ModiffMenuAction>
           ))}
           {kind ? <ModiffMenuAction onClick={() => apply()}>Ungroup stages</ModiffMenuAction> : null}
-          {kind === 'generate' ? (
+          {kind && ['inputs', 'generate'].includes(kind) ? (
             <ModiffMenuAction onClick={mergeSharedInputs}>Merge shared inputs</ModiffMenuAction>
           ) : null}
           {canAttach ? (

@@ -92,9 +92,9 @@ function api(graph) {
 
 // Historical automatic Generate definitions exposed one socket per consumer.
 // Preserve the old baseline itself, not a reference to today's planner output.
-function historicalSplit(graph) {
+function historicalSplit(graph, kind = 'generate') {
   const result = structuredClone(graph),
-    root = generate(result),
+    root = result.nodes.find((node) => groups.visualOperationGroup(node) === kind),
     instance = root.data.blockInstanceV2;
   const definition = structuredClone(instance.definitionSnapshot);
   const replacements = new Map();
@@ -188,13 +188,40 @@ test('saved automatic definitions repair locally, preserving baseline, values, p
     });
 });
 
+test('Encode Inputs also shares model components across native encoders and repairs saved split ports', async (t) => {
+  for (const row of fixture.recipes)
+    await t.test(row.id, () => {
+      const graph = fresh(row);
+      const root = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'inputs');
+      if (!root) {
+        assert.equal(row.starter.pipelineClass, 'MiniMaxMusic3ModularPipeline', 'Music encodes inside Generate');
+        return;
+      }
+      const ports = modelInputs(root);
+      assert.ok(ports.length <= 1, 'Encode Inputs needs one socket for the same model supplier');
+      if (!ports[0]?.mirrorBindings?.length) return;
+      const old = historicalSplit(graph, 'inputs');
+      const baseline = structuredClone(old);
+      const next = groups.mergeVisualStageSharedInputs(old, root.id);
+      assert.deepEqual(old, baseline);
+      const repaired = next.nodes.find((node) => node.id === root.id);
+      assert.equal(modelInputs(repaired).length, 1);
+      assert.deepEqual(
+        repaired.data.blockInstanceV2.definitionSnapshot,
+        old.nodes.find((node) => node.id === root.id).data.blockInstanceV2.definitionSnapshot,
+      );
+      assert.deepEqual(api(next), api(old));
+      assert.deepEqual(api(JSON.parse(JSON.stringify(next))), api(old));
+    });
+});
+
 test('model/task switching keeps shared inputs merged, including repaired historical stages', async (t) => {
   for (const pipeline of ['HunyuanVideo15ModularPipeline', 'MiniMaxH3ModularPipeline'])
     await t.test(pipeline, () => {
       const rows = fixture.recipes.filter((row) => row.starter.pipelineClass === pipeline);
       let graph = fresh(rows[0]);
       graph = groups.mergeVisualStageSharedInputs(historicalSplit(graph), generate(graph).id);
-      for (const row of [rows[1], rows[0]]) {
+      for (const row of [...rows.slice(1), rows[0]]) {
         const owner = groups
           .unpackVisualOperationGroups(graph)
           .graph.nodes.find((node) => node.data.action === 'ModelsLoader');
@@ -202,9 +229,46 @@ test('model/task switching keeps shared inputs merged, including repaired histor
         graph = plan.graph;
         assert.equal(modelInputs(generate(graph)).length, 1);
         assert.equal(modelInputs(generate(graph))[0].mirrorBindings.length, 1);
+        const inputs = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'inputs');
+        if (inputs) {
+          const flat = groups.unpackVisualOperationGroups(graph).graph;
+          const connected = modelInputs(inputs).filter((port) =>
+            [port.binding, ...(port.mirrorBindings ?? [])].some((binding) =>
+              flat.edges.some(
+                (edge) =>
+                  edge.target === `${inputs.id}/${binding.nodeId}` && edge.targetHandle === binding.fieldOrPortId,
+              ),
+            ),
+          );
+          // The preservation planner may retain disconnected image encoders
+          // after returning to text-only. Those are not shared live suppliers.
+          assert.equal(connected.length, 1, 'The active model supplier stays one shared input');
+        }
         assert.deepEqual(api(graph), api(groups.unpackVisualOperationGroups(graph).graph));
       }
     });
+});
+
+test('changed-task encoder mirrors refuse partial bindings and a foreign declared task', () => {
+  const rows = fixture.recipes.filter((row) => row.starter.pipelineClass === 'HunyuanVideo15ModularPipeline');
+  const initial = fresh(rows[0]);
+  const owner = groups
+    .unpackVisualOperationGroups(initial)
+    .graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+  const changed = authoring.planOperationChange(initial, owner.id, rows[1].starter).graph;
+  const inputs = changed.nodes.find((node) => groups.visualOperationGroup(node) === 'inputs');
+  assert.equal(modelInputs(inputs)[0].mirrorBindings.length, 2);
+  for (const fault of ['partial', 'task']) {
+    const previous = structuredClone(inputs);
+    if (fault === 'partial') modelInputs(previous)[0].mirrorBindings.pop();
+    else previous.data.blockInstanceV2.effectiveGraph.nodes[0].data.operationAuthoring.operation.task = 'foreign-task';
+    const unpacked = groups.unpackVisualOperationGroups(changed);
+    assert.throws(
+      () => groups.groupVisualStages(unpacked.graph, unpacked.members.get(inputs.id), 'inputs', previous),
+      /mirrored custom interface/,
+      fault,
+    );
+  }
 });
 
 test('different sources, duplicate incoming wires and unrelated value inputs are never merged', () => {

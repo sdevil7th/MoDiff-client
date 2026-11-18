@@ -536,7 +536,11 @@ function sharedModelInput(port: BlockPortV2) {
   );
 }
 
-function retainsGeneratedModelBindings(port: BlockPortV2, definition: BlockDefinitionV2) {
+function retainsGeneratedModelBindings(
+  port: BlockPortV2,
+  definition: BlockDefinitionV2,
+  effectiveGraph: BlockDefinitionV2['graph'],
+) {
   if (!sharedModelInput(port) || !port.mirrorBindings?.length) return false;
   const fields = [port.binding, ...port.mirrorBindings];
   if (fields.some((binding) => binding.fieldOrPortId !== port.binding.fieldOrPortId)) return false;
@@ -544,7 +548,38 @@ function retainsGeneratedModelBindings(port: BlockPortV2, definition: BlockDefin
     .filter((input) => input.valueType === port.valueType && input.binding.fieldOrPortId === port.binding.fieldOrPortId)
     .flatMap((input) => [input.binding, ...(input.mirrorBindings ?? [])]);
   const identity = (bindings: typeof fields) => bindings.map((binding) => canonicalBlockStringifyV2(binding)).sort();
-  return canonicalBlockStringifyV2(identity(fields)) === canonicalBlockStringifyV2(identity(original));
+  const matches = (bindings: typeof fields) =>
+    canonicalBlockStringifyV2(identity(fields)) === canonicalBlockStringifyV2(identity(bindings));
+  if (matches(original)) return true;
+  // A task change can add native encoders while preserving the original saved
+  // definition. Admit only the complete typed model-input census of one declared
+  // task, never an arbitrary or partial custom mirror.
+  if (!definition.source.provider?.startsWith(PROVIDER)) return false;
+  const consumers = effectiveGraph.nodes.filter((node) => {
+    const parameter = (node.data.params as CustomNodeType['data']['params'])?.[port.binding.fieldOrPortId];
+    return (
+      parameter?.type === port.valueType &&
+      (parameter.display === 'input' || parameter.isInput) &&
+      !effectiveGraph.edges.some(
+        (edge) => edge.targetNodeId === node.nodeId && edge.targetPortId === port.binding.fieldOrPortId,
+      )
+    );
+  });
+  // Inspect the validated hint only; this does not construct or execute a node.
+  const declared = consumers.map(
+    (node) => operationAuthoring({ data: node.data } as unknown as CustomNodeType)?.operation,
+  );
+  return (
+    consumers.length > 1 &&
+    declared.every(
+      (operation) =>
+        operation &&
+        ['block', 'bundle'].includes(operation.decomposition) &&
+        operation.pipelineClass === declared[0]?.pipelineClass &&
+        operation.task === declared[0]?.task,
+    ) &&
+    matches(consumers.map((node) => ({ nodeId: node.nodeId, fieldOrPortId: port.binding.fieldOrPortId })))
+  );
 }
 
 export function groupVisualStages(
@@ -582,7 +617,10 @@ export function groupVisualStages(
       [...old.effectiveInterface.boundary.inputs, ...old.effectiveInterface.boundary.outputs].some(
         (port) =>
           port.mirrorBindings?.length &&
-          !(kind === 'generate' && retainsGeneratedModelBindings(port, old.definitionSnapshot)),
+          !(
+            ['inputs', 'generate'].includes(kind) &&
+            retainsGeneratedModelBindings(port, old.definitionSnapshot, old.effectiveGraph)
+          ),
       ) || old.effectiveInterface.controls.some((control) => control.mirrorBindings?.length);
     if (customized)
       throw new Error(
@@ -737,7 +775,7 @@ export function groupVisualStages(
         control.label = `${member.data.label} · ${control.label}`;
       }
   }
-  if (kind === 'generate') {
+  if (['inputs', 'generate'].includes(kind)) {
     // A shared typed model value is one public input, regardless of the model
     // adapter's node names. Independent or unconnected suppliers stay separate.
     const visited = new Set<string>();
@@ -798,7 +836,14 @@ export function groupVisualStages(
                 edges[0]!.source === wires[0]![0]!.source && edges[0]!.sourceHandle === wires[0]![0]!.sourceHandle,
             )))
       ) {
-        pipelines[0]!.mirrorBindings = pipelines.slice(1).map((port) => port.binding);
+        pipelines[0]!.mirrorBindings = pipelines
+          .slice(1)
+          .map((port) => port.binding)
+          .sort((left, right) => {
+            const a = `${left.nodeId}\0${left.fieldOrPortId}`,
+              b = `${right.nodeId}\0${right.fieldOrPortId}`;
+            return a < b ? -1 : a > b ? 1 : 0;
+          });
         for (let index = 1; index < pipelines.length; index++) {
           inputs.splice(inputs.indexOf(pipelines[index]!), 1);
           if (wires[index]!.length) redundantEdges.add(wires[index]![0]!.id);
@@ -987,11 +1032,12 @@ export function groupVisualStages(
  * custom interface alone never changes its reusable definition or connections. */
 export function mergeVisualStageSharedInputs(graph: OperationGraph, rootId: string): OperationGraph {
   const root = graph.nodes.find((node) => node.id === rootId);
-  if (!root || visualOperationGroup(root) !== 'generate')
-    throw new Error('Choose a Generate stage to merge its shared model inputs.');
+  const kind = root && visualOperationGroup(root);
+  if (!root || !kind || !['inputs', 'generate'].includes(kind))
+    throw new Error('Choose an Encode Inputs or Generate stage to merge its shared model inputs.');
   const before = root.data.blockInstanceV2!.effectiveInterface.boundary.inputs.length;
   const unpacked = unpackVisualOperationGroups(graph, new Set([rootId]));
-  const next = groupVisualStages(unpacked.graph, unpacked.members.get(rootId)!, 'generate', root);
+  const next = groupVisualStages(unpacked.graph, unpacked.members.get(rootId)!, kind, root);
   const after = next.nodes.find((node) => node.id === rootId)!.data.blockInstanceV2!.effectiveInterface.boundary.inputs
     .length;
   if (after >= before)

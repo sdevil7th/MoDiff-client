@@ -36042,6 +36042,107 @@ test('saved Generate shared-input repair preserves execution, Undo, reload and e
   expect(await optionalStageApi(page)).toEqual(before);
 });
 
+test('saved Encode Inputs repairs three native encoder sockets through the stage menu', async ({ page }) => {
+  const fixture = await generateTemplateSchemas([
+    { id: 'native-i2v', selection: { pipelineClass: 'HunyuanVideo15ModularPipeline', task: 'image_to_video' } },
+  ]);
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__));
+  const id = await page.evaluate(async (fixture) => {
+    const { createWorkflowDraft } = await import('/src/workflow/workflowDraft.ts');
+    const { unpackVisualOperationGroups, groupNewOperationGraph } =
+      await import('/src/workflow/visualOperationGroups.ts');
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const schema = await import('/src/studio/blockSchemaV2.ts');
+    const runtime = await import('/src/studio/blockRuntimeV2.ts');
+    const flat = unpackVisualOperationGroups(
+      createWorkflowDraft(fixture.recipes[0].starter, fixture.registry).graph,
+    ).graph;
+    // The no-weight fixture uses its real plain-CPU export contract.
+    for (const node of flat.nodes) {
+      if (node.data.params.offload_mode) node.data.params.offload_mode.value = 'none';
+      if (node.data.params.auto_offload) node.data.params.auto_offload.value = false;
+    }
+    const graph = groupNewOperationGraph(flat);
+    const root = graph.nodes.find((node) => node.data.label === 'Encode Inputs')!;
+    const instance = root.data.blockInstanceV2!,
+      definition = structuredClone(instance.definitionSnapshot);
+    const replacements = new Map<string, string[]>();
+    definition.boundary.inputs = definition.boundary.inputs.flatMap((port) => {
+      if (port.binding.fieldOrPortId !== 'pipeline_components' || !port.mirrorBindings?.length) return [port];
+      const ports = [port.binding, ...port.mirrorBindings].map((binding) => {
+        const next = { ...port, binding, portId: `${binding.nodeId}:${binding.fieldOrPortId}` };
+        delete next.mirrorBindings;
+        return next;
+      });
+      replacements.set(
+        port.portId,
+        ports.map((p) => p.portId),
+      );
+      return ports;
+    });
+    definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+    const old = schema.createBlockInstanceV2(schema.normalizeBlockDefinitionV2(definition), {
+      instanceId: root.id,
+      position: root.position,
+      size: instance.presentation.size,
+      internalLayout: instance.presentation.internalLayout,
+    });
+    useFlowStore.getState().replaceGraph({
+      nodes: graph.nodes
+        .filter((n) => n.data.blockProjectionOwnerId !== root.id)
+        .map((n) => (n.id === root.id ? runtime.createBlockRootNodeV2(old) : n)),
+      edges: graph.edges
+        .filter((e) => e.data?.blockProjectionOwnerId !== root.id)
+        .flatMap((e) =>
+          e.target === root.id && replacements.has(e.targetHandle!)
+            ? replacements
+                .get(e.targetHandle!)!
+                .map((targetHandle, index) => ({ ...e, id: `${e.id}-old-${index}`, targetHandle }))
+            : [e],
+        ),
+    });
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return root.id;
+  }, fixture);
+  await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+  const before = await optionalStageApi(page);
+  const count = () =>
+    page.evaluate(
+      (id) =>
+        window
+          .__MODIFF_E2E__!.exportWorkflowGraph()
+          .nodes.find((node) => node.id === id)!
+          .data.blockInstanceV2!.effectiveInterface.boundary.inputs.filter(
+            (port) => port.binding.fieldOrPortId === 'pipeline_components',
+          ).length,
+      id,
+    );
+  expect(await count()).toBe(3);
+  const root = page.locator(`.react-flow__node[data-id="${id}"]`);
+  await root.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Merge shared inputs', exact: true }).click();
+  await expect.poll(count).toBe(1);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 35, y: 80 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(count).toBe(3);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(count).toBe(1);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(root).toBeVisible();
+  await expect.poll(count).toBe(1);
+  expect(await optionalStageApi(page)).toEqual(before);
+});
+
 async function optionalStageApi(page: Page) {
   return page.evaluate(async () => {
     const hooks = window.__MODIFF_E2E__!;

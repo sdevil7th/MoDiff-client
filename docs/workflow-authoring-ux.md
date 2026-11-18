@@ -44,7 +44,10 @@ Empty optional bundle inputs can also share a socket when their consumers belong
 to one model owner. Different sources, required empty inputs and authored bundle
 values stay separate. This presentation does not change backend execution.
 
-For an older saved Generate stage, open its inspector's **Workflow stage actions**
+Encode Inputs also shares identical model connections across its encoders. Music
+routes that encode inside Generate keep that existing structure.
+
+For an older saved Encode Inputs or Generate stage, open its **Workflow stage actions**
 menu and choose **Merge shared inputs**. The edit is undoable, preserves the
 saved reusable definition and current settings, and refuses inputs that cannot
 be shared safely. Opening a saved workflow alone does not rewrite its interface.

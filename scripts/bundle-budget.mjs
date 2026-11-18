@@ -1,3 +1,6 @@
+// Extending the same repair to encoders and preserving changed-task binding
+// censuses adds 364 deferred gzip bytes (350330 -> 350694). Keep the same 89-byte
+// headroom, startup ceilings, loading memberships and per-chunk ceiling.
 // Typed shared-input grouping and undoable saved-stage repair add 418 deferred
 // gzip bytes (349912 -> 350330). Retain the previous 89-byte headroom, four
 // startup/92 deferred memberships, startup caps and 64 KiB per-chunk cap.
@@ -985,6 +988,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  364 +
   418 +
   // Planning-only template creation guards add 181 gzip bytes versus tested v15
   // (349724 -> 349905). Keep startup caps and the independent 64 KiB chunk cap;
