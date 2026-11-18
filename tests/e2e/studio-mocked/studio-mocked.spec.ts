@@ -397,7 +397,13 @@ test('sampler activity clears telemetry through websocket phases and keeps termi
     });
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await dismissTaskLauncher(page);
+  // This fixture starts a run from the socket. The asynchronously loaded
+  // empty-canvas launcher is not part of that gesture.
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await page.evaluate(async () => {
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    useStudioStore.getState().setLauncherDismissed(true);
+  });
   await expect.poll(() => Boolean(publish)).toBe(true);
 
   current = loadingTask;
