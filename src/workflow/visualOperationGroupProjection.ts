@@ -1,7 +1,7 @@
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { insertStageLeaves, visualStageSourceIndex } from '../studio/visualStageOrder';
 import type { NodeData } from '../stores/useNodeStore';
-import { blockInstancePreviewBindingsV2, type BlockJsonValue } from '../studio/blockSchemaV2';
+import { blockInstancePreviewBindingsV2, type BlockInstanceV2, type BlockJsonValue } from '../studio/blockSchemaV2';
 import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { blockConnectionTargetsV2 } from '../studio/blockCrossingConnectionsV2';
 import { blockControlBindingV2 } from '../studio/blockControlConnectionsV2';
@@ -15,6 +15,8 @@ export type VisualOperationGroup = keyof typeof VISUAL_STAGE_LABELS;
 export const VISUAL_STAGE_PROVIDER = 'modiff.visual-stages.v1/';
 export const COMBINED_INPUT_PROVIDER = 'modiff.visual-stages.v2/inputs';
 export const VISUAL_STAGE_LABELS = {
+  assemble: 'Assemble',
+  assembleExport: 'Assemble & Export',
   composite: 'Composite',
   imageInput: 'Image Input',
   videoInput: 'Video Input',
@@ -27,6 +29,8 @@ export const VISUAL_STAGE_LABELS = {
   output: 'Image Output',
 };
 export const VISUAL_STAGE_NAMES = {
+  assemble: 'assembly',
+  assembleExport: 'assembly and export',
   composite: 'image composition',
   imageInput: 'image input',
   videoInput: 'video input',
@@ -98,8 +102,8 @@ export function visualOperationGroupMedia(node: Pick<CustomNodeType, 'data'>): '
 }
 
 /** Presentation provenance only; never execution permission or a model selector. */
-export function visualOperationGroup(node: CustomNodeType): VisualOperationGroup | null {
-  const source = node.data.blockInstanceV2?.definitionSnapshot.source;
+export function visualOperationStageKind(instance: BlockInstanceV2 | undefined): VisualOperationGroup | null {
+  const source = instance?.definitionSnapshot.source;
   if (source?.kind !== 'user') return null;
   if (source.provider === COMBINED_INPUT_PROVIDER) return 'inputs';
   return (
@@ -107,6 +111,16 @@ export function visualOperationGroup(node: CustomNodeType): VisualOperationGroup
       (kind) => source.provider === `${VISUAL_STAGE_PROVIDER}${kind}`,
     ) ?? null
   );
+}
+
+export function visualStageHasNestedStructure(instance: BlockInstanceV2) {
+  return instance.effectiveGraph.nodes.some(
+    (node) => node.parentNodeId || node.containerInterface || node.modularDiffusers,
+  );
+}
+
+export function visualOperationGroup(node: CustomNodeType): VisualOperationGroup | null {
+  return visualOperationStageKind(node.data.blockInstanceV2);
 }
 
 /** Value edits may cross disclosure containers without adapting their graph. */
@@ -170,12 +184,7 @@ function projectVisualOperationGroups(
   }
   for (const root of roots) {
     const instance = root.data.blockInstanceV2!;
-    if (
-      adapting &&
-      instance.effectiveGraph.nodes.some(
-        (node) => node.parentNodeId || node.containerInterface || node.modularDiffusers,
-      )
-    )
+    if (adapting && visualStageHasNestedStructure(instance))
       throw new Error('Ungroup nested additions before adapting this visual stage group. Nothing changed.');
     const view = blockOperationGraphV2(instance);
     const map = new Map(instance.effectiveGraph.nodes.map((node) => [node.nodeId, `${root.id}/${node.nodeId}`]));

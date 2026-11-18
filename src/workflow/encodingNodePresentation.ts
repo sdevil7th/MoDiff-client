@@ -1,7 +1,12 @@
 import type { NodeParams } from '../stores/useNodeStore';
 import type { BlockControlV2, BlockInstanceV2, BlockPortV2 } from '../studio/blockSchemaV2';
 import { workflowTaskCategory } from './workflowTaskBrowser';
-import { COMBINED_INPUT_PROVIDER, VISUAL_STAGE_PROVIDER } from './visualOperationGroupProjection';
+import {
+  COMBINED_INPUT_PROVIDER,
+  VISUAL_STAGE_PROVIDER,
+  visualOperationStageKind,
+  visualStageHasNestedStructure,
+} from './visualOperationGroupProjection';
 
 /** Scope by declared encoder tasks, not by model names or unrelated custom nodes. */
 export function isFocusedImageEncoding(instance: BlockInstanceV2 | undefined) {
@@ -44,14 +49,9 @@ export function isFocusedGuidance(instance: BlockInstanceV2 | undefined) {
 }
 
 export function isFocusedStageNode(instance: BlockInstanceV2 | undefined) {
-  return (
-    isFocusedImageEncoding(instance) ||
-    isFocusedGuidance(instance) ||
-    (['setup', 'mask', 'output'].some(
-      (kind) => instance?.definitionSnapshot.source.provider === `modiff.visual-stages.v1/${kind}`,
-    ) &&
-      Boolean(instance?.effectiveGraph.nodes.length))
-  );
+  if (!instance?.effectiveGraph.nodes.length || visualStageHasNestedStructure(instance)) return false;
+  const kind = visualOperationStageKind(instance);
+  return Boolean(kind && (kind !== 'guidance' || isFocusedGuidance(instance)));
 }
 
 /** Rendering only: never remove a declared boundary or an existing connection. */

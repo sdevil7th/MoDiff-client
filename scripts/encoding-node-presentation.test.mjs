@@ -69,7 +69,7 @@ test('custom implementation additions do not turn the generic encoder back into 
 
 test('Guidance presentation excludes unrelated recipes and scopes to image/audio', () => {
   const instance = {
-    definitionSnapshot: { source: { provider: 'modiff.visual-stages.v1/guidance' } },
+    definitionSnapshot: { source: { kind: 'user', provider: 'modiff.visual-stages.v1/guidance' } },
     effectiveGraph: {
       nodes: [
         { data: { operationAuthoring: { operation: { nodeType: 'guidance', task: 'text_to_image' } } } },
@@ -87,11 +87,28 @@ test('Guidance presentation excludes unrelated recipes and scopes to image/audio
   assert.equal(presentation.isFocusedStageNode(outside), false);
 });
 
-test('optional visual stages use the ordinary node shell and keep custom reusable names', () => {
-  for (const kind of ['setup', 'mask', 'output']) {
+test('built-in stages use one ordinary node across modalities, including video encoding and generation', () => {
+  for (const kind of [
+    'assemble',
+    'assembleExport',
+    'setup',
+    'inputs',
+    'generate',
+    'imageInput',
+    'videoInput',
+    'references',
+    'mask',
+    'composite',
+    'output',
+  ]) {
     const instance = {
-      definitionSnapshot: { displayName: 'My reusable stage', source: { provider: `modiff.visual-stages.v1/${kind}` } },
-      effectiveGraph: { nodes: [{ data: {} }] },
+      definitionSnapshot: {
+        displayName: 'My stage',
+        source: { kind: 'user', provider: `modiff.visual-stages.v1/${kind}` },
+      },
+      effectiveGraph: {
+        nodes: [{ data: { operationAuthoring: { operation: { nodeType: 'text_encoder', task: 'image_to_video' } } } }],
+      },
     };
     assert.equal(presentation.isFocusedStageNode(instance), true);
     assert.equal(presentation.isFocusedStageNode({ ...instance, effectiveGraph: { nodes: [] } }), false);
@@ -102,5 +119,27 @@ test('optional visual stages use the ordinary node shell and keep custom reusabl
       effectiveGraph: { nodes: [{ data: {} }] },
     }),
     false,
+  );
+});
+
+test('a saved stage with an authored nested composition can still expand as a Block', () => {
+  const instance = {
+    definitionSnapshot: { source: { kind: 'user', provider: 'modiff.visual-stages.v1/generate' } },
+    effectiveGraph: {
+      nodes: [
+        { nodeId: 'sampler', data: {} },
+        { nodeId: 'custom-wrapper', containerInterface: {}, data: {} },
+        { nodeId: 'custom-transform', parentNodeId: 'custom-wrapper', data: {} },
+      ],
+    },
+    presentation: { expanded: true },
+  };
+  assert.equal(presentation.isFocusedStageNode(instance), false);
+  assert.equal(
+    presentation.isFocusedStageNode({
+      ...instance,
+      effectiveGraph: { nodes: instance.effectiveGraph.nodes.slice(0, 1) },
+    }),
+    true,
   );
 });

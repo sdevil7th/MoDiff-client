@@ -63,6 +63,7 @@ function fixture(shell, scenario) {
   const env = {
     ...process.env,
     PATH: tools,
+    NODE_ENV: 'production',
     MODIFF_DEV_CALLS: calls,
     MODIFF_BACKEND_DIR: relative(root, backend),
     UV_FIXTURE_EXIT: scenario === 'pip-error' ? '7' : '0',
@@ -76,7 +77,7 @@ function fixture(shell, scenario) {
       join(backend, 'install.ps1'),
       `param([string]$Accelerator, [switch]$AllowExperimental, [switch]$Resume, [switch]$Repair, [switch]$BackendOnly)\nif (!$BackendOnly) { throw 'Expected backend-only installation.' }\nAdd-Content -LiteralPath $env:MODIFF_DEV_CALLS -Value installer\nSet-Location -LiteralPath $PSScriptRoot\nexit ${installerExit}\n`,
     );
-    writeFileSync(join(tools, 'npm.cmd'), '@echo off\necho npm>>"%MODIFF_DEV_CALLS%"\nexit /b 0\n');
+    writeFileSync(join(tools, 'npm.cmd'), '@echo off\necho npm %*>>"%MODIFF_DEV_CALLS%"\nexit /b 0\n');
     const uvSource = join(root, 'uv-fixture.cs');
     writeFileSync(
       uvSource,
@@ -96,7 +97,7 @@ function fixture(shell, scenario) {
       join(backend, 'install.sh'),
       `#!/usr/bin/env bash\n[[ "$*" == *--backend-only* ]] || exit 4\nprintf 'installer\\n' >> "$MODIFF_DEV_CALLS"\nexit ${installerExit}\n`,
     );
-    executable(join(tools, 'npm'), '#!/bin/sh\nprintf "npm\\n" >> "$MODIFF_DEV_CALLS"\n');
+    executable(join(tools, 'npm'), '#!/bin/sh\nprintf "npm %s\\n" "$*" >> "$MODIFF_DEV_CALLS"\n');
     const uv =
       '#!/bin/sh\nif [ "$1" = --version ]; then printf "probe:%s\\n" "$0" >> "$MODIFF_DEV_CALLS"; printf "uv %s\\n" "$UV_FIXTURE_VERSION"; exit 0; fi\nprintf "uv:%s\\n" "$0" >> "$MODIFF_DEV_CALLS"\nprintf "%s\\n" "$@" >> "$MODIFF_DEV_CALLS"\nprintf "native uv fixture progress\\n" >&2\nexit "$UV_FIXTURE_EXIT"\n';
     if (scenario !== 'missing' && scenario !== 'fallback') executable(join(tools, 'uv'), uv);
@@ -161,7 +162,7 @@ for (const shell of ['ps1', 'sh']) {
             if (scenario === 'pip-error') assert.doesNotMatch(calls, /npm|preflight/);
             else {
               assert.match(output, /Development environment is ready/);
-              assert.match(calls, /npm[\s\S]*preflight/);
+              assert.match(calls, /npm ci --include=dev\r?\npreflight/);
               assert.deepEqual(
                 JSON.parse(
                   readFileSync(join(f.client, 'artifacts/dev-install-current/backend-preflight.json'), 'utf8').replace(

@@ -186,6 +186,8 @@ test('all sequence templates arrange their shots in story order independently of
 });
 
 test('every sequence has actual separate shot groups and one shared primary model', async (t) => {
+  const { visualOperationGroup } = await server.ssrLoadModule('/src/workflow/visualOperationGroupProjection.ts');
+  const { isFocusedStageNode } = await server.ssrLoadModule('/src/workflow/encodingNodePresentation.ts');
   for (const [id, count] of cases)
     await t.test(id, () => {
       const { graph, template } = create(id);
@@ -196,6 +198,11 @@ test('every sequence has actual separate shot groups and one shared primary mode
         id === 'ace_step_lyric_music_video' ? 2 : 1,
       );
       assert.equal(graph.nodes.filter((node) => node.data.action === 'Storyboard').length, 1);
+      const assembly = graph.nodes.filter((node) =>
+        ['assemble', 'assembleExport'].includes(visualOperationGroup(node)),
+      );
+      assert.equal(assembly.length, 1, 'ordering and concatenation share one assembly stage');
+      assert.ok(isFocusedStageNode(assembly[0].data.blockInstanceV2), 'assembly uses the ordinary stage renderer');
       assert.ok(
         !graph.nodes.some((node) => node.data.action === 'ToList'),
         'ordering bookkeeping stays inside Assemble',

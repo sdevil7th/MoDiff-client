@@ -23,7 +23,7 @@ try {
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Location $PSScriptRoot
-& npm.cmd ci
+& npm.cmd ci --include=dev
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $artifactDir = Join-Path $PSScriptRoot "artifacts\dev-install-current"
 New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null

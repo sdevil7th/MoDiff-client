@@ -8,8 +8,9 @@ import { remapOperationAuthoring } from '../workflow/operationSharedInputs';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { groupNewOperationGraph, groupVisualStages, operationStageMemberIds } from '../workflow/visualOperationGroups';
+import { VISUAL_STAGE_PROVIDER } from '../workflow/visualOperationGroupProjection';
 import { createUserBlockDraftV2, prepareUserBlockCreationV2 } from './userBlockCreationV2';
-import { canonicalBlockStringifyV2 } from './blockSchemaV2';
+import { blockDefinitionContentHashV2, canonicalBlockStringifyV2, normalizeBlockInstanceV2 } from './blockSchemaV2';
 import { createStoryboardShotBlock } from '../workflow/storyboardShotPresentation';
 import type { StudioFormState, StudioTemplate } from './types';
 import { upscaleWorkflowFieldValues } from './controlledWorkflowValues';
@@ -343,8 +344,8 @@ export function createTemplateVideoSequence(
     result.nodes.push(exporter);
     wire(result, source, output, exporter, 'video');
   }
-  // Ordering is assembly bookkeeping, kept inside the ordinary Assemble
-  // Block. Its real shot sockets, timing controls and outputs remain public.
+  // Ordering is assembly bookkeeping. The generic stage keeps its real
+  // shot sockets, timing controls, output and existing execution bindings.
   const assembly = createUserBlockDraftV2(
     {
       nodes: result.nodes.map((node) => ({ ...node, selected: assemblyIds.has(node.id) })),
@@ -357,5 +358,25 @@ export function createTemplateVideoSequence(
     ...assembly.block,
     name: quality ? 'Assemble & Export' : 'Assemble',
   });
-  return groupNewOperationGraph(assembled.graph);
+  return groupNewOperationGraph({
+    ...assembled.graph,
+    nodes: assembled.graph.nodes.map((node) => {
+      const instance = node.data.blockInstanceV2;
+      if (!instance || instance.definitionSnapshot !== assembled.definition) return node;
+      const definition = structuredClone(instance.definitionSnapshot);
+      definition.source.provider = `${VISUAL_STAGE_PROVIDER}${quality ? 'assembleExport' : 'assemble'}`;
+      definition.contentHash = blockDefinitionContentHashV2(definition);
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          blockInstanceV2: normalizeBlockInstanceV2({
+            ...instance,
+            definitionRef: { ...instance.definitionRef, contentHash: definition.contentHash },
+            definitionSnapshot: definition,
+          }),
+        },
+      };
+    }),
+  });
 }

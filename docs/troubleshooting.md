@@ -37,11 +37,11 @@ The launcher also saves its latest report at `artifacts/dev-server-current/backe
 The supported client toolchain is defined in `.nvmrc`, `package.json`, and `package-lock.json`.
 
 1. Confirm Node `24.12.x` and npm `11.6.x`.
-2. For paired development, run `uv sync` with your accelerator extra in the
-   backend, then `npm ci` here. The combined development installers remain
+2. For paired development, run `uv sync --locked` with your accelerator extra in the
+   backend, then `npm ci --include=dev` here. The combined development installers remain
    available for specialized profiles. Do not regenerate the npm lockfile just
    to work around an install failure.
-3. If the lockfile and manifest intentionally changed together, run `npm install` once as part of that dependency change, review the diff, and return to `npm ci` for validation.
+3. If the lockfile and manifest intentionally changed together, run `npm install` once as part of that dependency change, review the diff, and return to `npm ci --include=dev` for validation.
 4. If native browser installation fails, retry `npx playwright install chromium` and follow Playwright's platform dependency message.
 
 ## Backend Path Not Found

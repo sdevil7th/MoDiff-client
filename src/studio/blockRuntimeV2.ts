@@ -1645,7 +1645,7 @@ function projectedHierarchicalLayoutsV2(
     }),
   );
   const visibleIds = new Set(orderedNodes.map(({ nodeId }) => nodeId));
-  const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsed = collapsedCanvasContainerIdsV2(instance);
   const childrenByParent = new Map<string, BlockGraphNodeV2[]>();
   orderedNodes.forEach((node) => {
     const parentId = parentIds.get(node.nodeId) ?? instance.instanceId;
@@ -1814,11 +1814,57 @@ function inactiveRegisteredStructuralNodeIdsV2(instance: BlockInstanceV2, parent
   );
 }
 
+export const STORYBOARD_SHOT_PROVIDER = 'modiff.visual-stages.storyboard.v1';
+
+/** The Shot composer retains these generated wrappers and their exact local
+ * interface when lifting inner stage definitions into its owning graph. Only
+ * that known presentation shape gets the simple card. Edited compositions
+ * with extra/replaced members remain ordinary expandable containers. */
+export function storyboardStageKindV2(instance: BlockInstanceV2 | undefined, semanticNodeId: string | undefined) {
+  const source = instance?.definitionSnapshot.source;
+  if (!instance || source?.kind !== 'user' || source.provider !== STORYBOARD_SHOT_PROVIDER) return null;
+  const nodes = instance.effectiveGraph.nodes;
+  const wrapper = nodes.find((node) => node.nodeId === semanticNodeId);
+  if (!wrapper?.nodeId.startsWith('visual-') || wrapper.parentNodeId || !wrapper.containerInterface) return null;
+  const children = nodes.filter((node) => node.parentNodeId === wrapper.nodeId);
+  if (children.some((child) => child.nodeType !== 'custom' || child.containerInterface)) return null;
+  const key = children
+    .map(({ data }) => {
+      const hint = data.operationAuthoring;
+      const operation = isRecord(hint) && hint.operation;
+      return isRecord(operation) && typeof operation.nodeType === 'string'
+        ? operation.nodeType
+        : `${data.module}.${data.action}`;
+    })
+    .sort()
+    .join(',');
+  switch (key) {
+    case 'modules.VideoConditioning.ShotPrompt,video_encoder':
+      return 'inputs';
+    case 'decoder,denoise,modules.VideoConditioning.ShotInputs':
+      return 'generate';
+    case 'modules.Image.Load':
+      return 'imageInput';
+    default:
+      return null;
+  }
+}
+
+function collapsedCanvasContainerIdsV2(instance: BlockInstanceV2) {
+  const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  if (instance.definitionSnapshot.source.provider === STORYBOARD_SHOT_PROVIDER) {
+    for (const node of instance.effectiveGraph.nodes) {
+      if (storyboardStageKindV2(instance, node.nodeId)) collapsed.add(node.nodeId);
+    }
+  }
+  return collapsed;
+}
+
 function visibleSemanticNodeIdsV2(
   instance: BlockInstanceV2,
   parentIds = blockGraphParentIdsV2(instance.effectiveGraph),
 ) {
-  const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsed = collapsedCanvasContainerIdsV2(instance);
   const inactiveStructural = inactiveRegisteredStructuralNodeIdsV2(instance, parentIds);
   return new Set(
     instance.effectiveGraph.nodes.flatMap((node) => {
@@ -1887,7 +1933,7 @@ function connectorDirection(param: NodeParams | undefined) {
  */
 function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSurfaceV2 {
   const parentIds = blockGraphParentIdsV2(instance.effectiveGraph);
-  const collapsedContainerIds = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsedContainerIds = collapsedCanvasContainerIdsV2(instance);
   const visibleNodeIds = visibleSemanticNodeIdsV2(instance, parentIds);
   const nodesById = new Map(instance.effectiveGraph.nodes.map((node) => [node.nodeId, node]));
   const paramsByNodeId = new Map<string, Record<string, NodeParams>>();
@@ -2276,7 +2322,7 @@ function projectedChildren(instance: BlockInstanceV2, absolute: boolean, include
   const visibleNodeIds = absolute
     ? (included ?? new Set(instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId)))
     : visibleSemanticNodeIdsV2(instance, parentIds);
-  const collapsedContainerIds = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsedContainerIds = collapsedCanvasContainerIdsV2(instance);
   const projectionSurface = absolute ? null : blockProjectionSurfaceV2(instance);
   // A collapsed container is another view of the same declared controls, not
   // a parameter-less summary card. Build once, then fan each control out to its

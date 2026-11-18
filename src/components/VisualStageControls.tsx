@@ -19,7 +19,6 @@ import {
   type VisualOperationGroup,
   availableOperationStageGroups,
   visualOperationOwnerId,
-  mergeVisualStageSharedInputs,
 } from '../workflow/visualOperationGroups';
 import { visualStagePresentation } from '../workflow/visualOperationGroupProjection';
 import { workflowTaskCategory } from '../workflow/workflowTaskBrowser';
@@ -100,18 +99,6 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
       setError(failure instanceof Error ? failure.message : 'Could not change these component connections.');
     }
   }
-  function mergeSharedInputs() {
-    try {
-      const graph = useFlowStore.getState().toObject();
-      const context = captureWorkflowOperationContext();
-      const next = mergeVisualStageSharedInputs(graph, root ? root.id : node.id);
-      commitOperationGraph(next, context, operationGraphSignature(graph), 'Merge shared model inputs');
-      useStudioStore.getState().saveActiveWorkflowTab(true);
-      setError(null);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Could not merge these shared inputs.');
-    }
-  }
   return (
     <div className="nodrag nowheel grid gap-2 py-2">
       <ModiffMenuRoot>
@@ -125,6 +112,8 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
             <ModiffMenuAction key={group} onClick={() => apply(group)}>
               {
                 {
+                  assemble: 'Group assembly',
+                  assembleExport: 'Group assembly and export',
                   inputs: 'Group input encoders',
                   composite: 'Group image composition',
                   imageInput: 'Group image input',
@@ -154,9 +143,6 @@ export default function VisualStageControls({ node }: { node: CustomNodeType }) 
             </ModiffMenuAction>
           ))}
           {kind ? <ModiffMenuAction onClick={() => apply()}>Ungroup stages</ModiffMenuAction> : null}
-          {kind && ['inputs', 'generate'].includes(kind) ? (
-            <ModiffMenuAction onClick={mergeSharedInputs}>Merge shared inputs</ModiffMenuAction>
-          ) : null}
           {canAttach ? (
             <ModiffMenuAction onClick={() => requestAnimationFrame(() => setAttachOpen(true))}>
               Add image / audio input…

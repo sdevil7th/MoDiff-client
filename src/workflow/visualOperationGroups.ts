@@ -664,7 +664,7 @@ export function groupVisualStages(
       );
       if (
         ['ui_image', 'ui_audio', 'ui_video'].includes(param.display ?? '') &&
-        ['output', 'imageInput', 'videoInput', 'references', 'mask', 'generate'].includes(kind)
+        ['output', 'imageInput', 'videoInput', 'references', 'mask', 'generate', 'assembleExport'].includes(kind)
       )
         previews.push({
           nodeId: remap(node.id),
@@ -698,7 +698,17 @@ export function groupVisualStages(
         label = `Target ${field === 'num_frames' ? 'frames' : field}`;
       const internalOutput =
         !connected &&
-        (['setup', 'imageInput', 'videoInput', 'references', 'mask', 'generate', 'composite'].includes(kind) ||
+        ([
+          'setup',
+          'imageInput',
+          'videoInput',
+          'references',
+          'mask',
+          'generate',
+          'composite',
+          'assemble',
+          'assembleExport',
+        ].includes(kind) ||
           implicitScalars.has(node.id)) &&
         graph.edges.some((edge) => edge.source === node.id && edge.sourceHandle === field && selected.has(edge.target));
       if (

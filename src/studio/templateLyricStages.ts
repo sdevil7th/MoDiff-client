@@ -3,6 +3,7 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData } from '../stores/useNodeStore';
 import type { OperationGraph } from '../workflow/operationAuthoring';
 import { groupNewOperationGraph, unpackVisualOperationGroups } from '../workflow/visualOperationGroups';
+import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 import { createNodeFromRegistry } from '../workflow/nodeFactory';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { audioFitWorkflowFieldValues, lyricVideoWorkflowFieldValues } from './controlledWorkflowValues';
@@ -63,25 +64,27 @@ export function createTemplateLyricStages(
       modelRevision: settings.visualModel.revision,
     },
   };
+  const branch = video(
+    visualTemplate,
+    {
+      ...form,
+      prompt: '',
+      negativePrompt: '',
+      seed: 1201047366,
+      randomSeed: false,
+      width: 768,
+      height: 512,
+      numFrames: 81,
+      fps: 16,
+      steps: 8,
+      guidanceScale: 1,
+      strength: 1,
+    },
+    secondary,
+  );
   const visual = unpackVisualOperationGroups(
-    video(
-      visualTemplate,
-      {
-        ...form,
-        prompt: '',
-        negativePrompt: '',
-        seed: 1201047366,
-        randomSeed: false,
-        width: 768,
-        height: 512,
-        numFrames: 81,
-        fps: 16,
-        steps: 8,
-        guidanceScale: 1,
-        strength: 1,
-      },
-      secondary,
-    ),
+    branch,
+    new Set(branch.nodes.filter((node) => visualOperationGroup(node) !== 'assemble').map((node) => node.id)),
   ).graph;
   const exporter = visual.nodes.find((node) => node.data.module === 'modules.Video' && node.data.action === 'Export');
   const supplied = visual.edges.find((edge) => edge.target === exporter?.id && edge.targetHandle === 'video');

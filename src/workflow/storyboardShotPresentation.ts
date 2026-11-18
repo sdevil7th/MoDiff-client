@@ -2,7 +2,7 @@ import type { OperationGraph } from './operationAuthoring';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { VisualOperationGroup } from './visualOperationGroupProjection';
 import { createUserBlockDraftV2, prepareUserBlockCreationV2 } from '../studio/userBlockCreationV2';
-import { replaceBlockEffectiveInterfaceV2 } from '../studio/blockRuntimeV2';
+import { replaceBlockEffectiveInterfaceV2, STORYBOARD_SHOT_PROVIDER } from '../studio/blockRuntimeV2';
 import { blockDefinitionContentHashV2, normalizeBlockInstanceV2 } from '../studio/blockSchemaV2';
 
 /** A disclosure container around existing stages, compiled by the ordinary V2 path. */
@@ -27,7 +27,7 @@ export function createStoryboardShotBlock(
   if (!root) throw new Error('The shot needs a real editable Block.');
   const previous = root.data.blockInstanceV2!;
   const definition = structuredClone(previous.definitionSnapshot);
-  definition.source.provider = 'modiff.visual-stages.storyboard.v1';
+  definition.source.provider = STORYBOARD_SHOT_PROVIDER;
   definition.contentHash = blockDefinitionContentHashV2(definition);
   const instance = normalizeBlockInstanceV2({
     ...previous,

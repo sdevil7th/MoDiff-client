@@ -4,8 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import type { BlockJsonValue } from '../studio/blockSchemaV2';
-import { blockOperationGraphV2, blockViewModelV2 } from '../studio/blockRuntimeV2';
-import { ModiffButton, ModiffDialog } from '../ui';
+import { blockViewModelV2 } from '../studio/blockRuntimeV2';
 import { encodingVisibleConnectors, isFocusedGuidance } from '../workflow/encodingNodePresentation';
 import CustomNode from './CustomNode';
 import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
@@ -14,7 +13,6 @@ import EncodingNodeControls from './EncodingNodeControls';
 import GuidanceNodeControls from './GuidanceNodeControls';
 import EncodingNodeMenu from './EncodingNodeMenu';
 import NodeContent from './NodeContent';
-import NodeInspectionDetails from './NodeInspectionDetails';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
@@ -24,6 +22,7 @@ import {
   visualStagePresentation,
 } from '../workflow/visualOperationGroupProjection';
 const StageNodeControls = lazy(() => import('./StageNodeControls'));
+const StageImplementationDialog = lazy(() => import('./StageImplementationDialog'));
 
 /** Dedicated frontend node; the existing stage contract only binds values,
  * persistence and execution. It never expands into a canvas container. */
@@ -31,7 +30,7 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
   const instance = node.data.blockInstanceV2!;
   const guidance = isFocusedGuidance(instance);
   const kind = visualOperationGroup({ ...node, position: instance.presentation.position })!;
-  const { label, name: stagesLabel } = visualStagePresentation(kind, visualOperationGroupMedia(node));
+  const { label } = visualStagePresentation(kind, visualOperationGroupMedia(node));
   const view = useMemo(() => blockViewModelV2(instance), [instance]);
   const [inspectOpen, setInspectOpen] = useState(false);
   const [interfaceOpen, setInterfaceOpen] = useState(false);
@@ -112,34 +111,17 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
         }}
       />
       {inspectOpen ? (
-        <ModiffDialog
-          open
-          title={`${label} implementation`}
-          onClose={() => setInspectOpen(false)}
-          footer={
-            <ModiffButton
-              onClick={() => {
-                setInspectOpen(false);
-                setInterfaceOpen(true);
-              }}
-            >
-              Configure inputs, outputs and controls
-            </ModiffButton>
-          }
-        >
-          <p className="mb-4 text-sm text-modiff-subtle-text">
-            These stages execute behind this node. To edit their connections on the canvas, use Separate {stagesLabel}{' '}
-            stages.
-          </p>
-          <div className="grid gap-4">
-            {blockOperationGraphV2(instance).nodes.map((stage) => (
-              <section key={stage.id}>
-                <h3 className="mb-2 font-semibold">{stage.data.label}</h3>
-                <NodeInspectionDetails node={stage} section="implementation" />
-              </section>
-            ))}
-          </div>
-        </ModiffDialog>
+        <Suspense fallback={null}>
+          <StageImplementationDialog
+            label={label}
+            instance={instance}
+            onClose={() => setInspectOpen(false)}
+            onConfigure={() => {
+              setInspectOpen(false);
+              setInterfaceOpen(true);
+            }}
+          />
+        </Suspense>
       ) : null}
       {interfaceOpen ? <BlockInterfaceDialogV2 nodeId={node.id} onClose={() => setInterfaceOpen(false)} /> : null}
       {saveOpen ? <BlockSaveDialogV2 nodeId={node.id} onClose={() => setSaveOpen(false)} /> : null}

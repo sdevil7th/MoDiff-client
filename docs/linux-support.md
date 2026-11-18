@@ -35,7 +35,7 @@ uv run --extra cuda python main.py
 
 Choose `--extra cpu` for CPU or `--extra xpu` for Intel, and keep the same extra
 on sync and run. Transformers and PEFT are mandatory base packages. Start the
-client with `npm ci` and `npm run dev` in another terminal. Ctrl+C stops each
+client with `npm ci --include=dev` and `npm run dev` in another terminal. Ctrl+C stops each
 process. `uv sync` reconciles the selected environment; test a different profile
 in another checkout. The [developer guide](https://github.com/sdevil7th/MoDiff/blob/develop/docs/developer-setup.md)
 explains explicit `uv pip`, repair, and upgrades.

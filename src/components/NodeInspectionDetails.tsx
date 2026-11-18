@@ -5,7 +5,7 @@ import { formatStudioFieldValue } from '../studio/presetDiff';
 import { deepEqual } from '../utils/deepEqual';
 import { operationAuthoring, operationFieldValue } from '../workflow/operationAuthoring';
 import type { NodeInspectorSection } from './NodeInspectorSections';
-import { isFocusedStageNode, isFocusedGuidance } from '../workflow/encodingNodePresentation';
+import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
 import { isOptionalEncodingHandle } from '../workflow/encodingOptionalInput';
 
@@ -109,7 +109,7 @@ export default function NodeInspectionDetails({
         {instance ? (
           <p>
             {isFocusedStageNode(instance)
-              ? `Use Separate ${isFocusedGuidance(instance) ? 'guidance' : 'encoding'} stages to edit individual stages on the canvas.`
+              ? 'Use Edit stages on the node to show and edit its individual operations on the canvas.'
               : 'Use Expand Block on the canvas to edit this composition. This does not edit the Python implementation.'}
           </p>
         ) : null}

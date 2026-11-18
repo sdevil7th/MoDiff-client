@@ -48,9 +48,9 @@ same-platform baseline.
 From a clean backend checkout, install the native NVIDIA profile:
 
 ```powershell
-uv sync --extra cuda
-uv run --extra cuda python -m modiff.preflight --json --check-port 8088 --fail-on-error
-uv run --extra cuda python main.py
+uv sync --locked --extra cuda
+uv run --locked --extra cuda python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --locked --extra cuda python main.py
 ```
 
 Use `--extra cpu` for CPU development or `--extra xpu` for supported Intel
@@ -58,7 +58,7 @@ hardware. Keep the same extra on sync and run. In a second terminal, from
 `MoDiff-client`:
 
 ```powershell
-npm ci
+npm ci --include=dev
 npm run dev
 ```
 

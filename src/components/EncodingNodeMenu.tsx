@@ -70,24 +70,26 @@ export default function EncodingNodeMenu({
     }
   }
   const description = {
+    assemble: 'Join the shots in storyboard order and set the transition or trim controls.',
+    assembleExport: 'Join the saved shots in storyboard order and export the finished video.',
     composite: 'Fit, pad, crop and composite the generated image with its protected background and mask.',
     imageInput: 'Choose the opening image and inspect its source preview.',
     videoInput: 'Choose a source clip and set its target size, frame count and fit.',
     references: 'Choose ordered reference images and inspect how they enter encoding.',
-    generate: 'Set generation controls here. Expand to inspect the actual sampling and decoding operations.',
+    generate: 'Set generation and decoding controls here. Inspect implementation lists the operations in this stage.',
     guidance:
       'Guidance combines the related Guider and Layers configuration. Schedulers and adapters remain separate nodes.',
     inputs:
       'Text, image and declared Guidance stages run behind this node. Guidance affects conditioning and denoising. Collapsing a section only hides its fields; use its Enabled control to change execution. Load media separately and connect its output to the relevant input.',
     setup:
       'Model Setup contains this loader and its connected configuration or adapter nodes. Model and task changes review the complete connected workflow. Grouping does not load or cache models.',
-    mask: 'Prepare or align the source mask and any selected canvas borders. White marks regions to generate. Expand to inspect the actual inputs and processing.',
+    mask: 'Prepare or align the source mask and any selected canvas borders. White marks regions to generate.',
     output:
       media === 'audio'
         ? 'Deliver and preview the generated audio with its export settings.'
         : media === 'video'
           ? 'Export and preview the final video. Upscaling and soundtrack preparation have separate stages.'
-          : 'Preview or save the final image. Expand to inspect any included decoding and delivery operations.',
+          : 'Preview or save the final image.',
   }[kind];
   function separate() {
     try {
@@ -127,6 +129,7 @@ export default function EncodingNodeMenu({
         'videoInput',
         'references',
         'mask',
+        'inputs',
         'output',
         'generate',
       ]);
@@ -135,6 +138,21 @@ export default function EncodingNodeMenu({
       useStudioStore.getState().saveActiveWorkflowTab(true);
     } catch (error) {
       enqueueSnackbar(error instanceof Error ? error.message : 'Could not simplify these stages.', {
+        variant: 'error',
+      });
+    }
+  }
+  async function mergeSharedInputs() {
+    try {
+      const graph = useFlowStore.getState().toObject();
+      const context = captureWorkflowOperationContext();
+      const signature = operationGraphSignature(graph);
+      const { mergeVisualStageSharedInputs } = await import('../workflow/visualOperationGroups');
+      const next = mergeVisualStageSharedInputs(graph, node.id);
+      commitOperationGraph(next, context, signature, 'Merge shared model inputs');
+      useStudioStore.getState().saveActiveWorkflowTab(true);
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : 'Could not merge these shared inputs.', {
         variant: 'error',
       });
     }
@@ -159,6 +177,9 @@ export default function EncodingNodeMenu({
         </ModiffMenuTrigger>
         <ModiffMenuSurface layer="graph">
           <ModiffMenuAction onClick={inspect}>Inspect implementation</ModiffMenuAction>
+          {kind === 'inputs' || kind === 'generate' ? (
+            <ModiffMenuAction onClick={mergeSharedInputs}>Merge shared inputs</ModiffMenuAction>
+          ) : null}
           {kind === 'setup' ? <ModiffMenuAction onClick={simplify}>Simplify connected stages</ModiffMenuAction> : null}
           <ModiffMenuAction onClick={separate}>{separateLabel}</ModiffMenuAction>
           {combinationOwner ? (

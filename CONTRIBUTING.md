@@ -24,7 +24,7 @@ Good first contributions include reproducible bug fixes, accessibility improveme
 2. Add the canonical repository as an `upstream` remote so you can keep the branch current.
 3. Create a short-lived branch from the latest `upstream/main`.
 4. Set up the compatible backend with native uv commands and this client with
-   `npm ci`, then reproduce the issue before changing code. UI-only work can use
+   `npm ci --include=dev`, then reproduce the issue before changing code. UI-only work can use
    an already-running compatible backend.
 5. Make the smallest coherent change, including tests and docs.
 6. Run the required checks and review the complete diff.
@@ -39,17 +39,16 @@ cd MoDiff-client
 git remote add upstream https://github.com/<project-owner>/MoDiff-client.git
 git fetch upstream
 git switch -c fix/concise-description upstream/main
-npm ci
+npm ci --include=dev
 ```
 
 Use clear commit messages that describe the outcome. Maintainers may squash a pull request when merging, so keep the branch reviewable rather than manufacturing a particular final history.
 
 ## Development Environment
 
-For the interim Windows candidate, use the published branch and exact paired
-application revisions in the [quick start](README.md#developer-setup-with-uv-and-npm).
-They have not been released on `main`; do not assume a checkout of `main` contains
-the candidate's setup or workflow changes.
+For the interim Windows candidate, use the current `fix-ui-ux-issues` branch in
+both repositories. Follow the [quick start](README.md#developer-setup-with-uv-and-npm)
+for setup commands. The candidate's changes have yet to reach `main`.
 
 Required client versions:
 
@@ -60,9 +59,9 @@ Use native uv and npm commands with the sibling backend and client checkouts.
 In the backend terminal, run:
 
 ```text
-uv sync --extra cpu
-uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
-uv run --extra cpu python main.py
+uv sync --locked --extra cpu
+uv run --locked --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error
+uv run --locked --extra cpu python main.py
 ```
 
 For NVIDIA, use `--extra cuda` in each command; for Intel, use `--extra xpu`.
@@ -74,7 +73,7 @@ AMD vendor-wheel environments use the backend's specialist
 In the client terminal, run:
 
 ```text
-npm ci
+npm ci --include=dev
 npm run dev
 ```
 
@@ -86,7 +85,7 @@ PowerShell. The backend's
 and the [Windows guide](docs/windows-support.md#developer-setup-with-uv-and-npm)
 cover explicit `uv pip` setup, upgrades, repair, and platform details.
 
-For UI-only work against an already-running backend, the same `npm ci` and
+For UI-only work against an already-running backend, the same `npm ci --include=dev` and
 `npm run dev` commands are sufficient. To use another backend port:
 
 ```bash

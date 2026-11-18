@@ -137,7 +137,12 @@ nodes, descendants, incident edges and separately selected edges. The existing
 Block deletion checks run before removing any selected wires. One Undo restores
 the complete graph; a rejected structural deletion leaves the selection intact.
 
-Encode Inputs uses the ordinary node surface. Supported inactive image-encoding
+Built-in stage cards use the ordinary node surface with the existing interface,
+bindings, and graph lowering. A saved expanded stage restores as a single card.
+Shot groups and reusable Blocks keep their composition controls. Inside an
+authored Shot, the generated image input, encoding and generation stages use
+ordinary cards. The generated assembly stage uses the same surface. Older
+unmarked user Blocks retain their saved form. Supported inactive image-encoding
 sockets are derived read-only from backend operation contracts. Connecting one
 uses `encodingNodeConnection` and the existing route planner to materialize real
 stage endpoints and commit the selected wire in one history transaction; it does

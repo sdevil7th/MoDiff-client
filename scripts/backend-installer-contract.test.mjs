@@ -130,7 +130,8 @@ test('development installers avoid duplicate client builds and install backend t
   assert.match(powershell, /-BackendOnly/);
   assert.match(powershell, /pip install --python \$python -r \$testRequirements/);
   assert.match(powershell, /requirements\\test\.txt/);
-  assert.match(powershell, /& npm\.cmd ci\s+if \(\$LASTEXITCODE -ne 0\)/);
+  assert.match(shell, /npm ci --include=dev/);
+  assert.match(powershell, /& npm\.cmd ci --include=dev\s+if \(\$LASTEXITCODE -ne 0\)/);
 });
 
 test('development launchers fail closed and keep live E2E shell-neutral', () => {
@@ -170,11 +171,11 @@ test('README follows the paired install and development launcher contract', () =
     'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff.git MoDiff',
     'git clone --branch fix-ui-ux-issues https://github.com/sdevil7th/MoDiff-client.git MoDiff-client',
     'cd MoDiff',
-    'uv sync --extra cpu',
-    'uv run --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error',
-    'uv run --extra cpu python main.py',
+    'uv sync --locked --extra cpu',
+    'uv run --locked --extra cpu python -m modiff.preflight --json --check-port 8088 --fail-on-error',
+    'uv run --locked --extra cpu python main.py',
     'cd MoDiff-client',
-    'npm ci',
+    'npm ci --include=dev',
     'npm run dev',
   ]) {
     assert.ok(quick.split('\n').includes(command), `Quick start is missing command: ${command}`);

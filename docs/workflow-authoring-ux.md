@@ -28,17 +28,24 @@ creation settings; selecting a model never installs its files or qualifies it
 for Automatic memory. Saved workflows and authored values keep their settings,
 and Run checks the exact current graph against the backend's resource plan.
 
-Composable routes expose meaningful independent nodes such as Load Models,
-Encode Prompt, Denoise and Decode Latents. Tasks can need additional image, mask,
+Composable routes present independent steps in task stages such as Model Setup,
+Encode Inputs and Generate. Tasks can need additional image, mask,
 conditioning or audio operations. Whole-pipeline routes expose Generate/Edit
 operations instead; those nodes do not claim independently replaceable denoising.
 Qwen-Image 2.1 uses its supported whole-pipeline route with the compatible
 installed Diffusers release. Its historical source review remains separately
 pinned.
 
-Fresh composable image, audio and video workflows present adjacent sampling and
-decoding operations inside one **Generate** stage. Expanding the stage reveals
-those real operations; collapsing it keeps their public controls together.
+Built-in stages use the same ordinary node renderer across image, audio and video.
+**Generate** presents the public sampling and decoding controls in one card.
+**Inspect implementation** lists the underlying operations. **Edit stages**
+separates those operations on the canvas as an undoable edit. A saved built-in
+stage that was expanded under the older renderer opens as one node.
+Reusable Blocks and storyboard shots retain their expandable composition view.
+Opening a shot shows ordinary Image Input, Encode Inputs and Generate cards
+where those stages are used. Assemble or Assemble & Export is a single card
+with the ordered shot inputs and delivery controls. A stage with an authored
+nested composition retains its editable Block view.
 Identical typed model inputs share one socket when they receive the same output.
 Empty optional bundle inputs can also share a socket when their consumers belong
 to one model owner. Different sources, required empty inputs and authored bundle
@@ -47,7 +54,7 @@ values stay separate. This presentation does not change backend execution.
 Encode Inputs also shares identical model connections across its encoders. Music
 routes that encode inside Generate keep that existing structure.
 
-For an older saved Encode Inputs or Generate stage, open its **Workflow stage actions**
+For an older saved Encode Inputs or Generate stage, open the node's options
 menu and choose **Merge shared inputs**. The edit is undoable, preserves the
 saved reusable definition and current settings, and refuses inputs that cannot
 be shared safely. Opening a saved workflow alone does not rewrite its interface.

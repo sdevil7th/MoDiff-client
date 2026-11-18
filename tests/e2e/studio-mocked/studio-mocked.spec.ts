@@ -562,7 +562,7 @@ test('arranged stage controls remain reachable at 4K, scaled and compact canvas 
   ]) {
     await page.setViewportSize(viewport);
     await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
-    for (const label of ['Encode Inputs', 'Model Setup', 'Image Output']) {
+    for (const label of ['Encode Inputs', 'Model Setup', 'Generate', 'Image Output']) {
       const edit = page.getByRole('button', { name: `Edit stages: ${label}`, exact: true });
       await edit.click({ trial: true });
       expect(
@@ -578,12 +578,9 @@ test('arranged stage controls remain reachable at 4K, scaled and compact canvas 
         }),
       ).toBe(true);
     }
-    const generate = page.locator('.react-flow__node').filter({ has: page.getByText('Generate', { exact: true }) });
-    await generate.getByRole('button', { name: 'Expand block', exact: true }).click();
-    await expect(page.getByText('Denoise', { exact: true })).toBeVisible();
-    await expect(page.getByText('Decode Latents', { exact: true })).toBeVisible();
-    expect(await optionalStageApi(page)).toEqual(before);
-    await generate.getByRole('button', { name: 'Collapse block', exact: true }).click();
+    for (const label of ['Denoise', 'Decode Latents']) {
+      await expect(page.locator('.react-flow__node header').getByText(label, { exact: true })).toHaveCount(0);
+    }
     expect(await optionalStageApi(page)).toEqual(before);
     await page.getByTestId('topbar-save-workflow').click({ trial: true });
     await page.getByTestId('topbar-export').click();
@@ -895,13 +892,22 @@ test('renamed declared video output stays runnable after ordinary import Save an
   expect(submissions).toBe(0);
 });
 
-test('nested Image Input stages use the selected leaf files after import Save and reload', async ({ page }) => {
+test('nested Image Input is one editable Shot stage after import, Save and reload', async ({ page }) => {
   test.setTimeout(120_000);
   const fixture = await generateTemplateSchemas([]);
   await ensureFrontend();
   await installMockRoutes(page);
   await page.route('**/nodes**', (route) =>
     route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/preview?file=*nested-source.png', (route) =>
+    route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    }),
   );
   let submissions = 0;
   page.on('request', (request) => {
@@ -914,7 +920,7 @@ test('nested Image Input stages use the selected leaf files after import Save an
     const [{ createNodeFromRegistry }, { groupVisualStages }, blocks, profiles, packages] = await Promise.all([
       import('/src/workflow/nodeFactory.ts'),
       import('/src/workflow/visualOperationGroups.ts'),
-      import('/src/studio/userBlockCreationV2.ts'),
+      import('/src/workflow/storyboardShotPresentation.ts'),
       import('/src/studio/modelProfiles.ts'),
       import('/src/studio/workflowPackage.ts'),
     ]);
@@ -931,13 +937,10 @@ test('nested Image Input stages use the selected leaf files after import Save an
       [source.id],
       'imageInput',
     );
-    const draft = blocks.createUserBlockDraftV2(
-      { ...grouped, nodes: grouped.nodes.map((node) => ({ ...node, selected: true })) },
-      [],
-    );
-    if (!draft.ok) throw new Error(draft.reason);
-    const nested = blocks.prepareUserBlockCreationV2(draft, { ...draft.block, name: 'Shot 1 · Source' });
-    const shot = nested.graph.nodes.find((node) => node.data.blockInstanceV2)!;
+    const nested = blocks.createStoryboardShotBlock(grouped, new Set(grouped.nodes.map((node) => node.id)), 'Shot 1', {
+      x: 0,
+      y: 0,
+    });
     const form = {
       ...profiles.getFormDefaultsForMode('video_stitch', 'BuiltinVideoOperation'),
       resourceMode: 'expert' as const,
@@ -945,7 +948,7 @@ test('nested Image Input stages use the selected leaf files after import Save an
       autoOffload: false,
       offloadMode: 'none' as const,
     };
-    return { shotId: shot.id, packageData: packages.buildWorkflowPackage({ form, graph: nested.graph }) };
+    return { shotId: nested.root.id, packageData: packages.buildWorkflowPackage({ form, graph: nested.graph }) };
   }, fixture.registry);
   await page.getByTestId('topbar-gallery').click();
   await page.getByTestId('gallery-import-workflow-input').setInputFiles({
@@ -957,7 +960,18 @@ test('nested Image Input stages use the selected leaf files after import Save an
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
   await expect(page.getByTestId('studio-run')).toBeDisabled();
   await page.getByTestId(`user-block-toggle-${prepared.shotId}`).click();
-  const file = page.locator('.react-flow').getByRole('textbox', { name: 'file', exact: true }).first();
+  const stage = page.getByTestId(/^shot-stage-imageInput-/);
+  await expect(stage).toBeVisible();
+  await expect(stage.getByRole('button', { name: 'Expand Image Input' })).toHaveCount(0);
+  await stage.getByText('Image Input', { exact: true }).click();
+  await expect(page.getByTestId('selection-toolbar-toggle-modular-block')).toHaveCount(0);
+  await stage.getByRole('button', { name: 'Inspect implementation', exact: true }).click();
+  const implementation = page.getByRole('dialog', { name: 'Image Input implementation', exact: true });
+  await expect(implementation.getByText('modules.Image.Load', { exact: true })).toBeVisible();
+  await expect(implementation.getByText('modules.Image.Preview', { exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(implementation).toBeHidden();
+  const file = stage.getByRole('textbox', { name: 'file', exact: true });
   await file.fill('@data/images/nested-source.png');
   await file.blur();
   await expect(page.getByTestId('studio-run')).toBeEnabled();
@@ -970,6 +984,11 @@ test('nested Image Input stages use the selected leaf files after import Save an
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
+  await expect(stage).toBeVisible();
+  // The multi-file field keeps an empty next slot after the selected image.
+  await expect(file).toHaveCount(2);
+  await expect(file.nth(0)).toHaveValue('@data/images/nested-source.png');
+  await expect(file.nth(1)).toHaveValue('');
   await expect(page.getByTestId('studio-run')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
   expect(submissions).toBe(0);
@@ -1037,7 +1056,8 @@ for (const [templateId, title] of [
       }),
     );
     const generate = page.locator('.react-flow__node').filter({ has: page.getByText('Generate', { exact: true }) });
-    await expect(generate.getByRole('button', { name: 'Expand block', exact: true })).toBeVisible();
+    await expect(generate.getByRole('button', { name: 'Generate options', exact: true })).toBeVisible();
+    await expect(generate.getByRole('button', { name: 'Expand block', exact: true })).toHaveCount(0);
     if (templateId === 'ltx_video_video_to_video') {
       const input = page.locator('.react-flow__node').filter({ has: page.getByText('Video Input', { exact: true }) });
       const source = input.locator('[data-key$=":file"] input[type="text"]');
@@ -1067,10 +1087,12 @@ for (const [templateId, title] of [
     const before = await readGraph();
     const generateId = await generate.getAttribute('data-id');
     const generateRoot = page.locator(`[data-id="${generateId}"]`);
-    await generateRoot.getByRole('button', { name: 'Expand block', exact: true }).click();
-    await expect(generateRoot.getByRole('button', { name: 'Collapse block', exact: true })).toBeVisible();
-    expect(await readGraph()).toEqual(before);
-    await generateRoot.getByRole('button', { name: 'Collapse block', exact: true }).click();
+    await generateRoot.getByRole('button', { name: 'Generate options', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Inspect implementation', exact: true }).click();
+    const implementation = page.getByRole('dialog', { name: 'Generate implementation', exact: true });
+    await expect(implementation.getByRole('heading', { name: 'Denoise', exact: true })).toBeVisible();
+    await expect(implementation.getByRole('heading', { name: 'Decode Latents', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
     expect(await readGraph()).toEqual(before);
     const template = STUDIO_TEMPLATES.find((item) => item.id === templateId)!;
     const encoder = Object.values(before.nodes).find((node) => node.action === 'EncodeInputs')!;
@@ -35973,7 +35995,7 @@ test('full image template cards, details, artifact search and Model Manager focu
   await expect(manager.getByTestId('model-manager-focus')).not.toContainText('Modular Diffusers');
 });
 
-test('saved Generate shared-input repair preserves execution, Undo, reload and expanded controls', async ({ page }) => {
+test('saved Generate shared-input repair preserves execution, Undo, reload and stage controls', async ({ page }) => {
   await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
   const before = await optionalStageApi(page);
   const id = await page.evaluate(async () => {
@@ -36003,10 +36025,12 @@ test('saved Generate shared-input repair preserves execution, Undo, reload and e
       size: instance.presentation.size,
       internalLayout: instance.presentation.internalLayout,
     });
+    const historicalRoot = runtime.createBlockRootNodeV2(old);
+    historicalRoot.data.blockInstanceV2 = runtime.setBlockPresentationV2(old, { expanded: true });
     flow.replaceGraph({
       nodes: graph.nodes
         .filter((node) => node.data.blockProjectionOwnerId !== root.id)
-        .map((node) => (node.id === root.id ? runtime.createBlockRootNodeV2(old) : node)),
+        .map((node) => (node.id === root.id ? historicalRoot : node)),
       edges: graph.edges.filter((edge) => edge.data?.blockProjectionOwnerId !== root.id),
     });
     useStudioStore.getState().saveActiveWorkflowTab(true);
@@ -36022,7 +36046,7 @@ test('saved Generate shared-input repair preserves execution, Undo, reload and e
   expect(await count()).toBe(2);
   expect(await optionalStageApi(page)).toEqual(before);
   const root = page.locator(`.react-flow__node[data-id="${id}"]`);
-  await root.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await root.getByRole('button', { name: 'Generate options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Merge shared inputs', exact: true }).click();
   await expect.poll(count).toBe(1);
   expect(await optionalStageApi(page)).toEqual(before);
@@ -36031,11 +36055,9 @@ test('saved Generate shared-input repair preserves execution, Undo, reload and e
   await expect.poll(count).toBe(2);
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(count).toBe(1);
-  await root.getByRole('button', { name: 'Expand block', exact: true }).click();
-  await expect(root.getByRole('button', { name: 'Collapse block', exact: true })).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Steps', exact: true }).first()).toBeVisible();
+  await expect(root.getByRole('button', { name: 'Expand block', exact: true })).toHaveCount(0);
+  await expect(root.getByRole('textbox', { name: 'Steps', exact: true })).toBeVisible();
   expect(await optionalStageApi(page)).toEqual(before);
-  await root.getByRole('button', { name: 'Collapse block', exact: true }).click();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(root).toBeVisible();
   await expect.poll(count).toBe(1);
@@ -36128,7 +36150,7 @@ test('saved Encode Inputs repairs three native encoder sockets through the stage
     );
   expect(await count()).toBe(3);
   const root = page.locator(`.react-flow__node[data-id="${id}"]`);
-  await root.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await root.getByRole('button', { name: 'Encode Inputs options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Merge shared inputs', exact: true }).click();
   await expect.poll(count).toBe(1);
   expect(await optionalStageApi(page)).toEqual(before);

@@ -1,3 +1,8 @@
+// Ordinary stage cards, storyboard compatibility and the lazy implementation
+// dialog measure 512625/691108/351346 largest/startup/deferred gzip bytes.
+// Add the measured 673/669/652 bytes over 511952/690439/350694, preserving
+// prior headroom. Four startup chunks and the 64 KiB deferred chunk cap stay
+// fixed. The shared StageImplementationDialog is the 93rd deferred chunk.
 // Extending the same repair to encoders and preserving changed-task binding
 // censuses adds 364 deferred gzip bytes (350330 -> 350694). Keep the same 89-byte
 // headroom, startup ceilings, loading memberships and per-chunk ceiling.
@@ -465,6 +470,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  673 +
   // Native sampler/decoder grouping, AV receipt fields and LTX Full policy add
   // 390 largest-chunk gzip bytes (511556 -> 511946); retain 12-byte headroom.
   390 +
@@ -694,6 +700,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  669 +
   // The paired change adds 389 startup gzip bytes (690042 -> 690431), preserving
   // 11-byte headroom. Deferred limits, dependencies and build rules are unchanged.
   389 +
@@ -988,6 +995,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  652 +
   364 +
   418 +
   // Planning-only template creation guards add 181 gzip bytes versus tested v15

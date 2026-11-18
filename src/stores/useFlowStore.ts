@@ -165,6 +165,7 @@ import {
   setBlockInstanceValueV2 as reduceBlockInstanceValueV2,
   setBlockPreviewStateV2 as reduceBlockPreviewStateV2,
   setBlockPresentationV2 as reduceBlockPresentationV2,
+  storyboardStageKindV2,
   type BlockPreviewPatchV2,
   type BlockPresentationPatchV2,
 } from '../studio/blockRuntimeV2';
@@ -2167,6 +2168,7 @@ export const useFlowStore = create<FlowStore>()(
         get().withHistory('Toggle Modular Diffusers container', () => {
           set((state) => {
             const graph = updateBlockInstanceV2(state, id, (instance) => {
+              if (storyboardStageKindV2(instance, semanticNodeId)) return instance;
               const containerIds = new Set(blockModularContainerNodeIdsV2(instance.effectiveGraph));
               if (!containerIds.has(semanticNodeId))
                 throw new Error(`Modular Diffusers container ${semanticNodeId} is unavailable.`);

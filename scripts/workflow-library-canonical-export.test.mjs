@@ -436,6 +436,10 @@ test('every bundled example opens as stages without changing its ordered API or 
   ];
   const { exampleWorkflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
   const { workflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  const { materializeBlockProjectionV2, setBlockPresentationV2, storyboardStageKindV2 } = await server.ssrLoadModule(
+    '/src/studio/blockRuntimeV2.ts',
+  );
+  const { isFocusedStageNode } = await server.ssrLoadModule('/src/workflow/encodingNodePresentation.ts');
   const identity = (sourceGraph) =>
     canonicalGraphIdentity(
       flowStore.getState().exportGraph('library-stage-restore', undefined, { sourceGraph, randomizeSeeds: false }),
@@ -454,6 +458,7 @@ test('every bundled example opens as stages without changing its ordered API or 
       );
     assert.deepEqual(identity(opened), expected, row.id);
     for (const stage of opened.nodes.filter(groups.visualOperationGroup)) {
+      assert.ok(isFocusedStageNode(stage.data.blockInstanceV2), `${row.id}: ${stage.data.label} opens as a node`);
       const exposed = groups.unpackVisualOperationGroups(opened, new Set([stage.id])).graph;
       assert.deepEqual(
         identity(exposed),
@@ -469,11 +474,46 @@ test('every bundled example opens as stages without changing its ordered API or 
       assert.deepEqual(opened.edges, saved.edges, `${row.id}: saved wires retain their presentation`);
     }
     assert.deepEqual(graph, original, `${row.id}: shipped bytes retain their identity`);
-    if (row.id.includes('long_showcase') || row.id.includes('animated_story') || row.id.includes('lyric_music_video'))
-      assert.ok(
-        opened.nodes.some((node) => /^Shot \d+/.test(node.data.label ?? '')),
-        `${row.id}: separate Shot groups`,
-      );
+    if (row.id.includes('long_showcase') || row.id.includes('animated_story') || row.id.includes('lyric_music_video')) {
+      const shots = opened.nodes.filter((node) => /^Shot \d+/.test(node.data.label ?? ''));
+      assert.ok(shots.length > 1, `${row.id}: separate Shot groups`);
+      for (const shot of shots) {
+        // An older saved instance could have expanded the inner stages.
+        const previous = shot.data.blockInstanceV2;
+        const instance = setBlockPresentationV2(previous, { expanded: true, collapsedContainerNodeIds: [] });
+        const projection = materializeBlockProjectionV2({
+          ...shot,
+          data: { ...shot.data, blockInstanceV2: instance },
+        });
+        const stages = projection.nodes.filter((node) =>
+          storyboardStageKindV2(instance, node.data.blockProjectionNodeId),
+        );
+        assert.deepEqual(
+          stages.map((node) => node.data.label).sort(),
+          [
+            'Encode Inputs',
+            'Generate',
+            ...(previous.effectiveGraph.nodes.some(
+              (node) => node.data.module === 'modules.Image' && node.data.action === 'Load',
+            )
+              ? ['Image Input']
+              : []),
+          ],
+          `${row.id}: one compact card per stage inside ${shot.data.label}`,
+        );
+        assert.ok(stages.every((node) => node.data.blockProjectionContainerExpanded === false));
+        assert.ok(projection.nodes.every((node) => stages.every((stage) => stage.id !== node.parentId)));
+        assert.deepEqual(
+          identity({
+            ...opened,
+            nodes: opened.nodes.flatMap((node) => (node.id === shot.id ? projection.nodes : [node])),
+            edges: [...opened.edges, ...projection.edges],
+          }),
+          expected,
+          `${row.id}: shot disclosure keeps the executable recipe`,
+        );
+      }
+    }
   }
 });
 

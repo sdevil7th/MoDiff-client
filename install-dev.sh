@@ -16,7 +16,7 @@ UV_BIN="$(cd -- "$BACKEND_PATH" && "$PYTHON_BIN" -c "from pathlib import Path; f
   -r "$BACKEND_PATH/requirements/test.txt"
 
 cd -- "$SCRIPT_DIR"
-npm ci
+npm ci --include=dev
 mkdir -p artifacts/dev-install-current
 "$PYTHON_BIN" -m modiff.preflight --json --fail-on-error > artifacts/dev-install-current/backend-preflight.json
 echo "Development environment is ready. Run ./run-dev.sh."
