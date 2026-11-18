@@ -5003,6 +5003,35 @@
       "height": 1728
     },
     {
+      "path": "template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.json",
+      "size": 7845,
+      "sha256": "sha256:bytes:2f0dacddc7d5260b2e0ac8c607d9b9aecf737b74582f36690d2c536eb0c1d7f6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.mp4",
+      "size": 25428412,
+      "sha256": "sha256:bytes:31112653ca805e2c11a4fdb9f651f9ca1315876bec0a728b833fa60d85cd618f",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.poster.png",
+      "size": 972698,
+      "sha256": "sha256:bytes:2032e9a113e8cf08d0bd4286f01c4a4f3ff722bb4b2d4125b0110d35075a9711",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png",
       "size": 2904091,
       "sha256": "sha256:bytes:fd3dbd225c9cd6d1a07b0bcfd80724b60b235f4287423a234c0a56017cd1d3b2",
@@ -5396,9 +5425,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:d0af645687892b845db969b7acf14c7941c04012dd44595c072fd4ad63143b68",
+  "assetSetId": "sha256:canonical-json:e699ffd797db2ec4e069406ce099ac84a9616e56bea79af9cb687dfd86ec5b35",
   "status": "ready",
-  "assetCount": 545,
-  "totalBytes": 1010209627,
+  "assetCount": 548,
+  "totalBytes": 1036618582,
   "missingAssets": []
 }

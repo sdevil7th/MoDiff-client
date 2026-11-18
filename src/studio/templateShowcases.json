@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "scope": "Approved supplementary display assets; no current-template or hardware qualification.",
+  "workflowAssets": [
+    {
+      "id": "ltx25-monday-morning-brisk-crossing.v1",
+      "title": "Monday Morning in New York — Brisk Crossing",
+      "status": "approved",
+      "workflowExecutionSpecId": "ltx25-full-av:image_to_video_with_audio:v1",
+      "outputPath": "/template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.mp4",
+      "posterPath": "/template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.poster.png",
+      "recordPath": "/template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.json",
+      "mediaSHA256": "31112653ca805e2c11a4fdb9f651f9ca1315876bec0a728b833fa60d85cd618f",
+      "posterSHA256": "2032e9a113e8cf08d0bd4286f01c4a4f3ff722bb4b2d4125b0110d35075a9711",
+      "width": 1024,
+      "height": 576,
+      "mediaKind": "video",
+      "recordSHA256": "2f0dacddc7d5260b2e0ac8c607d9b9aecf737b74582f36690d2c536eb0c1d7f6",
+      "modelLabel": "LTX-2.5 Full"
+    }
+  ],
   "assets": [
     {
       "id": "h3-pine-lake-mountains.v1",

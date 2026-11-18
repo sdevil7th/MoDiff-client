@@ -36,6 +36,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
 import { STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
+import { getWorkflowShowcases } from '../studio/templateShowcases';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { createLatestRequestGate, formatRequestError, requestJson, RequestError } from '../utils/requestJson';
 import type { StudioModelType, WorkflowTab } from '../studio/types';
@@ -156,6 +157,7 @@ function GraphList() {
   const mergeBackendWorkflow = useStudioStore((state) => state.mergeBackendWorkflow);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const showcases = libraryTab === 'examples' ? getWorkflowShowcases(search) : [];
 
   const fetchGraphs = useCallback(async () => {
     const ticket = graphListRequestGate.begin('graphs');
@@ -759,9 +761,38 @@ function GraphList() {
                   className="min-h-0 flex-1 select-none overflow-y-auto overscroll-contain"
                   data-testid="workflow-list"
                 >
+                  {showcases.map((showcase) => (
+                    <article
+                      key={showcase.id}
+                      className="m-2 space-y-2 rounded-modiff-compact border border-modiff-border p-2"
+                      data-testid={`workflow-showcase-${showcase.id}`}
+                      data-execution-spec-id={showcase.workflowExecutionSpecId}
+                    >
+                      <h3 className="text-sm font-semibold">
+                        {showcase.title} · {showcase.modelLabel}
+                      </h3>
+                      <video
+                        src={showcase.mediaPath}
+                        poster={showcase.posterPath}
+                        preload="none"
+                        controls
+                        playsInline
+                        aria-label={showcase.title}
+                        className="aspect-video w-full"
+                      />
+                      <a
+                        className="text-xs text-modiff-blue underline"
+                        href={showcase.recordPath}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Showcase recipe and review
+                      </a>
+                    </article>
+                  ))}
                   {filteredGraphs.length > 0 ? (
                     filteredGraphs.map((item) => renderDir(item, 0))
-                  ) : visibleSavedWorkflowRows.length === 0 ? (
+                  ) : visibleSavedWorkflowRows.length === 0 && showcases.length === 0 ? (
                     <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
                       No saved, imported, or example workflows found.
                     </div>

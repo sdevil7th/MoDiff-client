@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:d0af645687892b845db969b7acf14c7941c04012dd44595c072fd4ad63143b68",
+  "assetSetId": "sha256:canonical-json:e699ffd797db2ec4e069406ce099ac84a9616e56bea79af9cb687dfd86ec5b35",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -12119,6 +12119,75 @@
       "reviewedAt": "2026-11-12",
       "reviewClass": "per-file-maintainer-accepted-supplementary-showcase",
       "humanApprovalPacketSHA256": "955557efb82141c2c2603bf97dae483fbdf4a23e0b72934fbde52a3b414f4d6e"
+    },
+    {
+      "path": "template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.json",
+      "sha256": "sha256:bytes:2f0dacddc7d5260b2e0ac8c607d9b9aecf737b74582f36690d2c536eb0c1d7f6",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainer, subject to the recorded model terms",
+      "creationMethod": "Project-authored redacted generation, postproduction and review summary.",
+      "sourceUrl": "https://huggingface.co/Lightricks/LTX-2.5-Diffusers/tree/4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3",
+      "sourceRevision": "Lightricks/LTX-2.5-Diffusers@4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3",
+      "sourceLicense": "Project-authored metadata",
+      "modelTerms": [
+        "Lightricks/LTX-2.5-Diffusers@4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3: LTX-2.x Community License Agreement (https://github.com/Lightricks/LTX-2/blob/c1b4675863c07c59c92e502446cccdaedbe5889c/LICENSE-2_x)"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": ["AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace owner",
+      "reviewedAt": "2026-11-18",
+      "reviewClass": "exact-file-owner-approved-supplementary-workflow-showcase",
+      "humanApprovalPacketSHA256": "102b403c456c00c578eaf9a7499f4ed338948792bb5aa4bbddc948b1f7cb4b8a"
+    },
+    {
+      "path": "template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.mp4",
+      "sha256": "sha256:bytes:31112653ca805e2c11a4fdb9f651f9ca1315876bec0a728b833fa60d85cd618f",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainer, subject to the recorded model terms",
+      "creationMethod": "Original LTX-2.5 Full synthetic video edited in two shots with original frame-cued Foley.",
+      "sourceUrl": "https://huggingface.co/Lightricks/LTX-2.5-Diffusers/tree/4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3",
+      "sourceRevision": "Lightricks/LTX-2.5-Diffusers@4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3",
+      "sourceLicense": "Original synthetic media and project-authored Foley",
+      "modelTerms": [
+        "Lightricks/LTX-2.5-Diffusers@4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3: LTX-2.x Community License Agreement (https://github.com/Lightricks/LTX-2/blob/c1b4675863c07c59c92e502446cccdaedbe5889c/LICENSE-2_x)"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": ["AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace owner",
+      "reviewedAt": "2026-11-18",
+      "reviewClass": "exact-file-owner-approved-supplementary-workflow-showcase",
+      "humanApprovalPacketSHA256": "102b403c456c00c578eaf9a7499f4ed338948792bb5aa4bbddc948b1f7cb4b8a"
+    },
+    {
+      "path": "template-gallery/showcases/ltx25-monday-morning-brisk-crossing.v1.poster.png",
+      "sha256": "sha256:bytes:2032e9a113e8cf08d0bd4286f01c4a4f3ff722bb4b2d4125b0110d35075a9711",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainer, subject to the recorded model terms",
+      "creationMethod": "Unaltered frame selected from the approved AI-generated two-shot edit.",
+      "sourceUrl": "https://huggingface.co/Lightricks/LTX-2.5-Diffusers/tree/4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3",
+      "sourceRevision": "Lightricks/LTX-2.5-Diffusers@4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3",
+      "sourceLicense": "Original synthetic media and project-authored Foley",
+      "modelTerms": [
+        "Lightricks/LTX-2.5-Diffusers@4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3: LTX-2.x Community License Agreement (https://github.com/Lightricks/LTX-2/blob/c1b4675863c07c59c92e502446cccdaedbe5889c/LICENSE-2_x)"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": ["AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace owner",
+      "reviewedAt": "2026-11-18",
+      "reviewClass": "exact-file-owner-approved-supplementary-workflow-showcase",
+      "humanApprovalPacketSHA256": "102b403c456c00c578eaf9a7499f4ed338948792bb5aa4bbddc948b1f7cb4b8a"
     },
     {
       "path": "template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png",

@@ -15,6 +15,11 @@ model pins, controls and accepted limitations. It does not change template defau
 The MiniMax green-centre perfume showcase is an ordered-reference material edit;
 its blue-centre text-to-image source is separately registered.
 
+Workflow video showcases use the same pinned Dataset and file-by-file rights
+checks. Look for them under **Workflows → Example workflows**. Monday Morning
+in New York uses the LTX-2.5 Full image-to-video with audio route for its crossing.
+The card plays the approved two-shot edit and links its recipe and review record.
+
 [Hugging Face's current storage policy](https://huggingface.co/docs/hub/en/storage-limits)
 describes storage for a free user or organization's public repositories as
 **best effort**, and asks that public uploads provide real community value. The

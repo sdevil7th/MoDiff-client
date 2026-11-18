@@ -68,6 +68,81 @@ for (const [templateId, search, file] of [
   });
 }
 
+test('approved workflow showcase plays under Example workflows without creating or running a graph', async ({
+  page,
+}) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const asset = {
+    id: 'test-workflow-video.v1',
+    title: 'Test workflow video',
+    modelLabel: 'Test video model',
+    workflowExecutionSpecId: 'test-av:image_to_video_with_audio:v1',
+    status: 'approved',
+    mediaKind: 'video',
+    width: 320,
+    height: 180,
+    outputPath: '/template-gallery/showcases/test-workflow-video.v1.mp4',
+    posterPath: '/template-gallery/showcases/test-workflow-video.v1.poster.png',
+    recordPath: '/template-gallery/showcases/test-workflow-video.v1.json',
+    mediaSHA256: 'a'.repeat(64),
+    posterSHA256: 'b'.repeat(64),
+    recordSHA256: 'c'.repeat(64),
+  };
+  const python =
+    process.env.MODIFF_BACKEND_PYTHON ||
+    path.join(BACKEND_ROOT, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const clip = videoPreviewFixture(python, asset.width, asset.height);
+  await page.route(/\/src\/studio\/templateShowcases\.json(?:\?.*)?$/u, (route) =>
+    route.fulfill({
+      contentType: 'application/javascript',
+      body: `export const featured = []; export const workflowAssets = ${JSON.stringify([asset])};`,
+    }),
+  );
+  await page.route('**/showcases/test-workflow-video.v1.mp4', (route) =>
+    route.fulfill({ contentType: 'video/webm', body: clip }),
+  );
+  await page.route('**/showcases/test-workflow-video.v1.poster.png', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"></svg>',
+    }),
+  );
+  let graphWrites = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(graph|execute|install|download)(?:[/?]|$)/u.test(request.url()))
+      graphWrites++;
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-workflows').click();
+  const entry = page.getByTestId(`workflow-showcase-${asset.id}`);
+  await expect(entry).toHaveCount(0);
+  await page.getByRole('button', { name: 'Example workflows', exact: true }).click();
+  await expect(entry).toBeVisible();
+  await expect(entry).toHaveAttribute('data-execution-spec-id', asset.workflowExecutionSpecId);
+  const video = entry.locator('video');
+  await expect(video).toHaveAttribute('src', /\/showcases\/test-workflow-video\.v1\.mp4$/u);
+  await expect(video).toHaveAttribute('poster', /\/showcases\/test-workflow-video\.v1\.poster\.png$/u);
+  await expect(video).toHaveJSProperty('controls', true);
+  await video.evaluate(async (element: HTMLVideoElement) => {
+    element.muted = true;
+    await element.play();
+  });
+  await expect(video).toHaveJSProperty('videoWidth', asset.width);
+  await expect(entry.getByRole('link', { name: 'Showcase recipe and review' })).toHaveAttribute(
+    'href',
+    /\/showcases\/test-workflow-video\.v1\.json$/u,
+  );
+  const search = page.getByRole('searchbox', { name: 'Search workflows' });
+  await search.fill('unrelated example');
+  await expect(entry).toHaveCount(0);
+  await search.fill('test video model');
+  await expect(entry).toBeVisible();
+  expect(graphWrites).toBe(0);
+});
+
 for (const [width, imageWidth, imageHeight] of [
   [1280, 2048, 2048],
   [1920, 2048, 2048],

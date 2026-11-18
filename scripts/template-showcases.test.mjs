@@ -16,6 +16,9 @@ test('accepted showcase bytes have unique, immutable review identities and only 
   );
   for (const row of registry.assets) {
     assert.equal(row.status, 'approved');
+    const base = `/template-gallery/showcases/${row.id}`;
+    assert.equal(row.outputPath, base + '.webp');
+    assert.equal(row.recordPath, base + '.json');
     for (const [path, hash] of [
       [row.outputPath, row.mediaSHA256],
       [row.recordPath, row.recordSHA256],
@@ -25,6 +28,32 @@ test('accepted showcase bytes have unique, immutable review identities and only 
       const record = assets.assets.find((a) => a.path === path.slice(1));
       assert.equal(record?.sha256, `sha256:bytes:${hash}`);
       const accepted = rights.records.find((a) => a.path === path.slice(1));
+      assert.equal(accepted?.sha256, record.sha256);
+      assert.equal(accepted?.publishDecision, 'approved');
+    }
+  }
+  const workflowIds = registry.workflowAssets.map((row) => row.id);
+  assert.equal(new Set(workflowIds).size, workflowIds.length);
+  for (const row of registry.workflowAssets) {
+    assert.equal(row.status, 'approved');
+    assert.equal(row.mediaKind, 'video');
+    assert.match(row.id, /^[a-z0-9][a-z0-9.-]*$/u);
+    assert.ok(row.title.trim() && row.modelLabel.trim());
+    assert.match(row.workflowExecutionSpecId, /^[a-z0-9_-]+:[a-z0-9_-]+:v[1-9][0-9]*$/u);
+    assert.ok([row.width, row.height].every((size) => Number.isInteger(size) && size > 0));
+    const base = `/template-gallery/showcases/${row.id}`;
+    assert.equal(row.outputPath, base + '.mp4');
+    assert.ok([base + '.poster.png', base + '.poster.webp'].includes(row.posterPath));
+    assert.equal(row.recordPath, base + '.json');
+    for (const [path, hash] of [
+      [row.outputPath, row.mediaSHA256],
+      [row.posterPath, row.posterSHA256],
+      [row.recordPath, row.recordSHA256],
+    ]) {
+      assert.match(hash, /^[a-f0-9]{64}$/u);
+      const record = assets.assets.find((asset) => asset.path === path.slice(1));
+      assert.equal(record?.sha256, `sha256:bytes:${hash}`);
+      const accepted = rights.records.find((asset) => asset.path === path.slice(1));
       assert.equal(accepted?.sha256, record.sha256);
       assert.equal(accepted?.publishDecision, 'approved');
     }
@@ -55,6 +84,38 @@ test('featured media never replaces current-template exactness or the actual def
     }
     const other = STUDIO_TEMPLATES.find((t) => t.id === 'flux2_dev_text_to_image');
     assert.equal(getTemplateShowcase(other.id), undefined);
+  } finally {
+    await server.close();
+  }
+});
+
+test('approved workflow videos are searchable and resolve through the pinned Gallery source', async () => {
+  const server = await createServer({
+    configFile: false,
+    logLevel: 'silent',
+    appType: 'custom',
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true, watch: null },
+  });
+  try {
+    const { getWorkflowShowcases } = await server.ssrLoadModule('/src/studio/templateShowcases.ts');
+    const { getTemplateAssetSource, resolveTemplateAssetUrl } = await server.ssrLoadModule(
+      '/src/studio/templateAssets.ts',
+    );
+    const registry = JSON.parse(fs.readFileSync('src/studio/templateShowcases.json', 'utf8'));
+    const asset = registry.workflowAssets.find((row) => row.id === 'ltx25-monday-morning-brisk-crossing.v1');
+    const resolved = getWorkflowShowcases('LTX-2.5 Full').find((row) => row.id === asset.id);
+    assert.equal(resolved.workflowExecutionSpecId, 'ltx25-full-av:image_to_video_with_audio:v1');
+    const { revision, mode } = getTemplateAssetSource();
+    for (const [actual, original] of [
+      [resolved.mediaPath, asset.outputPath],
+      [resolved.posterPath, asset.posterPath],
+      [resolved.recordPath, asset.recordPath],
+    ]) {
+      assert.equal(actual, resolveTemplateAssetUrl(original));
+      if (mode === 'huggingface') assert.ok(actual.includes(`/resolve/${revision}/`));
+    }
+    assert.deepEqual(getWorkflowShowcases('unrelated model'), []);
   } finally {
     await server.close();
   }

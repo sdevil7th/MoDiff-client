@@ -35,6 +35,38 @@ function templateAssetSourceIdentityPlugin(source: TemplateAssetSourceContract):
   };
 }
 
+function templateShowcaseDisplayPlugin(): Plugin {
+  return {
+    name: 'modiff-template-showcase-display',
+    apply: 'build',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.endsWith('/src/studio/templateShowcases.json')) return;
+      const registry = JSON.parse(code) as typeof import('./src/studio/templateShowcases.json');
+      // Asset and rights verification use the complete checked-in registry.
+      // The browser uses only each card's display fields and immutable URL resolver.
+      return JSON.stringify({
+        featured: registry.featured.map(({ id, title, status, featuredTemplateId }) => ({
+          id,
+          title,
+          status,
+          featuredTemplateId,
+        })),
+        workflowAssets: registry.workflowAssets.map(
+          ({ id, title, status, modelLabel, workflowExecutionSpecId, posterPath }) => ({
+            id,
+            title,
+            status,
+            modelLabel,
+            workflowExecutionSpecId,
+            posterPath,
+          }),
+        ),
+      });
+    },
+  };
+}
+
 function shellPublicAssetsPlugin(): Plugin {
   let emitBuildAssets = false;
   const publicFiles = new Map([
@@ -229,7 +261,14 @@ const baseConfig: UserConfig = {
   // Concurrent qualification frontends must not replace each other's
   // optimized dependency files and trigger navigation during a gesture.
   cacheDir: process.env.MODIFF_VITE_CACHE_DIR || 'node_modules/.vite',
-  plugins: [react(), tailwindcss(), proxyLifecycle.plugin, compactProductionChunksPlugin(), shellAssetVersionPlugin()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    proxyLifecycle.plugin,
+    templateShowcaseDisplayPlugin(),
+    compactProductionChunksPlugin(),
+    shellAssetVersionPlugin(),
+  ],
   server: {
     proxy: backendProxy,
     hmr: process.env.MODIFF_GALLERY_STABLE !== '1',
@@ -259,6 +298,13 @@ const baseConfig: UserConfig = {
       output: {
         codeSplitting: {
           groups: [
+            {
+              // Both browsers stay deferred and share the approved showcase catalog.
+              name: 'browsers',
+              test: /\/src\/(?:components\/(?:GraphList|TemplateBrowserDialog)\.tsx|studio\/templateShowcases\.(?:json|ts))$/u,
+              includeDependenciesRecursively: false,
+              priority: 10,
+            },
             {
               // These related composition surfaces stay deferred. Share their
               // small chunk overhead without pulling their eager store dependencies.
