@@ -9,7 +9,18 @@
  * Gallery-registered.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
@@ -22,6 +33,8 @@ import {
   requireAppDownloadsIdle,
 } from './template-gallery-runner.mjs';
 import { classifyCampaignFailure, writeRetryLedger } from './generation-campaign-retry-ledger.mjs';
+import { writeJsonAtomic } from './example-generation-queue.mjs';
+import { sha256Value } from './live-proof-provenance.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -323,73 +336,114 @@ export function isCampaignImagePayload(buffer) {
   );
 }
 
+function exactCampaignReceipt(receipt, taskId) {
+  const task = receipt?.task;
+  if (task?.task_id !== taskId || task.status !== 'completed' || !Array.isArray(receipt.outputs)) {
+    throw new Error(`Run receipt does not match completed task ${taskId}.`);
+  }
+  const snapshots = [receipt.workflow_snapshot, task.workflow_snapshot].filter((snapshot) => snapshot != null);
+  const snapshotHashes = snapshots.map((snapshot) => {
+    if (!Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.edges)) {
+      throw new Error(`Run receipt has a malformed workflow snapshot for task ${taskId}.`);
+    }
+    return sha256Value('campaign-workflow-snapshot', snapshot);
+  });
+  if (new Set(snapshotHashes).size > 1) throw new Error(`Run receipt workflow snapshots disagree for task ${taskId}.`);
+  const runtime = task.runtimeFingerprint;
+  const fingerprint = /^sha256:[a-f0-9]{64}$/u;
+  if (runtime != null && (!fingerprint.test(runtime.fingerprint) || !fingerprint.test(runtime.resourceFingerprint))) {
+    throw new Error(`Run receipt has malformed runtime identities for task ${taskId}.`);
+  }
+  return {
+    outputs: receipt.outputs,
+    workflowSnapshotHash: snapshotHashes[0] ?? null,
+    runtimeFingerprint: runtime
+      ? { fingerprint: runtime.fingerprint, resourceFingerprint: runtime.resourceFingerprint }
+      : null,
+  };
+}
+
 export async function copyOutput(page, run, frontendUrl, destination, mediaKind, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const outputWaitMs = options.outputWaitMs ?? 20_000;
   const server = options.server || SERVER;
+  const kind = String(mediaKind || '');
+  const wantImage = kind
+    ? /image/i.test(kind) && !/video|audio|caption/i.test(kind)
+    : /text_to_image|edit_image|inpaint|outpaint|control/i.test(String(destination));
+  const expectedKind = wantImage ? 'image' : ['audio', 'video'].includes(kind) ? kind : null;
+  const receiptResponse = await fetchImpl(new URL(`/runs/${encodeURIComponent(run.taskId)}`, server), {
+    redirect: 'error',
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!receiptResponse.ok && receiptResponse.status !== 404)
+    throw new Error(`Could not read run receipt for task ${run.taskId}: HTTP ${receiptResponse.status}.`);
+  const receipt = receiptResponse.ok ? exactCampaignReceipt(await receiptResponse.json(), run.taskId) : null;
+  let output = receipt?.outputs
+    .filter((item) => item?.url && (item.taskId ?? item.task_id) === run.taskId)
+    .filter((item) => !expectedKind || String(item.displayType || item.mediaKind || '').includes(expectedKind))
+    .at(-1);
+  const captureSource = output ? 'run-receipt' : 'live-output';
   const deadline = Date.now() + outputWaitMs;
-  let output = null;
-  const wantImage =
-    /image/i.test(String(mediaKind || '')) ||
-    /text_to_image|edit_image|inpaint|outpaint|control/i.test(String(destination));
-  while (Date.now() < deadline) {
+  while (!output && Date.now() < deadline) {
     output = await page.evaluate(
-      ({ taskId, startedAt, wantImage: preferImage }) => {
+      ({ taskId, expectedKind }) => {
         const outputs = window.__MODIFF_E2E__?.getState()?.studio?.outputs ?? [];
         const matches = outputs.filter((item) => {
-          if (!item?.url) return false;
-          if (item.taskId === taskId || item.task_id === taskId) return true;
-          return Number(item.createdAt ?? 0) >= startedAt;
+          return item?.url && (item.taskId ?? item.task_id) === taskId;
         });
-        const isImage = (item) => {
-          const type = String(item.displayType || item.mediaKind || '');
-          const url = String(item.url || '');
-          return /image|png|jpe?g|webp/i.test(`${type} ${url}`);
-        };
-        if (preferImage) {
-          const images = matches.filter(isImage);
-          if (images.length) return images.at(-1);
-          return null;
-        }
-        return matches.at(-1) ?? null;
+        return (
+          matches
+            .filter((item) => !expectedKind || String(item.displayType || item.mediaKind || '').includes(expectedKind))
+            .at(-1) ?? null
+        );
       },
-      { taskId: run.taskId, startedAt: run.startedAt, wantImage },
+      { taskId: run.taskId, expectedKind },
     );
-    if (output?.url) break;
+    if (output?.url && (output.taskId ?? output.task_id) === run.taskId) break;
+    output = null;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  if (!output?.url) {
-    const receiptResponse = await fetchImpl(new URL(`/runs/${encodeURIComponent(run.taskId)}`, server));
-    if (receiptResponse.ok) {
-      const receipt = await receiptResponse.json();
-      const outputs = Array.isArray(receipt?.outputs)
-        ? receipt.outputs
-        : Array.isArray(receipt?.run?.outputs)
-          ? receipt.run.outputs
-          : [];
-      const matches = outputs.filter(
-        (item) => item?.url && (item.taskId === run.taskId || item.task_id === run.taskId),
-      );
-      if (wantImage) {
-        output = matches.filter((item) => /image/i.test(String(item.displayType || item.mediaKind || ''))).at(-1);
-      } else {
-        output = matches.at(-1);
-      }
-    }
-  }
   if (!output?.url) throw new Error(`No studio output URL for task ${run.taskId}.`);
-  const absoluteUrl = new URL(output.url, frontendUrl).toString();
-  const response = await fetchImpl(absoluteUrl);
+  const location = new URL(output.url, captureSource === 'run-receipt' ? server : frontendUrl);
+  if (
+    location.protocol !== 'data:' &&
+    (location.username ||
+      location.password ||
+      ![new URL(server).origin, new URL(frontendUrl).origin].includes(location.origin))
+  ) {
+    throw new Error(`Studio output for task ${run.taskId} is outside the app origin.`);
+  }
+  const absoluteUrl = location.href;
+  const response = await fetchImpl(absoluteUrl, { redirect: 'error', signal: AbortSignal.timeout(120_000) });
   if (!response.ok) throw new Error(`Could not fetch output ${absoluteUrl}: HTTP ${response.status}`);
   const buffer = Buffer.from(await response.arrayBuffer());
+  const mediaHash = `sha256:bytes:${createHash('sha256').update(buffer).digest('hex')}`;
+  if (output.mediaHash != null && output.mediaHash !== mediaHash)
+    throw new Error(`Studio output for task ${run.taskId} does not match its recorded media hash.`);
   if (wantImage && !isCampaignImagePayload(buffer)) {
     throw new Error(
       `Studio output for task ${run.taskId} was not a recognized campaign image (${buffer.length} bytes).`,
     );
   }
   const extension = extensionForCampaignOutput(output, absoluteUrl, response.headers.get('content-type'));
-  writeFileSync(destination + extension, buffer);
-  return destination + extension;
+  const filePath = destination + extension;
+  if (existsSync(filePath)) throw new Error(`Campaign output already exists: ${filePath}.`);
+  const temporary = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, buffer, { flag: 'wx' });
+    renameSync(temporary, filePath);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+  return {
+    filePath,
+    captureSource,
+    mediaHash,
+    matchedRecordedHash: output.mediaHash === mediaHash,
+    workflowSnapshotHash: receipt?.workflowSnapshotHash ?? null,
+    runtimeFingerprint: receipt?.runtimeFingerprint ?? null,
+  };
 }
 
 export function destinationStem(workflowId) {
@@ -447,10 +501,7 @@ function mergeResults(previous, next) {
 function writeReport(results) {
   const merged = mergeResults(loadPreviousResults(), results);
   const completed = merged.filter((item) => item.status === 'completed').length;
-  writeFileSync(
-    CAMPAIGN_REPORT_PATH,
-    `${JSON.stringify({ server: SERVER, completed, total: merged.length, results: merged }, null, 2)}\n`,
-  );
+  writeJsonAtomic(CAMPAIGN_REPORT_PATH, { server: SERVER, completed, total: merged.length, results: merged });
   writeRetryLedger(CAMPAIGN_REPORT_PATH, CAMPAIGN_RETRY_PATH);
   return CAMPAIGN_REPORT_PATH;
 }
@@ -680,18 +731,19 @@ async function runSkeleton(page, skeleton, args, results, capability) {
     timeoutMs: args.timeoutMs,
   });
   mkdirSync(join(RAW_ROOT, workflowId.replace(/:/g, '__')), { recursive: true });
-  const filePath = await copyOutput(
+  const retained = await copyOutput(
     page,
     run,
     args.frontendUrl,
     destinationStem(workflowId),
     skeleton.mediaKind || skeleton.mode,
+    { server: args.server },
   );
   results.push({
     workflowId,
     skeletonId: skeleton.id,
     taskId: run.taskId,
-    filePath,
+    ...retained,
     status: 'completed',
     resourceMode: preferAuto ? 'auto' : 'expert',
   });

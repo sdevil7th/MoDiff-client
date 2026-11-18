@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -63,6 +64,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const portablePath = (value) => value.split(sep).join('/');
 // Unit tests check fixture selection without requiring local review media.
 const availableFixtureOverrides = (workflowId, media) => fixtureOverrides(workflowId, media, () => true);
+const fetchWithoutRunReceipt = (url) =>
+  String(url).includes('/runs/') ? Promise.resolve(new Response(null, { status: 404 })) : fetch(url);
 
 function retainedRepairFixture() {
   const settings = { mode: 'text_to_image', modelType: 'ExamplePipeline', prompt: 'original brief', seed: 73 };
@@ -518,12 +521,13 @@ test('review campaign writes extensionless Studio image output with its fetched 
     };
     const page = { evaluate: async () => output };
 
-    const filePath = await copyOutput(
+    const { filePath } = await copyOutput(
       page,
       { taskId: 'task-webp', startedAt: Date.now() },
       'http://127.0.0.1:5192',
       resolve(root, 'campaign-output'),
       'image',
+      { fetchImpl: fetchWithoutRunReceipt },
     );
 
     assert.equal(filePath, resolve(root, 'campaign-output.webp'));
@@ -552,12 +556,13 @@ test('review campaign writes inline text output without treating its payload as 
     };
     const page = { evaluate: async () => output };
 
-    const filePath = await copyOutput(
+    const { filePath } = await copyOutput(
       page,
       { taskId: 'task-text', startedAt: Date.now() },
       'http://127.0.0.1:5192',
       resolve(root, 'campaign-output'),
       'json',
+      { fetchImpl: fetchWithoutRunReceipt },
     );
 
     assert.equal(filePath, resolve(root, 'campaign-output.txt'));
@@ -574,11 +579,24 @@ test('review campaign recovers a late Studio output from the authoritative run r
     bytes.write('RIFF', 0, 'ascii');
     bytes.write('WEBP', 8, 'ascii');
     const mediaUrl = `data:image/webp;base64,${bytes.toString('base64')}`;
+    const mediaHash = `sha256:bytes:${createHash('sha256').update(bytes).digest('hex')}`;
+    const runtimeFingerprint = {
+      fingerprint: `sha256:${'1'.repeat(64)}`,
+      resourceFingerprint: `sha256:${'2'.repeat(64)}`,
+    };
+    const workflowSnapshot = { nodes: [{ id: 'export' }], edges: [] };
     const fetchImpl = async (input) => {
-      if (String(input).includes('/runs/task-late')) {
+      if (String(input) === 'http://127.0.0.1:8088/runs/task-late') {
         return new Response(
           JSON.stringify({
-            outputs: [{ url: mediaUrl, displayType: 'image', taskId: 'task-late' }],
+            task: {
+              task_id: 'task-late',
+              status: 'completed',
+              runtimeFingerprint,
+              workflow_snapshot: workflowSnapshot,
+            },
+            workflow_snapshot: workflowSnapshot,
+            outputs: [{ url: mediaUrl, displayType: 'image', taskId: 'task-late', mediaHash }],
           }),
           { headers: { 'content-type': 'application/json' } },
         );
@@ -586,17 +604,132 @@ test('review campaign recovers a late Studio output from the authoritative run r
       return fetch(input);
     };
 
-    const filePath = await copyOutput(
-      { evaluate: async () => null },
+    const result = await copyOutput(
+      { evaluate: async () => ({ taskId: 'other-newer-run', url: mediaUrl, displayType: 'image' }) },
       { taskId: 'task-late', startedAt: Date.now() },
       'http://127.0.0.1:5192',
       resolve(root, 'campaign-output'),
       'image',
-      { fetchImpl, outputWaitMs: 0, server: 'http://127.0.0.1:8088' },
+      { fetchImpl, outputWaitMs: 20, server: 'http://127.0.0.1:8088' },
     );
 
-    assert.equal(filePath, resolve(root, 'campaign-output.webp'));
-    assert.deepEqual(readFileSync(filePath), bytes);
+    assert.equal(result.filePath, resolve(root, 'campaign-output.webp'));
+    assert.equal(result.mediaHash, mediaHash);
+    assert.deepEqual(result.runtimeFingerprint, runtimeFingerprint);
+    assert.match(result.workflowSnapshotHash, /^sha256:campaign-workflow-snapshot:/);
+    assert.deepEqual(readFileSync(result.filePath), bytes);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('review campaign rejects a mismatched receipt, invalid snapshot or changed media before saving', async () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-review-campaign-identity-'));
+  const fixture = {
+    task: { task_id: 'task-exact', status: 'completed' },
+    workflow_snapshot: { nodes: [{ id: 'export' }], edges: [] },
+    outputs: [
+      {
+        url: 'data:text/plain,original',
+        displayType: 'text',
+        taskId: 'task-exact',
+        mediaHash: `sha256:bytes:${createHash('sha256').update('original').digest('hex')}`,
+      },
+    ],
+  };
+  try {
+    for (const [change, message] of [
+      [
+        (receipt) => {
+          receipt.task.task_id = 'unrelated-task';
+        },
+        /does not match completed task/,
+      ],
+      [
+        (receipt) => {
+          receipt.workflow_snapshot = { graph: [] };
+        },
+        /snapshot/,
+      ],
+      [
+        (receipt) => {
+          receipt.task.runtimeFingerprint = 'sha256:wrong';
+        },
+        /runtime identities/,
+      ],
+      [
+        (receipt) => {
+          receipt.outputs[0].url = 'data:text/plain,changed';
+        },
+        /media hash/,
+      ],
+    ]) {
+      const receipt = structuredClone(fixture);
+      change(receipt);
+      await assert.rejects(
+        copyOutput(
+          { evaluate: async () => null },
+          { taskId: 'task-exact' },
+          'http://127.0.0.1:5192',
+          resolve(root, 'candidate'),
+          'text',
+          {
+            fetchImpl: (input) =>
+              String(input).includes('/runs/') ? Promise.resolve(Response.json(receipt)) : fetch(input),
+            outputWaitMs: 0,
+          },
+        ),
+        message,
+      );
+      assert.equal(existsSync(resolve(root, 'candidate.txt')), false);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('review campaign ignores other live tasks even when no retained receipt is available', async () => {
+  const output = { taskId: 'newer-task', url: 'data:text/plain,newer', displayType: 'text' };
+  await assert.rejects(
+    copyOutput(
+      { evaluate: async () => output },
+      { taskId: 'requested-task' },
+      'http://127.0.0.1:5192',
+      'unused-output',
+      'text',
+      { fetchImpl: fetchWithoutRunReceipt, outputWaitMs: 20 },
+    ),
+    /No studio output URL for task requested-task/,
+  );
+});
+
+test('review campaign retains the video export of a control-video workflow and preserves existing bytes', async () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-review-campaign-control-video-'));
+  const bytes = 'retained video bytes';
+  const receipt = {
+    task: { task_id: 'task-video', status: 'completed' },
+    outputs: [
+      { taskId: 'task-video', displayType: 'video', url: `data:video/mp4,${encodeURIComponent(bytes)}` },
+      { taskId: 'task-video', displayType: 'image', url: 'data:image/png,unrelated-preview' },
+    ],
+  };
+  const capture = () =>
+    copyOutput(
+      { evaluate: async () => null },
+      { taskId: 'task-video' },
+      'http://127.0.0.1:5192',
+      resolve(root, 'control-video'),
+      'video',
+      {
+        fetchImpl: (input) =>
+          String(input).includes('/runs/') ? Promise.resolve(Response.json(receipt)) : fetch(input),
+      },
+    );
+  try {
+    const result = await capture();
+    assert.equal(result.filePath, resolve(root, 'control-video.mp4'));
+    await assert.rejects(capture(), /Campaign output already exists/);
+    assert.equal(readFileSync(result.filePath, 'utf8'), bytes);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
