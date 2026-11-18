@@ -137,6 +137,100 @@ test('readiness excludes descendants of disabled containers just as API export d
   assert.deepEqual(flow.getState().toObject(), before);
 });
 
+test('the graph names only an unambiguous owner with literal model selectors', () => {
+  const pipeline = 'ExampleVideoAudioPipeline';
+  const loader = {
+    id: 'declared-owner',
+    type: 'custom',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'custom',
+      module: 'modules.DiffusersVideo',
+      action: 'LoadPipeline',
+      label: 'Model Setup',
+      params: {
+        pipeline_class: { value: pipeline },
+        model_id: { value: { source: 'hub', value: 'publisher/example' } },
+        execution_profile_id: { value: 'example:direct' },
+      },
+      operationAuthoring: {
+        schemaVersion: 1,
+        operation: {
+          pipelineClass: pipeline,
+          task: 'text_to_video_with_audio',
+          workflowId: null,
+          binding: { pipelineClass: pipeline, values: {} },
+          operationId: 'diffusion.load_models',
+          nodeKey: 'modules.DiffusersVideo.LoadPipeline',
+          nodeType: 'loader',
+          blockName: null,
+          decomposition: 'loader',
+          support: 'declared',
+          ports: [],
+        },
+        defaults: {},
+        retained: [],
+      },
+    },
+  };
+  flow.getState().replaceGraph({ nodes: [loader], edges: [] });
+  const before = structuredClone(flow.getState().toObject());
+  const declared = readiness.inspectCurrentGraph().declaredModel;
+  assert.deepEqual(declared, {
+    pipeline,
+    repo: 'publisher/example',
+    profileId: 'example:direct',
+  });
+  assert.deepEqual(readiness.inspectWorkflowModel(before), declared);
+  assert.deepEqual(flow.getState().toObject(), before);
+
+  const other = structuredClone(loader);
+  other.id = 'other-model-owner';
+  flow.getState().replaceGraph({ nodes: [loader, other], edges: [] });
+  const multiple = readiness.inspectCurrentGraph();
+  assert.equal(multiple.modelRefs.length, 2, 'Separate owners can select the same repository.');
+  assert.equal(multiple.declaredModel, undefined);
+  assert.deepEqual(
+    readiness.inspectWorkflowModel(before),
+    declared,
+    'The inspected capture can outlive the active graph.',
+  );
+
+  const source = graph().nodes[0];
+  flow.getState().replaceGraph({
+    nodes: [source, loader],
+    edges: [
+      { id: 'connected-model', source: source.id, sourceHandle: 'video', target: loader.id, targetHandle: 'model_id' },
+    ],
+  });
+  assert.equal(
+    readiness.inspectCurrentGraph().declaredModel,
+    undefined,
+    'A connected selector can override its literal.',
+  );
+
+  const stale = structuredClone(loader);
+  stale.data.params.pipeline_class.value = 'DifferentPipeline';
+  flow.getState().replaceGraph({ nodes: [stale], edges: [] });
+  assert.equal(
+    readiness.inspectCurrentGraph().declaredModel,
+    undefined,
+    'A stale hint cannot supply the runtime name.',
+  );
+});
+
+test('a conflicting catalog label keeps the declared pipeline name', () => {
+  const model = { pipeline: 'ExamplePipeline', profileId: 'default:profile', repo: 'publisher/repo' };
+  const known = { ...model, label: 'Example Model' };
+  const unrelated = { ...known, repo: 'other/repo', label: 'Other Model' };
+  assert.equal(readiness.declaredGraphModelLabel(model, [known, unrelated]), known.label);
+  assert.equal(readiness.declaredGraphModelLabel(model, [unrelated]), model.pipeline);
+  assert.equal(
+    readiness.declaredGraphModelLabel(model, [known, { ...known, label: 'Conflicting Model' }]),
+    model.pipeline,
+  );
+});
+
 test('only registry-declared inactive model fields are omitted from setup references', () => {
   const key = 'modules.TestLoader.Load';
   const previous = nodesStore.getState().nodesRegistry;

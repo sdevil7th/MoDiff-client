@@ -44,7 +44,7 @@ import {
 } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import { validateCurrentRun } from '../studio/runReadiness';
+import { inspectWorkflowModel, validateCurrentRun } from '../studio/runReadiness';
 import { useRunReadinessIssues } from '../studio/useRunReadinessIssues';
 import {
   createOrUpdateStudioGraph,
@@ -446,6 +446,8 @@ function TopBar() {
     const pending = sid && isConnected ? prepareExecutionScope({ workflowContext: context }) : undefined;
     const executionScope = pending ? await pending : undefined;
     const flow = useFlowStore.getState();
+    const graph = flow.toObject();
+    const workflowModelType = graphBinding ? undefined : inspectWorkflowModel(graph)?.pipeline;
     let apiGraph = sid && isConnected ? exportGraph(sid, undefined, { randomizeSeeds: false, executionScope }) : null;
     if (apiGraph && graphBinding) apiGraph = applyStudioRuntimeHints(apiGraph);
     if (
@@ -463,7 +465,8 @@ function TopBar() {
     return {
       ...buildWorkflowPackage({
         form: useStudioStore.getState().form,
-        graph: flow.toObject(),
+        graph,
+        workflowModelType,
         apiGraph,
         latestOutput: latestWorkflowOutput,
         packageType: 'modiff-workflow-share',

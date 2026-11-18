@@ -442,6 +442,8 @@ export type GraphInspectionSummary = {
     value: string;
     paramKey: string;
   }>;
+  /** Display-only identity of a single literal selector in the executable graph. */
+  declaredModel?: { pipeline: string; repo: string; profileId: string };
   blockingIssues: RunReadinessIssue[];
 };
 

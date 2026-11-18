@@ -1778,6 +1778,16 @@ their separate encoded-image input contract.
 
 Workflow packages are JSON. Image packages can also embed the `modiff.workflow` metadata key in PNG text chunks. Imported packages must be parsed/coerced at the boundary before they affect stores.
 
+Studio's custom graph summary reads the current lowered graph on import and
+reopen. A single declared model owner with literal selectors can use the
+backend display label for its exact pipeline, profile and repository. A missing
+or conflicting catalog label falls back to the declared pipeline. Model
+references from several nodes or unresolved selectors retain the general graph
+summary. A workflow share export also records that model identity in the
+portable summary from the same captured graph. Legacy Studio form validation
+and recorded output restore data keep their existing contracts. The portable
+summary never rewrites executable nodes or attaches a managed Studio binding.
+
 Gallery's PNG package export preserves existing PNG image bytes and converts
 other decodable image formats, including JPEG and WebP, to PNG before embedding
 workflow metadata. Conversion uses the browser image codec and rejects images

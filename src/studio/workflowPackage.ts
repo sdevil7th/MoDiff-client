@@ -47,7 +47,7 @@ export type ModiffWorkflowPackage = {
   };
   metadata: {
     exportedAt: string;
-    studio: StudioFormState;
+    studio: Omit<StudioFormState, 'modelType'> & { modelType: string };
     preview: string | null;
   };
   graph: unknown;
@@ -89,16 +89,21 @@ export function buildWorkflowPackage({
   apiGraph,
   form,
   graph,
+  workflowModelType,
   latestOutput = null,
   packageType = 'modiff-workflow-share',
 }: {
   apiGraph?: unknown;
   form: StudioFormState;
   graph: unknown;
+  /** Advisory identity from the exact captured share graph. */
+  workflowModelType?: string;
   latestOutput?: StudioOutput | null;
   packageType?: ModiffWorkflowPackage['manifest']['packageType'];
 }): ModiffWorkflowPackage {
   const exportedAt = new Date().toISOString();
+  const formMetadata = latestOutput?.formSnapshot ?? form;
+  const shareModelType = packageType === 'modiff-workflow-share' ? workflowModelType : undefined;
   return {
     manifest: {
       schemaVersion: 1,
@@ -133,7 +138,10 @@ export function buildWorkflowPackage({
     },
     metadata: {
       exportedAt,
-      studio: safeCloneJson(latestOutput?.formSnapshot ?? form) as StudioFormState,
+      studio: safeCloneJson({
+        ...formMetadata,
+        modelType: shareModelType ?? formMetadata.modelType,
+      }) as ModiffWorkflowPackage['metadata']['studio'],
       preview: latestOutput?.url ?? null,
     },
     graph: safeCloneJson(graph),

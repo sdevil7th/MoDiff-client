@@ -63,6 +63,7 @@ import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies
 import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import type { StudioAspectRatio, StudioFormState, StudioMode, StudioModelType } from '../studio/types';
 import {
+  declaredGraphModelLabel,
   getPreferredRuntimeDevice,
   inspectCurrentGraph,
   runtimeDeviceIsAvailable,
@@ -142,6 +143,7 @@ export default function StudioPanel() {
     studioModelCapabilities,
     studioModelCapabilitiesAuthoritative,
     studioExecutionSpecInvalid,
+    workflowModelDescriptors,
     installHfModel,
   } = useNodesStore(
     useShallow((state) => ({
@@ -153,6 +155,7 @@ export default function StudioPanel() {
       studioModelCapabilities: state.studioModelCapabilities,
       studioModelCapabilitiesAuthoritative: state.studioModelCapabilitiesAuthoritative,
       studioExecutionSpecInvalid: state.studioExecutionSpecInvalid,
+      workflowModelDescriptors: state.workflowModelDescriptors,
       installHfModel: state.installHfModel,
     })),
   );
@@ -268,7 +271,11 @@ export default function StudioPanel() {
       nodes: state.nodes
         .map((node) => {
           const modelParams = Object.entries(node.data.params)
-            .filter(([key]) => /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key))
+            .filter(([key]) =>
+              /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter|pipeline_class|execution_profile_id/i.test(
+                key,
+              ),
+            )
             .map(([key, param]) => `${key}:${JSON.stringify(param.value ?? param.default ?? '')}`)
             .join(',');
           return `${node.id}:${node.data.module}:${node.data.action}:${node.data.uiState?.disabled ? 'disabled' : 'enabled'}:${modelParams}`;
@@ -296,9 +303,10 @@ export default function StudioPanel() {
     ((!graphBinding && graphInspection.nodeCount > 0) || Boolean(graphDivergence));
 
   const customGraphModelText =
-    graphInspection.modelRefs.length > 0
+    declaredGraphModelLabel(graphInspection.declaredModel, workflowModelDescriptors) ??
+    (graphInspection.modelRefs.length > 0
       ? `${new Set(graphInspection.modelRefs.map((reference) => `${reference.kind}:${reference.value}`)).size} model refs`
-      : 'Graph-defined';
+      : 'Graph-defined');
   const runReadiness = useRunReadinessIssues({ sid, isConnected, includeStudio: !customGraphMode });
   const runReadinessSummary = useMemo(() => summarizeRunReadinessIssues(runReadiness.issues), [runReadiness.issues]);
   const studioReadinessMeta =

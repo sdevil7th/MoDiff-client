@@ -1,3 +1,7 @@
+// Graph-derived model display and workflow share metadata measure
+// 513023/691510/351624 largest/startup/deferred gzip bytes. Add the measured
+// 398/402/278 bytes over 512625/691108/351346. Preserve prior headroom, four
+// startup chunks, 93 deferred chunks and the 64 KiB per-chunk cap.
 // Ordinary stage cards, storyboard compatibility and the lazy implementation
 // dialog measure 512625/691108/351346 largest/startup/deferred gzip bytes.
 // Add the measured 673/669/652 bytes over 511952/690439/350694, preserving
@@ -470,6 +474,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  398 +
   673 +
   // Native sampler/decoder grouping, AV receipt fields and LTX Full policy add
   // 390 largest-chunk gzip bytes (511556 -> 511946); retain 12-byte headroom.
@@ -700,6 +705,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  402 +
   669 +
   // The paired change adds 389 startup gzip bytes (690042 -> 690431), preserving
   // 11-byte headroom. Deferred limits, dependencies and build rules are unchanged.
@@ -995,6 +1001,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  278 +
   652 +
   364 +
   418 +

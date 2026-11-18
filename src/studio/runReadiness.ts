@@ -80,8 +80,12 @@ import { inspectReviewedComponentRequirementsV2 } from './reviewedBlockContextV2
 import { useHuggingFaceModularConditionalStore } from '../stores/useHuggingFaceModularConditionalStore';
 import { inspectBlockDerivedControlsV2 } from './blockDerivedControlRepairV2';
 import { inspectBlockMediaInputsV2 } from './blockMediaReadinessV2';
+import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import { operationOwnsModel } from '../workflow/operationContracts';
+import type { WorkflowModelDescriptor } from '../workflow/workflowChoices';
 
 const GIB = 1024 ** 3;
+type InspectableFlowGraph = Pick<ReturnType<typeof useFlowStore.getState>, 'nodes' | 'edges'>;
 
 // Queue pressure reads ownership, lifecycle and the displayed run label, not
 // progress/heartbeat timestamps. Revalidating every Block on each progress tick
@@ -809,6 +813,70 @@ function getModelRepoFromNode(node: ReturnType<typeof useFlowStore.getState>['no
   return repoValueFromParam(value);
 }
 
+/** The normal lowered graph can identify a single model without granting legacy Studio authority. */
+function declaredGraphModel(
+  { nodes, edges }: InspectableFlowGraph,
+  references: GraphInspectionSummary['modelRefs'],
+): GraphInspectionSummary['declaredModel'] {
+  const nodeId = references[0]?.nodeId;
+  if (!nodeId || references.some((reference) => reference.nodeId !== nodeId)) return undefined;
+  const owner = nodes.find((node) => node.id === nodeId);
+  if (!owner) return undefined;
+
+  const operation = operationAuthoring(owner)?.operation;
+  const params = owner.data.params;
+  const pipelineKey = params.pipeline_class ? 'pipeline_class' : 'model_type';
+  const pipeline = params[pipelineKey]?.value ?? params[pipelineKey]?.default;
+  const profileId = params.execution_profile_id?.value ?? params.execution_profile_id?.default;
+  const repo = getModelRepoFromNode(owner);
+  if (
+    !operationOwnsModel(operation) ||
+    pipeline !== operation.pipelineClass ||
+    !isHfRepoId(repo) ||
+    !references.some((reference) => reference.kind === 'repo' && reference.value === repo) ||
+    edges.some(
+      (edge) =>
+        edge.target === nodeId &&
+        [pipelineKey, 'execution_profile_id', 'reviewed_variant', 'repo_id', 'model_id'].includes(
+          edge.targetHandle ?? '',
+        ),
+    )
+  )
+    return undefined;
+
+  return { pipeline: operation.pipelineClass, repo, profileId: typeof profileId === 'string' ? profileId : '' };
+}
+
+/** Read the exact captured workflow without using an imported form or API payload as its identity. */
+export function inspectWorkflowModel(graph: InspectableFlowGraph): GraphInspectionSummary['declaredModel'] {
+  try {
+    const { nodes, edges } = lowerFlowGraph(graph);
+    const executable = executableFlowNodes(nodes);
+    return declaredGraphModel({ nodes: executable, edges }, inspectedModelReferences(executable));
+  } catch {
+    // This optional label must not interfere with saving an unfinished graph.
+    return undefined;
+  }
+}
+
+export function declaredGraphModelLabel(
+  model: GraphInspectionSummary['declaredModel'],
+  descriptors: readonly WorkflowModelDescriptor[],
+): string | undefined {
+  if (!model) return undefined;
+  const labels = new Set(
+    descriptors
+      .filter(
+        (descriptor) =>
+          descriptor.pipeline === model.pipeline &&
+          descriptor.profileId === model.profileId &&
+          descriptor.repo === model.repo,
+      )
+      .map((descriptor) => descriptor.label),
+  );
+  return labels.size === 1 ? labels.values().next().value : model.pipeline;
+}
+
 function collectGraphModelIssues(graph = executableFlowGraph()): RunReadinessIssue[] {
   const { nodes } = graph;
   const { hfCache, localModels, modelCacheDiagnostics, discoveryRequests, workflowModelDescriptors } =
@@ -952,12 +1020,16 @@ export function collectGraphDeviceOffloadIssues(graph = executableFlowGraph()): 
   });
 }
 
-function executableFlowGraph(targetNodeId?: string, executionScope?: PreparedExecutionScope) {
-  const { nodes, edges } = useFlowStore.getState();
+function lowerFlowGraph({ nodes, edges }: InspectableFlowGraph, targetNodeId?: string) {
   const durable = withoutBlockCompilationTransientsV2(nodes, edges);
   const userBlocks = expandUserBlockGraph(durable.nodes, durable.edges, useUserBlockStore.getState().blocks);
   const legacyClusters = expandHuggingFaceClusterBoundaryEdges(userBlocks);
-  const execution = expandBlockGraphV2ForExecution(legacyClusters.nodes, legacyClusters.edges, targetNodeId);
+  return expandBlockGraphV2ForExecution(legacyClusters.nodes, legacyClusters.edges, targetNodeId);
+}
+
+function executableFlowGraph(targetNodeId?: string, executionScope?: PreparedExecutionScope) {
+  const { nodes, edges } = useFlowStore.getState();
+  const execution = lowerFlowGraph({ nodes, edges }, targetNodeId);
   if (hasAncillaryExecutionClaim(nodes)) {
     const graph = useFlowStore
       .getState()
@@ -1248,6 +1320,27 @@ function collectRegisteredBlockV2AuthorityIssues(): RunReadinessIssue[] {
   });
 }
 
+function inspectedModelReferences(nodes: InspectableFlowGraph['nodes']): GraphInspectionSummary['modelRefs'] {
+  return nodes.flatMap((node) => {
+    const references = collectNodeModelReferences(node);
+    const isModelLoader =
+      node.data.module === 'modules.ModularDiffusers' && ['ModelsLoader', 'AutoModelLoader'].includes(node.data.action);
+    const loaderRepo = isModelLoader ? getModelRepoFromNode(node) : '';
+    if (
+      loaderRepo &&
+      loaderRepo !== 'undefined' &&
+      !references.some((item) => item.kind === 'repo' && item.value === loaderRepo)
+    ) {
+      references.push({ kind: 'repo', value: loaderRepo, paramKey: 'repo_id' });
+    }
+    return references.map((reference) => ({
+      nodeId: node.id,
+      nodeLabel: node.data.label || node.data.action,
+      ...reference,
+    }));
+  });
+}
+
 export function inspectCurrentGraph(): GraphInspectionSummary {
   const flow = useFlowStore.getState();
   const visibleGraph = withoutBlockCompilationTransientsV2(flow.nodes, flow.edges);
@@ -1274,24 +1367,7 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
     edges.some((edge) => edge.target === node.id && executableNodeIds.has(edge.source)),
   );
   const connectedOutputNodeIds = new Set(connectedOutputNodes.map((node) => node.id));
-  const modelRefs = executableNodes.flatMap((node) => {
-    const references = collectNodeModelReferences(node);
-    const isModelLoader =
-      node.data.module === 'modules.ModularDiffusers' && ['ModelsLoader', 'AutoModelLoader'].includes(node.data.action);
-    const loaderRepo = isModelLoader ? getModelRepoFromNode(node) : '';
-    if (
-      loaderRepo &&
-      loaderRepo !== 'undefined' &&
-      !references.some((item) => item.kind === 'repo' && item.value === loaderRepo)
-    ) {
-      references.push({ kind: 'repo', value: loaderRepo, paramKey: 'repo_id' });
-    }
-    return references.map((reference) => ({
-      nodeId: node.id,
-      nodeLabel: node.data.label || node.data.action,
-      ...reference,
-    }));
-  });
+  const modelRefs = inspectedModelReferences(executableNodes);
   const issues = [
     ...collectUserBlockCompositionIssues(),
     ...collectGraphStructureIssues(executionGraph),
@@ -1317,6 +1393,7 @@ export function inspectCurrentGraph(): GraphInspectionSummary {
       connected: connectedOutputNodeIds.has(node.id),
     })),
     modelRefs,
+    declaredModel: declaredGraphModel({ nodes: executableNodes, edges }, modelRefs),
     blockingIssues: issues.filter((item) => item.blocking),
   };
 }

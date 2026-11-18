@@ -1104,6 +1104,101 @@ for (const [templateId, title] of [
     expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.graphBinding)).toBeNull();
   });
 
+test('native workflow import and re-export preserve the backend model identity for LTX Full', async ({ page }) => {
+  const pipelineClass = 'LTX25FullPipeline';
+  const task = 'text_to_video_with_audio';
+  const fixture = await generateTemplateSchemas(
+    [{ id: 'ltx-full-import', selection: { pipelineClass, task, executionProfileId: 'ltx25-full-av:direct' } }],
+    true,
+  );
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+
+  const prepared = await page.evaluate(
+    async ({ fixture, pipelineClass, task }) => {
+      const [models, packages, draft, contracts, starters, runtime, exporter] = await Promise.all([
+        import('/src/studio/modelProfiles.ts'),
+        import('/src/studio/workflowPackage.ts'),
+        import('/src/workflow/workflowDraft.ts'),
+        import('/src/workflow/operationContracts.ts'),
+        import('/src/workflow/operationStarterRequest.ts'),
+        import('/src/studio/blockRuntimeV2.ts'),
+        import('/src/stores/flowGraphExport.ts'),
+      ]);
+      const { publicPayload, registry, recipes } = fixture;
+      const operations = contracts.parseOperationContracts(
+        publicPayload.operationContracts,
+        publicPayload.operationContractSchemaVersion,
+      );
+      const starter = starters.parseOperationStarter(recipes[0]!.starter, pipelineClass, task, operations);
+      const { graph } = draft.createWorkflowDraft(starter, registry);
+      const api = exporter.buildApiGraphExport({
+        ...runtime.expandBlockGraphV2ForExecution(graph.nodes, graph.edges),
+        sid: 'ltx-full-import',
+        randomizeSeeds: false,
+        setParam: () => {
+          throw new Error('Export cannot mutate the authored graph.');
+        },
+      });
+      const form = { ...models.DEFAULT_STUDIO_FORM, mode: task, prompt: 'A glacier calving into the sea.' };
+      const packageData = packages.buildWorkflowPackage({ form, graph, apiGraph: api });
+      return {
+        api,
+        packageData: {
+          ...packageData,
+          metadata: { ...packageData.metadata, studio: { ...form, modelType: pipelineClass } },
+        },
+      };
+    },
+    { fixture, pipelineClass, task },
+  );
+  expect(
+    Object.values(prepared.api.nodes).find((node) => node.action === 'LoadPipeline')?.params.pipeline_class,
+  ).toMatchObject({ value: pipelineClass });
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'ltx-full.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(prepared.packageData), 'utf8'),
+  });
+  const summary = page.getByTestId('studio-task-model-summary');
+  await expect(summary).toContainText('LTX-2.5 Full');
+  await expect(page.getByTestId('studio-model-select')).toHaveCount(0);
+  expect(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.form.modelType)).toBe(
+    'ZImageModularPipeline',
+  );
+  const readExecutable = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().exportGraph('ltx-full-import', undefined, { randomizeSeeds: false }).nodes;
+    });
+  await expect.poll(readExecutable).toEqual(prepared.api.nodes);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(summary).toContainText('LTX-2.5 Full');
+  await expect.poll(readExecutable).toEqual(prepared.api.nodes);
+  const currentGraph = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'ltx-full-re-export', isConnected: true });
+    return JSON.parse(JSON.stringify(useFlowStore.getState().toObject()));
+  });
+  await page.getByTestId('topbar-export').click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('topbar-export-workflow-package').click();
+  const downloadedPath = await (await downloadPromise).path();
+  expect(downloadedPath).toBeTruthy();
+  const reexported = JSON.parse(await fs.readFile(downloadedPath!, 'utf8'));
+  expect(reexported.metadata.studio.modelType).toBe(pipelineClass);
+  expect(reexported.graph).toEqual(currentGraph);
+  expect(reexported.apiGraph.nodes).toEqual(prepared.api.nodes);
+});
+
 for (const { title, templateId, resourceMode, offloadMode } of [
   {
     title: 'Klein Automatic',
