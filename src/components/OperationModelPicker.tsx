@@ -10,9 +10,11 @@ import {
 } from '../stores/useStudioStore';
 import {
   operationAuthoring,
+  operationFieldValue,
   planOperationChange,
   planPristineOperationChange,
   type OperationChangePlan,
+  type OperationStarter,
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { commitOperationGraph, operationGraphSignature } from '../workflow/operationGraphTransaction';
@@ -23,10 +25,10 @@ import {
   workflowTaskLabel,
   type WorkflowChoice,
 } from '../workflow/workflowChoices';
-import { operationOwnsModel } from '../workflow/operationContracts';
+import { operationOwnsModel, type OperationContract } from '../workflow/operationContracts';
 import { rememberTaskModel } from '../workflow/taskModelPreferences';
 import { ModiffButton, ModiffDialog, ModiffDisclosure, ModiffSearchInput } from '../ui';
-import { formatRequestError } from '../utils/requestJson';
+import { formatRequestError, RequestError } from '../utils/requestJson';
 import { visualOperationOwnerId } from '../workflow/visualOperationGroups';
 
 type Review = {
@@ -40,6 +42,57 @@ type Review = {
 function choiceLabel(choice: WorkflowChoice) {
   const repositoryParts = (choice.repo || '').split('/');
   return choice.label || repositoryParts[repositoryParts.length - 1] || choice.pipeline;
+}
+
+/** Resolve the same immutable provider route before classifying its internal connections. */
+async function requestImageStageBaseline(
+  node: CustomNodeType,
+  operation: OperationContract,
+  operations: OperationContract[],
+  signal: AbortSignal,
+) {
+  const { pipeline, execution_profile_id: profile, model_id: model, revision: pin } = node.data.params;
+  const profileId = operationFieldValue(profile);
+  const repository = operationFieldValue(model);
+  const revision = operationFieldValue(pin);
+  if (
+    pipeline?.type !== 'image_diffusion_pipeline' ||
+    pipeline.display !== 'output' ||
+    profile?.isConnected ||
+    model?.isConnected ||
+    pin?.isConnected ||
+    !operation.task ||
+    typeof profileId !== 'string' ||
+    !profileId ||
+    !repository ||
+    typeof repository !== 'object' ||
+    !('source' in repository) ||
+    repository.source !== 'hub' ||
+    !('value' in repository) ||
+    typeof repository.value !== 'string' ||
+    typeof revision !== 'string' ||
+    !/^[0-9a-f]{40}$/u.test(revision)
+  )
+    return null;
+
+  try {
+    const source = await requestOperationStarter(
+      operation.pipelineClass,
+      operation.task,
+      operations,
+      signal,
+      profileId,
+      undefined,
+      repository.value,
+    );
+    const owner = source.nodes.find(({ operation: candidate }) => operationOwnsModel(candidate));
+    return operationFieldValue(owner?.node.params.revision) === revision ? source : null;
+  } catch (error) {
+    // A retired selection can still be changed. Its family baseline keeps the
+    // ordinary connection review without classifying an unverified old route.
+    if (error instanceof RequestError && error.kind === 'http' && error.status === 400) return null;
+    throw error;
+  }
 }
 
 /** Model-first authoring over the existing ordinary/Block graph transaction. */
@@ -137,15 +190,17 @@ export default function OperationModelPicker({
         node.data.blockProjectionOwnerId,
       );
       const visualOwner = ownerId !== (node.data.blockProjectionNodeId ?? node.id);
-      const baseline =
-        node.data.blockProjectionOwnerId && !visualOwner
-          ? null
-          : await requestOperationStarter(
-              hint.operation.pipelineClass,
-              hint.operation.task!,
-              operations,
-              controller.signal,
-            );
+      let baseline: OperationStarter | null = null;
+      if (!node.data.blockProjectionOwnerId || visualOwner) {
+        if (visualOwner)
+          baseline = await requestImageStageBaseline(node, hint.operation, operations, controller.signal);
+        baseline ??= await requestOperationStarter(
+          hint.operation.pipelineClass,
+          hint.operation.task!,
+          operations,
+          controller.signal,
+        );
+      }
       if (controller.signal.aborted) return;
       const plan =
         node.data.blockProjectionOwnerId && !visualOwner

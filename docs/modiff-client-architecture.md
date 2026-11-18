@@ -452,7 +452,10 @@ preview inventory and backend output-slot authority. Model Setup's projected
 loader resolves back to its unpacked runtime owner for the complete ordinary
 workflow planner, rather than adapting only the wrapper's implementation. Values,
 configured interfaces, immutable reusable snapshots and explicit save/separate
-behavior keep their existing authority.
+behavior keep their existing authority. For a pinned Hub image stage owner, the
+model-change preview resolves the source profile and matching immutable revision.
+It describes replaced starter connections as rebuilt and still flags an authored
+wire whose target disappears.
 Model Setup's Adapters controls follow the real ordered adapter wires. The Add
 dialog keeps a local draft until a populated local selection or immutable Hub
 selection is accepted; blank rows never enter the executable graph. Hub adapters

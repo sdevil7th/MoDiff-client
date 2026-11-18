@@ -1205,6 +1205,148 @@ test('native workflow import and re-export preserve the backend model identity f
   expect(reexported.apiGraph.nodes).toEqual(prepared.api.nodes);
 });
 
+test('imported Redux stages rebuild model-owned wires when switching to FLUX 3', async ({ page }) => {
+  const task = 'edit_image';
+  const redux = { pipelineClass: 'FluxReduxPipeline', task };
+  const boundRedux = { ...redux, executionProfileId: 'flux-redux:direct' };
+  const flux3 = {
+    pipelineClass: 'Flux3DistilledModularPipeline',
+    task,
+    executionProfileId: 'flux3-klein:official-provider:v1',
+    authoringRecipeId: 'flux3-klein:official:edit-image:prompt-preview-append-fp32:v1',
+  };
+  const selections = [
+    { id: 'unbound-redux', selection: redux },
+    { id: 'bound-redux', selection: boundRedux },
+    { id: 'flux3', selection: flux3 },
+  ];
+  const fixture = await generateTemplateSchemas(selections, true);
+  const reduxStarter = fixture.recipes.find(({ id }) => id === 'bound-redux')!.starter;
+  expect(reduxStarter.edges).toHaveLength(8);
+  expect(fixture.recipes.find(({ id }) => id === 'unbound-redux')!.starter.edges).toHaveLength(1);
+
+  await page.setViewportSize({ width: 1680, height: 1050 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...fixture.registry } } }),
+  );
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.route('**/preview?file=*redux-source.png', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="teal"/></svg>',
+    }),
+  );
+  const requests: Array<{ pipelineClass: string; executionProfileId?: string; repository?: string }> = [];
+  await page.route('**/operations/starter', async (route) => {
+    const selection = route.request().postDataJSON();
+    requests.push(selection);
+    const row = selections.find(
+      ({ selection: item }) =>
+        item.pipelineClass === selection.pipelineClass &&
+        item.task === selection.task &&
+        ('executionProfileId' in item ? item.executionProfileId : undefined) === selection.executionProfileId,
+    );
+    if (!row) return route.fallback();
+    return route.fulfill({ json: fixture.recipes.find(({ id }) => id === row.id)!.starter });
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+
+  const prompt = 'Retain three blue-glass bottles on a limestone shelf';
+  const packageData = await page.evaluate(
+    async ({ fixture, reduxStarter, prompt }) => {
+      const [models, packages, draft, groups, factory] = await Promise.all([
+        import('/src/studio/modelProfiles.ts'),
+        import('/src/studio/workflowPackage.ts'),
+        import('/src/workflow/workflowDraft.ts'),
+        import('/src/workflow/visualOperationGroups.ts'),
+        import('/src/workflow/nodeFactory.ts'),
+      ]);
+      const { graph } = draft.createWorkflowDraft(reduxStarter, fixture.registry);
+      const unpacked = groups.unpackVisualOperationGroups(graph);
+      const flat = unpacked.graph;
+      const encoder = flat.nodes.find((node) => node.data.action === 'EncodeInputs')!;
+      encoder.data.params.prompt!.value = prompt;
+      flat.nodes.find((node) => node.data.action === 'Load')!.data.params.file!.value = [
+        '@data/images/redux-source.png',
+      ];
+      const weights = factory.createNodeFromRegistry('modules.Text.ProcessText', fixture.registry, { x: 80, y: 800 })!;
+      weights.data.params.source!.value = '[0.8,0.2]';
+      flat.nodes.push(weights);
+      flat.edges.push({
+        id: 'authored-redux-scale',
+        source: weights.id,
+        sourceHandle: 'output',
+        target: encoder.id,
+        targetHandle: 'prompt_embeds_scale',
+      });
+      return packages.buildWorkflowPackage({
+        form: {
+          ...models.DEFAULT_STUDIO_FORM,
+          mode: 'edit_image',
+          modelType: 'FluxReduxPipeline',
+          resourceMode: 'expert',
+        },
+        graph: groups.restoreVisualOperationGroups(flat, unpacked),
+      });
+    },
+    { fixture, reduxStarter, prompt },
+  );
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'redux-stage-switch.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(packageData), 'utf8'),
+  });
+  await expect(page.getByTestId('studio-task-model-summary')).toContainText(/Redux/u);
+
+  const read = () =>
+    page.evaluate(async () => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      return useFlowStore.getState().exportGraph('redux-flux3-switch', undefined, { randomizeSeeds: false }).nodes;
+    });
+  const before = await read();
+  const setup = await publicFlux3FormatSetup(page);
+  await setup.getByRole('button', { name: 'Choose model', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: /^Choose model for /u });
+  const destination = picker.getByRole('button').filter({
+    has: page.getByText('black-forest-labs/flux-3-image-klein', { exact: true }),
+  });
+  await destination.click();
+  const review = picker.getByTestId('model-selection-review');
+  await expect(review).toBeVisible();
+  const changes = review.getByRole('button', { name: /^What will change /u });
+  await changes.click();
+  await expect(review.getByText(/Rebuild 8 model-owned connections/u)).toBeVisible();
+  await expect(review.getByText(/Process Text.*will be disconnected/u)).toBeVisible();
+  expect(await review.getByText(/will be disconnected/u).allTextContents()).toHaveLength(1);
+  expect(requests.find((selection) => selection.pipelineClass === 'FluxReduxPipeline')).toEqual({
+    ...boundRedux,
+    repository: 'black-forest-labs/FLUX.1-Redux-dev',
+  });
+  expect(await read()).toEqual(before);
+
+  await review.getByRole('button', { name: 'Apply model change', exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  const after = await read();
+  const node = (action: string) => Object.entries(after).find(([, item]) => item.action === action)!;
+  expect(node('ModelsLoader')[1].params.model_type?.value).toBe('Flux3DistilledModularPipeline');
+  expect(node('EncodePrompt')[1].params.prompt?.value).toBe(prompt);
+  expect(node('ImageEncode')[1].params.image).toMatchObject({ sourceId: node('Load')[0], sourceKey: 'image' });
+  expect(node('Preview')[1].params.image).toMatchObject({ sourceId: node('DecodeLatents')[0], sourceKey: 'images' });
+  expect(node('Denoise')[1].params.image_cond_latents).toMatchObject({
+    sourceId: node('ImageEncode')[0],
+    sourceKey: 'image_cond_latents',
+  });
+  expect(node('ProcessText')[1].params.source?.value).toBe('[0.8,0.2]');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect.poll(read).toEqual(after);
+});
+
 for (const { title, templateId, resourceMode, offloadMode } of [
   {
     title: 'Klein Automatic',
