@@ -72,6 +72,16 @@ export function visualOperationGroupMedia(node: Pick<CustomNodeType, 'data'>): '
         if (port.types.includes(media)) declaredMedia.add(media);
     }
   }
+  // A decoder can now belong to Generate. An export-only stage retains its
+  // declared media boundary even when its player/export member is removed.
+  // This affects wording only; it grants no graph or execution authority.
+  if (!declaredMedia.size) {
+    const boundary = instance?.effectiveInterface?.boundary;
+    for (const port of [...(boundary?.inputs ?? []), ...(boundary?.outputs ?? [])]) {
+      const types = typeof port.valueType === 'string' ? port.valueType.split('|') : [];
+      for (const media of ['image', 'audio', 'video'] as const) if (types.includes(media)) declaredMedia.add(media);
+    }
+  }
   // Removing or adding a player does not change the real output stage's media.
   // A joint video/audio decoder still delivers a video stage after its player
   // is removed. The soundtrack must not make its presentation ambiguous.

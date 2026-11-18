@@ -1,3 +1,6 @@
+// Typed shared-input grouping and undoable saved-stage repair add 418 deferred
+// gzip bytes (349912 -> 350330). Retain the previous 89-byte headroom, four
+// startup/92 deferred memberships, startup caps and 64 KiB per-chunk cap.
 // Native legacy setup/caption field preservation, pure Block movement planning,
 // workflow-scoped preview history and approved MiniMax showcase curation measure
 // 507642/686129/349717 largest/startup/deferred gzip bytes, versus the preceding
@@ -459,6 +462,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Native sampler/decoder grouping, AV receipt fields and LTX Full policy add
+  // 390 largest-chunk gzip bytes (511556 -> 511946); retain 12-byte headroom.
+  390 +
   // Explicit null telemetry resets add 35 gzip bytes (511521 -> 511556).
   // Preserve the existing 12-byte headroom and every loading/chunk boundary.
   35 +
@@ -685,6 +691,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The paired change adds 389 startup gzip bytes (690042 -> 690431), preserving
+  // 11-byte headroom. Deferred limits, dependencies and build rules are unchanged.
+  389 +
   // The same phase-reset correction adds 33 startup bytes (690009 -> 690042).
   // Preserve the existing 11-byte headroom; deferred limits stay unchanged.
   33 +
@@ -976,6 +985,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  418 +
   // Planning-only template creation guards add 181 gzip bytes versus tested v15
   // (349724 -> 349905). Keep startup caps and the independent 64 KiB chunk cap;
   // preserve the prior 96-byte deferred headroom. No dependencies/build-rule changes.

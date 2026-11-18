@@ -36,6 +36,21 @@ Qwen-Image 2.1 uses its supported whole-pipeline route with the compatible
 installed Diffusers release. Its historical source review remains separately
 pinned.
 
+Fresh composable image, audio and video workflows present adjacent sampling and
+decoding operations inside one **Generate** stage. Expanding the stage reveals
+those real operations; collapsing it keeps their public controls together.
+Identical typed model inputs share one socket when they receive the same output.
+Empty optional bundle inputs can also share a socket when their consumers belong
+to one model owner. Different sources, required empty inputs and authored bundle
+values stay separate. This presentation does not change backend execution.
+
+For an older saved Generate stage, open its inspector's **Workflow stage actions**
+menu and choose **Merge shared inputs**. The edit is undoable, preserves the
+saved reusable definition and current settings, and refuses inputs that cannot
+be shared safely. Opening a saved workflow alone does not rewrite its interface.
+Model/task changes retain a repaired stage's shared connection through the normal
+review and preservation planner.
+
 Curated fresh image recipes can request an exact backend `authoringRecipeId` on
 the ordinary operation-starter endpoint. Its optional hash-covered `authoring`
 record uses the existing role, edge and semantic form-binding tuples, plus

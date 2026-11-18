@@ -35973,6 +35973,75 @@ test('full image template cards, details, artifact search and Model Manager focu
   await expect(manager.getByTestId('model-manager-focus')).not.toContainText('Modular Diffusers');
 });
 
+test('saved Generate shared-input repair preserves execution, Undo, reload and expanded controls', async ({ page }) => {
+  await openOptionalStageTemplate(page, 'qwen_text_rendering', 'Exact Text', false);
+  const before = await optionalStageApi(page);
+  const id = await page.evaluate(async () => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { useStudioStore } = await import('/src/stores/useStudioStore.ts');
+    const schema = await import('/src/studio/blockSchemaV2.ts');
+    const runtime = await import('/src/studio/blockRuntimeV2.ts');
+    const flow = useFlowStore.getState(),
+      graph = flow.toObject();
+    const root = graph.nodes.find((node) => node.data.label === 'Generate')!;
+    const instance = root.data.blockInstanceV2!,
+      definition = structuredClone(instance.definitionSnapshot);
+    // Restore the historical automatically generated two-socket definition.
+    // The repair itself must be performed through the visible menu below.
+    definition.boundary.inputs = definition.boundary.inputs.flatMap((port) => {
+      if (port.binding.fieldOrPortId !== 'pipeline_components' || !port.mirrorBindings?.length) return [port];
+      return [port.binding, ...port.mirrorBindings].map((binding) => {
+        const next = { ...port, binding, portId: `${binding.nodeId}:${binding.fieldOrPortId}` };
+        delete next.mirrorBindings;
+        return next;
+      });
+    });
+    definition.contentHash = schema.blockDefinitionContentHashV2(definition);
+    const old = schema.createBlockInstanceV2(schema.normalizeBlockDefinitionV2(definition), {
+      instanceId: root.id,
+      position: root.position,
+      size: instance.presentation.size,
+      internalLayout: instance.presentation.internalLayout,
+    });
+    flow.replaceGraph({
+      nodes: graph.nodes
+        .filter((node) => node.data.blockProjectionOwnerId !== root.id)
+        .map((node) => (node.id === root.id ? runtime.createBlockRootNodeV2(old) : node)),
+      edges: graph.edges.filter((edge) => edge.data?.blockProjectionOwnerId !== root.id),
+    });
+    useStudioStore.getState().saveActiveWorkflowTab(true);
+    return root.id;
+  });
+  const graph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const count = async () =>
+    (await graph()).nodes
+      .find((node) => node.id === id)!
+      .data.blockInstanceV2!.effectiveInterface.boundary.inputs.filter(
+        (port) => port.binding.fieldOrPortId === 'pipeline_components',
+      ).length;
+  expect(await count()).toBe(2);
+  expect(await optionalStageApi(page)).toEqual(before);
+  const root = page.locator(`.react-flow__node[data-id="${id}"]`);
+  await root.getByRole('button', { name: 'Workflow stage actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Merge shared inputs', exact: true }).click();
+  await expect.poll(count).toBe(1);
+  expect(await optionalStageApi(page)).toEqual(before);
+  await page.locator('.react-flow__pane').click({ position: { x: 35, y: 80 } });
+  await page.keyboard.press('Control+z');
+  await expect.poll(count).toBe(2);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(count).toBe(1);
+  await root.getByRole('button', { name: 'Expand block', exact: true }).click();
+  await expect(root.getByRole('button', { name: 'Collapse block', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Steps', exact: true }).first()).toBeVisible();
+  expect(await optionalStageApi(page)).toEqual(before);
+  await root.getByRole('button', { name: 'Collapse block', exact: true }).click();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(root).toBeVisible();
+  await expect.poll(count).toBe(1);
+  expect(await optionalStageApi(page)).toEqual(before);
+});
+
 async function optionalStageApi(page: Page) {
   return page.evaluate(async () => {
     const hooks = window.__MODIFF_E2E__!;

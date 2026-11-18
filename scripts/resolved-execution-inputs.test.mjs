@@ -11,6 +11,40 @@ import { createRunProvenance, validateAppliedAdapterProof } from './live-proof-p
 
 let server, contracts, inputs, outputUtils, profiles, tasks;
 let ddimAccountingFixture;
+
+test('native AV guidance inputs remain strict, scoped and visible in the exact receipt', () => {
+  const capture = receipt();
+  const values = {
+    stg_scale: [1, 'temporalGuidance'],
+    modality_scale: [3, 'videoModalityGuidance'],
+    guidance_rescale: [0.7, 'videoGuidanceRescale'],
+    audio_guidance_scale: [7, 'audioGuidanceScale'],
+    audio_stg_scale: [1, 'audioTemporalGuidance'],
+    audio_modality_scale: [3, 'audioModalityGuidance'],
+    audio_guidance_rescale: [0.7, 'audioGuidanceRescale'],
+    temporal_guidance_blocks_json: [[27, 28], 'temporalGuidanceLayers'],
+    use_cross_timestep: [true, 'crossTimestepGuidance'],
+    condition_indices_json: [[0, -1], 'keyframePositions'],
+  };
+  capture.nodes = [
+    {
+      nodeId: 'render',
+      module: 'modules.DiffusersVideo',
+      action: 'GenerateVideoAudio',
+      fields: Object.fromEntries(Object.entries(values).map(([key, [value]]) => [key, { value, source: 'literal' }])),
+      omittedFields: {},
+    },
+  ];
+  capture.summary = Object.fromEntries(Object.values(values).map(([value, key]) => [key, value]));
+  const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(capture, identity), capture);
+  const tampered = structuredClone(capture);
+  tampered.summary.audioGuidanceScale = 4;
+  assert.equal(inputs.coerceResolvedExecutionInputs(tampered, identity), undefined);
+  const wrongScope = structuredClone(capture);
+  wrongScope.nodes[0].action = 'Generate';
+  assert.equal(inputs.coerceResolvedExecutionInputs(wrongScope, identity), undefined);
+});
 test('native joint-video inputs keep their real model and expansion settings instead of a stale image form', () => {
   const { receipt } = JSON.parse(
     readFileSync(new URL('../tests/fixtures/native-joint-video-inputs.v1.json', import.meta.url), 'utf8'),

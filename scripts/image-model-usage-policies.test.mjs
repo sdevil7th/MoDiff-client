@@ -27,6 +27,23 @@ before(async () => {
 
 after(async () => server?.close());
 
+test('LTX-2.5 Full has separate revision-bound model terms and gated access', () => {
+  const repo = 'Lightricks/LTX-2.5-Diffusers';
+  const policy = policies.usagePolicyForRepository(repo);
+  assert.equal(policy.reviewedRevision, '4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3');
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.acknowledgementRequired, true);
+  assert.equal(policy.access, 'huggingface_gated');
+  assert.equal(policies.repositoryRequiresHuggingFaceGate(repo), true);
+  assert.match(policy.termsUrl, /c1b4675863c07c59c92e502446cccdaedbe5889c\/LICENSE-2_x$/);
+  const exact = policies.acknowledgementRequiredForRepository(repo, policy.reviewedRevision);
+  assert.equal(exact.length, 1);
+  assert.notEqual(
+    policies.usagePolicyAcknowledgementKey(exact),
+    policies.usagePolicyAcknowledgementKey([{ ...exact[0], revision: 'a'.repeat(40) }]),
+  );
+});
+
 test('Hunyuan 720p acknowledgements bind each full checkpoint independently of the 480p recipes', () => {
   for (const [repository, revision] of [
     ['hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v', 'f4dbc4a1efa4ac8ea56680cdf79d9f455105e814'],

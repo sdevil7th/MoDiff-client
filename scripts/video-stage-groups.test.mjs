@@ -89,6 +89,19 @@ before(async () => {
     id: 'unbound-vace-whole',
     selection: { pipelineClass: 'WanVACEPipeline', task: 'control_to_video' },
   });
+  for (const [suffix, task] of [
+    ['t2v', 'text_to_video'],
+    ['i2v', 'image_to_video'],
+  ]) {
+    selections.push({
+      id: `native-hunyuan720-${suffix}`,
+      selection: {
+        pipelineClass: 'HunyuanVideo15ModularPipeline',
+        task,
+        executionProfileId: `hunyuan-video15-720p-${suffix}:official-modular-workflow`,
+      },
+    });
+  }
   fixture = JSON.parse(
     execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py')], {
       cwd: backend,
@@ -107,7 +120,10 @@ before(async () => {
     }),
   );
   fixture.unboundVace = fixture.recipes.find((row) => row.id === 'unbound-vace-whole');
-  fixture.recipes = fixture.recipes.filter((row) => row !== fixture.unboundVace);
+  fixture.nativeModularVideo = fixture.recipes.filter((row) => row.id.startsWith('native-hunyuan720-'));
+  fixture.recipes = fixture.recipes.filter(
+    (row) => row !== fixture.unboundVace && !fixture.nativeModularVideo.includes(row),
+  );
   secondaryFixture = JSON.parse(
     execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py')], {
       cwd: backend,
@@ -184,6 +200,70 @@ before(async () => {
   ({ DEFAULT_STUDIO_FORM: defaults } = await server.ssrLoadModule('/src/studio/modelProfiles.ts'));
 });
 after(async () => server?.close());
+
+test('native Modular video sampling and decoding share one Generate stage with unchanged export', async (t) => {
+  for (const row of fixture.nativeModularVideo) {
+    await t.test(row.id, () => {
+      const result = drafts.createWorkflowDraft(row.starter, fixture.registry);
+      const generated = result.graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'generate');
+      assert.equal(generated.length, 1);
+      if (row.starter.task === 'image_to_video') {
+        assert.equal(result.graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'imageInput').length, 1);
+      }
+      const children = generated[0].data.blockInstanceV2.effectiveGraph.nodes;
+      assert.ok(children.some((node) => node.data.action === 'WorkflowHunyuanVideo15Denoise'));
+      assert.ok(children.some((node) => node.data.action === 'WorkflowHunyuanVideo15Decode'));
+      const flat = groups.unpackVisualOperationGroups(result.graph).graph;
+      assert.equal(flat.nodes.filter((node) => node.data.action === 'WorkflowHunyuanVideo15Denoise').length, 1);
+      assert.equal(flat.nodes.filter((node) => node.data.action === 'WorkflowHunyuanVideo15Decode').length, 1);
+      // This no-weight fixture describes a CPU host. Use its valid plain-CPU
+      // placement for export comparison; retain the real runtime guard.
+      for (const node of flat.nodes) {
+        if (String(node.data.params.device?.value ?? node.data.params.device?.default).startsWith('cpu')) {
+          if (node.data.params.offload_mode) node.data.params.offload_mode.value = 'none';
+          for (const key of ['auto_offload', 'enable_auto_offload'])
+            if (node.data.params[key]) node.data.params[key].value = false;
+        }
+      }
+      const regrouped = groups.groupNewOperationGraph(flat);
+      assert.ok(
+        Object.keys(
+          exporter.useFlowStore
+            .getState()
+            .exportGraph('native-stage-proof', undefined, { sourceGraph: flat, randomizeSeeds: false }).nodes,
+        ).length >= 5,
+      );
+      assert.deepEqual(
+        canonicalGraphIdentity(
+          exporter.useFlowStore
+            .getState()
+            .exportGraph('native-stage-proof', undefined, { sourceGraph: flat, randomizeSeeds: false }),
+        ),
+        canonicalGraphIdentity(
+          exporter.useFlowStore
+            .getState()
+            .exportGraph('native-stage-proof', undefined, { sourceGraph: regrouped, randomizeSeeds: false }),
+        ),
+      );
+    });
+  }
+});
+
+test('native Generate grouping refuses mismatched task, state type or component owner', () => {
+  const row = fixture.nativeModularVideo.find((row) => row.starter.task === 'text_to_video');
+  for (const fault of ['task', 'type', 'owner']) {
+    const graph = authoring.createOperationStarter(structuredClone(row.starter), { x: 0, y: 0 });
+    const owner = graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+    const decoder = graph.nodes.find((node) => node.data.action === 'WorkflowHunyuanVideo15Decode');
+    if (fault === 'task') decoder.data.operationAuthoring.operation.task = 'image_to_video';
+    else if (fault === 'type') decoder.data.params.state_in.type = 'image';
+    else
+      graph.edges.find((edge) => edge.target === decoder.id && edge.targetHandle === 'pipeline_components').source =
+        'different-owner';
+    const result = groups.groupOperationStages(graph, owner.id, ['generate']);
+    assert.equal(result.nodes.filter((node) => groups.visualOperationGroup(node) === 'generate').length, 0, fault);
+  }
+});
 
 test('joint video/audio presentation retains both declared families without granting qualification', () => {
   const parsed = nodes.parseStudioModelCapabilities(fixture.publicPayload);

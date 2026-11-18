@@ -1013,18 +1013,24 @@ test('actual direct image adapters retain their operation scope through ordered 
     });
 });
 
-test('actual image decode operation groups Cosmos output without changing executable leaves or saved standalone layout', () => {
+test('actual image sampler/decode group uses shared stages without changing executable leaves or saved standalone layout', () => {
   const { graph } = cases.get('cosmos3_super_text_to_image');
   assert.deepEqual(graph.nodes.map((node) => node.data.label).sort(), [
-    'Denoise',
     'Encode Inputs',
+    'Generate',
     'Image Output',
     'Model Setup',
   ]);
   const output = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'output');
   assert.ok(output);
   const leaves = output.data.blockInstanceV2.effectiveGraph.nodes;
-  assert.deepEqual(leaves.map((node) => node.data.action).sort(), ['Preview', 'WorkflowCosmos3OmniDecode']);
+  assert.deepEqual(leaves.map((node) => node.data.action).sort(), ['Preview']);
+  const generate = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+  assert.ok(generate);
+  assert.deepEqual(generate.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action).sort(), [
+    'WorkflowCosmos3OmniDecode',
+    'WorkflowCosmos3OmniDenoise',
+  ]);
   const standalone = groups.unpackVisualOperationGroups(graph).graph;
   const saved = structuredClone(standalone);
   assert.equal(standalone.nodes.length, 5);

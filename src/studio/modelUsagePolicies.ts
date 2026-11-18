@@ -303,6 +303,20 @@ export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = 
     policyVersion: '2026-08-27',
     reviewedAt: '2026-08-27',
   },
+  'Lightricks/LTX-2.5-Diffusers': {
+    id: 'ltx-2x-community-license-agreement',
+    repository: 'Lightricks/LTX-2.5-Diffusers',
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The LTX-2.x Community License includes entity-wide revenue eligibility, use restrictions, distribution terms and machine-generated-content notices. Review the model terms separately from its code license.',
+    termsUrl: 'https://github.com/Lightricks/LTX-2/blob/c1b4675863c07c59c92e502446cccdaedbe5889c/LICENSE-2_x',
+    modelCardUrl: 'https://huggingface.co/Lightricks/LTX-2.5-Diffusers',
+    access: 'huggingface_gated',
+    reviewedRevision: '4791a1100e0cf97f7ed5c55c12dd71dce13f9dd3',
+    policyVersion: '2026-11-17',
+    reviewedAt: '2026-11-17',
+  },
   [FLUX_DEV_REPO]: fluxDevPolicy(FLUX_DEV_REPO, FLUX_DEV_REVISION),
   'black-forest-labs/FLUX.1-Krea-dev': fluxDevPolicy(
     'black-forest-labs/FLUX.1-Krea-dev',
