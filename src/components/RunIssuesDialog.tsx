@@ -24,6 +24,7 @@ import { IssueCard, ModiffButton, ModiffDialog, ProgressBar, Spinner, type Issue
 import { cleanupGpuMemory } from '../utils/serverActions';
 import { runtimeCleanupFeedback } from '../utils/runtimeCleanupFeedback';
 import { runRecoveryOriginIsCurrent, type RunRecoveryFocusTarget } from '../studio/runRecovery';
+import DecodeRecoveryOption from './DecodeRecoveryOption';
 
 type CleanupState = 'idle' | 'running' | 'success' | 'warning' | 'error';
 
@@ -526,6 +527,7 @@ export default function RunIssuesDialog() {
                 </p>
               )}
             </IssueCard>
+            {failure.taskId && <DecodeRecoveryOption key={failure.taskId} taskId={failure.taskId} />}
           </div>
         )}
       </RunModal>

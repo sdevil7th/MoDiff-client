@@ -1881,6 +1881,13 @@ Explicit null telemetry clears the previous phase's status fields. Terminal
 activity shows the final status and late progress cannot replace its archived
 name, percentage or phase.
 
+Run Details can offer Retry Decode when the backend confirms a saved denoising
+checkpoint for that failed run. Submitting it opens a new run in the normal
+queue and preserves the original model placement and VAE tiling by default.
+Where the backend enables the option, a user may explicitly turn on VAE tiling
+for that retry. An expired or unavailable checkpoint leaves the failure details
+open with the backend's reason.
+
 - `scripts/*.test.mjs`: unit/contract tests for graphs, templates, requests, Gallery, styles, and coordination
 - `tests/e2e/studio-mocked/`: deterministic browser coverage with mocked backend routes
 - `npm run check`: format, lint, types, styles, unit tests, build, and bundle budget

@@ -24735,6 +24735,123 @@ test('session activity and generation notifications open the originating workflo
   await expect(failureDialog).toContainText('A deliberately verbose backend exception');
 });
 
+for (const outcome of ['queued', 'stale', 'unavailable'] as const) {
+  test(`Retry Decode handles the ${outcome} checkpoint through Run Details`, async ({ page }) => {
+    await ensureFrontend();
+    await installMockRoutes(page);
+    const source = {
+      task_id: 'failed-decode-source',
+      name: 'Five-second video',
+      status: 'failed',
+      category: 'oom',
+      oom: true,
+      error: 'VAE decode exhausted memory',
+      completed_at: Date.now() / 1000,
+    };
+    const recovered = { task_id: 'decode-retry', name: 'Five-second video', status: 'queued' };
+    const unavailableReason = 'This run has no compatible saved decode checkpoint.';
+    const staleReason = 'The saved decode checkpoint is no longer available.';
+    let queued: Record<string, typeof recovered> = {};
+    let connectedSid: string | null = null;
+    const submissions: unknown[] = [];
+    let allowResponse: () => void = () => {};
+    const responseGate = new Promise<void>((resolve) => {
+      allowResponse = resolve;
+    });
+    await page.routeWebSocket('**/ws**', (socket) => {
+      connectedSid = new URL(socket.url()).searchParams.get('sid');
+      socket.send(
+        JSON.stringify({
+          type: 'welcome',
+          sid: connectedSid,
+          instance: 'mock',
+          current: null,
+          queued,
+          recent: [source],
+        }),
+      );
+    });
+    await page.route('**/queue', (route) => route.fulfill({ json: { current: null, queued, recent: [source] } }));
+    await page.route('**/runs/failed-decode-source', (route) =>
+      route.fulfill({
+        json: {
+          task: source,
+          recovery: {
+            kind: 'decode',
+            status: outcome === 'unavailable' ? 'unavailable' : 'ready',
+            reason: outcome === 'unavailable' ? unavailableReason : undefined,
+            vaeTiling: outcome === 'stale',
+            canEnableVaeTiling: outcome === 'queued',
+          },
+        },
+      }),
+    );
+    await page.route('**/runs/failed-decode-source/retry_decode', async (route) => {
+      expect(route.request().method()).toBe('POST');
+      submissions.push(route.request().postDataJSON());
+      if (outcome === 'stale')
+        return route.fulfill({
+          status: 409,
+          json: { error: true, error_code: 'decode_recovery_unavailable', message: staleReason },
+        });
+      await responseGate;
+      queued = { [recovered.task_id]: recovered };
+      return route.fulfill({
+        json: {
+          error: false,
+          sid: connectedSid,
+          task_id: recovered.task_id,
+          recoveredFromTaskId: source.task_id,
+          preview_slots: [],
+          preview_state_revision: 1,
+        },
+      });
+    });
+
+    await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+    await dismissTaskLauncher(page);
+    await expect.poll(() => connectedSid).toBeTruthy();
+    await page.getByTestId(`session-run-${source.task_id}`).click();
+    const failureDialog = page.getByTestId('run-failure-dialog');
+    await expect(failureDialog).toContainText(source.error);
+    const recovery = failureDialog.getByTestId('decode-recovery-option');
+    const retryButton = recovery.getByRole('button', { name: 'Retry Decode' });
+    const tiling = recovery.getByRole('checkbox', { name: 'Enable VAE tiling for this retry' });
+
+    if (outcome === 'unavailable') {
+      await expect(recovery).toContainText(unavailableReason);
+      await expect(retryButton).toHaveCount(0);
+      expect(submissions).toEqual([]);
+      return;
+    }
+
+    if (outcome === 'stale') {
+      await expect(recovery).toContainText('VAE tiling is already enabled.');
+      await expect(tiling).toHaveCount(0);
+      await retryButton.click();
+      await expect(recovery).toContainText(staleReason);
+      await expect(retryButton).toHaveCount(0);
+      await expect(failureDialog).toContainText(source.error);
+      expect(submissions).toEqual([{ sid: connectedSid }]);
+      return;
+    }
+
+    await expect(tiling).not.toBeChecked();
+    await tiling.check();
+    await retryButton.click();
+    try {
+      await expect.poll(() => submissions).toEqual([{ sid: connectedSid, enableVaeTiling: true }]);
+      await expect(retryButton).toBeDisabled();
+    } finally {
+      allowResponse();
+    }
+    await expect(failureDialog).toHaveCount(0);
+    await expect(page.getByTestId(`queue-run-${recovered.task_id}`)).toContainText(recovered.name);
+    await expect(page.getByTestId(`queue-failed-run-${source.task_id}`)).toContainText(source.name);
+    expect(submissions).toHaveLength(1);
+  });
+}
+
 test('runtime cleanup displays partial warnings and restores clean success without changing the graph', async ({
   page,
 }) => {
@@ -24841,6 +24958,9 @@ test('runtime cleanup displays partial warnings and restores clean success witho
 test('a recovered native worker crash opens an explicit failure with a lower-memory action', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
+  await page.route('**/runs/recovered-native-worker-crash', (route) =>
+    route.fulfill({ json: { task: { task_id: 'recovered-native-worker-crash', status: 'failed' } } }),
+  );
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   await page.evaluate(() => window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true }));
@@ -24850,6 +24970,7 @@ test('a recovered native worker crash opens an explicit failure with a lower-mem
   const workflowId = await page.evaluate(
     () => (window.__MODIFF_E2E__!.getState() as { studio: { activeWorkflowTabId: string } }).studio.activeWorkflowTabId,
   );
+  const historicalLookup = page.waitForResponse('**/runs/recovered-native-worker-crash');
   await page.evaluate(
     ({ activeWorkflowId, completedAt }) => {
       window.__MODIFF_E2E__!.sendWebsocketMessage({
@@ -24889,6 +25010,8 @@ test('a recovered native worker crash opens an explicit failure with a lower-mem
   await expect(failureDialog).toContainText('before Python could return a normal error');
   await expect(page.getByTestId('run-failure-memory-summary')).toContainText('accelerator allocations 58.0 GiB');
   await expect(failureDialog.getByRole('button', { name: 'Apply lower-memory settings' })).toBeVisible();
+  await historicalLookup;
+  await expect(failureDialog.getByTestId('decode-recovery-option')).toHaveCount(0);
   await failureDialog.locator('footer').getByRole('button', { name: 'Close', exact: true }).click();
   await expect(failureDialog).toHaveCount(0);
   await expect(page.getByTestId('session-run-recovered-native-worker-crash')).toContainText('Failed');
