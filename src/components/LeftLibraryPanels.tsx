@@ -32,6 +32,7 @@ import {
 } from '../studio/autoResource';
 import { getStudioWorkflowArtifactRequirements } from '../studio/artifactRequirements';
 import { getStudioModelCacheStatus } from '../studio/modelCache';
+import { observedOutputModelLabel } from '../studio/observedOutputModel';
 import {
   getDownloadPercent,
   hasHfDownloadFailed,
@@ -503,6 +504,7 @@ export function TemplateLibraryPanel() {
 export function AssetsLibraryPanel() {
   const setGalleryLibraryOpen = useSettingsStore((state) => state.setGalleryLibraryOpen);
   const outputs = useStudioStore((state) => state.outputs);
+  const modelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
   const importedAssets = useStudioStore((state) => state.importedAssets);
   const addImportedAssets = useStudioStore((state) => state.addImportedAssets);
   const sendImportedAssetToReference = useStudioStore((state) => state.useImportedAssetAsReference);
@@ -619,25 +621,28 @@ export function AssetsLibraryPanel() {
               No outputs yet.
             </div>
           ) : (
-            recentOutputs.map((output, index) => (
-              <ModiffButton
-                key={output.id}
-                data-testid={`left-gallery-output-${index}`}
-                title={`${output.modelLabel}${output.prompt ? ` | ${output.prompt}` : ''}`}
-                aria-label={`Open gallery item from ${output.modelLabel}`}
-                className="aspect-square h-auto min-h-0 overflow-hidden bg-modiff-bg !p-0"
-                onClick={() => setGalleryLibraryOpen(true)}
-                tone="secondary"
-              >
-                {output.displayType === 'audio' || output.displayType === 'video' ? (
-                  <span className="grid h-full w-full place-items-center text-hf-yellow">
-                    {mediaIcon(output.displayType)}
-                  </span>
-                ) : (
-                  <img src={output.url} alt="" className="h-full w-full object-cover" />
-                )}
-              </ModiffButton>
-            ))
+            recentOutputs.map((output, index) => {
+              const modelLabel = observedOutputModelLabel(output, modelDescriptors);
+              return (
+                <ModiffButton
+                  key={output.id}
+                  data-testid={`left-gallery-output-${index}`}
+                  title={`${modelLabel}${output.prompt ? ` | ${output.prompt}` : ''}`}
+                  aria-label={`Open gallery item from ${modelLabel}`}
+                  className="aspect-square h-auto min-h-0 overflow-hidden bg-modiff-bg !p-0"
+                  onClick={() => setGalleryLibraryOpen(true)}
+                  tone="secondary"
+                >
+                  {output.displayType === 'audio' || output.displayType === 'video' ? (
+                    <span className="grid h-full w-full place-items-center text-hf-yellow">
+                      {mediaIcon(output.displayType)}
+                    </span>
+                  ) : (
+                    <img src={output.url} alt="" className="h-full w-full object-cover" />
+                  )}
+                </ModiffButton>
+              );
+            })
           )}
         </div>
         <div className="flex items-center justify-between gap-2 px-1 text-xs font-semibold uppercase text-modiff-subtle-text">

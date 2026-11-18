@@ -23,6 +23,8 @@ import {
   Upload,
 } from 'lucide-react';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useNodesStore } from '../stores/useNodeStore';
+import { observedOutputModelLabel } from '../studio/observedOutputModel';
 import {
   captureWorkflowOperationContext,
   isWorkflowOperationCancelled,
@@ -68,7 +70,7 @@ async function downloadOutputPngPackage(output: StudioOutput) {
   );
 }
 
-function outputSubtitle(output: StudioOutput) {
+function outputSubtitle(output: StudioOutput, modelLabel: string) {
   const template = output.templateLabel ? ` | ${output.templateLabel}` : '';
   const audioDuration =
     output.mediaItems?.find((item) => item.durationSeconds)?.durationSeconds ??
@@ -83,7 +85,7 @@ function outputSubtitle(output: StudioOutput) {
       : isVideoOutput(output)
         ? ` | ${videoOutputSummary(output)}`
         : ` | ${size || 'image'}`;
-  return `${output.modelLabel}${template} | ${outputTaskDisplay(output)}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
+  return `${modelLabel}${template} | ${outputTaskDisplay(output)}${media} | ${seed === undefined ? 'Seed not captured' : `Seed ${seed}`}`;
 }
 
 function isAudioOutput(output: StudioOutput) {
@@ -189,6 +191,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
   const [selectedOutputIds, setSelectedOutputIds] = useState<string[]>([]);
   const importInputRef = useRef<HTMLInputElement>(null);
   const outputs = useStudioStore((state) => state.outputs);
+  const modelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
   const importedAssets = useStudioStore((state) => state.importedAssets);
   const galleryBackendStatus = useStudioStore((state) => state.galleryBackendStatus);
   const galleryBackendError = useStudioStore((state) => state.galleryBackendError);
@@ -209,11 +212,22 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
   const sid = useWebsocketStore((state) => state.sid);
   const isConnected = useWebsocketStore((state) => state.isConnected);
 
+  const modelLabels = useMemo(
+    () => new Map(outputs.map((output) => [output.id, observedOutputModelLabel(output, modelDescriptors)])),
+    [outputs, modelDescriptors],
+  );
+  const modelLabelFor = (output: StudioOutput) => modelLabels.get(output.id) ?? output.modelLabel;
   const modelFilters = useMemo(() => {
     const byModel = new Map<string, string>();
-    outputs.forEach((output) => byModel.set(outputModelKey(output), output.modelLabel));
+    for (const output of outputs) {
+      const key = outputModelKey(output);
+      const label = modelLabels.get(output.id) ?? output.modelLabel;
+      const previous = byModel.get(key);
+      const fallback = key === 'uncaptured-model' ? 'Model not captured' : key;
+      byModel.set(key, previous !== undefined && previous !== label ? fallback : label);
+    }
     return Array.from(byModel.entries());
-  }, [outputs]);
+  }, [outputs, modelLabels]);
 
   const filteredOutputs = useMemo(() => {
     if (filter === 'favorites') return outputs.filter((output) => output.favorite);
@@ -497,15 +511,17 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
       ) : filteredOutputs.length === 0 ? (
         <p className="text-xs text-modiff-subtle-text">No gallery items match this filter.</p>
       ) : view === 'inspect' && inspectedOutput ? (
-        <GalleryInspect output={inspectedOutput} />
+        <GalleryInspect output={inspectedOutput} modelLabel={modelLabelFor(inspectedOutput)} />
       ) : view === 'compare' ? (
         <div data-testid="gallery-compare-view" className="grid gap-2">
           <div className="grid gap-2 sm:grid-cols-2">
             {selectedOutputs.slice(0, 2).map((output) => (
-              <GalleryCompareCard key={`compare-${output.id}`} output={output} />
+              <GalleryCompareCard key={`compare-${output.id}`} output={output} modelLabel={modelLabelFor(output)} />
             ))}
           </div>
-          {compareLeft && compareRight && <GallerySettingsDiff left={compareLeft} right={compareRight} />}
+          {compareLeft && compareRight && (
+            <GallerySettingsDiff left={compareLeft} right={compareRight} modelLabelFor={modelLabelFor} />
+          )}
         </div>
       ) : view === 'lineage' ? (
         <div data-testid="gallery-lineage-view" className="grid gap-2">
@@ -513,6 +529,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
             <LineageButton
               key={`lineage-full-${output.id}`}
               output={output}
+              modelLabel={modelLabelFor(output)}
               onClick={() => {
                 setSelectedOutputIds([output.id]);
                 setView('inspect');
@@ -540,7 +557,7 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
                   }}
                 />
                 <div className="p-2">
-                  <GalleryMeta output={output} />
+                  <GalleryMeta output={output} modelLabel={modelLabelFor(output)} />
                   <p className="mt-1 max-h-10 overflow-hidden text-sm text-modiff-text">
                     {output.prompt || 'No prompt recorded'}
                   </p>
@@ -705,7 +722,12 @@ export default function OutputGalleryPanel({ modalView = false }: { modalView?: 
           <h2 className="mb-2 text-sm font-bold text-modiff-text">Version tree</h2>
           <div className="grid gap-1">
             {outputs.slice(0, 12).map((output) => (
-              <LineageButton key={`lineage-${output.id}`} output={output} onClick={() => openOutput(output)} />
+              <LineageButton
+                key={`lineage-${output.id}`}
+                output={output}
+                modelLabel={modelLabelFor(output)}
+                onClick={() => openOutput(output)}
+              />
             ))}
           </div>
         </div>
@@ -872,10 +894,10 @@ function GalleryIconButton({
   );
 }
 
-function GalleryMeta({ output }: { output: StudioOutput }) {
+function GalleryMeta({ output, modelLabel }: { output: StudioOutput; modelLabel: string }) {
   return (
     <>
-      <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output)}</p>
+      <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output, modelLabel)}</p>
       <p className="break-all text-xs text-modiff-subtle-text">
         {new Date(output.createdAt).toLocaleString()} | Run {output.runId || 'untracked'} | Task{' '}
         {output.taskId || 'untracked'}
@@ -905,7 +927,7 @@ function GalleryMeta({ output }: { output: StudioOutput }) {
   );
 }
 
-function GalleryInspect({ output }: { output: StudioOutput }) {
+function GalleryInspect({ output, modelLabel }: { output: StudioOutput; modelLabel: string }) {
   const mediaDetails = outputTextType(output)
     ? { displayType: outputTextType(output) }
     : isVideoOutput(output)
@@ -931,7 +953,7 @@ function GalleryInspect({ output }: { output: StudioOutput }) {
     <article data-testid="gallery-inspect-view" className="border border-modiff-border bg-modiff-surface">
       <GalleryMedia output={output} maxHeight={460} />
       <div className="p-2">
-        <h2 className="text-sm font-bold text-modiff-text">{outputSubtitle(output)}</h2>
+        <h2 className="text-sm font-bold text-modiff-text">{outputSubtitle(output, modelLabel)}</h2>
         <p className="break-all text-xs text-modiff-subtle-text">
           {new Date(output.createdAt).toLocaleString()} | Run {output.runId || 'untracked'} | Task{' '}
           {output.taskId || 'untracked'}
@@ -984,11 +1006,19 @@ function GalleryInspect({ output }: { output: StudioOutput }) {
   );
 }
 
-function GallerySettingsDiff({ left, right }: { left: StudioOutput; right: StudioOutput }) {
+function GallerySettingsDiff({
+  left,
+  right,
+  modelLabelFor,
+}: {
+  left: StudioOutput;
+  right: StudioOutput;
+  modelLabelFor: (output: StudioOutput) => string;
+}) {
   const rows = [
     ['Prompt', left.prompt || 'No prompt', right.prompt || 'No prompt'],
     ['Seed', String(outputInputDisplay(left, 'seed')), String(outputInputDisplay(right, 'seed'))],
-    ['Model', left.modelLabel, right.modelLabel],
+    ['Model', modelLabelFor(left), modelLabelFor(right)],
     ['Steps', String(outputInputDisplay(left, 'steps')), String(outputInputDisplay(right, 'steps'))],
     ['Guidance', String(outputInputDisplay(left, 'guidanceScale')), String(outputInputDisplay(right, 'guidanceScale'))],
     [
@@ -1028,12 +1058,12 @@ function GallerySettingsDiff({ left, right }: { left: StudioOutput; right: Studi
   );
 }
 
-function GalleryCompareCard({ output }: { output: StudioOutput }) {
+function GalleryCompareCard({ output, modelLabel }: { output: StudioOutput; modelLabel: string }) {
   return (
     <article className="border border-modiff-border bg-modiff-surface">
       <GalleryMedia output={output} aspectRatio="1 / 1" />
       <div className="p-2">
-        <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output)}</p>
+        <p className="text-xs text-modiff-subtle-text">{outputSubtitle(output, modelLabel)}</p>
         {output.variationGroupId && (
           <p className="text-xs text-hf-orange">
             {output.variationLabel || 'Sweep variant'} | {output.variationGroupId}
@@ -1045,7 +1075,15 @@ function GalleryCompareCard({ output }: { output: StudioOutput }) {
   );
 }
 
-function LineageButton({ output, onClick }: { output: StudioOutput; onClick: () => void }) {
+function LineageButton({
+  output,
+  modelLabel,
+  onClick,
+}: {
+  output: StudioOutput;
+  modelLabel: string;
+  onClick: () => void;
+}) {
   return (
     <ModiffButton
       tone="ghost"
@@ -1054,9 +1092,8 @@ function LineageButton({ output, onClick }: { output: StudioOutput; onClick: () 
       className="h-auto border border-transparent px-2 py-1 text-xs text-modiff-subtle-text hover:border-modiff-border"
       onClick={onClick}
     >
-      {output.variationGroupId ? 'Sweep' : output.parentId ? 'Branch' : 'Root'} |{' '}
-      {output.variationLabel || output.modelLabel} | {new Date(output.createdAt).toLocaleString()} |{' '}
-      {output.prompt || output.id}
+      {output.variationGroupId ? 'Sweep' : output.parentId ? 'Branch' : 'Root'} | {output.variationLabel || modelLabel}{' '}
+      | {new Date(output.createdAt).toLocaleString()} | {output.prompt || output.id}
     </ModiffButton>
   );
 }

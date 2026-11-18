@@ -1,6 +1,7 @@
 import config from '../../app.config';
 import { useFlowStore } from '../stores/useFlowStore';
 import { useRunIssueStore } from '../stores/useRunIssueStore';
+import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore, type MediaViewerItem } from '../stores/useSettingsStore';
 import { findStudioRunContext, useStudioStore } from '../stores/useStudioStore';
 import { coerceTask, useTaskStore, type SessionRun, type Task } from '../stores/useTaskStore';
@@ -11,6 +12,7 @@ import { enqueueSnackbar } from '../ui/snackbar';
 import { requestJson } from '../utils/requestJson';
 import { runtimeProgressTarget } from './userBlocks';
 import { executionProgressDetail, executionProgressFrom } from './executionProgress';
+import { observedOutputModelLabel } from './observedOutputModel';
 
 export type RunActivityStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -144,6 +146,7 @@ function textValue(value: unknown) {
 export function mediaViewerItemsForRun(outputs: StudioOutput[]): MediaViewerItem[] {
   const items: MediaViewerItem[] = [];
   const seen = new Set<string>();
+  const descriptors = useNodesStore.getState().workflowModelDescriptors;
 
   outputs.forEach((output, outputIndex) => {
     const sourceItems =
@@ -171,7 +174,12 @@ export function mediaViewerItemsForRun(outputs: StudioOutput[]): MediaViewerItem
       items.push({
         id: `${output.id}:${item.index ?? itemIndex}`,
         kind,
-        label: item.label || item.role || output.templateLabel || output.modelLabel || `Output ${outputIndex + 1}`,
+        label:
+          item.label ||
+          item.role ||
+          output.templateLabel ||
+          observedOutputModelLabel(output, descriptors) ||
+          `Output ${outputIndex + 1}`,
         ...(kind === 'text' ? { text } : { url }),
         downloadName: item.backendPath?.split(/[\\/]/).pop(),
       });

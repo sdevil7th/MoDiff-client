@@ -369,12 +369,10 @@ for (const [viewport, deviceScaleFactor] of [
   });
 }
 
-test('sampler activity replaces loading details and clears steps when decoding begins', async ({ page }, testInfo) => {
+test('sampler activity clears telemetry through websocket phases and keeps terminal history', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
-  // The mocked queue must agree with websocket activity. Startup/reconnect
-  // polling otherwise correctly replaces currentTask with the empty fixture.
-  let progressTask: Record<string, unknown> = {
+  const loadingTask = {
     task_id: 'phase-progress',
     name: 'Video generation',
     status: 'running',
@@ -383,104 +381,106 @@ test('sampler activity replaces loading details and clears steps when decoding b
     component: 'vae',
     shard_current: 2,
     shard_total: 2,
-    current_step: 4,
-    total_steps: 4,
   };
-  await page.route('**/queue', (route) => route.fulfill({ json: { current: progressTask, queued: {} } }));
-  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await dismissTaskLauncher(page);
-  await page.evaluate(() => {
-    window.__MODIFF_E2E__!.sendWebsocketMessage({
-      type: 'task_started',
-      task_id: 'phase-progress',
+  let current: Record<string, unknown> | null = null;
+  let recent: Record<string, unknown>[] = [];
+  let publish: ((message: Record<string, unknown>) => void) | undefined;
+  await page.route('**/queue', (route) => route.fulfill({ json: { current, queued: {}, recent } }));
+  await page.routeWebSocket('**/ws**', (socket) => {
+    publish = (message) => socket.send(JSON.stringify(message));
+    publish({
+      type: 'welcome',
+      sid: new URL(socket.url()).searchParams.get('sid'),
+      instance: 'mock',
+      current,
       queued: {},
-      current: {
-        task_id: 'phase-progress',
-        name: 'Video generation',
-        status: 'running',
-        progress: 24,
-        phase: 'shard_loading',
-        component: 'vae',
-        shard_current: 2,
-        shard_total: 2,
-        current_step: 4,
-        total_steps: 4,
-      },
     });
   });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await dismissTaskLauncher(page);
+  await expect.poll(() => Boolean(publish)).toBe(true);
+
+  current = loadingTask;
+  publish!({ type: 'task_started', task_id: loadingTask.task_id, current, queued: {} });
   const activity = page.getByTestId('session-run-phase-progress');
+  const details = page.getByRole('tooltip');
   await activity.hover();
-  await expect(page.getByRole('tooltip')).toContainText('Component: vae');
-  await expect(page.getByRole('tooltip')).toContainText('Shard 2/2');
-  progressTask = {
-    ...progressTask,
+  await expect(details).toContainText('Component: vae');
+  await expect(details).toContainText('Shard 2/2');
+
+  const clearedLoading = { component: null, shard_current: null, shard_total: null };
+  current = {
+    ...loadingTask,
+    ...clearedLoading,
     phase: 'denoising',
+    progress: 75,
     current_step: 47,
     total_steps: 50,
-    component: null,
-    shard_current: null,
-    shard_total: null,
     eta_seconds: 276,
     average_step_seconds: 92,
   };
-  await page.evaluate(() => {
-    window.__MODIFF_E2E__!.sendWebsocketMessage({
-      type: 'progress',
-      task_id: 'phase-progress',
-      node: 'sampler',
-      status: 'running',
-      progress: 94,
-      overall_progress: 75,
-      phase: 'denoising',
-      message: 'Denoising 47/50',
-      component: null,
-      shard_current: null,
-      shard_total: null,
-      current_step: 47,
-      total_steps: 50,
-      average_step_seconds: 92,
-      eta_seconds: 276,
-    });
+  publish!({
+    ...current,
+    type: 'progress',
+    node: 'sampler',
+    progress: 94,
+    overall_progress: 75,
+    message: 'Denoising 47/50',
   });
-  await testInfo.attach('sampler-task-state', {
-    body: JSON.stringify(await page.evaluate(() => window.__MODIFF_E2E__!.getState().tasks)),
-    contentType: 'application/json',
+  await expect(details).toContainText('Step 47/50');
+  await expect(details).toContainText('ETA 4m 36s');
+  await expect(details).not.toContainText('Component:');
+  await expect(details).not.toContainText('Shard');
+
+  const clearedSteps = { current_step: null, total_steps: null, eta_seconds: null, average_step_seconds: null };
+  current = { ...current, ...clearedSteps, phase: 'decoding', progress: 79 };
+  publish!({
+    ...current,
+    type: 'progress',
+    node: 'decoder',
+    progress: -1,
+    overall_progress: 79,
+    message: 'Decoding video',
   });
-  await expect(page.getByRole('tooltip')).toContainText('Step 47/50');
-  await expect(page.getByRole('tooltip')).toContainText('ETA 4m 36s');
-  await expect(page.getByRole('tooltip')).not.toContainText('Component:');
-  await expect(page.getByRole('tooltip')).not.toContainText('Shard');
-  await testInfo.attach('sampler-progress', { body: await page.screenshot(), contentType: 'image/png' });
-  progressTask = {
-    ...progressTask,
-    phase: 'decoding',
-    current_step: null,
-    total_steps: null,
-    eta_seconds: null,
-    average_step_seconds: null,
-  };
-  await page.evaluate(() => {
-    window.__MODIFF_E2E__!.sendWebsocketMessage({
-      type: 'progress',
-      task_id: 'phase-progress',
-      node: 'decoder',
-      status: 'running',
-      progress: -1,
-      overall_progress: 79,
-      phase: 'decoding',
-      message: 'Decoding video',
-      component: null,
-      shard_current: null,
-      shard_total: null,
-      current_step: null,
-      total_steps: null,
-      average_step_seconds: null,
-      eta_seconds: null,
-    });
-  });
-  await expect(page.getByRole('tooltip')).toContainText('Phase: decoding');
-  await expect(page.getByRole('tooltip')).not.toContainText('Step');
-  await expect(page.getByRole('tooltip')).not.toContainText('ETA');
+  await expect(details).toContainText('Phase: decoding');
+  await expect(details).not.toContainText('Step');
+  await expect(details).not.toContainText('ETA');
+
+  const terminal = { ...current, phase: 'completed', status: 'completed', progress: 100 };
+  current = null;
+  recent = [terminal];
+  publish!({ ...terminal, type: 'task_completed', current, queued: {}, recent });
+  await activity.hover();
+  await expect(details).toContainText('Completed');
+
+  // Both progress envelopes can arrive after terminal history reconnects. A
+  // second task update marks the end of the delivered frames for the assertion.
+  publish!({ ...loadingTask, type: 'progress', node: 'sampler', overall_progress: 24 });
+  publish!({ ...loadingTask, type: 'task_progress' });
+  publish!({ type: 'task_progress', task_id: 'transport-marker', progress: 7 });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window
+          .__MODIFF_E2E__!.getState()
+          .tasks.sessionRuns.some((run: { id: string }) => run.id === 'transport-marker'),
+      ),
+    )
+    .toBe(true);
+  expect(
+    await page.evaluate(() => {
+      const tasks = window.__MODIFF_E2E__!.getState().tasks;
+      const run = tasks.sessionRuns.find((row: { id: string }) => row.id === 'phase-progress');
+      return {
+        current: tasks.currentTask?.task_id ?? null,
+        phase: run?.phase,
+        progress: run?.progress,
+        status: run?.status,
+        component: run?.component,
+        step: run?.current_step,
+      };
+    }),
+  ).toEqual({ current: null, phase: 'completed', progress: 100, status: 'completed', component: null, step: null });
 });
 
 test('collapsed canvas activity retains active work, failures and explicit download navigation', async ({ page }) => {
@@ -32175,6 +32175,54 @@ for (const scoped of [false, true]) {
     expect(graphRequests).toBe(0);
   });
 }
+
+test('Gallery displays the observed native model and exports its exact recorded package', async ({ page }) => {
+  const fixture = await generateTemplateSchemas([], true);
+  const { receipt } = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'tests/fixtures/native-joint-video-inputs.v1.json'), 'utf8'),
+  );
+  const loader = receipt.nodes.find((node: { action: string }) => node.action === 'LoadPipeline');
+  const pipelineClass = loader.fields.pipeline_class.value;
+  const model = fixture.publicPayload.capabilities.find(({ modelType }) => modelType === pipelineClass);
+  expect(model).toBeTruthy();
+  const capture = {
+    ...receipt,
+    graphTasksVersion: 2,
+    graphTasks: [{ loaderId: loader.nodeId, pipelineClass, task: 'text_to_video_with_audio' }],
+  };
+  const output = {
+    id: 'observed-video',
+    url: '/file?file=observed-video.mp4',
+    displayType: 'video',
+    taskId: capture.taskId,
+    nodeId: capture.nodeId,
+    attemptIndex: capture.attemptIndex,
+    createdAt: 1,
+    formSnapshot: { modelType: 'ZImageModularPipeline' },
+    resolvedExecutionInputs: capture,
+  };
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/model_capabilities**', (route) => route.fulfill({ json: fixture.publicPayload }));
+  await page.route('**/studio_outputs**', (route) =>
+    route.fulfill({ json: { error: false, outputs: [output], revision: 1 } }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await dismissTaskLauncher(page);
+  await page.getByTestId('topbar-gallery').click();
+  await expect(page.getByTestId('gallery-output-0')).toContainText(model!.label);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('gallery-download-package-0').click();
+  const download = await downloadPromise;
+  const exportedPath = await download.path();
+  const exported = JSON.parse(await fs.readFile(exportedPath!, 'utf8'));
+  expect(exported.metadata.studio.modelType).toBe(pipelineClass);
+  expect(exported.restore.formSnapshot.modelType).toBe('ZImageModularPipeline');
+  expect(exported.latestOutput.resolvedExecutionInputs).toEqual(capture);
+  await page.getByTestId('gallery-view-inspect').click();
+  const inspector = page.getByTestId('gallery-inspect-view');
+  await expect(inspector.getByRole('heading')).toContainText(model!.label);
+});
 
 test('mocked Gallery keeps effective image overrides and favorite identity after refresh', async ({ page }) => {
   await ensureFrontend();

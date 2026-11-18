@@ -3526,6 +3526,39 @@ for (const type of ['progress', 'task_progress', 'task_started', 'http_queue']) 
   });
 }
 
+test('late task progress cannot overwrite a terminal session run', () => {
+  const store = taskStoreModule.useTaskStore;
+  store.setState({ currentTask: undefined, queuedTasks: {}, sessionRuns: [] });
+  store.getState().markTaskCompleted({
+    task_id: 'completed-phase-task',
+    name: 'Completed video',
+    phase: 'completed',
+    progress: 100,
+    component: null,
+    current_step: null,
+  });
+  const before = structuredClone(store.getState().sessionRuns);
+  const message = websocketModule.parseWebsocketMessage(
+    JSON.stringify({
+      type: 'task_progress',
+      task_id: 'completed-phase-task',
+      phase: 'shard_loading',
+      component: 'vae',
+      current_step: 3,
+      progress: 18,
+    }),
+  );
+  assert.ok(message);
+  websocketModule.handleWebsocketMessage(message, {
+    sid: 'session-1',
+    ws: {},
+    getSid: () => 'session-1',
+    setSid: () => undefined,
+    setLoopTimer: () => undefined,
+  });
+  assert.deepEqual(store.getState().sessionRuns, before);
+});
+
 test('backend-captured output ids are reused when the frontend enriches history', () => {
   globalThis.fetch = async () => jsonResponse({ error: false, outputs: [] });
   const identity = { clientRunId: 'backend-output-client', runInputHash: 'backend-output-hash' };

@@ -72,7 +72,7 @@ function RunCard({ now, onDismiss, run }: { now: number; onDismiss: () => void; 
   const duration = runDuration(run, now);
   const label = runActivityLabelForTask(run, run.task_id || run.id);
   const progressDetail =
-    executionProgressDetail(executionProgressFrom(run)) ||
+    (!terminal && executionProgressDetail(executionProgressFrom(run))) ||
     `${label} · ${statusLabel(run)} · ${formatDuration(duration)}`;
 
   return (

@@ -1877,6 +1877,9 @@ and step counters update their normal task surfaces without revalidating the
 entire Block graph or rebuilding its Fix plan. Resource snapshots remain a
 separate invalidation signal, and changing the selected workflow rechecks queue
 ownership even when its graph is otherwise unchanged.
+Explicit null telemetry clears the previous phase's status fields. Terminal
+activity shows the final status and late progress cannot replace its archived
+name, percentage or phase.
 
 - `scripts/*.test.mjs`: unit/contract tests for graphs, templates, requests, Gallery, styles, and coordination
 - `tests/e2e/studio-mocked/`: deterministic browser coverage with mocked backend routes
@@ -1961,9 +1964,13 @@ retain ordinary graph authority. Import preserves their executable values and
 wires instead of synthesizing a managed execution specification. Explicit or
 invalid managed receipts continue through their existing validation.
 
-History model labels and Gallery filters also use the validated captured model
-identity. Registered identities reuse existing display labels; custom pipeline
-identities remain distinct, and missing or ambiguous evidence is explicitly
+History model labels and Gallery filters use the validated captured model
+identity. A readable catalog label for a generic pipeline requires a single
+observed loader with a matching published repository and immutable revision.
+Conflicting or missing catalog labels keep the captured pipeline name, and
+Gallery filters keep their canonical model keys. Output packages include an
+observed model owner in their portable summary while preserving the recorded
+legacy restore form and receipt. Missing or ambiguous evidence is explicitly
 uncaptured. Legacy outputs without receipts keep their historical labels. Finite,
 safe decimal strings from native controls can be displayed as numbers without
 rewriting the receipt or saved form. This presentation conversion never merges

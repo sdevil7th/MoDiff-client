@@ -9,7 +9,7 @@ import { canonicalJsonHash } from './canonical-json.mjs';
 import { actualAppliedAdapterFixtures, protocolFactoryArguments } from './canonical-provenance-fixtures.mjs';
 import { createRunProvenance, validateAppliedAdapterProof } from './live-proof-provenance.mjs';
 
-let server, contracts, inputs, outputUtils, profiles, tasks;
+let server, contracts, inputs, outputUtils, profiles, tasks, observedModels, packages;
 let ddimAccountingFixture;
 
 test('native AV guidance inputs remain strict, scoped and visible in the exact receipt', () => {
@@ -71,6 +71,64 @@ test('native joint-video inputs keep their real model and expansion settings ins
     source: 'literal',
   };
   assert.equal(inputs.coerceResolvedExecutionInputs(tampered, identity), undefined);
+});
+test('recorded output labels and packages use the exact observed loader without rewriting its restore form', () => {
+  const { receipt: retained } = JSON.parse(
+    readFileSync(new URL('../tests/fixtures/native-joint-video-inputs.v1.json', import.meta.url), 'utf8'),
+  );
+  const owner = retained.nodes.find((node) => node.action === 'LoadPipeline');
+  const pipeline = owner.fields.pipeline_class.value;
+  const repo = owner.fields.model_id.value;
+  const revision = owner.fields.revision.value;
+  const task = 'text_to_video_with_audio';
+  const capturedReceipt = {
+    ...retained,
+    graphTasksVersion: 2,
+    graphTasks: [{ loaderId: owner.nodeId, pipelineClass: pipeline, task }],
+  };
+  const record = {
+    id: 'native-av',
+    url: '/video.mp4',
+    taskId: retained.taskId,
+    attemptIndex: retained.attemptIndex,
+    nodeId: retained.nodeId,
+    modelType: 'ZImageModularPipeline',
+    formSnapshot: { modelType: 'ZImageModularPipeline' },
+    resolvedExecutionInputs: capturedReceipt,
+  };
+  const output = contracts.coerceStudioOutput(record);
+  const descriptor = {
+    label: 'Exact native video model',
+    profileId: 'exact-video:direct',
+    pipeline,
+    repo,
+    inventory: {
+      taskSelections: [{ modes: [task], repo, revision, downloadFiles: ['model_index.json'] }],
+    },
+  };
+  assert.equal(observedModels.observedOutputModelLabel(output, [descriptor]), descriptor.label);
+  const differentTask = structuredClone(descriptor);
+  differentTask.inventory.taskSelections[0].modes = ['image_to_video'];
+  const differentRevision = structuredClone(descriptor);
+  differentRevision.inventory.taskSelections[0].revision = '0'.repeat(40);
+  assert.equal(observedModels.observedOutputModelLabel(output, [differentTask, differentRevision]), pipeline);
+  assert.equal(
+    observedModels.observedOutputModelLabel(output, [descriptor, { ...descriptor, label: 'Conflicting name' }]),
+    pipeline,
+  );
+  const packageData = packages.buildOutputWorkflowPackage(output);
+  assert.equal(packageData.metadata.studio.modelType, pipeline);
+  assert.equal(packageData.restore.formSnapshot.modelType, 'ZImageModularPipeline');
+  assert.equal(packageData.latestOutput.modelLabel, pipeline);
+  assert.deepEqual(packageData.latestOutput.resolvedExecutionInputs, capturedReceipt);
+  assert.equal(inputs.outputModelKey(output), pipeline);
+  const historical = contracts.coerceStudioOutput({
+    ...record,
+    modelLabel: 'Historical model alias',
+    resolvedExecutionInputs: undefined,
+  });
+  assert.equal(observedModels.observedOutputModelLabel(historical, [descriptor]), 'Historical model alias');
+  assert.equal(packages.buildOutputWorkflowPackage(historical).metadata.studio.modelType, record.modelType);
 });
 test('native builtin media metadata survives strict parsing without granting model evidence', async () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
@@ -354,6 +412,8 @@ before(async () => {
   outputUtils = await server.ssrLoadModule('/src/studio/outputUtils.ts');
   profiles = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
   tasks = await server.ssrLoadModule('/src/studio/outputTaskDisplay.ts');
+  observedModels = await server.ssrLoadModule('/src/studio/observedOutputModel.ts');
+  packages = await server.ssrLoadModule('/src/studio/workflowPackage.ts');
 });
 after(async () => {
   await server?.close();

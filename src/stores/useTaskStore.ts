@@ -513,8 +513,12 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
   },
 
   updateProgress: (task_id, progress, message, details = {}) => {
-    const currentTask = get().currentTask;
+    const { currentTask, sessionRuns } = get();
     if (currentTask === undefined || task_id !== currentTask.task_id) {
+      // A late task_progress frame can follow the terminal queue snapshot.
+      // Preserve the completed receipt even if the canvas no longer owns it.
+      const previous = sessionRuns.find((run) => run.id === task_id);
+      if (previous?.status && TERMINAL_TASK_STATUSES.has(previous.status)) return;
       set((state) => ({
         sessionRuns: mergeSessionRun(state.sessionRuns, {
           id: task_id,

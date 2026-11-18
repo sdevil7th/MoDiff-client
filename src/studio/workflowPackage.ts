@@ -16,6 +16,7 @@ import {
   safeCloneJson,
 } from './outputContracts';
 import { requestArrayBuffer } from '../utils/requestJson';
+import { observedOutputModel } from './observedOutputModel';
 
 export const MODIFF_PNG_METADATA_KEY = 'modiff.workflow';
 
@@ -103,7 +104,12 @@ export function buildWorkflowPackage({
 }): ModiffWorkflowPackage {
   const exportedAt = new Date().toISOString();
   const formMetadata = latestOutput?.formSnapshot ?? form;
-  const shareModelType = packageType === 'modiff-workflow-share' ? workflowModelType : undefined;
+  const modelType =
+    packageType === 'modiff-workflow-share'
+      ? workflowModelType
+      : latestOutput
+        ? observedOutputModel(latestOutput)?.pipeline
+        : undefined;
   return {
     manifest: {
       schemaVersion: 1,
@@ -140,7 +146,7 @@ export function buildWorkflowPackage({
       exportedAt,
       studio: safeCloneJson({
         ...formMetadata,
-        modelType: shareModelType ?? formMetadata.modelType,
+        modelType: modelType ?? formMetadata.modelType,
       }) as ModiffWorkflowPackage['metadata']['studio'],
       preview: latestOutput?.url ?? null,
     },
