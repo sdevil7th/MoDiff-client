@@ -1,3 +1,7 @@
+// Exact source-stage model review changes only the lazy OperationModelPicker
+// after import URL normalization. Deferred gzip grows 347 bytes (352868 to
+// 353215). Preserve the 89-byte headroom, startup bytes, chunk memberships
+// and individual 64 KiB cap.
 // Observed model labels, terminal progress, and Retry Decode measure
 // 513420/691906/352868 largest/startup/deferred gzip bytes. Add 397/396/1244
 // bytes over 513023/691510/351624. Preserve prior headroom, four startup
@@ -1007,6 +1011,7 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  347 +
   1244 +
   278 +
   652 +
