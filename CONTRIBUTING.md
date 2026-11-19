@@ -519,6 +519,16 @@ and release approval remain false. It does not make standalone workflows release
 eligible, promote local review receipts, or change ordinary template recording
 and Gallery publication policy.
 
+The release contract records `missingReleaseEvidence` for each held workflow.
+The release-candidate report exposes that list as `incompleteWorkflowEvidence`
+and reports standalone execution under `coverage.standaloneExecution`. Its
+`awaitingReleaseEligibility` count identifies verified standalone workflows that
+are still outside the eligible total. Model workflows need a matching
+release-eligible source template. A captured bound variant establishes the
+execution with that prompt or file and needs a reviewed recipe to bind it for
+release. Native-resolution DDIM, DDPM, and Consistency samples are technical
+canaries under the project's model review policy.
+
 The optional native `appliedAdapters` receipt records the owning ModelsLoader's
 observed ordered adapter names, numeric scales, immutable artifact identities,
 opaque descriptor hashes and explicit scheduler override digest. It carries a

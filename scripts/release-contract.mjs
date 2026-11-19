@@ -14,6 +14,7 @@ import {
   templateResourceExecutionModelType,
   qualificationModelArtifacts,
   assessGalleryReleaseApproval,
+  assessWorkflowReleaseEvidence,
   readCanonicalEvidenceFile,
   readCanonicalWorkflowEvidence,
 } from './release-contract-core.mjs';
@@ -580,16 +581,12 @@ try {
               },
             }
           : {}),
-        releaseEligible: Boolean(
-          (exactModelRevision && sourceTemplate?.releaseEligible) ||
-          (manifest.modelType === 'BuiltinDataOperation' &&
-            canonicalReceipt?.proofKind === 'real_backend_deterministic_data' &&
-            canonicalReceipt.deterministicCorrectness === 'verified_exact_result') ||
-          (['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation'].includes(manifest.modelType) &&
-            canonicalReceipt?.proofKind === 'real_backend_deterministic_media' &&
-            canonicalReceipt.canonicalDefaultsExecuted === true &&
-            canonicalReceipt.deterministicCorrectness === 'verified_media_contract'),
-        ),
+        ...assessWorkflowReleaseEvidence({
+          modelType: manifest.modelType,
+          exactModelRevision,
+          sourceTemplate,
+          canonicalReceipt,
+        }),
       };
     })
     .sort((left, right) => left.id.localeCompare(right.id));

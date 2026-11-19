@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 
 const scripts = dirname(fileURLToPath(import.meta.url));
-function fixture() {
+function fixture(workflows = []) {
   const root = mkdtempSync(join(tmpdir(), 'modiff-release-freshness-'));
   const clientScripts = join(root, 'client', 'scripts');
   const backend = join(root, 'backend');
@@ -23,8 +23,13 @@ function fixture() {
       contractHash: 'retained-contract-hash',
       packageSets: {},
       templates: [],
-      workflows: [],
-      coverage: { templateCount: 0, completeQualificationReceiptCount: 0 },
+      workflows,
+      coverage: {
+        templateCount: 0,
+        completeQualificationReceiptCount: 0,
+        workflowCount: workflows.length,
+        releaseEligibleWorkflowCount: workflows.filter(({ releaseEligible }) => releaseEligible).length,
+      },
     }),
   );
   const original = readFileSync(contractPath);
@@ -117,6 +122,76 @@ test('current-source verification failure stays blocked without inventing other 
     assert.equal(current.gates.releaseContractCurrent, true);
     assert(!current.blockers.some((blocker) => blocker.id === 'release-contract-not-current'));
     assert.equal(current.status, 'blocked', 'Freshness alone cannot grant hardware/resource readiness.');
+    assert.notEqual(f.run('--check', '--require-ready').status, 0);
+    f.assertPreserved();
+  } finally {
+    f.close();
+  }
+});
+
+test('candidate report counts exact runs and bound variants without granting release eligibility', () => {
+  const standalone = (id, status, receipt, missing, releaseEligible = false) => ({
+    id,
+    releaseEligible,
+    canonicalExecutionEvidence: { status, releaseApprovalGranted: false },
+    lastSuccessfulRealRun: receipt,
+    missingReleaseEvidence: missing,
+  });
+  const f = fixture([
+    standalone('exact-image', 'verified_execution_only', { taskId: 'native-image' }, ['eligible_source_template']),
+    standalone('prompt-variant', 'verified_prompt_bound_model_variant', { canonicalDefaultsExecuted: false }, [
+      'eligible_source_template',
+      'reviewed_bound_recipe',
+    ]),
+    standalone(
+      'source-image-variant',
+      'verified_input_bound_model_variant',
+      { observationLimits: { numericDepthPrediction: false } },
+      ['eligible_source_template', 'reviewed_bound_recipe'],
+    ),
+    standalone('deterministic', 'verified_deterministic_execution', { taskId: 'native-data' }, [], true),
+    standalone('missing-proof', 'missing', null, ['successful_real_run_receipt']),
+    {
+      id: 'template',
+      releaseEligible: false,
+      lastSuccessfulRealRun: { taskId: 'native-template' },
+      missingReleaseEvidence: ['approved_gallery_example'],
+    },
+  ]);
+  try {
+    assert.equal(f.run().status, 0);
+    const report = f.read();
+    assert.equal(report.coverage.eligibleWorkflows, 1);
+    assert.deepEqual(report.coverage.standaloneExecution, {
+      verified: 4,
+      exactModelWorkflows: 1,
+      boundVariants: 2,
+      deterministicWorkflows: 1,
+      awaitingReleaseEligibility: 3,
+    });
+    assert.deepEqual(report.incompleteWorkflows, [
+      'exact-image',
+      'prompt-variant',
+      'source-image-variant',
+      'missing-proof',
+      'template',
+    ]);
+    assert.deepEqual(report.incompleteWorkflowEvidence, [
+      { id: 'exact-image', executionStatus: 'verified_execution_only', missing: ['eligible_source_template'] },
+      {
+        id: 'prompt-variant',
+        executionStatus: 'verified_prompt_bound_model_variant',
+        missing: ['eligible_source_template', 'reviewed_bound_recipe'],
+      },
+      {
+        id: 'source-image-variant',
+        executionStatus: 'verified_input_bound_model_variant',
+        missing: ['eligible_source_template', 'reviewed_bound_recipe'],
+      },
+      { id: 'missing-proof', executionStatus: 'missing', missing: ['successful_real_run_receipt'] },
+      { id: 'template', executionStatus: 'retained_template_execution', missing: ['approved_gallery_example'] },
+    ]);
+    assert.equal(report.gates.workflowsEligible, false);
     assert.notEqual(f.run('--check', '--require-ready').status, 0);
     f.assertPreserved();
   } finally {

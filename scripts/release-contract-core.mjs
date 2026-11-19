@@ -108,6 +108,50 @@ export function assessGalleryReleaseApproval(entry, { matchesCurrentRecipe, unav
   return { approved: reasons.length === 0, reasons };
 }
 
+export function assessWorkflowReleaseEvidence({ modelType, exactModelRevision, sourceTemplate, canonicalReceipt }) {
+  const dataOperation = modelType === 'BuiltinDataOperation';
+  const mediaOperation = ['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation'].includes(
+    modelType,
+  );
+  const deterministicProof = dataOperation ? 'real_backend_deterministic_data' : 'real_backend_deterministic_media';
+  const deterministicCorrectness = dataOperation ? 'verified_exact_result' : 'verified_media_contract';
+  const hasDeterministicReceipt = canonicalReceipt?.proofKind === deterministicProof;
+  const verifiedCorrectness = canonicalReceipt?.deterministicCorrectness === deterministicCorrectness;
+  const executedRequiredDefaults = !mediaOperation || canonicalReceipt?.canonicalDefaultsExecuted === true;
+  const releaseEligible = Boolean(
+    (exactModelRevision && sourceTemplate?.releaseEligible) ||
+    ((dataOperation || mediaOperation) && hasDeterministicReceipt && verifiedCorrectness && executedRequiredDefaults),
+  );
+  const missingReleaseEvidence = [];
+  if (releaseEligible) return { releaseEligible, missingReleaseEvidence };
+
+  if (sourceTemplate) {
+    missingReleaseEvidence.push(...sourceTemplate.missingReleaseEvidence);
+    if (!exactModelRevision && !missingReleaseEvidence.includes('exact_model_revision')) {
+      missingReleaseEvidence.push('exact_model_revision');
+    }
+  } else if (dataOperation || mediaOperation) {
+    if (!hasDeterministicReceipt) {
+      missingReleaseEvidence.push('deterministic_execution_receipt');
+    } else {
+      if (!verifiedCorrectness) missingReleaseEvidence.push('deterministic_correctness');
+      if (!executedRequiredDefaults) missingReleaseEvidence.push('canonical_defaults_execution');
+    }
+  } else {
+    missingReleaseEvidence.push('eligible_source_template');
+    if (!exactModelRevision) missingReleaseEvidence.push('exact_model_revision');
+    if (!canonicalReceipt) missingReleaseEvidence.push('successful_real_run_receipt');
+    if (
+      ['real_backend_input_bound_model_variant', 'real_backend_prompt_bound_model_variant'].includes(
+        canonicalReceipt?.proofKind,
+      )
+    ) {
+      missingReleaseEvidence.push('reviewed_bound_recipe');
+    }
+  }
+  return { releaseEligible, missingReleaseEvidence };
+}
+
 function sameNodeContract(left, right) {
   return (
     Array.isArray(left) &&

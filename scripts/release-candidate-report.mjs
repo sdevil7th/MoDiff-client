@@ -78,9 +78,37 @@ const incompleteTemplates = contract.templates
     id: template.id,
     missing: template.missingReleaseEvidence,
   }));
-const incompleteWorkflows = contract.workflows
+const incompleteWorkflowEvidence = contract.workflows
   .filter((workflow) => !workflow.releaseEligible)
-  .map((workflow) => workflow.id);
+  .map((workflow) => ({
+    id: workflow.id,
+    executionStatus:
+      workflow.canonicalExecutionEvidence?.status ??
+      (workflow.lastSuccessfulRealRun ? 'retained_template_execution' : 'missing'),
+    missing: workflow.missingReleaseEvidence ?? [],
+  }));
+const incompleteWorkflows = incompleteWorkflowEvidence.map(({ id }) => id);
+const standaloneExecutionScopes = new Map([
+  ['verified_execution_only', 'exactModelWorkflows'],
+  ['verified_input_bound_model_variant', 'boundVariants'],
+  ['verified_prompt_bound_model_variant', 'boundVariants'],
+  ['verified_deterministic_execution', 'deterministicWorkflows'],
+  ['verified_deterministic_media_execution', 'deterministicWorkflows'],
+]);
+const standaloneExecution = {
+  verified: 0,
+  exactModelWorkflows: 0,
+  boundVariants: 0,
+  deterministicWorkflows: 0,
+  awaitingReleaseEligibility: 0,
+};
+for (const workflow of contract.workflows) {
+  const scope = standaloneExecutionScopes.get(workflow.canonicalExecutionEvidence?.status);
+  if (!scope || !workflow.lastSuccessfulRealRun) continue;
+  standaloneExecution[scope] += 1;
+  standaloneExecution.verified += 1;
+  if (!workflow.releaseEligible) standaloneExecution.awaitingReleaseEligibility += 1;
+}
 const missingFieldCounts = {};
 for (const template of contract.templates) {
   for (const field of template.qualificationReceiptMissingFields ?? []) {
@@ -193,6 +221,7 @@ const body = {
     completeQualificationReceipts: contract.coverage?.completeQualificationReceiptCount ?? 0,
     workflows: contract.coverage?.workflowCount ?? 0,
     eligibleWorkflows: contract.coverage?.releaseEligibleWorkflowCount ?? 0,
+    standaloneExecution,
     resourceRecipes: resourceQualification.coverage,
     releaseEligibleResourceRecipes: resourceQualification.coverage?.byReleaseLane?.releaseEligible ?? null,
     deferredResourceRecipes: resourceQualification.coverage?.byReleaseLane?.deferred ?? null,
@@ -200,6 +229,7 @@ const body = {
   receiptMissingFieldCounts: missingFieldCounts,
   incompleteTemplates,
   incompleteWorkflows,
+  incompleteWorkflowEvidence,
   advertisedSupportedProfiles,
   physicallyQualifiedProfiles,
   physicallyObservedProfiles,

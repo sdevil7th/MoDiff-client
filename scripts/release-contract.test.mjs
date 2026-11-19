@@ -18,6 +18,7 @@ import {
   templateResourceExecutionModelType,
   qualificationModelArtifacts,
   assessGalleryReleaseApproval,
+  assessWorkflowReleaseEvidence,
   canonicalWorkflowAuthoringContract,
   canonicalWorkflowDeclaredModelRevision,
   validateCanonicalWorkflowEvidence,
@@ -32,6 +33,107 @@ import {
   selectCanonicalWorkflowCapabilities,
   selectReviewedExperimentalWorkflows,
 } from './workflow-library-manifest-state.mjs';
+
+test('verified standalone model execution remains distinct from a reviewed exact template recipe', () => {
+  const workflow = { modelType: 'ExamplePipeline', exactModelRevision: `example/base@${'a'.repeat(40)}` };
+  assert.deepEqual(assessWorkflowReleaseEvidence({ modelType: workflow.modelType }), {
+    releaseEligible: false,
+    missingReleaseEvidence: ['eligible_source_template', 'exact_model_revision', 'successful_real_run_receipt'],
+  });
+  assert.deepEqual(
+    assessWorkflowReleaseEvidence({
+      ...workflow,
+      canonicalReceipt: { proofKind: 'real_backend_weights', canonicalDefaultsExecuted: true },
+    }),
+    { releaseEligible: false, missingReleaseEvidence: ['eligible_source_template'] },
+  );
+  for (const proofKind of ['real_backend_input_bound_model_variant', 'real_backend_prompt_bound_model_variant']) {
+    assert.deepEqual(
+      assessWorkflowReleaseEvidence({
+        ...workflow,
+        canonicalReceipt: { proofKind, canonicalDefaultsExecuted: false },
+      }),
+      { releaseEligible: false, missingReleaseEvidence: ['eligible_source_template', 'reviewed_bound_recipe'] },
+    );
+  }
+});
+
+test('template-backed workflows inherit their exact template release gaps and require a revision', () => {
+  const workflow = { modelType: 'ExamplePipeline', exactModelRevision: `example/base@${'a'.repeat(40)}` };
+  const releaseGaps = ['exact_model_revision', 'successful_real_run_receipt', 'approved_gallery_example'];
+  assert.deepEqual(
+    assessWorkflowReleaseEvidence({
+      modelType: workflow.modelType,
+      sourceTemplate: { releaseEligible: false, missingReleaseEvidence: releaseGaps },
+    }),
+    { releaseEligible: false, missingReleaseEvidence: releaseGaps },
+  );
+  assert.deepEqual(
+    assessWorkflowReleaseEvidence({
+      modelType: workflow.modelType,
+      sourceTemplate: { releaseEligible: true, missingReleaseEvidence: [] },
+    }),
+    { releaseEligible: false, missingReleaseEvidence: ['exact_model_revision'] },
+  );
+  assert.deepEqual(
+    assessWorkflowReleaseEvidence({
+      ...workflow,
+      sourceTemplate: { releaseEligible: true, missingReleaseEvidence: [] },
+    }),
+    { releaseEligible: true, missingReleaseEvidence: [] },
+  );
+});
+
+test('builtin release gaps reflect the deterministic proof requirements for each operation class', () => {
+  const dataOperation = { modelType: 'BuiltinDataOperation' };
+  const dataReceipt = {
+    proofKind: 'real_backend_deterministic_data',
+    deterministicCorrectness: 'verified_exact_result',
+  };
+  assert.deepEqual(assessWorkflowReleaseEvidence(dataOperation), {
+    releaseEligible: false,
+    missingReleaseEvidence: ['deterministic_execution_receipt'],
+  });
+  assert.deepEqual(
+    assessWorkflowReleaseEvidence({
+      ...dataOperation,
+      canonicalReceipt: { ...dataReceipt, deterministicCorrectness: null },
+    }),
+    { releaseEligible: false, missingReleaseEvidence: ['deterministic_correctness'] },
+  );
+  assert.deepEqual(assessWorkflowReleaseEvidence({ ...dataOperation, canonicalReceipt: dataReceipt }), {
+    releaseEligible: true,
+    missingReleaseEvidence: [],
+  });
+  for (const modelType of ['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation']) {
+    const mediaReceipt = {
+      proofKind: 'real_backend_deterministic_media',
+      deterministicCorrectness: 'verified_media_contract',
+    };
+    assert.deepEqual(assessWorkflowReleaseEvidence({ modelType, canonicalReceipt: dataReceipt }), {
+      releaseEligible: false,
+      missingReleaseEvidence: ['deterministic_execution_receipt'],
+    });
+    assert.deepEqual(assessWorkflowReleaseEvidence({ modelType, canonicalReceipt: mediaReceipt }), {
+      releaseEligible: false,
+      missingReleaseEvidence: ['canonical_defaults_execution'],
+    });
+    assert.deepEqual(
+      assessWorkflowReleaseEvidence({
+        modelType,
+        canonicalReceipt: { ...mediaReceipt, canonicalDefaultsExecuted: true, deterministicCorrectness: null },
+      }),
+      { releaseEligible: false, missingReleaseEvidence: ['deterministic_correctness'] },
+    );
+    assert.deepEqual(
+      assessWorkflowReleaseEvidence({
+        modelType,
+        canonicalReceipt: { ...mediaReceipt, canonicalDefaultsExecuted: true },
+      }),
+      { releaseEligible: true, missingReleaseEvidence: [] },
+    );
+  }
+});
 
 test('qualification model artifacts preserve each immutable member of an aggregate revision lock', () => {
   const model = { repo: 'Example/model', revision: 'a'.repeat(40), role: 'model' };
