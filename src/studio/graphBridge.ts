@@ -3203,7 +3203,7 @@ async function applyVideoPipelineContract(binding: StudioGraphBinding, mode: Stu
 
 async function applyImagePipelineContract(binding: StudioGraphBinding, mode: StudioMode) {
   const pipelineNode = binding.nodes.diffusersImagePipeline;
-  const actionNode = diffusersImageActionNode(binding);
+  const actionNode = binding.nodes.diffusersPredictMap ?? diffusersImageActionNode(binding);
   const pipelineClassKey = findParamKey(pipelineNode, ['pipeline_class']);
   if (!pipelineNode || !actionNode || !pipelineClassKey) return;
 
@@ -4146,7 +4146,11 @@ async function finalizeDiffusersImageGraph(
   timedOutGroups: string[],
   token: number,
 ) {
-  const targetNode = diffusersImageActionNode(binding);
+  const prediction = binding.nodes.diffusersPredictMap;
+  const targetNode = prediction ?? diffusersImageActionNode(binding);
+  const targetFields = prediction
+    ? [['pipeline'], ['image'], ['preview_images']]
+    : [['pipeline'], ['prompt'], ['images']];
   await Promise.all([
     waitForFieldGroupsTracked(
       binding.nodes.diffusersImagePipeline,
@@ -4157,9 +4161,9 @@ async function finalizeDiffusersImageGraph(
     ),
     waitForFieldGroupsTracked(
       targetNode,
-      [['pipeline'], ['prompt'], ['images']],
+      targetFields,
       timedOutGroups,
-      'diffusers image generate',
+      prediction ? 'diffusers prediction map' : 'diffusers image generate',
       5000,
     ),
     binding.nodes.loadImage

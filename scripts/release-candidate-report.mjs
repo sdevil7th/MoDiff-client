@@ -86,6 +86,15 @@ const incompleteWorkflowEvidence = contract.workflows
       workflow.canonicalExecutionEvidence?.status ??
       (workflow.lastSuccessfulRealRun ? 'retained_template_execution' : 'missing'),
     missing: workflow.missingReleaseEvidence ?? [],
+    ...(workflow.reviewedRetainedTemplate
+      ? {
+          reviewedRetainedTemplate: {
+            templateId: workflow.reviewedRetainedTemplate.templateId,
+            associationHash: workflow.reviewedRetainedTemplate.associationHash,
+            qualificationScope: workflow.reviewedRetainedTemplate.qualificationScope,
+          },
+        }
+      : {}),
   }));
 const incompleteWorkflows = incompleteWorkflowEvidence.map(({ id }) => id);
 const standaloneExecutionScopes = new Map([

@@ -7,6 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
+import { verifyRetainedStructuredText } from './retained-structured-text-evidence.mjs';
 import {
   bindPromptVariant,
   validatePromptVariantText,
@@ -116,7 +117,8 @@ test('the native text output binds exact durable JSON, prompt route and local mo
     return { item, bytes: Buffer.from(JSON.stringify(item.value)) };
   }
   const { item, bytes } = data(result);
-  assert.equal(validatePromptVariantText(bytes, item, bound, runtime).generatedTokens, 7);
+  const decodedOutput = validatePromptVariantText(bytes, item, bound, runtime);
+  assert.equal(decodedOutput.generatedTokens, 7);
   assert.throws(
     () => validatePromptVariantText(bytes, { value: ['"other output"'] }, bound, runtime),
     /native output/u,
@@ -128,6 +130,84 @@ test('the native text output binds exact durable JSON, prompt route and local mo
   );
   const excessiveTokens = data({ ...result, generatedTokens: 257 });
   assert.throws(() => validatePromptVariantText(excessiveTokens.bytes, excessiveTokens.item, bound, runtime));
+
+  const structuredBytes = Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
+  const releaseEvidence = {
+    receipt: {
+      schemaVersion: 1,
+      format: 'modiff.canonical-workflow-run-receipt.v1',
+      proofKind: 'real_backend_prompt_bound_model_variant',
+      workflowId: 'HuggingFaceTextGenerationModel:text_generation',
+      modelSet: [{ repoId: model.source.repository, revision: model.source.revision }],
+      outputHash: `sha256:bytes:${digest(bytes)}`,
+      decodedOutput,
+    },
+    transportBytes: bytes,
+    structuredBytes,
+    outputSha256: digest(structuredBytes),
+  };
+  const original = structuredClone(releaseEvidence.receipt);
+  const association = verifyRetainedStructuredText(releaseEvidence);
+  assert.equal(association.sourceOutputHash, releaseEvidence.receipt.outputHash);
+  assert.equal(association.outputEncodedSha256, `sha256:bytes:${digest(structuredBytes)}`);
+  assert.equal(association.decodedMediaHash, `sha256:canonical-json:${canonicalJsonHash(result)}`);
+  assert.deepEqual(releaseEvidence.receipt, original, 'The native receipt is immutable.');
+
+  // Byte identities remain exact even when a different file decodes to the same value.
+  assert.throws(
+    () => verifyRetainedStructuredText({ ...releaseEvidence, structuredBytes: Buffer.from(JSON.stringify(result)) }),
+    /approved structured result/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        transportBytes: Buffer.from(JSON.stringify(item.value, null, 2)),
+      }),
+    /original native transport/u,
+  );
+
+  // Rehashing substituted bytes cannot make a different answer the saved result.
+  const otherAnswer = Buffer.from(JSON.stringify({ ...result, text: 'An unrelated answer.' }));
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        structuredBytes: otherAnswer,
+        outputSha256: digest(otherAnswer),
+      }),
+    /decoded native result/u,
+  );
+  const identicalAnswerDifferentTokens = Buffer.from(JSON.stringify({ ...result, generatedTokens: 2 }));
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        structuredBytes: identicalAnswerDifferentTokens,
+        outputSha256: digest(identicalAnswerDifferentTokens),
+      }),
+    /decoded native result/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        receipt: { ...releaseEvidence.receipt, workflowId: 'ShapEPipeline:text_to_3d' },
+      }),
+    /reviewed text workflow/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedStructuredText({
+        ...releaseEvidence,
+        receipt: { ...releaseEvidence.receipt, decodedOutput: { ...decodedOutput, generatedTokens: 99 } },
+      }),
+    /native text receipt/u,
+  );
+  assert.throws(
+    () => verifyRetainedStructuredText({ ...releaseEvidence, transportBytes: Buffer.alloc(2 * 1024 * 1024 + 1) }),
+    /bounded file/u,
+  );
 });
 
 test('the video variant needs independently decoded and moving geometry at the native cadence', () => {

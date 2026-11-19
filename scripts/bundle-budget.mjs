@@ -490,6 +490,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Prediction-map readiness adds 40 gzip bytes (514731 -> 514771).
+  // Retain five bytes of headroom and the existing startup membership.
+  40 +
   1204 +
   106 +
   397 +
@@ -724,6 +727,9 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // Same build adds 41 startup gzip bytes (693216 -> 693257).
+  // Deferred gzip decreases by 57 bytes and retains both existing limits.
+  41 +
   1206 +
   103 +
   396 +

@@ -252,6 +252,8 @@ export type StudioPresetId =
   | 'flux_control';
 
 export type StudioTemplateId =
+  | 'marigold_depth_synthetic_ramp'
+  | 'smollm2_rain_gauge'
   | 'minimax_h3_image_old_town_cat'
   | 'flux3_klein_fp8r512_text_to_image'
   | 'flux3_klein_fp8r512_single_reference_edit'

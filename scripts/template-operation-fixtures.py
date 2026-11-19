@@ -13,6 +13,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.environ.get("MODIFF_BACKEND_DIR", str(Path(__file__).resolve().parents[2] / "MoDiff")))
 selections = json.load(sys.stdin)
 mock_cuda = "--mock-cuda" in sys.argv[1:]
+studio_spec_only = "--studio-spec-only" in sys.argv[1:]
 
 with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
     isolated = Path(temporary)
@@ -75,6 +76,24 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
             public_capabilities = public_payload["capabilities"]
             for item in selections:
                 selection = item["selection"]
+                binding = selection.get("bindingSpec")
+                spec = studio_execution_spec_for_pair(binding["modelType"], binding["mode"]) if binding else None
+                if binding and spec is None:
+                    raise ValueError(f"Missing template semantic bindings: {binding}")
+                if studio_spec_only:
+                    if spec is None:
+                        raise ValueError("A Studio-only fixture needs an exact binding specification.")
+                    for _, key, _, _ in spec["roles"]:
+                        describe(key)
+                    row = {"id": item["id"], "spec": spec}
+                    if spec["executionPath"] == "direct-diffusers-image":
+                        from modules.DiffusersImage.main import get_image_pipeline_adapter, image_pipeline_contract
+
+                        row["imageContract"] = image_pipeline_contract(
+                            get_image_pipeline_adapter(spec["pipelineClass"]), spec["mode"]
+                        )
+                    rows.append(row)
+                    continue
                 starter = resolve_operation_starter(MODULE_MAP, contracts, {
                     "pipelineClass": selection["pipelineClass"],
                     "task": selection["task"],
@@ -88,10 +107,6 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                     "operation": node["operation"],
                     "node": describer._describe_registered_node(node["module"], node["action"], node),
                 } for node in starter["nodes"]]
-                binding = selection.get("bindingSpec")
-                spec = studio_execution_spec_for_pair(binding["modelType"], binding["mode"]) if binding else None
-                if binding and spec is None:
-                    raise ValueError(f"Missing template semantic bindings: {binding}")
                 for node in starter["nodes"]:
                     describe(node["operation"]["nodeKey"])
                 for _, key, _, _ in starter.get("authoring", spec or {"roles": []})["roles"]:
@@ -114,7 +129,7 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                         "modules.Video.Concatenate", "modules.Video.ConcatenateAssets", "modules.Video.Trim",
                         "modules.DiffusersRuntime.PipelineQuantizationConfigV2", "modules.DiffusersRuntime.DiffusersExecutionRecipe"):
                 describe(key)
-            if any(item["selection"]["pipelineClass"] == "Cosmos3OmniModularPipeline" for item in selections):
+            if not studio_spec_only and any(item["selection"]["pipelineClass"] == "Cosmos3OmniModularPipeline" for item in selections):
                 from modiff.modular_whole_workflow_contracts import (
                     PINNED_WHOLE_WORKFLOW_GRAPH_ADAPTERS, reviewed_whole_workflow_action_adapter,
                 )

@@ -20,6 +20,7 @@ import {
 } from './release-contract-core.mjs';
 import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
 import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
+import { readReviewedBoundTemplateAssociations } from './retained-template-association.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -32,6 +33,7 @@ const TEMPLATE_RECEIPT_REGISTRY_PATH = join(
   'release',
   'template-run-receipts.v2.json',
 );
+const RETAINED_TEMPLATE_REVIEW_ROOT = join(BACKEND_ROOT, 'data/qualification/release/retained-template-review');
 const CHECK = process.argv.includes('--check');
 
 function readJson(path) {
@@ -344,6 +346,8 @@ const workflowRecords = [...workflowManifest.workflows, ...reviewedExperimental]
   return { manifest: workflow, graph, contract: canonicalWorkflowContract(workflow, graph) };
 });
 const canonicalReceiptsByWorkflow = new Map();
+const retainedNativeBySha = new Map();
+const hasRetainedTemplateReview = existsSync(join(RETAINED_TEMPLATE_REVIEW_ROOT, 'approval.v1.json'));
 const executionStatuses = {
   real_backend_deterministic_data: 'verified_deterministic_execution',
   real_backend_deterministic_media: 'verified_deterministic_media_execution',
@@ -379,6 +383,12 @@ if (existsSync(canonicalRegistryPath)) {
     if (JSON.stringify(stable(body)) !== JSON.stringify(stable(derived.receipt))) {
       throw new Error(`Canonical workflow receipt differs from original task evidence: ${stored.workflowId}`);
     }
+    if (hasRetainedTemplateReview && (derived.receipt.inputBinding || derived.receipt.promptBinding)) {
+      if (retainedNativeBySha.has(stored.evidenceSha256)) {
+        throw new Error(`Original bound workflow evidence is duplicated: ${stored.workflowId}`);
+      }
+      retainedNativeBySha.set(stored.evidenceSha256, derived);
+    }
     const previous = canonicalReceiptsByWorkflow.get(stored.workflowId);
     if (!previous || String(previous.capturedAt).localeCompare(stored.capturedAt) < 0)
       canonicalReceiptsByWorkflow.set(stored.workflowId, stored);
@@ -399,6 +409,11 @@ try {
   const { templateBackendNodeKeys } = await vite.ssrLoadModule('/src/studio/templateBackendCapabilities.ts');
   const { getPromptSettingsHash, getTemplateLockHash, getTemplateLockedSettings, findManifestEntry } =
     await vite.ssrLoadModule('/src/studio/templateExactness.ts');
+  const retainedTemplateAssociations = await readReviewedBoundTemplateAssociations({
+    approvalRoot: RETAINED_TEMPLATE_REVIEW_ROOT,
+    vite,
+    nativeBySha: retainedNativeBySha,
+  });
   const backendNodeRegistry = readBundledBackendNodeRegistry(BACKEND_ROOT);
   for (const workflow of workflowRecords) {
     assertBackendNodeKeys(workflow.contract.backendNodes, backendNodeRegistry, workflow.manifest.id);
@@ -535,6 +550,7 @@ try {
       const artifact = artifactByModel.get(manifest.modelType);
       const sourceTemplate = templates.find((template) => template.id === manifest.sourceTemplateId);
       const canonicalReceipt = sourceTemplate ? null : canonicalReceiptsByWorkflow.get(manifest.id);
+      const reviewedRetainedTemplate = retainedTemplateAssociations.get(manifest.id);
       const catalogRevision =
         artifact?.baseRepo && artifact?.baseRevision ? `${artifact.baseRepo}@${artifact.baseRevision}` : null;
       const authoring = canonicalAuthoring.find((row) => row.canonicalWorkflowId === manifest.id);
@@ -546,6 +562,17 @@ try {
       const executionStatus = manifest.requiredArtifacts?.some((item) => item.startsWith('builtin:'))
         ? 'unsupported_builtin_model_not_applicable'
         : 'missing';
+      const releaseEvidence = assessWorkflowReleaseEvidence({
+        modelType: manifest.modelType,
+        exactModelRevision,
+        sourceTemplate,
+        canonicalReceipt,
+      });
+      if (reviewedRetainedTemplate) {
+        releaseEvidence.missingReleaseEvidence = releaseEvidence.missingReleaseEvidence.filter(
+          (reason) => reason !== 'reviewed_bound_recipe',
+        );
+      }
       return {
         id: manifest.id,
         modelType: manifest.modelType,
@@ -581,12 +608,8 @@ try {
               },
             }
           : {}),
-        ...assessWorkflowReleaseEvidence({
-          modelType: manifest.modelType,
-          exactModelRevision,
-          sourceTemplate,
-          canonicalReceipt,
-        }),
+        ...releaseEvidence,
+        ...(reviewedRetainedTemplate ? { reviewedRetainedTemplate } : {}),
       };
     })
     .sort((left, right) => left.id.localeCompare(right.id));
