@@ -29,6 +29,7 @@ import {
 import { deleteStudioOutput, fetchStudioOutputs, setStudioOutputFavorite, syncStudioOutput } from '../studio/outputApi';
 import { withDurableBlockPreviewsV2 } from '../studio/blockPreviewPersistenceV2';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
+import { savedAttentionDefaultUpdate } from '../studio/savedStudioSpecCompatibility';
 import { normalizeStudioDeviceOffloadPlan } from '../studio/deviceOffload';
 import {
   firstImageValue,
@@ -53,6 +54,7 @@ import { STUDIO_TEMPLATES, getPreset } from '../studio/templates';
 import { adoptManagedWorkflowGraph, inferStudioFormFromWorkflow } from '../studio/workflowInference';
 import { createLatestRequestGate, formatRequestError, requestBlob } from '../utils/requestJson';
 import { createPageCheckpointStorage } from '../utils/checkpointStorage';
+import { restoreManagedAttentionDefault, restoreSavedAttentionDefaults } from '../workflow/savedAttentionCompatibility';
 import type { MediaArtifact } from '../utils/imageArtifacts';
 import { autoPlanKeyForForm, autoResourcePlanTargetMatches, type StudioAutoResourcePlan } from '../studio/autoResource';
 import type {
@@ -570,7 +572,7 @@ function normalizeWorkflowSnapshot(
     Boolean(node.data.blockInstanceV2 || node.data.operationAuthoring),
   );
   const seenNodeIds = new Set<string>();
-  const nodes = normalizedFlow.nodes
+  const nodes = restoreSavedAttentionDefaults(normalizedFlow.nodes, persistedStudioForm.attentionBackend)
     .filter((node) => {
       if (seenNodeIds.has(node.id)) return false;
       seenNodeIds.add(node.id);
@@ -670,11 +672,13 @@ function normalizeWorkflowSnapshot(
   const executionNormalizedNodes =
     ordinaryTaskImport || ordinaryOperationGraph
       ? nodes
-      : normalizeManagedSnapshotExecutionPlan(
-          normalizedNodes,
-          studioForm,
-          persistedGraphBinding ?? adoptedGraph?.binding ?? null,
-        );
+      : savedAttentionDefaultUpdate(persistedGraphBinding)
+        ? normalizedNodes
+        : normalizeManagedSnapshotExecutionPlan(
+            normalizedNodes,
+            studioForm,
+            persistedGraphBinding ?? adoptedGraph?.binding ?? null,
+          );
   const studioGraphBinding = ordinaryTaskImport
     ? null
     : reconcileSnapshotGraphBinding(
@@ -692,7 +696,12 @@ function normalizeWorkflowSnapshot(
         ),
       );
   return {
-    nodes: executionNormalizedNodes,
+    nodes: restoreManagedAttentionDefault(
+      executionNormalizedNodes,
+      edges,
+      studioGraphBinding,
+      studioForm.attentionBackend,
+    ),
     edges,
     viewport,
     studioForm,

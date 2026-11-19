@@ -1,20 +1,33 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 import { protocolFactoryArguments } from './canonical-provenance-fixtures.mjs';
 import { canonicalAccountingExecutionPlan, createRunProvenance, stableStringify } from './live-proof-provenance.mjs';
-import { exportCanonicalWorkflowGraphs } from './release-contract-core.mjs';
+import { exportCanonicalWorkflowGraphs, readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
 
 const clientRoot = fileURLToPath(new URL('../', import.meta.url));
-const source = new URL(
-  '../../MoDiff/data/graphs/studio/pix-art-sigma-pag-pipeline/text-to-image.json',
-  import.meta.url,
-);
-const modelType = 'PixArtSigmaPAGPipeline';
-const taskMode = 'text_to_image';
-const dimensions = { width: 1024, height: 1024 };
+const backendRoot = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+const retainedProfiles = [
+  {
+    modelType: 'DDPMPipeline',
+    graphPath: 'ddpm-pipeline/unconditional-image.json',
+    evidencePath: process.env.MODIFF_RETAINED_DDPM_EVIDENCE,
+    platform: 'Windows-11',
+    backend: 'cuda',
+    size: 32,
+  },
+  {
+    modelType: 'ConsistencyModelPipeline',
+    graphPath: 'consistency-model-pipeline/unconditional-image.json',
+    evidencePath: process.env.MODIFF_RETAINED_CONSISTENCY_EVIDENCE,
+    platform: 'Linux-x86_64',
+    backend: 'rocm',
+    size: 64,
+  },
+];
 const emptyConditioning = {
   control_guidance_start: null,
   control_guidance_end: null,
@@ -33,15 +46,28 @@ const project = (kind, values, sourceNodeId, sourcePortId) => ({
 // The canonical input is the actual exporter output. The stage transport,
 // runtime and accounting observations are synthetic and never registered.
 let synthetic;
+const syntheticRetained = new Map();
 before(async () => {
-  const graph = JSON.parse(readFileSync(source, 'utf8'));
+  synthetic = await syntheticImageCase({
+    modelType: 'PixArtSigmaPAGPipeline',
+    graphPath: 'pix-art-sigma-pag-pipeline/text-to-image.json',
+    size: 1024,
+  });
+  for (const profile of retainedProfiles) syntheticRetained.set(profile.modelType, await syntheticImageCase(profile));
+});
+
+async function syntheticImageCase({ modelType, graphPath, size, platform, backend }) {
+  const retained = platform !== undefined;
+  const generateAction = retained ? 'UnconditionalGenerate' : 'Generate';
+  const taskMode = retained ? 'unconditional_image' : 'text_to_image';
+  const graph = JSON.parse(readFileSync(join(backendRoot, 'data/graphs/studio', graphPath), 'utf8'));
   const [expected] = await exportCanonicalWorkflowGraphs(clientRoot, [graph]);
-  const form = { modelType, mode: taskMode };
+  const form = { modelType, mode: taskMode, ...(retained ? { resourceMode: 'expert' } : {}) };
   const visualNodes = graph.nodes.filter((node) => node.data.action === 'Preview');
   const ids = new Map(visualNodes.map((node) => [node.id, node.id]));
   for (const [id, pick] of [
-    ['setup', (node) => node.data.action !== 'Generate'],
-    ['generate', (node) => node.data.action === 'Generate'],
+    ['setup', (node) => node.data.action !== generateAction],
+    ['generate', (node) => node.data.action === generateAction],
   ]) {
     const leaves = graph.nodes.filter((node) => !ids.has(node.id) && pick(node));
     const nodes = leaves.map(({ id: nodeId, data }) => {
@@ -61,6 +87,11 @@ before(async () => {
   const expectedApiGraph = structuredClone(apiGraph);
   const nodeId = visualNodes[0].id;
   const base = protocolFactoryArguments(apiGraph);
+  if (retained) {
+    base.runtimeFingerprint.packages.platform = platform;
+    base.executionReceipt.runtimeMeasurement.backend = backend;
+    base.executionReceipt.runtimeMeasurement.device = 'cuda:0';
+  }
   const task = {
     task_id: base.taskId,
     sid: apiGraph.sid,
@@ -138,9 +169,17 @@ before(async () => {
       'cfg_normalize',
       'use_en_prompt',
     ],
+    UnconditionalGenerate: ['eta', 'class_label'],
     Preview: ['device'],
   };
-  const replacedLoaderFields = ['auto_offload', 'device', 'offload_mode', 'enable_vae_slicing', 'enable_vae_tiling'];
+  const replacedLoaderFields = {
+    auto_offload: 'offload_mode',
+    device: 'device',
+    offload_mode: 'offload_mode',
+    enable_vae_slicing: 'vae_slicing',
+    enable_vae_tiling: 'vae_tiling',
+  };
+  const recipeParams = Object.values(apiGraph.nodes).find((node) => node.action === 'DiffusersExecutionRecipe').params;
   const recipeValues = { schema_version: 1, quantization: 'none', device_map_strategy: 'none' };
   const none = { backend: 'none', disabled: true };
   const role = (action) => consumed.nodes.find((row) => row.action === action);
@@ -169,12 +208,20 @@ before(async () => {
         const reason =
           node.action === 'Preview'
             ? 'already-decoded-image'
-            : ['Generate', 'LoadPipeline'].includes(node.action)
+            : [generateAction, 'LoadPipeline'].includes(node.action)
               ? 'adapter-inactive'
               : 'feature-disabled';
         field = { ...field, disposition: 'inactive', reason };
-      } else if (node.action === 'LoadPipeline' && replacedLoaderFields.includes(key)) {
-        field = { ...field, disposition: 'superseded', reason: 'connected-recipe' };
+      } else if (node.action === 'LoadPipeline' && Object.hasOwn(replacedLoaderFields, key)) {
+        const effective = recipeParams[replacedLoaderFields[key]].value;
+        field = {
+          ...field,
+          value: key === 'auto_offload' ? effective !== 'none' : effective,
+          disposition: 'superseded',
+          reason: 'connected-recipe',
+        };
+      } else if (retained && node.action === 'LoadPipeline' && key === 'device_map') {
+        field = { ...field, value: 'cuda', disposition: 'superseded', reason: 'loader-normalization' };
       } else if (key === 'image_contract') {
         field = {
           source: 'literal',
@@ -184,14 +231,19 @@ before(async () => {
         };
       }
       row.fieldAccounting.fields[key] = field;
-      if (node.action === 'Generate' && field.disposition === 'consumed' && !key.startsWith('pag_'))
+      if (
+        node.action === generateAction &&
+        field.disposition === 'consumed' &&
+        !key.startsWith('pag_') &&
+        (!retained || key !== 'batch_size')
+      )
         row.fields[key] = legacy(value);
       if (node.action === 'DiffusersExecutionRecipe' && key !== 'device_map_overrides')
         recipeValues[key] = key.endsWith('_components') ? value.split(',').filter(Boolean) : value;
     }
-    if (node.action === 'Generate') {
+    if (node.action === generateAction) {
       row.fields.executed_task = legacy(taskMode);
-      for (const [key, value] of Object.entries(emptyConditioning)) row.fields[key] = legacy(value);
+      if (!retained) for (const [key, value] of Object.entries(emptyConditioning)) row.fields[key] = legacy(value);
     }
     consumed.nodes.push(row);
   }
@@ -227,7 +279,7 @@ before(async () => {
     graphSnapshot: snapshot,
     formSnapshot: form,
     resolvedExecutionInputs: consumed,
-    mediaItems: [{ ...base.executedOutput.mediaItems[0], ...dimensions }],
+    mediaItems: [{ ...base.executedOutput.mediaItems[0], width: size, height: size }],
   };
   const run = { task, workflow_id: task.workflow_tab_id, workflow_snapshot: snapshot, outputs: [output] };
   const graphCompleted = {
@@ -257,13 +309,13 @@ before(async () => {
     task: taskMode,
     modelSet: base.modelIdentities.map(({ repoId, selectedRevision }) => ({ repoId, revision: selectedRevision })),
   };
-  synthetic = {
+  return {
     ...base,
     executedOutput: output,
     executionReceipt: task,
     canonicalAccountingProof: { expectedApiGraph, target, run, graphCompleted },
   };
-});
+}
 
 const projection = (value) => {
   const { expectedApiGraph, target, run, graphCompleted } = value.canonicalAccountingProof;
@@ -371,3 +423,85 @@ test('staged PixArt evidence rejects missing, relabelled, or contradictory nativ
     assert.throws(() => createRunProvenance(value), expected);
   }
 });
+
+for (const { modelType, evidencePath } of retainedProfiles) {
+  test(`${modelType} joins the resident automatic-attention proof and rejects contradictory receipts`, () => {
+    const value = syntheticRetained.get(modelType);
+    const original = structuredClone(value);
+    const result = projection(value);
+    assert.equal(result.plan.runtimeHintAccounting.policy, 'canonical-retained-unconditional-runtime-hints-v1');
+    assert.equal(result.plan.runtimeHintAccounting.route, 'correlation-only');
+    assert.equal(result.plan.attentionBackend, 'auto');
+    assert.equal(result.plan.offloadMode, 'none');
+    assert.equal(result.plan.deviceMap, 'cuda');
+    assert.equal(createRunProvenance(value).graph.executionPlanHash, result.hash);
+    assert.deepEqual(value, original);
+    for (const [mutate, message] of [
+      [
+        (candidate) => {
+          const generate = candidate.executedOutput.resolvedExecutionInputs.nodes.find(
+            (row) => row.action === 'UnconditionalGenerate',
+          );
+          generate.fieldAccounting.fields.eta.disposition = 'consumed';
+          delete generate.fieldAccounting.fields.eta.reason;
+        },
+        /Wrong disposition/,
+      ],
+      [
+        (candidate) => {
+          candidate.executionReceipt.runtimeFingerprint.packages.platform = 'Unreviewed-operating-system';
+        },
+        /Retained platform differs/,
+      ],
+      [
+        (candidate) => {
+          candidate.executionReceipt.runtimeMeasurement.backend = 'cpu';
+        },
+        /Retained measurement backend differs/,
+      ],
+      [
+        (candidate) => {
+          candidate.canonicalAccountingProof.target.modelSet[0].revision = '0'.repeat(40);
+        },
+        /Retained unconditional model is outside the reviewed scope/,
+      ],
+      [
+        (candidate) => {
+          candidate.executedOutput.mediaItems[0].height += 1;
+        },
+        /Retained unconditional output height differs/,
+      ],
+      [
+        (candidate) => {
+          delete candidate.canonicalAccountingProof.graphCompleted;
+        },
+        /Original completion frame/,
+      ],
+    ]) {
+      const changed = structuredClone(value);
+      mutate(changed);
+      assert.throws(() => projection(changed), message);
+      assert.throws(() => createRunProvenance(changed), message);
+    }
+  });
+
+  test(
+    `${modelType} validates the retained original workflow, native task, and WebP`,
+    { skip: !evidencePath },
+    async () => {
+      const workflowId = `${modelType}:unconditional_image`;
+      const original = readFileSync(evidencePath);
+      const { receipt, provenance } = await readCanonicalWorkflowEvidence({
+        clientRoot,
+        backendRoot,
+        workflowId,
+        evidencePath,
+      });
+      assert.equal(receipt.workflowId, workflowId);
+      assert.equal(receipt.proofKind, 'real_backend_weights');
+      assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+      assert.equal(provenance.graph.executionPlan.attentionBackend, 'auto');
+      assert.deepEqual(readFileSync(evidencePath), original);
+    },
+  );
+}

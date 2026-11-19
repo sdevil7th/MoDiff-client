@@ -1,3 +1,6 @@
+// Saved workflow compatibility measures 514731/693216 startup gzip bytes.
+// Account for the measured 1204/1206-byte additions over 513527/692010.
+// Existing startup headroom, deferred caps, and loading boundaries stay fixed.
 // Plain text-to-image accounting measures 513527/692010/352904 largest,
 // startup and deferred gzip bytes, compared with 513421/691907/353157 in
 // the previous packaged bundle measured on the same host. The startup limits
@@ -487,6 +490,7 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  1204 +
   106 +
   397 +
   398 +
@@ -720,6 +724,7 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  1206 +
   103 +
   396 +
   402 +

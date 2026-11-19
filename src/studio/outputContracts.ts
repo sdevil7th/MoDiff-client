@@ -163,6 +163,9 @@ export function coerceStudioFormState(value: unknown): StudioFormState {
     classLabel: numberValue(form.classLabel, DEFAULT_STUDIO_FORM.classLabel),
     resourceMode: normalizeStudioResourceMode(form.resourceMode),
     dtype: stringUnionValue(form.dtype, STUDIO_DTYPES, DEFAULT_STUDIO_FORM.dtype),
+    ...(typeof form.attentionBackend === 'string' && /^[a-z\d_.-]{1,64}$/i.test(form.attentionBackend)
+      ? { attentionBackend: form.attentionBackend }
+      : {}),
     ...(form.weightFormat === undefined ? {} : { weightFormat: persistedStudioWeightFormat(form.weightFormat) }),
     quantizationMode: stringUnionValue(
       form.quantizationMode,

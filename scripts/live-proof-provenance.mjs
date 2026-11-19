@@ -11,6 +11,7 @@ import {
   assertCanonicalAccountingGraphEnvelope,
   canonicalDdimRuntimeHintAccounting,
   canonicalPixArtSigmaPagRuntimeHintAccounting,
+  canonicalRetainedUnconditionalRuntimeHintAccounting,
 } from './canonical-runtime-hints.mjs';
 import {
   capturedNativeGraphSubmission,
@@ -2203,6 +2204,24 @@ const pixArtSigmaPag = {
       ' ',
     ),
 };
+const retainedUnconditionalRecipes = {
+  DDPMPipeline: {
+    repoId: 'google/ddpm-cifar10-32',
+    revision: '267b167dc01f0e4e61923ea244e8b988f84deb80',
+    size: 32,
+    steps: 1000,
+    platform: /^Windows-/u,
+    backend: 'cuda',
+  },
+  ConsistencyModelPipeline: {
+    repoId: 'openai/diffusers-cd_imagenet64_l2',
+    revision: '5f462e4403fc37b72ec6004e806c71805db22387',
+    size: 64,
+    steps: 1,
+    platform: /^Linux-/u,
+    backend: 'rocm',
+  },
+};
 // The older receipt includes unset conditioning kwargs, and omits PAG knobs.
 const pixArtLegacyNullFields = ['control_guidance_start', 'conditioning_scale', 'strength', 'control_guidance_end'];
 const pixArtLegacyFields = [
@@ -2263,7 +2282,7 @@ function accountingDigest(kind, value) {
 }
 
 /** Independent accounting join; not a provenance factory or release grant.
- * Scope is the reviewed five-node DDIM and PixArt Sigma PAG canonical creators.
+ * Scope is the reviewed whole-pipeline canonical image creators.
  * The optional shared-factory hook binds this join to the original task/output.
  * Native acceptance remains separate; the default factory path stays unchanged.
  */
@@ -2276,14 +2295,22 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     'Accounting graph is not the canonical export.',
   );
   const isPixArt = target.modelType === pixArtSigmaPag.modelType;
+  const retainedUnconditional = Object.hasOwn(retainedUnconditionalRecipes, target.modelType)
+    ? retainedUnconditionalRecipes[target.modelType]
+    : null;
   assert.ok(
-    isPixArt || target.modelType === 'DDIMPipeline',
+    isPixArt || retainedUnconditional || target.modelType === 'DDIMPipeline',
     'Canonical accounting model is outside the reviewed scope.',
   );
   assert.equal(target.task, isPixArt ? 'text_to_image' : 'unconditional_image');
   if (isPixArt) {
     assert.equal(target.workflowId, pixArtSigmaPag.workflowId);
     same(target.modelSet, pixArtSigmaPag.modelSet, 'PixArt model is outside the reviewed accounting scope.');
+  }
+  if (retainedUnconditional) {
+    const { repoId, revision } = retainedUnconditional;
+    assert.equal(target.workflowId, `${target.modelType}:unconditional_image`);
+    same(target.modelSet, [{ repoId, revision }], 'Retained unconditional model is outside the reviewed scope.');
   }
   const generateAction = isPixArt ? 'Generate' : 'UnconditionalGenerate';
   assert.equal(consumed?.schemaVersion, 1);
@@ -2572,7 +2599,9 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     target.modelSet,
     'Executed model set differs.',
   );
-  const inactive = new Set(isPixArt ? pixArtSigmaPag.inactive : ['class_label']);
+  const inactive = new Set(
+    isPixArt ? pixArtSigmaPag.inactive : ['class_label', ...(retainedUnconditional ? ['eta'] : [])],
+  );
   for (const key of accountingFields[generateAction]) {
     if (key === 'image_contract') {
       assert.equal(fields(generate)[key].disposition, 'metadata');
@@ -2587,6 +2616,42 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     );
   }
   assert.equal(value(generate, 'output_type'), 'pil', 'Only already-decoded output is accounted.');
+  if (retainedUnconditional) {
+    const { size, steps, platform, backend } = retainedUnconditional;
+    accountingKeys(
+      generate.row.fields,
+      ['executed_task', 'num_inference_steps', 'output_type', 'seed'],
+      'Retained unconditional controls are incomplete or unexpected.',
+    );
+    assert.equal(generate.node.params.image_contract.value.pipelineClass, target.modelType);
+    assert.equal(generate.node.params.image_contract.value.mode, target.task);
+    assert.equal(value(generate, 'num_inference_steps'), steps);
+    assert.equal(value(generate, 'batch_size'), 1);
+    assert.equal(value(generate, 'seed'), 42);
+    assert.equal(value(generate, 'class_label'), -1);
+    assert.equal(value(generate, 'eta'), 0);
+    assert.equal(value(owner, 'dtype'), 'float32');
+    assert.equal(value(owner, 'device'), 'cuda:0');
+    assert.equal(value(owner, 'device_map'), 'cuda');
+    assert.equal(recipeValues.attention_backend, 'auto', 'Retained unconditional attention differs.');
+    same(recipeValues.attention_components, [], 'Unreviewed attention component selection.');
+    for (const key of ['regional_compile', 'channels_last', 'layerwise_casting'])
+      assert.equal(recipeValues[key], false);
+    assert.equal(recipeValues.denoiser_cache, 'none');
+    assert.ok(
+      apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0,
+      'Retained unconditional output requires original submission and completion evidence.',
+    );
+    const { run, output } = runtimeEvidence ?? {};
+    assert.match(run?.task?.runtimeFingerprint?.packages?.platform ?? '', platform, 'Retained platform differs.');
+    assert.equal(run?.task?.runtimeMeasurement?.backend, backend, 'Retained measurement backend differs.');
+    assert.equal(run?.task?.runtimeMeasurement?.device, 'cuda:0', 'Retained measurement device differs.');
+    assert.equal(output?.formSnapshot?.resourceMode, 'expert', 'Retained run is outside Expert scope.');
+    assert.equal(output?.fieldKey, 'preview', 'Retained unconditional output field differs.');
+    assert.equal(output.mediaItems?.length, 1, 'Retained unconditional image is missing.');
+    assert.equal(output.mediaItems[0].width, size, 'Retained unconditional output width differs.');
+    assert.equal(output.mediaItems[0].height, size, 'Retained unconditional output height differs.');
+  }
   if (isPixArt) {
     accountingKeys(generate.row.fields, pixArtLegacyFields, 'PixArt legacy controls are incomplete or unexpected.');
     const contract = generate.node.params.image_contract.value;
@@ -2644,7 +2709,11 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     layerwiseCasting: recipeValues.layerwise_casting,
   };
   if (apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0) {
-    const accountHints = isPixArt ? canonicalPixArtSigmaPagRuntimeHintAccounting : canonicalDdimRuntimeHintAccounting;
+    const accountHints = retainedUnconditional
+      ? canonicalRetainedUnconditionalRuntimeHintAccounting
+      : isPixArt
+        ? canonicalPixArtSigmaPagRuntimeHintAccounting
+        : canonicalDdimRuntimeHintAccounting;
     plan.runtimeHintAccounting = accountHints({
       apiGraph,
       consumed,

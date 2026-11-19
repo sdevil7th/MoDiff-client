@@ -668,6 +668,20 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const evidence = JSON.parse(descriptorBytes.toString('utf8'));
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.workflowId, workflowId);
+  if (
+    evidence.format === 'modiff.private.input-bound-model-smoke.v1' &&
+    workflowId === 'MarigoldDepthPipeline:depth_estimation'
+  ) {
+    const { readMarigoldPreviewEvidence } = await import('./marigold-preview-evidence.mjs');
+    return readMarigoldPreviewEvidence({
+      clientRoot,
+      manifest,
+      graph,
+      authoring: authoringMatches[0],
+      artifact,
+      evidencePath,
+    });
+  }
   if (evidence.format === 'modiff.private.input-bound-model-smoke.v1') {
     const { readInputBoundModelEvidence } = await import('./input-bound-model-evidence.mjs');
     return readInputBoundModelEvidence({
@@ -679,7 +693,29 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       evidencePath,
     });
   }
-  assert.equal(evidence.format, 'modiff.canonical-workflow-evidence.v1');
+  if (
+    evidence.format === 'modiff.private.smollm2-prompt-variant.v1' ||
+    evidence.format === 'modiff.private.shap-e-prompt-variant.v1'
+  ) {
+    const { readPromptVariantEvidence } = await import('./prompt-variant-evidence.mjs');
+    return readPromptVariantEvidence({
+      clientRoot,
+      manifest,
+      graph,
+      authoring: authoringMatches[0],
+      artifact,
+      evidencePath,
+    });
+  }
+  const captureFormat = {
+    'DDPMPipeline:unconditional_image': 'modiff.private.ddpm-attention-variant.v1',
+    'ConsistencyModelPipeline:unconditional_image': 'modiff.private.consistency-attention-variant.v1',
+  }[workflowId];
+  assert.ok(
+    evidence.format === 'modiff.canonical-workflow-evidence.v1' ||
+      (captureFormat !== undefined && evidence.format === captureFormat),
+    'Canonical evidence descriptor format does not match the workflow.',
+  );
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoringMatches[0], artifact);
   assert.ok(
     graph.nodes.every((node) =>

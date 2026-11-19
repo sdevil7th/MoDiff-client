@@ -86,17 +86,31 @@ export function canonicalDdimRuntimeHintAccounting(args) {
     'google/ddpm-cifar10-32',
     'Hinted DDIM model variants need a separate accounting policy.',
   );
-  return canonicalRuntimeHintAccounting(args, 'unconditional_image');
+  return canonicalRuntimeHintAccounting(args, 'unconditional_image', 'canonical-ddim-runtime-hints-v1');
 }
 
 // The reviewed PixArt route is a staged Expert graph with transport hints only.
 export function canonicalPixArtSigmaPagRuntimeHintAccounting(args) {
-  return canonicalRuntimeHintAccounting(args, 'text_to_image', true);
+  return canonicalRuntimeHintAccounting(args, 'text_to_image', 'canonical-pixart-sigma-pag-runtime-hints-v1', true);
+}
+
+export function canonicalRetainedUnconditionalRuntimeHintAccounting(args) {
+  return canonicalRuntimeHintAccounting(
+    args,
+    'unconditional_image',
+    'canonical-retained-unconditional-runtime-hints-v1',
+    true,
+  );
+}
+
+export function canonicalMarigoldPreviewRuntimeHintAccounting(args) {
+  return canonicalRuntimeHintAccounting(args, 'depth_estimation', 'canonical-marigold-preview-runtime-hints-v1', true);
 }
 
 function canonicalRuntimeHintAccounting(
   { apiGraph, consumed, plan, runtimeEvidence, digest },
   taskMode,
+  policy,
   staged = false,
 ) {
   const hints = apiGraph.runtimeHints;
@@ -422,7 +436,7 @@ function canonicalRuntimeHintAccounting(
       'Transport-only budget decision differs.',
     );
   return {
-    policy: staged ? 'canonical-pixart-sigma-pag-runtime-hints-v1' : 'canonical-ddim-runtime-hints-v1',
+    policy,
     route: managed ? 'studio-expert' : 'correlation-only',
     budgetDecision,
     submittedHintsHash: digest('canonical-runtime-hints-v1', hints),

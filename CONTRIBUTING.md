@@ -302,8 +302,8 @@ npm run gallery:coverage
 Do not publish a local artifact, private input, personal path, access token, or source revision through a Gallery bundle.
 
 The standalone, model-backed canonical execution recorder is separate from public
-templates. It validates original native execution records for the unchanged DDIM
-route and the reviewed PixArt Sigma PAG text-to-image route. Use the exact workflow
+templates. It validates original native execution records for the reviewed
+DDIM, DDPM, Consistency, and PixArt Sigma PAG routes. Use the exact workflow
 ID from the retained descriptor:
 
 ```bash
@@ -321,7 +321,7 @@ observations retain the ordinary model-list response. `outputs` contains ordered
 the original browser downloads and raw task body; do not reconstruct their
 fields from a catalog or replace defaults, paths, prompts, or model pins.
 
-For hinted DDIM and PixArt Sigma PAG accounting, also retain `graphCompleted` as a
+For these hinted accounting routes, also retain `graphCompleted` as a
 `{path, bytes, sha256}` reference to the **original** `graph_completed` WebSocket
 JSON frame (at most 16 MiB). Public run-detail GET responses deliberately omit
 `runtimeHints`; do not add invented hints to them. The shared factory and reader
@@ -414,10 +414,15 @@ native accounting. It derives the plan itself and binds task, attempt, output,
 model and completion identities without adding runtime hints or rewriting proofs.
 The DDIM profile accepts the unquantized float32 resident CIFAR-10 graph with
 correlation-only hints or its existing Studio Expert producer payload. The
+DDPM and Consistency profiles accept the exact newly authored automatic
+attention routes with their respective original Windows CUDA and Linux ROCm
+captures. The original `modiff.private.ddpm-attention-variant.v1` and
+`modiff.private.consistency-attention-variant.v1` descriptors share the exact
+current-graph accounting checks. The
 reviewed PixArt Sigma PAG profile accepts its pinned model with model CPU offload
 on CUDA and correlation-only hints. It verifies the assembled visual owners and
 the observed Generate controls, including both PAG scales, the conditioning
-alias and the image contract. Both profiles reject unknown execution authority,
+alias and the image contract. These profiles reject unknown execution authority,
 coercions, Auto and nonempty retry plans or history. DDIM accounts for the full saved observation form and the
 actual advisory CUDA reset decision; `fraction: 1` alone does not prove that a
 reset succeeded. Hinted and unhinted accounting also check the complete current,
@@ -479,15 +484,31 @@ and later immutable model/registry observations must be labelled separately from
 original pre-run observations; never rewrite the raw task or media.
 
 The `modiff.private.input-bound-model-smoke.v1` descriptor is supported for the
-standalone Spandrel Real-ESRGAN x2 image workflow. The reader exports the current
+standalone Spandrel Real-ESRGAN x2 image and Marigold depth-preview workflows.
+The reader exports the current
 canonical graph through the normal client path and checks the supplied variant
 against its sole declared image binding. It verifies the archived source with
-the native Load receipt, the exact installed weight file with the executor's
-controlled-artifact record, and the terminal Preview with the original output.
+the native Load receipt and the terminal Preview with the original output.
+The Spandrel check also joins the exact weight file to the executor's
+controlled-artifact record. The Marigold check joins the installed model pin
+and decoded depth preview. The numeric depth map is outside that receipt's scope.
 The resulting record identifies the populated fixture variant and records
 `canonicalDefaultsExecuted: false`, since the catalogue graph has an empty file
 selector. Other model-backed file-input routes need their own reviewed bindings
 and original execution evidence.
+
+The original `modiff.private.smollm2-prompt-variant.v1` and
+`modiff.private.shap-e-prompt-variant.v1` descriptions bind only the one empty
+authored prompt in their respective workflows. Native producer evidence and the
+original text or video are required. These receipts cover the populated prompt
+variants and record the limits of their native control accounting.
+
+Run evidence always uses the direct exporter for the original archived graph.
+Opening an editable workflow tab separately applies the legacy attention
+default repair to matching DDPM and Consistency presets. A workflow-local
+attention selection takes precedence. The exact older managed specification
+receipt remains attached to a restored managed graph while its current
+compatible authoring rules are used for form edits.
 
 The recorder copies original evidence under the backend's ignored
 `data/qualification/release/canonical-workflow-evidence/` directory and records

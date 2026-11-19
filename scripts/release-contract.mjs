@@ -347,6 +347,7 @@ const executionStatuses = {
   real_backend_deterministic_data: 'verified_deterministic_execution',
   real_backend_deterministic_media: 'verified_deterministic_media_execution',
   real_backend_input_bound_model_variant: 'verified_input_bound_model_variant',
+  real_backend_prompt_bound_model_variant: 'verified_prompt_bound_model_variant',
 };
 const canonicalRegistryPath = join(BACKEND_ROOT, 'data/qualification/release/canonical-workflow-run-receipts.v1.json');
 if (existsSync(canonicalRegistryPath)) {

@@ -76,7 +76,11 @@ if (qualificationArgs[0] === '--workflow' && qualificationArgs.length === 2 && q
     (a, b) => a.workflowId.localeCompare(b.workflowId) || a.capturedAt.localeCompare(b.capturedAt),
   );
   writeFileSync(registryPath, `${JSON.stringify({ ...previous, receipts }, null, 2)}\n`);
-  const scope = receipt.proofKind === 'real_backend_input_bound_model_variant' ? 'input-bound' : 'exact canonical';
+  const scopes = {
+    real_backend_input_bound_model_variant: 'input-bound',
+    real_backend_prompt_bound_model_variant: 'prompt-bound',
+  };
+  const scope = scopes[receipt.proofKind] ?? 'exact canonical';
   console.log(`Retained ${scope} execution evidence for ${receipt.workflowId}. This records technical execution only.`);
   process.exit(0);
 }

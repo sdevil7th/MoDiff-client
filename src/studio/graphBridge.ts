@@ -39,7 +39,11 @@ import {
   getModelRequirementsForMode,
 } from './modelProfiles';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from './autoResource';
-import { exactStudioExecutionProfileForForm, exactStudioExecutionSpecForForm } from './executionSpecs';
+import {
+  exactStudioExecutionProfileForForm,
+  exactStudioExecutionSpecForBinding,
+  exactStudioExecutionSpecForForm,
+} from './executionSpecs';
 import { resolveStudioExecutionSpecValues } from './executionSpecValues';
 import {
   assertStudioWeightFormatOptions,
@@ -75,14 +79,12 @@ function executionSpecForForm(
 }
 
 function executionSpecForBinding(binding: StudioGraphBinding): StudioExecutionSpec | null | undefined {
-  const spec = executionSpecForForm(binding);
-  if (!spec) return spec;
-  return binding.executionSpec?.schemaVersion === 1 &&
-    binding.executionSpec.id === spec.id &&
-    binding.executionSpec.contentHash === spec.contentHash &&
-    binding.executionSpec.executionProfileId === spec.executionProfileId
-    ? spec
-    : null;
+  const nodeStore = useNodesStore.getState();
+  return exactStudioExecutionSpecForBinding(
+    nodeStore.studioModelCapabilities,
+    nodeStore.studioExecutionSpecInvalid,
+    binding,
+  );
 }
 
 function executionProfileForForm(form: Pick<StudioFormState, 'modelType' | 'mode'>) {
@@ -623,9 +625,10 @@ function hasPartialCombinedControlGroup(binding: StudioGraphBinding) {
   );
 }
 
-function bindingFingerprint(form: StudioFormState) {
+function bindingFingerprint(form: StudioFormState, binding?: StudioGraphBinding) {
   const spec = executionSpecForForm(form);
-  const receipt = spec ? `:${spec.id}:${spec.contentHash}` : spec === null ? ':invalid-spec' : '';
+  const saved = binding && spec && executionSpecForBinding(binding) === spec ? binding.executionSpec : null;
+  const receipt = spec ? `:${spec.id}:${saved?.contentHash ?? spec.contentHash}` : spec === null ? ':invalid-spec' : '';
   const format = explicitStudioWeightFormat(form);
   return `${form.mode}:${form.modelType}:${form.resourceMode}:${form.quantizationMode}${receipt}${format !== undefined ? `:weight-format=${format === null ? 'blocked' : format}` : ''}`;
 }
@@ -636,12 +639,12 @@ function bindingMatchesForm(binding: StudioGraphBinding, form: StudioFormState) 
     spec !== null &&
     binding.mode === form.mode &&
     binding.modelType === form.modelType &&
-    binding.fingerprint === bindingFingerprint(form)
+    binding.fingerprint === bindingFingerprint(form, binding)
   );
 }
 
 function bindingShapeKey(binding: StudioGraphBinding, form: StudioFormState) {
-  return `${bindingFingerprint(form)}:${participatingRoles(form, binding).join('|')}`;
+  return `${bindingFingerprint(form, binding)}:${participatingRoles(form, binding).join('|')}`;
 }
 
 export function getStudioGraphShapeKey(form: StudioFormState = useStudioStore.getState().form) {
@@ -3980,7 +3983,7 @@ export function syncStudioGraphDefinition(form: StudioFormState = useStudioStore
     }
     binding = {
       ...binding,
-      fingerprint: bindingFingerprint(plannedForm),
+      fingerprint: bindingFingerprint(plannedForm, binding),
       updatedAt: Date.now(),
     };
     studio.setGraphBinding(binding);

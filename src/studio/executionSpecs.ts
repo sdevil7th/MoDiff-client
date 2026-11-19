@@ -1,4 +1,5 @@
 import { hashString, stableStringify } from './stableHash';
+import { savedAttentionDefaultUpdate } from './savedStudioSpecCompatibility';
 import type {
   StudioExecutionProfile,
   StudioExecutionSpec,
@@ -264,11 +265,11 @@ export function studioExecutionSpecRuntimeReceipt(
   executableNodes?: Readonly<Record<string, unknown>>,
 ) {
   if (!binding?.executionSpec) return undefined;
-  const spec = capabilities
+  const receipt = binding.executionSpec;
+  const exact = capabilities
     .find((item) => item.modelType === binding.modelType)
-    ?.studioExecutionSpecs?.find(
-      (item) => item.id === binding.executionSpec?.id && item.contentHash === binding.executionSpec.contentHash,
-    );
+    ?.studioExecutionSpecs?.find((item) => item.id === receipt.id && item.contentHash === receipt.contentHash);
+  const spec = exact ?? exactStudioExecutionSpecForBinding(capabilities, false, binding);
   if (!spec || spec.mode !== binding.mode) throw new Error('The Studio execution specification receipt is stale.');
   const nodes = Object.fromEntries(
     spec.roles.map(([role]) => {
@@ -297,4 +298,18 @@ export function studioExecutionSpecRuntimeReceipt(
     contentHash: binding.executionSpec.contentHash,
     nodes,
   };
+}
+
+export function exactStudioExecutionSpecForBinding(
+  capabilities: readonly StudioModelProfile[],
+  invalid: boolean,
+  binding: StudioGraphBinding,
+): StudioExecutionSpec | null | undefined {
+  const current = exactStudioExecutionSpecForForm(capabilities, invalid, binding);
+  if (!current) return current;
+  const saved = binding.executionSpec;
+  if (saved?.schemaVersion !== 1 || saved.id !== current.id || saved.executionProfileId !== current.executionProfileId)
+    return null;
+  const update = savedAttentionDefaultUpdate(binding);
+  return saved.contentHash === current.contentHash || update?.currentHash === current.contentHash ? current : null;
 }
