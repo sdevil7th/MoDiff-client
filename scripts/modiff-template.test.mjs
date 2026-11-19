@@ -2909,7 +2909,7 @@ test('template prompt recipes are distinct, detailed, and not generic placeholde
     } else if (template.promptQualityPolicy === 'adapter_reference') {
       assert.equal(template.category, 'lora', `${template.id} adapter reference prompts are limited to LoRA recipes`);
       assert.ok(template.prompt.length >= 20, `${template.id} retains a meaningful adapter reference prompt`);
-    } else if (template.mode === 'depth_estimation') {
+    } else if (template.mode === 'depth_estimation' || template.mode === 'image_upscale') {
       assert.equal(template.prompt, '', `${template.id} uses only a source image`);
     } else if (template.mode === 'text_generation') {
       assert.ok(template.prompt.trim(), `${template.id} asks the text model a question`);
@@ -3056,8 +3056,17 @@ test('LTX templates use the qualified 13B distilled execution contract', () => {
   );
 });
 
-test('every published template exposes a hardware-aware loader reuse contract for family batches', () => {
+test('published templates declare loader reuse only where the workflow has a reusable loader', () => {
   for (const template of templatesModule.STUDIO_TEMPLATES) {
+    if (template.mode === 'image_upscale' && template.modelType === 'SpandrelImageUpscale') {
+      assert.deepEqual(template.requiredBackendCapabilities, [
+        'modules.Image.Load',
+        'modules.Spandrel.Upscaler',
+        'modules.Image.Preview',
+      ]);
+      assert.equal(template.runtimeReuseKey, undefined, `${template.id} loads its checkpoint in the upscaler`);
+      continue;
+    }
     assert.ok(template.runtimeReuseKey, `${template.id} has a loader reuse key`);
   }
 
@@ -4560,10 +4569,12 @@ test('Experimental refuses undeclared or incomplete internal creator selections'
 test('every template name identifies its exact model and operation', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
   for (const template of STUDIO_TEMPLATES) {
-    assert.ok(
-      template.label.startsWith(`${browserModule.templateModelDisplayName(template)} — `),
-      `${template.id} must begin with its model name`,
-    );
+    const modelName = browserModule.templateModelDisplayName(template);
+    const modelLabel =
+      template.mode === 'image_upscale' && template.modelType === 'SpandrelImageUpscale'
+        ? `Spandrel ${modelName}`
+        : modelName;
+    assert.ok(template.label.startsWith(`${modelLabel} — `), `${template.id} must begin with its model name`);
     assert.doesNotMatch(template.label, /^(Low VRAM|High quality|Fast LoRA)$/i);
   }
   assert.equal(
