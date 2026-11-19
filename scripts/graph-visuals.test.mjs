@@ -10452,7 +10452,7 @@ test('canonical workflow generation persists the final layout and library open d
   assert.match(generator, /refreshTaskTemplateContracts/);
   assert.match(generator, /applyTaskTemplateSkeleton/);
   assert.match(generator, /applyTemplate\(templateId, \{ resourceMode: 'expert' \}\)/);
-  assert.match(generator, /if \(!byPair\.has\(pair\)\)/);
+  assert.match(generator, /selectCanonicalWorkflowSources\(templates, taskTemplates, retainedTemplateIds\)/);
   assert.match(generator, /shouldRecycleWorkflowBrowser\(completedWorkflowsInSession, WORKFLOW_BROWSER_BATCH_SIZE\)/);
   assert.match(generator, /launchWorkflowBrowser\(\(\) => chromium\.launch\(browserLaunchOptions\)\)/);
   assert.match(generator, /if \(isWorkflowBrowserSessionError\(error\)\) throw error/);

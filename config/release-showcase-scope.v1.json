@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "c7a3c2e344d8fc11e63d1fcdaa37db40b529a853"
+    "revision": "b3fefedf324c08cb50eaf4654ce68fefc041d0ef"
   },
   "originalCampaign": {
     "total": 89,
@@ -452,9 +452,21 @@
       "countedAsComplete": false
     },
     {
+      "id": "marigold_depth_synthetic_ramp",
+      "category": "supplementary-only",
+      "reason": "Published and registered as a supplementary Gallery example outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
       "id": "minimax_h3_image_old_town_cat",
       "category": "supplementary-only",
       "reason": "Approved supplementary showcases are separate examples; this template is outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "smollm2_rain_gauge",
+      "category": "supplementary-only",
+      "reason": "Published and registered as a supplementary Gallery example outside the original campaign selection.",
       "countedAsComplete": false
     },
     {
@@ -500,5 +512,5 @@
       "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:6758db9df5f354bbfa69e5552ddbd15ee6f03969a31a46c18b7375b8ef579df8"
+  "profileHash": "sha256:canonical-json:b9d5e60d449044a2445c782bfc5930cc3d6eade0d1786a89c548b66c1d8436a3"
 }
