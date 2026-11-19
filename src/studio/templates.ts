@@ -35,6 +35,7 @@ import {
   VIDEO_PROMPT_GUIDE,
 } from './promptGuides';
 import { templateDefaultInputBindings } from './generated/templateDefaultInputBindings';
+import { RETAINED_GALLERY_TEMPLATES } from './retainedGalleryTemplates';
 
 // Editorial card posters keep every runnable template visually complete while
 // model-generated video/audio evidence is still awaiting qualification. They
@@ -5257,9 +5258,10 @@ export const PLANNING_STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEM
   (template) => template.example?.status === 'blocked',
 );
 
-export const STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEMPLATES.filter(
-  (template) => template.example?.status !== 'blocked',
-);
+export const STUDIO_TEMPLATES: StudioTemplate[] = [
+  ...NORMALIZED_STUDIO_TEMPLATES.filter((template) => template.example?.status !== 'blocked'),
+  ...RETAINED_GALLERY_TEMPLATES.map(({ template }) => template),
+];
 
 export function getStudioTemplateLoraBaseModel(templateId: StudioTemplateId | null | undefined) {
   return STUDIO_TEMPLATES.find((template) => template.id === templateId)?.workflowBlockSettings?.lora?.baseModel;

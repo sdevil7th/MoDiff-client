@@ -1395,6 +1395,9 @@ function TemplateRecipeDetail({
           <p className="mt-1 text-xs leading-5 text-modiff-subtle-text">
             {template.recipeSummary ?? template.description}
           </p>
+          {template.tags?.includes('technical preview') && template.example?.notes ? (
+            <p className="mt-1 text-xs leading-5 text-modiff-subtle-text">{template.example.notes}</p>
+          ) : null}
         </section>
 
         <section className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3">
@@ -1525,6 +1528,21 @@ function TemplateBrowserPreview({
   thumbnailPath?: string;
   variant?: StudioTemplate['thumbnailVariant'];
 }) {
+  if (mediaKind === 'json' && afterPath) {
+    return (
+      <div className="grid aspect-video place-content-center justify-items-center gap-2 rounded-modiff-panel border border-modiff-border bg-modiff-panel p-3 text-center text-sm text-modiff-text">
+        <LayoutGrid aria-hidden="true" size={24} />
+        {detail ? (
+          <a className="text-modiff-blue underline" href={afterPath} target="_blank" rel="noreferrer">
+            Open structured response
+          </a>
+        ) : (
+          <span>Structured response</span>
+        )}
+      </div>
+    );
+  }
+
   if (mediaKind === 'image' && beforePath && afterPath) {
     return <ComparisonMedia afterPath={afterPath} beforePath={beforePath} detail={detail} />;
   }

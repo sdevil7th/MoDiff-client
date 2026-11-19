@@ -173,9 +173,26 @@ test('the complete catalog audits authored prompts and reports backend defaults 
       'image_outpaint',
       'image_control',
       'image_layers',
+      'depth_estimation',
+      'text_generation',
       'video',
       'audio',
     ]),
+  );
+});
+
+test('depth and text audits follow the input contracts of their own tasks', () => {
+  const depth = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'marigold_depth_synthetic_ramp');
+  const text = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'smollm2_rain_gauge');
+  assert.equal(qualityModule.auditTemplateQuality(depth).passed, true);
+  assert.equal(qualityModule.auditTemplateQuality(text).passed, true);
+  assert.deepEqual(
+    qualityModule.auditTemplateQuality({ ...depth, prompt: 'Estimate depth.' }).issues.map((issue) => issue.code),
+    ['unsupported_prompt_input'],
+  );
+  assert.deepEqual(
+    qualityModule.auditTemplateQuality({ ...text, prompt: '' }).issues.map((issue) => issue.code),
+    ['missing_semantic_group'],
   );
 });
 

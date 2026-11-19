@@ -3,6 +3,23 @@ export function compareCanonicalWorkflowRecordIds(left, right) {
   return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
 
+export function selectCanonicalWorkflowSources(templates, taskTemplates, retainedTemplateIds) {
+  const byPair = new Map();
+  for (const template of templates) {
+    // A retained Gallery example belongs to the catalog, but its explicit
+    // input/prompt cannot replace the standalone task's editable defaults.
+    if (retainedTemplateIds.has(template.id)) continue;
+    const pair = `${template.modelType}|${template.mode}`;
+    const current = byPair.get(pair);
+    if (!current || (current.category === 'lora' && template.category !== 'lora')) byPair.set(pair, template);
+  }
+  for (const template of taskTemplates) {
+    const pair = `${template.modelType}|${template.mode}`;
+    if (!byPair.has(pair)) byPair.set(pair, { ...template, taskContract: true });
+  }
+  return byPair;
+}
+
 export function selectCanonicalWorkflowVariantTemplates(templates, reviewedTemplateIds = [], scope = {}) {
   if (scope.requestedPair && scope.requestedTemplateId) throw new Error('Choose one canonical generation scope.');
   const reviewed = new Set(reviewedTemplateIds);

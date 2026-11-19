@@ -16,6 +16,10 @@ import { createServer } from 'vite';
 import { compareRunProvenance, runtimeLockFromProvenance } from './live-proof-provenance.mjs';
 import templateGalleryContract from '../src/studio/templateGalleryContract.json' with { type: 'json' };
 import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
+import {
+  RETAINED_GALLERY_PROVENANCE_FORMAT,
+  validateRetainedGalleryProvenance,
+} from './retained-gallery-provenance.mjs';
 import { validateTemplateAssetRelease, validateTemplateAssetSource } from './template-asset-source-contract.ts';
 import { sourceVideoTimingMatches } from '../src/studio/sourceVideoTiming.ts';
 
@@ -2407,7 +2411,7 @@ function canonicalGalleryAssetPath(path) {
   );
 }
 
-function galleryVerificationScope(root) {
+export function galleryVerificationScope(root) {
   const read = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
   const source = validateTemplateAssetSource(read('src/studio/templateAssetSource.json'));
   if (source.mode === 'local') return { source, assets: [], withheld: [] };
@@ -2696,20 +2700,24 @@ export async function verifyGallery(
       }
     }
     const provenancePath = join(root, 'public', String(entry.provenancePath ?? '').replace(/^\//, ''));
+    let retainedProvenance = false;
     if (!existsSync(provenancePath)) {
       errors.push(`${entry.templateId} provenance missing: ${entry.provenancePath}`);
     } else {
       try {
         const bundle = JSON.parse(readFileSync(provenancePath, 'utf8'));
+        retainedProvenance = bundle.format === RETAINED_GALLERY_PROVENANCE_FORMAT;
         const provenanceHash = canonicalJsonHash(bundle);
         if (provenanceHash !== entry.provenanceHash) {
           errors.push(
             `${entry.templateId} provenance hash mismatch: expected ${entry.provenanceHash}, got ${provenanceHash}`,
           );
         }
-        const expectedFormat = exactPublication
-          ? 'modiff.gallery.duplicate-provenance.v1'
-          : 'modiff.gallery.reviewed-provenance.v1';
+        const expectedFormat = retainedProvenance
+          ? RETAINED_GALLERY_PROVENANCE_FORMAT
+          : exactPublication
+            ? 'modiff.gallery.duplicate-provenance.v1'
+            : 'modiff.gallery.reviewed-provenance.v1';
         if (bundle.schemaVersion !== 1 || bundle.format !== expectedFormat) {
           errors.push(`${entry.templateId} provenance bundle schema/format is invalid for ${verificationStatus}`);
         }
@@ -2742,36 +2750,55 @@ export async function verifyGallery(
           }
         }
         const { runtimeFingerprint: _redactedRuntimeFingerprint, ...publiclyRecomputableBindings } = expectedBindings;
-        const pinnedRun = exactPublication ? bundle.run2 : bundle.run;
-        const provenanceErrors = exactPublication
-          ? validateDuplicateProvenance(bundle.run1, bundle.run2, publiclyRecomputableBindings).errors
-          : validateSingleProvenance(bundle.run, publiclyRecomputableBindings, bundle.derivative);
-        errors.push(...provenanceErrors.map((error) => `${entry.templateId} ${error}`));
-        if (entry.beforeMediaHash) {
-          const inputHashes = (pinnedRun?.inputs?.items ?? []).map((item) => item?.contentHash);
-          const sourceMediaHash = entry.beforeSourceMediaHash ?? entry.beforeMediaHash;
-          if (!inputHashes.includes(sourceMediaHash)) {
-            errors.push(`${entry.templateId} before source media hash does not match pinned provenance inputs`);
+        if (retainedProvenance) {
+          const retainedBefore = entry.beforePath && join(publicRoot, entry.beforePath.slice(1));
+          const readAvailable = (filename, assetPath) =>
+            filename && !isWithheld(assetPath) && existsSync(filename) && lstatSync(filename).size <= 2 * 1024 * 1024
+              ? readFileSync(filename)
+              : undefined;
+          const provenanceErrors = validateRetainedGalleryProvenance(bundle, entry, {
+            templateRevisionHash:
+              template &&
+              storageJsonHash({
+                template,
+                settings: runtime.lockedSettingsForTemplate(template),
+              }),
+            outputBytes: readAvailable(outputPath, entry.outputPath),
+            beforeBytes: readAvailable(retainedBefore, entry.beforePath),
+          });
+          errors.push(...provenanceErrors.map((error) => `${entry.templateId} ${error}`));
+        } else {
+          const pinnedRun = exactPublication ? bundle.run2 : bundle.run;
+          const provenanceErrors = exactPublication
+            ? validateDuplicateProvenance(bundle.run1, bundle.run2, publiclyRecomputableBindings).errors
+            : validateSingleProvenance(bundle.run, publiclyRecomputableBindings, bundle.derivative);
+          errors.push(...provenanceErrors.map((error) => `${entry.templateId} ${error}`));
+          if (entry.beforeMediaHash) {
+            const inputHashes = (pinnedRun?.inputs?.items ?? []).map((item) => item?.contentHash);
+            const sourceMediaHash = entry.beforeSourceMediaHash ?? entry.beforeMediaHash;
+            if (!inputHashes.includes(sourceMediaHash)) {
+              errors.push(`${entry.templateId} before source media hash does not match pinned provenance inputs`);
+            }
           }
-        }
-        for (const field of [
-          'graphHash',
-          'proofLockHash',
-          'backendSourceFingerprint',
-          'backendContractFingerprint',
-          'modelCommit',
-          'templateRevisionHash',
-          ...(entry.modelSetHash ? ['modelSetHash'] : []),
-          ...(entry.inputArtifactsHash ? ['inputArtifactsHash'] : []),
-        ]) {
-          const provenanceValue =
-            field === 'modelSetHash'
-              ? pinnedRun?.models?.hash
-              : field === 'inputArtifactsHash'
-                ? pinnedRun?.inputArtifactsHash
-                : pinnedRun?.[field];
-          if (provenanceValue !== entry[field]) {
-            errors.push(`${entry.templateId} manifest ${field} does not match pinned provenance`);
+          for (const field of [
+            'graphHash',
+            'proofLockHash',
+            'backendSourceFingerprint',
+            'backendContractFingerprint',
+            'modelCommit',
+            'templateRevisionHash',
+            ...(entry.modelSetHash ? ['modelSetHash'] : []),
+            ...(entry.inputArtifactsHash ? ['inputArtifactsHash'] : []),
+          ]) {
+            const provenanceValue =
+              field === 'modelSetHash'
+                ? pinnedRun?.models?.hash
+                : field === 'inputArtifactsHash'
+                  ? pinnedRun?.inputArtifactsHash
+                  : pinnedRun?.[field];
+            if (provenanceValue !== entry[field]) {
+              errors.push(`${entry.templateId} manifest ${field} does not match pinned provenance`);
+            }
           }
         }
       } catch (error) {
@@ -2806,6 +2833,7 @@ export async function verifyGallery(
           ...(entry.modelSetHash ? { modelSetHash: entry.modelSetHash } : {}),
           ...(entry.inputArtifactsHash ? { inputArtifactsHash: entry.inputArtifactsHash } : {}),
           decodedMediaHash: entry.mediaHash,
+          ...(retainedProvenance ? { reviewer: entry.reviewer, reviewedAt: entry.reviewedAt } : {}),
           ...(entry.decodedAudioHash ? { decodedAudioHash: entry.decodedAudioHash } : {}),
           ...(entry.audiovisualMediaHash ? { audiovisualMediaHash: entry.audiovisualMediaHash } : {}),
         },

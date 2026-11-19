@@ -1560,6 +1560,17 @@
       ]
     },
     {
+      "path": "template-gallery/inputs/marigold_depth_synthetic_ramp.before.png",
+      "size": 177,
+      "sha256": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 64,
+      "height": 48
+    },
+    {
       "path": "template-gallery/inputs/qwen-carton-layout-control.png",
       "size": 11137,
       "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
@@ -2103,13 +2114,24 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 227953,
-      "sha256": "sha256:bytes:5e3a95bb97bc8a83bfa2e7a45bef2e1bf7566c4f36308dbaa16503cd5043d1a2",
+      "size": 229404,
+      "sha256": "sha256:bytes:6d0538b4311d5366bfe162e5af113895b256c91668ade3e250e80c2ca4d37d12",
       "contentType": "application/json",
       "purposes": [
         "runtime",
         "tooling"
       ]
+    },
+    {
+      "path": "template-gallery/marigold_depth_synthetic_ramp.webp",
+      "size": 542,
+      "sha256": "sha256:bytes:129d4b01ca70f532e672214e85be073482aed461465b863467f0c871bf7c94db",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 64,
+      "height": 48
     },
     {
       "path": "template-gallery/minimax_music3_chamber_pop.wav",
@@ -3411,6 +3433,24 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/marigold_depth_synthetic_ramp.quality-review.json",
+      "size": 2882,
+      "sha256": "sha256:bytes:17c3bbb2da127558c468e58ccc2bb08a9b78d4f07f901d483cfe8092732ebb42",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/marigold_depth_synthetic_ramp.retained-template-provenance.json",
+      "size": 2639,
+      "sha256": "sha256:bytes:57b1487ecee6f44016512e1e1ce5c8135e963add06b1519b7e6007cb83184ae0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/minimax_music3_chamber_pop.quality-review.json",
       "size": 3481,
       "sha256": "sha256:bytes:cd83b77fc2ccb4b11263406c12dc9d0d222af582e52dc47b77c18a4243462502",
@@ -3837,6 +3877,24 @@
       "path": "template-gallery/reviews/reference_fusion.reviewed-provenance.json",
       "size": 107349,
       "sha256": "sha256:bytes:e8bb52b4d660c345368dd44a7d9d40edf62b00770a01dc444a5d5e9ec8d8bd87",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/smollm2_rain_gauge.quality-review.json",
+      "size": 2378,
+      "sha256": "sha256:bytes:a457e4143d17eecd1af499e61a28e7df0533b4a6a8f67712182ab8a829115e09",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/smollm2_rain_gauge.retained-template-provenance.json",
+      "size": 2565,
+      "sha256": "sha256:bytes:6b45536aab6905c02b1e937fb6c684765c30354ceff8e05c7ec6c1454500f168",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5032,6 +5090,15 @@
       "height": 576
     },
     {
+      "path": "template-gallery/smollm2_rain_gauge.json",
+      "size": 1190,
+      "sha256": "sha256:bytes:c92d19b1c39c5157b09f19d654c871f7453a9c794c733265fd89b7cc9521ea43",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png",
       "size": 2904091,
       "sha256": "sha256:bytes:fd3dbd225c9cd6d1a07b0bcfd80724b60b235f4287423a234c0a56017cd1d3b2",
@@ -5425,9 +5492,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:e699ffd797db2ec4e069406ce099ac84a9616e56bea79af9cb687dfd86ec5b35",
+  "assetSetId": "sha256:canonical-json:c3d16e412f427cdd1e51b95f7a4173938cb4daecc7e5e6744324fa4845046637",
   "status": "ready",
-  "assetCount": 548,
-  "totalBytes": 1036618582,
+  "assetCount": 555,
+  "totalBytes": 1036632406,
   "missingAssets": []
 }

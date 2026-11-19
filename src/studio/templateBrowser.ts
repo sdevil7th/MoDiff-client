@@ -30,6 +30,7 @@ export type TemplateBrowserCategoryId =
   | 'control'
   | 'audio'
   | 'video'
+  | 'text'
   | 'adapters'
   | 'upscale'
   | 'performance';
@@ -63,6 +64,7 @@ export const TEMPLATE_BROWSER_CATEGORIES: Array<{ id: TemplateBrowserCategoryId;
   { id: 'control', label: 'Control' },
   { id: 'video', label: 'Video' },
   { id: 'audio', label: 'Audio' },
+  { id: 'text', label: 'Text' },
   { id: 'adapters', label: 'Adapters' },
   { id: 'upscale', label: 'Upscale' },
   { id: 'performance', label: 'Performance' },
@@ -124,6 +126,7 @@ export function inferTemplateIntentGroup(template: StudioTemplate): StudioTempla
 }
 
 export function templateCategoryId(template: StudioTemplate): TemplateBrowserCategoryId {
+  if (template.category === 'text') return 'text';
   if (template.category === 'low_vram') return 'performance';
   if (template.category === 'lora') return 'adapters';
   if (template.category === 'upscale') return 'upscale';

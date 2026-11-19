@@ -2909,6 +2909,10 @@ test('template prompt recipes are distinct, detailed, and not generic placeholde
     } else if (template.promptQualityPolicy === 'adapter_reference') {
       assert.equal(template.category, 'lora', `${template.id} adapter reference prompts are limited to LoRA recipes`);
       assert.ok(template.prompt.length >= 20, `${template.id} retains a meaningful adapter reference prompt`);
+    } else if (template.mode === 'depth_estimation') {
+      assert.equal(template.prompt, '', `${template.id} uses only a source image`);
+    } else if (template.mode === 'text_generation') {
+      assert.ok(template.prompt.trim(), `${template.id} asks the text model a question`);
     } else {
       assert.ok(template.prompt.length >= 120, `${template.id} prompt is detailed`);
     }
@@ -4358,6 +4362,7 @@ test('template browser exposes the complete workflow catalog across task and ada
       'control',
       'video',
       'audio',
+      'text',
       'adapters',
       'upscale',
       'performance',
@@ -4375,6 +4380,17 @@ test('template browser exposes the complete workflow catalog across task and ada
   assert.ok(imageTemplates.every((template) => templateCategoryIds(template).includes('image')));
   assert.ok(imageTemplates.some((template) => template.id === 'flux_lora_oil_painting'));
   assert.ok(imageTemplates.some((template) => template.id === 'flux_lora_retro_comic'));
+  assert.ok(imageTemplates.every((template) => template.id !== 'smollm2_rain_gauge'));
+  assert.deepEqual(
+    filterStudioTemplates(STUDIO_TEMPLATES, form, {
+      category: 'text',
+      query: 'rain gauge',
+      modelType: 'all',
+      difficulty: 'all',
+      sort: 'recommended',
+    }).map(({ id }) => id),
+    ['smollm2_rain_gauge'],
+  );
 
   const adapterTemplates = filterStudioTemplates(STUDIO_TEMPLATES, form, {
     category: 'adapters',

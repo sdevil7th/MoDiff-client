@@ -28,6 +28,7 @@ import {
   canonicalWorkflowVariantTemplateIds,
   parseCanonicalWorkflowGenerationScope,
   selectCanonicalWorkflowCapabilities,
+  selectCanonicalWorkflowSources,
 } from './workflow-library-manifest-state.mjs';
 import {
   attachCanonicalAuxiliaryBinding,
@@ -318,8 +319,10 @@ async function main() {
     server: { middlewareMode: true, watch: null },
     appType: 'custom',
   });
-  let auxiliarySources, remapOperationAuthoring, expandCanonicalBlocks;
+  let auxiliarySources, remapOperationAuthoring, expandCanonicalBlocks, retainedTemplateIds;
   try {
+    const { RETAINED_GALLERY_TEMPLATES } = await parserServer.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts');
+    retainedTemplateIds = new Set(RETAINED_GALLERY_TEMPLATES.map(({ template }) => template.id));
     const templates = requestedTemplateId
       ? (await parserServer.ssrLoadModule('/src/studio/templates.ts')).STUDIO_TEMPLATES
       : [];
@@ -382,18 +385,7 @@ async function main() {
       taskTemplates = await pageOperation('reading Studio task-template skeletons', (page) =>
         page.evaluate(() => window.__MODIFF_E2E__?.listTaskTemplateSkeletons() ?? []),
       );
-      byPair = new Map();
-      for (const template of templates) {
-        const pair = `${template.modelType}|${template.mode}`;
-        const current = byPair.get(pair);
-        const isLoraVariant = template.category === 'lora';
-        const currentIsLoraVariant = current?.category === 'lora';
-        if (!current || (currentIsLoraVariant && !isLoraVariant)) byPair.set(pair, template);
-      }
-      for (const template of taskTemplates) {
-        const pair = `${template.modelType}|${template.mode}`;
-        if (!byPair.has(pair)) byPair.set(pair, { ...template, taskContract: true });
-      }
+      byPair = selectCanonicalWorkflowSources(templates, taskTemplates, retainedTemplateIds);
       missingPairs = selectedCapabilities.flatMap((capability) =>
         (capability.runnableModes ?? [])
           .map((mode) => `${capability.modelType}|${mode}`)

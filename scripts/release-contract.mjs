@@ -21,6 +21,8 @@ import {
 import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
 import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
 import { readReviewedBoundTemplateAssociations } from './retained-template-association.mjs';
+import { createRetainedGalleryReleaseReader } from './retained-gallery-release.mjs';
+import { canonicalJsonHash } from './canonical-json.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -405,6 +407,14 @@ const vite = await createServer({
 
 try {
   const { STUDIO_TEMPLATES } = await vite.ssrLoadModule('/src/studio/templates.ts');
+  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts');
+  const retainedRecipesByTemplate = new Map(RETAINED_GALLERY_TEMPLATES.map((recipe) => [recipe.template.id, recipe]));
+  const retainedRecipesByWorkflow = new Map(RETAINED_GALLERY_TEMPLATES.map((recipe) => [recipe.workflowId, recipe]));
+  const readRetainedGalleryRelease = createRetainedGalleryReleaseReader({
+    clientRoot: CLIENT_ROOT,
+    source: gallerySource,
+    registry: gallery,
+  });
   const { STUDIO_MODEL_PROFILES } = await vite.ssrLoadModule('/src/studio/modelProfiles.ts');
   const { templateBackendNodeKeys } = await vite.ssrLoadModule('/src/studio/templateBackendCapabilities.ts');
   const { getPromptSettingsHash, getTemplateLockHash, getTemplateLockedSettings, findManifestEntry } =
@@ -427,6 +437,17 @@ try {
     const galleryEntry = galleryByTemplate.get(template.id);
     const proof = readLatestProof(galleryEntry);
     const workflow = findCanonicalWorkflowRecord(workflowRecords, template);
+    const retainedRecipe = retainedRecipesByTemplate.get(template.id);
+    const lockedSettings = getTemplateLockedSettings(template);
+    const retainedReceipt = retainedRecipe
+      ? readRetainedGalleryRelease({
+          recipe: retainedRecipe,
+          entry: galleryEntry,
+          sourceWorkflow: workflow,
+          templateRevisionHash: canonicalJsonHash({ template, settings: lockedSettings }),
+          localAssociation: retainedTemplateAssociations.get(retainedRecipe.workflowId),
+        })
+      : null;
     const schema = {
       id: template.id,
       mode: template.mode,
@@ -444,7 +465,7 @@ try {
     const graphHash = workflow?.contract.graphHash ?? null;
     const galleryReceipt = receipt(template.id, galleryEntry, proof);
     const currentCatalogTemplateLockHash = getTemplateLockHash(template);
-    const currentPromptSettingsHash = getPromptSettingsHash(getTemplateLockedSettings(template));
+    const currentPromptSettingsHash = getPromptSettingsHash(lockedSettings);
     const historicalCandidates = [...(directReceiptsByTemplate.get(template.id) ?? []), galleryReceipt]
       .filter(Boolean)
       .sort((left, right) => String(left.capturedAt ?? '').localeCompare(String(right.capturedAt ?? '')));
@@ -457,13 +478,15 @@ try {
     }));
     const currentHistoricalEvidence = selectCurrentHistoricalEvidence(assessedHistoricalCandidates);
     const latestHistoricalEvidence = assessedHistoricalCandidates.at(-1) ?? null;
-    const lastSuccessfulRun = currentHistoricalEvidence
-      ? {
-          ...currentHistoricalEvidence.candidate,
-          canonicalWorkflowHash: workflow.contract.graphHash,
-          evidenceMatch: currentHistoricalEvidence.assessment.status,
-        }
-      : null;
+    const lastSuccessfulRun =
+      retainedReceipt ??
+      (currentHistoricalEvidence
+        ? {
+            ...currentHistoricalEvidence.candidate,
+            canonicalWorkflowHash: workflow.contract.graphHash,
+            evidenceMatch: currentHistoricalEvidence.assessment.status,
+          }
+        : null);
     const modelRevision =
       exactRevision(lastSuccessfulRun?.modelRevision) ??
       exactRevision(galleryEntry?.modelRevision ?? template.example?.modelRevision) ??
@@ -471,7 +494,8 @@ try {
         ? `${artifactCatalogEntry.baseRepo}@${artifactCatalogEntry.baseRevision}`
         : null);
     const qualificationExemption = template.evidencePolicy === 'user_supplied' ? 'user_supplied_artifact' : null;
-    const incompleteReceiptFields = qualificationExemption ? [] : receiptMissingFields(lastSuccessfulRun);
+    const incompleteReceiptFields =
+      qualificationExemption || retainedReceipt ? [] : receiptMissingFields(lastSuccessfulRun);
     const galleryApproval = assessGalleryReleaseApproval(galleryEntry, {
       matchesCurrentRecipe: Boolean(
         findManifestEntry(template, {
@@ -538,6 +562,7 @@ try {
           }
         : null,
       qualificationReceiptMissingFields: incompleteReceiptFields,
+      ...(retainedReceipt ? { qualificationReceiptScope: retainedReceipt.evidenceMatch } : {}),
       evidencePolicy: template.evidencePolicy ?? 'generated',
       qualificationExemption,
       releaseEligible: Boolean(qualificationExemption) || missingReleaseEvidence.length === 0,
@@ -548,8 +573,16 @@ try {
   const workflows = workflowRecords
     .map(({ manifest, graph }) => {
       const artifact = artifactByModel.get(manifest.modelType);
-      const sourceTemplate = templates.find((template) => template.id === manifest.sourceTemplateId);
-      const canonicalReceipt = sourceTemplate ? null : canonicalReceiptsByWorkflow.get(manifest.id);
+      const retainedRecipe = retainedRecipesByWorkflow.get(manifest.id);
+      const sourceTemplate = templates.find(
+        (template) =>
+          template.id === manifest.sourceTemplateId ||
+          (retainedRecipe &&
+            template.id === retainedRecipe.template.id &&
+            template.canonicalWorkflowId === manifest.id &&
+            retainedRecipe.sourceTaskTemplateId === manifest.sourceTemplateId),
+      );
+      const canonicalReceipt = !sourceTemplate || retainedRecipe ? canonicalReceiptsByWorkflow.get(manifest.id) : null;
       const reviewedRetainedTemplate = retainedTemplateAssociations.get(manifest.id);
       const catalogRevision =
         artifact?.baseRepo && artifact?.baseRevision ? `${artifact.baseRepo}@${artifact.baseRevision}` : null;
@@ -598,7 +631,7 @@ try {
         resourceRecipes: sourceTemplate?.resourceRecipes ?? null,
         outputContract: sourceTemplate?.outputContract ?? { mediaKinds: [manifest.mediaKind] },
         lastSuccessfulRealRun: sourceTemplate?.lastSuccessfulRealRun ?? canonicalReceipt ?? null,
-        ...(!sourceTemplate
+        ...(!sourceTemplate || retainedRecipe
           ? {
               canonicalExecutionEvidence: {
                 status: canonicalReceipt

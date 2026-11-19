@@ -7,6 +7,8 @@ export type TemplateQualityKind =
   | 'image_outpaint'
   | 'image_control'
   | 'image_layers'
+  | 'depth_estimation'
+  | 'text_generation'
   | 'video'
   | 'audio';
 
@@ -30,7 +32,8 @@ export type TemplateSemanticGroup =
   | 'musical_identity'
   | 'arrangement_or_timbre'
   | 'dynamic_structure'
-  | 'mix_or_finish';
+  | 'mix_or_finish'
+  | 'text_request';
 
 export type TemplateNegativeCategory = 'artifact' | 'structure' | 'task_fidelity' | 'aesthetic';
 
@@ -38,6 +41,7 @@ export type TemplateQualityIssueCode =
   | 'unresolved_backend_default'
   | 'invalid_layout_reference'
   | 'missing_semantic_group'
+  | 'unsupported_prompt_input'
   | 'blank_negative_not_allowed'
   | 'too_few_negative_constraints'
   | 'generic_negative_constraints';
@@ -219,6 +223,10 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
     label: 'mix, loudness, ambience, or production finish',
     patterns: [/\b(mix|loudness|ambience|production|reverb|stereo|master|clipping|noise|sibilance|fade)\w*\b/i],
   },
+  text_request: {
+    label: 'a question or instruction for the text model',
+    patterns: [/\p{L}/u],
+  },
 };
 
 const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSemanticGroup[]> = {
@@ -228,11 +236,18 @@ const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSem
   image_outpaint: ['source_role', 'canvas_extension', 'continuity', 'visual_treatment'],
   image_control: ['control_structure', 'control_adherence', 'transformation', 'visual_treatment'],
   image_layers: ['source_role', 'layer_structure', 'layer_editability', 'preservation'],
+  depth_estimation: [],
+  text_generation: ['text_request'],
   video: ['temporal_action', 'camera_or_motion', 'continuity', 'visual_treatment'],
   audio: ['musical_identity', 'arrangement_or_timbre', 'dynamic_structure', 'mix_or_finish'],
 };
 
 export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = [
+  {
+    id: 'depth-and-text-no-negative-input',
+    modelTypes: ['MarigoldDepthPipeline', 'HuggingFaceTextGenerationModel'],
+    reason: 'These depth and text generation contracts have no negative-prompt input.',
+  },
   {
     id: 'minimax-h3-image-no-negative-input',
     modelTypes: ['MiniMaxH3ImageModularPipeline'],
@@ -337,6 +352,8 @@ const NEGATIVE_CATEGORY_PATTERNS: Record<TemplateNegativeCategory, readonly RegE
 };
 
 export function classifyTemplateQualityKind(template: Pick<StudioTemplate, 'mode' | 'modelType'>): TemplateQualityKind {
+  if (template.mode === 'depth_estimation') return 'depth_estimation';
+  if (template.mode === 'text_generation') return 'text_generation';
   if (AUDIO_MODES.has(template.mode) || template.modelType === 'AceStepAudioPipeline') return 'audio';
   if (VIDEO_MODES.has(template.mode) || template.modelType === 'WanVACEPipeline') return 'video';
   if (template.mode === 'inpaint') return 'image_inpaint';
@@ -530,6 +547,12 @@ export function auditTemplateQuality(
         ]
       : [];
   const issues = [...layoutIssues, ...semanticIssues, ...negative.issues];
+  if (kind === 'depth_estimation' && (resolvedPrompt?.trim() || template.negativePrompt?.trim())) {
+    issues.push({ code: 'unsupported_prompt_input', message: 'Depth estimation uses a source image without prompts.' });
+  }
+  if (kind === 'text_generation' && template.negativePrompt?.trim()) {
+    issues.push({ code: 'unsupported_prompt_input', message: 'Text generation does not accept a negative prompt.' });
+  }
 
   return {
     templateId: template.id,

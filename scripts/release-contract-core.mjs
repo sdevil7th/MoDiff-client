@@ -671,6 +671,48 @@ export async function exportCanonicalWorkflowGraphs(clientRoot, graphs) {
   }
 }
 
+// Publication moves these two authoring rows out of the hidden-candidate
+// ledger. Revalidate the original evidence against its exact archived
+// authoring row. A new or edited standalone capture cannot use that baseline.
+const RETAINED_AUTHORING_ARCHIVES = new Map([
+  [
+    'MarigoldDepthPipeline:depth_estimation',
+    {
+      descriptorSha256: '1c358ef18df00556b704f826c706674d5ddbd89d8ad091478da862b8ad87c6ea',
+      bytes: 4075,
+      sha256: '29127ed9ed0c75eebe9d22348b34aca5b70c21f4eba949c1526b5e979c4149f5',
+    },
+  ],
+  [
+    'HuggingFaceTextGenerationModel:text_generation',
+    {
+      descriptorSha256: '4d0e3ad2819d02cc04c3f264145ddd384b17b9dfa39e83f4af6e923bce34f3d8',
+      bytes: 3042,
+      sha256: 'e8158c1fcd94e0cf2c2e8e2163f036edc783371d6ca9e253cdf31722c7273d0a',
+    },
+  ],
+]);
+
+function archivedCanonicalAuthoring(backendRoot, workflowId, evidencePath) {
+  const lock = RETAINED_AUTHORING_ARCHIVES.get(workflowId);
+  if (!lock) return null;
+  const stat = lstatSync(evidencePath);
+  assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size <= 65536);
+  const descriptorSha256 = createHash('sha256').update(readFileSync(evidencePath)).digest('hex');
+  assert.equal(descriptorSha256, lock.descriptorSha256, 'Archived authoring requires the exact original capture.');
+  return JSON.parse(
+    readCanonicalEvidenceFile(
+      backendRoot,
+      {
+        path: `data/qualification/release/canonical-workflow-evidence/${descriptorSha256}/authoring-spec.original.json`,
+        bytes: lock.bytes,
+        sha256: lock.sha256,
+      },
+      65536,
+    ).bytes,
+  );
+}
+
 // The same derivation is repeated by release-contract; a registry row alone
 // never authenticates a run. All file references are to retained original bytes.
 export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, workflowId, evidencePath }) {
@@ -691,14 +733,16 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const graph = json(graphPath);
   const authoringRows = json(join(backendRoot, 'data/template-authoring-specs.v1.json')).specifications;
   const authoringMatches = authoringRows.filter((row) => row.canonicalWorkflowId === workflowId);
-  assert.equal(authoringMatches.length, 1, 'Canonical source authoring identity is missing or ambiguous.');
+  assert.ok(authoringMatches.length <= 1, 'Canonical source authoring identity is ambiguous.');
+  const authoring = authoringMatches[0] ?? archivedCanonicalAuthoring(backendRoot, workflowId, evidencePath);
+  assert.ok(authoring, 'Canonical source authoring identity is missing.');
   if (manifest.modelType === 'BuiltinDataOperation') {
     const { readBuiltinDataEvidence } = await import('./builtin-data-qualification.mjs');
-    return readBuiltinDataEvidence({ clientRoot, manifest, graph, authoring: authoringMatches[0], evidencePath });
+    return readBuiltinDataEvidence({ clientRoot, manifest, graph, authoring, evidencePath });
   }
   if (['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation'].includes(manifest.modelType)) {
     const { readBuiltinMediaEvidence } = await import('./builtin-media-qualification.mjs');
-    return readBuiltinMediaEvidence({ clientRoot, manifest, graph, authoring: authoringMatches[0], evidencePath });
+    return readBuiltinMediaEvidence({ clientRoot, manifest, graph, authoring, evidencePath });
   }
   const artifact = json(join(backendRoot, 'data/model-artifact-catalog.json')).models.find(
     (row) => row.modelType === manifest.modelType,
@@ -721,7 +765,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       clientRoot,
       manifest,
       graph,
-      authoring: authoringMatches[0],
+      authoring,
       artifact,
       evidencePath,
     });
@@ -732,7 +776,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       clientRoot,
       manifest,
       graph,
-      authoring: authoringMatches[0],
+      authoring,
       artifact,
       evidencePath,
     });
@@ -746,7 +790,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       clientRoot,
       manifest,
       graph,
-      authoring: authoringMatches[0],
+      authoring,
       artifact,
       evidencePath,
     });
@@ -760,7 +804,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       (captureFormat !== undefined && evidence.format === captureFormat),
     'Canonical evidence descriptor format does not match the workflow.',
   );
-  const target = canonicalWorkflowAuthoringContract(manifest, graph, authoringMatches[0], artifact);
+  const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
   assert.ok(
     graph.nodes.every((node) =>
       Object.values(node.data?.params ?? {}).every((field) => field?.display !== 'filebrowser'),

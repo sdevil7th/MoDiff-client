@@ -19,9 +19,8 @@ const marigoldRevision = '04a73502f7fd8fc5e59947b9df3b2266d71d6849';
 const smollm2Revision = '12fd25f77366fa6b3b4b768ec3050bf629380bac';
 
 /**
- * Exact recipes for the retained-run release verifier. Keep these outside the
- * active catalog until the qualifying Gallery entries and pinned assets ship.
- * The standalone task contracts, blank defaults and captured runs stay intact.
+ * Reviewed catalog recipes tied to saved runs. Canonical workflow generation
+ * continues to seed their task contracts with the standalone defaults.
  */
 export const RETAINED_GALLERY_TEMPLATES = [
   {
@@ -29,7 +28,7 @@ export const RETAINED_GALLERY_TEMPLATES = [
     sourceTaskTemplateId: 'task-template:marigold-depth-lcm-v1-0:depth-estimation:v1',
     retainedGraphHash: 'sha256:canonical-graph-v1:ee35e710ecaf34a8a57d93fbefeea28b6a3795027ea8a3a872178501e852e06a',
     originalReceiptSha256: '1c358ef18df00556b704f826c706674d5ddbd89d8ad091478da862b8ad87c6ea',
-    reviewedTemplateSha256: '5d96ca2f7621c6926789c50eb0b0c8fed93bddd6f071bdd1ba1cec11907d4b9d',
+    reviewedTemplateSha256: '4e43813ae0e4b664e4982545884644ec097eb0cc25e8f13ff549ac24c2f49ce1',
     reviewedCatalogLock: {
       templateLockHash: 'tpl_bf1d929b',
       galleryTemplateLockHash: 'tpl_611e9ad6',
@@ -40,6 +39,7 @@ export const RETAINED_GALLERY_TEMPLATES = [
     template: {
       id: 'marigold_depth_synthetic_ramp',
       label: 'Marigold Depth LCM — Synthetic Ramp',
+      modelDisplayName: 'Marigold Depth LCM',
       mode: 'depth_estimation',
       modelType: 'MarigoldDepthPipeline',
       intentGroup: 'utility',
@@ -85,7 +85,9 @@ export const RETAINED_GALLERY_TEMPLATES = [
         'modules.Image.Preview',
       ],
       modelArtifact: { source: 'hub', value: 'prs-eth/marigold-depth-lcm-v1-0', revision: marigoldRevision },
+      runtimeReuseKey: 'MarigoldDepthPipeline:float32:none:resident:none',
       description: 'Run one-step relative depth estimation and compare the input ramp with its grayscale preview.',
+      recipeSummary: 'Compare a source image with a one-step relative-depth preview.',
       prompt: '',
       example: {
         mediaType: 'image',
@@ -114,7 +116,7 @@ export const RETAINED_GALLERY_TEMPLATES = [
     sourceTaskTemplateId: 'task-template:smollm2-135m-instruct:text-generation:v1',
     retainedGraphHash: 'sha256:canonical-graph-v1:285625f017e8de78e065d8fc32c9ce71ed9561b008cd5fa0e23ce9cda3dabefe',
     originalReceiptSha256: '4d0e3ad2819d02cc04c3f264145ddd384b17b9dfa39e83f4af6e923bce34f3d8',
-    reviewedTemplateSha256: '041ad1596a8b1609029aa3645de8096c17dcee527c02bc0f244df602f2de0c71',
+    reviewedTemplateSha256: 'aab7cfcf15db94d4e3d1415e963cabc0cf7e6a4baafd243d4095539b1004545b',
     reviewedCatalogLock: {
       templateLockHash: 'tpl_84d96f79',
       galleryTemplateLockHash: 'tpl_a845a534',
@@ -124,6 +126,7 @@ export const RETAINED_GALLERY_TEMPLATES = [
     template: {
       id: 'smollm2_rain_gauge',
       label: 'SmolLM2 135M Instruct — Rain Gauge Answer',
+      modelDisplayName: 'SmolLM2 135M Instruct',
       mode: 'text_generation',
       modelType: 'HuggingFaceTextGenerationModel',
       intentGroup: 'utility',
@@ -141,7 +144,9 @@ export const RETAINED_GALLERY_TEMPLATES = [
         'modules.Primitive.DataViewer',
       ],
       modelArtifact: { source: 'hub', value: 'HuggingFaceTB/SmolLM2-135M-Instruct', revision: smollm2Revision },
+      runtimeReuseKey: 'HuggingFaceTextGenerationModel:float32:none:resident:none',
       description: 'Answer a short factual question using greedy decoding and inspect the structured result.',
+      recipeSummary: 'Answer a short question and inspect the text, finish reason, and token counts.',
       prompt: 'Reply in one short sentence: What does a rain gauge measure?',
       example: {
         mediaType: 'json',

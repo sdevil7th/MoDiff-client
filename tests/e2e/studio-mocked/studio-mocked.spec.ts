@@ -13563,6 +13563,48 @@ test('published Experimental cards remain discoverable after Gallery metadata lo
   expect(forbiddenPosts).toEqual([]);
 });
 
+test('approved retained examples show structured text and a Marigold depth comparison', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'public/template-gallery/manifest.json'), 'utf8'),
+  );
+  const previewPixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route(/\/template-gallery\/[^?]+\.(?:webp|png)(?:\?.*)?$/u, (route) =>
+    route.fulfill({ body: previewPixel, contentType: 'image/png' }),
+  );
+  await page.route('**/template-gallery/manifest.json*', (route) => route.fulfill({ json: manifest }));
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  const launcher = page.getByTestId('task-launcher');
+  if (await launcher.isVisible()) await launcher.getByLabel('Close').click();
+  await page.getByTestId('topbar-templates').click();
+
+  await page.getByTestId('template-browser-category-text').click();
+  const textCard = page.getByTestId('template-browser-card-smollm2_rain_gauge');
+  await expect(textCard.getByText('Structured response', { exact: true })).toBeVisible();
+  await expect(textCard.getByRole('img')).toHaveCount(0);
+  await textCard.getByTestId('template-browser-use-smollm2_rain_gauge').click();
+  const textDetail = page.getByTestId('template-detail-smollm2_rain_gauge');
+  await expect(textDetail.getByRole('link', { name: 'Open structured response' })).toHaveAttribute(
+    'href',
+    /\/template-gallery\/smollm2_rain_gauge\.json$/u,
+  );
+  await textDetail.getByRole('button', { name: 'Templates', exact: true }).click();
+
+  await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-search').fill('Synthetic Ramp');
+  const depthCard = page.getByTestId('template-browser-card-marigold_depth_synthetic_ramp');
+  await expect(depthCard.getByTestId('template-ab-comparison')).toBeVisible();
+  await depthCard.getByTestId('template-browser-use-marigold_depth_synthetic_ramp').click();
+  const depthDetail = page.getByTestId('template-detail-marigold_depth_synthetic_ramp');
+  await expect(depthDetail.getByText('Hover or drag to compare')).toBeVisible();
+  await expect(depthDetail).toContainText('Depth accuracy remains unmeasured.');
+});
+
 test('Experimental public cards create the exact FLUX3 Ceramic Radio graph through ordinary UI', async ({ page }) => {
   await ensureFrontend();
   const fixture = await installPublicFlux3AuthoringRoutes(page, false, false, true);

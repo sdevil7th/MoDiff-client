@@ -5,12 +5,14 @@ import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
+import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
+import { selectCanonicalWorkflowSources } from './workflow-library-manifest-state.mjs';
 
 const client = resolve(import.meta.dirname, '..');
 const backend = resolve(process.env.MODIFF_BACKEND_DIR || join(client, '../MoDiff'));
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-let server, recipes, fixture, studio, flow, nodeStore, graphBridge, published;
+let server, recipes, fixture, studio, flow, nodeStore, graphBridge, published, exactness;
 
 before(async () => {
   const storage = new Map();
@@ -36,6 +38,7 @@ before(async () => {
   });
   ({ RETAINED_GALLERY_TEMPLATES: recipes } = await server.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts'));
   ({ STUDIO_TEMPLATES: published } = await server.ssrLoadModule('/src/studio/templates.ts'));
+  exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
   ({ useStudioStore: studio } = await server.ssrLoadModule('/src/stores/useStudioStore.ts'));
   ({ useFlowStore: flow } = await server.ssrLoadModule('/src/stores/useFlowStore.ts'));
   ({ useNodesStore: nodeStore } = await server.ssrLoadModule('/src/stores/useNodeStore.ts'));
@@ -77,7 +80,6 @@ function retainedTemplateGraph(recipe) {
   assert.equal(row.sourceTemplateId, recipe.sourceTaskTemplateId);
   assert.equal(row.modelType, template.modelType);
   assert.equal(row.mode, template.mode);
-  assert.ok(!published.some((item) => item.id === template.id));
 
   const graph = JSON.parse(readFileSync(join(backend, 'data/graphs', row.graphPath), 'utf8'));
   const api = flow.getState().exportGraph('retained-template-check', undefined, {
@@ -99,9 +101,38 @@ function retainedTemplateGraph(recipe) {
 }
 
 test('retained Gallery recipes preserve the native graph identities and standalone skeletons', () => {
+  const skeletons = recipes.map(({ sourceTaskTemplateId, template }) => ({
+    id: sourceTaskTemplateId,
+    modelType: template.modelType,
+    mode: template.mode,
+  }));
+  const sources = selectCanonicalWorkflowSources(
+    published,
+    skeletons,
+    new Set(recipes.map(({ template }) => template.id)),
+  );
   for (const recipe of recipes) {
-    assert.equal(retainedTemplateGraph(recipe).hash, recipe.retainedGraphHash, recipe.template.id);
+    const { template, reviewedCatalogLock } = recipe;
+    const settings = exactness.getTemplateLockedSettings(template);
+    assert.equal(published.filter((item) => item.id === template.id).length, 1);
+    assert.equal(
+      published.find((item) => item.id === template.id),
+      template,
+    );
+    assert.equal(canonicalJsonHash({ template, settings }), recipe.reviewedTemplateSha256);
+    assert.equal(exactness.getTemplateLockHash(template), reviewedCatalogLock.templateLockHash);
+    assert.equal(
+      exactness.getTemplateLockHash(template, `${template.modelArtifact.value}@${template.modelArtifact.revision}`),
+      reviewedCatalogLock.galleryTemplateLockHash,
+    );
+    assert.equal(exactness.getPromptSettingsHash(settings), reviewedCatalogLock.promptSettingsHash);
+    assert.deepEqual(sources.get(`${template.modelType}|${template.mode}`), {
+      ...skeletons.find(({ id }) => id === recipe.sourceTaskTemplateId),
+      taskContract: true,
+    });
+    assert.equal(retainedTemplateGraph(recipe).hash, recipe.retainedGraphHash, template.id);
   }
+  assert.ok(!published.some((item) => item.modelType === 'ShapEPipeline'));
 });
 
 test('fresh Expert recipes prepare with current backend specs and without a generation request', async () => {

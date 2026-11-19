@@ -529,8 +529,8 @@ execution with that prompt or file and needs a reviewed recipe to bind it for
 release. Native-resolution DDIM, DDPM, and Consistency samples are technical
 canaries under the project's model review policy.
 
-The Marigold synthetic ramp and SmolLM2 rain-gauge recipes have separate,
-staged declarations in `src/studio/retainedGalleryTemplates.ts`. They share
+The reviewed Marigold synthetic ramp and SmolLM2 rain-gauge catalog recipes
+use declarations in `src/studio/retainedGalleryTemplates.ts`. They share
 the existing task contracts. Keep their original standalone graphs and
 receipts. For an exact approved local review, retain `approval.v1.json`,
 the original `review-scope.json` inventory, and its reviewed files beneath
@@ -543,10 +543,16 @@ candidate remain absent.
 
 For the structured text recipe, the Gallery JSON must match the single full
 result in the original native text transport. Verify both encoded hashes
-and the decoded Gallery hash. Retained associations clear the
-`reviewed_bound_recipe` requirement for the matched workflows. Release
-eligibility still requires an active eligible source template and verified
-Gallery publication. The association supplies no Auto or hardware approval.
+and the decoded Gallery hash. Release eligibility joins the active template
+to its original standalone workflow, then verifies the registered proof and
+media against the active rights-approved Gallery set. The association supplies
+no Auto or hardware approval.
+
+Publication removes the two original entries from the hidden-candidate
+authoring ledger. Retain each exact original row as
+`authoring-spec.original.json` beside the approved canonical evidence descriptor.
+The historical reader checks both byte identities before using the archived
+row. The current authoring and Gallery metadata keep their own identities.
 
 The optional native `appliedAdapters` receipt records the owning ModelsLoader's
 observed ordered adapter names, numeric scales, immutable artifact identities,

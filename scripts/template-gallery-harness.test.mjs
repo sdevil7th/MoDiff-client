@@ -40,8 +40,117 @@ import {
 } from './template-gallery-harness.mjs';
 import { repairDuplicateOutputItems } from './live-proof-provenance.mjs';
 import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
+import {
+  buildRetainedGalleryProvenance,
+  RETAINED_GALLERY_PROVENANCE_FORMAT,
+  validateRetainedGalleryProvenance,
+} from './retained-gallery-provenance.mjs';
 
 let runtime;
+
+test('retained Gallery provenance cannot grant approval to another workflow or a replacement association', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    const entry = fixture.manifest.examples.find(({ templateId }) => templateId === 'available');
+    const association = { templateId: entry.templateId, qualificationScope: 'exact_retained_recipe' };
+    const bundle = {
+      schemaVersion: 1,
+      format: RETAINED_GALLERY_PROVENANCE_FORMAT,
+      templateId: entry.templateId,
+      association,
+    };
+    assert.throws(() => buildRetainedGalleryProvenance(association), /differs from the approved observation/);
+    assert.throws(
+      () => buildRetainedGalleryProvenance({ ...association, templateId: 'smollm2_rain_gauge' }),
+      /differs from the approved observation/,
+    );
+    const encoded = JSON.stringify(bundle);
+    entry.provenanceHash = canonicalJsonHash(bundle);
+    const asset = fixture.storage.assets.find(({ path }) => path === entry.provenancePath.slice(1));
+    asset.size = Buffer.byteLength(encoded);
+    asset.sha256 = `sha256:bytes:${createHash('sha256').update(encoded).digest('hex')}`;
+    fixture.rights.records.find(({ path }) => path === asset.path).sha256 = asset.sha256;
+    const identity = (assets) =>
+      `sha256:canonical-json:${storageJsonHash({ schemaVersion: 1, assetVersion: 'fixture', assets })}`;
+    fixture.storage.assetSetId = identity(fixture.storage.assets);
+    fixture.storage.totalBytes = fixture.storage.assets.reduce((total, row) => total + row.size, 0);
+    fixture.source.completeAssetSetId = fixture.storage.assetSetId;
+    fixture.source.assetSetId = identity(
+      fixture.storage.assets.filter(({ path }) => !fixture.source.unavailableAssets.includes(path)),
+    );
+    fixture.rights.assetSetId = fixture.storage.assetSetId;
+    fixture.write(`public${entry.provenancePath}`, encoded);
+    fixture.flush();
+    fixture.options.runtime.lockedSettingsForTemplate = () => ({});
+    const result = await verifyGallery({}, 'synthetic-retained', {
+      ...fixture.options,
+      templateIds: [entry.templateId],
+    });
+    assert.equal(result.ok, false);
+    assert.ok(
+      result.errors.includes('available retained Gallery provenance is outside the exact approved association'),
+      result.errors.join('\n'),
+    );
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test(
+  'materialized retained examples bind the archived bytes, active recipe and reviewed scope',
+  {
+    skip: !process.env.MODIFF_VERIFY_RETAINED_GALLERY,
+  },
+  async () => {
+    const client = fileURLToPath(new URL('../', import.meta.url));
+    const runtime = await loadTemplateRuntime(client);
+    const root = process.env.MODIFF_VERIFY_RETAINED_GALLERY;
+    const manifest = JSON.parse(readFileSync(join(root, 'manifest.json')));
+    for (const templateId of ['marigold_depth_synthetic_ramp', 'smollm2_rain_gauge']) {
+      const entry = manifest.examples.find((candidate) => candidate.templateId === templateId);
+      assert.ok(entry, templateId);
+      const load = (assetPath) => readFileSync(join(root, assetPath.slice('/template-gallery/'.length)));
+      const template = runtime.templates.find((item) => item.id === templateId);
+      assert.ok(template, templateId);
+      const bundle = JSON.parse(load(entry.provenancePath));
+      const options = {
+        templateRevisionHash: storageJsonHash({ template, settings: runtime.lockedSettingsForTemplate(template) }),
+        outputBytes: load(entry.outputPath),
+        beforeBytes: entry.beforePath && load(entry.beforePath),
+      };
+      assert.deepEqual(validateRetainedGalleryProvenance(bundle, entry, options), []);
+      assert.ok(validateRetainedGalleryProvenance(bundle, { ...entry, verificationStatus: 'exact' }, options).length);
+      assert.ok(
+        validateRetainedGalleryProvenance(bundle, { ...entry, verificationTimestamp: '2026-01-01T00:00:00Z' }, options)
+          .length,
+      );
+      assert.ok(
+        validateRetainedGalleryProvenance(bundle, entry, { ...options, templateRevisionHash: 'changed' }).length,
+      );
+      assert.ok(
+        validateRetainedGalleryProvenance(bundle, entry, {
+          ...options,
+          outputBytes: Buffer.concat([options.outputBytes, Buffer.from(' ')]),
+        }).length,
+      );
+      assert.ok(
+        validateRetainedGalleryProvenance(
+          {
+            ...bundle,
+            association: { ...bundle.association, originalTaskId: 'must-remain-private' },
+          },
+          entry,
+          options,
+        ).length,
+      );
+      if (options.beforeBytes) {
+        assert.ok(
+          validateRetainedGalleryProvenance(bundle, entry, { ...options, beforeBytes: Buffer.alloc(1) }).length,
+        );
+      }
+    }
+  },
+);
 
 test('explicit Gallery selection keeps the default complete verification strict', async () => {
   const fixture = subsetVerificationFixture();
@@ -936,8 +1045,8 @@ test('public provenance redacts removable Linux mounts while retaining public an
 });
 
 test('gallery harness loads all Studio templates from the TypeScript runtime', () => {
-  assert.equal(runtime.templates.length, 91);
-  assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 91);
+  assert.equal(runtime.templates.length, 93);
+  assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 93);
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_h3_image_old_town_cat'));
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_music3_chamber_pop'));
   assert.equal(

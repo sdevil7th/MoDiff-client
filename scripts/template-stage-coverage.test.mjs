@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 
-let server, templates, selections;
+let server, templates, selections, retained;
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -23,14 +23,21 @@ before(async () => {
     appType: 'custom',
   });
   ({ STUDIO_TEMPLATES: templates } = await server.ssrLoadModule('/src/studio/templates.ts'));
+  ({ RETAINED_GALLERY_TEMPLATES: retained } = await server.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts'));
   selections = await server.ssrLoadModule('/src/studio/templateOperationSelections.ts');
 });
 after(async () => server?.close());
 
-test('every normalized fresh media template has an explicit modern authoring route', async (t) => {
-  assert.ok(templates.length >= 91, 'Audit the complete current catalogue, including later additions.');
+test('every fresh template has an explicit operation or retained standalone authoring route', async (t) => {
+  assert.ok(templates.length >= 93, 'Audit the complete current catalogue, including later additions.');
+  const nativeTemplates = new Set(retained.map(({ template }) => template));
   for (const template of templates) {
     await t.test(template.id, () => {
+      if (nativeTemplates.has(template)) {
+        assert.equal(template.example.lockedSettings.resourceMode, 'expert');
+        assert.ok(template.requiredBackendCapabilities.length > 0);
+        return;
+      }
       assert.equal(
         selections.hasTemplateOperationRecipe(template),
         true,
