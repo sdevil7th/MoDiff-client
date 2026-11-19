@@ -17,7 +17,10 @@ const ids = validateReleaseShowcaseScope(profile, {
   source: read('src/studio/templateAssetSource.json'),
 });
 const historical = verifyTemplateRecipeRecords(history, { root, runtime, manifest });
-const byId = new Map(historical.map((record) => [record.templateId, record]));
+const selectedIds = new Set(ids);
+const byId = new Map(
+  historical.filter(({ templateId }) => selectedIds.has(templateId)).map((record) => [record.templateId, record]),
+);
 for (const selected of profile.includedTemplates) {
   const current = runtime.templates.find((template) => template.id === selected.id);
   if (selected.evidenceScope === 'current_recipe' && !runtime.findManifestEntry(current, manifest)) {

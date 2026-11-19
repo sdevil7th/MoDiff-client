@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempDisposableSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { createServer } from 'vite';
-import { canonicalJsonHash } from './template-gallery-harness.mjs';
+import { canonicalJsonHash, decodedAudiovisualMediaHash } from './template-gallery-harness.mjs';
 import { verifyTemplateRecipeRecords } from './template-recipe-records.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -109,6 +111,143 @@ test('all reconciled records reproduce their original locks and preserve histori
     if (record.creator.executionSelection) {
       assert.notDeepEqual(recipe.template.executionSelection, template.executionSelection);
     }
+  }
+});
+
+test('approved audio remux history binds the derivative and its original run independently', () => {
+  using temporary = mkdtempDisposableSync(resolve(tmpdir(), 'modiff-historical-remux-'));
+  const gallery = resolve(temporary.path, 'public/template-gallery');
+  mkdirSync(gallery, { recursive: true });
+  const templateId = 'reviewed_music_video';
+  const currentTemplateLockHash = 'tpl_12345555';
+  const templateLockHash = 'tpl_12344444';
+  const sourceTemplateLockHash = 'tpl_12343333';
+  const promptSettingsHash = 'ps_12340000';
+  const modelRevision = `example/wan@${'a'.repeat(40)}`;
+  const decodedMediaHash = 'sha256:decoded-video:original';
+  const decodedAudioHash = 'sha256:decoded-audio:replacement';
+  const audiovisualMediaHash = decodedAudiovisualMediaHash(decodedMediaHash, decodedAudioHash);
+  const modelSetHash = 'sha256:model-set:original';
+  const inputArtifactsHash = 'sha256:input-artifacts:original';
+  const proofFields = {
+    graphHash: 'sha256:graph:original',
+    proofLockHash: 'sha256:proof-lock:original',
+    backendSourceFingerprint: 'sha256:backend-source:original',
+    backendContractFingerprint: 'sha256:backend-contract:original',
+    modelCommit: modelRevision,
+    templateRevisionHash: 'sha256:template-revision:original',
+  };
+  const processorPath = 'scripts/align-subway-strum-review.py';
+  const processorHash = createHash('sha256')
+    .update(readFileSync(resolve(root, processorPath)))
+    .digest('hex');
+  const operation = { name: 'audio_delay_fit_and_stream_copy_remux', parameters: { delayVideoFrames: 4 } };
+  const expected = {
+    templateId,
+    templateLockHash,
+    promptSettingsHash,
+    modelRevision,
+    runtimeFingerprint: 'sha256:runtime:original',
+    decodedMediaHash,
+    decodedAudioHash,
+    audiovisualMediaHash,
+    modelSetHash,
+    inputArtifactsHash,
+  };
+  const prototype = {
+    schemaVersion: 1,
+    format: 'modiff.gallery.reviewed-provenance.v1',
+    templateId,
+    bindings: expected,
+    run: {
+      ...proofFields,
+      template: { id: templateId, promptSettingsHash },
+      templateLockHash: sourceTemplateLockHash,
+      modelRevision,
+      models: { hash: modelSetHash, revisionLock: modelRevision, count: 1, items: [{ modelRevision }] },
+      inputArtifactsHash,
+      mediaHash: decodedMediaHash,
+      output: { collectionHash: 'sha256:output-collection:original' },
+      blockers: [],
+    },
+    derivative: {
+      ...expected,
+      schemaVersion: 1,
+      format: 'modiff.gallery.reviewed-derivative.v1',
+      kind: 'audio_remux',
+      sourceOutputCollectionHash: 'sha256:output-collection:original',
+      sourceVideoHash: decodedMediaHash,
+      sourceTemplateLockHash,
+      sourcePromptSettingsHash: promptSettingsHash,
+      replacementAudio: { encodedSha256: 'encoded', decodedSha256: 'decoded', provenanceSha256: 'provenance' },
+      processor: { path: processorPath, contentHash: `sha256:bytes:${processorHash}` },
+      operation,
+      operationHash: canonicalJsonHash(operation),
+    },
+  };
+  const review = { status: 'approved_reviewed' };
+  writeFileSync(resolve(gallery, 'review.json'), JSON.stringify(review));
+  const template = { id: templateId, executionSelection: { implementation: 'pipeline_stages' } };
+  const historical = { id: templateId };
+  const runtime = {
+    templates: [template],
+    templateLockHash: () => currentTemplateLockHash,
+    promptSettingsHash: () => promptSettingsHash,
+    findHistoricalTemplateRecipe: () => ({ template: historical }),
+    findManifestEntry: () => undefined,
+  };
+  const verify = (bundle) => {
+    writeFileSync(resolve(gallery, 'provenance.json'), JSON.stringify(bundle));
+    const entry = {
+      ...expected,
+      ...proofFields,
+      mediaHash: decodedMediaHash,
+      provenancePath: '/template-gallery/provenance.json',
+      provenanceHash: canonicalJsonHash(bundle),
+      qualityReviewPath: '/template-gallery/review.json',
+      qualityReviewHash: canonicalJsonHash(review),
+    };
+    const body = {
+      schemaVersion: 1,
+      format: 'modiff.gallery.recipe-history.v1',
+      source: { repository: 'example/gallery', revision: 'b'.repeat(40) },
+      records: [
+        {
+          templateId,
+          currentTemplateLockHash,
+          evidenceScope: 'approved_historical_recipe',
+          currentGraphExecutionProved: false,
+          creator: { executionSelection: null, workflowBlockSettings: {} },
+          bindings: { templateLockHash, provenanceHash: entry.provenanceHash },
+        },
+      ],
+    };
+    return verifyTemplateRecipeRecords(
+      { ...body, recordsHash: canonicalJsonHash(body) },
+      { root: temporary.path, runtime, manifest: { schemaVersion: 2, examples: [entry] } },
+    );
+  };
+
+  const [record] = verify(prototype);
+  assert.equal(record.template, historical);
+  assert.equal(record.evidenceScope, 'approved_historical_recipe');
+  assert.equal(record.currentGraphExecutionProved, false);
+  for (const mutate of [
+    (bundle) => delete bundle.derivative,
+    (bundle) => (bundle.derivative.sourceTemplateLockHash = templateLockHash),
+    (bundle) => (bundle.derivative.templateLockHash = currentTemplateLockHash),
+    (bundle) => (bundle.derivative.operation.parameters.delayVideoFrames = 5),
+    (bundle) => (bundle.derivative.decodedAudioHash = 'different audio'),
+    (bundle) => (bundle.derivative.sourceOutputCollectionHash = 'different source'),
+    (bundle) => (bundle.bindings.runtimeFingerprint = 'different runtime'),
+    (bundle) => (bundle.run.graphHash = 'different graph'),
+    (bundle) => (bundle.run.inputArtifactsHash = 'different inputs'),
+    (bundle) => (bundle.run.models.count = 0),
+    (bundle) => (bundle.run.models.items = 'x'),
+  ]) {
+    const changed = structuredClone(prototype);
+    mutate(changed);
+    assert.throws(() => verify(changed), /original creator, graph or complete model-set proof/u);
   }
 });
 

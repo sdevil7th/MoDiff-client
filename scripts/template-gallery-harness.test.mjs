@@ -174,6 +174,55 @@ test('explicit Gallery selection keeps the default complete verification strict'
   }
 });
 
+test('reviewed history refuses a different source or a changed recipe ledger before decoding media', async () => {
+  const fixture = subsetVerificationFixture();
+  try {
+    const body = {
+      schemaVersion: 1,
+      format: 'modiff.gallery.recipe-history.v1',
+      source: { repository: 'other/gallery', revision: fixture.source.revision },
+      records: [],
+    };
+    fixture.write('config/template-recipe-history.v1.json', { ...body, recordsHash: canonicalJsonHash(body) });
+    await assert.rejects(
+      () => verifyGallery({ reviewedHistory: true }, 'synthetic-history', fixture.options),
+      /history belongs to a different Dataset/u,
+    );
+    body.source.repository = fixture.source.repoId;
+    fixture.write('config/template-recipe-history.v1.json', { ...body, recordsHash: 'changed' });
+    await assert.rejects(
+      () => verifyGallery({ reviewedHistory: true }, 'synthetic-history', fixture.options),
+      /history schema, immutable source or content hash is invalid/u,
+    );
+    assert.deepEqual(fixture.decoded, []);
+    assert.equal((await verifyGallery({}, 'default-verification', fixture.options)).ok, true);
+  } finally {
+    fixture.dispose();
+  }
+});
+
+test(
+  'saved Wan media and withheld Ghibli records pass only the explicitly reviewed historical audit',
+  { skip: !process.env.MODIFF_VERIFY_REVIEWED_HISTORY },
+  async () => {
+    const templateIds = ['flux_lora_ghibli_story', 'wan_22_ti2v_5b_seed_vault'];
+    const current = await verifyGallery({}, 'current-recipes', { templateIds });
+    assert.deepEqual(
+      current.errors,
+      templateIds.map((id) => `${id} manifest templateLockHash is stale for the current template revision`),
+    );
+    const saved = await verifyGallery({ reviewedHistory: true }, 'reviewed-recipes', { templateIds });
+    assert.deepEqual(saved.errors, []);
+    assert.equal(saved.verifiedCurrentExamples, 0);
+    assert.equal(saved.verifiedHistoricalExamples, 1);
+    assert.deepEqual(saved.historicalRecipeRecords, [
+      { templateId: templateIds[0], withheld: true },
+      { templateId: templateIds[1], withheld: false },
+    ]);
+    assert.equal(saved.withheldExamples[0].templateId, templateIds[0]);
+  },
+);
+
 test('decoded video identity tolerates only the reviewed FFmpeg software banner difference', () => {
   const original = Buffer.from(
     '#format: frame checksums\n#version: 2\n#hash: MD5\n#software: Lavf61.1.100\n' +

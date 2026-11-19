@@ -259,6 +259,11 @@ function parseArgs(argv) {
       args.publish = true;
       continue;
     }
+    if (entry === '--reviewed-history') {
+      if (args.mode !== 'verify') throw new Error('--reviewed-history only applies to Gallery verification.');
+      args.reviewedHistory = true;
+      continue;
+    }
     if (entry.startsWith('--')) {
       const [key, inlineValue] = entry.slice(2).split('=');
       const value = inlineValue ?? argv[index + 1];
@@ -701,7 +706,7 @@ export function validateReviewedDerivative(provenance, derivative, expected) {
   return errors;
 }
 
-function validateSingleProvenance(provenance, expected, derivative = null) {
+export function validateSingleProvenance(provenance, expected, derivative = null) {
   const errors = [];
   const audioDerivative =
     ['audio_remux', 'audio_caption_timeline_replacement'].includes(derivative?.kind) ||
@@ -2499,8 +2504,19 @@ export async function verifyGallery(
           ...completeManifest,
           examples: completeManifest.examples.filter((entry) => templateIds.includes(entry.templateId)),
         };
-  const decodedHashCompatibilityMatches = [];
   const scope = galleryVerificationScope(root);
+  const historicalById = new Map();
+  if (args.reviewedHistory === true) {
+    const { verifyTemplateRecipeRecords } = await import('./template-recipe-records.mjs');
+    const history = JSON.parse(readFileSync(join(root, 'config/template-recipe-history.v1.json'), 'utf8'));
+    if (scope.source.mode === 'huggingface' && history.source?.repository !== scope.source.repoId) {
+      throw new Error('Reviewed Gallery history belongs to a different Dataset.');
+    }
+    for (const record of verifyTemplateRecipeRecords(history, { root, runtime, manifest: completeManifest })) {
+      historicalById.set(record.templateId, record.template);
+    }
+  }
+  const decodedHashCompatibilityMatches = [];
   const unavailable = new Set(scope.withheld.map((asset) => asset.path));
   const isWithheld = (path) => typeof path === 'string' && unavailable.has(path.replace(/^\//, ''));
   const withheldExamples = [];
@@ -2616,7 +2632,7 @@ export async function verifyGallery(
         `${entry.templateId} audiovisual hash mismatch: expected ${entry.audiovisualMediaHash}, got ${audiovisualMediaHash ?? 'missing'}`,
       );
     }
-    const template = templatesById.get(entry.templateId);
+    const template = historicalById.get(entry.templateId) ?? templatesById.get(entry.templateId);
     if (!template) {
       errors.push(`${entry.templateId} is not present in the current template runtime`);
     } else {
@@ -2851,6 +2867,10 @@ export async function verifyGallery(
 
   const availableExamples = (manifest.examples?.length ?? 0) - withheldExamples.length;
   if (availableExamples === 0) errors.push('Gallery verification has no available published examples.');
+  const historicalEntries = (manifest.examples ?? [])
+    .filter(({ templateId }) => historicalById.has(templateId))
+    .map(({ templateId }) => ({ templateId, withheld: withheldExamples.some((row) => row.templateId === templateId) }));
+  const availableHistorical = historicalEntries.filter(({ withheld }) => !withheld).length;
   return {
     mode: 'verify',
     artifactDir,
@@ -2858,6 +2878,13 @@ export async function verifyGallery(
     verificationScope:
       scope.source.mode === 'huggingface' ? 'pinned-remote-assets-materialized-locally' : 'complete-local',
     verifiedExamples: errors.length === 0 ? availableExamples : 0,
+    ...(args.reviewedHistory === true
+      ? {
+          historicalRecipeRecords: historicalEntries,
+          verifiedCurrentExamples: errors.length === 0 ? availableExamples - availableHistorical : 0,
+          verifiedHistoricalExamples: errors.length === 0 ? availableHistorical : 0,
+        }
+      : {}),
     ...(templateIds === undefined
       ? {}
       : {

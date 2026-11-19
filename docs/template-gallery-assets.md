@@ -89,6 +89,13 @@ When accepted current-recipe replacements supersede every active historical
 example, this ledger may contain zero records. Preserve prior declarations and
 sidecars in the immutable Dataset history; an empty active ledger grants no proof.
 
+Run `npm run gallery:verify -- --reviewed-history` to verify the complete
+Gallery using any exact historical recipe records. The report separates
+verified current examples, available historical examples, and historical
+records whose media are withheld. Rights, media, provenance and review checks
+still apply. The default `npm run gallery:verify` continues to check the
+current recipes only.
+
 The browser continues to label these outputs **Previous recipe example**.
 Repository-relative weight filenames can resolve to their exact recorded Hub
 repository, but only the added revision field may be omitted from an older lock;

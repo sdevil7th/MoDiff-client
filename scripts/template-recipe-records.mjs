@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { canonicalJsonHash, loadTemplateRuntime } from './template-gallery-harness.mjs';
+import { canonicalJsonHash, loadTemplateRuntime, validateSingleProvenance } from './template-gallery-harness.mjs';
 
 function publicJson(root, path) {
   if (
@@ -66,20 +66,40 @@ export function verifyTemplateRecipeRecords(history, { root, runtime, manifest }
     }
     const bundle = publicJson(root, entry.provenancePath);
     const proof = bundle.run;
+    const expected = {
+      templateId: entry.templateId,
+      templateLockHash: entry.templateLockHash,
+      promptSettingsHash: entry.promptSettingsHash,
+      modelRevision: entry.modelRevision,
+      decodedMediaHash: entry.mediaHash,
+      ...(entry.decodedAudioHash ? { decodedAudioHash: entry.decodedAudioHash } : {}),
+      ...(entry.audiovisualMediaHash ? { audiovisualMediaHash: entry.audiovisualMediaHash } : {}),
+      ...(entry.modelSetHash ? { modelSetHash: entry.modelSetHash } : {}),
+      ...(entry.inputArtifactsHash ? { inputArtifactsHash: entry.inputArtifactsHash } : {}),
+    };
+    // The public run's local runtime metadata is redacted. Verify the sealed
+    // runtime binding without trying to derive it from that redacted payload.
+    const publicBindings = { ...expected, runtimeFingerprint: entry.runtimeFingerprint };
     if (
       canonicalJsonHash(bundle) !== entry.provenanceHash ||
+      bundle.schemaVersion !== 1 ||
+      bundle.format !== 'modiff.gallery.reviewed-provenance.v1' ||
+      bundle.templateId !== record.templateId ||
       !proof ||
-      proof.blockers?.length ||
-      proof.template?.id !== record.templateId ||
-      proof.templateLockHash !== entry.templateLockHash ||
-      proof.template.promptSettingsHash !== runtime.promptSettingsHash(current) ||
+      (bundle.bindings && Object.entries(publicBindings).some(([key, value]) => bundle.bindings[key] !== value)) ||
+      proof.template?.promptSettingsHash !== runtime.promptSettingsHash(historical.template) ||
       proof.graphHash !== entry.graphHash ||
       proof.proofLockHash !== entry.proofLockHash ||
+      proof.backendSourceFingerprint !== entry.backendSourceFingerprint ||
+      proof.backendContractFingerprint !== entry.backendContractFingerprint ||
+      proof.modelCommit !== entry.modelCommit ||
       proof.templateRevisionHash !== entry.templateRevisionHash ||
       proof.models?.hash !== entry.modelSetHash ||
       proof.models?.revisionLock !== entry.modelRevision ||
-      !proof.models?.items?.length ||
-      proof.models.count !== proof.models.items.length
+      !Array.isArray(proof.models?.items) ||
+      !proof.models.items.length ||
+      proof.models.count !== proof.models.items.length ||
+      validateSingleProvenance(proof, expected, bundle.derivative).length
     ) {
       fail('the unchanged original creator, graph or complete model-set proof did not match');
     }
