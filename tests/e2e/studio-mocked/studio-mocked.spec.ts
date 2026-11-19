@@ -37600,11 +37600,25 @@ test('unsupported image Model Setup disables Add LoRA and Cosmos retains four ac
   await withdrawSelectedImageAdapterPolicy(page, 'cosmos3-super-text-to-image:official-modular-workflow');
   const graph = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
   expect(graph.nodes.map((node) => node.data.label).sort()).toEqual([
-    'Denoise',
     'Encode Inputs',
+    'Generate',
     'Image Output',
     'Model Setup',
   ]);
+  const generate = graph.nodes.find((node) => node.data.label === 'Generate')!.data.blockInstanceV2!;
+  expect(generate.effectiveGraph.nodes.map((node) => node.data.action).sort()).toEqual([
+    'WorkflowCosmos3OmniDecode',
+    'WorkflowCosmos3OmniDenoise',
+  ]);
+  const api = await optionalStageApi(page);
+  expect(api['modules.ModularDiffusers.WorkflowCosmos3OmniDecode'].params.state_in).toMatchObject({
+    sourceId: 'modules.ModularDiffusers.WorkflowCosmos3OmniDenoise',
+    sourceKey: 'state_out',
+  });
+  expect(api['modules.Image.Preview'].params.image).toMatchObject({
+    sourceId: 'modules.ModularDiffusers.WorkflowCosmos3OmniDecode',
+    sourceKey: 'image',
+  });
   const setup = graph.nodes.find((node) => node.data.label === 'Model Setup')!;
   const node = page.getByTestId(`setup-node-${setup.id}`);
   await expect(node.getByRole('button', { name: 'Add LoRA', exact: true })).toBeDisabled();
@@ -37864,7 +37878,34 @@ test('optional declared component bundle preserves Qwen stages, controls, breako
   await page.keyboard.press('Escape');
   const bundled = await graph();
   expect(bundled.nodes.map((node) => node.id).sort()).toEqual(original.nodes.map((node) => node.id).sort());
-  expect(bundled.edges.length).toBe(original.edges.length - 1);
+  expect(bundled.edges.filter((edge) => edge.source !== owner.id)).toEqual(
+    original.edges.filter((edge) => edge.source !== owner.id),
+  );
+  const bundleField = 'pipeline_components';
+  const setupBundle = owner.data.blockInstanceV2!.effectiveInterface.boundary.outputs.find(
+    (port) => port.binding.fieldOrPortId === bundleField,
+  )!;
+  const bundleConsumers = ['Encode Inputs', 'Generate'].map((label) => {
+    const stage = bundled.nodes.find((node) => node.data.label === label)!;
+    const ports = stage.data.blockInstanceV2!.effectiveInterface.boundary.inputs.filter(
+      (port) => port.binding.fieldOrPortId === bundleField,
+    );
+    expect(ports).toHaveLength(1);
+    return { stage, port: ports[0]! };
+  });
+  const ownerEdges = bundled.edges.filter((edge) => edge.source === owner.id);
+  expect(ownerEdges).toHaveLength(bundleConsumers.length);
+  for (const { stage, port } of bundleConsumers) {
+    expect(ownerEdges).toContainEqual(
+      expect.objectContaining({ target: stage.id, sourceHandle: setupBundle.portId, targetHandle: port.portId }),
+    );
+  }
+  const { stage: generate, port: sharedBundle } = bundleConsumers[1]!;
+  const generateNodes = generate.data.blockInstanceV2!.effectiveGraph.nodes;
+  expect(sharedBundle.binding.nodeId).toBe(generateNodes.find((node) => node.data.action === 'Denoise')!.nodeId);
+  expect(sharedBundle.mirrorBindings).toEqual([
+    { nodeId: generateNodes.find((node) => node.data.action === 'DecodeLatents')!.nodeId, fieldOrPortId: bundleField },
+  ]);
   const api = await optionalStageApi(page);
   for (const key of [
     'modules.ModularDiffusers.EncodePrompt',
@@ -38895,7 +38936,6 @@ test('selected Cosmos NONE policy preserves actual stages through adapter Add, e
     reviewTerms: acknowledgementRequiredForTemplate(template).length > 0,
     embeddedGuidance: Number(denoise.params.guidance_scale!.value ?? denoise.params.guidance_scale!.default),
     guiderEnabled: null,
-    visibleLabels: ['Denoise', 'Encode Inputs', 'Image Output', 'Model Setup'],
   });
   const setup = (await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).nodes.find(
     (entry) => entry.data.label === 'Model Setup',
