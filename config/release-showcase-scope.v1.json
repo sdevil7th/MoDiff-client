@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "b3fefedf324c08cb50eaf4654ce68fefc041d0ef"
+    "revision": "8ffd3ced9c05fa385a5eea80838567468c6d98aa"
   },
   "originalCampaign": {
     "total": 89,
@@ -470,6 +470,12 @@
       "countedAsComplete": false
     },
     {
+      "id": "spandrel_x2_synthetic_gradient",
+      "category": "supplementary-only",
+      "countedAsComplete": false,
+      "reason": "Published and registered as a supplementary Gallery technical preview outside the original campaign selection."
+    },
+    {
       "id": "wan_21_t2v_13b_seed_vault",
       "category": "amd-cloud",
       "reason": "Full recipe deferred to AMD cloud; local complete-workflow campaign budget is two hours. No MoDiff user runtime restriction.",
@@ -512,5 +518,5 @@
       "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:b9d5e60d449044a2445c782bfc5930cc3d6eade0d1786a89c548b66c1d8436a3"
+  "profileHash": "sha256:canonical-json:b1ce2f98559f06dab8c067246b5851f40e4b0d3c8abf66760be43f6b6dabeb0a"
 }

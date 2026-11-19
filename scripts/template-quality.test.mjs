@@ -173,6 +173,7 @@ test('the complete catalog audits authored prompts and reports backend defaults 
       'image_outpaint',
       'image_control',
       'image_layers',
+      'image_upscale',
       'depth_estimation',
       'text_generation',
       'video',
@@ -181,13 +182,19 @@ test('the complete catalog audits authored prompts and reports backend defaults 
   );
 });
 
-test('depth and text audits follow the input contracts of their own tasks', () => {
+test('depth, upscale, and text audits follow the input contracts of their own tasks', () => {
   const depth = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'marigold_depth_synthetic_ramp');
+  const upscale = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'spandrel_x2_synthetic_gradient');
   const text = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'smollm2_rain_gauge');
   assert.equal(qualityModule.auditTemplateQuality(depth).passed, true);
+  assert.equal(qualityModule.auditTemplateQuality(upscale).passed, true);
   assert.equal(qualityModule.auditTemplateQuality(text).passed, true);
   assert.deepEqual(
     qualityModule.auditTemplateQuality({ ...depth, prompt: 'Estimate depth.' }).issues.map((issue) => issue.code),
+    ['unsupported_prompt_input'],
+  );
+  assert.deepEqual(
+    qualityModule.auditTemplateQuality({ ...upscale, prompt: 'Upscale this image.' }).issues.map((issue) => issue.code),
     ['unsupported_prompt_input'],
   );
   assert.deepEqual(

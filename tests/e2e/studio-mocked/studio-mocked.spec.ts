@@ -13563,7 +13563,7 @@ test('published Experimental cards remain discoverable after Gallery metadata lo
   expect(forbiddenPosts).toEqual([]);
 });
 
-test('approved retained examples show structured text and a Marigold depth comparison', async ({ page }) => {
+test('approved retained examples show structured text and technical image comparisons', async ({ page }) => {
   await ensureFrontend();
   await installMockRoutes(page);
   const manifest = JSON.parse(
@@ -13603,6 +13603,16 @@ test('approved retained examples show structured text and a Marigold depth compa
   const depthDetail = page.getByTestId('template-detail-marigold_depth_synthetic_ramp');
   await expect(depthDetail.getByText('Hover or drag to compare')).toBeVisible();
   await expect(depthDetail).toContainText('Depth accuracy remains unmeasured.');
+  await depthDetail.getByRole('button', { name: 'Templates', exact: true }).click();
+
+  await page.getByTestId('template-browser-category-upscale').click();
+  await page.getByTestId('template-browser-search').fill('Synthetic Gradient');
+  const upscaleCard = page.getByTestId('template-browser-card-spandrel_x2_synthetic_gradient');
+  await expect(upscaleCard.getByTestId('template-ab-comparison')).toBeVisible();
+  await upscaleCard.getByTestId('template-browser-use-spandrel_x2_synthetic_gradient').click();
+  const upscaleDetail = page.getByTestId('template-detail-spandrel_x2_synthetic_gradient');
+  await expect(upscaleDetail.getByText('Hover or drag to compare')).toBeVisible();
+  await expect(upscaleDetail).toContainText('The synthetic gradient does not test restoration of fine detail.');
 });
 
 test('Experimental public cards create the exact FLUX3 Ceramic Radio graph through ordinary UI', async ({ page }) => {

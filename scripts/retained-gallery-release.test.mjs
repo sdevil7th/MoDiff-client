@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
-import { verifiedRetainedGalleryAssetIndex } from './retained-gallery-release.mjs';
+import { canonicalWorkflowContract } from './release-contract-core.mjs';
+import { createRetainedGalleryReleaseReader, verifiedRetainedGalleryAssetIndex } from './retained-gallery-release.mjs';
+import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const hash = (value) => `sha256:canonical-json:${canonicalJsonHash(value)}`;
 
@@ -92,3 +94,62 @@ test('retained release refuses stale Gallery inventory, unbound rights and chang
     assert.throws(() => verifiedRetainedGalleryAssetIndex(value.root, value.source));
   }
 });
+
+test(
+  'the staged Spandrel preview qualifies only the locked recipe and original saved execution',
+  {
+    skip: !process.env.MODIFF_VERIFY_SPANDREL_GALLERY_STAGE,
+  },
+  async () => {
+    const clientRoot = resolve(import.meta.dirname, '..');
+    const backend = resolve(process.env.MODIFF_BACKEND_DIR || join(clientRoot, '..', 'MoDiff'));
+    const stage = resolve(process.env.MODIFF_VERIFY_SPANDREL_GALLERY_STAGE);
+    const json = (root, path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
+    const runtime = await loadTemplateRuntime(clientRoot);
+    const template = runtime.templates.find(({ id }) => id === 'spandrel_x2_synthetic_gradient');
+    const registry = json(stage, 'public/template-gallery/manifest.json');
+    const source = json(stage, 'src/studio/templateAssetSource.json');
+    const entry = runtime.findManifestEntry(template, registry);
+    assert.ok(entry, 'The saved Gallery preview must match its current technical recipe.');
+    const workflowId = 'SpandrelImageUpscale:image_upscale';
+    const manifest = json(backend, 'data/workflow-library-manifest.json').workflows.find(({ id }) => id === workflowId);
+    const graph = json(backend, `data/graphs/${manifest.graphPath}`);
+    const receiptRegistry = json(backend, 'data/qualification/release/canonical-workflow-run-receipts.v1.json');
+    const nativeReceipt = receiptRegistry.receipts.find((row) => row.workflowId === workflowId);
+    assert.ok(nativeReceipt);
+    const proof = {
+      recipe: {
+        template,
+        workflowId,
+        sourceTaskTemplateId: manifest.sourceTemplateId,
+        originalReceiptSha256: nativeReceipt.evidenceSha256,
+        retainedGraphHash: nativeReceipt.graphHash,
+        inputSha256: nativeReceipt.inputBinding.sha256,
+      },
+      entry,
+      sourceWorkflow: { manifest, contract: canonicalWorkflowContract(manifest, graph) },
+      templateRevisionHash: canonicalJsonHash({ template, settings: runtime.lockedSettingsForTemplate(template) }),
+      nativeReceipt,
+    };
+    const read = createRetainedGalleryReleaseReader({ clientRoot: stage, source, registry });
+    const retained = read(proof);
+    assert.equal(retained.proofKind, 'reviewed_retained_template_execution');
+    assert.equal(retained.resourceCandidateId, null);
+    assert.deepEqual(retained.observationLimits, nativeReceipt.observationLimits);
+    assert.deepEqual(retained.modelArtifact, nativeReceipt.modelArtifact);
+    assert.deepEqual(read({ ...proof, nativeReceipt: undefined }), retained);
+    for (const changes of [
+      { graphHash: 'different executed graph' },
+      { evidenceSha256: 'a'.repeat(64) },
+      { capturedAt: 'changed capture timestamp' },
+      { backendSourceFingerprint: 'changed source fingerprint' },
+      { modelArtifact: { ...nativeReceipt.modelArtifact, byteSize: 1 } },
+      { peakMemoryBytes: 1 },
+    ]) {
+      assert.throws(
+        () => read({ ...proof, nativeReceipt: { ...nativeReceipt, ...changes } }),
+        /Published Spandrel proof differs from the verified native receipt/u,
+      );
+    }
+  },
+);

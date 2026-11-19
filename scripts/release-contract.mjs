@@ -349,7 +349,6 @@ const workflowRecords = [...workflowManifest.workflows, ...reviewedExperimental]
 });
 const canonicalReceiptsByWorkflow = new Map();
 const retainedNativeBySha = new Map();
-const hasRetainedTemplateReview = existsSync(join(RETAINED_TEMPLATE_REVIEW_ROOT, 'approval.v1.json'));
 const executionStatuses = {
   real_backend_deterministic_data: 'verified_deterministic_execution',
   real_backend_deterministic_media: 'verified_deterministic_media_execution',
@@ -385,11 +384,11 @@ if (existsSync(canonicalRegistryPath)) {
     if (JSON.stringify(stable(body)) !== JSON.stringify(stable(derived.receipt))) {
       throw new Error(`Canonical workflow receipt differs from original task evidence: ${stored.workflowId}`);
     }
-    if (hasRetainedTemplateReview && (derived.receipt.inputBinding || derived.receipt.promptBinding)) {
+    if (derived.receipt.inputBinding || derived.receipt.promptBinding) {
       if (retainedNativeBySha.has(stored.evidenceSha256)) {
         throw new Error(`Original bound workflow evidence is duplicated: ${stored.workflowId}`);
       }
-      retainedNativeBySha.set(stored.evidenceSha256, derived);
+      retainedNativeBySha.set(stored.evidenceSha256, { ...derived, registeredReceipt: stored });
     }
     const previous = canonicalReceiptsByWorkflow.get(stored.workflowId);
     if (!previous || String(previous.capturedAt).localeCompare(stored.capturedAt) < 0)
@@ -446,6 +445,7 @@ try {
           sourceWorkflow: workflow,
           templateRevisionHash: canonicalJsonHash({ template, settings: lockedSettings }),
           localAssociation: retainedTemplateAssociations.get(retainedRecipe.workflowId),
+          nativeReceipt: retainedNativeBySha.get(retainedRecipe.originalReceiptSha256)?.registeredReceipt,
         })
       : null;
     const schema = {

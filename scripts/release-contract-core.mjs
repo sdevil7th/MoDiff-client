@@ -671,7 +671,7 @@ export async function exportCanonicalWorkflowGraphs(clientRoot, graphs) {
   }
 }
 
-// Publication moves these two authoring rows out of the hidden-candidate
+// Publication moves these authoring rows out of the hidden-candidate
 // ledger. Revalidate the original evidence against its exact archived
 // authoring row. A new or edited standalone capture cannot use that baseline.
 const RETAINED_AUTHORING_ARCHIVES = new Map([
@@ -689,6 +689,14 @@ const RETAINED_AUTHORING_ARCHIVES = new Map([
       descriptorSha256: '4d0e3ad2819d02cc04c3f264145ddd384b17b9dfa39e83f4af6e923bce34f3d8',
       bytes: 3042,
       sha256: 'e8158c1fcd94e0cf2c2e8e2163f036edc783371d6ca9e253cdf31722c7273d0a',
+    },
+  ],
+  [
+    'SpandrelImageUpscale:image_upscale',
+    {
+      descriptorSha256: '49336b0f76e158b3be514275763e8b2c50f00c048852a34cff43167687503f15',
+      bytes: 3349,
+      sha256: '787946f2e68cba243b8ca0908c8a626a9bc792ac2a03b25316eb503a7956be5b',
     },
   ],
 ]);

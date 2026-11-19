@@ -4383,6 +4383,16 @@ test('template browser exposes the complete workflow catalog across task and ada
   assert.ok(imageTemplates.every((template) => template.id !== 'smollm2_rain_gauge'));
   assert.deepEqual(
     filterStudioTemplates(STUDIO_TEMPLATES, form, {
+      category: 'upscale',
+      query: 'synthetic gradient',
+      modelType: 'all',
+      difficulty: 'all',
+      sort: 'recommended',
+    }).map(({ id }) => id),
+    ['spandrel_x2_synthetic_gradient'],
+  );
+  assert.deepEqual(
+    filterStudioTemplates(STUDIO_TEMPLATES, form, {
       category: 'text',
       query: 'rain gauge',
       modelType: 'all',

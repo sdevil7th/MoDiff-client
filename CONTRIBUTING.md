@@ -529,8 +529,9 @@ execution with that prompt or file and needs a reviewed recipe to bind it for
 release. Native-resolution DDIM, DDPM, and Consistency samples are technical
 canaries under the project's model review policy.
 
-The reviewed Marigold synthetic ramp and SmolLM2 rain-gauge catalog recipes
-use declarations in `src/studio/retainedGalleryTemplates.ts`. They share
+The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge and Spandrel
+Real-ESRGAN 2× catalog recipes use declarations in
+`src/studio/retainedGalleryTemplates.ts`. They share
 the existing task contracts. Keep their original standalone graphs and
 receipts. For an exact approved local review, retain `approval.v1.json`,
 the original `review-scope.json` inventory, and its reviewed files beneath
@@ -548,7 +549,7 @@ to its original standalone workflow, then verifies the registered proof and
 media against the active rights-approved Gallery set. The association supplies
 no Auto or hardware approval.
 
-Publication removes the two original entries from the hidden-candidate
+Publication removes the corresponding original entries from the hidden-candidate
 authoring ledger. Retain each exact original row as
 `authoring-spec.original.json` beside the approved canonical evidence descriptor.
 The historical reader checks both byte identities before using the archived

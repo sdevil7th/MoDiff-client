@@ -14,9 +14,10 @@ type RetainedGalleryRecipe = {
   };
 } & ({ readonly inputSha256: string; readonly inputFileName: string } | { readonly promptSha256: string });
 
-const marigoldSourceSha256 = '626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a';
+const syntheticGradientSha256 = '626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a';
 const marigoldRevision = '04a73502f7fd8fc5e59947b9df3b2266d71d6849';
 const smollm2Revision = '12fd25f77366fa6b3b4b768ec3050bf629380bac';
+const spandrelRevision = '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094';
 
 /**
  * Reviewed catalog recipes tied to saved runs. Canonical workflow generation
@@ -34,7 +35,7 @@ export const RETAINED_GALLERY_TEMPLATES = [
       galleryTemplateLockHash: 'tpl_611e9ad6',
       promptSettingsHash: 'ps_d0a17851',
     },
-    inputSha256: marigoldSourceSha256,
+    inputSha256: syntheticGradientSha256,
     inputFileName: 'marigold-depth-source.png',
     template: {
       id: 'marigold_depth_synthetic_ramp',
@@ -108,6 +109,95 @@ export const RETAINED_GALLERY_TEMPLATES = [
         expectedOutput: { width: 64, height: 48 },
         runtimeEstimate: '11.73 seconds in the retained Windows CUDA run',
         notes: 'The synthetic ramp demonstrates delivery of the preview. Depth accuracy remains unmeasured.',
+      },
+    },
+  },
+  {
+    workflowId: 'SpandrelImageUpscale:image_upscale',
+    sourceTaskTemplateId: 'task-template:real-esrgan-x2-image-upscale:v1',
+    retainedGraphHash: 'sha256:canonical-graph-v1:700b85c678b691dee3c8ad1e2ea6d4cc0017d1b12d47704e45e913e17f929451',
+    originalReceiptSha256: '49336b0f76e158b3be514275763e8b2c50f00c048852a34cff43167687503f15',
+    reviewedTemplateSha256: '8de95b8b13a0636a37a7db672fbced2199e00e6719517c282f68f685bc5fd482',
+    reviewedCatalogLock: {
+      templateLockHash: 'tpl_5d99038b',
+      galleryTemplateLockHash: 'tpl_43c3b587',
+      promptSettingsHash: 'ps_e7556958',
+    },
+    inputSha256: syntheticGradientSha256,
+    inputFileName: 'real-esrgan-x2-smoke-source.png',
+    template: {
+      id: 'spandrel_x2_synthetic_gradient',
+      label: 'Spandrel Real-ESRGAN 2× — Synthetic Gradient',
+      modelDisplayName: 'Real-ESRGAN 2×',
+      mode: 'image_upscale',
+      modelType: 'SpandrelImageUpscale',
+      intentGroup: 'utility',
+      category: 'upscale',
+      tags: ['image upscale', 'technical preview'],
+      difficulty: 'starter',
+      readinessPolicy: 'requires_input',
+      outputKinds: ['image'],
+      thumbnailVariant: 'compareSlider',
+      inputBindings: [
+        {
+          id: 'source-image',
+          label: 'Source image',
+          mediaType: 'image',
+          origin: 'user',
+          requiredAt: 'workflow_start',
+          field: 'referenceImages',
+          count: 1,
+        },
+      ],
+      mediaSlots: [
+        {
+          id: 'before',
+          label: 'Source gradient',
+          kind: 'comparison_before',
+          role: 'before',
+          placeholder: 'Source pending',
+        },
+        {
+          id: 'after',
+          label: 'Upscaled gradient',
+          kind: 'comparison_after',
+          role: 'after',
+          placeholder: 'Preview pending',
+        },
+      ],
+      requiredBackendCapabilities: ['modules.Image.Load', 'modules.Spandrel.Upscaler', 'modules.Image.Preview'],
+      modelArtifact: {
+        source: 'hub',
+        value: 'nateraw/real-esrgan',
+        revision: spandrelRevision,
+        sha256: '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb',
+        byteSize: 67061725,
+        license: 'bsd-3-clause',
+      },
+      description: 'Double the source image dimensions with tiled Real-ESRGAN upscaling.',
+      recipeSummary: 'Compare the source gradient with its 2× output.',
+      prompt: '',
+      example: {
+        mediaType: 'image',
+        status: 'unverified',
+        modelRevision: spandrelRevision,
+        // Spandrel has no seed input. The generic template form retains a fixed seed.
+        lockedSeed: 42,
+        lockedSettings: {
+          width: 128,
+          height: 96,
+          steps: 1,
+          guidanceScale: 0,
+          dtype: 'float32',
+          resourceMode: 'expert',
+          quantizationMode: 'none',
+          autoOffload: false,
+          offloadMode: 'none',
+        },
+        expectedOutput: { width: 128, height: 96 },
+        runtimeEstimate: '5.80 seconds in the retained Windows CUDA run',
+        notes:
+          'Minor edge-region grain and colour drift. The synthetic gradient does not test restoration of fine detail.',
       },
     },
   },

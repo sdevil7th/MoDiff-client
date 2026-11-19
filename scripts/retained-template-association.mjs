@@ -7,7 +7,7 @@ import { readCanonicalEvidenceFile } from './release-contract-core.mjs';
 import { verifyRetainedStructuredText } from './retained-structured-text-evidence.mjs';
 import { canonicalJsonHash as galleryJsonHash, validateQualityReview } from './template-gallery-harness.mjs';
 
-const SCOPES = {
+const BOUND_REVIEW_SCOPES = {
   marigold_depth_synthetic_ramp: {
     folder: 'marigold',
     proofKind: 'real_backend_input_bound_model_variant',
@@ -21,6 +21,13 @@ const SCOPES = {
     output: 'output.original.json',
     decision: 'approved',
   },
+};
+const SPANDREL_TEMPLATE_ID = 'spandrel_x2_synthetic_gradient';
+const SPANDREL_REVIEW_HASH = '357594a299efcda4b9b9e7c4fa65c3d016db3ffe1634fdfe8dfe360789c4d0d4';
+const SPANDREL_SCOPE = {
+  proofKind: 'real_backend_input_bound_model_variant',
+  input: true,
+  decision: 'accepted_with_disclosed_limitations',
 };
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
@@ -42,9 +49,11 @@ export function assessRetainedTemplateAssociation({
   galleryOutput,
   galleryInput,
   catalogLock,
+  reviewedRecipe,
 }) {
   const { template } = recipe;
-  const scope = SCOPES[template.id];
+  const spandrel = template.id === SPANDREL_TEMPLATE_ID;
+  const scope = spandrel ? SPANDREL_SCOPE : BOUND_REVIEW_SCOPES[template.id];
   assert.ok(scope, 'Retained Gallery template scope is not reviewed.');
   const { evidence, receipt, evidenceRoot, descriptorBytes } = native;
   assert.equal(candidate.templateId, template.id);
@@ -77,6 +86,65 @@ export function assessRetainedTemplateAssociation({
   assert.match(catalogLock.galleryTemplateLockHash, /^tpl_[a-f0-9]{8}$/u);
   assert.match(catalogLock.promptSettingsHash, /^ps_[a-f0-9]{8}$/u);
   assert.equal(digest(galleryOutput.bytes), galleryOutput.ref.sha256);
+
+  if (spandrel) {
+    const reviewedRecipeBytes = reviewedRecipe?.bytes;
+    assert.ok(
+      Buffer.isBuffer(reviewedRecipeBytes) && reviewedRecipeBytes.length > 0 && reviewedRecipeBytes.length <= 65536,
+    );
+    assert.equal(digest(reviewedRecipeBytes), reviewedRecipe.ref.sha256);
+    assert.equal(candidate.draftProvenanceSha256, reviewedRecipe.ref.sha256);
+    const { recipeReviewSha256, ...draft } = JSON.parse(reviewedRecipeBytes);
+    assert.equal(draft.format, 'modiff.private-technical-preview-recipe-review.v1');
+    assert.equal(recipeReviewSha256, SPANDREL_REVIEW_HASH);
+    assert.equal(candidate.recipeReviewSha256, recipeReviewSha256);
+    assert.equal(canonicalJsonHash(draft), recipeReviewSha256);
+    assert.equal(draft.workflowId, receipt.workflowId);
+    assert.equal(draft.input.sha256, receipt.inputBinding.sha256);
+    assert.deepEqual(
+      [draft.input.width, draft.input.height],
+      [receipt.inputBinding.width, receipt.inputBinding.height],
+    );
+    assert.equal(draft.output.fileHash, receipt.outputHash);
+    assert.equal(draft.output.decodedHash, receipt.decodedOutput.hash);
+    assert.deepEqual(
+      [draft.output.width, draft.output.height],
+      [receipt.decodedOutput.width, receipt.decodedOutput.height],
+    );
+    assert.deepEqual(draft.controls.model, evidence.modelArtifact);
+    const { artifact, byteSize, descriptorSha256 } = receipt.modelArtifact;
+    assert.deepEqual(artifact, {
+      source: 'hub',
+      repository: template.modelArtifact.value,
+      revision: template.modelArtifact.revision,
+      weightName: 'RealESRGAN_x2plus.pth',
+      sha256: draft.controls.model.sha256,
+    });
+    assert.equal(draft.controls.model.value, `${artifact.repository}/${artifact.weightName}`);
+    assert.equal(byteSize, draft.controls.model.byteSize);
+    assert.equal(template.modelArtifact.sha256, artifact.sha256);
+    assert.equal(template.modelArtifact.byteSize, byteSize);
+    assert.equal(template.modelArtifact.license, draft.controls.model.license);
+    assert.match(descriptorSha256, /^[a-f0-9]{64}$/u);
+    assert.equal(draft.proof.sourceTaskTemplateId, receipt.sourceTemplateId);
+    assert.equal(draft.proof.canonicalWorkflowHash, receipt.canonicalWorkflowHash);
+    assert.equal(draft.proof.populatedGraphHash, receipt.graphHash);
+    assert.equal(draft.proof.evidenceDescriptorSha256, recipe.originalReceiptSha256);
+    assert.equal(draft.proof.savedCreatorPackageSha256, evidence.creatorPackage.sha256);
+    const creator = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, evidence.creatorPackage).bytes);
+    const upscaler = Object.values(creator.apiGraph.nodes).find(
+      (node) => node.module === 'modules.Spandrel' && node.action === 'Upscaler',
+    );
+    assert.equal(creator.apiGraph.nodes[receipt.inputBinding.nodeId].params.alpha_channel.value, draft.input.alphaMode);
+    assert.deepEqual(
+      [upscaler.params.tile_size.value, upscaler.params.tile_overlap.value, upscaler.params.downscale.value],
+      [draft.controls.tileSize, draft.controls.tileOverlap, draft.controls.downscale],
+    );
+    assert.deepEqual(receipt.observationLimits, {
+      fullConsumedFieldAccounting: false,
+      physicalPlatformQualification: false,
+    });
+  }
 
   let output;
   if (scope.input) {
@@ -133,11 +201,13 @@ export function assessRetainedTemplateAssociation({
     catalogPromptSettingsHash: catalogLock.promptSettingsHash,
     originalTaskId: receipt.taskId,
     originalGraphHash: receipt.graphHash,
+    ...(spandrel ? { originalCanonicalWorkflowHash: receipt.canonicalWorkflowHash } : {}),
     originalTemplateLockHash: null,
     originalResourceCandidateId: null,
     originalEvidenceSha256: recipe.originalReceiptSha256,
     observedExecution: {
       modelSet: receipt.modelSet,
+      ...(spandrel ? { modelArtifact: receipt.modelArtifact } : {}),
       runtimeFingerprint: receipt.runtimeFingerprint,
       executionDurationSeconds: receipt.executionDurationSeconds,
       peakMemoryBytes: receipt.peakMemoryBytes,
@@ -149,6 +219,7 @@ export function assessRetainedTemplateAssociation({
       redistributionConfirmed: true,
       draftReviewSha256: candidate.draftReviewSha256,
       draftProvenanceSha256: candidate.draftProvenanceSha256,
+      ...(spandrel ? { recipeReviewSha256: candidate.recipeReviewSha256 } : {}),
     },
     qualificationScope: 'exact_retained_recipe',
     releaseApprovalGranted: false,
@@ -163,6 +234,8 @@ export function assessRetainedTemplateAssociation({
 // The final binding describes this reviewed association after execution. It
 // does not supply template or resource fields to the original native run.
 export function finalizeRetainedQualityReview({ association, draft, reviewer, reviewedAt }) {
+  const spandrel = association.templateId === SPANDREL_TEMPLATE_ID;
+  if (spandrel) assert.equal(draft.ratingMethod, 'maintainer_qualitative_acceptance');
   const bindings = {
     templateId: association.templateId,
     templateLockHash: association.galleryTemplateLockHash,
@@ -181,6 +254,7 @@ export function finalizeRetainedQualityReview({ association, draft, reviewer, re
     reviewStatus: 'approved_reviewed',
     reviewer,
     reviewedAt,
+    ...(spandrel ? { ratingMethod: draft.ratingMethod } : {}),
     rubric: draft.rubric,
     scores: draft.scores,
     hardFailures: draft.hardFailures,
@@ -195,8 +269,9 @@ export function finalizeRetainedQualityReview({ association, draft, reviewer, re
       decision: 'accepted_with_disclosed_limitations',
       reviewer,
       acceptedAt: reviewedAt,
-      statement:
-        'Accepted as a technical depth preview with the reviewed scores and the disclosed limits of the synthetic ramp.',
+      statement: spandrel
+        ? 'Accepted as a technical preview of the exact saved synthetic gradient and 2× delivery with the disclosed limitations.'
+        : 'Accepted as a technical depth preview with the reviewed scores and the disclosed limits of the synthetic ramp.',
       acceptedReviewHash: galleryJsonHash(review),
     };
   }
@@ -221,7 +296,9 @@ export async function readReviewedBoundTemplateAssociations({ approvalRoot, vite
       Number.isFinite(Date.parse(approval.recordedAt)),
   );
   assert.match(approval.reviewScopeSha256, /^[a-f0-9]{64}$/u);
-  assert.ok(Array.isArray(approval.candidates) && approval.candidates.length === Object.keys(SCOPES).length);
+  assert.ok(
+    Array.isArray(approval.candidates) && approval.candidates.length === Object.keys(BOUND_REVIEW_SCOPES).length,
+  );
   const reviewedScope = readBoundedRecord(join(approvalRoot, 'review-scope.json'));
   assert.equal(reviewedScope.sha256, approval.reviewScopeSha256, 'Original review inventory hash differs.');
   assert.equal(reviewedScope.value.status, 'private_review_only');
@@ -233,10 +310,11 @@ export async function readReviewedBoundTemplateAssociations({ approvalRoot, vite
     '/src/studio/templateExactness.ts',
   );
   const associations = new Map();
-  for (const recipe of RETAINED_GALLERY_TEMPLATES) {
+  for (const recipe of RETAINED_GALLERY_TEMPLATES.filter(({ template }) =>
+    Object.hasOwn(BOUND_REVIEW_SCOPES, template.id),
+  )) {
     const { template } = recipe;
-    const scope = SCOPES[template.id];
-    assert.ok(scope, 'Retained Gallery template scope is not reviewed.');
+    const scope = BOUND_REVIEW_SCOPES[template.id];
     const matches = approval.candidates.filter((item) => item.templateId === template.id);
     assert.equal(matches.length, 1, 'Exact retained Gallery approval is missing or ambiguous.');
     const [candidate] = matches;

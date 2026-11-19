@@ -106,7 +106,11 @@ test(
     const runtime = await loadTemplateRuntime(client);
     const root = process.env.MODIFF_VERIFY_RETAINED_GALLERY;
     const manifest = JSON.parse(readFileSync(join(root, 'manifest.json')));
-    for (const templateId of ['marigold_depth_synthetic_ramp', 'smollm2_rain_gauge']) {
+    for (const templateId of [
+      'marigold_depth_synthetic_ramp',
+      'smollm2_rain_gauge',
+      'spandrel_x2_synthetic_gradient',
+    ]) {
       const entry = manifest.examples.find((candidate) => candidate.templateId === templateId);
       assert.ok(entry, templateId);
       const load = (assetPath) => readFileSync(join(root, assetPath.slice('/template-gallery/'.length)));
@@ -119,6 +123,18 @@ test(
         beforeBytes: entry.beforePath && load(entry.beforePath),
       };
       assert.deepEqual(validateRetainedGalleryProvenance(bundle, entry, options), []);
+      if (templateId === 'spandrel_x2_synthetic_gradient') {
+        assert.equal(entry.width, 128);
+        assert.equal(entry.height, 96);
+        assert.deepEqual(validateRetainedGalleryProvenance(bundle, { ...entry, width: 64, height: 48 }, options), [
+          'retained Gallery manifest width differs from the approved observation',
+          'retained Gallery manifest height differs from the approved observation',
+        ]);
+        const quality = JSON.parse(load(entry.qualityReviewPath));
+        assert.equal(quality.ratingMethod, 'maintainer_qualitative_acceptance');
+        assert.equal(quality.maintainerAcceptance.decision, 'accepted_with_disclosed_limitations');
+        assert.ok(Object.values(quality.scores).every((score) => score === null));
+      }
       assert.ok(validateRetainedGalleryProvenance(bundle, { ...entry, verificationStatus: 'exact' }, options).length);
       assert.ok(
         validateRetainedGalleryProvenance(bundle, { ...entry, verificationTimestamp: '2026-01-01T00:00:00Z' }, options)
@@ -1094,8 +1110,9 @@ test('public provenance redacts removable Linux mounts while retaining public an
 });
 
 test('gallery harness loads all Studio templates from the TypeScript runtime', () => {
-  assert.equal(runtime.templates.length, 93);
-  assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 93);
+  assert.equal(runtime.templates.length, 94);
+  assert.equal(new Set(runtime.templates.map((template) => template.id)).size, 94);
+  assert.ok(runtime.templates.some((template) => template.id === 'spandrel_x2_synthetic_gradient'));
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_h3_image_old_town_cat'));
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_music3_chamber_pop'));
   assert.equal(

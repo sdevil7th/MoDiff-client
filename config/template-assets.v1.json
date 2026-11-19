@@ -1771,6 +1771,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/spandrel_x2_synthetic_gradient.before.png",
+      "size": 177,
+      "sha256": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 64,
+      "height": 48
+    },
+    {
       "path": "template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
       "size": 289576,
       "sha256": "sha256:bytes:748b164fd91bc2eed97f7c1d1125a04496a056f29cc016d7cc0da3734c2303b7",
@@ -2114,8 +2125,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 229404,
-      "sha256": "sha256:bytes:6d0538b4311d5366bfe162e5af113895b256c91668ade3e250e80c2ca4d37d12",
+      "size": 231734,
+      "sha256": "sha256:bytes:00dd065727ab3e3c88f3734fd3a12aa4bc946bb204411ca4731aa7ccff23146b",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -3132,7 +3143,8 @@
       "sha256": "sha256:bytes:6009868ad3e76b584a12eb4193daf7680a0f224224bcda917c2ebbe8f543d1a5",
       "contentType": "application/json",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ]
     },
     {
@@ -3141,7 +3153,8 @@
       "sha256": "sha256:bytes:f87545939eb878e8655640f7563f6ddb93b355ba72c716959fb61c39806fa8a3",
       "contentType": "application/json",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ]
     },
     {
@@ -3901,12 +3914,31 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/spandrel_x2_synthetic_gradient.quality-review.json",
+      "size": 2674,
+      "sha256": "sha256:bytes:75cd20b7aa48a0e129f10d09801f4ee7183c8a3bda5cf8a16bf372d9459c97f1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/spandrel_x2_synthetic_gradient.retained-template-provenance.json",
+      "size": 3397,
+      "sha256": "sha256:bytes:43789929c6d5eab5bf18f99df491e30a71f0ebd0a74b8162af30893303e282c0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/wan_22_ti2v_5b_seed_vault.quality-review.json",
       "size": 8097,
       "sha256": "sha256:bytes:119627f8cbd5751af0bf7cbf7dc7f5fa6a22ce28000438e0e49fc7569a493596",
       "contentType": "application/json",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ]
     },
     {
@@ -3915,7 +3947,8 @@
       "sha256": "sha256:bytes:260b3901159d64efad800ec39e72a1ac893e0b1f717551b572288f2a10efe1e8",
       "contentType": "application/json",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ]
     },
     {
@@ -5099,6 +5132,17 @@
       ]
     },
     {
+      "path": "template-gallery/spandrel_x2_synthetic_gradient.webp",
+      "size": 3094,
+      "sha256": "sha256:bytes:5b1ea25aacbedb50055ac010b38da45dbb3dab5477be1b2b1d99781a299e8729",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 128,
+      "height": 96
+    },
+    {
       "path": "template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png",
       "size": 2904091,
       "sha256": "sha256:bytes:fd3dbd225c9cd6d1a07b0bcfd80724b60b235f4287423a234c0a56017cd1d3b2",
@@ -5137,7 +5181,8 @@
       "sha256": "sha256:bytes:f610ee34c08aa97e5b2a42e029c7e4acfe2e22f5a73431dcd9ce875ec4dd1145",
       "contentType": "video/mp4",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ]
     },
     {
@@ -5146,7 +5191,8 @@
       "sha256": "sha256:bytes:2056b7fb1da71b48ebad25a95d8ea7fb124ba7eb884df940520224f8f488da7b",
       "contentType": "video/mp4",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ]
     },
     {
@@ -5155,7 +5201,8 @@
       "sha256": "sha256:bytes:5c9d7a7553921204ceca0ac74d5405d6ce81909e230e81e9edffaf0f2ffc50c6",
       "contentType": "image/png",
       "purposes": [
-        "runtime"
+        "runtime",
+        "tooling"
       ],
       "width": 1280,
       "height": 704
@@ -5492,9 +5539,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:c3d16e412f427cdd1e51b95f7a4173938cb4daecc7e5e6744324fa4845046637",
+  "assetSetId": "sha256:canonical-json:169f19ce25abd67b1fbc4226176786976ee8a62f5fc0b503bd33a6fa1a8f7000",
   "status": "ready",
-  "assetCount": 555,
-  "totalBytes": 1036632406,
+  "assetCount": 559,
+  "totalBytes": 1036644078,
   "missingAssets": []
 }

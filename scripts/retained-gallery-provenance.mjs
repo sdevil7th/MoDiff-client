@@ -6,33 +6,54 @@ export const RETAINED_GALLERY_PROVENANCE_FORMAT = 'modiff.gallery.retained-templ
 // The public copy omits the original task ID and all underlying capture files.
 // Pin the exact redacted associations that the maintainer reviewed against the
 // original runs, so a rewritten association cannot approve itself.
-const backendSourceFingerprint =
+const originalBackendSourceFingerprint =
   'sha256:backend-source-v1:8dd9a4d61d2c9c484e4167e38e7360d6b64a37d278e49771630e428189f5448b';
 const pinsByTemplate = new Map(
   Object.entries({
     marigold_depth_synthetic_ramp: {
       associationSha256: '9bf40847cebd0424cc17f8af5f87d7ce3a9e463ed0593177c1483f62a3a9e945',
+      backendSourceFingerprint: originalBackendSourceFingerprint,
       backendContractFingerprint:
         'sha256:backend-contract-v1:d159675b024e7b008f6347cf9655169efaa55dc928ddd7e17aae1fab5ca6fb29',
       templateRevisionHash: '4e43813ae0e4b664e4982545884644ec097eb0cc25e8f13ff549ac24c2f49ce1',
       capturedAt: '2026-11-19T07:35:33.324Z',
       inputSize: { width: 64, height: 48 },
+      outputSize: { width: 64, height: 48 },
       outputExtension: 'webp',
     },
     smollm2_rain_gauge: {
       associationSha256: 'a31b55bc4524f2e5999ac84a3c5a9f62350f45c807a1f03a0c14904b31e19c8d',
+      backendSourceFingerprint: originalBackendSourceFingerprint,
       backendContractFingerprint:
         'sha256:backend-contract-v1:cb7aeec701fb0aba61ab0c4fdffd3efbbde9f359f0b22b127d29c83cd44c1d00',
       templateRevisionHash: 'aab7cfcf15db94d4e3d1415e963cabc0cf7e6a4baafd243d4095539b1004545b',
       capturedAt: '2026-11-19T07:50:15.253Z',
       outputExtension: 'json',
     },
+    spandrel_x2_synthetic_gradient: {
+      associationSha256: 'bc51ecc479d2996d44954e4283d8cdad857f72ea1d5e35af7ef5afcecd7c1fb0',
+      backendSourceFingerprint:
+        'sha256:backend-source-v1:fd16f3acc76e08525b28215b603104d281e8ab26169b03076a112edbb7d100bb',
+      backendContractFingerprint:
+        'sha256:backend-contract-v1:bb13de17797e5bf1f3427f45b91f253013f7f0e590749710332783f28d251566',
+      templateRevisionHash: '8de95b8b13a0636a37a7db672fbced2199e00e6719517c282f68f685bc5fd482',
+      capturedAt: '2026-11-19T06:05:44.894Z',
+      inputSize: { width: 64, height: 48 },
+      outputSize: { width: 128, height: 96 },
+      outputExtension: 'webp',
+    },
   }),
 );
 
 export function retainedGalleryProvenancePins(templateId) {
   const pins = pinsByTemplate.get(templateId);
-  return pins && { ...pins, inputSize: pins.inputSize && { ...pins.inputSize }, backendSourceFingerprint };
+  return (
+    pins && {
+      ...pins,
+      inputSize: pins.inputSize && { ...pins.inputSize },
+      outputSize: pins.outputSize && { ...pins.outputSize },
+    }
+  );
 }
 
 export function buildRetainedGalleryProvenance(association) {
@@ -100,8 +121,8 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
     beforePath: pins.inputSize ? base + 'inputs/' + stem + '.before.png' : undefined,
     afterPath: pins.inputSize ? outputPath : undefined,
     beforeMediaHash: output.inputEncodedSha256,
-    width: pins.inputSize?.width,
-    height: pins.inputSize?.height,
+    width: pins.outputSize?.width,
+    height: pins.outputSize?.height,
   };
   const errors = Object.entries(expected)
     .filter(([field, value]) => entry[field] !== value)

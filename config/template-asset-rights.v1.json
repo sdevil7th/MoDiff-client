@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:c3d16e412f427cdd1e51b95f7a4173938cb4daecc7e5e6744324fa4845046637",
+  "assetSetId": "sha256:canonical-json:169f19ce25abd67b1fbc4226176786976ee8a62f5fc0b503bd33a6fa1a8f7000",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -4346,6 +4346,29 @@
       "consumingTemplateIds": ["reference_fusion"]
     },
     {
+      "path": "template-gallery/inputs/spandrel_x2_synthetic_gradient.before.png",
+      "sha256": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Original maintainer-approved synthetic gradient fixture",
+      "sourceUrl": null,
+      "sourceRevision": null,
+      "sourceLicense": "MoDiff-authored fixture or Gallery metadata",
+      "modelTerms": [],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": "MoDiff-Gallery-Restricted-1.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ea2e749b805706828428bd34589bd41263e9c432a9503fe17c3c6a6d7d932176",
+      "publicationBasis": "Maintainer approved this exact saved Spandrel 2× technical preview and confirmed redistribution rights.",
+      "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
+    },
+    {
       "path": "template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
       "sha256": "sha256:bytes:748b164fd91bc2eed97f7c1d1125a04496a056f29cc016d7cc0da3734c2303b7",
       "publishDecision": "approved",
@@ -5220,14 +5243,14 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:6d0538b4311d5366bfe162e5af113895b256c91668ade3e250e80c2ca4d37d12",
+      "sha256": "sha256:bytes:00dd065727ab3e3c88f3734fd3a12aa4bc946bb204411ca4731aa7ccff23146b",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
-      "creationMethod": "Project-authored redacted retained Gallery provenance, review, or registration metadata",
+      "creationMethod": "Project-authored redacted retained Gallery review, provenance or registration metadata",
       "sourceUrl": null,
       "sourceRevision": null,
-      "sourceLicense": "MoDiff-authored exact fixture or Gallery metadata",
+      "sourceLicense": "MoDiff-authored fixture or Gallery metadata",
       "modelTerms": [],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
@@ -5237,8 +5260,8 @@
       "reviewedBy": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-19",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "e604b0284a57b65b20343c7776511ae15bef922c7e104c09f0f6931eec610d2d",
-      "publicationBasis": "Activate and publish the two approved Gallery candidates using their retained native runs."
+      "humanApprovalPacketSHA256": "ea2e749b805706828428bd34589bd41263e9c432a9503fe17c3c6a6d7d932176",
+      "publicationBasis": "Maintainer approved this exact saved Spandrel 2× technical preview and confirmed redistribution rights."
     },
     {
       "path": "template-gallery/marigold_depth_synthetic_ramp.webp",
@@ -9632,6 +9655,52 @@
       "provenanceTemplateId": "smollm2_rain_gauge"
     },
     {
+      "path": "template-gallery/reviews/spandrel_x2_synthetic_gradient.quality-review.json",
+      "sha256": "sha256:bytes:75cd20b7aa48a0e129f10d09801f4ee7183c8a3bda5cf8a16bf372d9459c97f1",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted retained Gallery review, provenance or registration metadata",
+      "sourceUrl": null,
+      "sourceRevision": null,
+      "sourceLicense": "MoDiff-authored fixture or Gallery metadata",
+      "modelTerms": [],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ea2e749b805706828428bd34589bd41263e9c432a9503fe17c3c6a6d7d932176",
+      "publicationBasis": "Maintainer approved this exact saved Spandrel 2× technical preview and confirmed redistribution rights.",
+      "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
+    },
+    {
+      "path": "template-gallery/reviews/spandrel_x2_synthetic_gradient.retained-template-provenance.json",
+      "sha256": "sha256:bytes:43789929c6d5eab5bf18f99df491e30a71f0ebd0a74b8162af30893303e282c0",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted retained Gallery review, provenance or registration metadata",
+      "sourceUrl": null,
+      "sourceRevision": null,
+      "sourceLicense": "MoDiff-authored fixture or Gallery metadata",
+      "modelTerms": [],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ea2e749b805706828428bd34589bd41263e9c432a9503fe17c3c6a6d7d932176",
+      "publicationBasis": "Maintainer approved this exact saved Spandrel 2× technical preview and confirmed redistribution rights.",
+      "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
+    },
+    {
       "path": "template-gallery/reviews/wan_22_ti2v_5b_seed_vault.quality-review.json",
       "sha256": "sha256:bytes:119627f8cbd5751af0bf7cbf7dc7f5fa6a22ce28000438e0e49fc7569a493596",
       "publishDecision": "approved",
@@ -12357,6 +12426,33 @@
       "humanApprovalPacketSHA256": "e604b0284a57b65b20343c7776511ae15bef922c7e104c09f0f6931eec610d2d",
       "publicationBasis": "Activate and publish the two approved Gallery candidates using their retained native runs.",
       "provenanceTemplateId": "smollm2_rain_gauge"
+    },
+    {
+      "path": "template-gallery/spandrel_x2_synthetic_gradient.webp",
+      "sha256": "sha256:bytes:5b1ea25aacbedb50055ac010b38da45dbb3dab5477be1b2b1d99781a299e8729",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact maintainer-approved retained technical upscale output",
+      "sourceUrl": "https://huggingface.co/nateraw/real-esrgan/tree/42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094",
+      "sourceRevision": "nateraw/real-esrgan@42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094",
+      "sourceLicense": "Generated output subject to recorded model terms",
+      "modelTerms": [
+        "nateraw/real-esrgan@42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094: BSD-3-Clause model terms; https://huggingface.co/nateraw/real-esrgan/tree/42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "nateraw/real-esrgan@42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094 — https://huggingface.co/nateraw/real-esrgan/tree/42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094"
+      ],
+      "assetLicense": "MoDiff-Gallery-Restricted-1.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ea2e749b805706828428bd34589bd41263e9c432a9503fe17c3c6a6d7d932176",
+      "publicationBasis": "Maintainer approved this exact saved Spandrel 2× technical preview and confirmed redistribution rights.",
+      "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
     },
     {
       "path": "template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png",

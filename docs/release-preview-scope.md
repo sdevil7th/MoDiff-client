@@ -6,9 +6,10 @@ original 89-case campaign. The executable selection is
 revision and each accepted recipe. Run `npm run release:showcases:verify` to
 verify that selection. This check does not replace the full release gate.
 
-Marigold Depth LCM — Synthetic Ramp and SmolLM2 — Rain Gauge Answer are
-registered in the Gallery as supplements. They count toward the workflow release
-report and sit outside the original 89-case selection.
+Marigold Depth LCM — Synthetic Ramp, SmolLM2 — Rain Gauge Answer, and Spandrel
+Real-ESRGAN 2× — Synthetic Gradient are registered in the Gallery as supplements.
+They count toward the workflow release report and sit outside the original
+89-case selection.
 
 Five originals remain deferred to AMD cloud: Amber Glass Replacement, The Winter
 Delivery, Subway Musician, Final Mise en Place and Morning Light Teapot. Chinese

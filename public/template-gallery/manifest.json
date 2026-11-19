@@ -2910,6 +2910,37 @@
       "qualityReviewStatus": "approved_reviewed",
       "reviewer": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-19T13:32:10.468Z"
+    },
+    {
+      "templateId": "spandrel_x2_synthetic_gradient",
+      "verificationStatus": "reviewed",
+      "promptSettingsHash": "ps_e7556958",
+      "templateLockHash": "tpl_43c3b587",
+      "modelRevision": "nateraw/real-esrgan@42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094",
+      "runtimeFingerprint": "sha256:stable-runtime-v1:d1ce1bcfa35a3946d562bf90a663deadedaa79939c2c06cb9ac24c07f822dcc9",
+      "graphHash": "sha256:canonical-graph-v1:700b85c678b691dee3c8ad1e2ea6d4cc0017d1b12d47704e45e913e17f929451",
+      "proofLockHash": "sha256:retained-template-association-v1:8776b06a18e1b61c737fc9ee80ca907088853705131c457e78bbaf3140ae9dff",
+      "backendSourceFingerprint": "sha256:backend-source-v1:fd16f3acc76e08525b28215b603104d281e8ab26169b03076a112edbb7d100bb",
+      "backendContractFingerprint": "sha256:backend-contract-v1:bb13de17797e5bf1f3427f45b91f253013f7f0e590749710332783f28d251566",
+      "modelCommit": "42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094",
+      "templateRevisionHash": "8de95b8b13a0636a37a7db672fbced2199e00e6719517c282f68f685bc5fd482",
+      "provenancePath": "/template-gallery/reviews/spandrel_x2_synthetic_gradient.retained-template-provenance.json",
+      "provenanceHash": "sha256:canonical-json:c8e7a35440a517ff338c5faf58faf30571aa63b70152791edd01aa6557159d34",
+      "outputPath": "/template-gallery/spandrel_x2_synthetic_gradient.webp",
+      "thumbnailPath": "/template-gallery/spandrel_x2_synthetic_gradient.webp",
+      "mediaHash": "sha256:decoded-rgba:a292be547bc61295a658f09621a5a88cc0654008f0318147fef8a19faefa4cf0",
+      "mediaType": "image",
+      "verificationTimestamp": "2026-11-19T06:05:44.894Z",
+      "qualityReviewPath": "/template-gallery/reviews/spandrel_x2_synthetic_gradient.quality-review.json",
+      "qualityReviewHash": "sha256:canonical-json:2951773a705fb79cadec86b280732b29921682e3bb9c97f1279acaee8b653e6f",
+      "qualityReviewStatus": "approved_reviewed",
+      "reviewer": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19T18:08:33.393Z",
+      "beforePath": "/template-gallery/inputs/spandrel_x2_synthetic_gradient.before.png",
+      "afterPath": "/template-gallery/spandrel_x2_synthetic_gradient.webp",
+      "beforeMediaHash": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
+      "width": 128,
+      "height": 96
     }
   ]
 }

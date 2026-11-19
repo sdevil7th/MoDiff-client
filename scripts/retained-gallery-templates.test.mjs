@@ -126,13 +126,14 @@ test('retained Gallery recipes preserve the native graph identities and standalo
       reviewedCatalogLock.galleryTemplateLockHash,
     );
     assert.equal(exactness.getPromptSettingsHash(settings), reviewedCatalogLock.promptSettingsHash);
+    if (recipe.inputSha256) assert.equal(exactness.getTemplateInputContractHash(template), undefined);
     assert.deepEqual(sources.get(`${template.modelType}|${template.mode}`), {
       ...skeletons.find(({ id }) => id === recipe.sourceTaskTemplateId),
       taskContract: true,
     });
     assert.equal(retainedTemplateGraph(recipe).hash, recipe.retainedGraphHash, template.id);
   }
-  assert.ok(!published.some((item) => item.modelType === 'ShapEPipeline'));
+  assert.ok(!published.some((item) => ['PixArtSigmaPAGPipeline', 'ShapEPipeline'].includes(item.modelType)));
 });
 
 test('fresh Expert recipes prepare with current backend specs and without a generation request', async () => {
@@ -196,6 +197,27 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.equal(binding.executionSpec.contentHash, spec.contentHash);
       assert.equal(studio.getState().activeWorkflowTabId, tabId);
       const api = flow.getState().exportGraph('retained-template-check', undefined, { randomizeSeeds: false });
+      if (template.modelType === 'SpandrelImageUpscale') {
+        const source = api.nodes[binding.nodes.loadImage].params;
+        const upscaler = api.nodes[binding.nodes.imageUpscaler].params;
+        const preview = api.nodes[binding.nodes.preview].params;
+        assert.deepEqual(source.file.value, input);
+        assert.equal(source.alpha_channel.value, 'ignore');
+        const { value, ...artifact } = template.modelArtifact;
+        assert.deepEqual(upscaler.model_id.value, { ...artifact, value: `${value}/RealESRGAN_x2plus.pth` });
+        assert.equal(upscaler.tile_size.value, 256);
+        assert.equal(upscaler.tile_overlap.value, 32);
+        assert.equal(upscaler.downscale.value, 1);
+        assert.equal(upscaler.device.value, 'cuda:0');
+        assert.equal(upscaler.image.sourceId, binding.nodes.loadImage);
+        assert.equal(upscaler.image.sourceKey, 'image');
+        assert.equal(preview.image.sourceId, binding.nodes.imageUpscaler);
+        assert.equal(preview.image.sourceKey, 'output');
+        const comparable = structuredClone(api);
+        comparable.nodes[binding.nodes.loadImage].params.file.value = [recipe.inputFileName];
+        assert.deepEqual(canonicalGraphIdentity(comparable), retainedTemplateGraph(recipe));
+        continue;
+      }
       const loader = api.nodes[binding.nodes[spec.roles.find(([, key]) => key.endsWith('.' + spec.loaderAction))[0]]];
       assert.deepEqual(loader.params.model_id.value, { source: 'hub', value: template.modelArtifact.value });
       assert.equal(loader.params.revision.value, template.modelArtifact.revision);

@@ -10,6 +10,77 @@ import { validateRetainedGalleryProvenance } from './retained-gallery-provenance
 
 const same = (actual, expected, label) => assert.deepEqual(actual, expected, label);
 
+function assertRetainedSpandrelEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt }) {
+  const { observedExecution, output } = association;
+  const { modelArtifact, observationLimits } = observedExecution;
+  assert.equal(association.originalCanonicalWorkflowHash, sourceWorkflow.contract.graphHash);
+  assert.equal(association.originalEvidenceSha256, recipe.originalReceiptSha256);
+  assert.equal(association.originalGraphHash, recipe.retainedGraphHash);
+  same(
+    observationLimits,
+    { fullConsumedFieldAccounting: false, physicalPlatformQualification: false },
+    'Spandrel retained evidence has a broader scope than its saved run.',
+  );
+  assert.equal(association.originalResourceCandidateId, null);
+  assert.equal(association.originalTemplateLockHash, null);
+  const { modelArtifact: selected } = recipe.template;
+  same(
+    modelArtifact.artifact,
+    {
+      source: 'hub',
+      repository: selected.value,
+      revision: selected.revision,
+      weightName: 'RealESRGAN_x2plus.pth',
+      sha256: selected.sha256,
+    },
+    'Spandrel retained checkpoint differs from the template.',
+  );
+  assert.equal(modelArtifact.byteSize, selected.byteSize);
+  assert.equal(output.inputEncodedSha256, `sha256:bytes:${recipe.inputSha256}`);
+  if (!nativeReceipt) return;
+  same(
+    {
+      sourceTaskTemplateId: nativeReceipt.sourceTemplateId,
+      workflowId: nativeReceipt.workflowId,
+      proofKind: nativeReceipt.proofKind,
+      capturedAt: nativeReceipt.capturedAt,
+      backendSourceFingerprint: nativeReceipt.backendSourceFingerprint,
+      canonicalWorkflowHash: nativeReceipt.canonicalWorkflowHash,
+      graphHash: nativeReceipt.graphHash,
+      evidenceSha256: nativeReceipt.evidenceSha256,
+      modelSet: nativeReceipt.modelSet,
+      modelArtifact: nativeReceipt.modelArtifact,
+      observationLimits: nativeReceipt.observationLimits,
+      outputHash: nativeReceipt.outputHash,
+      decodedMediaHash: nativeReceipt.decodedOutput?.hash,
+      runtimeFingerprint: nativeReceipt.runtimeFingerprint,
+      executionDurationSeconds: nativeReceipt.executionDurationSeconds,
+      peakMemoryBytes: nativeReceipt.peakMemoryBytes,
+    },
+    {
+      sourceTaskTemplateId: association.nativeSourceTaskContractId,
+      workflowId: association.workflowId,
+      proofKind: 'real_backend_input_bound_model_variant',
+      capturedAt: entry.verificationTimestamp,
+      backendSourceFingerprint: entry.backendSourceFingerprint,
+      canonicalWorkflowHash: association.originalCanonicalWorkflowHash,
+      graphHash: association.originalGraphHash,
+      evidenceSha256: association.originalEvidenceSha256,
+      modelSet: observedExecution.modelSet,
+      modelArtifact,
+      observationLimits,
+      outputHash: output.sourceOutputHash,
+      decodedMediaHash: output.decodedMediaHash,
+      runtimeFingerprint: observedExecution.runtimeFingerprint,
+      executionDurationSeconds: observedExecution.executionDurationSeconds,
+      peakMemoryBytes: observedExecution.peakMemoryBytes,
+    },
+    'Published Spandrel proof differs from the verified native receipt.',
+  );
+  assert.equal(nativeReceipt.resourceCandidateId, null);
+  assert.equal(nativeReceipt.inputBinding?.sha256, recipe.inputSha256);
+}
+
 export function verifiedRetainedGalleryAssetIndex(clientRoot, expectedSource) {
   const { source, assets } = galleryVerificationScope(clientRoot);
   same(source, expectedSource, 'Retained release evidence differs from the activated Gallery source.');
@@ -37,7 +108,7 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
     ).bytes;
   };
 
-  return ({ recipe, entry, sourceWorkflow, templateRevisionHash, localAssociation }) => {
+  return ({ recipe, entry, sourceWorkflow, templateRevisionHash, localAssociation, nativeReceipt }) => {
     if (!sourceWorkflow || !entry?.proofLockHash?.startsWith('sha256:retained-template-association-v1:')) return null;
     if (!approved) {
       approved = verifiedRetainedGalleryAssetIndex(clientRoot, source);
@@ -60,6 +131,8 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
     const { association } = bundle;
     assert.equal(association.workflowId, recipe.workflowId);
     assert.equal(association.nativeSourceTaskContractId, sourceWorkflow.manifest.sourceTemplateId);
+    const spandrel = recipe.workflowId === 'SpandrelImageUpscale:image_upscale';
+    if (spandrel) assertRetainedSpandrelEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt });
     if (localAssociation) {
       const { originalTaskId, ...redacted } = localAssociation;
       same(association, redacted, 'Published Gallery proof differs from the locally revalidated saved run.');
@@ -121,6 +194,9 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
       provenanceHash: entry.provenanceHash,
       verificationStatus: entry.verificationStatus,
       qualityReviewStatus: entry.qualityReviewStatus,
+      ...(spandrel
+        ? { modelArtifact: observedExecution.modelArtifact, observationLimits: observedExecution.observationLimits }
+        : {}),
       evidenceMatch: 'current_reviewed_retained_recipe',
     };
   };
