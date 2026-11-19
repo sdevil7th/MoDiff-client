@@ -1,5 +1,5 @@
 import { canonicalJsonHash } from './canonical-json.mjs';
-import { assertCanonicalDdimGraphEnvelope } from './canonical-runtime-hints.mjs';
+import { assertCanonicalAccountingGraphEnvelope } from './canonical-runtime-hints.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
@@ -340,7 +340,7 @@ export function validateCanonicalWorkflowEvidence({
   );
   const hasAccounting =
     consumed.fieldAccountingStatus !== undefined || consumed.nodes.some((row) => row.fieldAccounting !== undefined);
-  if (hasAccounting) assertCanonicalDdimGraphEnvelope(creator.apiGraph);
+  if (hasAccounting) assertCanonicalAccountingGraphEnvelope(creator.apiGraph);
   const plan = hasAccounting
     ? canonicalAccountingExecutionPlan({
         expectedApiGraph,
@@ -659,13 +659,6 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const artifact = json(join(backendRoot, 'data/model-artifact-catalog.json')).models.find(
     (row) => row.modelType === manifest.modelType,
   );
-  const target = canonicalWorkflowAuthoringContract(manifest, graph, authoringMatches[0], artifact);
-  assert.ok(
-    graph.nodes.every((node) =>
-      Object.values(node.data?.params ?? {}).every((field) => field?.display !== 'filebrowser'),
-    ),
-    'Input-backed canonical qualification is unsupported until native execution-bound input-byte evidence is available.',
-  );
   const evidenceStat = lstatSync(evidencePath);
   assert.ok(
     evidenceStat.isFile() && !evidenceStat.isSymbolicLink() && evidenceStat.size <= 65536,
@@ -674,8 +667,26 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes.toString('utf8'));
   assert.equal(evidence.schemaVersion, 1);
-  assert.equal(evidence.format, 'modiff.canonical-workflow-evidence.v1');
   assert.equal(evidence.workflowId, workflowId);
+  if (evidence.format === 'modiff.private.input-bound-model-smoke.v1') {
+    const { readInputBoundModelEvidence } = await import('./input-bound-model-evidence.mjs');
+    return readInputBoundModelEvidence({
+      clientRoot,
+      manifest,
+      graph,
+      authoring: authoringMatches[0],
+      artifact,
+      evidencePath,
+    });
+  }
+  assert.equal(evidence.format, 'modiff.canonical-workflow-evidence.v1');
+  const target = canonicalWorkflowAuthoringContract(manifest, graph, authoringMatches[0], artifact);
+  assert.ok(
+    graph.nodes.every((node) =>
+      Object.values(node.data?.params ?? {}).every((field) => field?.display !== 'filebrowser'),
+    ),
+    'Input-backed canonical qualification is unsupported until native execution-bound input-byte evidence is available.',
+  );
   const root = realpathSync(dirname(evidencePath));
   const retainedFiles = [];
   const read = (ref, maximum) => {
@@ -687,7 +698,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const creator = readJson(evidence.creatorPackage);
   const outputPackage = readJson(evidence.outputPackage);
   const run = readJson(evidence.runDetail);
-  // Optional for legacy unhinted evidence; hinted DDIM accounting requires this
+  // Optional for legacy unhinted evidence; hinted accounting requires this
   // original native frame. read() retains and rechecks its original bytes/hash.
   const graphCompleted =
     evidence.graphCompleted === undefined
@@ -788,6 +799,10 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     assert.equal(item.byteSize, bytes.length);
     assert.ok(target.outputPlan.mediaKinds.includes(row.mediaType), 'Output modality is not declared.');
     const decoded = await decodedMediaHash(file, row.mediaType);
+    if (row.mediaType === 'image') {
+      if (item.width != null) assert.equal(decoded.width, item.width, 'Decoded image width differs from the run.');
+      if (item.height != null) assert.equal(decoded.height, item.height, 'Decoded image height differs from the run.');
+    }
     analyses.push({
       ...decoded,
       mediaType: row.mediaType,

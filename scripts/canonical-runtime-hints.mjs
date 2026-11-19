@@ -25,7 +25,7 @@ const boundedString = (value) => typeof value === 'string' && value.length > 0 &
 // servicePackage affect backend execution outside nodes/paths. Close this
 // initial accounting scope before comparing canonical identities, even for an
 // unhinted graph. Empty loops match the backend's no-loop behavior.
-export function assertCanonicalDdimGraphEnvelope(apiGraph) {
+export function assertCanonicalAccountingGraphEnvelope(apiGraph) {
   const keys = new Set(['sid', 'nodes', 'paths', 'runtimeHints', 'loops']);
   assert.ok(
     record(apiGraph) && Object.keys(apiGraph).every((key) => keys.has(key)),
@@ -36,23 +36,79 @@ export function assertCanonicalDdimGraphEnvelope(apiGraph) {
     same(apiGraph.loops, [], 'Unsupported canonical graph loops; only an absent or empty loop list is accounted.');
 }
 
+// Preserve the existing importer while the same envelope is reused by image accounting.
+export const assertCanonicalDdimGraphEnvelope = assertCanonicalAccountingGraphEnvelope;
+
+function assertSnapshotOwners(snapshot, apiGraph, staged) {
+  const owners = [];
+  const check = (id, data) => {
+    const node = apiGraph.nodes[id];
+    assert.ok(node && data, 'Workflow snapshot owner is missing from execution.');
+    assert.equal(data.module, node.module, 'Workflow snapshot module differs.');
+    assert.equal(data.action, node.action, 'Workflow snapshot action differs.');
+    owners.push(id);
+  };
+  let blockCount = 0;
+  for (const node of snapshot.nodes) {
+    const block = node.data?.blockInstanceV2;
+    if (!block) {
+      check(node.id, node.data);
+      continue;
+    }
+    assert.ok(staged, 'Block snapshot authority is outside ordinary DDIM scope.');
+    assert.equal(node.data.module, 'MoDiff');
+    assert.equal(node.data.action, 'BlockV2');
+    assert.equal(block.instanceId, node.id, 'Workflow snapshot Block owner differs.');
+    assert.ok(Array.isArray(block.effectiveGraph?.nodes), 'Workflow snapshot Block leaves are missing.');
+    blockCount += 1;
+    for (const leaf of block.effectiveGraph.nodes) {
+      assert.ok(
+        boundedString(leaf.nodeId) && !leaf.data?.blockInstanceV2,
+        'Unexpected nested Block snapshot authority.',
+      );
+      const id = `block-v2-node:${node.id.length}:${node.id}:${leaf.nodeId.length}:${leaf.nodeId}`;
+      check(id, leaf.data);
+    }
+  }
+  if (staged) assert.equal(blockCount, 2, 'Reviewed image stage owners differ.');
+  same(owners.sort(), Object.keys(apiGraph.nodes).sort(), 'Workflow snapshot owner scope differs.');
+}
+
 /** Closed policy for the existing ordinary five-node resident DDIM path only.
  * The caller first validates every consumed field and producer projection.
  * Completion is an original native frame, never a replacement GET task body.
  */
-export function canonicalDdimRuntimeHintAccounting({ apiGraph, consumed, plan, runtimeEvidence, digest }) {
-  const hints = apiGraph.runtimeHints;
+export function canonicalDdimRuntimeHintAccounting(args) {
+  const { plan } = args;
   assert.equal(plan.dtype, 'float32', 'Hinted DDIM dtype variants need a separate accounting policy.');
   assert.equal(
     plan.modelRepo,
     'google/ddpm-cifar10-32',
     'Hinted DDIM model variants need a separate accounting policy.',
   );
+  return canonicalRuntimeHintAccounting(args, 'unconditional_image');
+}
+
+// The reviewed PixArt route is a staged Expert graph with transport hints only.
+export function canonicalPixArtSigmaPagRuntimeHintAccounting(args) {
+  return canonicalRuntimeHintAccounting(args, 'text_to_image', true);
+}
+
+function canonicalRuntimeHintAccounting(
+  { apiGraph, consumed, plan, runtimeEvidence, digest },
+  taskMode,
+  staged = false,
+) {
+  const hints = apiGraph.runtimeHints;
   assert.ok(record(runtimeEvidence), 'Declared runtime hints require original completion evidence.');
   const { run, output, graphCompleted: completed } = runtimeEvidence;
   assert.ok(record(completed), 'Original completion frame is required for declared runtime hints.');
   const task = run?.task;
   const managed = Object.hasOwn(hints, 'source');
+  assert.ok(
+    !staged || (!managed && !Object.hasOwn(hints, 'nodeId')),
+    'Image accounting requires full-graph transport-only hints.',
+  );
   const optional = optionalTransportKeys.filter((key) => Object.hasOwn(hints, key));
   const memory = memoryKeys.filter((key) => Object.hasOwn(hints, key));
   exactKeys(
@@ -200,19 +256,10 @@ export function canonicalDdimRuntimeHintAccounting({ apiGraph, consumed, plan, r
     record(snapshot) && Array.isArray(snapshot.nodes) && Array.isArray(snapshot.edges),
     'Original workflow snapshot is missing.',
   );
-  same(
-    snapshot.nodes.map((node) => node.id).sort(),
-    Object.keys(apiGraph.nodes).sort(),
-    'Workflow snapshot owner scope differs.',
-  );
-  for (const node of snapshot.nodes) {
-    assert.ok(!node.data?.blockInstanceV2, 'Block snapshot authority is outside ordinary DDIM scope.');
-    assert.equal(node.data?.module, apiGraph.nodes[node.id]?.module, 'Workflow snapshot module differs.');
-    assert.equal(node.data?.action, apiGraph.nodes[node.id]?.action, 'Workflow snapshot action differs.');
-  }
+  assertSnapshotOwners(snapshot, apiGraph, staged);
   same(snapshot.studioForm, output.formSnapshot, 'Submitted snapshot/output form differs.');
   assert.equal(output.formSnapshot?.modelType, plan.modelType, 'Original hinted form model differs.');
-  assert.equal(output.formSnapshot?.mode, 'unconditional_image', 'Original hinted form task differs.');
+  assert.equal(output.formSnapshot?.mode, taskMode, 'Original hinted form task differs.');
   for (const key of ['nodes', 'edges', 'viewport'])
     same(snapshot[key], output.graphSnapshot?.[key], `Submitted snapshot/output ${key} differs.`);
   same(task.workflow_snapshot, snapshot, 'Raw task workflow snapshot differs.');
@@ -262,7 +309,7 @@ export function canonicalDdimRuntimeHintAccounting({ apiGraph, consumed, plan, r
   same(
     completed.runtimeHints,
     { ...hints, controlledArtifacts: [], loaderContract: ['modules.DiffusersImage.LoadPipeline'] },
-    'Actual worker hints differ from the submitted DDIM policy.',
+    'Actual worker hints differ from the submitted accounting policy.',
   );
   let budgetDecision = 'no-cuda-target';
   if (managed) {
@@ -375,7 +422,7 @@ export function canonicalDdimRuntimeHintAccounting({ apiGraph, consumed, plan, r
       'Transport-only budget decision differs.',
     );
   return {
-    policy: 'canonical-ddim-runtime-hints-v1',
+    policy: staged ? 'canonical-pixart-sigma-pag-runtime-hints-v1' : 'canonical-ddim-runtime-hints-v1',
     route: managed ? 'studio-expert' : 'correlation-only',
     budgetDecision,
     submittedHintsHash: digest('canonical-runtime-hints-v1', hints),

@@ -302,9 +302,9 @@ npm run gallery:coverage
 Do not publish a local artifact, private input, personal path, access token, or source revision through a Gallery bundle.
 
 The standalone, model-backed canonical execution recorder is separate from public
-templates. The initial unchanged five-node DDIM route has a retained native
-execution capture. Other routes still require their own complete original
-evidence; the command alone is not proof that a workflow ran:
+templates. It validates original native execution records for the unchanged DDIM
+route and the reviewed PixArt Sigma PAG text-to-image route. Use the exact workflow
+ID from the retained descriptor:
 
 ```bash
 MODIFF_CANONICAL_WORKFLOW_EVIDENCE=/absolute/path/evidence.json node scripts/template-qualification.mjs --workflow ModelPipeline:text_to_image
@@ -321,7 +321,7 @@ observations retain the ordinary model-list response. `outputs` contains ordered
 the original browser downloads and raw task body; do not reconstruct their
 fields from a catalog or replace defaults, paths, prompts, or model pins.
 
-For the initial hinted DDIM accounting route, also retain `graphCompleted` as a
+For hinted DDIM and PixArt Sigma PAG accounting, also retain `graphCompleted` as a
 `{path, bytes, sha256}` reference to the **original** `graph_completed` WebSocket
 JSON frame (at most 16 MiB). Public run-detail GET responses deliberately omit
 `runtimeHints`; do not add invented hints to them. The shared factory and reader
@@ -330,7 +330,8 @@ task/session/client-run/input-hash/workflow/canvas epoch, attempt zero, complete
 runtime/source identity and measurement. The frame has no attempt index or
 completion timestamp; those remain bound to the original raw task.
 
-This initial path supports input-free execution only (`inputs: []`). Every
+The `modiff.canonical-workflow-evidence.v1` format supports input-free execution
+only (`inputs: []`). Every
 submitted literal must have matching native consumed-input evidence; omissions,
 overrides, unsupported scalar connections, unresolved model components, retries,
 and fallback attempts remain held. Input-backed workflows need a durable,
@@ -405,17 +406,19 @@ receipt for inspection. Canonical admission still requires the separate
 reviewed accounting join and original execution evidence.
 Parsing a projection hash is not cryptographic verification. The independent
 canonical accounting join verifies metadata hashes, connected producer ports,
-disabled quantization and the unique executed loader for the unchanged five-node
-DDIM workflow. Preview's CPU setting does not describe model placement. The shared
+disabled quantization and the unique executed loader for each reviewed five-node
+runtime graph. Preview's CPU setting does not describe model placement. The shared
 provenance factory accepts an optional canonical proof from the existing reader:
 the trusted current canonical export, actual original task/output and complete
 native accounting. It derives the plan itself and binds task, attempt, output,
 model and completion identities without adding runtime hints or rewriting proofs.
-The optional hinted policy accepts only the existing ordinary five-node,
-unquantized float32 resident DDIM CIFAR-10 graph, either correlation-only or the
-actual Studio Expert producer payload. It rejects unknown hints, coercions,
-Auto, nonempty retry plans/history, offload, model variants and unsupported
-execution authority. It accounts for the full saved observation form and the
+The DDIM profile accepts the unquantized float32 resident CIFAR-10 graph with
+correlation-only hints or its existing Studio Expert producer payload. The
+reviewed PixArt Sigma PAG profile accepts its pinned model with model CPU offload
+on CUDA and correlation-only hints. It verifies the assembled visual owners and
+the observed Generate controls, including both PAG scales, the conditioning
+alias and the image contract. Both profiles reject unknown execution authority,
+coercions, Auto and nonempty retry plans or history. DDIM accounts for the full saved observation form and the
 actual advisory CUDA reset decision; `fraction: 1` alone does not prove that a
 reset succeeded. Hinted and unhinted accounting also check the complete current,
 submitted and creator API envelopes: only `sid`, `nodes`, `paths`, the reviewed
@@ -425,11 +428,9 @@ top-level authority need separate accounting; the historical canonical identity
 alone does not cover them. Submitted and original completion hashes become part of the
 derived plan. The recorder retains the original frame unchanged, and the release
 projection repeats the same closed validation. Valid legacy unhinted descriptors and
-the default factory path remain unchanged. Input files, builtin media, quantized
-configurations and other accounting policies remain unsupported by this initial
-join. The initial DDIM route has been exercised with a native unchanged graph;
-this does not qualify other standalone routes. Mocked protocol checks are not
-native, quality, hardware or release evidence.
+the default factory path remain unchanged. This accounting join is scoped to the
+reviewed routes. Mocked protocol checks exercise validator behavior. Native
+records establish actual execution of the retained recipe.
 
 Current exports include the optional `execution_profile_id` loader selector.
 The initial whole-pipeline DDIM accounting path accepts its empty value only
@@ -476,6 +477,17 @@ This resource identity does not claim full control accounting or native capture
 of an internally fixed sampler or workflow selector. Retained source recovery
 and later immutable model/registry observations must be labelled separately from
 original pre-run observations; never rewrite the raw task or media.
+
+The `modiff.private.input-bound-model-smoke.v1` descriptor is supported for the
+standalone Spandrel Real-ESRGAN x2 image workflow. The reader exports the current
+canonical graph through the normal client path and checks the supplied variant
+against its sole declared image binding. It verifies the archived source with
+the native Load receipt, the exact installed weight file with the executor's
+controlled-artifact record, and the terminal Preview with the original output.
+The resulting record identifies the populated fixture variant and records
+`canonicalDefaultsExecuted: false`, since the catalogue graph has an empty file
+selector. Other model-backed file-input routes need their own reviewed bindings
+and original execution evidence.
 
 The recorder copies original evidence under the backend's ignored
 `data/qualification/release/canonical-workflow-evidence/` directory and records

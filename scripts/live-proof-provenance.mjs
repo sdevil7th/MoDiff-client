@@ -7,7 +7,11 @@ import { canonicalJsonHash as observationJsonHash } from './canonical-json.mjs';
 
 import { normalizeResourceRouteBinding, resourceRouteBindingHash } from './resource-route-binding.mjs';
 import { createAppliedAdapterProof, validateAppliedAdapterProof } from './applied-adapter-provenance.mjs';
-import { assertCanonicalDdimGraphEnvelope, canonicalDdimRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
+import {
+  assertCanonicalAccountingGraphEnvelope,
+  canonicalDdimRuntimeHintAccounting,
+  canonicalPixArtSigmaPagRuntimeHintAccounting,
+} from './canonical-runtime-hints.mjs';
 import {
   capturedNativeGraphSubmission,
   executedNativeMediaPlan,
@@ -2184,6 +2188,29 @@ export function validateRunProvenance(provenance) {
 const same = (actual, expected, label) => assert.equal(stableStringify(actual), stableStringify(expected), label);
 const immutableRevision = (value) => typeof value === 'string' && /^[a-f0-9]{40,64}$/i.test(value);
 
+const pixArtSigmaPag = {
+  workflowId: 'PixArtSigmaPAGPipeline:text_to_image',
+  modelType: 'PixArtSigmaPAGPipeline',
+  modelSet: [
+    { repoId: 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS', revision: 'e102b3591cc82e97071b8b4cb90d834d0c487207' },
+  ],
+  active:
+    'prompt negative_prompt seed width height num_inference_steps guidance_scale pag_scale pag_adaptive_scale max_sequence_length output_type'.split(
+      ' ',
+    ),
+  inactive:
+    'cfg_normalize control_guidance_end control_guidance_start image_guidance_scale layers padding_mask_crop resolution strength use_en_prompt'.split(
+      ' ',
+    ),
+};
+// The older receipt includes unset conditioning kwargs, and omits PAG knobs.
+const pixArtLegacyNullFields = ['control_guidance_start', 'conditioning_scale', 'strength', 'control_guidance_end'];
+const pixArtLegacyFields = [
+  ...pixArtSigmaPag.active.filter((key) => !['pag_scale', 'pag_adaptive_scale'].includes(key)),
+  'executed_task',
+  ...pixArtLegacyNullFields,
+];
+
 const accountingFields = {
   LoadPipeline: `model_id pipeline_class mode revision conditioning_kind conditioning_model_id conditioning_revision
     dtype device quantization_mode quantized_components device_map auto_offload offload_mode enable_vae_slicing
@@ -2194,11 +2221,13 @@ const accountingFields = {
     layerwise_compute_dtype channels_last channels_last_components regional_compile compile_components compile_backend
     compile_mode compile_fullgraph compile_dynamic denoiser_cache cache_threshold cache_options`.split(/\s+/u),
   UnconditionalGenerate: 'image_contract batch_size seed num_inference_steps eta class_label output_type'.split(' '),
+  Generate: ['image_contract', ...pixArtSigmaPag.active, ...pixArtSigmaPag.inactive],
   Preview: ['device', 'export'],
 };
 const accountingModules = {
   LoadPipeline: 'modules.DiffusersImage',
   UnconditionalGenerate: 'modules.DiffusersImage',
+  Generate: 'modules.DiffusersImage',
   PipelineQuantizationConfigV2: 'modules.DiffusersRuntime',
   DiffusersExecutionRecipe: 'modules.DiffusersRuntime',
   Preview: 'modules.Image',
@@ -2234,20 +2263,29 @@ function accountingDigest(kind, value) {
 }
 
 /** Independent accounting join; not a provenance factory or release grant.
- * Initial scope is the existing five-node, unquantized DDIM canonical creator.
+ * Scope is the reviewed five-node DDIM and PixArt Sigma PAG canonical creators.
  * The optional shared-factory hook binds this join to the original task/output.
  * Native acceptance remains separate; the default factory path stays unchanged.
  */
 export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target, runtimeEvidence }) {
-  assertCanonicalDdimGraphEnvelope(expectedApiGraph);
-  assertCanonicalDdimGraphEnvelope(apiGraph);
+  assertCanonicalAccountingGraphEnvelope(expectedApiGraph);
+  assertCanonicalAccountingGraphEnvelope(apiGraph);
   same(
     canonicalGraphIdentity(apiGraph),
     canonicalGraphIdentity(expectedApiGraph),
     'Accounting graph is not the canonical export.',
   );
-  assert.equal(target.modelType, 'DDIMPipeline', 'Canonical accounting model is outside the reviewed initial scope.');
-  assert.equal(target.task, 'unconditional_image');
+  const isPixArt = target.modelType === pixArtSigmaPag.modelType;
+  assert.ok(
+    isPixArt || target.modelType === 'DDIMPipeline',
+    'Canonical accounting model is outside the reviewed scope.',
+  );
+  assert.equal(target.task, isPixArt ? 'text_to_image' : 'unconditional_image');
+  if (isPixArt) {
+    assert.equal(target.workflowId, pixArtSigmaPag.workflowId);
+    same(target.modelSet, pixArtSigmaPag.modelSet, 'PixArt model is outside the reviewed accounting scope.');
+  }
+  const generateAction = isPixArt ? 'Generate' : 'UnconditionalGenerate';
   assert.equal(consumed?.schemaVersion, 1);
   assert.equal(consumed.source, 'backend-execution');
   assert.equal(consumed.truncated, false);
@@ -2266,6 +2304,8 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
   for (const row of consumed.nodes) {
     const node = apiGraph.nodes[row.nodeId];
     assert.ok(Object.hasOwn(accountingFields, row.action), 'Unknown accounting action.');
+    if (['Generate', 'UnconditionalGenerate'].includes(row.action))
+      assert.equal(row.action, generateAction, 'Generation action is outside the reviewed accounting scope.');
     assert.equal(row.module, accountingModules[row.action], 'Unknown accounting module.');
     assert.equal(node.module, row.module);
     assert.equal(node.action, row.action);
@@ -2337,8 +2377,12 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
       assert.equal(field.source, 'literal', 'Legacy scalar origin differs.');
       accountingKeys(field, ['value', 'source'], 'Legacy scalar has contradictory origin fields.');
       if (key === 'executed_task') {
-        assert.equal(row.action, 'UnconditionalGenerate');
+        assert.equal(row.action, generateAction);
         assert.equal(field.value, target.task);
+        continue;
+      }
+      if (isPixArt && row.action === 'Generate' && pixArtLegacyNullFields.includes(key)) {
+        assert.equal(field.value, null, `Inactive legacy control was passed to PixArt: ${key}`);
         continue;
       }
       const accounted = section.fields[key];
@@ -2352,7 +2396,7 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
   const owner = byAction.get('LoadPipeline');
   const recipe = byAction.get('DiffusersExecutionRecipe');
   const quant = byAction.get('PipelineQuantizationConfigV2');
-  const generate = byAction.get('UnconditionalGenerate');
+  const generate = byAction.get(generateAction);
   const preview = byAction.get('Preview');
   assert.ok(owner && recipe && quant && generate && preview, 'Canonical accounting roles are incomplete.');
   assert.equal(consumed.nodeId, preview.row.nodeId, 'Accounting output owner differs.');
@@ -2419,7 +2463,11 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
   for (const key of ['max_memory', 'cache_options', 'device_map_overrides'])
     assert.equal(value(recipe, key), '{}', 'Mapping or cache configuration is outside the bounded accounting scope.');
   assert.equal(value(recipe, 'device_map'), 'none', 'Split/manual placement is outside the bounded accounting scope.');
-  assert.equal(value(recipe, 'offload_mode'), 'none', 'Offload accounting needs a separate reviewed scope.');
+  assert.equal(
+    value(recipe, 'offload_mode'),
+    isPixArt ? 'model_cpu' : 'none',
+    'Offload is outside the reviewed accounting scope.',
+  );
   const projection = (item, kind, values, producer) => {
     accountingKeys(
       item,
@@ -2498,7 +2546,11 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
       const effective =
         key === 'auto_offload' ? value(recipe, 'offload_mode') !== 'none' : value(recipe, superseded[key]);
       check(owner, key, 'superseded', effective, 'connected-recipe');
-    } else if (key === 'device_map' && ['cuda', 'cuda:0'].includes(value(owner, 'device'))) {
+    } else if (
+      key === 'device_map' &&
+      value(recipe, 'offload_mode') === 'none' &&
+      ['cuda', 'cuda:0'].includes(value(owner, 'device'))
+    ) {
       assert.equal(fields(owner)[key].inputValue, 'none');
       check(owner, key, 'superseded', 'cuda', 'loader-normalization');
     } else if (['conditioning_model_id', 'conditioning_revision'].includes(key)) {
@@ -2520,7 +2572,8 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     target.modelSet,
     'Executed model set differs.',
   );
-  for (const key of accountingFields.UnconditionalGenerate) {
+  const inactive = new Set(isPixArt ? pixArtSigmaPag.inactive : ['class_label']);
+  for (const key of accountingFields[generateAction]) {
     if (key === 'image_contract') {
       assert.equal(fields(generate)[key].disposition, 'metadata');
       continue;
@@ -2528,12 +2581,44 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     check(
       generate,
       key,
-      key === 'class_label' ? 'inactive' : 'consumed',
+      inactive.has(key) ? 'inactive' : 'consumed',
       fields(generate)[key].inputValue,
-      key === 'class_label' ? 'adapter-inactive' : undefined,
+      inactive.has(key) ? 'adapter-inactive' : undefined,
     );
   }
   assert.equal(value(generate, 'output_type'), 'pil', 'Only already-decoded output is accounted.');
+  if (isPixArt) {
+    accountingKeys(generate.row.fields, pixArtLegacyFields, 'PixArt legacy controls are incomplete or unexpected.');
+    const contract = generate.node.params.image_contract.value;
+    assert.equal(contract.pipelineClass, target.modelType, 'PixArt metadata model differs.');
+    assert.equal(contract.mode, target.task, 'PixArt metadata task differs.');
+    for (const field of ['pag_scale', 'pag_adaptive_scale'])
+      assert.equal(contract.fieldParams?.[field]?.hidden, false, 'PixArt PAG controls must be declared.');
+    assert.equal(value(owner, 'dtype'), 'float32', 'PixArt dtype is outside the reviewed accounting scope.');
+    assert.equal(value(owner, 'device'), 'cuda:0', 'PixArt device is outside the reviewed accounting scope.');
+    assert.equal(
+      value(owner, 'device_map'),
+      'none',
+      'PixArt split placement is outside the reviewed accounting scope.',
+    );
+    assert.equal(recipeValues.attention_backend, 'auto');
+    for (const key of ['regional_compile', 'channels_last', 'layerwise_casting'])
+      assert.equal(recipeValues[key], false);
+    assert.equal(recipeValues.denoiser_cache, 'none');
+    assert.ok(
+      apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0,
+      'PixArt requires original submission and completion evidence.',
+    );
+    const output = runtimeEvidence?.output;
+    assert.equal(output?.fieldKey, 'preview', 'PixArt output field differs.');
+    assert.equal(output.mediaItems?.length, 1, 'PixArt must retain its single generated image.');
+    assert.equal(output.mediaItems[0].width, value(generate, 'width'), 'PixArt output width differs from generation.');
+    assert.equal(
+      output.mediaItems[0].height,
+      value(generate, 'height'),
+      'PixArt output height differs from generation.',
+    );
+  }
   check(preview, 'device', 'inactive', fields(preview).device.inputValue, 'already-decoded-image');
   check(preview, 'export', 'consumed', fields(preview).export.inputValue);
   const plan = {
@@ -2558,14 +2643,16 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     channelsLast: recipeValues.channels_last,
     layerwiseCasting: recipeValues.layerwise_casting,
   };
-  if (apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0)
-    plan.runtimeHintAccounting = canonicalDdimRuntimeHintAccounting({
+  if (apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0) {
+    const accountHints = isPixArt ? canonicalPixArtSigmaPagRuntimeHintAccounting : canonicalDdimRuntimeHintAccounting;
+    plan.runtimeHintAccounting = accountHints({
       apiGraph,
       consumed,
       plan,
       runtimeEvidence,
       digest: sha256Value,
     });
+  }
   return { ownerId: owner.row.nodeId, plan, hash: sha256Value('execution-plan-v1', plan) };
 }
 

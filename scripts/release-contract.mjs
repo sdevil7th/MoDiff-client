@@ -343,6 +343,11 @@ const workflowRecords = [...workflowManifest.workflows, ...reviewedExperimental]
   return { manifest: workflow, graph, contract: canonicalWorkflowContract(workflow, graph) };
 });
 const canonicalReceiptsByWorkflow = new Map();
+const executionStatuses = {
+  real_backend_deterministic_data: 'verified_deterministic_execution',
+  real_backend_deterministic_media: 'verified_deterministic_media_execution',
+  real_backend_input_bound_model_variant: 'verified_input_bound_model_variant',
+};
 const canonicalRegistryPath = join(BACKEND_ROOT, 'data/qualification/release/canonical-workflow-run-receipts.v1.json');
 if (existsSync(canonicalRegistryPath)) {
   const registry = readJson(canonicalRegistryPath);
@@ -536,6 +541,9 @@ try {
           ? canonicalWorkflowDeclaredModelRevision(manifest, graph, authoring, artifact)
           : null;
       const exactModelRevision = sourceTemplate?.exactModelRevision ?? authoredRevision ?? catalogRevision;
+      const executionStatus = manifest.requiredArtifacts?.some((item) => item.startsWith('builtin:'))
+        ? 'unsupported_builtin_model_not_applicable'
+        : 'missing';
       return {
         id: manifest.id,
         modelType: manifest.modelType,
@@ -564,15 +572,9 @@ try {
         ...(!sourceTemplate
           ? {
               canonicalExecutionEvidence: {
-                status: manifest.requiredArtifacts?.some((item) => item.startsWith('builtin:'))
-                  ? canonicalReceipt?.proofKind === 'real_backend_deterministic_data'
-                    ? 'verified_deterministic_execution'
-                    : canonicalReceipt?.proofKind === 'real_backend_deterministic_media'
-                      ? 'verified_deterministic_media_execution'
-                      : 'unsupported_builtin_model_not_applicable'
-                  : canonicalReceipt
-                    ? 'verified_execution_only'
-                    : 'missing',
+                status: canonicalReceipt
+                  ? (executionStatuses[canonicalReceipt.proofKind] ?? 'verified_execution_only')
+                  : executionStatus,
                 releaseApprovalGranted: false,
               },
             }
