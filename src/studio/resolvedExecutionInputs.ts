@@ -434,6 +434,10 @@ const accountingNames: Record<string, string[]> = {
   ),
   'DiffusersImage.UnconditionalGenerate':
     'image_contract batch_size seed num_inference_steps eta class_label output_type'.split(' '),
+  'DiffusersImage.Generate': `image_contract prompt negative_prompt width height seed num_inference_steps guidance_scale
+    image_guidance_scale use_guidance_scale_2 guidance_scale_2 pag_scale pag_adaptive_scale control_guidance_start
+    control_guidance_end layers resolution cfg_normalize use_en_prompt strength padding_mask_crop max_sequence_length
+    output_type`.split(/\s+/u),
   'Image.Preview': ['device', 'export'],
 };
 const accountingPorts: Record<string, [Record<string, string>, Record<string, string>]> = {
@@ -444,6 +448,7 @@ const accountingPorts: Record<string, [Record<string, string>, Record<string, st
     { execution_recipe: 'execution-recipe-v1' },
   ],
   'DiffusersImage.UnconditionalGenerate': [{}, {}],
+  'DiffusersImage.Generate': [{}, {}],
   'Image.Preview': [{}, {}],
 };
 const accountingReasons = new Set([

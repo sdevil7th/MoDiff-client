@@ -398,6 +398,11 @@ The optional native `fieldAccounting` extension preserves requested literals,
 actual call controls, explicit inactive/superseded controls, and bounded recipe
 projections separately from legacy v1 fields and summaries. The client parser
 retains its completeness/truncation status without changing v1 normalization.
+For a plain text-to-image call, it retains the bounded requested controls and
+effective call arguments reported by the backend, including PAG scales and
+model-specific aliases for generic controls. This parser support preserves the
+receipt for inspection. Canonical admission still requires the separate
+reviewed accounting join and original execution evidence.
 Parsing a projection hash is not cryptographic verification. The independent
 canonical accounting join verifies metadata hashes, connected producer ports,
 disabled quantization and the unique executed loader for the unchanged five-node

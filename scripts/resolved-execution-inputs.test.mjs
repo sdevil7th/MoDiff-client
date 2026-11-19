@@ -225,7 +225,9 @@ spec.loader.exec_module(module)
 with MonkeyPatch.context() as patch:
     graph = module.ddim_graph()
     receipt, _, _, _ = module.run_ddim(patch, graph)
-print(json.dumps({'apiGraph': graph, 'receipt': receipt}))
+with MonkeyPatch.context() as patch:
+    conditional_receipt, _, _ = module.run_conditional_image(patch, 'StableDiffusionPAGPipeline')
+print(json.dumps({'apiGraph': graph, 'receipt': receipt, 'conditionalReceipt': conditional_receipt}))
 `,
     ],
     { cwd: backend, encoding: 'utf8', maxBuffer: 2_000_000 },
@@ -281,6 +283,22 @@ test('native empty execution-profile accounting survives receipt and output hist
     value: '',
     source: 'literal',
   };
+  assert.equal(inputs.coerceResolvedExecutionInputs(unknown, identity), undefined);
+});
+
+test('plain conditional accounting preserves the bounded backend PAG call and rejects undeclared values', () => {
+  const { conditionalReceipt: receipt } = actualDdimAccountingFixture();
+  const identity = { taskId: receipt.taskId, attemptIndex: receipt.attemptIndex, nodeId: receipt.nodeId };
+  assert.deepEqual(inputs.coerceResolvedExecutionInputs(receipt, identity), receipt);
+  const fields = receipt.nodes[0].fieldAccounting.fields;
+  assert.equal(fields.pag_scale.value, 2.5);
+  assert.equal(fields.pag_adaptive_scale.value, 0.5);
+  assert.equal(fields.layers.disposition, 'inactive');
+  assert.equal(fields.layers.inputValue, 4);
+  assert.equal(fields.width.inputValue, '512');
+  assert.equal(fields.width.value, 512);
+  const unknown = structuredClone(receipt);
+  unknown.nodes[0].fieldAccounting.fields.latents = { ...fields.seed };
   assert.equal(inputs.coerceResolvedExecutionInputs(unknown, identity), undefined);
 });
 
