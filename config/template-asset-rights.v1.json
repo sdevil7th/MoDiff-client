@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:169f19ce25abd67b1fbc4226176786976ee8a62f5fc0b503bd33a6fa1a8f7000",
+  "assetSetId": "sha256:canonical-json:9cb4e03df78ad36f0beb120a89c66d267c2e98e24b4892a719a7735eca9944af",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -5243,7 +5243,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:00dd065727ab3e3c88f3734fd3a12aa4bc946bb204411ca4731aa7ccff23146b",
+      "sha256": "sha256:bytes:785b7c753988370be0df861faca31e7ac1e4e8f94662ac49c96dd940055193f2",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -8542,6 +8542,54 @@
       "humanApprovalPacketSHA256": "e604b0284a57b65b20343c7776511ae15bef922c7e104c09f0f6931eec610d2d",
       "publicationBasis": "Activate and publish the two approved Gallery candidates using their retained native runs.",
       "provenanceTemplateId": "marigold_depth_synthetic_ramp"
+    },
+    {
+      "path": "template-gallery/reviews/minimax_h3_image_old_town_cat.quality-review.json",
+      "sha256": "sha256:bytes:ce9fc2a0edaaf3eef1f3db03024d3e64108523e93fc2797fee7cbe7364e7ce97",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, subject to the recorded model terms",
+      "creationMethod": "Project-authored current-recipe review or redacted provenance for the saved image",
+      "sourceUrl": "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/tree/492fd8c4eca666f1085f57e30738c1e0d86b3439",
+      "sourceRevision": "MiniMaxAI/MiniMax-H3-Image@492fd8c4eca666f1085f57e30738c1e0d86b3439",
+      "sourceLicense": "Apache-2.0 project-authored metadata",
+      "modelTerms": [
+        "MiniMaxAI/MiniMax-H3-Image@492fd8c4eca666f1085f57e30738c1e0d86b3439: MiniMax H3 Image Community License Agreement"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19",
+      "reviewClass": "per-file-maintainer-accepted-current-recipe",
+      "humanApprovalPacketSHA256": "97cf1d2ce0a8500d5b3b67ff4efb20a2e91c44a6f1e22d3eafd7b408babc31a2",
+      "provenanceTemplateId": "minimax_h3_image_old_town_cat"
+    },
+    {
+      "path": "template-gallery/reviews/minimax_h3_image_old_town_cat.reviewed-provenance.json",
+      "sha256": "sha256:bytes:9d5792710da6b60188994c51bfa1ac49047121433d83961cd58d22b9caf6030c",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, subject to the recorded model terms",
+      "creationMethod": "Project-authored current-recipe review or redacted provenance for the saved image",
+      "sourceUrl": "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/tree/492fd8c4eca666f1085f57e30738c1e0d86b3439",
+      "sourceRevision": "MiniMaxAI/MiniMax-H3-Image@492fd8c4eca666f1085f57e30738c1e0d86b3439",
+      "sourceLicense": "Apache-2.0 project-authored metadata",
+      "modelTerms": [
+        "MiniMaxAI/MiniMax-H3-Image@492fd8c4eca666f1085f57e30738c1e0d86b3439: MiniMax H3 Image Community License Agreement"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19",
+      "reviewClass": "per-file-maintainer-accepted-current-recipe",
+      "humanApprovalPacketSHA256": "97cf1d2ce0a8500d5b3b67ff4efb20a2e91c44a6f1e22d3eafd7b408babc31a2",
+      "provenanceTemplateId": "minimax_h3_image_old_town_cat"
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers",

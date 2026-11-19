@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "8ffd3ced9c05fa385a5eea80838567468c6d98aa"
+    "revision": "14970cc49ef1579fcc1899fff406810d8b4ba581"
   },
   "originalCampaign": {
     "total": 89,
@@ -518,5 +518,5 @@
       "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:b1ce2f98559f06dab8c067246b5851f40e4b0d3c8abf66760be43f6b6dabeb0a"
+  "profileHash": "sha256:canonical-json:ba1dfb69be774d74bc355a70e0ae90a84328ebaa5516020d6c3c3b90c5f1d55e"
 }

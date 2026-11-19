@@ -2941,6 +2941,36 @@
       "beforeMediaHash": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
       "width": 128,
       "height": 96
+    },
+    {
+      "templateId": "minimax_h3_image_old_town_cat",
+      "modelRevision": "MiniMaxAI/MiniMax-H3-Image@492fd8c4eca666f1085f57e30738c1e0d86b3439",
+      "templateLockHash": "tpl_6899b3b2",
+      "promptSettingsHash": "ps_f2030306",
+      "verificationStatus": "reviewed",
+      "graphHash": "sha256:canonical-graph-v1:90a99664972df28b447a871b2c180c266199f137944bf55d680c6ae9f281e8de",
+      "proofLockHash": "sha256:live-proof-lock-v1:b8b45ff63a5aa0b3f0e38714496fae710c0bb9d4acc811ab2a0afb8c049febd1",
+      "runtimeFingerprint": "sha256:stable-runtime-v1:e40a5952c842b037c3f2f293b9ad3292fd07e22cb791c60aadeb6afa420fdd24",
+      "backendSourceFingerprint": "sha256:backend-source-v1:002b2f76328c3160e4487de5441fa37807dbdc41718fe9d726e148813da068e8",
+      "backendContractFingerprint": "sha256:backend-contract-v1:8bae9eb12c4b7b61efc7fe7ea1c27be93f6cf4ffe2b17b9af695e9b0c6c495ff",
+      "modelCommit": "492fd8c4eca666f1085f57e30738c1e0d86b3439",
+      "modelSetHash": "sha256:model-set-v1:57ebfdd2342b7b2d42b3e4279633a38854eba1386c4e93aaa58c5c69543869f5",
+      "inputArtifactsHash": "sha256:input-artifacts-v1:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "templateRevisionHash": "sha256:template-revision-v1:976c532eafd4ca7428ce3a59547619ad72ca0972855de1b3e4cc72c625032ef3",
+      "outputPath": "/template-gallery/showcases/h3-old-town-human-cat.webp",
+      "thumbnailPath": "/template-gallery/showcases/h3-old-town-human-cat.webp",
+      "mediaHash": "sha256:decoded-rgba:b499e978db7492bf2b863198bb1cc5143bc1934b6f2c2e4817c10f3f4832963a",
+      "mediaType": "image",
+      "width": 2048,
+      "height": 2048,
+      "reviewer": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-19T19:57:14.488Z",
+      "provenancePath": "/template-gallery/reviews/minimax_h3_image_old_town_cat.reviewed-provenance.json",
+      "provenanceHash": "sha256:canonical-json:b47d8e7bfdb37430658137dc9abe5321bfb5ccbc0856c289e1926847ded9000c",
+      "qualityReviewPath": "/template-gallery/reviews/minimax_h3_image_old_town_cat.quality-review.json",
+      "qualityReviewHash": "sha256:canonical-json:f4b06e2e7e96ae7b9f476ca9d3a03ae3d799c54c3f07ed0a421ce4e662234a31",
+      "qualityReviewStatus": "approved_reviewed",
+      "verificationTimestamp": "2026-11-19T19:57:14.488Z"
     }
   ]
 }

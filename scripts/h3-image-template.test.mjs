@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { createServer } from 'vite';
@@ -34,7 +35,13 @@ test('the H3 template keeps its generic recipe and identifies its separately app
     const exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
     const card = exactness.getTemplateCardMedia(template, null);
     assert.equal(card.thumbnailPath, '/assets/minimax-h3-old-town.card-poster.png');
-    assert.equal(card.mediaPath, undefined, 'The recipe itself still has no current qualified output.');
+    assert.equal(card.mediaPath, undefined, 'The fallback remains usable without a Gallery manifest.');
+    const manifest = JSON.parse(readFileSync(new URL('../public/template-gallery/manifest.json', import.meta.url)));
+    const entry = exactness.findManifestEntry(template, manifest);
+    assert.ok(entry, 'The retained H3 review matches the current recipe.');
+    assert.equal(entry.qualityReviewStatus, 'approved_reviewed');
+    assert.equal(entry.outputPath, '/template-gallery/showcases/h3-old-town-human-cat.webp');
+    assert.equal(exactness.getTemplateExampleUiState(template, {}, null, manifest).status, 'reviewed');
     const { getTemplateShowcase } = await server.ssrLoadModule('/src/studio/templateShowcases.ts');
     assert.match(getTemplateShowcase(template.id).mediaPath, /showcases\/h3-emerald-material-transfer\.webp/u);
     assert.equal(exactness.getTemplateExampleUiState(template, {}, null, null).status, 'unverified');

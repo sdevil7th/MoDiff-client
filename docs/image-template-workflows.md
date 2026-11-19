@@ -63,9 +63,11 @@ retain the conservative registry requirements.
 The **Experimental** category includes **MiniMax H3 Image — Old Town: Human & Cat**.
 It creates the same generic text-to-image stages, with a fictional adult and a
 cat as the foreground subjects and a detailed street background. Its pinned
-2048-square BF16 recipe uses Custom memory and SSD group offload. The preview
-remains unverified until creative review. Its card uses a labeled vector
-illustration, which can be rendered with `node scripts/render-h3-template-poster.mjs`.
+2048-square BF16 recipe uses Custom memory and SSD group offload. The Gallery
+includes the reviewed output for this exact recipe. Its review records brighter
+ambient light than the requested blue hour and visibly sharpened edges. The
+recipe's fallback vector illustration can be rendered with
+`node scripts/render-h3-template-poster.mjs`.
 The template adds no Auto or broader hardware qualification. Edit the prompt to
 turn the old town into a modern city.
 
