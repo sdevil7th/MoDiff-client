@@ -112,7 +112,11 @@ export default function HandleField(props: FieldProps) {
         <span className="sr-only">{props.label}</span>
       ) : (
         <div
-          className={`text-modiff-control mx-0.5 truncate px-2 text-modiff-subtle-text ${textAlignClassName}`}
+          className={cx(
+            'text-modiff-control mx-0.5 px-2 text-modiff-subtle-text',
+            props.fieldOptions?.wrapConnectionLabel === true ? 'break-words' : 'truncate',
+            textAlignClassName,
+          )}
           title={labelTitle}
         >
           {props.label}

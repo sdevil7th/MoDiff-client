@@ -490,6 +490,9 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // The shared stage connector labels add 428 gzip bytes (516919 -> 517347).
+  // Retain the 17-byte headroom and the same four startup chunks.
+  428 +
   // The retained Spandrel recipe adds 472 gzip bytes (516459 -> 516931).
   // Keep five bytes of startup headroom and the two existing deferred limits.
   472 +
@@ -733,6 +736,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // Measured node interface presentation delta (695402 -> 695834).
+  432 +
   // The same Gallery build adds 479 startup gzip bytes (694940 -> 695419).
   479 +
   // The same Gallery build adds 1683 startup gzip bytes (693257 -> 694940).
@@ -1039,6 +1044,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  // Catalog qualifiers and custom node categories add 300 gzip bytes
+  // (353082 -> 353382), with the same 93 deferred chunks and 64 KiB chunk cap.
+  300 +
   347 +
   1244 +
   278 +

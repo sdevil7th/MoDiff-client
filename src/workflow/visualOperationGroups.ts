@@ -1157,7 +1157,7 @@ export function groupNewOperationGraph(graph: OperationGraph, options: { legacyS
               'output',
             ])
           : workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Audio'
-            ? groupOperationStages(next, owner.id, ['inputs', 'guidance', 'setup', 'output', 'videoInput', 'generate'])
+            ? groupOperationStages(next, owner.id, ['inputs', 'guidance', 'setup', 'generate', 'output', 'videoInput'])
             : groupOperationStages(next, owner.id);
   // The same real input preparation can precede a whole native pipeline.
   // Keep a separately consumed original clip external, with its own preview.

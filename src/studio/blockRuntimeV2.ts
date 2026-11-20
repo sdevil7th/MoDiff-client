@@ -500,16 +500,32 @@ export function blockConnectorParamsV2(instanceValue: BlockInstanceV2): BlockCon
 }
 
 function connectorParamsForNormalizedInstanceV2(instance: BlockInstanceV2): BlockConnectorParamsV2 {
+  const focused = isFocusedStageNode(instance);
+  const project = (ports: BlockPortV2[], direction: 'input' | 'output') => {
+    const counts = new Map<string, number>();
+    if (focused) {
+      for (const { label } of ports) counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Object.fromEntries(
+      ports.map((port) => {
+        const param = connectorParam(instance, port, direction);
+        // Distinct operations can publish the same label (for example Doc or
+        // Summary). Identify its owner on the canvas without changing the
+        // saved interface name, socket ID, type, or executable binding.
+        if ((counts.get(port.label) ?? 0) > 1) {
+          const title = instance.effectiveGraph.nodes.find((node) => node.nodeId === port.binding.nodeId)?.data.label;
+          if (typeof title === 'string' && title.trim()) {
+            param.label = `${title.trim()} · ${port.label}`;
+            param.fieldOptions = { ...param.fieldOptions, wrapConnectionLabel: true };
+          }
+        }
+        return [port.portId, param];
+      }),
+    );
+  };
   return {
-    inputs: Object.fromEntries(
-      instance.effectiveInterface.boundary.inputs.map((port) => [port.portId, connectorParam(instance, port, 'input')]),
-    ),
-    outputs: Object.fromEntries(
-      instance.effectiveInterface.boundary.outputs.map((port) => [
-        port.portId,
-        connectorParam(instance, port, 'output'),
-      ]),
-    ),
+    inputs: project(instance.effectiveInterface.boundary.inputs, 'input'),
+    outputs: project(instance.effectiveInterface.boundary.outputs, 'output'),
   };
 }
 

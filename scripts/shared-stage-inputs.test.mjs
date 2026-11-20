@@ -153,6 +153,38 @@ test('all seven affected routes and H3 Image expose one shared model input witho
     });
 });
 
+test('shared stage connectors label distinct outputs by their operation without changing saved bindings', () => {
+  let checked = 0;
+  for (const row of fixture.recipes) {
+    const graph = fresh(row);
+    const saved = JSON.stringify(graph);
+    for (const node of graph.nodes.filter(groups.visualOperationGroup)) {
+      const instance = node.data.blockInstanceV2;
+      const ports = instance.effectiveInterface.boundary.outputs;
+      const projected = runtime.blockConnectorParamsV2(instance).outputs;
+      assert.deepEqual(
+        Object.keys(projected),
+        ports.map(({ portId }) => portId),
+      );
+      for (const port of ports) {
+        const collisions = ports.filter(({ label }) => label === port.label);
+        if (collisions.length < 2) {
+          assert.equal(projected[port.portId].label, port.label);
+          continue;
+        }
+        const owner = instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === port.binding.nodeId);
+        assert.equal(projected[port.portId].label, `${owner.data.label} · ${port.label}`);
+        assert.equal(projected[port.portId].fieldOptions.wrapConnectionLabel, true);
+        assert.equal(new Set(collisions.map(({ portId }) => projected[portId].label)).size, collisions.length);
+        checked++;
+      }
+    }
+    assert.equal(JSON.stringify(graph), saved, 'labels are only a view of the saved graph');
+    assert.deepEqual(api(graph), api(JSON.parse(saved)));
+  }
+  assert.ok(checked > 0, 'the released node schemas exercise at least one repeated output label');
+});
+
 test('saved automatic definitions repair locally, preserving baseline, values, preview, layout and Undo/Redo', async (t) => {
   for (const row of fixture.recipes)
     await t.test(row.id, () => {

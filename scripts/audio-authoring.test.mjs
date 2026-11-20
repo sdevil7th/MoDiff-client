@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { captureAudioSchemaFixture } from './audio-schema-fixture.mjs';
+import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +25,7 @@ let server,
   defaults,
   authority,
   projection,
+  presentation,
   exporter,
   requiredInputs;
 before(async () => {
@@ -56,6 +59,7 @@ before(async () => {
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
   ({ DEFAULT_STUDIO_FORM: defaults } = await server.ssrLoadModule('/src/studio/modelProfiles.ts'));
   projection = await server.ssrLoadModule('/src/workflow/visualOperationGroupProjection.ts');
+  presentation = await server.ssrLoadModule('/src/workflow/encodingNodePresentation.ts');
   exporter = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   requiredInputs = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
   const publicPayload = fixture.publicPayload;
@@ -504,7 +508,11 @@ test('all seven actual curated audio factories preserve original creative settin
         template.workflowBlocks?.includes('lora') ? 1 : 0,
       );
       assert.ok(!flat.nodes.some((node) => ['EncodeInputs', 'Denoise', 'DecodeLatents'].includes(node.data.action)));
-    } else assert.equal(graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'output').length, 1);
+    } else {
+      const generation = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+      assert.ok(presentation.isFocusedStageNode(generation?.data.blockInstanceV2), template.id);
+      assert.equal(graph.nodes.filter((node) => groups.visualOperationGroup(node) === 'output').length, 1);
+    }
   }
 });
 
@@ -624,11 +632,20 @@ test('actual audio families group only their real execution stages', async (t) =
           { label: 'Audio Output', name: 'audio output' },
         );
         const instance = output[0].data.blockInstanceV2;
-        assert.equal(instance.effectiveGraph.nodes.length, 2);
+        assert.deepEqual(
+          instance.effectiveGraph.nodes.map((node) => node.data.action),
+          ['Export'],
+        );
         assert.equal(instance.previewStates.length, 1);
         assert.equal(instance.previewStates[0].binding.mediaType, 'audio');
         assert.equal(instance.previewStates[0].binding.outputPortId, 'preview');
-        assert.equal(grouped.nodes.length, 4, 'real loader, semantic generation, denoise and audio output');
+        const generation = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+        assert.ok(presentation.isFocusedStageNode(generation?.data.blockInstanceV2));
+        assert.deepEqual(
+          generation.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action),
+          ['WorkflowDenoise', 'WorkflowDecodeAudio'],
+        );
+        assert.equal(grouped.nodes.length, 4, 'real loader, semantic generation, Generate and Audio Output');
       } else
         assert.equal(
           grouped.nodes.length,
@@ -643,6 +660,31 @@ test('actual audio families group only their real execution stages', async (t) =
       );
       assert.deepEqual(api(groups.unpackVisualOperationGroups(grouped).graph), api(original));
     });
+});
+
+test('canonical Music 3 example saves the ordinary Generate stage with the original executable identity', async () => {
+  const { workflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  const { exampleWorkflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
+  const backend = process.env.MODIFF_BACKEND_DIR || path.resolve('../MoDiff');
+  const source = JSON.parse(
+    readFileSync(path.join(backend, 'data/graphs/studio/mini-max-music3-modular-pipeline/text-to-audio.json'), 'utf8'),
+  );
+  const original = workflowSnapshotFromGraph(source, 'default', defaults);
+  const opened = exampleWorkflowSnapshotFromGraph(source, 'default', defaults);
+  const generation = opened.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+  assert.ok(presentation.isFocusedStageNode(generation?.data.blockInstanceV2));
+  const identity = (sourceGraph) =>
+    canonicalGraphIdentity(
+      exporter.useFlowStore.getState().exportGraph('audio-example', undefined, {
+        sourceGraph,
+        randomizeSeeds: false,
+      }),
+    );
+  assert.deepEqual(identity(opened), identity(original));
+  const restored = workflowSnapshotFromGraph(JSON.parse(JSON.stringify(opened)), 'default', defaults);
+  const restoredGeneration = restored.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+  assert.ok(presentation.isFocusedStageNode(restoredGeneration?.data.blockInstanceV2));
+  assert.deepEqual(identity(restored), identity(original));
 });
 
 test('actual native audio output refuses an unrelated sink or missing preview binding', () => {

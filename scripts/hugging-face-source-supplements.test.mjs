@@ -140,6 +140,72 @@ test('mixed hierarchy selects the exact source while preserving every historical
   assert.ok(contexts.every((context) => pika.definitionIds.includes(context.definitionId)));
 });
 
+test('same-name discovery variants are distinguishable without changing their reviewed contracts', async () => {
+  const audit = await server.ssrLoadModule('/src/studio/nodeLibraryAuditV2.ts');
+  const library = parser.parseHuggingFaceNodeLibrary(fixture.mixed);
+  const snapshot = conditionals.parseHuggingFaceModularConditionalSnapshot(fixture.conditionals);
+  const expectedLabels = [
+    'Flux3 Set Timesteps · Flux3',
+    'Flux3 Set Timesteps · Flux3 Distilled',
+    'Helios Additional Inputs · Image To Video',
+    'Helios Additional Inputs · Video To Video',
+    'Qwen Image Additional Inputs · Edit',
+    'Qwen Image Additional Inputs · Edit Inpaint',
+    'Qwen Image Additional Inputs · Inpaint',
+    'Wan Loop Denoiser · Wan',
+    'Wan Loop Denoiser · Wan Image To Video',
+  ];
+  for (const source of [undefined, snapshot]) {
+    const sections = catalog.buildHuggingFaceCatalogSections(library, source);
+    const blocks = sections.find(({ id }) => id === 'modular_diffusers_block_nodes').entries;
+    const collisions = audit
+      .auditNodeLibraryV2({}, sections)
+      .sections.flatMap((section) => section.sameLabelDifferentIdentities);
+    assert.deepEqual(collisions, []);
+    if (source) {
+      const labels = new Set(blocks.map(({ label }) => label));
+      for (const label of expectedLabels) assert.ok(labels.has(label), label);
+    }
+    const placements = new Map(
+      source
+        ? [source, ...source.sourceSupplements].flatMap(({ pipelines }) =>
+            pipelines.map(({ pipelineClass, placements }) => [pipelineClass, placements]),
+          )
+        : library.definitions.map(({ id, blockPlacements }) => [id, blockPlacements]),
+    );
+    for (const entry of blocks) {
+      for (const context of entry.modularBlockContexts) {
+        assert.ok(
+          placements.get(source ? context.pipelineClass : context.definitionId).includes(context.placement),
+          entry.id,
+        );
+        assert.equal(entry.id, `modular-block:${context.placement.blockDefinitionId}`);
+      }
+    }
+    const results = catalog.filterHuggingFaceCatalogSections(sections, 'scheduler flow match euler');
+    const schedulers = results.find(({ id }) => id === 'diffusers_component_nodes').entries;
+    assert.deepEqual(
+      schedulers.map(({ label }) => label),
+      [
+        'scheduler — Flow Match Euler Discrete Scheduler · From Configuration',
+        'scheduler — Flow Match Euler Discrete Scheduler · From Pretrained',
+      ],
+    );
+    const componentIds = new Set(
+      library.definitions.flatMap(({ components }) =>
+        components.map(
+          ({ name, type, creationMethod, reuseKey }) =>
+            `diffusers.component:${JSON.stringify([name, type, creationMethod, reuseKey])}`,
+        ),
+      ),
+    );
+    for (const entry of schedulers) {
+      assert.equal(entry.insertable, false);
+      assert.ok(componentIds.has(entry.id));
+    }
+  }
+});
+
 for (const mutation of ['missing', 'duplicate', 'base-revision', 'nested', 'unknown', 'pipeline-conflict', 'boolean']) {
   test(`mixed hierarchy rejects ${mutation} source metadata`, () => {
     const value = structuredClone(fixture.conditionals);

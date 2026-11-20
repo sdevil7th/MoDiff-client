@@ -488,9 +488,7 @@ for (const [file, model] of [
   test(`canonical Example retains its ordinary graph and saves its staged layout: ${model}`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    if (!(await page.getByRole('button', { name: 'Example workflows', exact: true }).isVisible()))
-      await page.getByTestId('left-tab-workflows').click();
-    await page.getByRole('button', { name: 'Example workflows', exact: true }).click();
+    await openExamples(page);
     await page.getByRole('searchbox', { name: 'Search workflows', exact: true }).fill(`${file} ${model}`);
     const entry = page.getByTestId(/^workflow-file-/);
     await expect(entry).toHaveCount(1);
@@ -506,6 +504,10 @@ for (const [file, model] of [
       const generate = Object.values(api.nodes).find((node) => node.action === 'Generate')!;
       expect(generate.params).not.toHaveProperty('use_guidance_scale_2');
       expect(generate.params).not.toHaveProperty('guidance_scale_2');
+      const connectors = page.getByTestId(/^setup-node-/).getByRole('group', { name: 'Node connectors' });
+      await expect(connectors.getByText('Pipeline Quantization Config V2 · Summary', { exact: true })).toBeVisible();
+      await expect(connectors.getByText('Diffusers Execution Recipe · Summary', { exact: true })).toBeVisible();
+      await expect(connectors.getByText('Summary', { exact: true })).toHaveCount(0);
     }
     if (model === 'HuggingFaceImageTextToTextModel') {
       const generate = Object.values(api.nodes).find((node) => node.action === 'GenerateImageVideoText')!;
@@ -515,6 +517,20 @@ for (const [file, model] of [
     if (['MiniMaxMusic3ModularPipeline', 'WanImage2VideoModularPipeline'].includes(model)) {
       const loader = Object.values(api.nodes).find((node) => node.action === 'ModelsLoader')!;
       expect(loader.params).not.toHaveProperty('weight_format');
+    }
+    if (model === 'MiniMaxMusic3ModularPipeline') {
+      const generate = page.getByTestId(/^generate-node-/);
+      await expect(generate).toHaveCount(1);
+      await expect(generate.getByText('Generate', { exact: true }).first()).toBeVisible();
+      await expect(generate.getByText('Steps', { exact: true }).first()).toBeVisible();
+      await expect(page.getByTestId(/^output-node-/).getByText('Audio Output', { exact: true })).toBeVisible();
+      const [samplerId] = Object.entries(api.nodes).find(([, node]) => node.action === 'WorkflowDenoise')!;
+      const [decoderId, decoder] = Object.entries(api.nodes).find(([, node]) => node.action === 'WorkflowDecodeAudio')!;
+      const audio = Object.values(api.nodes).find(
+        (node) => node.action === 'Export' && node.module === 'modules.Audio',
+      )!;
+      expect(decoder.params.state_in).toMatchObject({ sourceId: samplerId, sourceKey: 'state_out' });
+      expect(audio.params.audio).toMatchObject({ sourceId: decoderId, sourceKey: 'audio' });
     }
     if (model === 'BuiltinAudioOperation') {
       await expect(page.locator('.react-flow__node').getByText('Previous', { exact: true })).toHaveCount(0);
@@ -545,6 +561,11 @@ for (const [file, model] of [
     const restored = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
     expect(restored.nodes).toEqual(api.nodes);
     expect(restored.paths).toEqual(api.paths);
+    if (model === 'MiniMaxMusic3ModularPipeline') {
+      const generate = page.getByTestId(/^generate-node-/);
+      await expect(generate).toHaveCount(1);
+      await expect(generate.getByText('Steps', { exact: true }).first()).toBeVisible();
+    }
     expect(errors).toEqual([]);
     await page.screenshot({ path: test.info().outputPath(`${model}-example-restored.png`) });
   });

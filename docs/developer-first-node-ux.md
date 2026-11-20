@@ -36,6 +36,8 @@ The permanent Custom nodes category discovers backend `custom/` files/packages
 without running them. Use Load deliberately, then Reload after editing. Disable
 keeps the source. Registry refresh does not rewrite existing node port definitions.
 Code/dependency identity changes invalidate execution until Reload.
+Enabled nodes appear under their Python-declared category within Custom nodes.
+Search by node name or category to find the operation you want to insert.
 
 An approved custom Block's **Load Models** component fields use their own exact
 lowercase 40-character revisions when you select **Install** beside a Hub model.
