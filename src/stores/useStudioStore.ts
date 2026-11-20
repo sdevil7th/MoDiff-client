@@ -1,4 +1,5 @@
 import { useSettingsStore } from './useSettingsStore';
+import { useNodesStore } from './useNodeStore';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
@@ -8,6 +9,7 @@ import {
   type WorkflowHydrationBaseline,
 } from '../studio/workflowHydrationBaseline';
 import { applyResolvedExecutionInputs } from '../studio/resolvedExecutionInputs';
+import { studioSpeechTimestampContract } from '../studio/effectiveControls';
 import {
   DEFAULT_STUDIO_FORM,
   STUDIO_MODEL_PROFILES,
@@ -86,6 +88,13 @@ import {
   type CustomNodeType,
   useFlowStore,
 } from './useFlowStore';
+
+function normalizeAuthoredSpeechTimestamps(form: StudioFormState): StudioFormState {
+  const contract = studioSpeechTimestampContract(form, useNodesStore.getState());
+  return contract && !contract.options.includes(form.speechTimestamps)
+    ? { ...form, speechTimestamps: contract.defaultValue }
+    : form;
+}
 
 export type StudioRecentChange = {
   id: string;
@@ -1689,7 +1698,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
 
       selectMode: (mode) => {
         const current = get().form;
-        const nextForm = resolveStudioResourceForm(getFormDefaultsForMode(mode, current.modelType));
+        const nextForm = resolveStudioResourceForm(
+          normalizeAuthoredSpeechTimestamps(getFormDefaultsForMode(mode, current.modelType)),
+        );
         set({
           selectedMode: mode,
           activeTemplateId: null,
@@ -1744,6 +1755,9 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
             lastError = `${STUDIO_MODEL_PROFILES[values.modelType].label} does not support ${values.mode ?? state.form.mode}; switched to ${fallbackMode.replace(/_/g, ' ')}.`;
           }
 
+          if (values.modelType !== undefined || values.mode !== undefined) {
+            form = normalizeAuthoredSpeechTimestamps(form);
+          }
           form = preservePinnedAutoFormValues(
             resolveStudioResourceForm(form),
             state.form,

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2558,4 +2559,82 @@ test('task contracts reject a loader or output identity that diverges from its e
       /Invalid Studio task-template contract/,
     );
   }
+});
+test('managed speech authoring uses exact backend timestamp options without rewriting a saved form', async (t) => {
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  globalThis.window = { location: { origin: 'http://127.0.0.1' }, dispatchEvent: () => true };
+  t.after(() => {
+    if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+    else delete globalThis.window;
+  });
+  const nodes = (await server.ssrLoadModule('/src/stores/useNodeStore.ts')).useNodesStore;
+  const studio = (await server.ssrLoadModule('/src/stores/useStudioStore.ts')).useStudioStore;
+  const originalNodes = nodes.getState();
+  const originalStudio = studio.getState();
+  t.after(() => {
+    nodes.setState(originalNodes, true);
+    studio.setState(originalStudio, true);
+  });
+  const ctc = 'HuggingFaceCTCSpeechRecognitionModel';
+  const whisper = 'HuggingFaceSpeechRecognitionModel';
+  const ctcNodeKey = 'modules.HuggingFaceSpeech.TranscribeCTCAudio';
+  const whisperNodeKey = 'modules.HuggingFaceSpeech.TranscribeAudio';
+  const ctcFixture = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/ctc-catalog-insertion.v1.json'), 'utf8'));
+  const transcribeCtc = ctcFixture.compiledEntry.definition.graph.nodes.find(
+    (node) => node.data.action === 'TranscribeCTCAudio',
+  ).data;
+  const capability = (modelType, nodeKey, modes) => ({
+    modelType,
+    studioExecutionSpecSchemaVersion: 1,
+    studioExecutionSpecModes: modes,
+    studioExecutionSpecs: modes.map((mode) => ({
+      modelType,
+      mode,
+      roles: [['transcribeAudio', nodeKey, 0, 0]],
+      bindings: [['transcribeAudio', 'timestamps', 'speechTimestamps']],
+    })),
+  });
+  nodes.setState({
+    studioExecutionSpecInvalid: false,
+    studioModelCapabilities: [
+      capability(ctc, ctcNodeKey, ['speech_to_text']),
+      capability(whisper, whisperNodeKey, ['speech_to_text', 'speech_translation']),
+    ],
+    nodesRegistry: {
+      [ctcNodeKey]: transcribeCtc,
+      [whisperNodeKey]: { params: { timestamps: { default: 'segment', options: ['none', 'segment', 'word'] } } },
+    },
+  });
+
+  studio.getState().updateForm(modelProfilesModule.getFormDefaultsForMode('speech_to_text', ctc));
+  assert.equal(studio.getState().form.speechTimestamps, 'word', 'Fresh CTC Studio graph must author the node default');
+  const { studioSpeechTimestampContract } = await server.ssrLoadModule('/src/studio/effectiveControls.ts');
+  const contractForForm = (form) => studioSpeechTimestampContract(form, nodes.getState());
+  assert.deepEqual(contractForForm(studio.getState().form), { options: ['none', 'word'], defaultValue: 'word' });
+
+  for (const value of ['none', 'word']) {
+    studio.getState().updateForm({ speechTimestamps: value });
+    studio.getState().updateForm({ modelType: whisper });
+    assert.equal(studio.getState().form.speechTimestamps, value);
+    studio.getState().updateForm({ modelType: ctc });
+    assert.equal(studio.getState().form.speechTimestamps, value);
+  }
+
+  studio.getState().selectMode('speech_translation');
+  assert.equal(studio.getState().form.modelType, whisper);
+  assert.equal(studio.getState().form.speechTimestamps, 'segment');
+  assert.deepEqual(contractForForm(studio.getState().form), {
+    options: ['none', 'segment', 'word'],
+    defaultValue: 'segment',
+  });
+  studio.getState().selectMode('speech_to_text');
+  assert.equal(studio.getState().form.speechTimestamps, 'segment');
+  studio.getState().updateForm({ modelType: ctc });
+  assert.equal(studio.getState().form.speechTimestamps, 'word');
+
+  // Loading a persisted draft does not take the explicit task/model authoring path.
+  studio.setState({ form: { ...studio.getState().form, speechTimestamps: 'segment' } });
+  studio.getState().updateForm({ sourceAudio: ['@data/audio/old-input.wav'] });
+  assert.equal(studio.getState().form.speechTimestamps, 'segment');
+  assert.deepEqual(studio.getState().form.sourceAudio, ['@data/audio/old-input.wav']);
 });

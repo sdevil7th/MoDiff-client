@@ -58,7 +58,7 @@ import {
 import { studioLowMemoryFormValues } from '../studio/resourcePlanner';
 import { STUDIO_PRESETS, STUDIO_TEMPLATES } from '../studio/templates';
 import { exactStudioExecutionProfileForForm } from '../studio/executionSpecs';
-import { studioSupportsStrength } from '../studio/effectiveControls';
+import { studioSpeechTimestampContract, studioSupportsStrength } from '../studio/effectiveControls';
 import { acknowledgementRequiredForModelRun } from '../studio/modelUsagePolicies';
 import { useModelUsageTermsGate } from '../studio/useModelUsageTerms';
 import type { StudioAspectRatio, StudioFormState, StudioMode, StudioModelType } from '../studio/types';
@@ -96,6 +96,12 @@ import {
   StudioTextInput,
 } from '../ui';
 import { cx } from '../utils/classNames';
+
+const SPEECH_TIMESTAMP_LABELS = {
+  none: 'No timestamps',
+  segment: 'Segment timestamps',
+  word: 'Word timestamps',
+} satisfies Record<StudioFormState['speechTimestamps'], string>;
 
 const ASPECT_OPTIONS: { label: StudioAspectRatio; width: number; height: number }[] = [
   { label: '1:1', width: 1024, height: 1024 },
@@ -231,6 +237,10 @@ export default function StudioPanel() {
   const isUnconditionalMode = form.mode === 'unconditional_image';
   const isPerceptionMode = form.mode === 'depth_estimation';
   const isSpeechMode = SPEECH_STUDIO_MODES.includes(form.mode);
+  const speechTimestampContract = isSpeechMode
+    ? studioSpeechTimestampContract(form, { studioModelCapabilities, studioExecutionSpecInvalid, nodesRegistry })
+    : undefined;
+  const speechTimestampOptions = speechTimestampContract?.options ?? (['none', 'segment', 'word'] as const);
   const isThreeDMode = THREE_D_STUDIO_MODES.includes(form.mode);
   const usesPrompt =
     !isUnconditionalMode &&
@@ -1619,11 +1629,10 @@ export default function StudioPanel() {
                   onValueChange={(value) =>
                     updateAndSync({ speechTimestamps: value as StudioFormState['speechTimestamps'] })
                   }
-                  options={[
-                    { value: 'none', label: 'No timestamps' },
-                    { value: 'segment', label: 'Segment timestamps' },
-                    { value: 'word', label: 'Word timestamps' },
-                  ]}
+                  options={speechTimestampOptions.map((value) => ({
+                    value,
+                    label: SPEECH_TIMESTAMP_LABELS[value],
+                  }))}
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <StudioInput

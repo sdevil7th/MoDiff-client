@@ -12,7 +12,10 @@ export type BuiltinMediaEvidence =
       controls: Record<string, Scalar>;
       inputs: Record<string, MediaIdentity[]>;
       outputs: Record<string, MediaIdentity[]>;
-      files: Record<string, { sourceValue: string; sha256: string; byteSize: number; converted?: boolean }[]>;
+      files: Record<
+        string,
+        { sourceValue: string | [string]; sha256: string; byteSize: number; converted?: boolean }[]
+      >;
     };
 
 const imageControls = `pipeline_class operation brightness contrast saturation sharpness gamma temperature tint
@@ -51,6 +54,18 @@ const keys = (v: Record<string, unknown>, names: string[]) =>
   Object.keys(v).length === names.length && names.every((n) => has(v, n));
 const uint = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0;
 const digest = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/u.test(v);
+function fileSource(value: unknown, legacyAudioSelection: boolean): value is string | [string] {
+  if (typeof value === 'string') return value.length <= 16384;
+  // Older Audio.Load receipts retained the file picker's one-item selection.
+  return (
+    legacyAudioSelection &&
+    Array.isArray(value) &&
+    value.length === 1 &&
+    typeof value[0] === 'string' &&
+    value[0].length > 0 &&
+    value[0].length <= 16384
+  );
+}
 function identity(v: unknown): v is MediaIdentity {
   if (!record(v) || !digest(v.sha256) || !uint(v.byteSize) || v.byteSize > 256 * 1024 * 1024) return false;
   if (v.kind === 'file') return keys(v, ['kind', 'sha256', 'byteSize']);
@@ -131,8 +146,7 @@ export function parseBuiltinMediaEvidence(value: unknown, scope: string): Builti
           (v) =>
             !record(v) ||
             !keys(v, ['sourceValue', 'sha256', 'byteSize', ...(has(v, 'converted') ? ['converted'] : [])]) ||
-            typeof v.sourceValue !== 'string' ||
-            v.sourceValue.length > 16384 ||
+            !fileSource(v.sourceValue, scope === 'Audio.Load' && port === 'file' && items.length === 1) ||
             !digest(v.sha256) ||
             !uint(v.byteSize) ||
             v.byteSize > 256 * 1024 * 1024 ||

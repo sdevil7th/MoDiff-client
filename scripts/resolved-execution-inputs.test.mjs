@@ -130,6 +130,95 @@ test('recorded output labels and packages use the exact observed loader without 
   assert.equal(observedModels.observedOutputModelLabel(historical, [descriptor]), 'Historical model alias');
   assert.equal(packages.buildOutputWorkflowPackage(historical).metadata.studio.modelType, record.modelType);
 });
+function audioLoadReceipt(sourceValue) {
+  return {
+    ...receipt(),
+    mediaEvidenceStatus: { schemaVersion: 1, truncated: false },
+    summary: {},
+    nodes: [
+      {
+        nodeId: 'load',
+        module: 'modules.Audio',
+        action: 'Load',
+        fields: {},
+        omittedFields: {},
+        mediaEvidence: {
+          schemaVersion: 1,
+          source: 'native-builtin-media-v1',
+          status: 'complete',
+          controls: {},
+          inputs: {},
+          outputs: {
+            audio: [
+              {
+                kind: 'audio',
+                shape: [16, 1],
+                sampleRate: 16000,
+                dtype: 'float32-le',
+                sha256: 'a'.repeat(64),
+                byteSize: 64,
+              },
+            ],
+          },
+          files: { file: [{ sourceValue, sha256: 'b'.repeat(64), byteSize: 76, converted: false }] },
+        },
+      },
+      { nodeId: 'preview', module: 'modules.Primitive', action: 'DataViewer', fields: {}, omittedFields: {} },
+    ],
+  };
+}
+
+test('Audio.Load scalar and legacy singleton filenames survive history and output export exactly', () => {
+  for (const sourceValue of ['speech.wav', ['speech.wav']]) {
+    const capture = audioLoadReceipt(sourceValue);
+    const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+    const before = JSON.stringify(capture);
+    const parsed = inputs.coerceResolvedExecutionInputs(capture, identity);
+    assert.deepEqual(parsed, capture);
+    const restored = contracts.coerceStudioOutput({
+      id: 'audio-file-proof',
+      url: '/native.txt',
+      ...identity,
+      resolvedExecutionInputs: capture,
+    });
+    assert.deepEqual(restored.resolvedExecutionInputs, capture);
+    assert.deepEqual(packages.buildOutputWorkflowPackage(restored).latestOutput.resolvedExecutionInputs, capture);
+    assert.equal(JSON.stringify(capture), before);
+  }
+});
+
+test('Audio.Load legacy filenames stay bounded and scoped to its declared file port', async () => {
+  const { parseBuiltinMediaEvidence } = await server.ssrLoadModule('/src/studio/builtinMediaEvidence.ts');
+  for (const sourceValue of [[], [''], [null], [['speech.wav']], ['one.wav', 'two.wav'], ['x'.repeat(16385)]]) {
+    assert.equal(
+      parseBuiltinMediaEvidence(audioLoadReceipt(sourceValue).nodes[0].mediaEvidence, 'Audio.Load'),
+      undefined,
+    );
+  }
+  const capture = audioLoadReceipt(['speech.wav']).nodes[0].mediaEvidence;
+  for (const mutate of [
+    (row) => {
+      row.files.other = row.files.file;
+    },
+    (row) => {
+      row.files.file[0].sha256 = 'changed';
+    },
+    (row) => {
+      row.files.file[0].proofOverride = true;
+    },
+  ]) {
+    const changed = structuredClone(capture);
+    mutate(changed);
+    assert.equal(parseBuiltinMediaEvidence(changed, 'Audio.Load'), undefined);
+  }
+  const duplicate = { ...capture, files: { file: [...capture.files.file, ...capture.files.file] } };
+  assert.equal(parseBuiltinMediaEvidence(duplicate, 'Audio.Load'), undefined);
+  const otherScope = { ...capture, outputs: {} };
+  assert.equal(parseBuiltinMediaEvidence(otherScope, 'Image.Load'), undefined);
+  otherScope.files = { videos: capture.files.file };
+  assert.equal(parseBuiltinMediaEvidence(otherScope, 'Video.ProcessVideo'), undefined);
+});
+
 test('native builtin media metadata survives strict parsing without granting model evidence', async () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
   const python =

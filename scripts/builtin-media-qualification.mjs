@@ -290,7 +290,8 @@ export async function readBuiltinMediaEvidence({ clientRoot, manifest, graph, au
       assert.equal(native.length, binding.values.length);
       const values = binding.values.map((row, i) => {
         const physical = read(row.file);
-        assert.equal(native[i].sourceValue, row.sourceValue);
+        const { sourceValue } = native[i];
+        assert.equal(Array.isArray(sourceValue) ? sourceValue[0] : sourceValue, row.sourceValue);
         assert.equal(native[i].sha256, row.file.sha256);
         assert.equal(native[i].byteSize, row.file.bytes);
         assert.ok(native[i].converted !== true);
