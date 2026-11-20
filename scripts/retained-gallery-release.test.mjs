@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalWorkflowContract } from './release-contract-core.mjs';
 import { createRetainedGalleryReleaseReader, verifiedRetainedGalleryAssetIndex } from './retained-gallery-release.mjs';
+import { validateRetainedGalleryProvenance } from './retained-gallery-provenance.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const hash = (value) => `sha256:canonical-json:${canonicalJsonHash(value)}`;
@@ -150,6 +151,76 @@ test(
         () => read({ ...proof, nativeReceipt: { ...nativeReceipt, ...changes } }),
         /Published Spandrel proof differs from the verified native receipt/u,
       );
+    }
+  },
+);
+
+test(
+  'the approved retained Whisper and LCM examples bind exact bytes and native observations',
+  { skip: !process.env.MODIFF_VERIFY_WHISPER_LCM_GALLERY_STAGE },
+  async () => {
+    const clientRoot = resolve(import.meta.dirname, '..');
+    const backend = resolve(process.env.MODIFF_BACKEND_DIR || join(clientRoot, '..', 'MoDiff'));
+    const stage = resolve(process.env.MODIFF_VERIFY_WHISPER_LCM_GALLERY_STAGE);
+    const json = (root, path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
+    const registry = json(stage, 'public/template-gallery/manifest.json');
+    const source = json(stage, 'src/studio/templateAssetSource.json');
+    const manifest = json(backend, 'data/workflow-library-manifest.json');
+    const receiptRegistry = json(backend, 'data/qualification/release/canonical-workflow-run-receipts.v1.json');
+    const runtime = await loadTemplateRuntime(clientRoot);
+    const read = createRetainedGalleryReleaseReader({ clientRoot: stage, source, registry });
+    for (const [id, workflowId] of [
+      ['whisper_tiny_blue_cup_transcription', 'HuggingFaceSpeechRecognitionModel:speech_to_text'],
+      ['lcm_dawn_alpine_lake', 'LatentConsistencyModelPipeline:edit_image'],
+    ]) {
+      const template = runtime.templates.find((item) => item.id === id);
+      const entry = runtime.findManifestEntry(template, registry);
+      const workflow = manifest.workflows.find((item) => item.id === workflowId);
+      const graph = json(backend, `data/graphs/${workflow.graphPath}`);
+      const nativeReceipt = receiptRegistry.receipts.find((item) => item.workflowId === workflowId);
+      assert.ok(entry);
+      const proof = {
+        recipe: {
+          template,
+          workflowId,
+          sourceTaskTemplateId: workflow.sourceTemplateId,
+          originalReceiptSha256: nativeReceipt.evidenceSha256,
+          retainedGraphHash: nativeReceipt.graphHash,
+          inputSha256: nativeReceipt.inputBinding.sha256,
+          promptSha256: nativeReceipt.promptBinding?.sha256,
+        },
+        entry,
+        sourceWorkflow: { manifest: workflow, contract: canonicalWorkflowContract(workflow, graph) },
+        templateRevisionHash: canonicalJsonHash({ template, settings: runtime.lockedSettingsForTemplate(template) }),
+        nativeReceipt,
+      };
+      const retained = read(proof);
+      assert.equal(retained.proofKind, 'reviewed_retained_template_execution');
+      assert.equal(retained.resourceCandidateId, null);
+      assert.deepEqual(retained.observationLimits, nativeReceipt.observationLimits);
+      assert.deepEqual(read({ ...proof, nativeReceipt: undefined }), retained);
+      assert.throws(
+        () => read({ ...proof, nativeReceipt: { ...nativeReceipt, resourceCandidateId: 'made-up' } }),
+        /Published recipe differs from the verified native receipt/u,
+      );
+      const provenance = json(stage, `public${entry.provenancePath}`);
+      const outputBytes = readFileSync(join(stage, `public${entry.outputPath}`));
+      const beforeBytes = entry.beforePath && readFileSync(join(stage, `public${entry.beforePath}`));
+      const check = { templateRevisionHash: proof.templateRevisionHash, outputBytes, beforeBytes };
+      const changed = Buffer.from('not the original media');
+      assert.deepEqual(validateRetainedGalleryProvenance(provenance, entry, check), []);
+      assert.ok(validateRetainedGalleryProvenance(provenance, entry, { ...check, outputBytes: changed }).length);
+      assert.ok(validateRetainedGalleryProvenance(provenance, entry, { ...check, beforeBytes: changed }).length);
+      assert.equal('originalTaskId' in provenance.association, false);
+      if (workflowId.startsWith('HuggingFace')) {
+        assert.equal(entry.beforePath, undefined);
+        assert.equal(provenance.association.recipeObservation.input.galleryScope, 'private_source_hash_only');
+      } else {
+        const review = json(stage, `public${entry.qualityReviewPath}`);
+        assert.match(entry.beforePath, /\.before\.webp$/u);
+        assert.equal(review.scores.promptAdherence, 3);
+        assert.equal(review.maintainerAcceptance.decision, 'accepted_with_disclosed_limitations');
+      }
     }
   },
 );

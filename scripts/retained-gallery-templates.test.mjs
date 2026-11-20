@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
+import { readCanonicalEvidenceFile } from './release-contract-core.mjs';
 import { selectCanonicalWorkflowSources } from './workflow-library-manifest-state.mjs';
 
 const client = resolve(import.meta.dirname, '..');
@@ -73,7 +74,9 @@ after(async () => {
   await server?.close();
 });
 
-function retainedTemplateGraph(recipe) {
+const authorsAudioFixture = 'review-source-audio.wav';
+
+function retainedTemplateGraph(recipe, sourceValue = recipe.inputFileName ?? authorsAudioFixture) {
   const manifest = JSON.parse(readFileSync(join(backend, 'data/workflow-library-manifest.json'), 'utf8'));
   const { template } = recipe;
   const row = manifest.workflows.find((item) => item.id === recipe.workflowId);
@@ -86,16 +89,23 @@ function retainedTemplateGraph(recipe) {
     sourceGraph: graph,
     randomizeSeeds: false,
   });
-  const node = Object.values(api.nodes).find((item) => item.action === (recipe.inputSha256 ? 'Load' : 'GenerateText'));
+  const nodes = Object.values(api.nodes);
   if (recipe.inputSha256) {
-    assert.equal(template.inputBindings[0].origin, 'user');
+    const [binding] = template.inputBindings;
+    const audio = binding.mediaType === 'audio';
+    assert.equal(binding.origin, 'user');
     assert.match(recipe.inputSha256, /^[a-f0-9]{64}$/u);
-    assert.deepEqual(node.params.file.value, []);
-    node.params.file.value = [recipe.inputFileName];
-  } else {
+    const source = nodes.find(
+      (node) => node.module === (audio ? 'modules.Audio' : 'modules.Image') && node.action === 'Load',
+    );
+    assert.deepEqual(source.params.file.value, audio ? '' : []);
+    source.params.file.value = [sourceValue];
+  }
+  if (recipe.promptSha256) {
     assert.equal(recipe.promptSha256, sha256(template.prompt));
-    assert.equal(node.params.prompt.value, '');
-    node.params.prompt.value = template.prompt;
+    const promptNode = nodes.find((node) => node.action === (template.mode === 'edit_image' ? 'Edit' : 'GenerateText'));
+    assert.equal(promptNode.params.prompt.value, '');
+    promptNode.params.prompt.value = template.prompt;
   }
   return canonicalGraphIdentity(api);
 }
@@ -131,7 +141,29 @@ test('retained Gallery recipes preserve the native graph identities and standalo
       ...skeletons.find(({ id }) => id === recipe.sourceTaskTemplateId),
       taskContract: true,
     });
-    assert.equal(retainedTemplateGraph(recipe).hash, recipe.retainedGraphHash, template.id);
+    if (recipe.inputLocatorSha256) {
+      const evidenceRoot = join(
+        backend,
+        'data/qualification/release/canonical-workflow-evidence',
+        recipe.originalReceiptSha256,
+      );
+      const evidenceFile = join(evidenceRoot, 'evidence.json');
+      assert.match(recipe.inputLocatorSha256, /^[a-f0-9]{64}$/u);
+      assert.equal(recipe.inputFileName, undefined);
+      // Repository CI has no private source. The browser-form checks below
+      // can use a synthetic picker string without exposing the real locator.
+      if (existsSync(evidenceFile)) {
+        const bytes = readFileSync(evidenceFile);
+        assert.equal(sha256(bytes), recipe.originalReceiptSha256);
+        const { capture } = JSON.parse(bytes);
+        const { inputs } = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, capture).bytes);
+        assert.equal(inputs.length, 1);
+        assert.equal(sha256(inputs[0].sourceValue), recipe.inputLocatorSha256);
+        assert.equal(retainedTemplateGraph(recipe, inputs[0].sourceValue).hash, recipe.retainedGraphHash, template.id);
+      }
+    } else {
+      assert.equal(retainedTemplateGraph(recipe).hash, recipe.retainedGraphHash, template.id);
+    }
   }
   assert.ok(!published.some((item) => ['PixArtSigmaPAGPipeline', 'ShapEPipeline'].includes(item.modelType)));
 });
@@ -162,7 +194,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: contract }, 'signal');
       } else {
         assert.equal(payload.fn, 'update_image_contract');
-        assert.equal(payload.action, 'PredictMap');
+        assert.ok(['PredictMap', 'Edit'].includes(payload.action));
         assert.deepEqual(payload.values.image_contract, contract);
       }
       return Response.json({ error: false, nodes: [] });
@@ -177,9 +209,11 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       const { template } = recipe;
       const { spec, imageContract } = fixture.recipes.find((item) => item.id === template.id);
       contract = imageContract;
-      const input = recipe.inputSha256 ? ['@data/images/sha256-bound-ramp.png'] : [];
+      const inputBinding = template.inputBindings?.[0];
+      const audio = inputBinding?.mediaType === 'audio';
+      const input = recipe.inputSha256 ? [recipe.inputFileName ?? authorsAudioFixture] : [];
       const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
-      studio.getState().applyTemplate(template, { referenceImages: input });
+      studio.getState().applyTemplate(template, audio ? { sourceAudio: input[0] } : { referenceImages: input });
       const form = studio.getState().form;
       assert.equal(form.device, 'cuda:0');
       assert.equal(form.resourceMode, 'expert');
@@ -222,8 +256,70 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.deepEqual(loader.params.model_id.value, { source: 'hub', value: template.modelArtifact.value });
       assert.equal(loader.params.revision.value, template.modelArtifact.revision);
       assert.equal(loader.params.dtype.value, 'float32');
-      assert.equal(loader.params.quantization_mode.value, 'none');
       assert.equal(loader.params.device.value, 'cuda:0');
+      if (audio) {
+        const source = api.nodes[binding.nodes.loadAudio];
+        // The interactive file picker supplies a local locator. The retained
+        // native file evidence records the same selected file as a one-item list.
+        const file = source.params.file.value;
+        assert.deepEqual(typeof file === 'string' ? [file] : file, input);
+        source.params.file.value = input;
+        const withIndependentInputsOrdered = ({ canonicalGraph }) => {
+          // The fresh form inserts the model before Audio Load. Both are
+          // independent suppliers to Transcribe Audio.
+          const { nodes, paths } = canonicalGraph;
+          assert.deepEqual(
+            nodes
+              .slice(0, 2)
+              .map(({ key }) => key)
+              .sort(),
+            ['modules.Audio.Load#1', 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel#1'],
+          );
+          assert.equal(paths.length, 1);
+          return {
+            ...canonicalGraph,
+            nodes: [...nodes.slice(0, 2).sort((a, b) => a.key.localeCompare(b.key)), ...nodes.slice(2)],
+            paths: [[...paths[0].slice(0, 2).sort(), ...paths[0].slice(2)]],
+          };
+        };
+        assert.deepEqual(
+          withIndependentInputsOrdered(canonicalGraphIdentity(api)),
+          withIndependentInputsOrdered(retainedTemplateGraph(recipe)),
+        );
+        continue;
+      }
+      assert.equal(loader.params.quantization_mode.value, 'none');
+      if (template.mode === 'edit_image') {
+        const source = api.nodes[binding.nodes.loadImage].params;
+        assert.deepEqual(source.file.value, input);
+        assert.equal(source.alpha_channel.value, 'ignore');
+        const edit = api.nodes[binding.nodes.diffusersImageEdit].params;
+        assert.deepEqual(edit.image_contract.value, contract);
+        const values = Object.fromEntries(
+          ['prompt', 'width', 'height', 'num_inference_steps', 'guidance_scale', 'strength', 'seed', 'output_type'].map(
+            (key) => [key, edit[key].value],
+          ),
+        );
+        assert.deepEqual(values, {
+          prompt: template.prompt,
+          width: 1024,
+          height: 1024,
+          num_inference_steps: 4,
+          guidance_scale: 8.5,
+          strength: 0.8,
+          seed: 42,
+          output_type: 'pil',
+        });
+        assert.equal(edit.image.sourceId, binding.nodes.loadImage);
+        assert.equal(edit.pipeline.sourceId, binding.nodes.diffusersImagePipeline);
+        assert.equal(api.nodes[binding.nodes.preview].params.image.sourceId, binding.nodes.diffusersImageEdit);
+        const controls = api.nodes[binding.nodes.diffusersRecipe].params;
+        assert.equal(controls.offload_mode.value, 'none');
+        assert.equal(controls.attention_backend.value, 'auto');
+        assert.equal(controls.vae_slicing.value, true);
+        assert.equal(controls.vae_tiling.value, true);
+        continue;
+      }
       if (recipe.inputSha256) {
         assert.ok(fieldActions.includes('update_pipeline_contract'));
         assert.ok(fieldActions.includes('update_image_contract'));

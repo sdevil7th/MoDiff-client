@@ -42,6 +42,29 @@ const pinsByTemplate = new Map(
       outputSize: { width: 128, height: 96 },
       outputExtension: 'webp',
     },
+    whisper_tiny_blue_cup_transcription: {
+      associationSha256: '17998ed9f920a3656b4b30178f18b03ef3c709dcaf6e43cfdd7c0804fa5c7b8c',
+      backendSourceFingerprint:
+        'sha256:backend-source-v1:674f8959f84e6b26f6ff04d8c7cdd2af9d9a5f4e438a325ecd4c042ecda9eeab',
+      backendContractFingerprint:
+        'sha256:backend-contract-v1:a54ff5dae2f71449c7a5b7cbb9f3db0277594d7e5117f892ecc21d4ce676f98f',
+      templateRevisionHash: 'f9e6bd0b708cc08d7068555be9f4094f68cc9aa6115639792339f50b38c2e35c',
+      capturedAt: '2026-11-20T15:39:15.190Z',
+      outputExtension: 'json',
+    },
+    lcm_dawn_alpine_lake: {
+      associationSha256: '33a841dd30dfa18c0de548283a9adbcb92b7a89fc28a0defe3975b79f0cbeb10',
+      backendSourceFingerprint:
+        'sha256:backend-source-v1:56db5ad14d640c084f94cafa1e746939ebff60ac39d214f5d413dca61b94df66',
+      backendContractFingerprint:
+        'sha256:backend-contract-v1:315617df789a8a5f57426692318e197c13786098718305edd1927471b5b9c194',
+      templateRevisionHash: '79ee258770b00a581d8e006b743cacd78ad992739353bcfcd724a920eb41fc8e',
+      capturedAt: '2026-11-20T16:22:50.650Z',
+      inputSize: { width: 512, height: 512 },
+      outputSize: { width: 512, height: 512 },
+      beforeExtension: 'webp',
+      outputExtension: 'webp',
+    },
   }),
 );
 
@@ -118,7 +141,7 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
     qualityReviewStatus: 'approved_reviewed',
     verificationStatus: 'reviewed',
     verificationTimestamp: pins.capturedAt,
-    beforePath: pins.inputSize ? base + 'inputs/' + stem + '.before.png' : undefined,
+    beforePath: pins.inputSize ? base + 'inputs/' + stem + '.before.' + (pins.beforeExtension ?? 'png') : undefined,
     afterPath: pins.inputSize ? outputPath : undefined,
     beforeMediaHash: output.inputEncodedSha256,
     width: pins.outputSize?.width,

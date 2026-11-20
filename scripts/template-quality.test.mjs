@@ -176,6 +176,7 @@ test('the complete catalog audits authored prompts and reports backend defaults 
       'image_upscale',
       'depth_estimation',
       'text_generation',
+      'speech_recognition',
       'video',
       'audio',
     ]),
@@ -201,6 +202,45 @@ test('depth, upscale, and text audits follow the input contracts of their own ta
     qualityModule.auditTemplateQuality({ ...text, prompt: '' }).issues.map((issue) => issue.code),
     ['missing_semantic_group'],
   );
+});
+
+test('the Whisper Tiny audio-to-text template needs an audio source and no prompt', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'whisper_tiny_blue_cup_transcription');
+  assert.ok(template);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.kind, 'speech_recognition');
+  assert.deepEqual(audit.requiredSemanticGroups, []);
+  assert.equal(audit.passed, true);
+  assert.deepEqual(
+    qualityModule
+      .auditTemplateQuality({ ...template, prompt: 'Transcribe the uploaded audio.' })
+      .issues.map((issue) => issue.code),
+    ['unsupported_prompt_input'],
+  );
+});
+
+test('the LCM Edit audit recognizes a target caption with a bound source and no negative input', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'lcm_dawn_alpine_lake');
+  assert.ok(template);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.passed, true);
+  assert.equal(audit.negative.policy.declarationId, 'lcm-edit-no-negative-input');
+  assert.deepEqual(audit.matchedSemanticGroups, ['source_role', 'transformation', 'preservation', 'integration']);
+
+  const missingSource = qualityModule.auditTemplateQuality({ ...template, inputBindings: [] });
+  assert.ok(missingSource.issues.some((issue) => issue.semanticGroup === 'source_role'));
+  const noTarget = qualityModule.auditTemplateQuality({
+    ...template,
+    prompt: 'Photograph of this alpine lake. Keep the shoreline, rocky foreground and pine forest composition.',
+  });
+  assert.ok(noTarget.issues.some((issue) => issue.semanticGroup === 'transformation'));
+  const instructionEdit = qualityModule.auditTemplateQuality({
+    ...template,
+    modelType: 'QwenImageEditModularPipeline',
+  });
+  assert.ok(instructionEdit.issues.some((issue) => issue.semanticGroup === 'transformation'));
+  assert.ok(instructionEdit.issues.some((issue) => issue.code === 'blank_negative_not_allowed'));
+  assert.equal(qualityModule.getTemplateNegativePolicy({ ...template, mode: 'text_to_image' }).requirement, 'required');
 });
 
 test('the Cosmos publisher blank-negative declaration does not extend to other same-class recipes', () => {

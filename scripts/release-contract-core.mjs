@@ -699,6 +699,22 @@ const RETAINED_AUTHORING_ARCHIVES = new Map([
       sha256: '787946f2e68cba243b8ca0908c8a626a9bc792ac2a03b25316eb503a7956be5b',
     },
   ],
+  [
+    'HuggingFaceSpeechRecognitionModel:speech_to_text',
+    {
+      descriptorSha256: '7ef2a7611856f6a0c111d5e4ffa248201f88718756aed16f5a6a30487e571faa',
+      bytes: 3846,
+      sha256: '50555a4961d24df966a82582bbb6a0f169f5419319e955ceec8a42ec4823e415',
+    },
+  ],
+  [
+    'LatentConsistencyModelPipeline:edit_image',
+    {
+      descriptorSha256: 'd29515dfafdcde29ecff2332276275247a6feeae5afd36639da87efc552af4f6',
+      bytes: 4384,
+      sha256: '5b07f097ab9706ce5ce7f9de8c1e93c2860adf5712b9c874237bea0e5739f83c',
+    },
+  ],
 ]);
 
 function archivedCanonicalAuthoring(backendRoot, workflowId, evidencePath) {

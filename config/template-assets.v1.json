@@ -1506,6 +1506,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/lcm_dawn_alpine_lake.before.webp",
+      "size": 164148,
+      "sha256": "sha256:bytes:25fe06d8e93645bc6ff29928556a0cd654aa6d70178d435268b3d17e9188feaa",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/inputs/ltx_boardwalk_tracking.end.webp",
       "size": 62370,
       "sha256": "sha256:bytes:52ea89c0cdec3142162156be07af12a06a14ad623b68c9700ccbc82bf889100d",
@@ -1884,6 +1895,17 @@
       "height": 640
     },
     {
+      "path": "template-gallery/lcm_dawn_alpine_lake.webp",
+      "size": 119274,
+      "sha256": "sha256:bytes:6da406d5e24cb7b9e62c1ee617ff8bca851b0f5da3cc7aef2b2e88ac73bfc8d0",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/low_vram.webp",
       "size": 230540,
       "sha256": "sha256:bytes:a69d58bfa342f850d807690080ca9aac583ca9fb69115e55904de315f71938e1",
@@ -2125,8 +2147,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 234038,
-      "sha256": "sha256:bytes:785b7c753988370be0df861faca31e7ac1e4e8f94662ac49c96dd940055193f2",
+      "size": 238353,
+      "sha256": "sha256:bytes:2c35cd09dc15607edc9fe8e8335d1150b88a74485bcb643363dd1839edd54199",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -3320,6 +3342,24 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/lcm_dawn_alpine_lake.quality-review.json",
+      "size": 2982,
+      "sha256": "sha256:bytes:e5c590a6287147faad9d5eab5676b8d2bb8224a8581a2043cf78c8dd50dcb0b9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/lcm_dawn_alpine_lake.retained-template-provenance.json",
+      "size": 5757,
+      "sha256": "sha256:bytes:767b8d794460fca5a3e1c79a89aeaa2b1dcdb815d47702e1063ed35d07163247",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/low_vram.quality-review.json",
       "size": 2522,
       "sha256": "sha256:bytes:53b25669d880814ac612e803b0c6f2abbcdd8853e7ea4ca6e1e6d0b97fa23352",
@@ -4072,6 +4112,24 @@
       "path": "template-gallery/reviews/wan_video_long_showcase.reviewed-provenance.json",
       "size": 308774,
       "sha256": "sha256:bytes:4e355061c502c865d206fe9cbddd4c74984385d4d78254af5b629202b18ad1be",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/whisper_tiny_blue_cup_transcription.quality-review.json",
+      "size": 2380,
+      "sha256": "sha256:bytes:e25cabb7027838e4593af9155c9dba2dc695d23ee2cccc2ad8bbc991a992c5e5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/whisper_tiny_blue_cup_transcription.retained-template-provenance.json",
+      "size": 3759,
+      "sha256": "sha256:bytes:410e2c8efcb1ae5a4bf6827f9bf327fc9bfa6bc84f32eedb269b1120cbbfd3a9",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5490,6 +5548,15 @@
       "height": 960
     },
     {
+      "path": "template-gallery/whisper_tiny_blue_cup_transcription.json",
+      "size": 305,
+      "sha256": "sha256:bytes:19ad6ca1cda03c92aa6f86f590a69c052e8bded5c8340189a56c68193c2ed9ec",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/z_image_cinematic_contact_sheet.webp",
       "size": 182632,
       "sha256": "sha256:bytes:4c2bbf8e5c5fc23984d3cbb7cf716220d6a5a3a628510b0de9bae418b3447723",
@@ -5557,9 +5624,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:9cb4e03df78ad36f0beb120a89c66d267c2e98e24b4892a719a7735eca9944af",
+  "assetSetId": "sha256:canonical-json:985e5c67b0e9791b04f400b287029bd3f54285e908107ca1951fb62070405fc8",
   "status": "ready",
-  "assetCount": 561,
-  "totalBytes": 1036746377,
+  "assetCount": 568,
+  "totalBytes": 1037049297,
   "missingAssets": []
 }

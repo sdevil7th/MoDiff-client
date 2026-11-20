@@ -14,6 +14,7 @@ import {
   VIDEO_TEMPLATE_EXECUTION_SELECTIONS,
 } from '../../../src/studio/templateOperationSelections';
 import { STUDIO_TEMPLATES } from '../../../src/studio/templates';
+import type { TemplateGalleryManifest } from '../../../src/studio/templateExactness';
 import { hashString, stableStringify } from '../../../src/studio/stableHash';
 import { REGISTERED_BLOCK_V2_ROUTES } from '../../../src/studio/registeredBlockV2Routes';
 import { acknowledgementRequiredForTemplate } from '../../../src/studio/modelUsagePolicies';
@@ -13719,6 +13720,143 @@ test('approved retained examples show structured text and technical image compar
   const upscaleDetail = page.getByTestId('template-detail-spandrel_x2_synthetic_gradient');
   await expect(upscaleDetail.getByText('Hover or drag to compare')).toBeVisible();
   await expect(upscaleDetail).toContainText('The synthetic gradient does not test restoration of fine detail.');
+});
+
+test('Whisper and LCM approved examples preserve their source requirements', async ({ page }) => {
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const manifestBytes = await fs.readFile(path.join(CLIENT_ROOT, 'public/template-gallery/manifest.json'));
+  const manifest: TemplateGalleryManifest = JSON.parse(manifestBytes.toString('utf8'));
+  const whisperId = 'whisper_tiny_blue_cup_transcription';
+  const lcmId = 'lcm_dawn_alpine_lake';
+  const transcriptPath = `template-gallery/${whisperId}.json`;
+  const beforePath = `template-gallery/inputs/${lcmId}.before.webp`;
+  const afterPath = `template-gallery/${lcmId}.webp`;
+  const transcript = 'The blue cup is on the table. The window is open.';
+  const whisper = manifest.examples.find((entry) => entry.templateId === whisperId);
+  const lcm = manifest.examples.find((entry) => entry.templateId === lcmId);
+  expect(whisper).toMatchObject({
+    mediaType: 'json',
+    outputPath: '/' + transcriptPath,
+    verificationStatus: 'reviewed',
+    qualityReviewStatus: 'approved_reviewed',
+  });
+  expect(whisper?.beforePath).toBeUndefined();
+  expect(lcm).toMatchObject({
+    mediaType: 'image',
+    outputPath: '/' + afterPath,
+    beforePath: '/' + beforePath,
+    afterPath: '/' + afterPath,
+    verificationStatus: 'reviewed',
+    qualityReviewStatus: 'approved_reviewed',
+  });
+
+  const assetIndex: { assets: Array<{ path: string; size: number; sha256: string }> } = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'config/template-assets.v1.json'), 'utf8'),
+  );
+  const previewPixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const approvedFilesServed: string[] = [];
+  for (const galleryPath of [transcriptPath, beforePath, afterPath]) {
+    const asset = assetIndex.assets.find((item) => item.path === galleryPath);
+    expect(asset).toBeDefined();
+    const cached = await fs
+      .readFile(path.join(CLIENT_ROOT, 'public', galleryPath))
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+    if (cached) {
+      expect(cached.byteLength).toBe(asset?.size);
+      expect('sha256:bytes:' + createHash('sha256').update(cached).digest('hex')).toBe(asset?.sha256);
+      approvedFilesServed.push(galleryPath);
+    }
+    // Clean checkouts can verify presentation without downloading the Gallery.
+    const jsonPreview = galleryPath === transcriptPath;
+    await page.context().route(
+      (url) => url.pathname.endsWith('/' + galleryPath),
+      (route) =>
+        route.fulfill({
+          body: cached ?? (jsonPreview ? Buffer.from(JSON.stringify({ text: transcript })) : previewPixel),
+          contentType: jsonPreview ? 'application/json' : cached ? 'image/webp' : 'image/png',
+          headers: { 'access-control-allow-origin': new URL(FRONTEND_URL).origin },
+        }),
+    );
+  }
+  await test.info().attach('checked Gallery bytes available locally', {
+    body: JSON.stringify(approvedFilesServed),
+    contentType: 'application/json',
+  });
+  await page.route('**/template-gallery/manifest.json*', (route) =>
+    route.fulfill({ body: manifestBytes, contentType: 'application/json' }),
+  );
+  const forbiddenRequests: string[] = [];
+  await page.route(
+    /\/(?:graph|execute|hf_download|install|download|runtime\/optional-runtimes)(?:[/?]|$)/u,
+    (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      forbiddenRequests.push(new URL(route.request().url()).pathname);
+      return route.abort('blockedbyclient');
+    },
+  );
+  await page.context().route(/\/template-gallery\/[^?]+\.wav(?:\?.*)?$/iu, (route) => {
+    forbiddenRequests.push(new URL(route.request().url()).pathname);
+    return route.abort('blockedbyclient');
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await openTemplateBrowser(page);
+  await page.getByTestId('template-browser-category-all').click();
+
+  for (const [id, search, input] of [
+    [whisperId, 'Short Speech Transcription', 'Source audio'],
+    [lcmId, 'Alpine Lake at Dawn', 'Source image'],
+  ] as const) {
+    await page.getByTestId('template-browser-search').fill(search);
+    const card = page.getByTestId(`template-browser-card-${id}`);
+    await expect(card).toBeVisible();
+    if (id === whisperId) {
+      await expect(card.getByText('Structured response', { exact: true })).toBeVisible();
+      await expect(card.getByRole('img')).toHaveCount(0);
+    } else {
+      await expect(card.getByTestId('template-ab-comparison')).toBeVisible();
+    }
+    await card.getByTestId(`template-browser-use-${id}`).click();
+
+    const detail = page.getByTestId(`template-detail-${id}`);
+    const inputs = detail.getByRole('heading', { name: 'Required inputs' }).locator('..');
+    await expect(inputs.getByText(input, { exact: true })).toBeVisible();
+    await expect(detail.getByRole('heading', { name: 'Included inputs' })).toHaveCount(0);
+    await expect(detail.getByTestId('template-approved-showcase')).toHaveCount(0);
+    if (id === whisperId) {
+      await expect(detail.locator('audio, a[href*=".wav" i], [src*=".wav" i]')).toHaveCount(0);
+      const link = detail.getByRole('link', { name: 'Open structured response' });
+      const href = await link.getAttribute('href');
+      expect(new URL(href!, FRONTEND_URL).pathname.endsWith('/' + transcriptPath)).toBe(true);
+      const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()]);
+      await expect(popup.locator('body')).toContainText(transcript);
+      await popup.close();
+    } else {
+      const comparison = detail.getByTestId('template-ab-comparison');
+      await expect(comparison).toBeVisible();
+      for (const [name, galleryPath] of [
+        ['A · Before', beforePath],
+        ['B · After', afterPath],
+      ] as const) {
+        const image = comparison.getByRole('img', { name, exact: true });
+        await expect(image).toBeVisible();
+        await expect
+          .poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth))
+          .toBe(approvedFilesServed.includes(galleryPath) ? 512 : 1);
+        const src = await image.getAttribute('src');
+        expect(new URL(src!, FRONTEND_URL).pathname.endsWith('/' + galleryPath)).toBe(true);
+      }
+    }
+    await detail.getByRole('button', { name: 'Templates', exact: true }).click();
+  }
+  expect(forbiddenRequests).toEqual([]);
 });
 
 test('Experimental public cards create the exact FLUX3 Ceramic Radio graph through ordinary UI', async ({ page }) => {

@@ -807,8 +807,9 @@ This source update does not approve media rights, template quality, model
 execution, Auto, or Gallery eligibility. New inputs and previews still require
 the normal per-file human rights and template evidence reviews.
 
-The reviewed Marigold depth preview, SmolLM2 rain-gauge reply and Spandrel
-Real-ESRGAN 2× comparison use `modiff.gallery.retained-template-provenance.v1`.
+The reviewed Marigold depth preview, SmolLM2 rain-gauge reply, Spandrel
+Real-ESRGAN 2× comparison, Whisper Tiny transcription and LCM dawn edit use
+`modiff.gallery.retained-template-provenance.v1`.
 This format is limited to immutable reviewed associations. It binds the active catalog recipe,
 observed source and runtime, the approved publication bytes, and the exact
 quality review. The original standalone task identifiers and private captures
@@ -817,6 +818,12 @@ decoded identities alongside the archived transport hash. Marigold records the
 source-size visual preview of a synthetic ramp. Spandrel binds the original
 64 × 48 source and 128 × 96 delivery to its pinned weight file. The comparison
 is a technical preview of the 2× route and measures no fine-detail recovery.
+Whisper publishes the exact JSON delivered by the transcription node. Its
+retained association verifies the original audio input hash, native transcript
+transport and exact JSON. The original recording remains private. The LCM
+comparison retains both original WebPs and binds the source and the saved
+prompt. Its accepted review records the substantial changes to the ridge and
+shoreline and the stronger dawn light.
 
 Their original canonical workflow rows remain attached to the standalone task
 skeletons. Release qualification links each row to its verified Gallery

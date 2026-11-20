@@ -2911,6 +2911,11 @@ test('template prompt recipes are distinct, detailed, and not generic placeholde
       assert.ok(template.prompt.length >= 20, `${template.id} retains a meaningful adapter reference prompt`);
     } else if (template.mode === 'depth_estimation' || template.mode === 'image_upscale') {
       assert.equal(template.prompt, '', `${template.id} uses only a source image`);
+    } else if (templateQualityModule.classifyTemplateQualityKind(template) === 'speech_recognition') {
+      assert.equal(template.prompt, '', `${template.id} reads source audio without a prompt`);
+      assert.ok(
+        template.inputBindings?.some((binding) => binding.origin === 'user' && binding.field === 'sourceAudio'),
+      );
     } else if (template.mode === 'text_generation') {
       assert.ok(template.prompt.trim(), `${template.id} asks the text model a question`);
     } else {

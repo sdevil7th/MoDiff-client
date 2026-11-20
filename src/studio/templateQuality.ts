@@ -10,6 +10,7 @@ export type TemplateQualityKind =
   | 'image_upscale'
   | 'depth_estimation'
   | 'text_generation'
+  | 'speech_recognition'
   | 'video'
   | 'audio';
 
@@ -85,6 +86,7 @@ type SemanticGroupDefinition = {
 type BlankNegativeDeclaration = {
   id: string;
   modelTypes: readonly StudioModelType[];
+  modes?: readonly StudioMode[];
   executionProfileId?: string;
   maxGuidanceScale?: number;
   reason: string;
@@ -103,6 +105,7 @@ const VIDEO_MODES = new Set<StudioMode>([
 ]);
 
 const AUDIO_MODES = new Set<StudioMode>(['text_to_audio', 'audio_variation', 'audio_continuation', 'audio_repaint']);
+const SPEECH_RECOGNITION_MODES: readonly StudioMode[] = ['speech_to_text', 'speech_translation'];
 
 const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = {
   focal_content: {
@@ -240,6 +243,7 @@ const REQUIRED_SEMANTIC_GROUPS: Record<TemplateQualityKind, readonly TemplateSem
   image_upscale: [],
   depth_estimation: [],
   text_generation: ['text_request'],
+  speech_recognition: [],
   video: ['temporal_action', 'camera_or_motion', 'continuity', 'visual_treatment'],
   audio: ['musical_identity', 'arrangement_or_timbre', 'dynamic_structure', 'mix_or_finish'],
 };
@@ -254,6 +258,18 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
     id: 'depth-and-text-no-negative-input',
     modelTypes: ['MarigoldDepthPipeline', 'HuggingFaceTextGenerationModel'],
     reason: 'These depth and text generation contracts have no negative-prompt input.',
+  },
+  {
+    id: 'speech-recognition-no-prompts',
+    modelTypes: ['HuggingFaceSpeechRecognitionModel', 'HuggingFaceCTCSpeechRecognitionModel'],
+    modes: SPEECH_RECOGNITION_MODES,
+    reason: 'Speech recognition uses source audio and recognition controls without prompt fields.',
+  },
+  {
+    id: 'lcm-edit-no-negative-input',
+    modelTypes: ['LatentConsistencyModelPipeline'],
+    modes: ['edit_image'],
+    reason: 'LCM image editing uses a source image and a positive target caption.',
   },
   {
     id: 'minimax-h3-image-no-negative-input',
@@ -362,6 +378,7 @@ export function classifyTemplateQualityKind(template: Pick<StudioTemplate, 'mode
   if (template.mode === 'depth_estimation') return 'depth_estimation';
   if (template.mode === 'image_upscale') return 'image_upscale';
   if (template.mode === 'text_generation') return 'text_generation';
+  if (SPEECH_RECOGNITION_MODES.includes(template.mode)) return 'speech_recognition';
   if (AUDIO_MODES.has(template.mode) || template.modelType === 'AceStepAudioPipeline') return 'audio';
   if (VIDEO_MODES.has(template.mode) || template.modelType === 'WanVACEPipeline') return 'video';
   if (template.mode === 'inpaint') return 'image_inpaint';
@@ -431,11 +448,12 @@ function rawLayoutSemanticGroups(prompt: string): TemplateSemanticGroup[] | null
 }
 
 export function getTemplateNegativePolicy(
-  template: Pick<StudioTemplate, 'modelType' | 'example' | 'executionSelection'>,
+  template: Pick<StudioTemplate, 'mode' | 'modelType' | 'example' | 'executionSelection'>,
 ): TemplateNegativePolicy {
   const guidanceScale = template.example?.lockedSettings?.guidanceScale;
   const declaration = BLANK_NEGATIVE_DECLARATIONS.find((candidate) => {
     if (!candidate.modelTypes.includes(template.modelType)) return false;
+    if (candidate.modes && !candidate.modes.includes(template.mode)) return false;
     if (
       candidate.executionProfileId !== undefined &&
       template.executionSelection?.executionProfileId !== candidate.executionProfileId
@@ -460,7 +478,7 @@ export function getTemplateNegativePolicy(
 }
 
 export function analyzeTemplateNegativePrompt(
-  template: Pick<StudioTemplate, 'modelType' | 'example' | 'negativePrompt' | 'executionSelection'>,
+  template: Pick<StudioTemplate, 'mode' | 'modelType' | 'example' | 'negativePrompt' | 'executionSelection'>,
 ): TemplateNegativeAnalysis {
   const policy = getTemplateNegativePolicy(template);
   const negativePrompt = template.negativePrompt?.trim() ?? '';
@@ -508,6 +526,28 @@ export function analyzeTemplateNegativePrompt(
   return { policy, constraints, categories, issues };
 }
 
+function imageTargetCaptionGroups(template: StudioTemplate, prompt: string): TemplateSemanticGroup[] {
+  if (
+    template.mode !== 'edit_image' ||
+    template.modelType !== 'LatentConsistencyModelPipeline' ||
+    !template.inputBindings?.some(
+      (binding) => binding.origin === 'user' && binding.field === 'referenceImages' && binding.count === 1,
+    )
+  ) {
+    return [];
+  }
+  // This img2img route describes the desired image. A caption can refer to the
+  // bound source and specify its new look without an instruction verb.
+  const target =
+    /^(?:an? )?(?:photo(?:graph)?|image|portrait|illustration|rendering) of (?:this|the same) ([^.!?]+)/iu.exec(
+      prompt.trim(),
+    )?.[1];
+  if (!target) return [];
+  return templatePromptMatchesSemanticGroup(target, 'visual_treatment')
+    ? ['source_role', 'transformation']
+    : ['source_role'];
+}
+
 export function auditTemplateQuality(
   template: StudioTemplate,
   resolvedBackendDefaults?: Pick<StudioTemplate, 'prompt'>,
@@ -524,8 +564,11 @@ export function auditTemplateQuality(
     : 'template';
   const rawLayout = template.promptQualityPolicy === 'raw_layout_reference';
   const layoutGroups = rawLayout ? rawLayoutSemanticGroups(resolvedPrompt ?? '') : null;
+  const captionGroups = imageTargetCaptionGroups(template, resolvedPrompt ?? '');
   const matchedSemanticGroups = requiredSemanticGroups.filter((group) =>
-    rawLayout ? layoutGroups?.includes(group) : templatePromptMatchesSemanticGroup(resolvedPrompt ?? '', group),
+    rawLayout
+      ? layoutGroups?.includes(group)
+      : captionGroups.includes(group) || templatePromptMatchesSemanticGroup(resolvedPrompt ?? '', group),
   );
   const semanticIssues: TemplateQualityIssue[] =
     promptResolution === 'unresolved_backend_default'
@@ -563,6 +606,9 @@ export function auditTemplateQuality(
   }
   if (kind === 'text_generation' && template.negativePrompt?.trim()) {
     issues.push({ code: 'unsupported_prompt_input', message: 'Text generation does not accept a negative prompt.' });
+  }
+  if (kind === 'speech_recognition' && (resolvedPrompt?.trim() || template.negativePrompt?.trim())) {
+    issues.push({ code: 'unsupported_prompt_input', message: 'Speech recognition uses source audio without prompts.' });
   }
 
   return {

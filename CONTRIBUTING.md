@@ -529,8 +529,8 @@ execution with that prompt or file and needs a reviewed recipe to bind it for
 release. Native-resolution DDIM, DDPM, and Consistency samples are technical
 canaries under the project's model review policy.
 
-The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge and Spandrel
-Real-ESRGAN 2× catalog recipes use declarations in
+The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge, Spandrel
+Real-ESRGAN 2×, Whisper Tiny transcription and LCM dawn edit use declarations in
 `src/studio/retainedGalleryTemplates.ts`. They share
 the existing task contracts. Keep their original standalone graphs and
 receipts. For an exact approved local review, retain `approval.v1.json`,

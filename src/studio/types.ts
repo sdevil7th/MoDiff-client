@@ -255,6 +255,8 @@ export type StudioTemplateId =
   | 'marigold_depth_synthetic_ramp'
   | 'smollm2_rain_gauge'
   | 'spandrel_x2_synthetic_gradient'
+  | 'whisper_tiny_blue_cup_transcription'
+  | 'lcm_dawn_alpine_lake'
   | 'minimax_h3_image_old_town_cat'
   | 'flux3_klein_fp8r512_text_to_image'
   | 'flux3_klein_fp8r512_single_reference_edit'

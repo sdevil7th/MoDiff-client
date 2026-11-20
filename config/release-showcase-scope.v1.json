@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "14970cc49ef1579fcc1899fff406810d8b4ba581"
+    "revision": "3fe997d48f920c5a2ec66d025b008901d2fc3ce3"
   },
   "originalCampaign": {
     "total": 89,
@@ -516,7 +516,19 @@
       "category": "planning-contract",
       "reason": "Planning-only workflow lacks its separately required implementation or execution qualification.",
       "countedAsComplete": false
+    },
+    {
+      "id": "lcm_dawn_alpine_lake",
+      "category": "supplementary-only",
+      "reason": "Published and registered as a supplementary Gallery example outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "whisper_tiny_blue_cup_transcription",
+      "category": "supplementary-only",
+      "reason": "Published and registered as a supplementary Gallery example outside the original campaign selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:ba1dfb69be774d74bc355a70e0ae90a84328ebaa5516020d6c3c3b90c5f1d55e"
+  "profileHash": "sha256:canonical-json:2b6e9de6bc70face7dc1bf8a7f15306c08e470ad6ce0984a4f842af0dd0f408d"
 }
