@@ -775,6 +775,13 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     return readCanonicalSpeechEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
   }
   if (
+    evidence.format === 'modiff.private.lcm-source-bound-edit.v1' &&
+    workflowId === 'LatentConsistencyModelPipeline:edit_image'
+  ) {
+    const { readPrivateImageEditEvidence } = await import('./private-image-edit-evidence.mjs');
+    return readPrivateImageEditEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
+  }
+  if (
     evidence.format === 'modiff.private.input-bound-model-smoke.v1' &&
     workflowId === 'MarigoldDepthPipeline:depth_estimation'
   ) {

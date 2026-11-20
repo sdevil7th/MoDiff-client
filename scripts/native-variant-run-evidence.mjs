@@ -3,6 +3,26 @@ import { stableStringify } from './live-proof-provenance.mjs';
 
 const same = (a, b, message) => assert.equal(stableStringify(a), stableStringify(b), message);
 const recordKeys = (row, keys, message) => same(Object.keys(row ?? {}).sort(), keys.sort(), message);
+const nativeOutputFields = [
+  'id',
+  'taskId',
+  'sid',
+  'clientRunId',
+  'runInputHash',
+  'workflowTabId',
+  'attemptIndex',
+  'nodeId',
+  'fieldKey',
+  'displayType',
+  'formSnapshot',
+  'graphSnapshot',
+  'apiGraphSnapshot',
+  'resolvedExecutionInputs',
+  'backendProvenance',
+  'mediaHash',
+  'mediaCollectionHash',
+  'mediaItems',
+];
 
 export function validateUnmodifiedExpertPreparation(preparation, modelType) {
   const { availableRamBytes, availableVramBytes, ...status } = preparation;
@@ -98,26 +118,7 @@ export function validateNativeVariantRun({
   same(graphCompleted.runtimePreparation, task.runtimePreparation, 'Native completion preparation differs.');
   assert.equal(run.outputs.length, 1, 'A single native output is required.');
   const nativeOutput = run.outputs[0];
-  for (const field of [
-    'id',
-    'taskId',
-    'sid',
-    'clientRunId',
-    'runInputHash',
-    'workflowTabId',
-    'attemptIndex',
-    'nodeId',
-    'fieldKey',
-    'displayType',
-    'formSnapshot',
-    'graphSnapshot',
-    'apiGraphSnapshot',
-    'resolvedExecutionInputs',
-    'backendProvenance',
-    'mediaHash',
-    'mediaCollectionHash',
-    'mediaItems',
-  ]) {
+  for (const field of nativeOutputFields) {
     assert.notEqual(output[field], undefined, `Original output is missing ${field}.`);
     same(output[field], nativeOutput[field], `Original native output ${field} differs.`);
   }
@@ -128,6 +129,46 @@ export function validateNativeVariantRun({
     assert.equal(graphAcknowledgment.sid, task.sid);
   }
   return { task, output, hints };
+}
+
+// Some image output stores attach the API snapshot after the completed task
+// GET returns. Compare that original response and the late native record
+// before applying the ordinary complete-output validation to the late record.
+export function validateLateNativeImageVariantRun({ run, persistedOutput, ...options }) {
+  assert.equal(options.displayType, 'image');
+  assert.equal(run.outputs.length, 1);
+  const [early] = run.outputs;
+  assert.equal(early.apiGraphSnapshot, undefined, 'Unexpected already captured early API snapshot.');
+  assert.ok(persistedOutput?.apiGraphSnapshot, 'The late native API snapshot is missing.');
+  for (const field of nativeOutputFields) {
+    if (['apiGraphSnapshot', 'backendProvenance', 'mediaItems'].includes(field)) continue;
+    assert.notEqual(early[field], undefined, `Early native output lacks ${field}.`);
+    same(early[field], persistedOutput[field], `Native output changed ${field} during persistence.`);
+  }
+  const earlyMedia = early.mediaItems;
+  const lateMedia = persistedOutput.mediaItems;
+  assert.equal(earlyMedia.length, 1);
+  assert.equal(lateMedia.length, 1);
+  const { durationSeconds: earlyDuration, label: earlyLabel, ...earlyItem } = earlyMedia[0];
+  const { durationSeconds: lateDuration, label: lateLabel, ...lateItem } = lateMedia[0];
+  assert.equal(earlyDuration, null);
+  assert.equal(lateDuration, undefined);
+  assert.equal(earlyLabel, undefined);
+  assert.equal(lateLabel, 'Item 1');
+  same(earlyItem, lateItem, 'Native image identity changed during persistence.');
+  const provenanceAt = (row, media) => {
+    const { capturedAt, exactTemplateCompatible, promptSettingsHash, mediaItems, ...identity } = row.backendProvenance;
+    assert.ok(Number.isSafeInteger(capturedAt) && capturedAt > 0);
+    assert.ok(exactTemplateCompatible == null || exactTemplateCompatible === false);
+    assert.ok(promptSettingsHash == null);
+    same(mediaItems, media, 'Native provenance media differs from its output.');
+    return { capturedAt, identity };
+  };
+  const earlyProof = provenanceAt(early, earlyMedia);
+  const lateProof = provenanceAt(persistedOutput, lateMedia);
+  assert.ok(earlyProof.capturedAt <= lateProof.capturedAt);
+  same(earlyProof.identity, lateProof.identity, 'Native provenance identity changed during persistence.');
+  return validateNativeVariantRun({ ...options, run: { ...run, outputs: [persistedOutput] } });
 }
 
 export function validateNativeVariantOutput({ output, outputRef, task, bytes, displayType, contentType }) {
