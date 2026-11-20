@@ -97,7 +97,12 @@ export function restoreManagedAttentionDefault(
   binding: StudioGraphBinding | null,
   requested?: string,
 ) {
-  if (!binding || !savedAttentionDefaultUpdate(binding) || (requested && requested !== 'auto')) return nodes;
+  if (
+    binding?.mode !== 'unconditional_image' ||
+    !savedAttentionDefaultUpdate(binding) ||
+    (requested && requested !== 'auto')
+  )
+    return nodes;
   const recipe = nodes.find((node) => isRecord(node) && node.id === binding.nodes.diffusersRecipe);
   const loader = nodes.find((node) => isRecord(node) && node.id === binding.nodes.diffusersImagePipeline);
   if (

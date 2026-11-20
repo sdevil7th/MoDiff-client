@@ -408,6 +408,9 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           revision: '3d4d00fc113225e1040f4d3bec504b6ec750c10c',
         },
       };
+      if (pipelineClass === 'AnimateDiffPAGPipeline' && recipeParams.attention_backend?.value !== 'auto') {
+        throw new Error(`${workflow.id} AnimateDiff PAG graph must use its automatic attention default.`);
+      }
       const animateMotion = animateMotionArtifacts[pipelineClass];
       if (animateMotion) {
         const base = pipeline.data.params?.model_id?.value;
@@ -423,7 +426,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           motionRevision !== animateMotion.revision ||
           !workflow.requiredArtifacts.includes(base.value) ||
           !workflow.requiredArtifacts.includes(motion.value) ||
-          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_backend?.value !== 'auto' ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_tiling?.value !== false
         ) {
@@ -440,7 +443,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           revision !== '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01' ||
           !workflow.requiredArtifacts.includes(base.value) ||
           JSON.stringify(quantizationParams.components?.value) !== '[]' ||
-          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_backend?.value !== 'auto' ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_slicing?.value !== true ||
           recipeParams.vae_tiling?.value !== false
@@ -558,7 +561,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           !workflow.requiredArtifacts.includes(base.value) ||
           JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
-          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_backend?.value !== (imageConditioned ? '_native_math' : 'auto') ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_slicing?.value !== true ||
           recipeParams.vae_tiling?.value !== false ||

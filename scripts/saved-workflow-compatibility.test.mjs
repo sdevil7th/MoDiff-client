@@ -101,8 +101,12 @@ test('older stages restore tested defaults while explicit attention and unreview
 });
 
 test('restored managed receipts use current authoring while keeping the original exact Run identity', () => {
-  const archive = JSON.parse(readFileSync(join(backend, 'data/unconditional-studio-spec-compatibility.v1.json')));
-  for (const { specification: previous } of archive.specifications) {
+  const archives = ['unconditional', 'video-attention'].flatMap(
+    (kind) => JSON.parse(readFileSync(join(backend, `data/${kind}-studio-spec-compatibility.v1.json`))).specifications,
+  );
+  const manifest = JSON.parse(readFileSync(join(backend, 'data/workflow-library-manifest.json')));
+  const paths = new Map(manifest.workflows.map(({ id, graphPath }) => [id, graphPath]));
+  for (const { specification: previous } of archives) {
     const { contentHash, ...semantic } = previous;
     const current = {
       ...semantic,
@@ -121,17 +125,9 @@ test('restored managed receipts use current authoring while keeping the original
         studioExecutionSpecs: [current],
       },
     ];
-    const isDdpm = previous.modelType === 'DDPMPipeline';
-    const graph = JSON.parse(
-      readFileSync(
-        join(
-          backend,
-          'data/graphs/studio',
-          isDdpm ? 'ddpm-pipeline' : 'consistency-model-pipeline',
-          'unconditional-image.json',
-        ),
-      ),
-    );
+    const graphPath = paths.get(`${previous.modelType}:${previous.mode}`);
+    assert.ok(graphPath, previous.id);
+    const graph = JSON.parse(readFileSync(join(backend, 'data/graphs', graphPath)));
     graph.nodes.find(({ data }) => data.action === recipeAction).data.params.attention_backend.value = '_native_math';
     const device = graph.nodes.find(({ data }) => data.action === recipeAction).data.params.device.value;
     const nodes = Object.fromEntries(graph.nodes.map(({ data, id }) => [data.studioRole, id]));
@@ -165,7 +161,14 @@ test('restored managed receipts use current authoring while keeping the original
     const active = studio.getState().graphBinding;
     assert.deepEqual(active.executionSpec, identity);
     assert.equal(active.fingerprint, binding.fingerprint);
-    compareOnlyAttention(exportGraph(graph), exportGraph(restored));
+    if (previous.mode === 'unconditional_image') {
+      compareOnlyAttention(exportGraph(graph), exportGraph(restored));
+    } else {
+      const before = exportGraph(graph);
+      const after = exportGraph(restored);
+      assert.equal(attention(after).value, '_native_math');
+      assert.equal(canonicalGraphIdentity(after).hash, canonicalGraphIdentity(before).hash);
+    }
     assert.equal(specs.exactStudioExecutionSpecForBinding(capabilities, false, active), current);
     assert.deepEqual(specs.studioExecutionSpecRuntimeReceipt(active, capabilities), {
       schemaVersion: 1,
