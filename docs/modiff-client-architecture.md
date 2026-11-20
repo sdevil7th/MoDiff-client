@@ -1734,6 +1734,15 @@ model object or credential is captured. Receipt identity cannot be reassigned by
 history enrichment. See the paired backend API reference for
 limits and omissions; receipt presence is not output-quality/publication proof.
 
+History and workflow packages preserve the bounded decoded RGB input projection
+for reviewed image edits and the typed audio input observation for speech
+recognition. The Edit projection identifies the pixels supplied to Diffusers
+and their connected source. Speech control accounting records the dispatched
+timestamp, chunking and task arguments separately from the audio identity.
+Missing observations in older receipts stay missing. The canonical evidence
+reader checks saved inputs, native outputs and the pinned recipe before
+accepting a private execution record.
+
 Optional `summaryScopeVersion: 2` keeps builtin LoRA/adapter descriptor fields in
 their original node records while excluding them from the primary-model summary.
 The parser recomputes summary, ambiguity and omissions with the same exact builtin
