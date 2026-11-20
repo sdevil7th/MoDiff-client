@@ -85,7 +85,7 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `6485b4cf59f25298e5105491941d9e2e1fcf297c`.
+CI backend contract: `a254c87e39aa509d12f8a45d5760e2e0c8bf90fe`.
 
 Both CI jobs use this immutable backend revision. It includes shared video
 stages, conditional reference requirements, the scoped Linux shared-memory LTX
