@@ -27,7 +27,7 @@ const videoControls = `pipeline_class operation selection_mode indices timecodes
 transition_seconds start_seconds end_seconds columns sync gap background`;
 export const BUILTIN_MEDIA_EVIDENCE_SCOPES: Record<
   string,
-  { controls: string; inputs: string[]; outputs: string[]; files: string[] }
+  { controls: string; inputs: string[]; outputs: string[]; files: string[]; requiredSingleAudioInput?: string }
 > = {
   'Image.Load': { controls: 'alpha_channel', inputs: [], outputs: ['image'], files: ['file'] },
   'Image.Preview': { controls: 'device export', inputs: ['image'], outputs: ['output', 'filtered'], files: [] },
@@ -40,6 +40,20 @@ export const BUILTIN_MEDIA_EVIDENCE_SCOPES: Record<
   'Audio.Load': { controls: '', inputs: [], outputs: ['audio'], files: ['file'] },
   'Audio.ProcessAudio': { controls: audioControls, inputs: ['source', 'reference'], outputs: ['output'], files: [] },
   'Audio.Export': { controls: 'filename sample_rate', inputs: ['audio'], outputs: ['file'], files: [] },
+  'HuggingFaceSpeech.TranscribeAudio': {
+    controls: '',
+    inputs: ['audio'],
+    outputs: [],
+    files: [],
+    requiredSingleAudioInput: 'audio',
+  },
+  'HuggingFaceSpeech.TranscribeCTCAudio': {
+    controls: '',
+    inputs: ['audio'],
+    outputs: [],
+    files: [],
+    requiredSingleAudioInput: 'audio',
+  },
   'Video.ProcessVideo': {
     controls: videoControls,
     inputs: ['videos'],
@@ -135,6 +149,10 @@ export function parseBuiltinMediaEvidence(value: unknown, scope: string): Builti
       )
     )
       return undefined;
+  }
+  if (declaration.requiredSingleAudioInput) {
+    const audio = value.inputs[declaration.requiredSingleAudioInput];
+    if (!Array.isArray(audio) || audio.length !== 1 || audio[0]?.kind !== 'audio') return undefined;
   }
   if (
     Object.entries(value.files).some(

@@ -2471,6 +2471,138 @@ test('audio receipt validates duration, delivery rate and consumed controls thro
   assert.equal(restored.nodes[0].fields.num_inference_steps.sourceNodeId, 'steps');
 });
 
+function speechConsumerReceipt(action) {
+  const value = receipt();
+  const consumed = (inputValue, value = inputValue) => ({
+    disposition: 'consumed',
+    inputValue,
+    value,
+    source: 'literal',
+  });
+  const fields = {
+    timestamps: consumed('word'),
+    chunk_length_seconds: consumed(30),
+    stride_length_seconds: consumed(5),
+  };
+  if (action === 'TranscribeAudio') {
+    fields.task = consumed(' TRANSLATE ', 'translate');
+    fields.language = {
+      ...consumed(''),
+      disposition: 'inactive',
+      reason: 'feature-disabled',
+    };
+  }
+  value.nodes = [
+    {
+      nodeId: 'speech',
+      module: 'modules.HuggingFaceSpeech',
+      action,
+      fields: {},
+      omittedFields: {},
+      fieldAccounting: {
+        schemaVersion: 1,
+        fields,
+        inputProjections: {},
+        outputProjections: {},
+        unaccountedFields: [],
+        omittedFields: {},
+        complete: true,
+      },
+      mediaEvidence: {
+        schemaVersion: 1,
+        source: 'native-builtin-media-v1',
+        status: 'complete',
+        controls: {},
+        inputs: {
+          audio: [
+            {
+              kind: 'audio',
+              sha256: 'a'.repeat(64),
+              shape: [12, 2],
+              sampleRate: 16000,
+              byteSize: 96,
+              dtype: 'float32-le',
+            },
+          ],
+        },
+        outputs: {},
+        files: {},
+      },
+    },
+  ];
+  value.summary = {};
+  value.fieldAccountingStatus = { schemaVersion: 1, truncated: false };
+  value.mediaEvidenceStatus = { schemaVersion: 1, truncated: false };
+  return value;
+}
+
+test('speech consumer accounting preserves options and one audio input in hydrated outputs', () => {
+  for (const action of ['TranscribeAudio', 'TranscribeCTCAudio']) {
+    const capture = speechConsumerReceipt(action);
+    const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+    const output = contracts.coerceStudioOutput({
+      id: action,
+      url: '/transcript.txt',
+      displayType: 'text',
+      ...identity,
+      resolvedExecutionInputs: capture,
+    });
+    assert.deepEqual(output.resolvedExecutionInputs, capture, action);
+    assert.deepEqual(contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output))).resolvedExecutionInputs, capture);
+    assert.deepEqual(output.resolvedExecutionInputs.summary, {});
+    const incomplete = structuredClone(capture);
+    incomplete.nodes[0].fieldAccounting.complete = false;
+    incomplete.nodes[0].fieldAccounting.unaccountedFields = ['unexpected_parameter'];
+    incomplete.nodes[0].mediaEvidence = {
+      schemaVersion: 1,
+      status: 'unavailable',
+      reason: 'unsupported-or-bounded-input',
+    };
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(incomplete, identity), incomplete);
+  }
+});
+
+test('speech consumer hydration rejects extra options, projections and spoofed media', () => {
+  for (const action of ['TranscribeAudio', 'TranscribeCTCAudio']) {
+    const capture = speechConsumerReceipt(action);
+    const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+    const [speech] = capture.nodes;
+    const accounting = speech.fieldAccounting;
+    const media = speech.mediaEvidence;
+    const [audio] = media.inputs.audio;
+    const option = accounting.fields.timestamps;
+    const fields = (additional) => ({
+      fieldAccounting: { ...accounting, fields: { ...accounting.fields, ...additional } },
+    });
+    const projections = (key) => ({ fieldAccounting: { ...accounting, [key]: { audio: {} } } });
+    const evidence = (changes) => ({ mediaEvidence: { ...media, ...changes } });
+    const unreviewedOptions = action === 'TranscribeCTCAudio' ? ['task', 'language'] : ['guidance_scale'];
+    for (const [reason, changes] of [
+      ['foreign scope', { module: 'custom.HuggingFaceSpeech' }],
+      ...unreviewedOptions.map((name) => [`out-of-scope option ${name}`, fields({ [name]: option })]),
+      ['raw audio in field accounting', fields({ audio: option })],
+      ['extra accounting data', fields({ timestamps: { ...option, rawSamples: [1] } })],
+      ['input projection', projections('inputProjections')],
+      ['output projection', projections('outputProjections')],
+      ['media control', evidence({ controls: { timestamps: true } })],
+      ['file observation', evidence({ files: { file: [] } })],
+      ['media output', evidence({ outputs: { text: [] } })],
+      ['foreign input port', evidence({ inputs: { ...media.inputs, reference: [audio] } })],
+      ['missing audio input', evidence({ inputs: {} })],
+      ['empty audio input', evidence({ inputs: { audio: [] } })],
+      ['multiple audio inputs', evidence({ inputs: { audio: [audio, audio] } })],
+      [
+        'file posing as audio',
+        evidence({ inputs: { audio: [{ kind: 'file', sha256: audio.sha256, byteSize: audio.byteSize }] } }),
+      ],
+      ['extra audio data', evidence({ inputs: { audio: [{ ...audio, samples: [1, 2] }] } })],
+    ]) {
+      const candidate = { ...capture, nodes: [{ ...speech, ...changes }] };
+      assert.equal(inputs.coerceResolvedExecutionInputs(candidate, identity), undefined, `${action}: ${reason}`);
+    }
+  }
+});
+
 test('attention context reuse survives receipts and rejects a contradictory summary', () => {
   for (const enabled of [true, false]) {
     const value = receipt();

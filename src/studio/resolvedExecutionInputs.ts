@@ -438,6 +438,14 @@ const accountingNames: Record<string, string[]> = {
     image_guidance_scale use_guidance_scale_2 guidance_scale_2 pag_scale pag_adaptive_scale control_guidance_start
     control_guidance_end layers resolution cfg_normalize use_en_prompt strength padding_mask_crop max_sequence_length
     output_type`.split(/\s+/u),
+  'HuggingFaceSpeech.TranscribeAudio': [
+    'task',
+    'language',
+    'timestamps',
+    'chunk_length_seconds',
+    'stride_length_seconds',
+  ],
+  'HuggingFaceSpeech.TranscribeCTCAudio': ['timestamps', 'chunk_length_seconds', 'stride_length_seconds'],
   'Image.Preview': ['device', 'export'],
 };
 const accountingPorts: Record<string, [Record<string, string>, Record<string, string>]> = {
@@ -449,6 +457,8 @@ const accountingPorts: Record<string, [Record<string, string>, Record<string, st
   ],
   'DiffusersImage.UnconditionalGenerate': [{}, {}],
   'DiffusersImage.Generate': [{}, {}],
+  'HuggingFaceSpeech.TranscribeAudio': [{}, {}],
+  'HuggingFaceSpeech.TranscribeCTCAudio': [{}, {}],
   'Image.Preview': [{}, {}],
 };
 const accountingReasons = new Set([
