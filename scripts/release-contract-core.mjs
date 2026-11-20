@@ -765,6 +765,16 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.workflowId, workflowId);
   if (
+    evidence.format === 'modiff.private.speech-to-text-input-bound.v1' &&
+    [
+      'HuggingFaceSpeechRecognitionModel:speech_to_text',
+      'HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
+    ].includes(workflowId)
+  ) {
+    const { readCanonicalSpeechEvidence } = await import('./private-speech-evidence.mjs');
+    return readCanonicalSpeechEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
+  }
+  if (
     evidence.format === 'modiff.private.input-bound-model-smoke.v1' &&
     workflowId === 'MarigoldDepthPipeline:depth_estimation'
   ) {
