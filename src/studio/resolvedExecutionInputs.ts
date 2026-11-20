@@ -36,7 +36,7 @@ export type ExecutionFieldAccounting = {
   complete: boolean;
 };
 type ExecutionAccountingProjection = {
-  kind: 'disabled-quantization-v1' | 'execution-recipe-v1';
+  kind: 'disabled-quantization-v1' | 'execution-recipe-v1' | 'decoded-image-v1';
   values: Record<string, InputValue>;
   sha256: string;
 };
@@ -419,6 +419,11 @@ function appliedAdapters(value: unknown, scope: string): AppliedAdapters | undef
 
 // Mirror only the backend's bounded accounting policy, not arbitrary objects or
 // new execution authority. Cryptographic and graph joins belong to the recorder.
+const conditionalImageAccountingNames =
+  `image_contract prompt negative_prompt width height seed num_inference_steps guidance_scale
+  image_guidance_scale use_guidance_scale_2 guidance_scale_2 pag_scale pag_adaptive_scale control_guidance_start
+  control_guidance_end layers resolution cfg_normalize use_en_prompt strength padding_mask_crop max_sequence_length
+  output_type`.split(/\s+/u);
 const accountingNames: Record<string, string[]> = {
   'DiffusersImage.LoadPipeline':
     `model_id pipeline_class mode revision execution_profile_id conditioning_kind conditioning_model_id
@@ -434,10 +439,8 @@ const accountingNames: Record<string, string[]> = {
   ),
   'DiffusersImage.UnconditionalGenerate':
     'image_contract batch_size seed num_inference_steps eta class_label output_type'.split(' '),
-  'DiffusersImage.Generate': `image_contract prompt negative_prompt width height seed num_inference_steps guidance_scale
-    image_guidance_scale use_guidance_scale_2 guidance_scale_2 pag_scale pag_adaptive_scale control_guidance_start
-    control_guidance_end layers resolution cfg_normalize use_en_prompt strength padding_mask_crop max_sequence_length
-    output_type`.split(/\s+/u),
+  'DiffusersImage.Generate': conditionalImageAccountingNames,
+  'DiffusersImage.Edit': [...conditionalImageAccountingNames, 'reference_strength'],
   'HuggingFaceSpeech.TranscribeAudio': [
     'task',
     'language',
@@ -457,6 +460,7 @@ const accountingPorts: Record<string, [Record<string, string>, Record<string, st
   ],
   'DiffusersImage.UnconditionalGenerate': [{}, {}],
   'DiffusersImage.Generate': [{}, {}],
+  'DiffusersImage.Edit': [{ image: 'decoded-image-v1' }, {}],
   'HuggingFaceSpeech.TranscribeAudio': [{}, {}],
   'HuggingFaceSpeech.TranscribeCTCAudio': [{}, {}],
   'Image.Preview': [{}, {}],
@@ -483,6 +487,22 @@ const accountingOrigin = (value: Record<string, unknown>) =>
     Boolean(value.sourceNodeId) &&
     text(value.sourcePortId) &&
     Boolean(value.sourcePortId));
+
+function decodedImageProjectionValues(values: Record<string, unknown>): boolean {
+  const { mode, width, height, byteSize, sha256 } = values;
+  const positiveInteger = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+  return (
+    exactKeys(values, ['mode', 'width', 'height', 'byteSize', 'sha256']) &&
+    mode === 'RGB' &&
+    positiveInteger(width) &&
+    positiveInteger(height) &&
+    positiveInteger(byteSize) &&
+    byteSize <= 64 * 1024 * 1024 &&
+    width * height * 3 === byteSize &&
+    digest(sha256)
+  );
+}
 
 function fieldAccounting(value: unknown, scope: string): ExecutionFieldAccounting | undefined {
   if (
@@ -560,6 +580,12 @@ function fieldAccounting(value: unknown, scope: string): ExecutionFieldAccountin
       const values = projection.values;
       if (projection.kind === 'disabled-quantization-v1') {
         if (!exactKeys(values, ['backend', 'disabled']) || values.backend !== 'none' || values.disabled !== true)
+          return undefined;
+      } else if (projection.kind === 'decoded-image-v1') {
+        if (
+          !decodedImageProjectionValues(values) ||
+          (projection.source !== 'connected' && (value.complete || value.omittedFields[port] !== 'unsupported-origin'))
+        )
           return undefined;
       } else {
         const keys = accountingNames['DiffusersRuntime.DiffusersExecutionRecipe']!.filter(

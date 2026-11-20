@@ -391,6 +391,119 @@ test('plain conditional accounting preserves the bounded backend PAG call and re
   assert.equal(inputs.coerceResolvedExecutionInputs(unknown, identity), undefined);
 });
 
+test('image edit accounting preserves only a bounded decoded RGB input on the image port', () => {
+  const capture = receipt();
+  const values = { mode: 'RGB', width: 48, height: 32, byteSize: 4608, sha256: 'b'.repeat(64) };
+  const projection = {
+    kind: 'decoded-image-v1',
+    values,
+    sha256: 'a'.repeat(64),
+    source: 'connected',
+    sourceNodeId: 'source-image',
+    sourcePortId: 'image',
+  };
+  const accounting = {
+    schemaVersion: 1,
+    fields: {
+      reference_strength: {
+        disposition: 'inactive',
+        inputValue: 1,
+        value: 1,
+        reason: 'feature-disabled',
+        source: 'literal',
+      },
+    },
+    inputProjections: { image: projection },
+    outputProjections: {},
+    unaccountedFields: [],
+    omittedFields: {},
+    complete: true,
+  };
+  const node = {
+    nodeId: 'edit',
+    module: 'modules.DiffusersImage',
+    action: 'Edit',
+    fields: { executed_task: { value: 'edit_image', source: 'literal' } },
+    omittedFields: {},
+    fieldAccounting: accounting,
+  };
+  capture.nodes = [node];
+  capture.summary = { executedTask: 'edit_image' };
+  capture.fieldAccountingStatus = { schemaVersion: 1, truncated: false };
+  const identity = { taskId: capture.taskId, attemptIndex: capture.attemptIndex, nodeId: capture.nodeId };
+  const output = contracts.coerceStudioOutput({
+    id: 'edit',
+    url: '/edit.png',
+    ...identity,
+    resolvedExecutionInputs: capture,
+  });
+  assert.deepEqual(output.resolvedExecutionInputs, capture);
+  assert.deepEqual(contracts.coerceStudioOutput(JSON.parse(JSON.stringify(output))).resolvedExecutionInputs, capture);
+
+  const withAccounting = (changes) => ({
+    ...capture,
+    nodes: [{ ...node, fieldAccounting: { ...accounting, ...changes } }],
+  });
+  const image = (changes) => ({ image: { ...projection, ...changes } });
+  for (const invalid of [
+    { mode: 'RGBA' },
+    { width: '48' },
+    { width: 0, byteSize: 0 },
+    { height: 32.5, byteSize: 4680 },
+    { height: true },
+    { height: Number.MAX_SAFE_INTEGER + 1 },
+    { byteSize: 4609 },
+    { width: 8192, height: 8192, byteSize: 201326592 },
+    { sha256: 'B'.repeat(64) },
+    { sha256: 'b'.repeat(63) },
+    { samples: [0, 0, 0] },
+  ]) {
+    assert.equal(
+      inputs.coerceResolvedExecutionInputs(
+        withAccounting({ inputProjections: image({ values: { ...values, ...invalid } }) }),
+        identity,
+      ),
+      undefined,
+      JSON.stringify(invalid),
+    );
+  }
+  for (const [label, changes] of [
+    ['missing image', { inputProjections: {} }],
+    ['foreign port', { inputProjections: { mask: projection } }],
+    ['output port', { outputProjections: { image: projection } }],
+    ['unbounded wrapper digest', { inputProjections: image({ sha256: 'wrong' }) }],
+    ['missing source port', { inputProjections: image({ sourcePortId: undefined }) }],
+  ]) {
+    assert.equal(inputs.coerceResolvedExecutionInputs(withAccounting(changes), identity), undefined, label);
+  }
+  const wrongScope = {
+    ...capture,
+    nodes: [{ ...node, action: 'Generate', fieldAccounting: { ...accounting, fields: {} } }],
+  };
+  assert.equal(inputs.coerceResolvedExecutionInputs(wrongScope, identity), undefined);
+  for (const source of ['literal', 'override']) {
+    const { sourceNodeId: _nodeId, sourcePortId: _portId, ...withoutLink } = projection;
+    const inputProjections = { image: { ...withoutLink, source } };
+    assert.equal(
+      inputs.coerceResolvedExecutionInputs(withAccounting({ inputProjections }), identity),
+      undefined,
+      source,
+    );
+    const partial = withAccounting({
+      inputProjections,
+      omittedFields: { image: 'unsupported-origin' },
+      complete: false,
+    });
+    assert.deepEqual(inputs.coerceResolvedExecutionInputs(partial, identity), partial, source);
+    const falselyPartial = withAccounting({
+      inputProjections,
+      omittedFields: { width: 'unavailable' },
+      complete: false,
+    });
+    assert.equal(inputs.coerceResolvedExecutionInputs(falselyPartial, identity), undefined, source);
+  }
+});
+
 test('mocked native DDIM accounting derives the unique executed owner without borrowing Preview CPU or hints', () => {
   const value = canonicalAccountingCase();
   const graphBefore = JSON.stringify(value.apiGraph);
