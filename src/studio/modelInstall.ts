@@ -90,9 +90,10 @@ export function formatDownloadBytes(bytes?: number) {
 export function formatDownloadEta(seconds?: number) {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '';
   if (seconds < 60) return `${Math.ceil(seconds)} sec`;
-  if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`;
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.ceil((seconds % 3600) / 60);
+  const totalMinutes = Math.ceil(seconds / 60);
+  if (seconds < 3600) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   return `${hours} hr ${minutes} min`;
 }
 

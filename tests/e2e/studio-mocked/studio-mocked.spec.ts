@@ -734,6 +734,22 @@ test('collapsed canvas activity retains active work, failures and explicit downl
   await shelf.getByRole('button', { name: 'Show session activity', exact: true }).click();
   await expect(page.getByTestId('session-run-activity-running')).toBeVisible();
   await expect(page.getByTestId('session-download-example/existing-download')).toBeVisible();
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_completed',
+      task_id: 'activity-running',
+      name: 'Current work',
+      started_at: 1_790_000_000,
+      completed_at: 1_790_001_559.6,
+      current: null,
+      queued: {},
+    });
+  });
+  await expect(page.getByTestId('session-run-activity-running').getByText('26:00', { exact: true })).toBeVisible();
+  await page.getByTestId('workspace-tab-queue').click();
+  await expect(
+    page.getByTestId('queue-session-run-activity-running').getByText('26:00', { exact: true }),
+  ).toBeVisible();
   expect(mutations).toBe(0);
 });
 

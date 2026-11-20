@@ -16,6 +16,7 @@ import { hasHfDownloadFailed, isHfDownloadActive, isHfDownloadComplete } from '.
 import { ProgressBar } from '../ui/ProgressBar';
 import { ModiffButton, ModiffTooltip } from '../ui';
 import { cx } from '../utils/classNames';
+import { formatRunDuration } from '../utils/formatExecutionTime';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import {
   openRunActivity,
@@ -27,18 +28,6 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { executionProgressDetail, executionProgressFrom } from '../studio/executionProgress';
 
 const TERMINAL_STATUSES = new Set<SessionRun['status']>(['completed', 'failed', 'cancelled']);
-
-function formatDuration(ms: number | undefined) {
-  if (typeof ms !== 'number' || !Number.isFinite(ms)) return '-';
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = Math.round(seconds % 60)
-    .toString()
-    .padStart(2, '0');
-  return `${minutes}:${remainder}`;
-}
 
 function runDuration(run: SessionRun, now: number) {
   if (typeof run.durationMs === 'number') return run.durationMs;
@@ -73,7 +62,7 @@ function RunCard({ now, onDismiss, run }: { now: number; onDismiss: () => void; 
   const label = runActivityLabelForTask(run, run.task_id || run.id);
   const progressDetail =
     (!terminal && executionProgressDetail(executionProgressFrom(run))) ||
-    `${label} · ${statusLabel(run)} · ${formatDuration(duration)}`;
+    `${label} · ${statusLabel(run)} · ${formatRunDuration(duration)}`;
 
   return (
     <div className="group/notification relative min-w-0">
@@ -112,7 +101,7 @@ function RunCard({ now, onDismiss, run }: { now: number; onDismiss: () => void; 
                   </span>
                 </span>
                 <span className="flex-none text-modiff-label font-semibold text-modiff-subtle-text">
-                  {formatDuration(duration)}
+                  {formatRunDuration(duration)}
                 </span>
               </span>
               {active ? (

@@ -7,6 +7,8 @@ import { createServer } from 'vite';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let activityModule;
+let durationModule;
+let modelInstallModule;
 let outputContracts;
 let flowStoreModule;
 let issueStoreModule;
@@ -54,6 +56,46 @@ test('Queue accepts batch upscale frame progress through the existing phase cont
   assert.match(detail, /ETA/u);
 });
 
+test('Session and queue duration labels carry rounded seconds and preserve short or missing values', () => {
+  const { formatRunDuration } = durationModule;
+  for (const [milliseconds, expected] of [
+    [0, '0ms'],
+    [425, '425ms'],
+    [2500, '2.5s'],
+    [60000, '1:00'],
+    [1559499, '25:59'],
+    [1559500, '26:00'],
+    [3599499, '59:59'],
+    [3599500, '60:00'],
+    [undefined, '-'],
+    [Number.NaN, '-'],
+  ]) {
+    assert.equal(formatRunDuration(milliseconds), expected);
+  }
+});
+
+test('Run progress details and download estimates carry across minute and hour boundaries', () => {
+  const detail = activityModule.runActivityDetailForTask({
+    status: 'running',
+    current_step: 1,
+    total_steps: 2,
+    elapsed_seconds: 1559.5,
+    eta_seconds: 119.5,
+    phase_timings: { component_loading: 3599.5 },
+  });
+  assert.match(detail, /Elapsed 26m 0s · ETA 2m 0s · Phase timings: component loading 60m 0s/u);
+  assert.match(activityModule.runActivityDetailForTask({ status: 'running', elapsed_seconds: 0 }), /Elapsed 0s/u);
+  assert.doesNotMatch(activityModule.runActivityDetailForTask({ status: 'running' }), /Elapsed/u);
+
+  const { formatDownloadEta, formatDownloadDuration } = modelInstallModule;
+  assert.equal(formatDownloadEta(7140), '1 hr 59 min');
+  assert.equal(formatDownloadEta(7199.5), '2 hr 0 min');
+  assert.equal(formatDownloadEta(7200), '2 hr 0 min');
+  assert.equal(formatDownloadDuration(1, 7200.5), '2 hr 0 min');
+  assert.equal(formatDownloadEta(0), '');
+  assert.equal(formatDownloadEta(undefined), '');
+});
+
 before(async () => {
   const storage = new Map();
   globalThis.localStorage = {
@@ -86,6 +128,8 @@ before(async () => {
     appType: 'custom',
   });
   activityModule = await server.ssrLoadModule('/src/studio/runActivity.ts');
+  durationModule = await server.ssrLoadModule('/src/utils/formatExecutionTime.ts');
+  modelInstallModule = await server.ssrLoadModule('/src/studio/modelInstall.ts');
   outputContracts = await server.ssrLoadModule('/src/studio/outputContracts.ts');
   flowStoreModule = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   issueStoreModule = await server.ssrLoadModule('/src/stores/useRunIssueStore.ts');

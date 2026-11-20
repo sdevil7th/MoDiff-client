@@ -16,6 +16,7 @@ import {
 } from '../studio/runActivity';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { cx } from '../utils/classNames';
+import { formatRunDuration } from '../utils/formatExecutionTime';
 
 type QueueButtonProps = {
   children: string;
@@ -33,20 +34,8 @@ function QueueButton({ children, disabled, icon, onClick, testId }: QueueButtonP
   );
 }
 
-function formatDuration(ms: number | undefined) {
-  if (typeof ms !== 'number' || !Number.isFinite(ms)) return '-';
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = Math.round(seconds % 60)
-    .toString()
-    .padStart(2, '0');
-  return `${minutes}:${remainder}`;
-}
-
 function formatSeconds(seconds: number | null | undefined) {
-  return typeof seconds === 'number' && Number.isFinite(seconds) ? formatDuration(seconds * 1000) : null;
+  return typeof seconds === 'number' && Number.isFinite(seconds) ? formatRunDuration(seconds * 1000) : null;
 }
 
 function sessionRunDuration(run: SessionRun) {
@@ -317,7 +306,7 @@ export default function RunQueuePanel() {
                     </span>
                   </span>
                   <span className="flex-none text-xs font-semibold text-modiff-subtle-text">
-                    {formatDuration(sessionRunDuration(run))}
+                    {formatRunDuration(sessionRunDuration(run))}
                   </span>
                 </span>
               </span>

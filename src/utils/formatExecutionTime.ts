@@ -33,3 +33,17 @@ export function formatExecutionTime(timeInSeconds: number): string {
   const minutes = Math.floor((timeInSeconds % 3600) / 60);
   return `${hours}h ${minutes}m`;
 }
+
+export function splitRoundedSeconds(seconds: number) {
+  const roundedSeconds = Math.round(seconds);
+  return { minutes: Math.floor(roundedSeconds / 60), seconds: roundedSeconds % 60 };
+}
+
+export function formatRunDuration(milliseconds: number | undefined): string {
+  if (typeof milliseconds !== 'number' || !Number.isFinite(milliseconds)) return '-';
+  if (milliseconds < 1000) return `${Math.max(0, Math.round(milliseconds))}ms`;
+  const seconds = milliseconds / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const rounded = splitRoundedSeconds(seconds);
+  return `${rounded.minutes}:${String(rounded.seconds).padStart(2, '0')}`;
+}
