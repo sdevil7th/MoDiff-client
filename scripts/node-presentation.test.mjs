@@ -5,6 +5,7 @@ import { createServer } from 'vite';
 let server;
 let catalog;
 let browser;
+let presentation;
 const cases = [
   ['ModularDiffusers', 'ModelsLoader', 'Load Models', 'Load Modular Components'],
   ['ModularDiffusers', 'AutoModelLoader', 'Load Model', 'Load Model Component'],
@@ -45,6 +46,7 @@ before(async () => {
   });
   catalog = await server.ssrLoadModule('/src/studio/nodeCatalog.ts');
   browser = await server.ssrLoadModule('/src/workflow/workflowTaskBrowser.ts');
+  presentation = await server.ssrLoadModule('/src/workflow/nodePresentation.ts');
 });
 after(async () => server?.close());
 
@@ -74,6 +76,61 @@ test('user titles remain intact and a registry alias uses the executable identit
   const data = node('DiffusersImage', 'OutpaintCanvas', 'Outpaint Canvas');
   assert.equal(catalog.getNodeCatalogEntry(data, 'legacy.canvas').label, 'Prepare Outpaint Canvas');
   assert.equal(catalog.getNodeCatalogEntry({ ...data, label: 'My border preparation' }).label, 'My border preparation');
+});
+
+test('ordinary controls and sockets distinguish requested settings from supplied or measured results', () => {
+  const fields = [
+    ['VideoConditioning.Normalize', 'video', 'Video', 'Source frames'],
+    ['VideoConditioning.Normalize', 'num_frames', 'Frames', 'Target frames'],
+    ['VideoConditioning.Normalize', 'output', 'Video', 'Normalized video'],
+    ['VideoConditioning.Normalize', 'frames_out', 'Frames', 'Actual frame count'],
+    ['ModularDiffusers.Scheduler', 'scheduler_in', 'Scheduler', 'Base scheduler'],
+    ['ModularDiffusers.Scheduler', 'scheduler', 'Scheduler', 'Scheduler type'],
+    ['ModularDiffusers.Scheduler', 'scheduler_out', 'Scheduler', 'Configured scheduler'],
+    ['Video.MuxAudioAsset', 'fit', 'Duration', 'Audio fit'],
+    ['Video.MuxAudioAsset', 'duration_seconds', 'Duration', 'Measured duration (s)'],
+    ['DiffusersAudio.Generate', 'sample_rate', 'Sample Rate', 'Requested sample rate'],
+    ['DiffusersAudio.Generate', 'sample_rate_out', 'Sample Rate', 'Actual sample rate'],
+    ['Audio.FitDuration', 'target_sample_rate', 'Target SR', 'Target sample rate'],
+  ];
+  for (const [action, field, label, expected] of fields) {
+    const key = `modules.${action}`;
+    assert.equal(presentation.nodeFieldDisplayLabel(key, field, label), expected);
+    assert.equal(presentation.nodeFieldDisplayLabel(key, field, 'My title'), 'My title');
+    assert.equal(presentation.nodeFieldDisplayLabel(`custom.${action}`, field, label), label);
+  }
+});
+
+test('discoverability reflects the encoder role and both declared upscale media types', () => {
+  const encoder = { ...node('ModularDiffusers', 'ImageEncode', 'Encode Image'), category: 'sampler' };
+  const upscaler = {
+    ...node('Spandrel', 'Upscaler', 'Upscale with model'),
+    category: 'upscaler',
+    params: {
+      image: { display: 'input', type: ['image', 'video'] },
+      output: { display: 'output', type: ['image', 'video'] },
+    },
+  };
+  const before = JSON.stringify({ encoder, upscaler });
+  const encode = catalog.getNodeCatalogEntry(encoder);
+  assert.deepEqual(encode.groupPath, ['Models & Components', 'Condition']);
+  assert.equal(encode.dragKey, 'modules.ModularDiffusers.ImageEncode');
+  assert.ok(catalog.nodeCatalogEntryMatchesSearch(encode, 'encode image'));
+
+  const upscale = catalog.getNodeCatalogEntry(upscaler);
+  assert.deepEqual(upscale.groupPath, ['Image & Video', 'Upscale']);
+  assert.equal(upscale.dragKey, 'modules.Spandrel.Upscaler');
+  assert.equal(upscale.label, 'Upscale Image or Video');
+  assert.ok(catalog.nodeCatalogEntryMatchesView(upscale, 'common'));
+  for (const search of ['image upscale', 'video upscale', 'Upscale with model']) {
+    assert.ok(catalog.nodeCatalogEntryMatchesSearch(upscale, search), search);
+  }
+  const imageOnly = {
+    ...upscaler,
+    params: { ...upscaler.params, image: { display: 'input', type: 'image' } },
+  };
+  assert.notEqual(catalog.getNodeCatalogEntry(imageOnly).groupPath[0], 'Image & Video');
+  assert.equal(JSON.stringify({ encoder, upscaler }), before);
 });
 
 test('task browser groups modalities, deduplicates models and prefers available composable execution', () => {

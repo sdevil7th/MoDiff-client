@@ -1,4 +1,5 @@
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { blockConnectorParamsV2 } from '../studio/blockRuntimeV2';
 import { formatStudioFieldValue } from '../studio/presetDiff';
@@ -8,6 +9,8 @@ import type { NodeInspectorSection } from './NodeInspectorSections';
 import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
 import { isOptionalEncodingHandle } from '../workflow/encodingOptionalInput';
+import { nodeFieldDisplayLabel } from '../workflow/nodePresentation';
+import { unresolvedSignalControls } from '../workflow/signalControlPresentation';
 
 /** Read only. Selecting a section cannot resolve schemas, import code or allocate models. */
 export default function NodeInspectionDetails({
@@ -24,6 +27,12 @@ export default function NodeInspectionDetails({
   const instance = node.data.blockInstanceV2;
   const source = instance?.definitionSnapshot.source;
   const identity = `${node.data.module}.${node.data.action}`;
+  const registered = useNodesStore((state) => state.nodesRegistry[identity]?.params);
+  const signalControls = useFlowStore(
+    useShallow((state) =>
+      section === 'interface' ? unresolvedSignalControls(node.id, registered, state) : new Map<string, string>(),
+    ),
+  );
   const modular =
     node.data.modularDiffusersCatalogNode ??
     owner?.data.blockInstanceV2?.effectiveGraph.nodes.find((item) => item.nodeId === node.data.blockProjectionNodeId)
@@ -62,6 +71,7 @@ export default function NodeInspectionDetails({
           <div key={direction} className="grid gap-2">
             <h3 className="font-semibold">{direction === 'inputs' ? 'Inputs' : 'Outputs'}</h3>
             {Object.entries(ports[direction]).map(([name, param]: [string, NodeParams]) => {
+              const signalNote = signalControls.get(name);
               const connections = edges.filter((edge) =>
                 direction === 'inputs'
                   ? edge.target === node.id && edge.targetHandle === name
@@ -70,10 +80,12 @@ export default function NodeInspectionDetails({
               return (
                 <div key={name} className="break-words">
                   <p>
-                    {param.label || name} · {Array.isArray(param.type) ? param.type.join(' | ') : param.type || 'Any'}
+                    {nodeFieldDisplayLabel(identity, name, param.label || name)} ·{' '}
+                    {Array.isArray(param.type) ? param.type.join(' | ') : param.type || 'Any'}
                     {param.required ? ' · Required' : ''}
                   </p>
                   <p className="text-modiff-subtle-text">Socket: {name}</p>
+                  {signalNote ? <p className="text-modiff-subtle-text">{signalNote}</p> : null}
                   {isOptionalEncodingHandle(name) ? (
                     <p className="text-modiff-subtle-text">
                       Optional adaptation socket — connecting prepares the supported stage; unused sockets do not
@@ -117,7 +129,7 @@ export default function NodeInspectionDetails({
           .filter(([, param]) => param.description && !param.hidden)
           .map(([name, param]) => (
             <div key={name}>
-              <h3 className="font-semibold">{param.label || name}</h3>
+              <h3 className="font-semibold">{nodeFieldDisplayLabel(identity, name, param.label || name)}</h3>
               <p className="whitespace-pre-wrap text-modiff-subtle-text">{param.description}</p>
             </div>
           ))}

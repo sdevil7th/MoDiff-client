@@ -543,6 +543,9 @@ for (const [file, model] of [
       });
     }
     if (model === 'MiniMaxMusic3ModularPipeline') {
+      const setup = page.getByTestId(/^setup-node-/);
+      await expect(setup.getByRole('button', { name: 'Change model / task' })).toBeVisible();
+      await expect(setup.getByRole('button', { name: 'Adapters', exact: true })).toHaveCount(0);
       const generate = page.getByTestId(/^generate-node-/);
       await expect(generate).toHaveCount(1);
       await expect(generate.getByText('Generate', { exact: true }).first()).toBeVisible();
@@ -586,6 +589,9 @@ for (const [file, model] of [
     expect(restored.nodes).toEqual(api.nodes);
     expect(restored.paths).toEqual(api.paths);
     if (model === 'MiniMaxMusic3ModularPipeline') {
+      const setup = page.getByTestId(/^setup-node-/);
+      await expect(setup.getByRole('button', { name: 'Change model / task' })).toBeVisible();
+      await expect(setup.getByRole('button', { name: 'Adapters', exact: true })).toHaveCount(0);
       const generate = page.getByTestId(/^generate-node-/);
       await expect(generate).toHaveCount(1);
       await expect(generate.getByText('Steps', { exact: true }).first()).toBeVisible();

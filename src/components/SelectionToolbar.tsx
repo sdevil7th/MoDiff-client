@@ -115,7 +115,8 @@ export function SelectionToolbar({
   const [positioned, setPositioned] = useState(false);
   const [layoutRevision, setLayoutRevision] = useState(0);
   const viewport = useViewport();
-  const { flowToScreenPosition, getNodesBounds } = useReactFlow<CustomNodeType>();
+  const { flowToScreenPosition, getIntersectingNodes, getNodesBounds, screenToFlowPosition } =
+    useReactFlow<CustomNodeType>();
   const [saveNodeId, setSaveNodeId] = useState<string | null>(null);
   const [inspectNodeId, setInspectNodeId] = useState<string | null>(null);
   const sid = useWebsocketStore((state) => state.sid);
@@ -273,12 +274,11 @@ export function SelectionToolbar({
     const minTop = (canvasBounds?.top ?? 0) + TOOLBAR_MARGIN;
     const maxLeft = Math.max(minLeft, (canvasBounds?.right ?? window.innerWidth) - toolbarWidth - TOOLBAR_MARGIN);
     const maxTop = Math.max(minTop, (canvasBounds?.bottom ?? window.innerHeight) - toolbarHeight - TOOLBAR_MARGIN);
+    const aboveSelection = topAnchor.y - toolbarHeight - TOOLBAR_SELECTION_GAP;
+    const belowSelection = bottomAnchor.y + TOOLBAR_SELECTION_GAP;
+    const preferAbove = aboveSelection >= minTop;
     let left = topAnchor.x - toolbarWidth / 2;
-    let top = topAnchor.y - toolbarHeight - TOOLBAR_SELECTION_GAP;
-
-    if (top < minTop) {
-      top = bottomAnchor.y + TOOLBAR_SELECTION_GAP;
-    }
+    let top = preferAbove ? aboveSelection : belowSelection;
 
     left = Math.max(minLeft, Math.min(left, maxLeft));
     top = Math.max(minTop, Math.min(top, maxTop));
@@ -287,15 +287,15 @@ export function SelectionToolbar({
       .closest<HTMLElement>('[data-canvas-workspace]')
       ?.querySelector<HTMLElement>(ACTIVITY_OVERLAY_SELECTOR)
       ?.getBoundingClientRect();
-    if (
+    const overlapsActivity = (x: number, y: number) =>
       activity &&
       activity.width > 0 &&
       activity.height > 0 &&
-      left < activity.right + TOOLBAR_MARGIN &&
-      left + toolbarWidth > activity.left - TOOLBAR_MARGIN &&
-      top < activity.bottom + TOOLBAR_MARGIN &&
-      top + toolbarHeight > activity.top - TOOLBAR_MARGIN
-    ) {
+      x < activity.right + TOOLBAR_MARGIN &&
+      x + toolbarWidth > activity.left - TOOLBAR_MARGIN &&
+      y < activity.bottom + TOOLBAR_MARGIN &&
+      y + toolbarHeight > activity.top - TOOLBAR_MARGIN;
+    if (activity && overlapsActivity(left, top)) {
       // Clamping an off-screen selection to the canvas edge must not cover
       // activity controls, or leave node actions underneath the opened list.
       const above = activity.top - toolbarHeight - TOOLBAR_MARGIN;
@@ -304,13 +304,36 @@ export function SelectionToolbar({
       else if (right <= maxLeft) left = Math.max(left, right);
     }
 
+    const alternativeTop = preferAbove ? belowSelection : aboveSelection;
+    if (alternativeTop >= minTop && alternativeTop <= maxTop && !overlapsActivity(left, alternativeTop)) {
+      const overlapsCard = (y: number) => {
+        const start = screenToFlowPosition({ x: left, y }, { snapToGrid: false });
+        const end = screenToFlowPosition({ x: left + toolbarWidth, y: y + toolbarHeight }, { snapToGrid: false });
+        return getIntersectingNodes({ ...start, width: end.x - start.x, height: end.y - start.y }).some(
+          (node) =>
+            !node.hidden &&
+            node.measured?.width &&
+            node.measured?.height &&
+            node.data.type !== 'group' &&
+            node.data.type !== 'loop' &&
+            !node.data.blockInstanceV2?.presentation.expanded &&
+            !node.data.blockProjectionContainerExpanded,
+        );
+      };
+      // Stay next to the selection when the preferred side would intercept a
+      // neighboring node and the opposite side is clear.
+      if (overlapsCard(top) && !overlapsCard(alternativeTop)) top = alternativeTop;
+    }
+
     toolbar.style.setProperty('--modiff-selection-toolbar-x', `${Math.round(left)}px`);
     toolbar.style.setProperty('--modiff-selection-toolbar-y', `${Math.round(top)}px`);
     setPositioned(true);
   }, [
     flowToScreenPosition,
+    getIntersectingNodes,
     getNodesBounds,
     layoutRevision,
+    screenToFlowPosition,
     selectedNodes,
     viewport.x,
     viewport.y,

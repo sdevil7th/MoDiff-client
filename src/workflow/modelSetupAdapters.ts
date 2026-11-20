@@ -14,7 +14,7 @@ import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibili
 import { hasInlineScalarControl } from '../studio/inlineScalarControl';
 import { MAX_ORDERED_ADAPTERS, orderedAdapterChainLinks } from '../studio/adapterChainLinks';
 import { parseImageAdapterAuthoringPolicy } from '../studio/optionalRuntimes';
-import { declaredImagePipelineStageTail } from './operationScope';
+import { declaredImagePipelineStageTail, operationScope } from './operationScope';
 import { deepEqual } from '../utils/deepEqual';
 import { selectedAudioAdapterPolicy } from './selectedAudioAdapterAuthority';
 import {
@@ -148,6 +148,27 @@ export function modelSetupAdapterFields(node: CustomNodeType) {
         !field.display?.startsWith('ui_'),
     ),
   );
+}
+
+/** The generic Modular loader's LoRA socket can also exist on non-image
+ * workflows. Only a connected, declared media output establishes relevance. */
+function nativeNonImageAdapterRoute(chain: ReturnType<typeof modelSetupAdapterChain>): boolean {
+  if (!chain.native) return false;
+  try {
+    const outputs = operationScope(chain.unpacked.graph, chain.owner.id).flatMap((node) =>
+      node.data.operationAuthoring!.operation.ports.filter(
+        (port) => port.direction === 'output' && port.semantics?.kind === 'media',
+      ),
+    );
+    return outputs.length > 0 && outputs.every((port) => !port.types.includes('image'));
+  } catch {
+    // Keep existing diagnostics when ownership is incomplete or ambiguous.
+    return false;
+  }
+}
+
+export function showModelSetupAdapterControls(chain: ReturnType<typeof modelSetupAdapterChain>): boolean {
+  return chain.adapters.length > 0 || Boolean(chain.native && chain.prefix) || !nativeNonImageAdapterRoute(chain);
 }
 
 export type ModelSetupAdapterAuthority = {
@@ -367,7 +388,9 @@ function modelSetupAdapterAuthoringLimit(
         ),
     )
   )
-    return 'Select a declared image workflow before adding LoRA.';
+    return nativeNonImageAdapterRoute(chain)
+      ? 'This workflow has no reviewed inline LoRA editing.'
+      : 'Select a declared image workflow before adding LoRA.';
   const fields = owner.data.params;
   const value = (name: string) =>
     Object.prototype.hasOwnProperty.call(fields, name) &&

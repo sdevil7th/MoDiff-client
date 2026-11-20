@@ -86,6 +86,7 @@ const PRESENTATIONS: Record<string, Presentation> = {
   'modules.Primitive.ExportData': { label: 'Export Data', previous: ['Export'] },
   'modules.Video.Export': { label: 'Export Video', previous: ['Export'] },
   'modules.Video.ExportAsset': { label: 'Export Video Asset', previous: ['Export Retained Video Asset', 'Export'] },
+  'modules.Spandrel.Upscaler': { label: 'Upscale Image or Video', previous: ['Upscale with model'] },
   'modules.DiffusersVideo.Generate': {
     label: 'Generate Video',
     previous: ['Diffusers Video Generate', 'Generate video'],
@@ -107,6 +108,37 @@ const PRESENTATIONS: Record<string, Presentation> = {
     previous: ['Diffusers Video + Audio Generate', 'Generate video + audio'],
   },
 };
+
+const FIELD_PRESENTATIONS: Record<string, Record<string, readonly [string, string]>> = {
+  'modules.VideoConditioning.Normalize': {
+    video: ['Video', 'Source frames'],
+    num_frames: ['Frames', 'Target frames'],
+    output: ['Video', 'Normalized video'],
+    frames_out: ['Frames', 'Actual frame count'],
+  },
+  'modules.ModularDiffusers.Scheduler': {
+    scheduler_in: ['Scheduler', 'Base scheduler'],
+    scheduler: ['Scheduler', 'Scheduler type'],
+    scheduler_out: ['Scheduler', 'Configured scheduler'],
+  },
+  'modules.Video.MuxAudioAsset': {
+    fit: ['Duration', 'Audio fit'],
+    duration_seconds: ['Duration', 'Measured duration (s)'],
+  },
+  'modules.DiffusersAudio.Generate': {
+    sample_rate: ['Sample Rate', 'Requested sample rate'],
+    sample_rate_out: ['Sample Rate', 'Actual sample rate'],
+  },
+  'modules.Audio.FitDuration': {
+    target_sample_rate: ['Target SR', 'Target sample rate'],
+  },
+};
+
+/** Improve built-in captions at render time while keeping authored aliases and field IDs. */
+export function nodeFieldDisplayLabel(identity: string, field: string, label: string): string {
+  const presentation = FIELD_PRESENTATIONS[identity]?.[field];
+  return presentation?.[0] === label ? presentation[1] : label;
+}
 
 /** Built-in composite metadata carries an exact runtime key, not a user title. */
 export function builtinNodeDisplayLabel(identity: string, fallback: string) {

@@ -18,6 +18,7 @@ import {
   modelSetupAdapterEditUnavailable,
   modelSetupAdapterFields,
   planModelSetupAdapterEdit,
+  showModelSetupAdapterControls,
 } from '../workflow/modelSetupAdapters';
 import NodeContent from './NodeContent';
 
@@ -58,6 +59,7 @@ export default function ModelSetupAdapterControls({
   let editUnavailable: string | null = null;
   try {
     chain = modelSetupAdapterChain(graph, node.id);
+    if (!showModelSetupAdapterControls(chain)) return null;
     addUnavailable = modelSetupAdapterAddUnavailable(chain, authority);
     editUnavailable = modelSetupAdapterEditUnavailable(chain, authority);
   } catch (failure) {

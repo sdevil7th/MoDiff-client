@@ -509,6 +509,7 @@ function getIcon(category: string) {
     case 'embedding':
       return <LayoutGrid size={16} />;
     case 'upscaler':
+    case 'image & video':
       return <Maximize size={16} />;
     case 'image_filter':
       return <Filter size={16} />;

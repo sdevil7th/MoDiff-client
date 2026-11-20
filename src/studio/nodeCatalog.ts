@@ -103,6 +103,7 @@ const GENERIC_NODE_KEYS = new Set([
   'modules.ModularDiffusers.Scheduler',
   'modules.ModularDiffusers.Guider',
   'modules.ModularDiffusers.QuantizationConfigNode',
+  'modules.Spandrel.Upscaler',
 ]);
 
 export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
@@ -165,6 +166,7 @@ function textIncludesAny(text: string, values: string[]) {
 }
 
 function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
+  if (nodeKey(node) === 'modules.ModularDiffusers.ImageEncode') return 'Condition';
   const text = `${key} ${node.category} ${node.label}`.toLowerCase();
   if (textIncludesAny(text, ['adapter', 'lora'])) return 'Adapters';
   if (textIncludesAny(text, ['export', 'save'])) return 'Export';
@@ -201,6 +203,7 @@ function runtimeKindForNode(node: NodeData, key: string): NodeRuntimeKind {
 export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCatalogEntry {
   const runtimeKind = runtimeKindForNode(node, key);
   const visibility = visibilityForNode(node, key);
+  const surfaceCategory = categoryFromNode(node, key);
   const isDiffusersBacked =
     runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated' || runtimeKind === 'experimental_diffusers';
   const specializedReason =
@@ -216,14 +219,14 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
     label: nodeDisplayLabel(node),
     aliases: nodeSearchAliases(node),
     description: node.description,
-    surfaceCategory: categoryFromNode(node, key),
+    surfaceCategory,
     visibility,
     runtimeKind,
     isDiffusersBacked,
     acceleratorStrategy: runtimeKind === 'diffusers_accelerated' ? 'accelerated Diffusers strategy' : undefined,
     specializedReason,
     node,
-    groupPath: nodeBrowsePath(node, categoryFromNode(node, key)),
+    groupPath: nodeBrowsePath(node, surfaceCategory),
   };
 }
 
@@ -259,6 +262,17 @@ export function compareNodeSurfaceCategories(left: NodeSurfaceCategory, right: N
 function nodeBrowsePath(node: NodeData, operation: NodeSurfaceCategory) {
   const module = node.module.toLowerCase();
   const category = (node.category ?? '').toLowerCase();
+  if (
+    category === 'upscaler' &&
+    Object.values(node.params).some(
+      (field) =>
+        (field.display === 'input' || field.isInput) &&
+        Array.isArray(field.type) &&
+        field.type.includes('image') &&
+        field.type.includes('video'),
+    )
+  )
+    return ['Image & Video', 'Upscale'];
   let modality = 'Data & Utilities';
   if (/threed|three_d|3d/u.test(`${module} ${category}`)) modality = '3D';
   else if (/audio|speech/u.test(`${module} ${category}`)) modality = 'Audio';

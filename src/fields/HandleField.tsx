@@ -18,6 +18,9 @@ export default function HandleField(props: FieldProps) {
   const position = props.handlePosition ?? (props.fieldType === 'output' ? Position.Right : Position.Left);
   const textAlignClassName = props.fieldType === 'output' ? 'text-right' : 'text-left';
   const isCompact = Boolean(props.compactHandle);
+  const wrapLabel =
+    props.fieldOptions?.wrapConnectionLabel === true ||
+    (props.fieldType === 'output' && props.fieldKey.startsWith('iteration_previous__'));
   const updateNodeInternals = useUpdateNodeInternals();
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -114,7 +117,7 @@ export default function HandleField(props: FieldProps) {
         <div
           className={cx(
             'text-modiff-control mx-0.5 px-2 text-modiff-subtle-text',
-            props.fieldOptions?.wrapConnectionLabel === true ? 'break-words' : 'truncate',
+            wrapLabel ? 'break-words' : 'truncate',
             textAlignClassName,
           )}
           title={labelTitle}

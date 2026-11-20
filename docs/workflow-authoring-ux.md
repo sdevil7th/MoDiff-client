@@ -64,6 +64,12 @@ be shared safely. Opening a saved workflow alone does not rewrite its interface.
 Model and task changes retain a repaired shared connection when the new route
 can retain the supplier and its compatible consumers.
 
+The node palette lists **Encode Image** under Models & Components → Condition.
+Find the shared **Upscale Image or Video** node under Image & Video → Upscale,
+or search by either media type. The Normalize Video, Scheduler, audio mux and
+audio generation cards distinguish their controls from the results available
+on their sockets.
+
 Curated fresh image recipes can request an exact backend `authoringRecipeId` on
 the ordinary operation-starter endpoint. Its optional hash-covered `authoring`
 record uses the existing role, edge and semantic form-binding tuples, plus
@@ -224,7 +230,11 @@ chosen settings without claiming Auto qualification.
 
 ## Change the model
 
-### Image Model Setup adapters
+### Model Setup adapters
+
+An empty Modular setup with a connected, declared non-image output hides the
+image adapter section. Existing adapter rows and connected suppliers remain
+visible. Direct audio workflows use their own declared adapter policy.
 
 **Add LoRA** requires the selected image model's current backend capability,
 execution profile, exact repository/revision pair and registered adapter sockets
@@ -448,3 +458,18 @@ documents omitted from the browser cache remain in My workflows; clean
 acknowledged drafts remain in Recovery drafts. If the active
 workflow or unsaved edits alone exceed browser capacity, the existing Save or
 export warning remains in effect.
+
+## Guidance model connections
+
+The standalone Guider exposes its choice of guidance algorithm and its
+model-specific controls after a connected Denoise stage supplies a model
+identity accepted by the Guider. General guidance controls remain editable
+while the model connection is absent. The canvas and Parameters view show
+where to reconnect. The Interface view records the Layers socket and its
+dependency on a model connection.
+
+Removing the model connection keeps authored guidance values and any existing
+Layers wire. A connected Layers socket stays visible. Undoing the removal or
+reconnecting the same supported model restores the authored settings. The
+editor applies the same presentation rules to older saved workflows and
+uses the current registry to check which model identities the Guider accepts.

@@ -185,9 +185,10 @@ The attachment stays in the same graph and is one Undo/Redo transaction;
 unsupported task changes still require review. Existing saved graphs are not
 rewritten on open, and missing source files continue to block Run.
 
-Model Setup reports when its inline LoRA editor does not support the selected
-pipeline type. This is separate from a graph with shared or missing consumers;
-viewing the limitation does not alter the graph or grant adapter support.
+Model Setup shows inline adapter controls where they apply. A native workflow
+with declared non-image outputs omits the empty image LoRA panel. Existing
+adapter rows and external connections remain inspectable, and supported audio
+routes retain their declared adapter controls.
 
 Recorded ordinary video stage inputs keep condition strength and denoise
 strength separate. A source-video pixel digest identifies the ordered frozen
@@ -198,12 +199,11 @@ history reload without borrowing values from the current form.
 ## Audio stages
 
 The same stage actions offer **Group model setup** for eligible direct audio
-loaders and their exclusive configuration/adapter nodes. Native MiniMax retains
-Semantic Generation and Denoise; **Group audio output** combines its real decoder
-and Export Audio node. The group uses the existing player, file export and
-inspection/interface controls. Direct whole-pipeline Generate operations retain
-their separate exporter. Source audio and meaningful processing nodes remain
-connected outside those groups.
+loaders and their exclusive configuration/adapter nodes. Native MiniMax keeps
+**Generate Semantics** for its song structure and uses one **Generate** card for
+denoising and decoding. **Audio Output** holds the file export and player. Direct
+whole-pipeline Generate operations also retain their separate exporter. Source
+audio and other processing nodes remain connected outside those stages.
 
 Selected ACE branches can expose one owned adapter row when the backend declares
 the exact task, model revision and registered transport. Capacity restricts Add;

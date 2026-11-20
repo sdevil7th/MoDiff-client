@@ -300,12 +300,44 @@ test('actual published audio policy parses without changing its false broad flag
     );
 });
 
+test('the native audio setup hides only its empty image adapter section', async () => {
+  const row = fixture.recipes.find((item) => item.id === 'minimax:text_to_audio');
+  const { graph, root, chain } = setup(row);
+  const original = structuredClone(graph);
+  assert.equal(chain.native, true);
+  assert.equal(adapters.showModelSetupAdapterControls(chain), false);
+  assert.match(adapters.modelSetupAdapterAddUnavailable(chain, authority), /no reviewed inline LoRA editing/);
+  assert.deepEqual(graph, original);
+
+  const { createNodeFromRegistry } = await server.ssrLoadModule('/src/workflow/nodeFactory.ts');
+  const adapter = createNodeFromRegistry('modules.ModularDiffusers.Lora', fixture.registry, { x: 200, y: 0 });
+  const input = root.data.blockInstanceV2.effectiveInterface.boundary.inputs.find(
+    (port) => port.binding.fieldOrPortId === 'lora_list',
+  );
+  assert.ok(adapter && input);
+  const connected = {
+    ...graph,
+    nodes: [...graph.nodes, adapter],
+    edges: [
+      ...graph.edges,
+      { id: 'external-adapter', source: adapter.id, sourceHandle: 'lora', target: root.id, targetHandle: input.portId },
+    ],
+  };
+  const saved = structuredClone(connected);
+  const preserved = adapters.modelSetupAdapterChain(connected, root.id);
+  assert.deepEqual(preserved.prefix, { source: adapter.id, sourceHandle: 'lora' });
+  assert.equal(adapters.showModelSetupAdapterControls(preserved), true);
+  assert.match(adapters.modelSetupAdapterEditUnavailable(preserved, authority), /no reviewed inline LoRA editing/);
+  assert.deepEqual(connected, saved);
+});
+
 test('actual selected audio tasks and both own repositories authorize one populated row and safe recovery', async (t) => {
   for (const row of fixture.recipes.filter(
     (item) => item.starter.pipelineClass === 'AceStepPipeline' && item.id !== 'ace:ACE-Step-Base:audio_variation',
   ))
     await t.test(row.id, () => {
       const { graph, root, chain } = setup(row);
+      assert.equal(adapters.showModelSetupAdapterControls(chain), true);
       assert.equal(adapters.modelSetupAdapterAddUnavailable(chain, authority), null);
       const next = adapters.planModelSetupAdapterEdit(
         graph,

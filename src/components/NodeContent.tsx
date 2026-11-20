@@ -31,7 +31,9 @@ import { blockControlConnectionNotesV2 } from '../studio/blockControlConnections
 import { FieldFrame } from '../ui/FieldFrame';
 import { PreviewEmptyState } from '../ui/PreviewFrame';
 import { operationOwnsModel } from '../workflow/operationContracts';
+import { nodeFieldDisplayLabel } from '../workflow/nodePresentation';
 import { fileBackedMediaPreviewUrl } from '../studio/outputUtils';
+import { unresolvedSignalControls } from '../workflow/signalControlPresentation';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -214,8 +216,13 @@ const NodeContent = memo(function NodeContent({
   // Workflow Auto plans resources without hiding manually authored controls.
   const autoModeActive = studioResourceMode === 'auto' && controlledStudioNode;
   const autoFormPatch = formPatchForAutoCandidate(selectedCandidate, studioForm);
+  const identity = `${module}.${action}`;
+  const signalControls = useFlowStore(
+    useShallow((state) => unresolvedSignalControls(nodeId, nodesRegistry[identity]?.params, state)),
+  );
   const fields = Object.entries(params).flatMap(([key, data]: [string, NodeParams]) => {
-    const label = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
+    const declaredLabel = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
+    const label = nodeFieldDisplayLabel(identity, key, declaredLabel);
     const display = data.isInput ? 'input' : data.display || '';
     const dataType = (
       Array.isArray(data.type) && data.type.length > 0 ? data.type[0] : data.type || 'string'
@@ -226,7 +233,7 @@ const NodeContent = memo(function NodeContent({
       key,
       display,
       blockRuntimeOptionPresentation(data.options || [], key, data, graphNode, blockOwner, nodesRegistry) ??
-        registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[`${module}.${action}`]?.params),
+        registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[identity]?.params),
     );
     const fieldType = getFieldType(display, dataType, options);
     // A managed model choice already resolves the repository, implementation
@@ -236,7 +243,7 @@ const NodeContent = memo(function NodeContent({
     // low-level/custom contract authoring.
     const derivedPipelineType =
       key === 'model_type' && operationOwnsModel(graphNode?.data.operationAuthoring?.operation);
-    const hidden = Boolean(data.hidden || derivedPipelineType);
+    const hidden = Boolean(data.hidden || derivedPipelineType || signalControls.has(key));
     const configuredValue = data.value ?? data.default;
     const selectedFile = params.file?.value ?? params.file?.default;
     let fileBackedLoaderPreview: string | string[] | undefined;
@@ -293,6 +300,7 @@ const NodeContent = memo(function NodeContent({
       step: data.step,
       fieldOptions: {
         ...data.fieldOptions,
+        ...(label !== declaredLabel ? { wrapConnectionLabel: true } : {}),
         ...(connectionNotes[key] ? { connectedControlNote: connectionNotes[key] } : {}),
       },
       artifacts: data.artifacts,
@@ -381,6 +389,12 @@ const NodeContent = memo(function NodeContent({
   }
 
   const renderFields = mode === 'controls' ? controls : [...controls, ...connectors];
+  const signalNotes = new Set(
+    renderFields.flatMap(({ props }) => {
+      const note = signalControls.get(props.fieldKey);
+      return note ? [note] : [];
+    }),
+  );
   // Keep field ownership stable across presentations. Moving a control between
   // parents remounts its initialization hook and can repeat backend actions.
   const mainFields = renderFields.filter(({ surface }) => surface === 'main');
@@ -411,6 +425,11 @@ const NodeContent = memo(function NodeContent({
       ) : null}
       {encodeImageSummary}
       {resolutionNotice}
+      {[...signalNotes].map((note) => (
+        <p className="px-2 py-1 text-xs text-modiff-subtle-text" key={note} role="note">
+          {note}
+        </p>
+      ))}
       {orderedMainFields}
       {orderedInternalFields.length > 0 && (
         <div className={collapseAdvanced ? 'hidden' : 'contents'}>{orderedInternalFields}</div>
