@@ -257,6 +257,7 @@ export type StudioTemplateId =
   | 'spandrel_x2_synthetic_gradient'
   | 'whisper_tiny_blue_cup_transcription'
   | 'lcm_dawn_alpine_lake'
+  | 'sana_sprint_monochrome_tiger'
   | 'minimax_h3_image_old_town_cat'
   | 'flux3_klein_fp8r512_text_to_image'
   | 'flux3_klein_fp8r512_single_reference_edit'

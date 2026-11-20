@@ -715,6 +715,14 @@ const RETAINED_AUTHORING_ARCHIVES = new Map([
       sha256: '5b07f097ab9706ce5ce7f9de8c1e93c2860adf5712b9c874237bea0e5739f83c',
     },
   ],
+  [
+    'SanaSprintPipeline:edit_image',
+    {
+      descriptorSha256: 'ec340d225ca8eae07996fc5f93e3561cd25c82e80d1229a3adca1f648ea8d20e',
+      bytes: 4739,
+      sha256: '47a822a576ca20855d10311136e51651c5a2765bdd6c7fb3d79f8ab781bb0c0f',
+    },
+  ],
 ]);
 
 function archivedCanonicalAuthoring(backendRoot, workflowId, evidencePath) {
@@ -791,8 +799,9 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     return readCanonicalSpeechEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
   }
   if (
-    evidence.format === 'modiff.private.lcm-source-bound-edit.v1' &&
-    workflowId === 'LatentConsistencyModelPipeline:edit_image'
+    ['modiff.private.lcm-source-bound-edit.v1', 'modiff.private.direct-image-edit-source-bound.v1'].includes(
+      evidence.format,
+    )
   ) {
     const { readPrivateImageEditEvidence } = await import('./private-image-edit-evidence.mjs');
     return readPrivateImageEditEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });

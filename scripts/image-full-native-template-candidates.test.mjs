@@ -147,9 +147,13 @@ test('two experimental Custom recipes extend image coverage while preserving the
     54,
   );
   const imageTemplates = publicTemplates.filter((item) => item.example?.mediaType === 'image');
-  const retainedLake = imageTemplates.find(({ id }) => id === 'lcm_dawn_alpine_lake');
-  assert.equal(retainedLake?.example.status, 'unverified');
-  assert.equal(imageTemplates.filter((item) => item !== retainedLake).length, 69);
+  const retainedEdits = ['lcm_dawn_alpine_lake', 'sana_sprint_monochrome_tiger'];
+  for (const id of retainedEdits) {
+    const template = imageTemplates.find((item) => item.id === id);
+    assert.equal(template?.example.status, 'unverified');
+    assert.equal(template.readinessPolicy, 'requires_input');
+  }
+  assert.equal(imageTemplates.filter(({ id }) => !retainedEdits.includes(id)).length, 69);
   for (const template of candidates) {
     assert.equal(
       publicTemplates.some((item) => item.id === template.id),

@@ -243,6 +243,20 @@ test('the LCM Edit audit recognizes a target caption with a bound source and no 
   assert.equal(qualityModule.getTemplateNegativePolicy({ ...template, mode: 'text_to_image' }).requirement, 'required');
 });
 
+test('the retained Sana Sprint Edit requires a target caption and exactly one required source', () => {
+  const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'sana_sprint_monochrome_tiger');
+  assert.ok(template);
+  const audit = qualityModule.auditTemplateQuality(template);
+  assert.equal(audit.passed, true);
+  assert.equal(audit.negative.policy.declarationId, 'sana-sprint-edit-no-negative-input');
+  assert.deepEqual(audit.matchedSemanticGroups, ['source_role', 'focal_content', 'spatial_design', 'visual_treatment']);
+  const noSource = qualityModule.auditTemplateQuality({ ...template, inputBindings: [] });
+  assert.ok(noSource.issues.some((issue) => issue.semanticGroup === 'source_role'));
+  const noCaption = qualityModule.auditTemplateQuality({ ...template, prompt: '' });
+  assert.ok(noCaption.issues.some((issue) => issue.semanticGroup === 'visual_treatment'));
+  assert.equal(qualityModule.getTemplateNegativePolicy({ ...template, mode: 'text_to_image' }).requirement, 'required');
+});
+
 test('the Cosmos publisher blank-negative declaration does not extend to other same-class recipes', () => {
   const template = templatesModule.STUDIO_TEMPLATES.find((item) => item.id === 'cosmos3_super_text_to_image');
   assert.equal(qualityModule.getTemplateNegativePolicy(template).declarationId, 'cosmos3-super-publisher-conditioning');

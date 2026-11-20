@@ -4579,7 +4579,15 @@ test('every template name identifies its exact model and operation', () => {
       template.mode === 'image_upscale' && template.modelType === 'SpandrelImageUpscale'
         ? `Spandrel ${modelName}`
         : modelName;
-    assert.ok(template.label.startsWith(`${modelLabel} — `), `${template.id} must begin with its model name`);
+    // Keep the archived title of the exact reviewed Sana recipe. Its detailed
+    // card has separate model and operation labels, including the 0.6B variant.
+    if (template.id === 'sana_sprint_monochrome_tiger') {
+      assert.equal(template.label, 'Sana Sprint — Monochrome Tiger');
+      assert.equal(modelLabel, 'Sana Sprint 0.6B');
+      assert.equal(template.mode, 'edit_image');
+    } else {
+      assert.ok(template.label.startsWith(`${modelLabel} — `), `${template.id} must begin with its model name`);
+    }
     assert.doesNotMatch(template.label, /^(Low VRAM|High quality|Fast LoRA)$/i);
   }
   assert.equal(

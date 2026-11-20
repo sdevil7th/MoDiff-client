@@ -156,23 +156,27 @@ test(
 );
 
 test(
-  'the approved retained Whisper and LCM examples bind exact bytes and native observations',
-  { skip: !process.env.MODIFF_VERIFY_WHISPER_LCM_GALLERY_STAGE },
+  'approved retained speech and edit examples bind exact bytes and native observations',
+  { skip: !process.env.MODIFF_VERIFY_WHISPER_LCM_GALLERY_STAGE && !process.env.MODIFF_VERIFY_SANA_GALLERY_STAGE },
   async () => {
     const clientRoot = resolve(import.meta.dirname, '..');
     const backend = resolve(process.env.MODIFF_BACKEND_DIR || join(clientRoot, '..', 'MoDiff'));
-    const stage = resolve(process.env.MODIFF_VERIFY_WHISPER_LCM_GALLERY_STAGE);
+    const whisperLcmStage = process.env.MODIFF_VERIFY_WHISPER_LCM_GALLERY_STAGE;
+    const sanaStage = process.env.MODIFF_VERIFY_SANA_GALLERY_STAGE;
     const json = (root, path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
-    const registry = json(stage, 'public/template-gallery/manifest.json');
-    const source = json(stage, 'src/studio/templateAssetSource.json');
     const manifest = json(backend, 'data/workflow-library-manifest.json');
     const receiptRegistry = json(backend, 'data/qualification/release/canonical-workflow-run-receipts.v1.json');
     const runtime = await loadTemplateRuntime(clientRoot);
-    const read = createRetainedGalleryReleaseReader({ clientRoot: stage, source, registry });
-    for (const [id, workflowId] of [
-      ['whisper_tiny_blue_cup_transcription', 'HuggingFaceSpeechRecognitionModel:speech_to_text'],
-      ['lcm_dawn_alpine_lake', 'LatentConsistencyModelPipeline:edit_image'],
+    for (const [id, workflowId, stagePath] of [
+      ['whisper_tiny_blue_cup_transcription', 'HuggingFaceSpeechRecognitionModel:speech_to_text', whisperLcmStage],
+      ['lcm_dawn_alpine_lake', 'LatentConsistencyModelPipeline:edit_image', whisperLcmStage],
+      ['sana_sprint_monochrome_tiger', 'SanaSprintPipeline:edit_image', sanaStage],
     ]) {
+      if (!stagePath) continue;
+      const stage = resolve(stagePath);
+      const registry = json(stage, 'public/template-gallery/manifest.json');
+      const source = json(stage, 'src/studio/templateAssetSource.json');
+      const read = createRetainedGalleryReleaseReader({ clientRoot: stage, source, registry });
       const template = runtime.templates.find((item) => item.id === id);
       const entry = runtime.findManifestEntry(template, registry);
       const workflow = manifest.workflows.find((item) => item.id === workflowId);
@@ -218,8 +222,17 @@ test(
       } else {
         const review = json(stage, `public${entry.qualityReviewPath}`);
         assert.match(entry.beforePath, /\.before\.webp$/u);
-        assert.equal(review.scores.promptAdherence, 3);
+        const sana = id === 'sana_sprint_monochrome_tiger';
+        assert.equal(review.scores.promptAdherence, sana ? 4 : 3);
         assert.equal(review.maintainerAcceptance.decision, 'accepted_with_disclosed_limitations');
+        if (sana) {
+          const { observedEditControls, modelTerms } = provenance.association.recipeObservation;
+          assert.equal(observedEditControls.strength, 0.75);
+          assert.equal(modelTerms.textEncoder, 'Gemma-2-2B-IT');
+          const stock = structuredClone(provenance);
+          stock.association.recipeObservation.observedEditControls.strength = 0.5;
+          assert.ok(validateRetainedGalleryProvenance(stock, entry, check).length);
+        }
       }
     }
   },

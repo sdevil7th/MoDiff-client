@@ -65,6 +65,19 @@ const pinsByTemplate = new Map(
       beforeExtension: 'webp',
       outputExtension: 'webp',
     },
+    sana_sprint_monochrome_tiger: {
+      associationSha256: '71acd76b4251a090e7c311cdb2a7d60a1ca7efbb48740046c2a9c71d62c064ce',
+      backendSourceFingerprint:
+        'sha256:backend-source-v1:51be643787f3d45e45bed24df176137979ee0c8983fd86521cc2bcf45ad568ec',
+      backendContractFingerprint:
+        'sha256:backend-contract-v1:315617df789a8a5f57426692318e197c13786098718305edd1927471b5b9c194',
+      templateRevisionHash: '7f1ac6b38c8f3fcc701921fe7f500b4717c4f1bfdf5cc2f059e934972923296b',
+      capturedAt: '2026-11-20T16:56:35.946Z',
+      inputSize: { width: 1024, height: 1024 },
+      outputSize: { width: 1024, height: 1024 },
+      beforeExtension: 'webp',
+      outputExtension: 'webp',
+    },
   }),
 );
 

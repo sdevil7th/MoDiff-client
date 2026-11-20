@@ -1782,6 +1782,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/sana_sprint_monochrome_tiger.before.webp",
+      "size": 256118,
+      "sha256": "sha256:bytes:a99616590d7d8586a51a25bbe9e36b309f705bc80f2abaab04ac84f1e0d948e4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/spandrel_x2_synthetic_gradient.before.png",
       "size": 177,
       "sha256": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
@@ -2147,8 +2158,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 238353,
-      "sha256": "sha256:bytes:2c35cd09dc15607edc9fe8e8335d1150b88a74485bcb643363dd1839edd54199",
+      "size": 240709,
+      "sha256": "sha256:bytes:7aec0be529d3d015f42cc48d9eea0302afc8727097235fe3fa558bf73ec6c8c5",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -3954,6 +3965,24 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sana_sprint_monochrome_tiger.quality-review.json",
+      "size": 3320,
+      "sha256": "sha256:bytes:daad196fff80a6e8d2543deeb911b5cd94a027a746e8d7cc0a011dc687f8c50e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_sprint_monochrome_tiger.retained-template-provenance.json",
+      "size": 5206,
+      "sha256": "sha256:bytes:9da7a90fdc337893b768009a2d6c619c730606e2544c335f4c4d02d14137d1a9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/smollm2_rain_gauge.quality-review.json",
       "size": 2378,
       "sha256": "sha256:bytes:a457e4143d17eecd1af499e61a28e7df0533b4a6a8f67712182ab8a829115e09",
@@ -4870,6 +4899,17 @@
       ]
     },
     {
+      "path": "template-gallery/sana_sprint_monochrome_tiger.webp",
+      "size": 365662,
+      "sha256": "sha256:bytes:f22b1d5a1d2944949698b47eec10e7f8d04b23bc0746f4e089b41d78e9d94ff7",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/showcases/flux3-kolkata-bride.v1.json",
       "size": 5475,
       "sha256": "sha256:bytes:64a51a70baec5b4a99937ac3952e458450c7d699669b6f31241106da33f70b55",
@@ -5624,9 +5664,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:985e5c67b0e9791b04f400b287029bd3f54285e908107ca1951fb62070405fc8",
+  "assetSetId": "sha256:canonical-json:1345dca546164326458297b1a75b056cefa8fccb94da13f60301b3ddcd21ca3a",
   "status": "ready",
-  "assetCount": 568,
-  "totalBytes": 1037049297,
+  "assetCount": 572,
+  "totalBytes": 1037681959,
   "missingAssets": []
 }

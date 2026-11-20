@@ -116,6 +116,7 @@ const SEMANTIC_GROUPS: Record<TemplateSemanticGroup, SemanticGroupDefinition> = 
       /\b(worker|keeper|operator|courier|engineer|mechanic|artisan|veterinarian|musician|driver|researcher|watchman)\b/i,
       /\b(bottle|can|radio|camera|poster|logo|packag\w*|lamp|helmet|chair|headphone|observatory|greenhouse)\b/i,
       /\b(train|harbor|gallery|briefcase|coast|orchid|book\w*|speaker|bowl|mascot|carton|mug|cup|teapot)\b/i,
+      /\b(tiger|lion|leopard|elephant|fox|wolf|bear|deer|owl|eagle|wildlife)\b/i,
     ],
   },
   spatial_design: {
@@ -272,6 +273,12 @@ export const BLANK_NEGATIVE_DECLARATIONS: readonly BlankNegativeDeclaration[] = 
     reason: 'LCM image editing uses a source image and a positive target caption.',
   },
   {
+    id: 'sana-sprint-edit-no-negative-input',
+    modelTypes: ['SanaSprintPipeline'],
+    modes: ['edit_image'],
+    reason: 'The reviewed Sana Sprint image edit uses a source image and a positive target caption.',
+  },
+  {
     id: 'minimax-h3-image-no-negative-input',
     modelTypes: ['MiniMaxH3ImageModularPipeline'],
     executionProfileId: 'minimax-h3-image:official-provider:v1',
@@ -392,6 +399,9 @@ export function classifyTemplateQualityKind(template: Pick<StudioTemplate, 'mode
 export function getRequiredTemplateSemanticGroups(
   template: Pick<StudioTemplate, 'mode' | 'modelType'>,
 ): TemplateSemanticGroup[] {
+  if (template.modelType === 'SanaSprintPipeline' && template.mode === 'edit_image') {
+    return ['source_role', ...REQUIRED_SEMANTIC_GROUPS.image_generation];
+  }
   return [...REQUIRED_SEMANTIC_GROUPS[classifyTemplateQualityKind(template)]];
 }
 
@@ -527,15 +537,17 @@ export function analyzeTemplateNegativePrompt(
 }
 
 function imageTargetCaptionGroups(template: StudioTemplate, prompt: string): TemplateSemanticGroup[] {
-  if (
-    template.mode !== 'edit_image' ||
-    template.modelType !== 'LatentConsistencyModelPipeline' ||
-    !template.inputBindings?.some(
-      (binding) => binding.origin === 'user' && binding.field === 'referenceImages' && binding.count === 1,
-    )
-  ) {
-    return [];
+  if (template.mode !== 'edit_image') return [];
+  const reference = template.inputBindings?.find(
+    (binding) => binding.origin === 'user' && binding.field === 'referenceImages' && binding.count === 1,
+  );
+  if (!reference) return [];
+  // Sana Sprint takes a positive description of the finished image. The
+  // source's role is established by its explicit required image binding.
+  if (template.modelType === 'SanaSprintPipeline') {
+    return reference.requiredAt === 'workflow_start' ? ['source_role'] : [];
   }
+  if (template.modelType !== 'LatentConsistencyModelPipeline') return [];
   // This img2img route describes the desired image. A caption can refer to the
   // bound source and specify its new look without an instruction verb.
   const target =

@@ -202,7 +202,14 @@ test('private direct image edit graph binds exactly one empty file and one empty
   assert.deepEqual(expected.nodes.source.params.file.value, []);
   submitted.nodes.edit.params.strength.value = 0.7;
   assert.throws(invoke, /changed|differs outside/u);
+  const strengthVariant = { original: 0.8, retained: 0.7 };
+  const bindVariant = (variant = strengthVariant) =>
+    bindPrivateImageEditGraph({ expected, submitted, input, strengthVariant: variant });
+  assert.equal(bindVariant().edit.node.params.strength.value, 0.7);
+  assert.equal(expected.nodes.edit.params.strength.value, 0.8);
+  assert.throws(() => bindVariant({ ...strengthVariant, original: 0.5 }));
   submitted.nodes.edit.params.strength.value = 0.8;
+  assert.throws(() => bindVariant(), /differs outside/u);
   submitted.nodes.edit.params.image.sourceKey = 'mask';
   assert.throws(invoke, /differs outside/u);
   submitted.loops = [];

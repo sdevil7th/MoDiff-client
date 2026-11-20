@@ -42,6 +42,18 @@ const WHISPER_LCM_REVIEW_SCOPES = {
       'Accepted as a creative dawn reinterpretation with the disclosed terrain changes and stronger alpenglow.',
   },
 };
+const SANA_TEMPLATE_ID = 'sana_sprint_monochrome_tiger';
+const SANA_WORKFLOW_ID = 'SanaSprintPipeline:edit_image';
+const SANA_REVIEW_SCOPE_SHA256 = '09c91c7aa04229e591a86849d399dcf557ca61bdecfc3ac25e7b935795113263';
+const SANA_REVIEW_SCOPE = {
+  proofKind: 'real_backend_input_bound_model_variant',
+  input: `${SANA_TEMPLATE_ID}.before.webp`,
+  output: `${SANA_TEMPLATE_ID}.webp`,
+  decision: 'accepted_with_disclosed_limitations',
+  technicalRecipe: 'source_bound_image_edit',
+  acceptanceStatement:
+    'Accepted as a creative monochrome edit with the disclosed changes to facial proportions, stripes, crop and background.',
+};
 const SPANDREL_TEMPLATE_ID = 'spandrel_x2_synthetic_gradient';
 const SPANDREL_REVIEW_HASH = '357594a299efcda4b9b9e7c4fa65c3d016db3ffe1634fdfe8dfe360789c4d0d4';
 const SPANDREL_SCOPE = {
@@ -62,6 +74,91 @@ function readBoundedRecord(path) {
   return { value: JSON.parse(bytes), sha256: digest(bytes) };
 }
 
+function verifiedSanaRecipe(draft, native, recipe) {
+  const { evidence, receipt, evidenceRoot } = native;
+  const capture = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, evidence.capture).bytes);
+  const run = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, capture.runDetail).bytes);
+  const [nativeOutput] = run.outputs;
+  const [source] = capture.inputs;
+  const original = nativeOutput.resolvedExecutionInputs.nodes;
+  const parameters = (action, disposition) =>
+    Object.fromEntries(
+      Object.entries(original.find((node) => node.action === action).fieldAccounting.fields)
+        .filter(([, field]) => field.disposition === disposition)
+        .map(([key, field]) => [key, field.value]),
+    );
+  const loaded = parameters('LoadPipeline', 'consumed');
+  const execution = parameters('DiffusersExecutionRecipe', 'consumed');
+  const submittedLoaderSettings = {
+    dtype: loaded.dtype,
+    device: execution.device,
+    device_map: execution.device_map,
+    attention_backend: execution.attention_backend,
+    offload_mode: execution.offload_mode,
+    quantization_mode: loaded.quantization_mode,
+    low_cpu_mem_usage: loaded.low_cpu_mem_usage,
+    vae_slicing: execution.vae_slicing,
+    vae_tiling: execution.vae_tiling,
+  };
+  assert.equal(draft.format, 'modiff.gallery.retained-template-provenance-draft.v1');
+  assert.equal(draft.verificationStatus, 'pending_maintainer_review');
+  assert.equal(draft.evidenceDescriptorSha256, evidence.capture.sha256);
+  assert.equal(draft.nativeRuntimeFingerprint, run.task.runtimeFingerprint.fingerprint);
+  assert.equal(draft.originalGraphHash, receipt.graphHash);
+  assert.equal(`sha256:workflow-graph-v1:${draft.sourceGraphManifestSha256}`, receipt.canonicalWorkflowHash);
+  assert.equal(draft.verificationTimestamp, new Date(nativeOutput.createdAt).toISOString());
+  assert.equal(draft.canonicalDefaultsExecuted, receipt.canonicalDefaultsExecuted);
+  assert.deepEqual(draft.qualificationClaims, receipt.qualificationClaims);
+  assert.deepEqual(draft.modelSet, receipt.modelSet);
+  assert.equal(draft.effectivePipelineClass, loaded.pipeline_class);
+  assert.deepEqual(draft.submittedLoading, submittedLoaderSettings);
+  assert.deepEqual(draft.observedEditControls, parameters('Edit', 'consumed'));
+  assert.deepEqual(draft.inactiveAuthoredEditControls, parameters('Edit', 'inactive'));
+  assert.equal(draft.observedEditControls.prompt, recipe.template.prompt);
+  assert.equal(draft.observedEditControls.strength, 0.75);
+  assert.deepEqual(draft.controlledVariant.strength, { field: 'strength', from: 0.5, to: 0.75 });
+  const { width, height, mode, sha256 } = receipt.inputBinding.decodedImage;
+  assert.deepEqual(
+    [draft.source.width, draft.source.height, draft.source.decodedMode, draft.source.decodedSha256],
+    [width, height, mode, sha256],
+  );
+  assert.equal(draft.source.bytes, source.file.bytes);
+  assert.equal(draft.source.encodedSha256, receipt.inputBinding.sha256);
+  assert.deepEqual(
+    [draft.output.width, draft.output.height],
+    [receipt.decodedOutput.width, receipt.decodedOutput.height],
+  );
+  const { runtimeMeasurement } = run.task;
+  assert.equal(draft.runtime.backend, runtimeMeasurement.backend);
+  assert.equal(draft.runtime.resourceMode, run.task.runtimePreparation.resourceMode);
+  assert.equal(draft.runtime.executionDurationSeconds, receipt.executionDurationSeconds);
+  assert.equal(draft.runtime.peakAllocatedAcceleratorBytes, receipt.peakMemoryBytes);
+  assert.equal(draft.runtime.peakReservedAcceleratorBytes, runtimeMeasurement.peakReservedBytes);
+  return {
+    backendContractFingerprint: receipt.backendContractFingerprint,
+    recipeObservation: {
+      source: {
+        width,
+        height,
+        encodedSha256: draft.source.encodedSha256,
+        decodedSha256: sha256,
+        creation: draft.source.creation,
+      },
+      observedEditControls: draft.observedEditControls,
+      inactiveAuthoredEditControls: draft.inactiveAuthoredEditControls,
+      submittedLoaderSettings,
+      modelTerms: {
+        license: 'Apache-2.0',
+        licenseUrl:
+          'https://huggingface.co/Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers/blob/aa76e7f4f4928f378716b6716a2130fba3caf5b1/LICENSE',
+        textEncoder: 'Gemma-2-2B-IT',
+        textEncoderTermsUrl: 'https://ai.google.dev/gemma/terms',
+        textEncoderProhibitedUsePolicyUrl: 'https://ai.google.dev/gemma/prohibited_use_policy',
+      },
+    },
+  };
+}
+
 function verifiedTechnicalRecipe({ scope, recipe, candidate, native, reviewedRecipe, output, speech }) {
   const { bytes, ref } = reviewedRecipe;
   const { receipt } = native;
@@ -72,15 +169,16 @@ function verifiedTechnicalRecipe({ scope, recipe, candidate, native, reviewedRec
   assert.equal(draft.templateId, recipe.template.id);
   assert.equal(draft.workflowId, receipt.workflowId);
   assert.equal(draft.sourceTaskContractId, receipt.sourceTemplateId);
-  assert.equal(draft.runtimeFingerprint, receipt.runtimeFingerprint);
   assert.equal(draft.backendSourceFingerprint, receipt.backendSourceFingerprint);
-  assert.deepEqual(draft.observationLimits, receipt.observationLimits);
   assert.equal(
     draft.output.decodedMediaHash ?? `sha256:decoded-rgba:${draft.output.decodedSha256}`,
     output.decodedMediaHash,
   );
   assert.equal(`sha256:bytes:${draft.output.sha256 ?? draft.output.encodedSha256}`, output.outputEncodedSha256);
   assert.equal(draft.output.byteSize ?? draft.output.bytes, output.outputBytes);
+  if (scope === SANA_REVIEW_SCOPE) return verifiedSanaRecipe(draft, native, recipe);
+  assert.equal(draft.runtimeFingerprint, receipt.runtimeFingerprint);
+  assert.deepEqual(draft.observationLimits, receipt.observationLimits);
   const { templateLockHash, galleryTemplateLockHash, promptSettingsHash } = recipe.reviewedCatalogLock;
   if (scope.technicalRecipe === 'speech_transcription') {
     assert.equal(draft.format, 'modiff.gallery.retained-speech-review-draft.v1');
@@ -170,7 +268,9 @@ export function assessRetainedTemplateAssociation({
   const spandrel = template.id === SPANDREL_TEMPLATE_ID;
   const scope = spandrel
     ? SPANDREL_SCOPE
-    : (BOUND_REVIEW_SCOPES[template.id] ?? WHISPER_LCM_REVIEW_SCOPES[template.id]);
+    : template.id === SANA_TEMPLATE_ID
+      ? SANA_REVIEW_SCOPE
+      : (BOUND_REVIEW_SCOPES[template.id] ?? WHISPER_LCM_REVIEW_SCOPES[template.id]);
   assert.ok(scope, 'Retained Gallery template scope is not reviewed.');
   const { evidence, receipt, evidenceRoot, descriptorBytes } = native;
   assert.equal(candidate.templateId, template.id);
@@ -404,7 +504,9 @@ export function finalizeRetainedQualityReview({ association, draft, reviewer, re
       reviewer,
       acceptedAt: reviewedAt,
       statement:
-        WHISPER_LCM_REVIEW_SCOPES[association.templateId]?.acceptanceStatement ??
+        (association.templateId === SANA_TEMPLATE_ID
+          ? SANA_REVIEW_SCOPE.acceptanceStatement
+          : WHISPER_LCM_REVIEW_SCOPES[association.templateId]?.acceptanceStatement) ??
         (spandrel
           ? 'Accepted as a technical preview of the exact saved synthetic gradient and 2× delivery with the disclosed limitations.'
           : 'Accepted as a technical depth preview with the reviewed scores and the disclosed limits of the synthetic ramp.'),
@@ -540,6 +642,101 @@ export function readApprovedWhisperLcmBatch(args) {
   });
 }
 
+export async function readApprovedSanaReview({ approvalRoot, vite, nativeBySha }) {
+  const approvalPath = join(approvalRoot, 'approval.v1.json');
+  if (!existsSync(approvalPath)) return null;
+  const { value: approval, sha256: approvalHash } = readBoundedRecord(approvalPath);
+  assert.equal(
+    approvalHash,
+    '40060ba701188a6d287df07e0852c6497d109885495e6fc85a19e8371ef73906',
+    'Sana Sprint approval digest differs.',
+  );
+  assert.equal(approval.schemaVersion, 1);
+  assert.equal(approval.format, 'modiff.private.gallery-candidate-approval.v1');
+  assert.ok(typeof approval.reviewer === 'string' && approval.reviewer.trim());
+  assert.ok(Number.isFinite(Date.parse(approval.reviewedAt)));
+  assert.equal(approval.reviewScopeSha256, SANA_REVIEW_SCOPE_SHA256);
+  assert.equal(approval.candidates.length, 1);
+  const [candidate] = approval.candidates;
+  assert.equal(candidate.templateId, SANA_TEMPLATE_ID);
+  assert.equal(candidate.workflowId, SANA_WORKFLOW_ID);
+  const { value: scope, sha256: scopeHash } = readBoundedRecord(join(approvalRoot, 'review-scope.json'));
+  assert.equal(scopeHash, SANA_REVIEW_SCOPE_SHA256);
+  assert.equal(scope.status, 'pending_review_and_redistribution_rights');
+  assert.deepEqual(candidate.files, scope.files);
+  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts');
+  const { getTemplateLockHash, getPromptSettingsHash, getTemplateLockedSettings } = await vite.ssrLoadModule(
+    '/src/studio/templateExactness.ts',
+  );
+  const matches = RETAINED_GALLERY_TEMPLATES.filter(({ template }) => template.id === SANA_TEMPLATE_ID);
+  assert.equal(matches.length, 1);
+  const [recipe] = matches;
+  const { template } = recipe;
+  const settings = getTemplateLockedSettings(template);
+  assert.equal(canonicalJsonHash({ template, settings }), recipe.reviewedTemplateSha256);
+  const native = nativeBySha.get(recipe.originalReceiptSha256);
+  assert.ok(native, 'The approved original Sana Sprint receipt could not be verified.');
+  const before = SANA_REVIEW_SCOPE.input;
+  const after = SANA_REVIEW_SCOPE.output;
+  const review = `${SANA_TEMPLATE_ID}.proposed-review.json`;
+  const provenance = `${SANA_TEMPLATE_ID}.proposed-provenance.json`;
+  assert.equal(candidate.files.length, 4);
+  const files = new Map(
+    [before, after, review, provenance].map((name) => {
+      const refs = candidate.files.filter((item) => item.path === name);
+      assert.equal(refs.length, 1);
+      const [ref] = refs;
+      return [name, { ref, ...readCanonicalEvidenceFile(join(approvalRoot, 'reviewed'), ref, 2 * 1024 * 1024) }];
+    }),
+  );
+  const draftReview = JSON.parse(files.get(review).bytes);
+  assert.equal(draftReview.schemaVersion, 2);
+  assert.equal(draftReview.templateId, SANA_TEMPLATE_ID);
+  assert.equal(draftReview.reviewStatus, 'pending_maintainer_review');
+  assert.equal(draftReview.proposedDecision, SANA_REVIEW_SCOPE.decision);
+  assert.ok(!draftReview.reviewer && !draftReview.reviewedAt);
+  assert.equal(draftReview.graphHash, native.receipt.graphHash);
+  const capture = JSON.parse(readCanonicalEvidenceFile(native.evidenceRoot, native.evidence.capture).bytes);
+  const run = JSON.parse(readCanonicalEvidenceFile(native.evidenceRoot, capture.runDetail).bytes);
+  assert.equal(draftReview.nativeRuntimeFingerprint, run.task.runtimeFingerprint.fingerprint);
+  assert.equal(draftReview.modelRevision, `${template.modelArtifact.value}@${template.modelArtifact.revision}`);
+  assert.equal(draftReview.outputSha256, files.get(after).ref.sha256);
+  assert.equal(draftReview.sourceSha256, files.get(before).ref.sha256);
+  const association = assessRetainedTemplateAssociation({
+    recipe,
+    candidate: {
+      ...candidate,
+      sourceTaskContractId: recipe.sourceTaskTemplateId,
+      draftReviewSha256: files.get(review).ref.sha256,
+      draftProvenanceSha256: files.get(provenance).ref.sha256,
+    },
+    native,
+    galleryOutput: files.get(after),
+    galleryInput: files.get(before),
+    reviewedRecipe: files.get(provenance),
+    catalogLock: {
+      templateLockHash: getTemplateLockHash(template),
+      galleryTemplateLockHash: getTemplateLockHash(template, draftReview.modelRevision),
+      promptSettingsHash: getPromptSettingsHash(settings),
+    },
+  });
+  assert.equal(draftReview.decodedMediaHash, association.output.decodedMediaHash);
+  const qualityReview = finalizeRetainedQualityReview({
+    association,
+    draft: draftReview,
+    reviewer: approval.reviewer,
+    reviewedAt: approval.reviewedAt,
+  });
+  return {
+    association: { ...association, qualityReviewHash: galleryJsonHash(qualityReview) },
+    qualityReview,
+    recipe,
+    receipt: native.receipt,
+    outputBytes: files.get(after).bytes,
+    beforeBytes: files.get(before).bytes,
+  };
+}
+
 export async function readReviewedBoundTemplateAssociations({ approvalRoot, vite, nativeBySha }) {
   const current = await readReviewBatch({ approvalRoot, vite, nativeBySha, scopes: BOUND_REVIEW_SCOPES });
   const audited = await readApprovedWhisperLcmBatch({
@@ -547,8 +744,10 @@ export async function readReviewedBoundTemplateAssociations({ approvalRoot, vite
     vite,
     nativeBySha,
   });
+  const sana = await readApprovedSanaReview({ approvalRoot: join(approvalRoot, 'sana-sprint'), vite, nativeBySha });
+  const records = sana ? [...current, ...audited, sana] : [...current, ...audited];
   const associations = new Map();
-  for (const { association } of [...current, ...audited]) {
+  for (const { association } of records) {
     assert.ok(!associations.has(association.workflowId), 'Retained Gallery workflow association is duplicated.');
     associations.set(association.workflowId, association);
   }

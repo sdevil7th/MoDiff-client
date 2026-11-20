@@ -1110,11 +1110,12 @@ test('public provenance redacts removable Linux mounts while retaining public an
 });
 
 test('gallery harness loads all Studio templates from the TypeScript runtime', () => {
-  assert.equal(runtime.templates.length, 96);
+  assert.equal(runtime.templates.length, 97);
   const ids = new Set(runtime.templates.map((template) => template.id));
-  assert.equal(ids.size, 96);
+  assert.equal(ids.size, 97);
   assert.ok(ids.has('whisper_tiny_blue_cup_transcription'));
   assert.ok(ids.has('lcm_dawn_alpine_lake'));
+  assert.ok(ids.has('sana_sprint_monochrome_tiger'));
   assert.ok(ids.has('spandrel_x2_synthetic_gradient'));
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_h3_image_old_town_cat'));
   assert.ok(runtime.templates.some((template) => template.id === 'minimax_music3_chamber_pop'));

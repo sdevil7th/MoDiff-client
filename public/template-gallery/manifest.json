@@ -3028,6 +3028,37 @@
       "afterPath": "/template-gallery/lcm_dawn_alpine_lake.webp",
       "width": 512,
       "height": 512
+    },
+    {
+      "templateId": "sana_sprint_monochrome_tiger",
+      "promptSettingsHash": "ps_6cb5dccc",
+      "templateLockHash": "tpl_8be9c59d",
+      "modelRevision": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers@aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+      "runtimeFingerprint": "sha256:stable-runtime-v1:86cbd0c11653c4c599d5eb3c2559aa63a0a7ec8c205bc89d37bc67cb82e285fe",
+      "graphHash": "sha256:canonical-graph-v1:e69d5c8fa5e75c1387b8dae436e44c580d3b1eb31267946c26b98049e2f7132c",
+      "proofLockHash": "sha256:retained-template-association-v1:c750198e9b68ec712a04f992e93451f1e8023185f9992b63475b88f3aec2aeaa",
+      "backendSourceFingerprint": "sha256:backend-source-v1:51be643787f3d45e45bed24df176137979ee0c8983fd86521cc2bcf45ad568ec",
+      "backendContractFingerprint": "sha256:backend-contract-v1:315617df789a8a5f57426692318e197c13786098718305edd1927471b5b9c194",
+      "modelCommit": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+      "templateRevisionHash": "7f1ac6b38c8f3fcc701921fe7f500b4717c4f1bfdf5cc2f059e934972923296b",
+      "provenancePath": "/template-gallery/reviews/sana_sprint_monochrome_tiger.retained-template-provenance.json",
+      "provenanceHash": "sha256:canonical-json:edecb4d3879face43fcf6d23512307b1a078a688caa5f4d579dc6e2ce0e3afa2",
+      "outputPath": "/template-gallery/sana_sprint_monochrome_tiger.webp",
+      "thumbnailPath": "/template-gallery/sana_sprint_monochrome_tiger.webp",
+      "mediaHash": "sha256:decoded-rgba:abe5eb7eab08a9f78453c9aedbbb336af94d9c633efc4a5abb30eea5b8221a4f",
+      "mediaType": "image",
+      "verificationTimestamp": "2026-11-20T16:56:35.946Z",
+      "qualityReviewPath": "/template-gallery/reviews/sana_sprint_monochrome_tiger.quality-review.json",
+      "qualityReviewHash": "sha256:canonical-json:56f0a406162e07665a67c1d4126b437a328690dc3be104de4eead7888a37b647",
+      "verificationStatus": "reviewed",
+      "qualityReviewStatus": "approved_reviewed",
+      "reviewer": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-20T21:03:32.000Z",
+      "beforePath": "/template-gallery/inputs/sana_sprint_monochrome_tiger.before.webp",
+      "beforeMediaHash": "sha256:bytes:a99616590d7d8586a51a25bbe9e36b309f705bc80f2abaab04ac84f1e0d948e4",
+      "afterPath": "/template-gallery/sana_sprint_monochrome_tiger.webp",
+      "width": 1024,
+      "height": 1024
     }
   ]
 }

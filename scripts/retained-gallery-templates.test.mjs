@@ -106,6 +106,11 @@ function retainedTemplateGraph(recipe, sourceValue = recipe.inputFileName ?? aut
     const promptNode = nodes.find((node) => node.action === (template.mode === 'edit_image' ? 'Edit' : 'GenerateText'));
     assert.equal(promptNode.params.prompt.value, '');
     promptNode.params.prompt.value = template.prompt;
+    if (template.modelType === 'SanaSprintPipeline' && template.mode === 'edit_image') {
+      assert.equal(promptNode.params.strength.value, 0.5);
+      assert.equal(template.example.lockedSettings.strength, 0.75);
+      promptNode.params.strength.value = template.example.lockedSettings.strength;
+    }
   }
   return canonicalGraphIdentity(api);
 }
@@ -255,7 +260,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       const loader = api.nodes[binding.nodes[spec.roles.find(([, key]) => key.endsWith('.' + spec.loaderAction))[0]]];
       assert.deepEqual(loader.params.model_id.value, { source: 'hub', value: template.modelArtifact.value });
       assert.equal(loader.params.revision.value, template.modelArtifact.revision);
-      assert.equal(loader.params.dtype.value, 'float32');
+      assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');
       assert.equal(loader.params.device.value, 'cuda:0');
       if (audio) {
         const source = api.nodes[binding.nodes.loadAudio];
@@ -290,6 +295,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       }
       assert.equal(loader.params.quantization_mode.value, 'none');
       if (template.mode === 'edit_image') {
+        const locked = template.example.lockedSettings;
         const source = api.nodes[binding.nodes.loadImage].params;
         assert.deepEqual(source.file.value, input);
         assert.equal(source.alpha_channel.value, 'ignore');
@@ -302,19 +308,19 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         );
         assert.deepEqual(values, {
           prompt: template.prompt,
-          width: 1024,
-          height: 1024,
-          num_inference_steps: 4,
-          guidance_scale: 8.5,
-          strength: 0.8,
-          seed: 42,
-          output_type: 'pil',
+          width: locked.width,
+          height: locked.height,
+          num_inference_steps: locked.steps,
+          guidance_scale: locked.guidanceScale,
+          strength: locked.strength,
+          seed: template.example.lockedSeed,
+          output_type: locked.outputType,
         });
         assert.equal(edit.image.sourceId, binding.nodes.loadImage);
         assert.equal(edit.pipeline.sourceId, binding.nodes.diffusersImagePipeline);
         assert.equal(api.nodes[binding.nodes.preview].params.image.sourceId, binding.nodes.diffusersImageEdit);
         const controls = api.nodes[binding.nodes.diffusersRecipe].params;
-        assert.equal(controls.offload_mode.value, 'none');
+        assert.equal(controls.offload_mode.value, locked.offloadMode);
         assert.equal(controls.attention_backend.value, 'auto');
         assert.equal(controls.vae_slicing.value, true);
         assert.equal(controls.vae_tiling.value, true);
