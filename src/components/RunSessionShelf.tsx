@@ -169,7 +169,8 @@ export default function RunSessionShelf() {
   const hasActiveRun = sessionRuns.some((run) => run.status === 'running' || run.status === 'queued');
   const hasActiveDownload = Object.values(hfDownloadProgress).some(isHfDownloadActive);
   const hasActiveActivity = hasActiveRun || hasActiveDownload;
-  const [expanded, setExpanded] = useState(true);
+  const [disclosure, setDisclosure] = useState<boolean | null>(null);
+  const expanded = disclosure ?? hasActiveActivity;
   const contentId = useId();
   const [highlightDownloads, setHighlightDownloads] = useState(false);
   const [dismissedActivity, setDismissedActivity] = useState(restoredDismissedActivity);
@@ -177,13 +178,16 @@ export default function RunSessionShelf() {
 
   useEffect(() => {
     if (!hasActiveActivity) return undefined;
+    // Retain the visible result or failure of work seen in this page. An
+    // explicit collapse still takes precedence over active work.
+    setDisclosure((current) => current ?? true);
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [hasActiveActivity]);
 
   useEffect(() => {
     const handleShowDownloads = () => {
-      setExpanded(true);
+      setDisclosure(true);
       setHighlightDownloads(true);
       window.setTimeout(() => setHighlightDownloads(false), 1800);
     };
@@ -252,7 +256,7 @@ export default function RunSessionShelf() {
             aria-label={expanded ? 'Hide session activity' : 'Show session activity'}
             aria-expanded={expanded}
             aria-controls={contentId}
-            onClick={() => setExpanded((current) => !current)}
+            onClick={() => setDisclosure(!expanded)}
             className="h-auto! min-w-0 flex-1 gap-2 px-1 py-1"
           >
             <Clock3 size={15} className="text-hf-yellow" />

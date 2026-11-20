@@ -518,6 +518,30 @@ for (const [file, model] of [
       const loader = Object.values(api.nodes).find((node) => node.action === 'ModelsLoader')!;
       expect(loader.params).not.toHaveProperty('weight_format');
     }
+    if (model === 'WanImage2VideoModularPipeline') {
+      const encode = page.getByTestId(/^encoding-node-/).getByRole('group', { name: 'Node connectors' });
+      await expect(encode.getByText('Image *', { exact: true })).toBeVisible();
+      await expect(encode.getByText('Last Image', { exact: true })).toBeVisible();
+      const generate = page.getByTestId(/^generate-node-/).getByRole('group', { name: 'Node connectors' });
+      await expect(generate.getByText('VAE *', { exact: true })).toBeVisible();
+      const embedding = Object.values(api.nodes).find((node) => node.action === 'ImageEmbeddings')!;
+      const encoder = Object.values(api.nodes).find((node) => node.action === 'ImageEncode')!;
+      expect(embedding.params.image).toMatchObject({
+        sourceId: encoder.params.image.sourceId,
+        sourceKey: encoder.params.image.sourceKey,
+      });
+      expect(embedding.params.last_image).toMatchObject({
+        sourceId: encoder.params.last_image.sourceId,
+        sourceKey: encoder.params.last_image.sourceKey,
+      });
+      expect(embedding.params.image.sourceId).not.toBe(embedding.params.last_image.sourceId);
+      const denoise = Object.values(api.nodes).find((node) => node.action === 'Denoise')!;
+      const decode = Object.values(api.nodes).find((node) => node.action === 'DecodeLatents')!;
+      expect(denoise.params.vae).toMatchObject({
+        sourceId: decode.params.vae.sourceId,
+        sourceKey: decode.params.vae.sourceKey,
+      });
+    }
     if (model === 'MiniMaxMusic3ModularPipeline') {
       const generate = page.getByTestId(/^generate-node-/);
       await expect(generate).toHaveCount(1);

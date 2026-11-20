@@ -24,6 +24,7 @@ import { remapOperationAuthoring } from './operationSharedInputs';
 import { workflowTaskCategory } from './workflowTaskBrowser';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { hasInlineScalarControl } from '../studio/inlineScalarControl';
+import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { groupStoryboardShots } from './storyboardShotPresentation';
 
 import {
@@ -536,12 +537,86 @@ function sharedModelInput(port: BlockPortV2) {
   );
 }
 
-function retainsGeneratedModelBindings(
+function connectedStageInputKind(kind: VisualOperationGroup, { binding, valueType }: BlockPortV2) {
+  if (kind === 'inputs' && valueType === 'image' && ['image', 'last_image'].includes(binding.fieldOrPortId))
+    return 'media';
+  if (kind === 'generate' && valueType === 'diffusers_auto_model' && binding.fieldOrPortId === 'vae')
+    return 'component';
+  return null;
+}
+
+/** An opening and closing frame are separate inputs. The same typed frame may
+ * be consumed by distinct encoders. Legacy component recipes use the same
+ * contract but omit operation hints, so recognize their exact generic leaves. */
+function compatibleStageInputConsumers(kind: VisualOperationGroup, port: BlockPortV2, consumers: CustomNodeType[]) {
+  const semantics = connectedStageInputKind(kind, port);
+  if (!semantics || consumers.length !== 2) return false;
+  const field = port.binding.fieldOrPortId;
+  const fields = consumers.map((node) => node.data.params[field]);
+  if (
+    fields.some(
+      (param) =>
+        param?.type !== port.valueType ||
+        (param.display !== 'input' && !param.isInput) ||
+        (param.value ?? param.default) != null ||
+        param.requiredWhen ||
+        param.onSignal ||
+        param.signal?.value !== undefined ||
+        param.signalCompatibility ||
+        param.connectionRole ||
+        param.connectionRoleSelector,
+    ) ||
+    fields[0]!.required !== fields[1]!.required ||
+    fields[0]!.label !== fields[1]!.label ||
+    canonicalBlockStringifyV2(fields[0]!.signal ?? null) !== canonicalBlockStringifyV2(fields[1]!.signal ?? null)
+  )
+    return false;
+  const declared = consumers.map((node) => operationAuthoring(node)?.operation);
+  if (declared[0] && declared[1]) {
+    const [first, second] = [declared[0], declared[1]];
+    if (first.pipelineClass !== second.pipelineClass || first.task !== second.task) return false;
+    const roles = new Set([first.nodeType, second.nodeType]);
+    if (
+      semantics === 'media' &&
+      !(roles.has('vae_encoder') && (roles.has('text_encoder') || roles.has('image_encoder')))
+    )
+      return false;
+    if (semantics === 'component' && !(roles.has('denoise') && (roles.has('decoder') || roles.has('decode'))))
+      return false;
+    const description = declared.map(
+      (operation) =>
+        operation?.ports.find(
+          (socket) =>
+            socket.direction === 'input' &&
+            socket.name === field &&
+            socket.semanticName === field &&
+            socket.types.length === 1 &&
+            socket.types[0] === port.valueType &&
+            socket.semantics?.kind === semantics,
+        )?.semantics,
+    );
+    return Boolean(
+      description[0] &&
+      description[1] &&
+      canonicalBlockStringifyV2(description[0]) === canonicalBlockStringifyV2(description[1]),
+    );
+  }
+  if (consumers.some((node) => node.data.operationAuthoring)) return false;
+  const leaves = new Set(consumers.map(nodeKey));
+  return semantics === 'media'
+    ? leaves.has('modules.ModularDiffusers.ImageEmbeddings') && leaves.has('modules.ModularDiffusers.ImageEncode')
+    : leaves.has('modules.ModularDiffusers.Denoise') && leaves.has('modules.ModularDiffusers.DecodeLatents');
+}
+
+function retainsGeneratedStageBindings(
+  kind: VisualOperationGroup,
   port: BlockPortV2,
   definition: BlockDefinitionV2,
   effectiveGraph: BlockDefinitionV2['graph'],
 ) {
-  if (!sharedModelInput(port) || !port.mirrorBindings?.length) return false;
+  if (!port.mirrorBindings?.length) return false;
+  const model = sharedModelInput(port);
+  if (!model && !connectedStageInputKind(kind, port)) return false;
   const fields = [port.binding, ...port.mirrorBindings];
   if (fields.some((binding) => binding.fieldOrPortId !== port.binding.fieldOrPortId)) return false;
   const original = definition.boundary.inputs
@@ -550,11 +625,11 @@ function retainsGeneratedModelBindings(
   const identity = (bindings: typeof fields) => bindings.map((binding) => canonicalBlockStringifyV2(binding)).sort();
   const matches = (bindings: typeof fields) =>
     canonicalBlockStringifyV2(identity(fields)) === canonicalBlockStringifyV2(identity(bindings));
-  if (matches(original)) return true;
+  if (model && matches(original)) return true;
   // A task change can add native encoders while preserving the original saved
-  // definition. Admit only the complete typed model-input census of one declared
-  // task, never an arbitrary or partial custom mirror.
-  if (!definition.source.provider?.startsWith(PROVIDER)) return false;
+  // definition. Match all participating leaves before adapting the stage.
+  const provider = definition.source.provider;
+  if (!provider?.startsWith(PROVIDER) && !(provider === COMBINED_INPUT_PROVIDER && !model)) return false;
   const consumers = effectiveGraph.nodes.filter((node) => {
     const parameter = (node.data.params as CustomNodeType['data']['params'])?.[port.binding.fieldOrPortId];
     return (
@@ -565,6 +640,16 @@ function retainsGeneratedModelBindings(
       )
     );
   });
+  if (!model) {
+    return (
+      matches(consumers.map((node) => ({ nodeId: node.nodeId, fieldOrPortId: port.binding.fieldOrPortId }))) &&
+      compatibleStageInputConsumers(
+        kind,
+        port,
+        consumers.map((node) => ({ data: node.data }) as unknown as CustomNodeType),
+      )
+    );
+  }
   // Inspect the validated hint only; this does not construct or execute a node.
   const declared = consumers.map(
     (node) => operationAuthoring({ data: node.data } as unknown as CustomNodeType)?.operation,
@@ -619,7 +704,7 @@ export function groupVisualStages(
           port.mirrorBindings?.length &&
           !(
             ['inputs', 'generate'].includes(kind) &&
-            retainsGeneratedModelBindings(port, old.definitionSnapshot, old.effectiveGraph)
+            retainsGeneratedStageBindings(kind, port, old.definitionSnapshot, old.effectiveGraph)
           ),
       ) || old.effectiveInterface.controls.some((control) => control.mirrorBindings?.length);
     if (customized)
@@ -786,26 +871,46 @@ export function groupVisualStages(
       }
   }
   if (['inputs', 'generate'].includes(kind)) {
-    // A shared typed model value is one public input, regardless of the model
-    // adapter's node names. Independent or unconnected suppliers stay separate.
+    // Keep a single boundary for each proven common source. Independent
+    // inputs and local media fallbacks still need their own boundaries.
     const visited = new Set<string>();
-    for (const primary of [...inputs].filter(sharedModelInput)) {
+    for (const primary of [...inputs].filter((port) => sharedModelInput(port) || connectedStageInputKind(kind, port))) {
       const key = `${primary.binding.fieldOrPortId}:${primary.valueType}`;
       if (visited.has(key)) continue;
       visited.add(key);
-      const pipelines = inputs.filter(
+      const ports = inputs.filter(
         (port) => port.valueType === primary.valueType && port.binding.fieldOrPortId === primary.binding.fieldOrPortId,
       );
+      const member = (port: BlockPortV2) => members.find((node) => remap(node.id) === port.binding.nodeId)!;
+      const model = sharedModelInput(primary);
+      if (!model) {
+        if (!compatibleStageInputConsumers(kind, primary, ports.map(member))) continue;
+        const saved = old?.effectiveInterface.boundary.inputs.filter((prior) =>
+          ports.some(
+            (port) =>
+              port.binding.nodeId === prior.binding.nodeId &&
+              port.binding.fieldOrPortId === prior.binding.fieldOrPortId,
+          ),
+        );
+        if (
+          saved?.length === 2 &&
+          (saved[0]!.label !== saved[1]!.label ||
+            saved[0]!.required !== saved[1]!.required ||
+            saved[0]!.multiple !== saved[1]!.multiple)
+        )
+          continue;
+      }
       // Keep the callback-bearing consumer as the public projection. Imported
       // graphs can list a callback-free decoder before its sampler. Every real
       // binding still receives its own native field actions through V2.
       const callbacks = (port: BlockPortV2) => {
-        const member = members.find((member) => remap(member.id) === port.binding.nodeId)!;
-        const value = member.data.params[port.binding.fieldOrPortId]!.onSignal;
+        const value = member(port).data.params[port.binding.fieldOrPortId]!.onSignal;
         return Array.isArray(value) ? value.length : value ? 1 : 0;
       };
-      pipelines.sort((left, right) => callbacks(right) - callbacks(left));
-      const wires = pipelines.map((port) =>
+      const disabled = (port: BlockPortV2) =>
+        Number(Boolean(member(port).data.params[port.binding.fieldOrPortId]!.disabled));
+      ports.sort((left, right) => callbacks(right) - callbacks(left) || (model ? 0 : disabled(left) - disabled(right)));
+      const wires = ports.map((port) =>
         graph.edges.filter(
           (edge) =>
             members.some((member) => member.id === edge.target && remap(member.id) === port.binding.nodeId) &&
@@ -816,11 +921,11 @@ export function groupVisualStages(
       // as an alternative to their connected component sockets. Share that
       // empty alternative only within one demonstrable model-owner branch.
       const emptyOptional =
-        pipelines.length > 1 &&
+        model &&
+        ports.length > 1 &&
         wires.every((edges) => edges.length === 0) &&
-        pipelines.every((port) => {
-          const member = members.find((member) => remap(member.id) === port.binding.nodeId)!;
-          const field = member.data.params[port.binding.fieldOrPortId]!;
+        ports.every((port) => {
+          const field = member(port).data.params[port.binding.fieldOrPortId]!;
           return !field.required && (field.value ?? field.default) == null;
         }) &&
         (() => {
@@ -830,23 +935,34 @@ export function groupVisualStages(
               flat.nodes.filter((owner) => {
                 if (!operationOwnsModel(operationAuthoring(owner)?.operation)) return false;
                 const scope = new Set(operationScope(flat, owner.id).map((node) => remap(node.id)));
-                return pipelines.every((port) => scope.has(port.binding.nodeId));
+                return ports.every((port) => scope.has(port.binding.nodeId));
               }).length === 1
             );
           } catch {
             return false;
           }
         })();
+      const driver = wires[0]?.[0];
+      const sameDriver =
+        driver &&
+        wires.every(
+          (edges) =>
+            edges.length === 1 && edges[0]!.source === driver.source && edges[0]!.sourceHandle === driver.sourceHandle,
+        );
+      const source =
+        !model && sameDriver
+          ? nodeConnectorParam(
+              graph.nodes.find((node) => node.id === driver.source),
+              driver.sourceHandle,
+            )
+          : undefined;
       if (
-        pipelines.length > 1 &&
+        ports.length > 1 &&
         (emptyOptional ||
-          (wires.every((edges) => edges.length === 1) &&
-            wires.every(
-              (edges) =>
-                edges[0]!.source === wires[0]![0]!.source && edges[0]!.sourceHandle === wires[0]![0]!.sourceHandle,
-            )))
+          (sameDriver &&
+            (model || (source?.display === 'output' && connectionTypesAreCompatible(source.type, primary.valueType)))))
       ) {
-        pipelines[0]!.mirrorBindings = pipelines
+        ports[0]!.mirrorBindings = ports
           .slice(1)
           .map((port) => port.binding)
           .sort((left, right) => {
@@ -854,8 +970,8 @@ export function groupVisualStages(
               b = `${right.nodeId}\0${right.fieldOrPortId}`;
             return a < b ? -1 : a > b ? 1 : 0;
           });
-        for (let index = 1; index < pipelines.length; index++) {
-          inputs.splice(inputs.indexOf(pipelines[index]!), 1);
+        for (let index = 1; index < ports.length; index++) {
+          inputs.splice(inputs.indexOf(ports[index]!), 1);
           if (wires[index]!.length) redundantEdges.add(wires[index]![0]!.id);
         }
       }
@@ -1044,7 +1160,7 @@ export function mergeVisualStageSharedInputs(graph: OperationGraph, rootId: stri
   const root = graph.nodes.find((node) => node.id === rootId);
   const kind = root && visualOperationGroup(root);
   if (!root || !kind || !['inputs', 'generate'].includes(kind))
-    throw new Error('Choose an Encode Inputs or Generate stage to merge its shared model inputs.');
+    throw new Error('Choose an Encode Inputs or Generate stage to merge its shared inputs.');
   const before = root.data.blockInstanceV2!.effectiveInterface.boundary.inputs.length;
   const unpacked = unpackVisualOperationGroups(graph, new Set([rootId]));
   const next = groupVisualStages(unpacked.graph, unpacked.members.get(rootId)!, kind, root);
@@ -1052,7 +1168,7 @@ export function mergeVisualStageSharedInputs(graph: OperationGraph, rootId: stri
     .length;
   if (after >= before)
     throw new Error(
-      'No shared model inputs can be merged. Use the same model output, or empty optional inputs belonging to one model branch.',
+      'No matching shared inputs can be merged. Connect them to the same output, or use empty optional bundle inputs on one model branch.',
     );
   return next;
 }

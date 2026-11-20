@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
 
-let fixture, server, groups, drafts, authoring, exporter, schema, runtime;
+let fixture, server, groups, drafts, authoring, exporter, schema, runtime, defaults, inference, examples;
+const backend = process.env.MODIFF_BACKEND_DIR || path.resolve('../MoDiff');
 const selections = [
   ['HunyuanVideo15ModularPipeline', 'text_to_video'],
   ['HunyuanVideo15ModularPipeline', 'image_to_video'],
@@ -16,8 +18,11 @@ const selections = [
   ['QwenImageModularPipeline', 'text_to_image'],
   ['MiniMaxH3ImageModularPipeline', 'text_to_image'],
 ];
+const switchSelections = [
+  ['QwenImageEditPlusModularPipeline', 'edit_image'],
+  ['QwenImageEditPlusModularPipeline', 'multi_image_reference_edit'],
+];
 before(async () => {
-  const backend = process.env.MODIFF_BACKEND_DIR || path.resolve('../MoDiff');
   const python = process.env.MODIFF_BACKEND_PYTHON || path.join(backend, '.venv/Scripts/python.exe');
   fixture = JSON.parse(
     execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py')], {
@@ -26,7 +31,7 @@ before(async () => {
       maxBuffer: 64 * 1024 ** 2,
       timeout: 120_000,
       input: JSON.stringify(
-        selections.map(([pipelineClass, task]) => ({
+        [...selections, ...switchSelections].map(([pipelineClass, task]) => ({
           id: `${pipelineClass}:${task}`,
           selection: { pipelineClass, task },
         })),
@@ -41,6 +46,7 @@ before(async () => {
       },
     }),
   );
+  fixture.switchRecipes = fixture.recipes.splice(selections.length);
   const storage = new Map();
   globalThis.localStorage = {
     getItem: (key) => storage.get(key) ?? null,
@@ -61,6 +67,9 @@ before(async () => {
   exporter = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   schema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
   runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  ({ DEFAULT_STUDIO_FORM: defaults } = await server.ssrLoadModule('/src/studio/modelProfiles.ts'));
+  inference = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+  examples = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
 });
 after(async () => server?.close());
 
@@ -90,16 +99,208 @@ function api(graph) {
   );
 }
 
+const sharedImageExamples = [
+  'QwenImageEditModularPipeline:edit_image',
+  'QwenImageEditModularPipeline:inpaint',
+  'QwenImageEditPlusModularPipeline:edit_image',
+  'QwenImageEditPlusModularPipeline:edit_image:qwen_edit_plus_single_image',
+  'QwenImageEditPlusModularPipeline:multi_image_reference_edit',
+  'QwenImageLayeredModularPipeline:layer_decomposition',
+];
+const sharedVideoExample = 'WanImage2VideoModularPipeline:image_to_video';
+
+function exampleDocument(id) {
+  const manifest = JSON.parse(readFileSync(path.join(backend, 'data/workflow-library-manifest.json'), 'utf8'));
+  const row = [...manifest.workflows, ...manifest.experimentalWorkflows].find((row) => row.id === id);
+  assert.ok(row, id);
+  return JSON.parse(readFileSync(path.join(backend, 'data/graphs', row.graphPath), 'utf8'));
+}
+
+function stageInputs(graph, kind, field) {
+  const stage = graph.nodes.find((node) => groups.visualOperationGroup(node) === kind);
+  return (
+    stage?.data.blockInstanceV2.effectiveInterface.boundary.inputs.filter(
+      (port) => port.binding.fieldOrPortId === field,
+    ) ?? []
+  );
+}
+
+test('same-source image, last image and VAE are one connection on the actual example graphs', async (t) => {
+  for (const id of [...sharedImageExamples, sharedVideoExample]) {
+    await t.test(id, () => {
+      const source = exampleDocument(id);
+      const before = inference.workflowSnapshotFromGraph(source, 'default', defaults);
+      const graph = examples.exampleWorkflowSnapshotFromGraph(source, 'default', defaults);
+      const fields =
+        id === sharedVideoExample
+          ? [
+              ['inputs', 'image'],
+              ['inputs', 'last_image'],
+              ['generate', 'vae'],
+            ]
+          : [['inputs', 'image']];
+      for (const [kind, field] of fields) {
+        const [port, ...repeated] = stageInputs(graph, kind, field);
+        assert.equal(repeated.length, 0, `${kind} has one ${field} socket`);
+        assert.equal(port.mirrorBindings?.length, 1);
+        assert.equal(port.mirrorBindings[0].fieldOrPortId, field);
+      }
+      assert.deepEqual(api(graph), api(before), 'the exact canonical execution and input order survive');
+      assert.deepEqual(api(JSON.parse(JSON.stringify(graph))), api(before), 'save and reopen keep both real inputs');
+    });
+  }
+});
+
+test('image decisions follow a validated common wire and keep independent or disconnected ports', () => {
+  for (const fault of [
+    'different source',
+    'different handle',
+    'incompatible output type',
+    'duplicate',
+    'disconnected',
+    'foreign role',
+    'fallback',
+    'conditional input',
+    'active signal',
+  ]) {
+    const raw = inference.workflowSnapshotFromGraph(exampleDocument(sharedImageExamples[0]), 'default', defaults);
+    const prompt = raw.nodes.find((node) => node.data.action === 'EncodePrompt');
+    const edge = raw.edges.find((edge) => edge.target === prompt.id && edge.targetHandle === 'image');
+    const loader = raw.nodes.find((node) => node.id === edge.source);
+    if (fault === 'different source') {
+      raw.nodes.push({ ...structuredClone(loader), id: 'different-image-source' });
+      edge.source = 'different-image-source';
+    }
+    if (fault === 'different handle') {
+      loader.data.params.alternative = structuredClone(loader.data.params[edge.sourceHandle]);
+      edge.sourceHandle = 'alternative';
+    }
+    if (fault === 'incompatible output type') loader.data.params[edge.sourceHandle].type = 'video';
+    if (fault === 'duplicate') raw.edges.push({ ...edge, id: 'extra-image-wire' });
+    if (fault === 'disconnected') raw.edges = raw.edges.filter((wire) => wire !== edge);
+    if (fault === 'foreign role')
+      prompt.data.operationAuthoring.operation.ports.find((port) => port.name === 'image').semanticName = 'other';
+    if (fault === 'fallback') prompt.data.params.image.value = ['latent-reference.png'];
+    if (fault === 'conditional input')
+      prompt.data.params.image.requiredWhen = { field: 'model_type', equals: 'custom' };
+    if (fault === 'active signal') prompt.data.params.image.signal = { direction: 'input', value: 'live-image' };
+    const before = structuredClone(raw);
+    const grouped = groups.groupNewOperationGraph(raw);
+    assert.equal(stageInputs(grouped, 'inputs', 'image').length, 2, fault);
+    assert.deepEqual(raw, before);
+  }
+});
+
+test('saved image sockets with independently configured labels stay separate', () => {
+  const document = exampleDocument(sharedImageExamples[0]);
+  const current = examples.exampleWorkflowSnapshotFromGraph(document, 'default', defaults);
+  const graph = historicalSplit(current, 'inputs', ['image']);
+  const root = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'inputs');
+  const instance = root.data.blockInstanceV2;
+  const surface = structuredClone(instance.effectiveInterface);
+  surface.boundary.inputs.find((port) => port.binding.fieldOrPortId === 'image').label = 'Alternate prompt reference';
+  root.data.blockInstanceV2 = runtime.replaceBlockEffectiveInterfaceV2(instance, surface);
+  const before = structuredClone(graph);
+  assert.throws(() => groups.mergeVisualStageSharedInputs(graph, root.id), /No matching shared inputs/);
+  assert.deepEqual(graph, before);
+});
+
+test('saved shared image, closing frame and VAE inputs can be repaired independently', () => {
+  for (const [id, kind, fields] of [
+    [sharedImageExamples[0], 'inputs', ['image']],
+    [sharedVideoExample, 'inputs', ['image', 'last_image']],
+    [sharedVideoExample, 'generate', ['vae']],
+  ]) {
+    const source = exampleDocument(id);
+    const current = examples.exampleWorkflowSnapshotFromGraph(source, 'default', defaults);
+    const saved = JSON.parse(JSON.stringify(historicalSplit(current, kind, fields)));
+    const before = structuredClone(saved);
+    const root = saved.nodes.find((node) => groups.visualOperationGroup(node) === kind);
+    const repaired = groups.mergeVisualStageSharedInputs(saved, root.id);
+    const changed = repaired.nodes.find((node) => node.id === root.id);
+    for (const field of fields) {
+      assert.equal(stageInputs(saved, kind, field).length, 2);
+      assert.equal(stageInputs(repaired, kind, field).length, 1);
+    }
+    assert.deepEqual(saved, before, 'repair is pure');
+    assert.deepEqual(changed.data.blockInstanceV2.definitionSnapshot, root.data.blockInstanceV2.definitionSnapshot);
+    assert.deepEqual(changed.data.blockInstanceV2.presentation, root.data.blockInstanceV2.presentation);
+    assert.deepEqual(api(repaired), api(saved));
+    assert.deepEqual(api(JSON.parse(JSON.stringify(repaired))), api(saved));
+  }
+});
+
+test('rewiring one shared canvas input feeds both executable image consumers', () => {
+  const source = exampleDocument(sharedImageExamples[0]);
+  const graph = examples.exampleWorkflowSnapshotFromGraph(source, 'default', defaults);
+  const stage = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'inputs');
+  const port = stageInputs(graph, 'inputs', 'image')[0];
+  const edge = graph.edges.find((edge) => edge.target === stage.id && edge.targetHandle === port.portId);
+  const loader = graph.nodes.find((node) => node.id === edge.source);
+  const changed = structuredClone(graph);
+  const newSource = 'alternate-image-loader';
+  changed.nodes.push({ ...structuredClone(loader), id: newSource });
+  changed.edges.find((wire) => wire.id === edge.id).source = newSource;
+  const executable = exporter.useFlowStore
+    .getState()
+    .exportGraph('shared-image-rewire', undefined, { sourceGraph: changed, randomizeSeeds: false });
+  const consumers = Object.values(executable.nodes).filter((node) =>
+    ['EncodePrompt', 'ImageEncode'].includes(node.action),
+  );
+  assert.equal(consumers.length, 2);
+  for (const node of consumers)
+    assert.deepEqual([node.params.image.sourceId, node.params.image.sourceKey], [newSource, edge.sourceHandle]);
+  assert.equal(graph.edges.find((wire) => wire.id === edge.id).source, loader.id);
+});
+
+test('the shared Wan VAE uses the enabled handle and disconnects both Generate leaves', () => {
+  const graph = examples.exampleWorkflowSnapshotFromGraph(exampleDocument(sharedVideoExample), 'default', defaults);
+  const stage = generate(graph);
+  const instance = stage.data.blockInstanceV2;
+  const [port] = stageInputs(graph, 'generate', 'vae');
+  const member = (binding) => instance.effectiveGraph.nodes.find(({ nodeId }) => nodeId === binding.nodeId);
+  assert.equal(member(port.binding).data.action, 'Denoise');
+  assert.equal(member(port.mirrorBindings[0]).data.params.vae.disabled, true);
+  assert.notEqual(runtime.blockConnectorParamsV2(instance).inputs[port.portId].disabled, true);
+  const disconnected = runtime.expandBlockGraphV2ForExecution(
+    graph.nodes,
+    graph.edges.filter((edge) => edge.target !== stage.id || edge.targetHandle !== port.portId),
+  );
+  const suppliedVae = disconnected.edges.filter((edge) => edge.targetHandle === 'vae');
+  assert.equal(suppliedVae.length, 1, 'separate Encode Inputs VAE is still connected');
+  assert.equal(disconnected.nodes.find((node) => node.id === suppliedVae[0].target).data.action, 'ImageEncode');
+});
+
+test('Qwen image task switching retains the one shared image source and leaves the source draft intact', () => {
+  const [single, multi] = fixture.switchRecipes;
+  assert.equal(multi.id, 'QwenImageEditPlusModularPipeline:multi_image_reference_edit');
+  let graph = examples.exampleWorkflowSnapshotFromGraph(exampleDocument(sharedImageExamples[2]), 'default', defaults);
+  for (const row of [multi, single]) {
+    const before = structuredClone(graph);
+    const owner = groups
+      .unpackVisualOperationGroups(graph)
+      .graph.nodes.find((node) => node.data.action === 'ModelsLoader');
+    const plan = authoring.planOperationChange(graph, owner.id, row.starter);
+    assert.deepEqual(graph, before);
+    graph = plan.graph;
+    const ports = stageInputs(graph, 'inputs', 'image');
+    assert.equal(ports.length, 1);
+    assert.equal(ports[0].mirrorBindings?.length, 1);
+    assert.deepEqual(api(graph), api(groups.unpackVisualOperationGroups(graph).graph));
+    assert.deepEqual(api(graph), api(JSON.parse(JSON.stringify(graph))));
+  }
+});
+
 // Historical automatic Generate definitions exposed one socket per consumer.
 // Preserve the old baseline itself, not a reference to today's planner output.
-function historicalSplit(graph, kind = 'generate') {
+function historicalSplit(graph, kind = 'generate', fields = ['pipeline_components']) {
   const result = structuredClone(graph),
     root = result.nodes.find((node) => groups.visualOperationGroup(node) === kind),
     instance = root.data.blockInstanceV2;
   const definition = structuredClone(instance.definitionSnapshot);
   const replacements = new Map();
   definition.boundary.inputs = definition.boundary.inputs.flatMap((port) => {
-    if (port.binding.fieldOrPortId !== 'pipeline_components' || !port.mirrorBindings?.length) return [port];
+    if (!fields.includes(port.binding.fieldOrPortId) || !port.mirrorBindings?.length) return [port];
     const ports = [port.binding, ...port.mirrorBindings].map((binding) => ({
       ...port,
       binding,

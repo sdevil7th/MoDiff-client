@@ -149,7 +149,7 @@ export default function EncodingNodeMenu({
       const signature = operationGraphSignature(graph);
       const { mergeVisualStageSharedInputs } = await import('../workflow/visualOperationGroups');
       const next = mergeVisualStageSharedInputs(graph, node.id);
-      commitOperationGraph(next, context, signature, 'Merge shared model inputs');
+      commitOperationGraph(next, context, signature, 'Merge shared inputs');
       useStudioStore.getState().saveActiveWorkflowTab(true);
     } catch (error) {
       enqueueSnackbar(error instanceof Error ? error.message : 'Could not merge these shared inputs.', {

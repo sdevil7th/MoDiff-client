@@ -1044,6 +1044,9 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  // Shared media sockets and restored activity disclosure add 604 gzip bytes
+  // (353382 -> 353986), with the same chunk membership and startup limits.
+  604 +
   // Catalog qualifiers and custom node categories add 300 gzip bytes
   // (353082 -> 353382), with the same 93 deferred chunks and 64 KiB chunk cap.
   300 +

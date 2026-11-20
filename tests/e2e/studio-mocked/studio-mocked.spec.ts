@@ -278,6 +278,7 @@ for (const [viewport, deviceScaleFactor] of [
       const shelf = page.getByTestId('run-session-shelf');
       const list = page.getByTestId('run-session-scrollport');
       await expect(list.locator('[data-testid^="session-run-viewport-history-"]')).toHaveCount(7);
+      await shelf.getByRole('button', { name: 'Show session activity', exact: true }).click();
       // Arrange fits on deferred animation frames. Measuring before that fit
       // pans from stale coordinates, especially on an unscaled 4K viewport.
       await expect
@@ -564,6 +565,87 @@ test('sampler activity clears telemetry through websocket phases and keeps termi
   ).toEqual({ current: null, phase: 'completed', progress: 100, status: 'completed', component: null, step: null });
 });
 
+test('restored finished session activity keeps canvas fields and ports reachable', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await ensureFrontend();
+  const { workflows } = await installMockRoutes(page);
+  const workflowId = 'restored-activity-workflow';
+  const title = 'Restored activity workflow';
+  const snapshot = restorationSnapshot('Saved canvas field', '/preview-fixture/unused.png', 60);
+  snapshot.nodes = snapshot.nodes.slice(0, 1);
+  snapshot.nodes[0]!.position.y = 580;
+  const now = Date.now();
+  workflows.set(workflowId, {
+    id: workflowId,
+    title,
+    intent: 'saved',
+    source: 'manual',
+    revision: 1,
+    createdAt: now,
+    updatedAt: now,
+    snapshot,
+  });
+  const history = Array.from({ length: 4 }, (_, index) => ({
+    task_id: `restored-activity-${index}`,
+    name: `Finished fixture ${index + 1}`,
+    status: 'completed',
+    completed_at: now / 1000 - index,
+  }));
+  let restoreHistory = false;
+  await page.route('**/queue', (route) =>
+    route.fulfill({ json: { current: null, queued: {}, recent: restoreHistory ? history : [] } }),
+  );
+  let submissions = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') submissions++;
+  });
+
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await dismissTaskLauncher(page);
+  await page.getByTestId('left-tab-workflows').click();
+  await page.getByRole('button', { name: 'My workflows', exact: true }).click();
+  await page.getByRole('button', { name: title, exact: true }).click();
+  const node = page.locator('.react-flow__node[data-id="restoration-text"]');
+  const field = node.getByRole('textbox', { name: 'Text', exact: true });
+  const port = page.getByTestId('node-handle-restoration-text-output');
+  const readGraph = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  await expect(field).toHaveValue('Saved canvas field');
+  const viewport = (await readGraph()).viewport;
+  restoreHistory = true;
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(field).toHaveValue('Saved canvas field');
+
+  const shelf = page.getByTestId('run-session-shelf');
+  const list = page.getByTestId('run-session-scrollport');
+  const toggle = shelf.getByRole('button', { name: /^(Hide|Show) session activity$/u });
+  await expect(toggle).toContainText('4 finished');
+  await page.screenshot({ path: testInfo.outputPath('restored-activity-initial.png') });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(list).toBeHidden();
+  const restored = await readGraph();
+  expect(restored.viewport).toEqual(viewport);
+  const hit = (target: Locator) =>
+    target.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) === element;
+    });
+  await expect.poll(() => hit(field)).toBe(true);
+  await expect.poll(() => hit(port)).toBe(true);
+
+  await toggle.click();
+  await expect(list).toBeVisible();
+  await expect(list.locator('[data-testid^="session-run-restored-activity-"]')).toHaveCount(4);
+  await expect.poll(() => hit(field)).toBe(false);
+  await expect.poll(() => hit(port)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath('restored-activity-explicitly-opened.png') });
+  await toggle.click();
+  await expect(list).toBeHidden();
+  await expect.poll(() => hit(field)).toBe(true);
+  await expect.poll(() => hit(port)).toBe(true);
+  expect(await readGraph()).toEqual(restored);
+  expect(submissions).toBe(0);
+});
+
 test('collapsed canvas activity retains active work, failures and explicit download navigation', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await ensureFrontend();
@@ -593,6 +675,30 @@ test('collapsed canvas activity retains active work, failures and explicit downl
   });
   const shelf = page.getByTestId('run-session-shelf');
   const list = page.getByTestId('run-session-scrollport');
+  await expect(list).toBeHidden();
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_started',
+      current: { task_id: 'activity-before-failure', name: 'Work before failure', progress: 25, status: 'running' },
+      queued: {},
+    });
+  });
+  await expect(page.getByTestId('session-run-activity-before-failure')).toBeVisible();
+  await page.evaluate(() => {
+    window.__MODIFF_E2E__!.sendWebsocketMessage({
+      type: 'task_failed',
+      task_id: 'activity-before-failure',
+      name: 'Work before failure',
+      error: 'Visible failure after active work',
+      current: null,
+      queued: {},
+    });
+  });
+  await expect(shelf).toContainText('3 finished');
+  await expect(page.getByTestId('session-run-activity-before-failure')).toBeVisible();
+  await expect(page.getByTestId('session-run-activity-before-failure')).toContainText(
+    'Visible failure after active work',
+  );
   await shelf.getByRole('button', { name: 'Hide session activity', exact: true }).click();
   await page.evaluate(() => {
     window.__MODIFF_E2E__!.sendWebsocketMessage({
@@ -24604,6 +24710,7 @@ test('startup discovery blocks transient readiness and the compact activity shel
   await expect(startupGate).toHaveCount(0, { timeout: 10_000 });
 
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
+  await dismissTaskLauncher(page);
   await page.evaluate(() => {
     window.__MODIFF_E2E__!.setWebsocketConnection({ sid: 'mock-sid', isConnected: true });
     for (let index = 0; index < 7; index += 1) {
@@ -24621,6 +24728,10 @@ test('startup discovery blocks transient readiness and the compact activity shel
 
   const scrollport = page.getByTestId('run-session-scrollport');
   await expect(scrollport.locator('[data-testid^="session-run-shelf-history-"]')).toHaveCount(7);
+  await page
+    .getByTestId('run-session-shelf')
+    .getByRole('button', { name: 'Show session activity', exact: true })
+    .click();
   const activityHeight = await scrollport.evaluate((element) => ({
     clientHeight: element.clientHeight,
     overflowY: getComputedStyle(element).overflowY,
@@ -24724,6 +24835,10 @@ test('session activity and generation notifications open the originating workflo
     .not.toBe(workflowId);
   await expect(page.getByTestId('task-launcher')).toBeVisible();
   await dismissTaskLauncher(page);
+  await page
+    .getByTestId('run-session-shelf')
+    .getByRole('button', { name: 'Show session activity', exact: true })
+    .click();
   await page.getByTestId('session-run-notification-success-task').click();
   await expect
     .poll(() => page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId))
@@ -25086,6 +25201,10 @@ for (const outcome of ['queued', 'stale', 'unavailable'] as const) {
     await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
     await dismissTaskLauncher(page);
     await expect.poll(() => connectedSid).toBeTruthy();
+    await page
+      .getByTestId('run-session-shelf')
+      .getByRole('button', { name: 'Show session activity', exact: true })
+      .click();
     await page.getByTestId(`session-run-${source.task_id}`).click();
     const failureDialog = page.getByTestId('run-failure-dialog');
     await expect(failureDialog).toContainText(source.error);

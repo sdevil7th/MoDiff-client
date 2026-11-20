@@ -51,15 +51,18 @@ Empty optional bundle inputs can also share a socket when their consumers belong
 to one model owner. Different sources, required empty inputs and authored bundle
 values stay separate. This presentation does not change backend execution.
 
-Encode Inputs also shares identical model connections across its encoders. Music
-routes that encode inside Generate keep that existing structure.
+Encode Inputs keeps one connection when the same image output supplies matching
+encoders. Opening and closing frames have separate sockets. Generate uses one
+VAE connection when the sampler and decoder share the same component output.
+Different sources and fields with their own fallback values remain separate.
+Music routes that encode inside Generate keep that existing structure.
 
 For an older saved Encode Inputs or Generate stage, open the node's options
 menu and choose **Merge shared inputs**. The edit is undoable, preserves the
 saved reusable definition and current settings, and refuses inputs that cannot
 be shared safely. Opening a saved workflow alone does not rewrite its interface.
-Model/task changes retain a repaired stage's shared connection through the normal
-review and preservation planner.
+Model and task changes retain a repaired shared connection when the new route
+can retain the supplier and its compatible consumers.
 
 Curated fresh image recipes can request an exact backend `authoringRecipeId` on
 the ordinary operation-starter endpoint. Its optional hash-covered `authoring`
@@ -91,10 +94,11 @@ intact; ambiguous matches or incompatible preserved defaults reject regeneration
 
 ## Keep activity out of the editing area
 
-Click the **Session activity** heading to fold its list away when it covers a
-canvas control. The compact heading retains **Active now** while work is running
-or downloading. Click it again to restore the same notifications; Enter and Space
-also toggle it. This does not clear history, stop work or alter the workflow.
+When a page opens with only finished activity, **Session activity** shows a
+compact count. Live work opens the list automatically and keeps its result
+visible unless you fold it. Click the heading to fold or reveal the same
+notifications, or use Enter or Space. The heading retains **Active now** while
+work is running or downloading. Folding preserves history, work and the canvas.
 The toolbar's download activity button opens the list when you need download
 progress. **Clear** remains a separate action for finished notifications.
 When panning or resizing, the selected-node toolbar moves clear of activity so
