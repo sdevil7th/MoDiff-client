@@ -116,7 +116,7 @@ test.beforeEach(async ({ page }) => {
     route.request().method() === 'POST' ? route.abort() : route.continue(),
   );
   await page.setViewportSize({ width: 1920, height: 1200 });
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto('/', { waitUntil: 'commit', timeout: 60_000 });
   await ready(page);
   await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated);
   const launcher = page.getByTestId('task-launcher');
