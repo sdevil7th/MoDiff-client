@@ -314,6 +314,20 @@ const baseConfig: UserConfig = {
               priority: 10,
             },
             {
+              // The canvas loads media preview fields on demand. Keep their
+              // shared dependencies separate from the viewer and export dialogs.
+              name: 'node-media-previews',
+              test: /\/src\/(?:fields\/(?:UIImageField|UIImagecompareField|UIVideoField|UIAudioField|UITextField|PreviewHistoryStrip|PreviewHistoryStripContent)\.tsx|utils\/mediaDownload\.ts|studio\/outputText\.ts)$/,
+              includeDependenciesRecursively: false,
+              priority: 10,
+            },
+            {
+              name: 'media-viewer-tools',
+              test: /\/src\/(?:components\/(?:MediaViewerDialog|LightboxDialog|MediaExportDialog)\.tsx|studio\/mediaCapabilities\.ts)$/,
+              includeDependenciesRecursively: false,
+              priority: 10,
+            },
+            {
               // These planners already load on demand. Their shared graph and
               // schema vocabulary compresses once without making store or
               // renderer dependencies part of this deferred authoring chunk.

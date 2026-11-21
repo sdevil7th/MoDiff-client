@@ -54,14 +54,16 @@ import ModelSelectField from '../fields/ModelSelectField';
 import LayerConfigField from '../fields/LayerConfigField';
 import SelectDialogField from '../fields/SelectDialogField';
 
-import UITextField from '../fields/UITextField';
-import UIImageField from '../fields/UIImageField';
 import UIButtonField from '../fields/UIButtonField';
 import UILabelFieldField from '../fields/UILabelField';
 import UIGroupField from '../fields/UIGroupField';
-import UIImagecompareField from '../fields/UIImagecompareField';
-const UIVideoField = lazy(() => import('../fields/UIVideoField'));
-const UIAudioField = lazy(() => import('../fields/UIAudioField'));
+const CANVAS_MEDIA_PREVIEWS = {
+  ui_image: { label: 'image', Field: lazy(() => import('../fields/UIImageField')) },
+  ui_imagecompare: { label: 'image comparison', Field: lazy(() => import('../fields/UIImagecompareField')) },
+  ui_video: { label: 'video', Field: lazy(() => import('../fields/UIVideoField')) },
+  ui_audio: { label: 'audio', Field: lazy(() => import('../fields/UIAudioField')) },
+  ui_text: { label: 'text', Field: lazy(() => import('../fields/UITextField')) },
+};
 const SplineField = lazy(() => import('../fields/SplineField'));
 const LayoutConditioningField = lazy(() => import('../fields/LayoutConditioningField'));
 const PromptEnhancementControls = lazy(() => import('./PromptEnhancementControls'));
@@ -681,11 +683,11 @@ const FieldMemo = memo((props: FieldProps) => {
     case 'selectdialog':
       return <SelectDialogField {...props} />;
     case 'ui_text':
-      return <UITextField {...props} />;
     case 'ui_image':
-      return <UIImageField {...props} />;
+    case 'ui_imagecompare':
     case 'ui_video':
-    case 'ui_audio':
+    case 'ui_audio': {
+      const { label, Field } = CANVAS_MEDIA_PREVIEWS[props.fieldType];
       return (
         <Suspense
           fallback={
@@ -697,21 +699,20 @@ const FieldMemo = memo((props: FieldProps) => {
             >
               <div role="status">
                 <PreviewEmptyState
-                  kind={props.fieldType === 'ui_audio' ? 'audio' : 'visual'}
+                  kind={props.fieldType === 'ui_audio' ? 'audio' : props.fieldType === 'ui_text' ? 'text' : 'visual'}
                   compact={props.fieldOptions?.compactPreview === true}
-                  message={`Loading ${props.fieldType === 'ui_audio' ? 'audio' : 'video'} preview…`}
+                  message={'Loading ' + label + ' preview…'}
                 />
               </div>
             </FieldFrame>
           }
         >
-          {props.fieldType === 'ui_audio' ? <UIAudioField {...props} /> : <UIVideoField {...props} />}
+          <Field {...props} />
         </Suspense>
       );
+    }
     case 'ui_button':
       return <UIButtonField {...props} />;
-    case 'ui_imagecompare':
-      return <UIImagecompareField {...props} />;
     case 'ui_label':
       return <UILabelFieldField {...props} />;
     case 'ui_group':
