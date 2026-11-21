@@ -97,10 +97,10 @@ export function canonicalPixArtSigmaPagRuntimeHintAccounting(args) {
 export function directImagePromptRuntimeHintAccounting(args) {
   const savedSd15 = args.plan.modelType === 'StableDiffusionPipeline';
   assert.ok(
-    savedSd15 || args.plan.modelType === 'PRXPipeline',
+    savedSd15 || ['PRXPipeline', 'StableDiffusionXLPipeline'].includes(args.plan.modelType),
     'Direct image snapshot model is outside reviewed scope.',
   );
-  const stageName = savedSd15 ? 'Saved SD1.5' : 'PRX';
+  const stageName = savedSd15 ? 'Saved SD1.5' : 'Direct image';
   const expectedBlockCount = savedSd15 ? 2 : 1;
   const nodes = args.apiGraph.runtimeHints?.workflowSnapshot?.nodes;
   assert.ok(Array.isArray(nodes), `Original ${stageName} workflow snapshot is missing.`);

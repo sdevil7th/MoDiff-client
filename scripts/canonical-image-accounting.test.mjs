@@ -53,6 +53,7 @@ const project = (kind, values, sourceNodeId, sourcePortId) => ({
 // runtime and accounting observations are synthetic and never registered.
 let synthetic;
 let syntheticPrx;
+let syntheticSdxl;
 const syntheticRetained = new Map();
 before(async () => {
   synthetic = await syntheticImageCase({
@@ -67,27 +68,38 @@ before(async () => {
     platform: 'Linux-x86_64',
     backend: 'rocm',
   });
+  syntheticSdxl = await syntheticImageCase({
+    modelType: 'StableDiffusionXLPipeline',
+    graphPath: 'stable-diffusion-xl-pipeline/text-to-image.json',
+    size: 1024,
+    platform: 'Linux-x86_64',
+    backend: 'rocm',
+  });
   for (const profile of retainedProfiles) syntheticRetained.set(profile.modelType, await syntheticImageCase(profile));
 });
 
 async function syntheticImageCase({ modelType, graphPath, size, platform, backend }) {
   const directPrx = modelType === 'PRXPipeline';
-  const retained = platform !== undefined && !directPrx;
+  const directSdxl = modelType === 'StableDiffusionXLPipeline';
+  const directImage = directPrx || directSdxl;
+  const retained = platform !== undefined && !directImage;
   const generateAction = retained ? 'UnconditionalGenerate' : 'Generate';
   const taskMode = retained ? 'unconditional_image' : 'text_to_image';
   const graph = JSON.parse(readFileSync(join(backendRoot, 'data/graphs/studio', graphPath), 'utf8'));
-  if (directPrx) {
+  if (directImage) {
     const generate = graph.nodes.find((node) => node.data.action === 'Generate');
-    generate.data.params.prompt.value = 'Editorial product photograph of a single silver compass.';
+    generate.data.params.prompt.value = directSdxl
+      ? 'A rain-soaked Victorian conservatory with a wet terracotta aisle and fern beds.'
+      : 'Editorial product photograph of a single silver compass.';
   }
   const [expected] = await exportCanonicalWorkflowGraphs(clientRoot, [graph]);
   const form = { modelType, mode: taskMode, ...(retained ? { resourceMode: 'expert' } : {}) };
   const visualNodes = graph.nodes.filter(
-    (node) => node.data.action === 'Preview' || (directPrx && node.data.action === 'Generate'),
+    (node) => node.data.action === 'Preview' || (directImage && node.data.action === 'Generate'),
   );
   const ids = new Map(visualNodes.map((node) => [node.id, node.id]));
   const staged = [['setup', (node) => node.data.action !== generateAction]];
-  if (!directPrx) staged.push(['generate', (node) => node.data.action === generateAction]);
+  if (!directImage) staged.push(['generate', (node) => node.data.action === generateAction]);
   for (const [id, pick] of staged) {
     const leaves = graph.nodes.filter((node) => !ids.has(node.id) && pick(node));
     const nodes = leaves.map(({ id: nodeId, data }) => {
@@ -190,7 +202,7 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
       'use_en_prompt',
     ],
     UnconditionalGenerate: ['eta', 'class_label'],
-    ...(directPrx
+    ...(directImage
       ? {
           Generate: [
             'cfg_normalize',
@@ -198,6 +210,7 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
             'control_guidance_start',
             'image_guidance_scale',
             'layers',
+            ...(directSdxl ? ['max_sequence_length'] : []),
             'padding_mask_crop',
             'pag_adaptive_scale',
             'pag_scale',
@@ -281,6 +294,7 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
     if (node.action === generateAction) {
       row.fields.executed_task = legacy(taskMode);
       if (!retained) for (const [key, value] of Object.entries(emptyConditioning)) row.fields[key] = legacy(value);
+      if (directSdxl) row.fields.max_sequence_length = legacy(null);
     }
     consumed.nodes.push(row);
   }
@@ -365,6 +379,43 @@ const projection = (value, reader = canonicalAccountingExecutionPlan) => {
   });
 };
 
+test('SDXL Base prompt variant accepts only its exact Linux pin and actual sequence accounting', () => {
+  const accepted = projection(syntheticSdxl, directImagePromptAccountingExecutionPlan);
+  assert.equal(accepted.plan.runtimeHintAccounting.policy, 'direct-image-prompt-runtime-hints-v1');
+  assert.equal(accepted.plan.pipelineClass, 'StableDiffusionXLPipeline');
+  assert.equal(accepted.plan.offloadMode, 'model_cpu');
+
+  const wrongPin = structuredClone(syntheticSdxl);
+  wrongPin.canonicalAccountingProof.target.modelSet[0].revision = 'e'.repeat(40);
+  assert.throws(
+    () => projection(wrongPin, directImagePromptAccountingExecutionPlan),
+    /Conditional image model is outside the reviewed accounting scope/u,
+  );
+  const wrongLength = structuredClone(syntheticSdxl);
+  const generate = wrongLength.executedOutput.resolvedExecutionInputs.nodes.find((row) => row.action === 'Generate');
+  generate.fields.max_sequence_length.value = 512;
+  assert.throws(
+    () => projection(wrongLength, directImagePromptAccountingExecutionPlan),
+    /Inactive legacy control was passed to the pipeline: max_sequence_length/u,
+  );
+  const wrongDisposition = structuredClone(syntheticSdxl);
+  const field = wrongDisposition.executedOutput.resolvedExecutionInputs.nodes.find((row) => row.action === 'Generate')
+    .fieldAccounting.fields.max_sequence_length;
+  field.disposition = 'consumed';
+  delete field.reason;
+  assert.throws(() => projection(wrongDisposition, directImagePromptAccountingExecutionPlan), /Wrong disposition/u);
+  const wrongDimensions = structuredClone(syntheticSdxl);
+  wrongDimensions.executedOutput.mediaItems[0].width = 512;
+  assert.throws(
+    () => projection(wrongDimensions, directImagePromptAccountingExecutionPlan),
+    /Native image dimensions differ/u,
+  );
+  const turbo = structuredClone(syntheticSdxl);
+  turbo.canonicalAccountingProof.target.workflowId = 'StableDiffusionXLTurboPipeline:text_to_image';
+  turbo.canonicalAccountingProof.target.modelType = 'StableDiffusionXLTurboPipeline';
+  assert.throws(() => projection(turbo, directImagePromptAccountingExecutionPlan), /outside the reviewed scope/u);
+});
+
 test('PRX prompt variant accepts the exact cached pin and complete scoped accounting', () => {
   const before = structuredClone(syntheticPrx);
   const accepted = projection(syntheticPrx, directImagePromptAccountingExecutionPlan);
@@ -383,7 +434,7 @@ test('PRX prompt variant rejects alternate model pins, sequence accounting and c
   snapshot.nodes = snapshot.nodes.filter((node) => node.id !== generateNode.id);
   assert.throws(
     () => projection(wrongOwner, directImagePromptAccountingExecutionPlan),
-    /PRX Model Setup member scope differs/u,
+    /Model Setup member scope differs/u,
   );
   const wrongPin = structuredClone(syntheticPrx);
   wrongPin.canonicalAccountingProof.target.modelSet[0].revision = 'e'.repeat(40);

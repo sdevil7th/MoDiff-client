@@ -2259,6 +2259,30 @@ export const directImagePromptRoutes = [
       negative_prompt: '',
     },
   },
+  {
+    format: 'modiff.private.sdxl-base-prompt-variant.v1',
+    workflowId: 'StableDiffusionXLPipeline:text_to_image',
+    modelType: 'StableDiffusionXLPipeline',
+    modelRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
+    modelRevision: '462165984030d82259a11f4367a4eed129e94a7b',
+    active: [...plainImageActive, 'negative_prompt'],
+    inactive: [...plainImageInactive, 'max_sequence_length'],
+    legacyNull: [...plainImageLegacyNull, 'max_sequence_length'],
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    dtype: 'bfloat16',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 30,
+      guidance_scale: 5,
+      max_sequence_length: 512,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
 ];
 const retainedUnconditionalRecipes = {
   DDPMPipeline: {
