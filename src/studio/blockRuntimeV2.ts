@@ -1,3 +1,4 @@
+import { insertStageLeaves, visualStageSourceIndex } from './visualStageOrder';
 import type { Edge } from '@xyflow/react';
 import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
 
@@ -31,6 +32,7 @@ import {
   blockMediaFileBoundaryIsCompatibleV2,
   blockValueTypeMatchesMediaV2,
   blockValueTypesAreCompatibleV2,
+  normalizeBlockValueTypeV2,
 } from './blockValueTypeCompatibilityV2';
 import {
   blockContainerControlTargetsV1,
@@ -347,6 +349,10 @@ function projectedBindingFieldOptions(
 ) {
   return {
     ...(isRecord(base?.fieldOptions) ? cloneJson(base.fieldOptions) : {}),
+    ...(instance.definitionSnapshot.ownership.kind === 'user' &&
+    instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+      ? { suppressInitialFieldAction: true, suppressAutomaticSignalAction: true }
+      : {}),
     blockBindingV2: {
       schemaVersion: 2,
       ownerId: instance.instanceId,
@@ -362,6 +368,34 @@ function optionalValue(value: BlockJsonValue | undefined) {
   return value === undefined ? {} : { value: cloneJson(value) };
 }
 
+function currentPreviewValue(base: NodeParams | undefined, preview: BlockPreviewStateV2 | undefined) {
+  if (preview?.mediaReference === undefined) return {};
+  return {
+    value: preview.mediaReference,
+    // Immutable source artifacts must not override a newer instance preview.
+    artifacts: Array.isArray(base?.artifacts)
+      ? base.artifacts.filter(
+          (artifact: unknown) =>
+            isRecord(artifact) &&
+            artifact.url === preview.mediaReference &&
+            (!preview.taskId || (artifact.taskId ?? artifact.task_id) === preview.taskId),
+        )
+      : [],
+  };
+}
+
+function previewSourceFieldOptionsV2(instance: BlockInstanceV2, binding: BlockPreviewStateV2['binding']) {
+  return {
+    blockPreviewBindingV2: {
+      schemaVersion: 2,
+      ownerId: instance.instanceId,
+      nodeId: binding.nodeId,
+      outputPortId: binding.outputPortId,
+      mediaType: binding.mediaType,
+    },
+  };
+}
+
 /** Body controls. They intentionally do not use input/output display modes. */
 export function blockControlParamsV2(instanceValue: BlockInstanceV2): Record<string, NodeParams> {
   const instance = normalizeBlockInstanceV2(instanceValue);
@@ -373,37 +407,126 @@ function controlParamsForNormalizedInstanceV2(instance: BlockInstanceV2): Record
     instance.effectiveInterface.controls.map((control) => {
       const base = sourceParam(instance, control.binding.nodeId, control.binding.fieldId);
       const display = base?.display === 'input' || base?.display === 'output' ? undefined : base?.display;
+      const preview = base?.display?.startsWith('ui_')
+        ? instance.previewStates.find(
+            (state) =>
+              state.binding.nodeId === control.binding.nodeId && state.binding.outputPortId === control.binding.fieldId,
+          )
+        : undefined;
       return [
         control.controlId,
         {
           ...(base ? cloneJson(base) : {}),
           label: control.label,
           type: control.valueType,
-          // Effective-interface controls are explicitly public body controls.
-          // A source node may keep the backing field hidden until its dynamic
-          // options are resolved, but that implementation detail must not hide
-          // the declared Block control on the collapsed or expanded root.
-          hidden: false,
+          // User/registered Block interfaces remain explicitly public. Ordinary
+          // visual stages follow the selected native model's dynamic contract,
+          // retaining inactive values without showing inapplicable editors.
+          hidden:
+            instance.definitionSnapshot.ownership.kind === 'user' &&
+            instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+              ? Boolean(base?.hidden)
+              : false,
           ...(display ? { display } : { display: undefined }),
           ...optionalValue(blockInstanceValueV2(instance, control.controlId)),
+          // Older creation dialogs also exposed output previews as controls.
+          // Project current run state without changing that saved contract.
+          ...currentPreviewValue(base, preview),
           ...(control.defaultValue === undefined ? {} : { default: cloneJson(control.defaultValue) }),
           ...(control.required === undefined ? {} : { required: control.required }),
           disabled: Boolean(control.sealed) || Boolean(base?.disabled),
           isInput: false,
-          fieldOptions: projectedBindingFieldOptions(base, instance, control.controlId, 'control', control.binding),
+          fieldOptions: {
+            ...projectedBindingFieldOptions(base, instance, control.controlId, 'control', control.binding),
+            ...(preview ? previewSourceFieldOptionsV2(instance, preview.binding) : {}),
+          },
         } satisfies NodeParams,
       ];
     }),
   );
 }
 
+const IMAGE_RESULT_LABEL_V2 = {
+  portId: 'images',
+  savedLabel: 'videos',
+  displayLabel: 'Image',
+  valueType: 'image',
+  nodeId: 'decode',
+  fieldOrPortId: 'videos',
+};
+const TRANSCRIPT_RESULT_LABEL_V2 = {
+  portId: 'result',
+  savedLabel: 'result',
+  displayLabel: 'Transcript',
+  valueType: 'any',
+  nodeId: 'transcribeAudio',
+  fieldOrPortId: 'transcript',
+};
+
+// Keep these user-facing aliases out of the immutable registered interfaces.
+const REGISTERED_OUTPUT_LABELS_V2 = new Map([
+  [
+    'diffusers.cluster-admission:Cosmos3DistilledModularPipeline:text2image:workflow:official_top_level_blocks',
+    IMAGE_RESULT_LABEL_V2,
+  ],
+  [
+    'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2image:workflow:official_top_level_blocks',
+    IMAGE_RESULT_LABEL_V2,
+  ],
+  ['transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text', TRANSCRIPT_RESULT_LABEL_V2],
+  ['transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_to_text', TRANSCRIPT_RESULT_LABEL_V2],
+  ['transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_translation', TRANSCRIPT_RESULT_LABEL_V2],
+]);
+
+function registeredOutputLabelV2(instance: BlockInstanceV2, port: BlockPortV2) {
+  const { definitionId, source, ownership } = instance.definitionSnapshot;
+  const alias = REGISTERED_OUTPUT_LABELS_V2.get(definitionId);
+  return ownership.kind === 'registered' &&
+    source.executionAdmissionId === definitionId &&
+    alias?.portId === port.portId &&
+    alias.savedLabel === port.label &&
+    alias.valueType === port.valueType &&
+    alias.nodeId === port.binding.nodeId &&
+    alias.fieldOrPortId === port.binding.fieldOrPortId
+    ? alias.displayLabel
+    : port.label;
+}
+
 function connectorParam(instance: BlockInstanceV2, port: BlockPortV2, direction: 'input' | 'output'): NodeParams {
   const base = sourceParam(instance, port.binding.nodeId, port.binding.fieldOrPortId);
+  if (base?.signalCompatibility?.action === '$node') {
+    const actions = blockInputPortBindingsV2(port).map(
+      (binding) => instance.effectiveGraph.nodes.find((node) => node.nodeId === binding.nodeId)?.data.action,
+    );
+    const action = actions[0];
+    if (typeof action !== 'string' || !action || actions.some((value) => typeof value !== 'string' || !value))
+      throw new Error(`Cannot project action compatibility for Block port "${port.portId}": missing bound action.`);
+    if (actions.some((value) => value !== action)) {
+      // A shared input is compatible only when the source supports every bound
+      // action. Reject mirrors whose own declaration or option filters would
+      // be lost by projecting the primary port.
+      const sameContract = port.mirrorBindings?.every((binding) => {
+        const mirror = sourceParam(instance, binding.nodeId, binding.fieldOrPortId);
+        return (
+          mirror &&
+          canonicalBlockStringifyV2(mirror.signalCompatibility ?? null) ===
+            canonicalBlockStringifyV2(base.signalCompatibility) &&
+          (!mirror.onSignal ||
+            (Array.isArray(mirror.onSignal) && mirror.onSignal.length === 0) ||
+            canonicalBlockStringifyV2(mirror.onSignal) === canonicalBlockStringifyV2(base.onSignal ?? null))
+        );
+      });
+      if (direction !== 'input' || !sameContract) throw new Error('Incompatible action-bound Block mirror.');
+      base.signalCompatibility.boundActions = [...new Set(actions as string[])];
+    }
+    base.signalCompatibility.action = action;
+  }
   const value = direction === 'input' ? blockInstanceValueV2(instance, port.portId) : undefined;
+  const union = normalizeBlockValueTypeV2(port.valueType);
   return {
     ...(base ? cloneJson(base) : {}),
-    label: port.label,
-    type: port.valueType,
+    label: direction === 'output' ? registeredOutputLabelV2(instance, port) : port.label,
+    type: Array.isArray(union) ? (union as string[]) : port.valueType,
     display: direction,
     required: port.required,
     isInput: direction === 'input',
@@ -423,16 +546,32 @@ export function blockConnectorParamsV2(instanceValue: BlockInstanceV2): BlockCon
 }
 
 function connectorParamsForNormalizedInstanceV2(instance: BlockInstanceV2): BlockConnectorParamsV2 {
+  const focused = isFocusedStageNode(instance);
+  const project = (ports: BlockPortV2[], direction: 'input' | 'output') => {
+    const counts = new Map<string, number>();
+    if (focused) {
+      for (const { label } of ports) counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Object.fromEntries(
+      ports.map((port) => {
+        const param = connectorParam(instance, port, direction);
+        // Distinct operations can publish the same label (for example Doc or
+        // Summary). Identify its owner on the canvas without changing the
+        // saved interface name, socket ID, type, or executable binding.
+        if ((counts.get(port.label) ?? 0) > 1) {
+          const title = instance.effectiveGraph.nodes.find((node) => node.nodeId === port.binding.nodeId)?.data.label;
+          if (typeof title === 'string' && title.trim()) {
+            param.label = `${title.trim()} · ${port.label}`;
+            param.fieldOptions = { ...param.fieldOptions, wrapConnectionLabel: true };
+          }
+        }
+        return [port.portId, param];
+      }),
+    );
+  };
   return {
-    inputs: Object.fromEntries(
-      instance.effectiveInterface.boundary.inputs.map((port) => [port.portId, connectorParam(instance, port, 'input')]),
-    ),
-    outputs: Object.fromEntries(
-      instance.effectiveInterface.boundary.outputs.map((port) => [
-        port.portId,
-        connectorParam(instance, port, 'output'),
-      ]),
-    ),
+    inputs: project(instance.effectiveInterface.boundary.inputs, 'input'),
+    outputs: project(instance.effectiveInterface.boundary.outputs, 'output'),
   };
 }
 
@@ -480,30 +619,10 @@ function previewViewsForNormalizedInstanceV2(
           label: base?.label ?? 'Preview',
           type: base?.type ?? binding.mediaType,
           display: PREVIEW_DISPLAY_V2[binding.mediaType],
-          ...(preview.mediaReference === undefined
-            ? {}
-            : {
-                value: preview.mediaReference,
-                // A saved source field can retain artifacts from an earlier run.
-                // Its URL must not override the current instance's media reference.
-                artifacts: Array.isArray(base?.artifacts)
-                  ? base.artifacts.filter(
-                      (artifact: unknown) =>
-                        isRecord(artifact) &&
-                        artifact.url === preview.mediaReference &&
-                        (!preview.taskId || (artifact.taskId ?? artifact.task_id) === preview.taskId),
-                    )
-                  : [],
-              }),
+          ...currentPreviewValue(base, preview),
           fieldOptions: {
             ...(isRecord(base?.fieldOptions) ? cloneJson(base.fieldOptions) : {}),
-            blockPreviewBindingV2: {
-              schemaVersion: 2,
-              ownerId: instance.instanceId,
-              nodeId: binding.nodeId,
-              outputPortId: binding.outputPortId,
-              mediaType: binding.mediaType,
-            },
+            ...previewSourceFieldOptionsV2(instance, binding),
           },
         },
       },
@@ -1413,12 +1532,28 @@ function projectedNodeData(
     label,
     category: typeof raw.category === 'string' ? raw.category : 'Block internals',
     params,
+    // Disabled is authored execution state. Other UI state can contain stale
+    // validation or runtime diagnostics and must not enter the projection.
+    ...(isRecord(raw.uiState) && typeof raw.uiState.disabled === 'boolean'
+      ? { uiState: { disabled: raw.uiState.disabled } }
+      : {}),
     // Expanded Block internals are ordinary canvas nodes. Keep the same
     // resize affordance as standalone/User Node internals; the durable size
     // is absorbed into presentation.internalLayout by setFlowNodeSize.
     resizable: true,
     ...(typeof raw.description === 'string' ? { description: raw.description } : {}),
     ...(typeof raw.skipParamsCheck === 'boolean' ? { skipParamsCheck: raw.skipParamsCheck } : {}),
+    // Workflow-local stage grouping preserves advisory output/authoring roles.
+    // It never adopts managed ownership or grants execution authority.
+    ...(typeof raw.studioRole === 'string' &&
+    /^[A-Za-z][A-Za-z0-9:_-]{0,127}$/u.test(raw.studioRole) &&
+    instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+      ? { studioRole: raw.studioRole }
+      : {}),
+    ...(visualStageSourceIndex(raw.visualStageSourceIndex) &&
+    instance.definitionSnapshot.source.provider?.startsWith('modiff.visual-stages.')
+      ? { visualStageSourceIndex: raw.visualStageSourceIndex }
+      : {}),
     ...(raw.operationAuthoring
       ? {
           operationAuthoring: remapOperationAuthoring(raw.operationAuthoring, (id) =>
@@ -1512,7 +1647,8 @@ function projectedOwnSizeV2(
   // Catalogs produced before progressive disclosure stored a container's
   // complete recursive footprint in its one width/height pair. Detect that
   // legacy geometry from its immediate child bounds and restore the compact
-  // card size. Expanded dimensions are derived separately below.
+  // card size unless an explicit compact resize has supplied an unambiguous
+  // size mode. Expanded dimensions are derived separately below.
   const containsStoredChild = directChildren.some((child) => {
     const childLayout = layoutByNodeId.get(child.nodeId);
     if (!childLayout) return false;
@@ -1520,7 +1656,7 @@ function projectedOwnSizeV2(
     const childHeight = childLayout.height ?? INTERNAL_CONTAINER_MIN_HEIGHT;
     return width >= childLayout.x + childWidth + 20 || height >= childLayout.y + childHeight + 20;
   });
-  if (containsStoredChild) {
+  if (containsStoredChild && layout.sizeMode !== 'compact') {
     width = INTERNAL_CONTAINER_WIDTH;
     height = defaultHeight;
   }
@@ -1571,7 +1707,7 @@ function projectedHierarchicalLayoutsV2(
     }),
   );
   const visibleIds = new Set(orderedNodes.map(({ nodeId }) => nodeId));
-  const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsed = collapsedCanvasContainerIdsV2(instance);
   const childrenByParent = new Map<string, BlockGraphNodeV2[]>();
   orderedNodes.forEach((node) => {
     const parentId = parentIds.get(node.nodeId) ?? instance.instanceId;
@@ -1740,11 +1876,94 @@ function inactiveRegisteredStructuralNodeIdsV2(instance: BlockInstanceV2, parent
   );
 }
 
+export const STORYBOARD_SHOT_PROVIDER = 'modiff.visual-stages.storyboard.v1';
+
+/** The Shot composer retains these generated wrappers and their exact local
+ * interface when lifting inner stage definitions into its owning graph. Only
+ * that known presentation shape gets the simple card. Edited compositions
+ * with extra/replaced members remain ordinary expandable containers. */
+export function storyboardStageKindV2(instance: BlockInstanceV2 | undefined, semanticNodeId: string | undefined) {
+  const source = instance?.definitionSnapshot.source;
+  if (!instance || source?.kind !== 'user' || source.provider !== STORYBOARD_SHOT_PROVIDER) return null;
+  const nodes = instance.effectiveGraph.nodes;
+  const wrapper = nodes.find((node) => node.nodeId === semanticNodeId);
+  if (!wrapper?.nodeId.startsWith('visual-') || wrapper.parentNodeId || !wrapper.containerInterface) return null;
+  const children = nodes.filter((node) => node.parentNodeId === wrapper.nodeId);
+  if (children.some((child) => child.nodeType !== 'custom' || child.containerInterface)) return null;
+  const key = children
+    .map(({ data }) => {
+      const hint = data.operationAuthoring;
+      const operation = isRecord(hint) && hint.operation;
+      return isRecord(operation) && typeof operation.nodeType === 'string'
+        ? operation.nodeType
+        : `${data.module}.${data.action}`;
+    })
+    .sort()
+    .join(',');
+  switch (key) {
+    case 'modules.VideoConditioning.ShotPrompt,video_encoder':
+      return 'inputs';
+    case 'decoder,denoise,modules.VideoConditioning.ShotInputs':
+      return 'generate';
+    case 'modules.Image.Load':
+      return 'imageInput';
+    default:
+      return null;
+  }
+}
+
+const COSMOS_DECODE_WRAPPER_ID = 'container:decode/standard';
+
+function compactCosmosDecoderV2(instance: BlockInstanceV2, nodeId: string | undefined) {
+  const { source, ownership } = instance.definitionSnapshot;
+  if (
+    nodeId !== COSMOS_DECODE_WRAPPER_ID ||
+    ownership.kind !== 'registered' ||
+    source.pipelineClass !== 'Cosmos3OmniModularPipeline' ||
+    !/^(?:image2video|text2image|text2video|video2video)$/u.test(source.workflow ?? '')
+  )
+    return null;
+  const graph = instance.effectiveGraph;
+  const wrapper = graph.nodes.find((node) => node.nodeId === nodeId);
+  if (wrapper?.modularDiffusers?.blockClass !== 'Cosmos3DecodeStep' || wrapper.containerInterface) return null;
+  const parents = blockGraphParentIdsV2(graph);
+  const children = graph.nodes.filter((node) => parents.get(node.nodeId) === nodeId);
+  const decoder = children[0];
+  if (
+    children.length !== 1 ||
+    !decoder ||
+    decoder.nodeId !== 'decode' ||
+    decoder.modularDiffusers?.blockClass !== 'Cosmos3VideoDecodeStep' ||
+    decoder.containerInterface ||
+    [...parents.values()].includes(decoder.nodeId) ||
+    Object.values(sourceParams(decoder)).some((field) => !field.hidden && !connectorDirection(field))
+  )
+    return null;
+  return decoder;
+}
+
+export function projectedStageKindV2(instance: BlockInstanceV2 | undefined, semanticNodeId: string | undefined) {
+  return instance && compactCosmosDecoderV2(instance, semanticNodeId)
+    ? 'decode'
+    : storyboardStageKindV2(instance, semanticNodeId);
+}
+
+function collapsedCanvasContainerIdsV2(instance: BlockInstanceV2) {
+  const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  if (instance.definitionSnapshot.source.provider === STORYBOARD_SHOT_PROVIDER) {
+    for (const node of instance.effectiveGraph.nodes) {
+      if (storyboardStageKindV2(instance, node.nodeId)) collapsed.add(node.nodeId);
+    }
+  }
+  if (compactCosmosDecoderV2(instance, COSMOS_DECODE_WRAPPER_ID)) collapsed.add(COSMOS_DECODE_WRAPPER_ID);
+  return collapsed;
+}
+
 function visibleSemanticNodeIdsV2(
   instance: BlockInstanceV2,
   parentIds = blockGraphParentIdsV2(instance.effectiveGraph),
 ) {
-  const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsed = collapsedCanvasContainerIdsV2(instance);
   const inactiveStructural = inactiveRegisteredStructuralNodeIdsV2(instance, parentIds);
   return new Set(
     instance.effectiveGraph.nodes.flatMap((node) => {
@@ -1813,7 +2032,7 @@ function connectorDirection(param: NodeParams | undefined) {
  */
 function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSurfaceV2 {
   const parentIds = blockGraphParentIdsV2(instance.effectiveGraph);
-  const collapsedContainerIds = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsedContainerIds = collapsedCanvasContainerIdsV2(instance);
   const visibleNodeIds = visibleSemanticNodeIdsV2(instance, parentIds);
   const nodesById = new Map(instance.effectiveGraph.nodes.map((node) => [node.nodeId, node]));
   const paramsByNodeId = new Map<string, Record<string, NodeParams>>();
@@ -1969,10 +2188,25 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
       nodeId: port.binding.nodeId,
       fieldOrPortId: port.binding.fieldOrPortId,
     };
-    const preferred = { label: port.label, valueType: port.valueType, required: port.required };
+    const preferred = {
+      label: registeredOutputLabelV2(instance, port),
+      valueType: port.valueType,
+      required: port.required,
+    };
     addEndpoint(endpoint, preferred);
     addEndpointToVisibleContainers(endpoint, preferred);
   });
+
+  // This single-operation stage keeps every native socket, including optional
+  // sockets that do not participate in a default crossing connection.
+  const compactDecoder = compactCosmosDecoderV2(instance, COSMOS_DECODE_WRAPPER_ID);
+  if (compactDecoder && visibleNodeIds.has(COSMOS_DECODE_WRAPPER_ID)) {
+    for (const [fieldOrPortId, field] of Object.entries(sourceParams(compactDecoder))) {
+      const direction = connectorDirection(field);
+      if (!direction || field.hidden) continue;
+      addEndpointAtNode(COSMOS_DECODE_WRAPPER_ID, { direction, nodeId: compactDecoder.nodeId, fieldOrPortId }, {});
+    }
+  }
 
   // A nested Block's declared public sockets also remain available on its
   // unopened descendants. Do not leak a local interface into ancestors above
@@ -2202,7 +2436,7 @@ function projectedChildren(instance: BlockInstanceV2, absolute: boolean, include
   const visibleNodeIds = absolute
     ? (included ?? new Set(instance.effectiveGraph.nodes.map(({ nodeId }) => nodeId)))
     : visibleSemanticNodeIdsV2(instance, parentIds);
-  const collapsedContainerIds = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
+  const collapsedContainerIds = collapsedCanvasContainerIdsV2(instance);
   const projectionSurface = absolute ? null : blockProjectionSurfaceV2(instance);
   // A collapsed container is another view of the same declared controls, not
   // a parameter-less summary card. Build once, then fan each control out to its
@@ -2855,6 +3089,13 @@ export function expandBlockGraphV2ForExecution(
   const executionNodes = [...rootInstances.entries()].flatMap(([id, instance]) =>
     projectedChildren(instance, true, id === selectedOwnerId ? selectedSemanticIds : undefined),
   );
+  const positioned = executionNodes.flatMap((leaf) =>
+    visualStageSourceIndex(leaf.data.visualStageSourceIndex) ? [{ index: leaf.data.visualStageSourceIndex, leaf }] : [],
+  );
+  const orderedNodes = [
+    ...insertStageLeaves(externalNodes, positioned),
+    ...executionNodes.filter((leaf) => !visualStageSourceIndex(leaf.data.visualStageSourceIndex)),
+  ];
   const occupied = new Set(externalNodes.map(({ id }) => id));
   executionNodes.forEach(({ id }) => {
     if (occupied.has(id)) throw new Error(`Cannot expand Block V2 graph: projected node id ${id} already exists.`);
@@ -2973,11 +3214,11 @@ export function expandBlockGraphV2ForExecution(
       }
     }
     return {
-      nodes: [...externalNodes, ...executionNodes].filter(({ id }) => included.has(id)),
+      nodes: orderedNodes.filter(({ id }) => included.has(id)),
       edges: allEdges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
     };
   }
-  return { nodes: [...externalNodes, ...executionNodes], edges: [...translatedEdges, ...internalEdges] };
+  return { nodes: orderedNodes, edges: [...translatedEdges, ...internalEdges] };
 }
 
 /** Rebuild a durable root solely from its embedded instance authority. */

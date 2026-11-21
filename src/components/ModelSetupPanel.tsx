@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { Download, FolderOpen, FolderSearch, Info, RefreshCw, Settings } from 'lucide-react';
 import { useNodesStore } from '../stores/useNodeStore';
+import { studioWeightFormatProfile, hasNonNativeStudioWeightFormat } from '../studio/weightFormat';
 import { useStudioStore } from '../stores/useStudioStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
@@ -12,7 +13,7 @@ import {
   isHfDownloadActive,
   isHfDownloadComplete,
 } from '../studio/modelInstall';
-import { getStudioModelCacheStatus } from '../studio/modelCache';
+import { getStudioModelCacheStatus, reviewedExpertInstallTarget } from '../studio/modelCache';
 import { STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
 import {
   getGraphWorkflowArtifactRequirements,
@@ -52,8 +53,8 @@ import {
 } from '../ui';
 import { cx } from '../utils/classNames';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
-import { RuntimeEnvironmentCard } from './RuntimeEnvironmentCard';
-import RuntimeOptimizationsCard from './RuntimeOptimizationsCard';
+import WorkflowSetupChecklist from './WorkflowSetupChecklist';
+import { captureRunRecoveryOrigin } from '../studio/runRecovery';
 import { TemplateGallerySetupCard } from './TemplateGallerySetupCard';
 import { WorkflowArtifactRequirementRow } from './WorkflowArtifactRequirementRow';
 
@@ -190,8 +191,10 @@ export default function ModelSetupPanel() {
   const localModels = useNodesStore((state) => state.localModels);
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
   const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const studioModelCapabilitiesAuthoritative = useNodesStore((state) => state.studioModelCapabilitiesAuthoritative);
+  const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const studioExecutionSpecInvalid = useNodesStore((state) => state.studioExecutionSpecInvalid);
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
-  const runtimeError = useNodesStore((state) => state.runtimeError);
   const hfDownloadProgress = useNodesStore((state) => state.hfDownloadProgress);
   const refreshModelIndexes = useNodesStore((state) => state.refreshModelIndexes);
   const fetchRuntimeStatus = useNodesStore((state) => state.fetchRuntimeStatus);
@@ -206,7 +209,9 @@ export default function ModelSetupPanel() {
       state.nodes
         .map((node) => {
           const modelParams = Object.entries(node.data.params)
-            .filter(([key]) => /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter/i.test(key))
+            .filter(([key]) =>
+              /repo|model|checkpoint|ckpt|safetensors|lora|vae|controlnet|adapter|weight_format|revision/i.test(key),
+            )
             .map(([key, param]) => `${key}:${JSON.stringify(param.value ?? param.default ?? '')}`)
             .join(',');
           return `${node.id}:${node.data.module}:${node.data.action}:${node.data.uiState?.disabled ? 'disabled' : 'enabled'}:${modelParams}`;
@@ -241,7 +246,13 @@ export default function ModelSetupPanel() {
       !graphBinding &&
       (graphInspection.nodeCount > 0 || graphInspection.blockingIssues.length > 0));
   const workflowAutoPlanKey = autoPlanKeyForForm(form);
-  const workflowProfile = STUDIO_MODEL_PROFILES[form.modelType];
+  const workflowProfile = studioWeightFormatProfile(
+    form,
+    STUDIO_MODEL_PROFILES[form.modelType],
+    studioModelCapabilities,
+    workflowModelDescriptors,
+    studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
+  );
   const profiles =
     hasWorkflowModelContext && workflowProfile
       ? [
@@ -262,6 +273,9 @@ export default function ModelSetupPanel() {
           form,
           hfCache,
           includePipeline: false,
+          backendCapabilities: studioModelCapabilities,
+          workflowModelDescriptors,
+          studioExecutionSpecInvalid: studioExecutionSpecInvalid || !studioModelCapabilitiesAuthoritative,
           localModels,
           modelCacheDiagnostics,
         })
@@ -269,6 +283,8 @@ export default function ModelSetupPanel() {
   const graphArtifactRequirements = hasCustomGraphContext
     ? getGraphWorkflowArtifactRequirements({
         references: graphInspection.modelRefs,
+        nodes: useFlowStore.getState().nodes,
+        workflowModelDescriptors,
         hfCache,
         localModels,
         modelCacheDiagnostics,
@@ -311,7 +327,7 @@ export default function ModelSetupPanel() {
   };
 
   const openIssueReview = () => {
-    showRunIssues(runReadiness.issues);
+    showRunIssues(runReadiness.issues, captureRunRecoveryOrigin());
   };
 
   const handleIssueInstall = async (repoId: string) => {
@@ -435,7 +451,7 @@ export default function ModelSetupPanel() {
     <div className="grid gap-3 p-3 text-sm text-modiff-text" data-testid="setup-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-base font-bold text-modiff-text">Model Health</h2>
+          <h2 className="text-base font-bold text-modiff-text">Workflow setup</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           <ModiffButton
@@ -457,18 +473,21 @@ export default function ModelSetupPanel() {
         </div>
       </div>
 
-      <RuntimeEnvironmentCard error={runtimeError} status={runtimeStatus} />
-      <RuntimeOptimizationsCard />
+      <WorkflowSetupChecklist onInstall={handleInstall} />
       <TemplateGallerySetupCard />
 
       {currentIssueGroups.length > 0 && (
-        <section
-          className="grid gap-3 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
+        <ModiffDisclosure
+          className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3"
           data-testid="setup-current-issues"
+          label={`Whole workflow Run checks (${runReadiness.blockingIssues.length})`}
+          panelClassName="mt-3 grid gap-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-bold text-modiff-text">Current issues</h3>
+              <p className="text-xs text-modiff-subtle-text">
+                These checks cover the whole workflow, independently of the checklist scope selected above.
+              </p>
             </div>
             <ModiffButton icon={<Info size={15} />} onClick={openIssueReview}>
               Review all
@@ -492,7 +511,7 @@ export default function ModelSetupPanel() {
               </div>
             </div>
           ))}
-        </section>
+        </ModiffDisclosure>
       )}
 
       {visibleDownloads.length > 0 && (
@@ -608,6 +627,11 @@ export default function ModelSetupPanel() {
                 Contextual
               </StatusPill>
             </div>
+            {hasNonNativeStudioWeightFormat(form) && !workflowProfile ? (
+              <p role="status" className="text-xs text-hf-orange">
+                {getStudioModelCacheStatus(null, hfCache, localModels, modelCacheDiagnostics).reason}
+              </p>
+            ) : null}
             {profiles.map(({ autoPlan, backendCapability, profile, status }) => (
               <ModelProfileCard
                 key={profile.modelType}
@@ -760,10 +784,12 @@ function ModelProfileCard({
   requirements: WorkflowArtifactRequirement[];
   status: ReturnType<typeof getStudioModelCacheStatus>;
 }) {
-  const autoInstallTarget = autoResourceInstallTarget(autoPlan, form);
+  const autoInstallTarget =
+    autoResourceInstallTarget(autoPlan, form) ??
+    (hasNonNativeStudioWeightFormat(form) ? reviewedExpertInstallTarget(profile, status) : null);
   const autoCandidate = selectedAutoCandidate(autoPlan, form);
   const autoReady = autoPlanIsReady(autoPlan, form);
-  const ready = autoPlan ? autoReady : status.runnable;
+  const ready = hasNonNativeStudioWeightFormat(form) ? status.runnable : autoPlan ? autoReady : status.runnable;
   const installRepo = autoInstallTarget?.repo ?? profile.defaultRepo;
   const progress = hfDownloadProgress[installRepo];
   const installing = isHfDownloadActive(progress);

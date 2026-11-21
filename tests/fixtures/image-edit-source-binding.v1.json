@@ -1,0 +1,302 @@
+{
+  "submittedApi": {
+    "nodes": {
+      "load": {
+        "module": "modules.Image",
+        "action": "Load",
+        "params": {
+          "file": {
+            "display": "filebrowser",
+            "value": ["synthetic-rgb-pattern.png"]
+          },
+          "alpha_channel": {
+            "value": "ignore"
+          }
+        }
+      },
+      "edit": {
+        "module": "modules.DiffusersImage",
+        "action": "Edit",
+        "params": {
+          "image": {
+            "display": "input",
+            "sourceId": "load",
+            "sourceKey": "image"
+          }
+        }
+      }
+    }
+  },
+  "receipt": {
+    "fieldAccountingStatus": {
+      "schemaVersion": 1,
+      "truncated": false
+    },
+    "mediaEvidenceStatus": {
+      "schemaVersion": 1,
+      "truncated": false
+    },
+    "schemaVersion": 1,
+    "source": "backend-execution",
+    "taskId": "synthetic-rgb-source-edit",
+    "attemptIndex": 0,
+    "nodeId": "edit",
+    "nodes": [
+      {
+        "nodeId": "edit",
+        "module": "modules.DiffusersImage",
+        "action": "Edit",
+        "fields": {
+          "prompt": {
+            "value": "Flat travel poster",
+            "source": "literal"
+          },
+          "num_inference_steps": {
+            "value": 30,
+            "source": "literal"
+          },
+          "output_type": {
+            "value": "pil",
+            "source": "literal"
+          },
+          "negative_prompt": {
+            "value": "",
+            "source": "literal"
+          },
+          "strength": {
+            "value": 0.8,
+            "source": "literal"
+          },
+          "guidance_scale": {
+            "value": 7.5,
+            "source": "literal"
+          },
+          "executed_task": {
+            "value": "edit_image",
+            "source": "literal"
+          },
+          "seed": {
+            "value": 42,
+            "source": "literal"
+          },
+          "control_guidance_end": {
+            "value": null,
+            "source": "literal"
+          },
+          "max_sequence_length": {
+            "value": null,
+            "source": "literal"
+          },
+          "control_guidance_start": {
+            "value": null,
+            "source": "literal"
+          },
+          "conditioning_scale": {
+            "value": null,
+            "source": "literal"
+          },
+          "width": {
+            "value": null,
+            "source": "literal"
+          },
+          "height": {
+            "value": null,
+            "source": "literal"
+          }
+        },
+        "omittedFields": {},
+        "fieldAccounting": {
+          "schemaVersion": 1,
+          "fields": {
+            "guidance_scale": {
+              "disposition": "consumed",
+              "inputValue": 7.5,
+              "value": 7.5,
+              "source": "literal"
+            },
+            "height": {
+              "disposition": "inactive",
+              "inputValue": 512,
+              "value": 512,
+              "reason": "adapter-inactive",
+              "source": "literal"
+            },
+            "image_contract": {
+              "disposition": "metadata",
+              "reason": "presentation-contract",
+              "sha256": "f5c3241f8cec9e8dc35e8be81dfd0354380bd5a2b33f0451d320cb57fe455ee4",
+              "source": "literal"
+            },
+            "max_sequence_length": {
+              "disposition": "inactive",
+              "inputValue": 512,
+              "value": 512,
+              "reason": "adapter-inactive",
+              "source": "literal"
+            },
+            "negative_prompt": {
+              "disposition": "consumed",
+              "inputValue": "",
+              "value": "",
+              "source": "literal"
+            },
+            "num_inference_steps": {
+              "disposition": "consumed",
+              "inputValue": 30,
+              "value": 30,
+              "source": "literal"
+            },
+            "output_type": {
+              "disposition": "consumed",
+              "inputValue": "pil",
+              "value": "pil",
+              "source": "literal"
+            },
+            "prompt": {
+              "disposition": "consumed",
+              "inputValue": "Flat travel poster",
+              "value": "Flat travel poster",
+              "source": "literal"
+            },
+            "reference_strength": {
+              "disposition": "inactive",
+              "inputValue": 1,
+              "value": 1,
+              "reason": "adapter-inactive",
+              "source": "literal"
+            },
+            "seed": {
+              "disposition": "consumed",
+              "inputValue": 42,
+              "value": 42,
+              "source": "literal"
+            },
+            "strength": {
+              "disposition": "consumed",
+              "inputValue": 0.8,
+              "value": 0.8,
+              "source": "literal"
+            },
+            "width": {
+              "disposition": "inactive",
+              "inputValue": 512,
+              "value": 512,
+              "reason": "adapter-inactive",
+              "source": "literal"
+            }
+          },
+          "inputProjections": {
+            "image": {
+              "kind": "decoded-image-v1",
+              "values": {
+                "sha256": "78f70abfbea583685cf06bf4b8ead86205f1e3e218a14aeefb09e4fded2b17c8",
+                "byteSize": 4608,
+                "width": 48,
+                "height": 32,
+                "mode": "RGB"
+              },
+              "sha256": "f96db0030504f2ebd0cfa15c120d890e6dba487dea430b77db594e623a698507",
+              "source": "connected",
+              "sourceNodeId": "load",
+              "sourcePortId": "image"
+            }
+          },
+          "outputProjections": {},
+          "unaccountedFields": [],
+          "omittedFields": {},
+          "complete": true
+        }
+      },
+      {
+        "nodeId": "load",
+        "module": "modules.Image",
+        "action": "Load",
+        "fields": {
+          "alpha_channel": {
+            "value": "ignore",
+            "source": "literal"
+          },
+          "source_hashes": {
+            "value": ["b4bf67b55e9276e60895d82f90f8b065f96213092f1a8cdfd21d5a8fca17edff"],
+            "source": "literal"
+          },
+          "source_widths": {
+            "value": [48],
+            "source": "literal"
+          },
+          "source_heights": {
+            "value": [32],
+            "source": "literal"
+          },
+          "source_modes": {
+            "value": ["RGB"],
+            "source": "literal"
+          }
+        },
+        "omittedFields": {},
+        "mediaEvidence": {
+          "schemaVersion": 1,
+          "source": "native-builtin-media-v1",
+          "status": "complete",
+          "controls": {
+            "alpha_channel": "ignore"
+          },
+          "inputs": {},
+          "outputs": {
+            "image": [
+              {
+                "kind": "image",
+                "sha256": "78f70abfbea583685cf06bf4b8ead86205f1e3e218a14aeefb09e4fded2b17c8",
+                "byteSize": 4608,
+                "width": 48,
+                "height": 32,
+                "mode": "RGB"
+              }
+            ]
+          },
+          "files": {
+            "file": [
+              {
+                "sourceValue": "synthetic-rgb-pattern.png",
+                "sha256": "b4bf67b55e9276e60895d82f90f8b065f96213092f1a8cdfd21d5a8fca17edff",
+                "byteSize": 130
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "summary": {
+      "prompt": "Flat travel poster",
+      "steps": 30,
+      "outputType": "pil",
+      "negativePrompt": "",
+      "strength": 0.8,
+      "guidanceScale": 7.5,
+      "executedTask": "edit_image",
+      "seed": 42,
+      "controlGuidanceEnd": null,
+      "maxSequenceLength": null,
+      "controlGuidanceStart": null,
+      "conditioningScale": null,
+      "width": null,
+      "height": null,
+      "imageAlphaChannel": "ignore",
+      "imageSourceHashes": ["b4bf67b55e9276e60895d82f90f8b065f96213092f1a8cdfd21d5a8fca17edff"],
+      "imageSourceWidths": [48],
+      "imageSourceHeights": [32],
+      "imageSourceModes": ["RGB"]
+    },
+    "ambiguousFields": [],
+    "unavailableFields": [],
+    "uncapturedNodeIds": [],
+    "truncated": false
+  },
+  "outputIdentity": {
+    "taskId": "synthetic-rgb-source-edit",
+    "nodeId": "edit",
+    "attemptIndex": 0
+  },
+  "loadId": "load",
+  "editId": "edit"
+}

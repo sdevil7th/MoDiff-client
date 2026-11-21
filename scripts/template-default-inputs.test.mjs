@@ -53,7 +53,7 @@ test('approved provenance root inputs have complete typed Studio binding coverag
     assert.ok(approvedTemplateIds.has(templateId), `${templateId} is still approved by the public manifest`);
   }
   for (const requirement of plan.requirements) {
-    const expectedAssetId = `${requirement.templateId}-${requirement.role.replaceAll('_', '-')}`;
+    const expectedAssetId = requirement.assetId ?? `${requirement.templateId}-${requirement.role.replaceAll('_', '-')}`;
     const bindingAsset = mappedAssets.find(
       ({ templateId, asset }) => templateId === requirement.templateId && asset.id === expectedAssetId,
     );
@@ -78,7 +78,7 @@ test('approved provenance root inputs have complete typed Studio binding coverag
   );
   assert.deepEqual(
     plan.excludedGenerated.map(({ templateId, role }) => [templateId, role]),
-    [['qwen_upscale_finish', 'generated_before_upscale']],
+    [['qwen_upscale_finish', 'upscaleSourceComparison']],
     'generated intermediate outputs never become bundled root inputs',
   );
   assert.equal(plan.mapping.qwen_upscale_finish, undefined);
@@ -137,5 +137,26 @@ test('two clean generations produce byte-identical runtime and typed bundles', a
   } finally {
     await rm(firstRoot, { recursive: true, force: true });
     await rm(secondRoot, { recursive: true, force: true });
+  }
+});
+
+test('regeneration preserves sources owned by the installed runtime cache', async () => {
+  const plan = await buildTemplateDefaultInputPlan();
+  const destinationRoot = await mkdtemp(join(tmpdir(), 'modiff-template-inputs-self-'));
+  try {
+    await writeTemplateDefaultInputPlan(plan, destinationRoot);
+    const before = await runtimeTreeDigest(destinationRoot);
+    const cachedPlan = {
+      ...plan,
+      runtimeAssets: plan.runtimeAssets.map((asset) => ({
+        ...asset,
+        sourcePath: join(destinationRoot, 'public/template-gallery/runtime-inputs', asset.relativePath),
+      })),
+    };
+    await writeTemplateDefaultInputPlan(cachedPlan, destinationRoot);
+    await verifyTemplateDefaultInputPlan(cachedPlan, destinationRoot);
+    assert.equal(await runtimeTreeDigest(destinationRoot), before);
+  } finally {
+    await rm(destinationRoot, { recursive: true, force: true });
   }
 });

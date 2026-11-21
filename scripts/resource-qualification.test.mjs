@@ -199,6 +199,30 @@ test('accepts a full locked workload when only resource controls change', () => 
   assert.equal(result.recipe.offloadMode, 'model_cpu');
 });
 
+test('a reviewed execution-class alias keeps the original recipe and cannot qualify a different pipeline', () => {
+  const baseline = provenance();
+  const candidate = provenance({ offloadMode: 'model_cpu', autoOffload: true });
+  const target = {
+    ...contractTemplate,
+    modelType: 'CatalogDisplayFamily',
+    resourceRecipes: {
+      ...contractTemplate.resourceRecipes,
+      executionModelType: 'FluxSchnellPipeline',
+    },
+  };
+  const result = validateResourceQualificationEvidence({ provenance: candidate, baseline, contractTemplate: target });
+  assert.equal(
+    result.recipe.modelType,
+    'FluxSchnellPipeline',
+    'do not rewrite original runtime identity to a display alias',
+  );
+  target.resourceRecipes.executionModelType = 'DifferentPipeline';
+  assert.throws(
+    () => validateResourceQualificationEvidence({ provenance: candidate, baseline, contractTemplate: target }),
+    /not declared/,
+  );
+});
+
 test('resource recipe identity changes for optimization and placement controls', () => {
   const baseline = provenance();
   baseline.graph.executionPlan.device = 'cuda:0';
@@ -329,105 +353,162 @@ test('pre-attestation V2 resource evidence requires a fresh worker run', () => {
   );
 });
 
-test('resource coverage consumes a retained full-workload receipt', () => {
-  const backendRoot = mkdtempSync(join(tmpdir(), 'modiff-resource-report-'));
-  try {
-    const releaseDir = join(backendRoot, 'data', 'qualification', 'release');
-    const templateProofDir = join(releaseDir, 'template-provenance');
-    const resourceProofDir = join(releaseDir, 'resource-provenance');
-    const historyDir = join(backendRoot, 'data', 'auto_resource');
-    mkdirSync(templateProofDir, { recursive: true });
-    mkdirSync(resourceProofDir, { recursive: true });
-    mkdirSync(historyDir, { recursive: true });
+for (const baselineKind of ['direct', 'gallery_bundle']) {
+  test(`resource coverage consumes a retained full-workload receipt with a ${baselineKind} baseline`, () => {
+    const backendRoot = mkdtempSync(join(tmpdir(), 'modiff-resource-report-'));
+    try {
+      const releaseDir = join(backendRoot, 'data', 'qualification', 'release');
+      const templateProofDir = join(releaseDir, 'template-provenance');
+      const resourceProofDir = join(releaseDir, 'resource-provenance');
+      const historyDir = join(backendRoot, 'data', 'auto_resource');
+      mkdirSync(templateProofDir, { recursive: true });
+      mkdirSync(resourceProofDir, { recursive: true });
+      mkdirSync(historyDir, { recursive: true });
 
-    const baseline = provenance();
-    const candidate = provenance({ offloadMode: 'model_cpu', autoOffload: true, exactRoute: true });
-    const baselineRelativePath = 'data/qualification/release/template-provenance/baseline.json';
-    const proofRelativePath = 'data/qualification/release/resource-provenance/candidate.json';
-    const proofPath = join(backendRoot, proofRelativePath);
-    writeFileSync(join(backendRoot, baselineRelativePath), `${JSON.stringify(baseline)}\n`);
-    writeFileSync(proofPath, `${JSON.stringify(candidate)}\n`);
-    const proofSha256 = `sha256:${createHash('sha256').update(readFileSync(proofPath)).digest('hex')}`;
-    const recipe = resourceRecipeFromProvenance(candidate);
-    const recipeHash = resourceRecipeHash(recipe);
-    writeFileSync(
-      join(backendRoot, 'data', 'release-contract.v1.json'),
-      `${JSON.stringify({
-        generatedAt: '2026-07-28T00:00:00.000Z',
-        contractHash: 'sha256:contract',
-        templates: [
-          {
-            ...contractTemplate,
-            releaseEligible: true,
-            qualificationExemption: null,
-            lastSuccessfulRealRun: { provenancePath: baselineRelativePath },
-          },
-        ],
-      })}\n`,
-    );
-    writeFileSync(join(historyDir, 'history.json'), `${JSON.stringify({ entries: {} })}\n`);
-    writeFileSync(
-      join(releaseDir, 'resource-run-receipts.v1.json'),
-      `${JSON.stringify({
-        schemaVersion: 1,
-        format: 'modiff.resource-run-receipt-registry.v1',
-        receipts: [
-          {
-            templateId: contractTemplate.id,
-            templateSchemaHash: contractTemplate.schemaHash,
-            taskId: candidate.taskId,
-            capturedAt: candidate.capturedAt,
-            modelType: 'FluxSchnellPipeline',
-            dtype: 'bfloat16',
-            offloadMode: 'model_cpu',
-            quantizationMode: 'none',
-            recipe,
-            recipeHash,
-            bindingStatus: 'exact_route_bound',
-            routeBinding: candidate.routeBinding,
-            routeBindingHash: candidate.routeBindingHash,
-            modelRevision: candidate.modelRevision,
-            modelSetHash: candidate.models.hash,
-            resourceCandidateId: 'manual:test',
-            graphHash: candidate.graphHash,
-            workloadHash: resourceWorkloadHash(candidate),
-            baselineWorkloadHash: resourceWorkloadHash(baseline),
-            runtimeFingerprint: candidate.runtimeFingerprint,
-            outputHash: candidate.mediaHash,
-            executionDurationSeconds: candidate.execution.elapsedSeconds,
-            peakMemoryBytes: candidate.execution.peakMemoryBytes,
-            peakReservedBytes: 1400,
-            processRssBytes: 5600,
-            proofPath: proofRelativePath,
-            proofSha256,
-          },
-        ],
-      })}\n`,
-    );
+      const targetTemplate =
+        baselineKind === 'gallery_bundle'
+          ? {
+              ...contractTemplate,
+              modelType: 'CatalogDisplayFamily',
+              resourceRecipes: { ...contractTemplate.resourceRecipes, executionModelType: 'FluxSchnellPipeline' },
+            }
+          : contractTemplate;
+      const baseline = provenance();
+      const candidate = provenance({ offloadMode: 'model_cpu', autoOffload: true, exactRoute: true });
+      const baselineRelativePath =
+        baselineKind === 'direct'
+          ? 'data/qualification/release/template-provenance/baseline.json'
+          : '/template-gallery/reviews/resource-baseline-fixture.json';
+      const baselineFile =
+        baselineKind === 'direct'
+          ? join(backendRoot, baselineRelativePath)
+          : join(backendRoot, 'web', baselineRelativePath.slice(1));
+      mkdirSync(join(baselineFile, '..'), { recursive: true });
+      const baselineBody =
+        baselineKind === 'direct'
+          ? baseline
+          : {
+              schemaVersion: 1,
+              format: 'modiff.gallery.reviewed-provenance.v1',
+              templateId: baseline.template.id,
+              run: baseline,
+            };
+      const proofRelativePath = 'data/qualification/release/resource-provenance/candidate.json';
+      const proofPath = join(backendRoot, proofRelativePath);
+      writeFileSync(baselineFile, `${JSON.stringify(baselineBody)}\n`);
+      writeFileSync(proofPath, `${JSON.stringify(candidate)}\n`);
+      const proofSha256 = `sha256:${createHash('sha256').update(readFileSync(proofPath)).digest('hex')}`;
+      const recipe = resourceRecipeFromProvenance(candidate);
+      const recipeHash = resourceRecipeHash(recipe);
+      writeFileSync(
+        join(backendRoot, 'data', 'release-contract.v1.json'),
+        `${JSON.stringify({
+          generatedAt: '2026-07-28T00:00:00.000Z',
+          contractHash: 'sha256:contract',
+          templates: [
+            {
+              ...targetTemplate,
+              releaseEligible: true,
+              qualificationExemption: null,
+              lastSuccessfulRealRun: {
+                provenancePath: baselineRelativePath,
+                provenanceHash:
+                  baselineKind === 'direct'
+                    ? `sha256:${createHash('sha256').update(readFileSync(baselineFile)).digest('hex')}`
+                    : sha256Value('canonical-json', baselineBody),
+                templateId: baseline.template.id,
+                taskId: baseline.taskId,
+                graphHash: baseline.graphHash,
+                modelRevision: baseline.modelRevision,
+                runtimeFingerprint: baseline.runtimeFingerprint,
+                resourceCandidateId: baseline.execution.resourceCandidateId,
+                outputHash: baseline.mediaHash,
+                executionDurationSeconds: baseline.execution.elapsedSeconds,
+                peakMemoryBytes: baseline.execution.peakMemoryBytes,
+              },
+            },
+          ],
+        })}\n`,
+      );
+      writeFileSync(join(historyDir, 'history.json'), `${JSON.stringify({ entries: {} })}\n`);
+      writeFileSync(
+        join(releaseDir, 'resource-run-receipts.v1.json'),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          format: 'modiff.resource-run-receipt-registry.v1',
+          receipts: [
+            {
+              templateId: contractTemplate.id,
+              resourceFamily: targetTemplate.modelType,
+              templateSchemaHash: contractTemplate.schemaHash,
+              taskId: candidate.taskId,
+              capturedAt: candidate.capturedAt,
+              modelType: 'FluxSchnellPipeline',
+              dtype: 'bfloat16',
+              offloadMode: 'model_cpu',
+              quantizationMode: 'none',
+              recipe,
+              recipeHash,
+              bindingStatus: 'exact_route_bound',
+              routeBinding: candidate.routeBinding,
+              routeBindingHash: candidate.routeBindingHash,
+              modelRevision: candidate.modelRevision,
+              modelSetHash: candidate.models.hash,
+              resourceCandidateId: 'manual:test',
+              graphHash: candidate.graphHash,
+              workloadHash: resourceWorkloadHash(candidate),
+              baselineWorkloadHash: resourceWorkloadHash(baseline),
+              runtimeFingerprint: candidate.runtimeFingerprint,
+              outputHash: candidate.mediaHash,
+              executionDurationSeconds: candidate.execution.elapsedSeconds,
+              peakMemoryBytes: candidate.execution.peakMemoryBytes,
+              peakReservedBytes: 1400,
+              processRssBytes: 5600,
+              proofPath: proofRelativePath,
+              proofSha256,
+            },
+          ],
+        })}\n`,
+      );
 
-    const result = spawnSync(process.execPath, [resolve('scripts/resource-qualification-report.mjs')], {
-      cwd: resolve('.'),
-      encoding: 'utf8',
-      env: { ...process.env, MODIFF_BACKEND_DIR: backendRoot },
-    });
-    assert.equal(result.status, 0, result.stderr);
-    const report = JSON.parse(readFileSync(join(releaseDir, 'resource-recipe-coverage.v1.json'), 'utf8'));
-    assert.equal(report.coverage.qualified, 1);
-    const qualified = report.recipes.find((recipe) => recipe.status === 'qualified');
-    assert.equal(qualified.evidence.evidenceSource, 'resource_run_receipt');
-    assert.equal(qualified.evidence.taskId, candidate.taskId);
-    assert.equal(qualified.evidence.processRssBytes, 5600);
-    assert.equal(qualified.evidence.bindingStatus, 'exact_route_bound');
-    assert.equal(qualified.evidence.routeBindingHash, candidate.routeBindingHash);
-    assert.equal(qualified.evidence.modelSetHash, candidate.models.hash);
-    // Standard-template evidence qualifies the explicitly declared family
-    // recipe only. Even when it retains an exact binding for audit, it cannot
-    // authorize the independent two-proof exact-route lane.
-    assert.equal(report.routeQualifications.length, 0);
-  } finally {
-    rmSync(backendRoot, { recursive: true, force: true });
-  }
-});
+      const result = spawnSync(process.execPath, [resolve('scripts/resource-qualification-report.mjs')], {
+        cwd: resolve('.'),
+        encoding: 'utf8',
+        env: { ...process.env, MODIFF_BACKEND_DIR: backendRoot },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const report = JSON.parse(readFileSync(join(releaseDir, 'resource-recipe-coverage.v1.json'), 'utf8'));
+      assert.equal(report.coverage.qualified, 1);
+      const qualified = report.recipes.find((recipe) => recipe.status === 'qualified');
+      assert.equal(qualified.evidence.evidenceSource, 'resource_run_receipt');
+      assert.equal(qualified.evidence.taskId, candidate.taskId);
+      assert.equal(qualified.evidence.processRssBytes, 5600);
+      assert.equal(qualified.evidence.bindingStatus, 'exact_route_bound');
+      assert.equal(qualified.evidence.routeBindingHash, candidate.routeBindingHash);
+      assert.equal(qualified.evidence.modelSetHash, candidate.models.hash);
+      assert.equal(qualified.modelType, targetTemplate.modelType);
+      // Standard-template evidence qualifies the explicitly declared family
+      // recipe only. Even when it retains an exact binding for audit, it cannot
+      // authorize the independent two-proof exact-route lane.
+      assert.equal(report.routeQualifications.length, 0);
+      if (baselineKind === 'gallery_bundle') {
+        const registryPath = join(releaseDir, 'resource-run-receipts.v1.json');
+        const changedRegistry = JSON.parse(readFileSync(registryPath, 'utf8'));
+        changedRegistry.receipts[0].resourceFamily = 'AnotherCatalogFamily';
+        writeFileSync(registryPath, JSON.stringify(changedRegistry));
+        const rejected = spawnSync(process.execPath, [resolve('scripts/resource-qualification-report.mjs')], {
+          cwd: resolve('.'),
+          encoding: 'utf8',
+          env: { ...process.env, MODIFF_BACKEND_DIR: backendRoot },
+        });
+        assert.notEqual(rejected.status, 0);
+        assert.match(rejected.stderr, /another catalog family/);
+      }
+    } finally {
+      rmSync(backendRoot, { recursive: true, force: true });
+    }
+  });
+}
 
 test('resource coverage treats missing local history as empty evidence on a clean host', () => {
   const backendRoot = mkdtempSync(join(tmpdir(), 'modiff-resource-report-clean-'));

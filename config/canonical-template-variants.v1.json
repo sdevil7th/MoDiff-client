@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "format": "modiff.canonical-template-variants.v1",
+  "templates": [
+    {
+      "id": "qwen_edit_plus_single_image",
+      "reason": "The single-image recipe omits the adapter selected by the default pair exemplar."
+    },
+    {
+      "id": "qwen_upscale_finish",
+      "reason": "The finishing recipe includes its own pinned upscaler and delivery controls."
+    },
+    {
+      "id": "wan_video_long_showcase",
+      "reason": "The five-shot recipe includes storyboard, per-shot rendering and assembly."
+    },
+    {
+      "id": "ltx_video_animated_story",
+      "reason": "The three-scene recipe requires its own storyboard, native per-shot stages, assembly and final upscaler."
+    },
+    {
+      "id": "ltx_video_long_showcase",
+      "reason": "The six-shot recipe retains each opening image, native generation, per-shot upscale and final assembly."
+    },
+    {
+      "id": "flux3_klein_fp8r512_single_reference_edit",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3DistilledModularPipeline",
+        "mode": "edit_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_text_to_image",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3DistilledModularPipeline",
+        "mode": "text_to_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_raw_coordinate_prompt",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3DistilledModularPipeline",
+        "mode": "text_to_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_multi_reference_edit",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3DistilledModularPipeline",
+        "mode": "edit_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_fp8r512_lora_style",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3DistilledModularPipeline",
+        "mode": "text_to_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_text_to_image",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3ModularPipeline",
+        "mode": "text_to_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_single_reference_edit",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3ModularPipeline",
+        "mode": "edit_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_raw_coordinate_prompt",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3ModularPipeline",
+        "mode": "text_to_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_multi_reference_edit",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3ModularPipeline",
+        "mode": "edit_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "flux3_klein_base_fp8r512_lora_style",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "Flux3ModularPipeline",
+        "mode": "text_to_image",
+        "runtimeProfileId": "huggingface-diffusers-flux3-7ecb1e1"
+      }
+    },
+    {
+      "id": "minimax_h3_image_old_town_cat",
+      "reason": "Explicit fixed recipe retains its experimental family and exact optional-provider boundary; full compositions must match their own observed runs.",
+      "experimentalRecipe": {
+        "modelType": "MiniMaxH3ImageModularPipeline",
+        "mode": "text_to_image",
+        "runtimeProfileId": "huggingface-diffusers-h3-image-875373a"
+      }
+    },
+    {
+      "id": "ace_step_lyric_music_video",
+      "reason": "The accepted nine-scene /45-second soundtrack film has two native model owners, fitted audio, post-assembly upscale and an explicitly disabled lyric overlay. Its exact Custom memory recipe has its own canonical composition."
+    }
+  ]
+}

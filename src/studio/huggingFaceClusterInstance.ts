@@ -392,9 +392,8 @@ export function setHuggingFaceClusterParameter(
 ): HuggingFaceClusterInstance {
   const field = definition.inputs.find((candidate) => candidate.name === name);
   if (!field) invalid(`unknown parameter ${name}.`);
-  // NumberField deliberately commits text so users can edit incomplete values.
-  // Cluster instances are durable semantic receipts, so retain the exact JSON
-  // type declared by the reviewed backend definition instead of a DOM string.
+  // Historical widgets and imported documents may supply numeric strings.
+  // Cluster instances retain the JSON type declared by the backend definition.
   const normalizedValue =
     typeof value === 'string' && (field.type === 'int' || field.type === 'builtins.int')
       ? Number(value)

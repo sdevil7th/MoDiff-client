@@ -1,11 +1,19 @@
+import type { Edge } from '@xyflow/react';
 import { hasInlineScalarControl } from './inlineScalarControl';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
-import { blockControlParamsV2, blockModularParentIdsV2, materializeBlockProjectionV2 } from './blockRuntimeV2';
+import {
+  blockControlParamsV2,
+  blockModularParentIdsV2,
+  blockOperationGraphV2,
+  materializeBlockProjectionV2,
+} from './blockRuntimeV2';
 import type { BlockJsonValue } from './blockSchemaV2';
 import { syncManagedNodeControlChange } from './managedControlSync';
 import type { AppModeInput } from './types';
+import { modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
+import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 
 export type GraphInputCandidate = AppModeInput & { node: CustomNodeType; param: NodeParams };
 
@@ -14,11 +22,18 @@ const controlsBySource = new WeakMap<object, Record<string, NodeParams>>();
 const expandedByInstance = new WeakMap<object, CustomNodeType[]>();
 
 /** The inspector is another view of the canvas control contract, never a schema owner. */
-export function graphNodeControlParams(node: CustomNodeType): Record<string, NodeParams> {
-  const source = node.data.blockInstanceV2 ?? node.data.params;
-  const cached = controlsBySource.get(source);
+export function graphNodeControlParams(
+  node: CustomNodeType,
+  workflowEdges: readonly Edge[] = [],
+): Record<string, NodeParams> {
+  const instance = node.data.blockInstanceV2;
+  const source = instance ?? node.data.params;
+  const setup = instance && visualOperationGroup(node) === 'setup';
+  const hasIncoming = setup && workflowEdges.some((edge) => edge.target === node.id);
+  const cached = hasIncoming ? undefined : controlsBySource.get(source);
   if (cached) return cached;
-  const params = node.data.blockInstanceV2 ? blockControlParamsV2(node.data.blockInstanceV2) : node.data.params;
+  const base = instance ? blockControlParamsV2(instance) : node.data.params;
+  const params = setup ? modelSetupControlParams(instance, blockOperationGraphV2(instance), base, workflowEdges) : base;
   const controls = Object.fromEntries(
     Object.entries(params)
       .filter(([key, param]) => {
@@ -41,13 +56,17 @@ export function graphNodeControlParams(node: CustomNodeType): Record<string, Nod
         },
       ]),
   );
-  controlsBySource.set(source, controls);
+  if (!hasIncoming) controlsBySource.set(source, controls);
   return controls;
 }
 
-export function graphParamInputCandidates(nodes: CustomNodeType[], pinnedIds: string[] = []): GraphInputCandidate[] {
+export function graphParamInputCandidates(
+  nodes: CustomNodeType[],
+  pinnedIds: string[] = [],
+  workflowEdges: readonly Edge[] = [],
+): GraphInputCandidate[] {
   const candidates: GraphInputCandidate[] = nodes.flatMap((node) =>
-    Object.entries(graphNodeControlParams(node)).map(([key, param]) => ({
+    Object.entries(graphNodeControlParams(node, workflowEdges)).map(([key, param]) => ({
       id: `graph:${node.id}:${key}`,
       kind: 'graph-param' as const,
       label: `${node.data.label || node.id} / ${param.label || key}`,
@@ -80,9 +99,11 @@ export function graphParamInputCandidates(nodes: CustomNodeType[], pinnedIds: st
       expandedByInstance.set(instance, expanded);
     }
     candidates.push(
-      ...graphParamInputCandidates(expanded.filter(({ id }) => !visibleIds.has(id))).filter(({ id }) =>
-        missingPins.has(id),
-      ),
+      ...graphParamInputCandidates(
+        expanded.filter(({ id }) => !visibleIds.has(id)),
+        [],
+        workflowEdges,
+      ).filter(({ id }) => missingPins.has(id)),
     );
   }
   return candidates;
@@ -130,7 +151,7 @@ export function updateGraphNodeControl(
       !Object.prototype.hasOwnProperty.call(params, param)
     )
       return;
-  } else if (!graphNodeControlParams(node)[param]) return;
+  } else if (!graphNodeControlParams(node, flow.edges)[param]) return;
   if (node.data.blockInstanceV2) {
     if (key === undefined || key === 'value') flow.setBlockInstanceValueV2(nodeId, param, value as BlockJsonValue);
     return;

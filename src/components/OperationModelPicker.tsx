@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
+import { layoutReferenceContext } from '../studio/layoutReferenceContext';
 import {
   assertWorkflowOperationContext,
   captureWorkflowOperationContext,
@@ -9,22 +10,26 @@ import {
 } from '../stores/useStudioStore';
 import {
   operationAuthoring,
+  operationFieldValue,
   planOperationChange,
   planPristineOperationChange,
   type OperationChangePlan,
+  type OperationStarter,
 } from '../workflow/operationAuthoring';
 import { requestOperationStarter } from '../workflow/operationStarterRequest';
 import { commitOperationGraph, operationGraphSignature } from '../workflow/operationGraphTransaction';
 import {
   groupWorkflowModels,
   workflowChoices,
+  workflowModelMatchesQuery,
   workflowTaskLabel,
   type WorkflowChoice,
 } from '../workflow/workflowChoices';
-import { operationOwnsModel } from '../workflow/operationContracts';
+import { operationOwnsModel, type OperationContract } from '../workflow/operationContracts';
 import { rememberTaskModel } from '../workflow/taskModelPreferences';
 import { ModiffButton, ModiffDialog, ModiffDisclosure, ModiffSearchInput } from '../ui';
-import { formatRequestError } from '../utils/requestJson';
+import { formatRequestError, RequestError } from '../utils/requestJson';
+import { visualOperationOwnerId } from '../workflow/visualOperationGroups';
 
 type Review = {
   plan: OperationChangePlan;
@@ -37,6 +42,57 @@ type Review = {
 function choiceLabel(choice: WorkflowChoice) {
   const repositoryParts = (choice.repo || '').split('/');
   return choice.label || repositoryParts[repositoryParts.length - 1] || choice.pipeline;
+}
+
+/** Resolve the same immutable provider route before classifying its internal connections. */
+async function requestImageStageBaseline(
+  node: CustomNodeType,
+  operation: OperationContract,
+  operations: OperationContract[],
+  signal: AbortSignal,
+) {
+  const { pipeline, execution_profile_id: profile, model_id: model, revision: pin } = node.data.params;
+  const profileId = operationFieldValue(profile);
+  const repository = operationFieldValue(model);
+  const revision = operationFieldValue(pin);
+  if (
+    pipeline?.type !== 'image_diffusion_pipeline' ||
+    pipeline.display !== 'output' ||
+    profile?.isConnected ||
+    model?.isConnected ||
+    pin?.isConnected ||
+    !operation.task ||
+    typeof profileId !== 'string' ||
+    !profileId ||
+    !repository ||
+    typeof repository !== 'object' ||
+    !('source' in repository) ||
+    repository.source !== 'hub' ||
+    !('value' in repository) ||
+    typeof repository.value !== 'string' ||
+    typeof revision !== 'string' ||
+    !/^[0-9a-f]{40}$/u.test(revision)
+  )
+    return null;
+
+  try {
+    const source = await requestOperationStarter(
+      operation.pipelineClass,
+      operation.task,
+      operations,
+      signal,
+      profileId,
+      undefined,
+      repository.value,
+    );
+    const owner = source.nodes.find(({ operation: candidate }) => operationOwnsModel(candidate));
+    return operationFieldValue(owner?.node.params.revision) === revision ? source : null;
+  } catch (error) {
+    // A retired selection can still be changed. Its family baseline keeps the
+    // ordinary connection review without classifying an unverified old route.
+    if (error instanceof RequestError && error.kind === 'http' && error.status === 400) return null;
+    throw error;
+  }
 }
 
 /** Model-first authoring over the existing ordinary/Block graph transaction. */
@@ -58,6 +114,7 @@ export default function OperationModelPicker({
   const diagnostics = useNodesStore((s) => s.modelCacheDiagnostics);
   const operations = useNodesStore((s) => s.operationContracts);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
+  const resourceMode = useStudioStore((s) => s.form.resourceMode);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [installed, setInstalled] = useState(false);
@@ -73,10 +130,7 @@ export default function OperationModelPicker({
     [support, models, cache, local, diagnostics, descriptors, hint.operation.task],
   );
   const current = choices.find((c) => c.repo === value && c.pipeline === hint.operation.pipelineClass);
-  const visible = choices.filter(
-    (c) =>
-      (!installed || c.cache?.runnable) && `${c.label} ${c.repo}`.toLowerCase().includes(query.trim().toLowerCase()),
-  );
+  const visible = choices.filter((c) => (!installed || c.cache?.runnable) && workflowModelMatchesQuery(c, query));
 
   useEffect(() => {
     setOpen(false);
@@ -94,6 +148,8 @@ export default function OperationModelPicker({
     setOpen(false);
   }
   function apply(candidate: Review) {
+    if (candidate.choice.evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+      throw new Error('Select Custom memory before choosing an evaluation model.');
     commitOperationGraph(
       candidate.plan.graph,
       candidate.context,
@@ -116,38 +172,55 @@ export default function OperationModelPicker({
     setError(null);
     setReview(null);
     try {
+      if (choice.evaluationOnly && useStudioStore.getState().form.resourceMode !== 'expert')
+        throw new Error('Select Custom memory before choosing an evaluation model.');
       const starter = await requestOperationStarter(
         choice.pipeline,
         choice.task,
         operations,
         controller.signal,
         choice.profileId,
+        choice.authoringRecipeId,
       );
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
-      const baseline = node.data.blockProjectionOwnerId
-        ? null
-        : await requestOperationStarter(
-            hint.operation.pipelineClass,
-            hint.operation.task!,
-            operations,
-            controller.signal,
-          );
+      const ownerId = visualOperationOwnerId(
+        snapshot,
+        node.data.blockProjectionNodeId ?? node.id,
+        node.data.blockProjectionOwnerId,
+      );
+      const visualOwner = ownerId !== (node.data.blockProjectionNodeId ?? node.id);
+      let baseline: OperationStarter | null = null;
+      if (!node.data.blockProjectionOwnerId || visualOwner) {
+        if (visualOwner)
+          baseline = await requestImageStageBaseline(node, hint.operation, operations, controller.signal);
+        baseline ??= await requestOperationStarter(
+          hint.operation.pipelineClass,
+          hint.operation.task!,
+          operations,
+          controller.signal,
+        );
+      }
       if (controller.signal.aborted) return;
-      const plan = node.data.blockProjectionOwnerId
-        ? (await import('../workflow/operationLegacyBlockChange')).planOwnerBlockOperationChange(
-            snapshot,
-            node.data.blockProjectionOwnerId,
-            node.data.blockProjectionNodeId ?? node.id,
-            starter,
-            { replaceModel: !restoreDefaults, restoreDefaults },
-          )
-        : (!restoreDefaults && baseline && planPristineOperationChange(snapshot, node.id, baseline, starter)) ||
-          planOperationChange(snapshot, node.id, starter, {
-            replaceModel: !restoreDefaults,
-            restoreDefaults,
-            baseline,
-          });
+      const plan =
+        node.data.blockProjectionOwnerId && !visualOwner
+          ? (await import('../workflow/operationLegacyBlockChange')).planOwnerBlockOperationChange(
+              snapshot,
+              node.data.blockProjectionOwnerId,
+              node.data.blockProjectionNodeId ?? node.id,
+              starter,
+              { replaceModel: !restoreDefaults, restoreDefaults, layoutReferenceContext },
+            )
+          : (!visualOwner &&
+              !restoreDefaults &&
+              baseline &&
+              planPristineOperationChange(snapshot, ownerId, baseline, starter)) ||
+            planOperationChange(snapshot, ownerId, starter, {
+              replaceModel: !restoreDefaults,
+              restoreDefaults,
+              baseline,
+              layoutReferenceContext,
+            });
       if (controller.signal.aborted) return;
       assertWorkflowOperationContext(context, { includeForm: false });
       if (operationGraphSignature(useFlowStore.getState().toObject()) !== signature)
@@ -201,6 +274,8 @@ export default function OperationModelPicker({
       ) : null}
       {review.plan.review.attention.length ? (
         <ModiffDisclosure
+          key={review.choice.id}
+          defaultOpen
           label={`Needs attention (${review.plan.review.attention.length})`}
           buttonClassName="px-0 py-1 text-sm"
           panelClassName="pt-1"
@@ -271,6 +346,23 @@ export default function OperationModelPicker({
               {workflowTaskLabel(hint.operation.task ?? '')}. Selecting a model updates its connected nodes. Nothing is
               downloaded or executed.
             </p>
+            {resourceMode !== 'expert' && choices.some((choice) => choice.evaluationOnly) ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm text-modiff-subtle-text">
+                <p>Some models require Custom memory. Switching does not select a model or run the workflow.</p>
+                <ModiffButton
+                  disabled={busy}
+                  onClick={() => {
+                    const studio = useStudioStore.getState();
+                    if (studio.activeWorkflowTabId !== workflow) return;
+                    studio.updateForm({ resourceMode: 'expert' });
+                    setReview(null);
+                    setError(null);
+                  }}
+                >
+                  Use Custom memory
+                </ModiffButton>
+              </div>
+            ) : null}
             <ModiffSearchInput
               aria-label="Search compatible models"
               placeholder="Search by model or repository"
@@ -301,7 +393,7 @@ export default function OperationModelPicker({
                     aria-pressed={review?.choice.id === choice.id || (!review && current?.id === choice.id)}
                     className="h-auto w-full rounded-none p-3"
                     align="left"
-                    disabled={busy}
+                    disabled={busy || (choice.evaluationOnly && resourceMode !== 'expert')}
                     onClick={() => void choose(choice)}
                     tone={review?.choice.id === choice.id ? 'primary' : 'ghost'}
                   >
@@ -316,6 +408,11 @@ export default function OperationModelPicker({
                         </span>
                       ) : null}
                       <span>{choice.support.decomposition === 'stages' ? 'Editable nodes' : 'Whole pipeline'}</span>
+                      {choice.evaluationOnly ? (
+                        <span>
+                          {resourceMode === 'expert' ? 'Evaluation · Custom memory' : 'Custom memory required'}
+                        </span>
+                      ) : null}
                       {choice.support.dependencies === 'blocked' ? <span>Runtime setup required</span> : null}
                     </span>
                   </ModiffButton>
@@ -337,7 +434,7 @@ export default function OperationModelPicker({
                           aria-pressed={review?.choice.id === route.id}
                           align="left"
                           className="h-auto w-full justify-between px-2 py-2"
-                          disabled={busy}
+                          disabled={busy || (route.evaluationOnly && resourceMode !== 'expert')}
                           onClick={() => void choose(route)}
                           tone={review?.choice.id === route.id ? 'primary' : 'ghost'}
                         >

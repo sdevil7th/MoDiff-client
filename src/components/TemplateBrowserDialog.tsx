@@ -20,17 +20,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import { enqueueSnackbar } from '../ui/snackbar';
+import { getTemplateShowcase } from '../studio/templateShowcases';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { isWorkflowOperationCancelled, useStudioStore } from '../stores/useStudioStore';
 import { useTaskStore } from '../stores/useTaskStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
-import {
-  STUDIO_MODEL_LABELS,
-  STUDIO_MODE_LABELS,
-  getCatalogModelProfiles,
-  getFormDefaultsForMode,
-} from '../studio/modelProfiles';
+import { STUDIO_MODE_LABELS, getCatalogModelProfiles, getFormDefaultsForMode } from '../studio/modelProfiles';
 import {
   autoPlanKeyForForm,
   fetchAutoResourcePlans,
@@ -41,6 +37,7 @@ import {
 import {
   TEMPLATE_GALLERY_MANIFEST_PATH,
   findManifestEntry,
+  findHistoricalTemplateManifestEntry,
   getTemplateCardMedia,
   getTemplateLockedSettings,
   parseTemplateGalleryManifest,
@@ -50,7 +47,9 @@ import {
 import {
   TEMPLATE_BROWSER_CATEGORIES,
   filterStudioTemplates,
+  hasDeclaredExperimentalCreator,
   templateDisplayName,
+  templateModelDisplayName,
   templateMediaSlots,
   type TemplateBrowserCategoryId,
   type TemplateBrowserFilter,
@@ -59,6 +58,7 @@ import {
 import { getTemplateReadiness, type TemplateReadinessResult } from '../studio/templateReadiness';
 import { resolveTemplateInputs } from '../studio/templateInputs';
 import { createWorkflowFromTemplate } from '../studio/templateWorkflow';
+import { isPlanningOnlyTemplate } from '../studio/templateCreationPolicy';
 import { getPreset, PLANNING_STUDIO_TEMPLATES, STUDIO_TEMPLATES } from '../studio/templates';
 import { acknowledgementRequiredForTemplate } from '../studio/modelUsagePolicies';
 import { resolveStudioResourceForm } from '../studio/resourcePlanner';
@@ -123,7 +123,9 @@ function templateAutoForm(template: StudioTemplate) {
   });
 }
 
-const templateAutoPlanEntries = STUDIO_TEMPLATES.map((template) => {
+const templateAutoPlanEntries = STUDIO_TEMPLATES.filter(
+  (template) => template.executionSelection?.memoryPolicy !== 'custom_experimental',
+).map((template) => {
   const form = templateAutoForm(template);
   return { form, planKey: autoPlanKeyForForm(form), templateId: template.id };
 });
@@ -240,8 +242,9 @@ function categoryLabel(categoryId: TemplateBrowserCategoryId) {
 }
 
 function templateHasPublishedMedia(template: StudioTemplate, manifest: TemplateGalleryManifest | null) {
+  if (getTemplateShowcase(template.id)) return true;
   if (manifest) {
-    const entry = findManifestEntry(template, manifest);
+    const entry = findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
     if (!entry) return false;
     return entry.mediaType !== 'video' || Boolean(entry.cardPreviewPath && entry.cardPreviewSha256);
   }
@@ -282,6 +285,9 @@ const AUDIO_WAVEFORM_BAR_CLASSES = [
 ];
 
 const SHOWCASE_TEMPLATE_PRIORITY = [
+  'minimax_h3_image_old_town_cat',
+  'minimax_music3_chamber_pop',
+  'flux3_klein_fp8r512_text_to_image',
   'qwen_low_vram_product_concept',
   'qwen_poster_logo_text',
   'qwen_text_rendering',
@@ -332,6 +338,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   const localModels = useNodesStore((state) => state.localModels);
   const modelCacheDiagnostics = useNodesStore((state) => state.modelCacheDiagnostics);
   const runtimeStatus = useNodesStore((state) => state.runtimeStatus);
+  const studioModelCapabilities = useNodesStore((state) => state.studioModelCapabilities);
+  const optionalRuntimeCatalog = useNodesStore((state) => state.optionalRuntimeCatalog);
   const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const installHfModel = useNodesStore((state) => state.installHfModel);
   const modelIndexesRefreshing = useNodesStore((state) =>
@@ -509,10 +517,21 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       localModels,
       modelCacheDiagnostics,
       runtimeStatus,
+      studioModelCapabilities,
+      optionalRuntimeCatalog,
       nodesRegistry,
       modelIndexesRefreshing,
     }),
-    [hfCache, localModels, modelCacheDiagnostics, modelIndexesRefreshing, nodesRegistry, runtimeStatus],
+    [
+      hfCache,
+      localModels,
+      modelCacheDiagnostics,
+      modelIndexesRefreshing,
+      nodesRegistry,
+      runtimeStatus,
+      studioModelCapabilities,
+      optionalRuntimeCatalog,
+    ],
   );
 
   const effectiveFilter = useMemo(
@@ -528,20 +547,23 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     [autoResourcePlans],
   );
   const runtimeEstimateForTemplate = useCallback(
-    (template: StudioTemplate) => localRuntimeEstimate(autoPlanForTemplate(template)),
+    (template: StudioTemplate) =>
+      template.executionSelection?.memoryPolicy === 'custom_experimental'
+        ? null
+        : localRuntimeEstimate(autoPlanForTemplate(template)),
     [autoPlanForTemplate],
   );
   const isExperimentalTemplate = useCallback(
-    (template: StudioTemplate) => !templateHasPublishedMedia(template, manifest),
+    (template: StudioTemplate) =>
+      hasDeclaredExperimentalCreator(template) || !templateHasPublishedMedia(template, manifest),
     [manifest],
   );
   const filteredTemplates = useMemo(() => {
     const source = filter.category === 'experimental' ? BROWSER_CATALOG_TEMPLATES : STUDIO_TEMPLATES;
-    const category = filter.category === 'experimental' ? 'all' : filter.category;
     const filtered = filterStudioTemplates(
       source,
       form,
-      { ...effectiveFilter, category },
+      effectiveFilter,
       (template) => runtimeEstimateForTemplate(template)?.observedSeconds ?? null,
     );
     if (filter.category !== 'experimental') return filtered;
@@ -550,7 +572,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
   const catalogTemplates = useMemo(
     () =>
       filterStudioTemplates(
-        BROWSER_CATALOG_TEMPLATES,
+        STUDIO_TEMPLATES,
         form,
         {
           ...effectiveFilter,
@@ -565,11 +587,24 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     [effectiveFilter, form, runtimeEstimateForTemplate],
   );
   const experimentalTemplateCount = useMemo(
-    () => catalogTemplates.filter(isExperimentalTemplate).length,
-    [catalogTemplates, isExperimentalTemplate],
+    () =>
+      filterStudioTemplates(BROWSER_CATALOG_TEMPLATES, form, {
+        ...effectiveFilter,
+        category: 'experimental',
+        query: '',
+        modelType: 'all',
+        mode: 'all',
+        difficulty: 'all',
+      }).filter(isExperimentalTemplate).length,
+    [effectiveFilter, form, isExperimentalTemplate],
   );
   const publishedTemplateCount = useMemo(
-    () => catalogTemplates.filter((template) => templateHasPublishedMedia(template, manifest)).length,
+    () =>
+      BROWSER_CATALOG_TEMPLATES.filter(
+        (template) =>
+          (catalogTemplates.some((item) => item.id === template.id) || getTemplateShowcase(template.id)) &&
+          templateHasPublishedMedia(template, manifest),
+      ).length,
     [catalogTemplates, manifest],
   );
   const templates = useMemo(() => {
@@ -580,7 +615,18 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       filter.mode === 'all' &&
       filter.difficulty === 'all';
     if (!isUnfilteredRecommendation) return filteredTemplates;
-    const published = filteredTemplates.filter((template) => templateHasPublishedMedia(template, manifest));
+    // Accepted display media can be featured without changing experimental
+    // execution, terms, memory readiness or the recipe qualification boundary.
+    const candidates = [...filteredTemplates];
+    for (const template of BROWSER_CATALOG_TEMPLATES)
+      if (
+        getTemplateShowcase(template.id) &&
+        template.difficulty !== 'blocked' &&
+        template.example?.status !== 'blocked' &&
+        !candidates.some((item) => item.id === template.id)
+      )
+        candidates.push(template);
+    const published = candidates.filter((template) => templateHasPublishedMedia(template, manifest));
     if (published.length === 0) return filteredTemplates;
     if (filter.sort !== 'recommended') return published;
     return [...published].sort((left, right) => showcasePriority(left.id) - showcasePriority(right.id));
@@ -718,15 +764,16 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     modelUsageTerms.needsReview(acknowledgementRequiredForTemplate(template));
 
   const requestCreateFromTemplate = (template: StudioTemplate) => {
+    if (isPlanningOnlyTemplate(template)) return;
     modelUsageTerms.request('create', acknowledgementRequiredForTemplate(template), () => createFromTemplate(template));
   };
 
   const pendingTermsPolicies = modelUsageTerms.pending?.policies ?? [];
 
-  const installRepo = async (repoId: string, repair = false) => {
+  const installRepo = async (repoId: string, repair = false, selection?: { revision?: string; files?: string[] }) => {
     setInstallingRepo(repoId);
     try {
-      await installHfModel(repoId, sid, { repair });
+      await installHfModel(repoId, sid, { repair, ...selection });
       setAutoResourcePlans(await loadTemplateAutoPlans(true));
     } catch (error) {
       console.error(error);
@@ -735,8 +782,15 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
     }
   };
 
-  const requestInstallRepo = (template: StudioTemplate, repoId: string, repair = false) => {
-    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () => installRepo(repoId, repair));
+  const requestInstallRepo = (
+    template: StudioTemplate,
+    repoId: string,
+    repair = false,
+    selection?: { revision?: string; files?: string[] },
+  ) => {
+    modelUsageTerms.request('install', acknowledgementRequiredForTemplate(template), () =>
+      installRepo(repoId, repair, selection),
+    );
   };
 
   const openSetup = () => {
@@ -757,7 +811,7 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
       focus: {
         modelType: template.modelType,
         repo,
-        label: STUDIO_MODEL_LABELS[template.modelType],
+        label: templateModelDisplayName(template),
         source: 'template',
       },
     });
@@ -995,8 +1049,8 @@ export default function TemplateBrowserDialog({ entry = false }: { entry?: boole
                   onCreate={() => {
                     requestCreateFromTemplate(selectedTemplate);
                   }}
-                  onInstallRepo={(repoId, repair) => {
-                    requestInstallRepo(selectedTemplate, repoId, repair);
+                  onInstallRepo={(repoId, repair, selection) => {
+                    requestInstallRepo(selectedTemplate, repoId, repair, selection);
                   }}
                   onOpenAssets={openAssets}
                   onOpenModels={openModels}
@@ -1073,7 +1127,12 @@ function TemplateBrowserCard({
   selected: boolean;
   template: StudioTemplate;
 }) {
-  const { beforePath, mediaPath: cardMediaPath, thumbnailPath } = getTemplateCardMedia(template, manifest);
+  const showcase = getTemplateShowcase(template.id);
+  const publishedMedia = getTemplateCardMedia(template, manifest);
+  const beforePath = showcase ? undefined : publishedMedia.beforePath;
+  const cardMediaPath = showcase?.mediaPath ?? publishedMedia.mediaPath;
+  const thumbnailPath = showcase?.mediaPath ?? publishedMedia.thumbnailPath;
+  const historical = !findManifestEntry(template, manifest) && findHistoricalTemplateManifestEntry(template, manifest);
   const hasUsageRestrictions = acknowledgementRequiredForTemplate(template).length > 0;
 
   return (
@@ -1112,6 +1171,11 @@ function TemplateBrowserCard({
           thumbnailPath={thumbnailPath}
           variant={template.thumbnailVariant}
         />
+        {showcase || historical ? (
+          <span className="absolute bottom-2 left-2 rounded-modiff-compact bg-modiff-bg/85 px-2 py-1 text-xs text-modiff-text">
+            {showcase ? 'Approved showcase · separate recipe' : 'Previous recipe example'}
+          </span>
+        ) : null}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-end gap-2 bg-gradient-to-b from-modiff-bg/80 to-transparent p-3">
           {hasUsageRestrictions ? (
             <ModiffTooltip<HTMLSpanElement> content="Usage restrictions — review before use">
@@ -1166,7 +1230,7 @@ function TemplateBrowserCard({
             />
           </div>
           <p className="truncate text-sm font-semibold text-modiff-subtle-text">
-            {STUDIO_MODEL_LABELS[template.modelType]} · {STUDIO_MODE_LABELS[template.mode]}
+            {templateModelDisplayName(template)} · {STUDIO_MODE_LABELS[template.mode]}
           </p>
         </div>
 
@@ -1189,14 +1253,14 @@ function TemplateBrowserCard({
             tone="primary"
             className="pointer-events-auto w-full"
             icon={<Play size={14} />}
-            disabled={disabled}
+            disabled={disabled || isPlanningOnlyTemplate(template)}
             data-testid={`template-browser-create-card-${template.id}`}
             onClick={(event) => {
               event.stopPropagation();
               onCreate();
             }}
           >
-            {requiresTermsReview ? 'Review terms' : 'Use template'}
+            {isPlanningOnlyTemplate(template) ? 'Planning only' : requiresTermsReview ? 'Review terms' : 'Use template'}
           </ModiffButton>
         </div>
       </div>
@@ -1225,7 +1289,7 @@ function TemplateRecipeDetail({
   manifest: TemplateGalleryManifest | null;
   onBack: () => void;
   onCreate: () => void;
-  onInstallRepo: (repoId: string, repair?: boolean) => void;
+  onInstallRepo: (repoId: string, repair?: boolean, selection?: { revision?: string; files?: string[] }) => void;
   onOpenAssets: () => void;
   onOpenModels: () => void;
   onOpenSetup: () => void;
@@ -1235,7 +1299,10 @@ function TemplateRecipeDetail({
   requiresTermsReview: boolean;
   template: StudioTemplate;
 }) {
-  const detailManifestEntry = findManifestEntry(template, manifest, { requireCardPreview: false });
+  const currentEntry = findManifestEntry(template, manifest, { requireCardPreview: false });
+  const showcase = getTemplateShowcase(template.id);
+  const detailManifestEntry =
+    currentEntry ?? findHistoricalTemplateManifestEntry(template, manifest, { requireCardPreview: false });
   // Source inputs have their own reviewed hash and do not become invalid merely
   // because a prompt, graph, or generated-output lock changes. Keep the strict
   // exactness gate for the result, but resolve the published source separately
@@ -1246,12 +1313,18 @@ function TemplateRecipeDetail({
     .flatMap((binding) => binding.defaultAssets)
     .find((asset) => asset.previewPath)?.previewPath;
   const thumbnailPath =
+    showcase?.mediaPath ??
     templateManifestPath(detailManifestEntry?.thumbnailPath ?? detailManifestEntry?.posterPath) ??
     templateExampleThumbnailPath(template);
-  const beforePath = templateManifestPath(sourceEntry?.beforePath ?? bundledSourcePreview);
-  const afterPath = templateManifestPath(detailManifestEntry?.afterPath ?? detailManifestEntry?.outputPath);
+  const beforePath = showcase ? undefined : templateManifestPath(sourceEntry?.beforePath ?? bundledSourcePreview);
+  const afterPath =
+    showcase?.mediaPath ?? templateManifestPath(detailManifestEntry?.afterPath ?? detailManifestEntry?.outputPath);
   const inputPresentation = templateInputPresentation(template);
-  const createLabel = requiresTermsReview ? 'Review terms' : 'Use template';
+  const createLabel = isPlanningOnlyTemplate(template)
+    ? 'Planning only'
+    : requiresTermsReview
+      ? 'Review terms'
+      : 'Use template';
   const hasInputAction = readiness.issues.some((issue) => issue.action === 'open_assets');
   const hasBackendAction = readiness.issues.some((issue) => issue.action === 'open_setup');
   const hasLowVramAction = readiness.issues.some((issue) => issue.action === 'apply_low_vram');
@@ -1276,6 +1349,19 @@ function TemplateRecipeDetail({
         thumbnailPath={thumbnailPath}
         variant={template.thumbnailVariant}
       />
+      {showcase ? (
+        <p className="mt-2 text-xs leading-5 text-modiff-subtle-text" data-testid="template-approved-showcase">
+          {showcase.title}. Approved image from a separate recipe; the template defaults below are unchanged.{' '}
+          <a className="text-modiff-blue underline" href={showcase.recordPath} target="_blank" rel="noreferrer">
+            View the actual prompt, settings and accepted review
+          </a>
+        </p>
+      ) : !currentEntry && detailManifestEntry && template.executionSelection ? (
+        <p className="mt-2 text-xs leading-5 text-modiff-subtle-text" data-testid="template-historical-example">
+          Example from the previous recipe. This template now creates editable developer workflow nodes; the new graph
+          has not been visually qualified by this image.
+        </p>
+      ) : null}
 
       <div className="mt-4 grid gap-4">
         <div>
@@ -1289,7 +1375,7 @@ function TemplateRecipeDetail({
                 {templateDisplayName(template)}
               </h2>
               <p className="mt-1 text-sm font-semibold text-modiff-subtle-text">
-                {STUDIO_MODEL_LABELS[template.modelType]} · {STUDIO_MODE_LABELS[template.mode]}
+                {templateModelDisplayName(template)} · {STUDIO_MODE_LABELS[template.mode]}
               </p>
             </div>
             <TemplateReadinessBadge readiness={readiness} />
@@ -1309,6 +1395,9 @@ function TemplateRecipeDetail({
           <p className="mt-1 text-xs leading-5 text-modiff-subtle-text">
             {template.recipeSummary ?? template.description}
           </p>
+          {template.tags?.includes('technical preview') && template.example?.notes ? (
+            <p className="mt-1 text-xs leading-5 text-modiff-subtle-text">{template.example.notes}</p>
+          ) : null}
         </section>
 
         <section className="rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3">
@@ -1345,7 +1434,7 @@ function TemplateRecipeDetail({
             <TemplateReadinessBadge readiness={readiness} />
           </div>
           {readiness.issues.length === 0 ? (
-            <IssueCard tone="success" title="Ready now" meta={readiness.summary}>
+            <IssueCard tone={readiness.tone} title={readiness.label} meta={readiness.summary}>
               Create a graph tab, build the graph, and then run when you are ready.
             </IssueCard>
           ) : (
@@ -1362,7 +1451,9 @@ function TemplateRecipeDetail({
               icon={<Boxes size={15} />}
               disabled={installingRepo === target.repoId}
               aria-label={`Install ${target.repoId}`}
-              onClick={() => onInstallRepo(target.repoId, target.repair)}
+              onClick={() =>
+                onInstallRepo(target.repoId, target.repair, { revision: target.revision, files: target.files })
+              }
             >
               {installingRepo === target.repoId ? 'Installing...' : (target.actionLabel ?? 'Install')}
             </ModiffButton>
@@ -1400,7 +1491,7 @@ function TemplateRecipeDetail({
                 <Play size={15} />
               )
             }
-            disabled={disabled}
+            disabled={disabled || isPlanningOnlyTemplate(template)}
             data-testid={`template-browser-create-${template.id}`}
             onClick={onCreate}
           >
@@ -1437,6 +1528,21 @@ function TemplateBrowserPreview({
   thumbnailPath?: string;
   variant?: StudioTemplate['thumbnailVariant'];
 }) {
+  if (mediaKind === 'json' && afterPath) {
+    return (
+      <div className="grid aspect-video place-content-center justify-items-center gap-2 rounded-modiff-panel border border-modiff-border bg-modiff-panel p-3 text-center text-sm text-modiff-text">
+        <LayoutGrid aria-hidden="true" size={24} />
+        {detail ? (
+          <a className="text-modiff-blue underline" href={afterPath} target="_blank" rel="noreferrer">
+            Open structured response
+          </a>
+        ) : (
+          <span>Structured response</span>
+        )}
+      </div>
+    );
+  }
+
   if (mediaKind === 'image' && beforePath && afterPath) {
     return <ComparisonMedia afterPath={afterPath} beforePath={beforePath} detail={detail} />;
   }
@@ -1809,7 +1915,7 @@ function MediaSlotView({
                 alt={slot.label}
                 loading="eager"
                 decoding="async"
-                className="relative h-full w-full object-contain p-1.5"
+                className="absolute inset-0 h-full w-full object-contain p-1.5"
                 onError={() => setFailedPath(usablePath)}
               />
             </>
@@ -1819,7 +1925,7 @@ function MediaSlotView({
               alt={slot.label}
               loading="eager"
               decoding="async"
-              className="h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full object-contain"
               onError={() => setFailedPath(usablePath)}
             />
           )

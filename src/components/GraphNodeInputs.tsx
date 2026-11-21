@@ -1,5 +1,7 @@
 import { nodeDisplayLabel } from '../workflow/nodePresentation';
 import { useCallback, useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { useFlowStore } from '../stores/useFlowStore';
 import { Pin, PinOff } from 'lucide-react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
@@ -39,6 +41,9 @@ export function GraphNodeInputs({
   const [disclosureState, setDisclosureState] = useState<Record<string, boolean>>({});
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const incomingEdges = useFlowStore(
+    useShallow((state) => (selectedNode ? state.edges.filter((edge) => edge.target === selectedNode.id) : [])),
+  );
   const groups = useMemo(() => {
     const byNode = new Map<string, { node: CustomNodeType; params: Record<string, NodeParams> }>();
     pinnedInputs.forEach((input) => {
@@ -49,7 +54,7 @@ export function GraphNodeInputs({
     });
 
     if (selectedNode) {
-      const selectedParams = graphNodeControlParams(selectedNode);
+      const selectedParams = graphNodeControlParams(selectedNode, incomingEdges);
       byNode.set(selectedNode.id, { node: selectedNode, params: selectedParams });
     }
 
@@ -61,7 +66,7 @@ export function GraphNodeInputs({
       const group = byNode.get(id);
       return group ? [group] : [];
     });
-  }, [nodes, pinnedInputs, selectedNode]);
+  }, [nodes, pinnedInputs, selectedNode, incomingEdges]);
 
   const updateParam = useCallback(
     (nodeId: string, param: string, value: unknown, key?: keyof NodeParams) => {

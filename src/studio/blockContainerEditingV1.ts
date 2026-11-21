@@ -164,6 +164,7 @@ export function setBlockFieldValuesV1(
   instance: BlockInstanceV2,
   targets: Array<{ nodeId: string; fieldId: string }>,
   value: BlockJsonValue | undefined,
+  options: { authored?: boolean } = {},
 ) {
   const controls = [
     ...instance.effectiveInterface.controls,
@@ -218,7 +219,7 @@ export function setBlockFieldValuesV1(
     if (field.disabled) throw new Error(`Cannot change disabled internal field ${nodeId}.${fieldId}.`);
     if (value === undefined) delete field.value;
     else field.value = structuredClone(value);
-    if (node) {
+    if (node && options.authored !== false) {
       const hint = operationAuthoring({
         id: nodeId,
         type: 'custom',

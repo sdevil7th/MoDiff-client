@@ -18,6 +18,9 @@ export default function HandleField(props: FieldProps) {
   const position = props.handlePosition ?? (props.fieldType === 'output' ? Position.Right : Position.Left);
   const textAlignClassName = props.fieldType === 'output' ? 'text-right' : 'text-left';
   const isCompact = Boolean(props.compactHandle);
+  const wrapLabel =
+    props.fieldOptions?.wrapConnectionLabel === true ||
+    (props.fieldType === 'output' && props.fieldKey.startsWith('iteration_previous__'));
   const updateNodeInternals = useUpdateNodeInternals();
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -112,7 +115,11 @@ export default function HandleField(props: FieldProps) {
         <span className="sr-only">{props.label}</span>
       ) : (
         <div
-          className={`text-modiff-control mx-0.5 truncate px-2 text-modiff-subtle-text ${textAlignClassName}`}
+          className={cx(
+            'text-modiff-control mx-0.5 px-2 text-modiff-subtle-text',
+            wrapLabel ? 'break-words' : 'truncate',
+            textAlignClassName,
+          )}
           title={labelTitle}
         >
           {props.label}

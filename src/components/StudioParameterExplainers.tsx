@@ -6,9 +6,10 @@ import { SectionHeader } from '../ui';
 
 type StudioParameterExplainersProps = {
   form: StudioFormState;
+  supportsStrength: boolean;
 };
 
-export function StudioParameterExplainers({ form }: StudioParameterExplainersProps) {
+export function StudioParameterExplainers({ form, supportsStrength }: StudioParameterExplainersProps) {
   const rows = [
     [
       'Seed',
@@ -16,7 +17,9 @@ export function StudioParameterExplainers({ form }: StudioParameterExplainersPro
     ],
     ['Guidance', `${form.guidanceScale} balances prompt obedience against natural detail.`],
     ['Steps', `${form.steps} sampling steps sets quality/runtime tradeoff.`],
-    ['Strength', `${form.strength} controls how much source images can change in edit workflows.`],
+    ...(supportsStrength
+      ? [['Strength', `${form.strength} controls how much source images can change in edit workflows.`]]
+      : []),
     ['Size', `${form.width}x${form.height} changes composition and exactness hash.`],
     ['Dtype', `${form.dtype} affects memory use and can affect reproducibility.`],
     ['Model', STUDIO_MODEL_LABELS[form.modelType]],

@@ -73,3 +73,40 @@ test('unresolvable precomputed backend registries fail closed', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('removed modules with only residual bytecode do not block the bundled registry', () => {
+  const root = mkdtempSync(join(tmpdir(), 'modiff-backend-registry-'));
+  try {
+    moduleFixture(root, 'Direct', 'from .main import *\n', {
+      'main.py': 'class Load(NodeBase):\n    pass\n',
+    });
+    mkdirSync(join(root, 'modules', 'Empty'), { recursive: true });
+    const cache = join(root, 'modules', 'Removed', '__pycache__');
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(join(cache, '__init__.cpython-312.pyc'), 'not executable source');
+    assert.deepEqual([...readBundledBackendNodeRegistry(root)], ['modules.Direct.Load']);
+
+    writeFileSync(join(root, 'modules', 'Removed', 'main.py'), 'class Hidden(NodeBase):\n    pass\n');
+    assert.throws(() => readBundledBackendNodeRegistry(root), /has no __init__\.py/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('non-cache files and directories without an initializer still fail closed', () => {
+  for (const name of ['notes.txt', 'nested']) {
+    const root = mkdtempSync(join(tmpdir(), 'modiff-backend-registry-'));
+    try {
+      moduleFixture(root, 'Direct', 'from .main import *\n', {
+        'main.py': 'class Load(NodeBase):\n    pass\n',
+      });
+      const moduleRoot = join(root, 'modules', 'Incomplete');
+      mkdirSync(moduleRoot);
+      if (name === 'nested') mkdirSync(join(moduleRoot, name));
+      else writeFileSync(join(moduleRoot, name), 'source may be missing');
+      assert.throws(() => readBundledBackendNodeRegistry(root), /has no __init__\.py/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});

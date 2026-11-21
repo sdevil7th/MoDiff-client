@@ -46,7 +46,8 @@ export function formatRequestError(error: unknown, fallback: string) {
   return fallback;
 }
 
-async function requestWithResponse<T>(
+/** Keep response readers inside the shared abort/timeout transport lifecycle. */
+export async function requestWithResponse<T>(
   url: string,
   options: RequestOptions,
   read: (response: Response) => Promise<T>,

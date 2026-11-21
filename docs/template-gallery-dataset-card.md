@@ -107,3 +107,7 @@ Maintainers generate and verify the storage manifest locally, upload one
 reviewed asset set, and pin the resulting commit SHA in MoDiff. Replacing a
 file creates a new asset-set identity and requires a new pinned Dataset commit.
 Historical application releases continue resolving their original revision.
+
+## MiniMax-Music3 example disclosure
+
+The Leave a Little Light example and its previews are **AI-generated music — MiniMax-Music3**. The per-file ledger retains the immutable publisher license and acceptable-use terms. Human acceptance of this example is not an independent lyric, similarity, or listening certification. No model weights are included.

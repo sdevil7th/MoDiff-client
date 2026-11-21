@@ -13,10 +13,14 @@ import {
   type WorkflowOperationContext,
 } from '../stores/useStudioStore';
 import { formPatchForAutoCandidate, selectedAutoCandidate } from '../studio/autoResource';
-import { NodeParams, type NodeParamOptions, type NodeParamSignal } from '../stores/useNodeStore';
+import { NodeParams, type NodeParamOptions, type NodeParamSignal, useNodesStore } from '../stores/useNodeStore';
 import { useFlowStore } from '../stores/useFlowStore';
 import { classifyManagedControl } from '../studio/managedControlPolicy';
-import { runtimeOptionValues } from '../studio/runtimeOptions';
+import {
+  blockRuntimeOptionPresentation,
+  registeredRuntimeOptionPresentation,
+  runtimeOptionValues,
+} from '../studio/runtimeOptions';
 import { sanitizeModiffFieldStyle, type ModiffFieldStyle } from '../theme';
 import type { ImageArtifact } from '../utils/imageArtifacts';
 import { GraphControlButton } from '../ui/GraphControls';
@@ -27,6 +31,13 @@ import { blockControlConnectionNotesV2 } from '../studio/blockControlConnections
 import { FieldFrame } from '../ui/FieldFrame';
 import { PreviewEmptyState } from '../ui/PreviewFrame';
 import { operationOwnsModel } from '../workflow/operationContracts';
+import { nodeFieldDisplayLabel } from '../workflow/nodePresentation';
+import { fileBackedMediaPreviewUrl } from '../studio/outputUtils';
+import { unresolvedSignalControls } from '../workflow/signalControlPresentation';
+import {
+  builtinUtilityOperationPresentation,
+  builtinUtilityOptionPresentation,
+} from '../workflow/builtinUtilityOperationPresentation';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -43,15 +54,19 @@ import ModelSelectField from '../fields/ModelSelectField';
 import LayerConfigField from '../fields/LayerConfigField';
 import SelectDialogField from '../fields/SelectDialogField';
 
-import UITextField from '../fields/UITextField';
-import UIImageField from '../fields/UIImageField';
 import UIButtonField from '../fields/UIButtonField';
 import UILabelFieldField from '../fields/UILabelField';
 import UIGroupField from '../fields/UIGroupField';
-import UIImagecompareField from '../fields/UIImagecompareField';
-const UIVideoField = lazy(() => import('../fields/UIVideoField'));
-const UIAudioField = lazy(() => import('../fields/UIAudioField'));
+const CANVAS_MEDIA_PREVIEWS = {
+  ui_image: { label: 'image', Field: lazy(() => import('../fields/UIImageField')) },
+  ui_imagecompare: { label: 'image comparison', Field: lazy(() => import('../fields/UIImagecompareField')) },
+  ui_video: { label: 'video', Field: lazy(() => import('../fields/UIVideoField')) },
+  ui_audio: { label: 'audio', Field: lazy(() => import('../fields/UIAudioField')) },
+  ui_text: { label: 'text', Field: lazy(() => import('../fields/UITextField')) },
+};
 const SplineField = lazy(() => import('../fields/SplineField'));
+const LayoutConditioningField = lazy(() => import('../fields/LayoutConditioningField'));
+const PromptEnhancementControls = lazy(() => import('./PromptEnhancementControls'));
 
 export type FieldProps = {
   nodeId: string;
@@ -151,6 +166,10 @@ const NodeContent = memo(function NodeContent({
   const studioResourceMode = studioForm.resourceMode;
   const studioGraphBinding = useStudioStore((state) => state.graphBinding);
   const graphNode = useFlowStore((state) => state.nodes.find((node) => node.id === nodeId));
+  const blockOwner = useFlowStore((state) =>
+    state.nodes.find((node) => node.id === graphNode?.data.blockProjectionOwnerId),
+  );
+  const nodesRegistry = useNodesStore((state) => state.nodesRegistry);
   const connectionNotes = useFlowStore(
     useShallow((state) =>
       blockControlConnectionNotesV2(
@@ -203,14 +222,33 @@ const NodeContent = memo(function NodeContent({
   // Workflow Auto plans resources without hiding manually authored controls.
   const autoModeActive = studioResourceMode === 'auto' && controlledStudioNode;
   const autoFormPatch = formPatchForAutoCandidate(selectedCandidate, studioForm);
+  const identity = `${module}.${action}`;
+  const utilityOperation = builtinUtilityOperationPresentation(identity, graphNode?.data.params ?? params);
+  const signalControls = useFlowStore(
+    useShallow((state) => unresolvedSignalControls(nodeId, nodesRegistry[identity]?.params, state)),
+  );
   const fields = Object.entries(params).flatMap(([key, data]: [string, NodeParams]) => {
-    const label = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
+    const declaredLabel = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
+    const label =
+      utilityOperation?.continuation && key === 'reference' && declaredLabel === 'Reference Audio'
+        ? 'Continuation Audio'
+        : nodeFieldDisplayLabel(identity, key, declaredLabel);
     const display = data.isInput ? 'input' : data.display || '';
     const dataType = (
       Array.isArray(data.type) && data.type.length > 0 ? data.type[0] : data.type || 'string'
     ) as string;
     const connectionType = data.type || 'string';
-    const options = liveFieldOptions(module, key, display, data.options || []);
+    const options = liveFieldOptions(
+      module,
+      key,
+      display,
+      builtinUtilityOptionPresentation(
+        identity,
+        key,
+        blockRuntimeOptionPresentation(data.options || [], key, data, graphNode, blockOwner, nodesRegistry) ??
+          registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[identity]?.params),
+      ),
+    );
     const fieldType = getFieldType(display, dataType, options);
     // A managed model choice already resolves the repository, implementation
     // route and pipeline class atomically. Keep model_type in the persisted
@@ -219,14 +257,20 @@ const NodeContent = memo(function NodeContent({
     // low-level/custom contract authoring.
     const derivedPipelineType =
       key === 'model_type' && operationOwnsModel(graphNode?.data.operationAuthoring?.operation);
-    const hidden = Boolean(data.hidden || derivedPipelineType);
+    const inactiveUtilityField = utilityOperation?.inactive.has(key);
+    const hidden = Boolean(data.hidden || derivedPipelineType || signalControls.has(key) || inactiveUtilityField);
     const configuredValue = data.value ?? data.default;
-    const fileBackedLoaderPreview =
-      (fieldType === 'ui_audio' || fieldType === 'ui_video') &&
-      /(?:^|\.)Load$/i.test(action) &&
-      typeof (params.file?.value ?? params.file?.default) === 'string'
-        ? (params.file?.value ?? params.file?.default)
-        : undefined;
+    const selectedFile = params.file?.value ?? params.file?.default;
+    let fileBackedLoaderPreview: string | string[] | undefined;
+    if ((fieldType === 'ui_audio' || fieldType === 'ui_video') && /(?:^|\.)Load$/i.test(action)) {
+      const kind = fieldType === 'ui_audio' ? 'audio' : 'video';
+      if (typeof selectedFile === 'string') fileBackedLoaderPreview = fileBackedMediaPreviewUrl(selectedFile, kind);
+      else if (Array.isArray(selectedFile)) {
+        fileBackedLoaderPreview = selectedFile
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => fileBackedMediaPreviewUrl(value, kind));
+      }
+    }
     // Older runs stored `/cache/<node>/filename/...` for file-backed previews.
     // That endpoint contains the filename as text, not the media bytes. Loader
     // nodes can render their selected file directly before or after execution.
@@ -271,6 +315,8 @@ const NodeContent = memo(function NodeContent({
       step: data.step,
       fieldOptions: {
         ...data.fieldOptions,
+        ...(label !== declaredLabel ? { wrapConnectionLabel: true } : {}),
+        ...(inactiveUtilityField && isConnected ? { connectionDescription: 'Unused by this operation' } : {}),
         ...(connectionNotes[key] ? { connectedControlNote: connectionNotes[key] } : {}),
       },
       artifacts: data.artifacts,
@@ -359,6 +405,12 @@ const NodeContent = memo(function NodeContent({
   }
 
   const renderFields = mode === 'controls' ? controls : [...controls, ...connectors];
+  const signalNotes = new Set(
+    renderFields.flatMap(({ props }) => {
+      const note = signalControls.get(props.fieldKey);
+      return note ? [note] : [];
+    }),
+  );
   // Keep field ownership stable across presentations. Moving a control between
   // parents remounts its initialization hook and can repeat backend actions.
   const mainFields = renderFields.filter(({ surface }) => surface === 'main');
@@ -380,8 +432,20 @@ const NodeContent = memo(function NodeContent({
 
   return (
     <>
+      {graphNode?.data.operationAuthoring?.ancillaryParent &&
+      !graphNode.data.blockInstanceV2 &&
+      !graphNode.data.blockProjectionOwnerId ? (
+        <Suspense fallback={null}>
+          <PromptEnhancementControls ownerId={graphNode.id} />
+        </Suspense>
+      ) : null}
       {encodeImageSummary}
       {resolutionNotice}
+      {[...signalNotes].map((note) => (
+        <p className="px-2 py-1 text-xs text-modiff-subtle-text" key={note} role="note">
+          {note}
+        </p>
+      ))}
       {orderedMainFields}
       {orderedInternalFields.length > 0 && (
         <div className={collapseAdvanced ? 'hidden' : 'contents'}>{orderedInternalFields}</div>
@@ -610,14 +674,20 @@ const FieldMemo = memo((props: FieldProps) => {
       return <ModelSelectField {...props} />;
     case 'layerconfig':
       return <LayerConfigField {...props} />;
+    case 'layout':
+      return (
+        <Suspense fallback={<div role="status">Loading layout editor...</div>}>
+          <LayoutConditioningField {...props} />
+        </Suspense>
+      );
     case 'selectdialog':
       return <SelectDialogField {...props} />;
     case 'ui_text':
-      return <UITextField {...props} />;
     case 'ui_image':
-      return <UIImageField {...props} />;
+    case 'ui_imagecompare':
     case 'ui_video':
-    case 'ui_audio':
+    case 'ui_audio': {
+      const { label, Field } = CANVAS_MEDIA_PREVIEWS[props.fieldType];
       return (
         <Suspense
           fallback={
@@ -629,21 +699,20 @@ const FieldMemo = memo((props: FieldProps) => {
             >
               <div role="status">
                 <PreviewEmptyState
-                  kind={props.fieldType === 'ui_audio' ? 'audio' : 'visual'}
+                  kind={props.fieldType === 'ui_audio' ? 'audio' : props.fieldType === 'ui_text' ? 'text' : 'visual'}
                   compact={props.fieldOptions?.compactPreview === true}
-                  message={`Loading ${props.fieldType === 'ui_audio' ? 'audio' : 'video'} preview…`}
+                  message={'Loading ' + label + ' preview…'}
                 />
               </div>
             </FieldFrame>
           }
         >
-          {props.fieldType === 'ui_audio' ? <UIAudioField {...props} /> : <UIVideoField {...props} />}
+          <Field {...props} />
         </Suspense>
       );
+    }
     case 'ui_button':
       return <UIButtonField {...props} />;
-    case 'ui_imagecompare':
-      return <UIImagecompareField {...props} />;
     case 'ui_label':
       return <UILabelFieldField {...props} />;
     case 'ui_group':

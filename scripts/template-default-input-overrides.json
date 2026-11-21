@@ -12,6 +12,35 @@
       "byteSize": 14400044,
       "sourceTaskId": "6K8vnoVfgEEz",
       "selectionReason": "User-selected latest 75-second ACE-Step output at 170 BPM, C# minor, and 3/4 for the continuation template source."
+    },
+    {
+      "templateId": "flux_kontext_multi_reference",
+      "role": "reference_image_1",
+      "bindingId": "flux-kontext-material-preservation-v2-inputs",
+      "bindingLabel": "Source bottle and material-only reference",
+      "assetId": "flux_kontext_multi_reference-reference-image-1",
+      "assetLabel": "Approved source bottle",
+      "fileName": "flux_kontext_multi_reference.reference_image_1.webp",
+      "path": "public/template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
+      "previewPath": "/template-gallery/inputs/flux_kontext_multi_reference.before.webp",
+      "contentHash": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+      "byteSize": 196402,
+      "sourceTaskId": "h0n3A3uvEPX4",
+      "selectionReason": "Preserve the approved material-preservation v2 input identity, ordering and author labels; exact source bytes are unchanged."
+    },
+    {
+      "templateId": "flux_kontext_multi_reference",
+      "role": "reference_image_2",
+      "bindingId": "flux-kontext-material-preservation-v2-inputs",
+      "bindingLabel": "Source bottle and material-only reference",
+      "assetId": "flux-kontext-cobalt-material-only-v2",
+      "assetLabel": "Cobalt surface colour and texture strip",
+      "fileName": "flux_kontext_multi_reference.material_strip_v2.png",
+      "path": "public/template-gallery/runtime-inputs/assets/70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34.png",
+      "contentHash": "sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34",
+      "byteSize": 3714,
+      "sourceTaskId": "h0n3A3uvEPX4",
+      "selectionReason": "Preserve the approved material-preservation v2 input identity, ordering and author labels; exact source bytes are unchanged."
     }
   ]
 }

@@ -1,11 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, DownloadCloud, LoaderCircle, Trash2, X, XCircle } from 'lucide-react';
+import { useEffect, useId, useMemo, useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  DownloadCloud,
+  LoaderCircle,
+  Trash2,
+  X,
+  XCircle,
+} from 'lucide-react';
 import { useNodesStore } from '../stores/useNodeStore';
 import { useTaskStore, type SessionRun } from '../stores/useTaskStore';
 import { hasHfDownloadFailed, isHfDownloadActive, isHfDownloadComplete } from '../studio/modelInstall';
 import { ProgressBar } from '../ui/ProgressBar';
 import { ModiffButton, ModiffTooltip } from '../ui';
 import { cx } from '../utils/classNames';
+import { formatRunDuration } from '../utils/formatExecutionTime';
 import { ModelDownloadProgressCard } from './ModelDownloadProgressCard';
 import {
   openRunActivity,
@@ -17,18 +28,6 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { executionProgressDetail, executionProgressFrom } from '../studio/executionProgress';
 
 const TERMINAL_STATUSES = new Set<SessionRun['status']>(['completed', 'failed', 'cancelled']);
-
-function formatDuration(ms: number | undefined) {
-  if (typeof ms !== 'number' || !Number.isFinite(ms)) return '-';
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = Math.round(seconds % 60)
-    .toString()
-    .padStart(2, '0');
-  return `${minutes}:${remainder}`;
-}
 
 function runDuration(run: SessionRun, now: number) {
   if (typeof run.durationMs === 'number') return run.durationMs;
@@ -62,8 +61,8 @@ function RunCard({ now, onDismiss, run }: { now: number; onDismiss: () => void; 
   const duration = runDuration(run, now);
   const label = runActivityLabelForTask(run, run.task_id || run.id);
   const progressDetail =
-    executionProgressDetail(executionProgressFrom(run)) ||
-    `${label} · ${statusLabel(run)} · ${formatDuration(duration)}`;
+    (!terminal && executionProgressDetail(executionProgressFrom(run))) ||
+    `${label} · ${statusLabel(run)} · ${formatRunDuration(duration)}`;
 
   return (
     <div className="group/notification relative min-w-0">
@@ -102,7 +101,7 @@ function RunCard({ now, onDismiss, run }: { now: number; onDismiss: () => void; 
                   </span>
                 </span>
                 <span className="flex-none text-modiff-label font-semibold text-modiff-subtle-text">
-                  {formatDuration(duration)}
+                  {formatRunDuration(duration)}
                 </span>
               </span>
               {active ? (
@@ -159,18 +158,25 @@ export default function RunSessionShelf() {
   const hasActiveRun = sessionRuns.some((run) => run.status === 'running' || run.status === 'queued');
   const hasActiveDownload = Object.values(hfDownloadProgress).some(isHfDownloadActive);
   const hasActiveActivity = hasActiveRun || hasActiveDownload;
+  const [disclosure, setDisclosure] = useState<boolean | null>(null);
+  const expanded = disclosure ?? hasActiveActivity;
+  const contentId = useId();
   const [highlightDownloads, setHighlightDownloads] = useState(false);
   const [dismissedActivity, setDismissedActivity] = useState(restoredDismissedActivity);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!hasActiveActivity) return undefined;
+    // Retain the visible result or failure of work seen in this page. An
+    // explicit collapse still takes precedence over active work.
+    setDisclosure((current) => current ?? true);
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [hasActiveActivity]);
 
   useEffect(() => {
     const handleShowDownloads = () => {
+      setDisclosure(true);
       setHighlightDownloads(true);
       window.setTimeout(() => setHighlightDownloads(false), 1800);
     };
@@ -228,19 +234,33 @@ export default function RunSessionShelf() {
     <section
       aria-label="Session activity"
       data-testid="run-session-shelf"
+      data-canvas-overlay="activity"
       className="pointer-events-none absolute bottom-4 left-4 z-30 w-[min(360px,calc(100%-32px))] text-modiff-text"
     >
       <div className="pointer-events-auto border border-modiff-border bg-modiff-bg p-2 shadow-modiff-panel">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+        <div className={cx('flex items-center justify-between gap-2', expanded && 'mb-2')}>
+          <ModiffButton
+            tone="ghost"
+            align="left"
+            aria-label={expanded ? 'Hide session activity' : 'Show session activity'}
+            aria-expanded={expanded}
+            aria-controls={contentId}
+            onClick={() => setDisclosure(!expanded)}
+            className="h-auto! min-w-0 flex-1 gap-2 px-1 py-1"
+          >
             <Clock3 size={15} className="text-hf-yellow" />
-            <div>
-              <div className="text-xs font-bold text-modiff-text">Session activity</div>
-              <div className="text-modiff-label text-modiff-subtle-text">
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-bold text-modiff-text">Session activity</span>
+              <span className="block text-modiff-label text-modiff-subtle-text">
                 {hasActiveActivity ? 'Active now' : `${finishedCount + finishedDownloadCount} finished`}
-              </div>
-            </div>
-          </div>
+              </span>
+            </span>
+            <ChevronDown
+              size={14}
+              className={cx('shrink-0 transition-transform', expanded && 'rotate-180')}
+              aria-hidden="true"
+            />
+          </ModiffButton>
           <ModiffButton
             tone="ghost"
             size="compact"
@@ -254,6 +274,8 @@ export default function RunSessionShelf() {
           </ModiffButton>
         </div>
         <div
+          id={contentId}
+          hidden={!expanded}
           className="modiff-scrollbar-thin max-h-[min(45vh,352px)] overflow-y-auto overscroll-contain pr-1"
           data-testid="run-session-scrollport"
         >

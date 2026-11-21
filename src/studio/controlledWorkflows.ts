@@ -23,25 +23,16 @@ import {
   type ControlledNodeRole,
 } from './controlledWorkflowContracts';
 import { resolveStudioResourceForm } from './resourcePlanner';
-import type {
-  StudioAudioFitSettings,
-  StudioFormState,
-  StudioTemplateLoraSettings,
-  StudioTemplateWorkflowBlockSettings,
-} from './types';
+import {
+  loraWorkflowFieldValues,
+  buildLyricVideoWorkflow,
+  soundtrackWorkflowFieldValues,
+  upscaleWorkflowFieldValues,
+} from './controlledWorkflowValues';
+import { MAX_ORDERED_ADAPTERS, orderedAdapterChainLinks } from './adapterChainLinks';
+import type { StudioFormState, StudioTemplateLoraSettings, StudioTemplateWorkflowBlockSettings } from './types';
 
 export { CONTROLLED_WORKFLOW_NODE_KEYS } from './controlledWorkflowContracts';
-
-const VIDEO_DELIVERY_UPSCALER = {
-  model: {
-    source: 'hub' as const,
-    value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth',
-    revision: '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094',
-    sha256: '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb',
-    byteSize: 67061725,
-  },
-  downscale: 1,
-};
 
 type ControlledWorkflowOptions = {
   graphPrepared?: boolean;
@@ -86,16 +77,6 @@ function setParamIfPresent(
   if (!nodeId || !fieldKey) return false;
   useFlowStore.getState().setParam(nodeId, fieldKey, value, key);
   return true;
-}
-
-function applyAudioFitValues(nodeId: string, settings: StudioAudioFitSettings) {
-  setParamIfPresent(nodeId, ['source_start_seconds'], settings.sourceStartSeconds);
-  setParamIfPresent(nodeId, ['source_duration_seconds'], settings.sourceDurationSeconds);
-  setParamIfPresent(nodeId, ['target_duration_seconds'], settings.targetDurationSeconds);
-  setParamIfPresent(nodeId, ['delay_seconds'], settings.delaySeconds ?? 0);
-  setParamIfPresent(nodeId, ['target_sample_rate'], settings.targetSampleRate ?? 48000);
-  setParamIfPresent(nodeId, ['fade_in_seconds'], settings.fadeInSeconds ?? 0);
-  setParamIfPresent(nodeId, ['fade_out_seconds'], settings.fadeOutSeconds ?? 0);
 }
 
 async function ensureRegistryKeys(keys: string[]) {
@@ -288,9 +269,11 @@ export async function addLoraWorkflowBlock(
   const adapterSettings: StudioTemplateLoraSettings[] = settings
     ? [settings, ...(settings.additionalAdapters ?? [])]
     : [];
-  if (adapterSettings.length > 1 && !usesDirectDiffusersImage) {
+  if (adapterSettings.length > 1 && !usesDirectDiffusersImage && (!modelsNode || binding?.nodes.videoExport)) {
     throw new Error('Multiple LoRA adapters currently require the Diffusers image pipeline.');
   }
+  if (adapterSettings.length > MAX_ORDERED_ADAPTERS)
+    throw new Error(`A LoRA chain supports at most ${MAX_ORDERED_ADAPTERS} adapters.`);
   const effectiveSettings = adapterSettings.length > 0 ? adapterSettings : [undefined];
   const basePosition = positionNear(
     modelsNode ?? directPipelineNode ?? audioPipelineNode,
@@ -303,6 +286,23 @@ export async function addLoraWorkflowBlock(
       ? 'lora.diffusers-image.v1'
       : 'lora.modular.v1';
   const loraNode = runControlledGraphTransaction(context, contractId, () => {
+    const currentAdapters = useFlowStore
+      .getState()
+      .nodes.filter(
+        (node) => node.data.studioRole === 'loraAdapter' || node.data.studioRole?.startsWith('loraAdapter:'),
+      );
+    const currentAdapterIds = new Set(currentAdapters.map((node) => node.id));
+    const sink = modelsNode ?? directGenerateNode ?? audioGenerateNode;
+    if (
+      useFlowStore
+        .getState()
+        .edges.some(
+          (edge) => currentAdapterIds.has(edge.source) && !currentAdapterIds.has(edge.target) && edge.target !== sink,
+        )
+    )
+      throw new Error(
+        'This LoRA chain is shared with another consumer. Edit its ordinary graph connections to preserve that branch.',
+      );
     const expectedRoles = new Set(
       effectiveSettings.map((_, index) => (index === 0 ? 'loraAdapter' : `loraAdapter:${index}`)),
     );
@@ -323,22 +323,7 @@ export async function addLoraWorkflowBlock(
         x: basePosition.x + index * 310,
         y: basePosition.y,
       });
-      setParamIfPresent(nodeId, ['scale'], adapter?.scale ?? 1);
-      setParamIfPresent(nodeId, ['replace_existing'], index === 0);
-      if (adapter?.model) {
-        setParamIfPresent(nodeId, ['model', 'adapter_path'], {
-          source: adapter.model.source,
-          value: adapter.model.value,
-        });
-        setParamIfPresent(nodeId, ['revision'], adapter.model.revision ?? '');
-        setParamIfPresent(nodeId, ['expected_sha256'], adapter.model.sha256 ?? '');
-      }
-      if (adapter?.weightName) {
-        setParamIfPresent(nodeId, ['weight_name'], adapter.weightName);
-      }
-      if (adapter?.adapterName) {
-        setParamIfPresent(nodeId, ['adapter_name'], adapter.adapterName);
-      }
+      for (const { fields, value } of loraWorkflowFieldValues(adapter, index)) setParamIfPresent(nodeId, fields, value);
       return nodeId;
     });
     const primaryLoraNode = loraNodes[0];
@@ -349,12 +334,6 @@ export async function addLoraWorkflowBlock(
       });
       setParamIfPresent(audioPipelineNode, ['revision'], settings.baseModel.revision ?? '');
     }
-    if (settings?.schedulerClass) {
-      setParamIfPresent(primaryLoraNode, ['scheduler_class'], settings.schedulerClass);
-    }
-    if (settings?.schedulerConfig) {
-      setParamIfPresent(primaryLoraNode, ['scheduler_config'], JSON.stringify(settings.schedulerConfig));
-    }
     let connected = false;
     if (usesDirectDiffusersImage || usesDirectDiffusersAudio) {
       const flow = useFlowStore.getState();
@@ -364,20 +343,43 @@ export async function addLoraWorkflowBlock(
         .filter(
           (edge) =>
             (edge.source === sourcePipelineNode &&
+              edge.sourceHandle === 'pipeline' &&
+              edge.targetHandle === 'pipeline' &&
               (edge.target === targetGenerateNode || loraNodes.includes(edge.target))) ||
             (loraNodes.includes(edge.source) &&
+              edge.sourceHandle === 'output' &&
+              edge.targetHandle === 'pipeline' &&
               (edge.target === targetGenerateNode || loraNodes.includes(edge.target))),
         )
         .map((edge) => edge.id);
       if (bypassEdges.length > 0) flow.removeEdges(bypassEdges);
-      connected = ensureConnection(sourcePipelineNode, ['pipeline'], loraNodes[0], ['pipeline']);
-      for (let index = 1; index < loraNodes.length && connected; index += 1) {
-        connected = ensureConnection(loraNodes[index - 1], ['output'], loraNodes[index], ['pipeline']);
-      }
-      connected =
-        connected && ensureConnection(loraNodes[loraNodes.length - 1], ['output'], targetGenerateNode, ['pipeline']);
+      if (sourcePipelineNode && targetGenerateNode)
+        connected = orderedAdapterChainLinks({
+          adapterIds: loraNodes,
+          inputHandles: ['pipeline'],
+          outputHandles: ['output'],
+          source: { nodeId: sourcePipelineNode, handles: ['pipeline'] },
+          target: { nodeId: targetGenerateNode, handles: ['pipeline'] },
+        }).every((link) => ensureConnection(link.source, link.sourceHandles, link.target, link.targetHandles));
     } else {
-      connected = ensureConnection(primaryLoraNode, ['lora'], modelsNode, ['lora_list', 'loras']);
+      const flow = useFlowStore.getState();
+      const staleChainEdges = flow.edges
+        .filter(
+          (edge) =>
+            loraNodes.includes(edge.source) &&
+            edge.sourceHandle === 'lora' &&
+            ((loraNodes.includes(edge.target) && edge.targetHandle === 'previous_loras') ||
+              (edge.target === modelsNode && ['lora_list', 'loras'].includes(edge.targetHandle ?? ''))),
+        )
+        .map((edge) => edge.id);
+      if (staleChainEdges.length > 0) flow.removeEdges(staleChainEdges);
+      if (modelsNode)
+        connected = orderedAdapterChainLinks({
+          adapterIds: loraNodes,
+          inputHandles: ['previous_loras'],
+          outputHandles: ['lora'],
+          target: { nodeId: modelsNode, handles: ['lora_list', 'loras'] },
+        }).every((link) => ensureConnection(link.source, link.sourceHandles, link.target, link.targetHandles));
     }
     if (!connected) {
       throw new Error('LoRA node was created, but its pipeline connection could not be completed.');
@@ -453,13 +455,8 @@ export async function addUpscaleWorkflowBlock(
       'upscaler',
       positionNear(decodeNode ?? directImageNode ?? videoDeliverySource, { x: 930, y: 170 }, { x: 330, y: 250 }),
     );
-    setParamIfPresent(upscalerNode, ['device'], form.device);
-    if (settings?.model) {
-      setParamIfPresent(upscalerNode, ['model_id'], settings.model);
-    }
-    if (settings?.downscale !== undefined) {
-      setParamIfPresent(upscalerNode, ['downscale'], settings.downscale);
-    }
+    for (const { fields, value } of upscaleWorkflowFieldValues(settings, form.device))
+      setParamIfPresent(upscalerNode, fields, value);
     if (qualityVideoGenerateNode && qualityVideoRetainNode) {
       removeEdgesBetween(qualityVideoGenerateNode.id, qualityVideoRetainNode.id, ['video_out'], ['video']);
       const generateConnected = ensureConnection(qualityVideoGenerateNode.id, ['video_out'], upscalerNode, ['image']);
@@ -711,12 +708,14 @@ export async function addQualityVideoSequenceWorkflowBlock(
     setParamIfPresent(recipe, ['device_map'], 'none');
     setParamIfPresent(recipe, ['offload_mode'], sequenceOffloadMode);
     setParamIfPresent(recipe, ['device'], executionDevice);
-    const supportsNativeFlash = executionDevice.startsWith('cuda');
-    setParamIfPresent(recipe, ['attention_backend'], supportsNativeFlash ? '_native_flash' : 'auto');
+    // A CUDA device does not prove that this Torch build contains flash SDPA.
+    // Preserve an explicit expert choice; ordinary authoring uses native auto.
+    const attentionBackend = executionForm.attentionBackend ?? 'auto';
+    setParamIfPresent(recipe, ['attention_backend'], attentionBackend);
     setParamIfPresent(
       recipe,
       ['attention_components'],
-      supportsNativeFlash ? (mode === 'text_to_video' ? 'transformer' : 'transformer,transformer_2') : '',
+      attentionBackend !== 'auto' ? (mode === 'text_to_video' ? 'transformer' : 'transformer,transformer_2') : '',
     );
     setParamIfPresent(recipe, ['vae_slicing'], true);
     // Video VAE decode can require substantially more memory than denoising.
@@ -742,6 +741,8 @@ export async function addQualityVideoSequenceWorkflowBlock(
     setParamIfPresent(jobs, ['negative_prompt'], form.negativePrompt);
     setParamIfPresent(retain, ['quality'], 10);
     setParamIfPresent(retain, ['pin'], true);
+    // ExportAsset exposes FPS as a scalar control until its input socket is enabled.
+    setParamIfPresent(retain, ['fps'], true, 'isInput');
     setParamIfPresent(join, ['transition_seconds'], settings.transitionSeconds);
     setParamIfPresent(join, ['pin'], true);
 
@@ -865,43 +866,10 @@ export async function addSoundtrackWorkflowBlock(
       y: 140,
     });
 
-    setParamIfPresent(quantization, ['backend'], 'none');
-    setParamIfPresent(quantization, ['components'], []);
-    setParamIfPresent(quantization, ['dtype'], executionForm.dtype);
-    setParamIfPresent(recipe, ['device_map'], 'none');
-    setParamIfPresent(recipe, ['offload_mode'], executionForm.offloadMode);
-    setParamIfPresent(recipe, ['device'], executionForm.device);
-    // ACE-Step supplies an attention mask. On the qualified ROCm stack both
-    // AITER and the native-flash dispatch can reject masked attention, so use
-    // the portable PyTorch math SDPA path for this small eight-step branch.
-    setParamIfPresent(recipe, ['attention_backend'], '_native_math');
-    setParamIfPresent(recipe, ['attention_components'], '');
-    setParamIfPresent(recipe, ['vae_slicing'], true);
-    setParamIfPresent(recipe, ['vae_tiling'], true);
-    setParamIfPresent(pipeline, ['model_id'], settings.model);
-    if (settings.model.revision) setParamIfPresent(pipeline, ['revision'], settings.model.revision);
-    setParamIfPresent(pipeline, ['pipeline_class'], settings.pipelineClass);
-    setParamIfPresent(pipeline, ['mode'], 'text_to_audio');
-    setParamIfPresent(pipeline, ['dtype'], executionForm.dtype);
-    setParamIfPresent(pipeline, ['device'], executionForm.device);
-    setParamIfPresent(pipeline, ['auto_offload'], executionForm.autoOffload);
-    setParamIfPresent(pipeline, ['offload_mode'], executionForm.offloadMode);
-    setParamIfPresent(generate, ['task_type'], 'text2music');
-    setParamIfPresent(generate, ['prompt'], settings.prompt);
-    setParamIfPresent(generate, ['negative_prompt'], settings.negativePrompt ?? '');
-    setParamIfPresent(generate, ['lyrics'], '');
-    setParamIfPresent(generate, ['audio_duration'], settings.durationSeconds);
-    setParamIfPresent(generate, ['num_inference_steps'], settings.steps);
-    setParamIfPresent(generate, ['guidance_scale'], settings.guidanceScale);
-    setParamIfPresent(generate, ['stable_audio_steps'], settings.steps);
-    setParamIfPresent(generate, ['stable_audio_guidance'], settings.guidanceScale);
-    setParamIfPresent(generate, ['seed'], settings.seed);
-    setParamIfPresent(generate, ['bpm'], settings.bpm ?? 0);
-    setParamIfPresent(generate, ['keyscale'], settings.keyscale ?? '');
-    setParamIfPresent(generate, ['timesignature'], settings.timesignature ?? '4/4');
-    applyAudioFitValues(audioFit, settings.audioFit);
-    setParamIfPresent(exporter, ['fps'], form.fps);
-    setParamIfPresent(exporter, ['quality'], 10);
+    const fieldValues = soundtrackWorkflowFieldValues(settings, executionForm, { retainSelectorMetadata: true });
+    for (const [role, nodeId] of Object.entries({ quantization, recipe, pipeline, generate, audioFit, exporter }))
+      for (const { fields, value } of fieldValues[role as keyof typeof fieldValues])
+        setParamIfPresent(nodeId, fields, value);
 
     // Keep the core exporter identity stable and make the controlled receipt
     // own the explicit sink replacement. This lets restore validate the base
@@ -933,7 +901,6 @@ export async function addLyricVideoWorkflowBlock(
   assertWorkflowOperationContext(context);
   if (!settings) throw new Error('Lyric video settings are required.');
   const executionForm = resolveStudioResourceForm(form);
-  const runtimeQuantizationMode = executionForm.resourceMode === 'expert' ? executionForm.quantizationMode : 'none';
   const requiredKeys: string[] = [
     CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoQuantization,
     CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoRecipe,
@@ -954,98 +921,18 @@ export async function addLyricVideoWorkflowBlock(
   const audioGenerate = binding?.nodes.audioGenerate;
   if (!audioGenerate) throw new Error('Lyric video requires the ACE-Step audio graph.');
   return runControlledGraphTransaction(context, 'lyric-video.v1', () => {
-    const quantization = ensureControlledNode(
-      CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoQuantization,
-      'lyricVideoQuantization',
-      { x: -1280, y: 340 },
+    return buildLyricVideoWorkflow(
+      settings,
+      form,
+      audioGenerate,
+      ensureControlledNode,
+      (node, fields, value) => {
+        setParamIfPresent(node, fields, value);
+      },
+      (from, outputs, to, inputs) => {
+        if (!ensureConnection(from, outputs, to, inputs))
+          throw new Error('Lyric video nodes were created, but their media handles are unavailable.');
+      },
     );
-    const recipe = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.lyricVideoRecipe, 'lyricVideoRecipe', {
-      x: -900,
-      y: 340,
-    });
-    const pipeline = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.videoPipeline, 'lyricVideoPipeline', {
-      x: -500,
-      y: 340,
-    });
-    const sequence = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.videoSequence, 'videoSequence', {
-      x: -100,
-      y: 340,
-    });
-    const compose = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.videoCompose, 'videoCompose', {
-      x: 300,
-      y: 340,
-    });
-    const upscaler = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.upscaler, 'upscaler', { x: 680, y: 340 });
-    const overlay = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.lyricOverlay, 'lyricOverlay', {
-      x: 1060,
-      y: 340,
-    });
-    const audioFit = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.audioFit, 'lyricAudioFit', {
-      x: 1060,
-      y: 720,
-    });
-    const exporter = ensureControlledNode(CONTROLLED_WORKFLOW_NODE_KEYS.exportWithAudio, 'exportWithAudio', {
-      x: 1440,
-      y: 180,
-    });
-    setParamIfPresent(quantization, ['backend'], runtimeQuantizationMode);
-    setParamIfPresent(quantization, ['components'], ['transformer']);
-    setParamIfPresent(quantization, ['dtype'], executionForm.dtype);
-    setParamIfPresent(recipe, ['device_map'], 'none');
-    setParamIfPresent(recipe, ['offload_mode'], executionForm.offloadMode);
-    setParamIfPresent(recipe, ['device'], executionForm.device);
-    setParamIfPresent(recipe, ['attention_backend'], 'auto');
-    setParamIfPresent(recipe, ['attention_components'], '');
-    setParamIfPresent(recipe, ['vae_slicing'], true);
-    setParamIfPresent(recipe, ['vae_tiling'], true);
-    setParamIfPresent(pipeline, ['model_id'], settings.visualModel);
-    setParamIfPresent(pipeline, ['pipeline_class'], 'LTXConditionPipeline');
-    setParamIfPresent(pipeline, ['dtype'], executionForm.dtype);
-    setParamIfPresent(pipeline, ['device'], executionForm.device);
-    setParamIfPresent(pipeline, ['auto_offload'], executionForm.autoOffload);
-    setParamIfPresent(pipeline, ['offload_mode'], executionForm.offloadMode);
-    applySequenceValues(
-      sequence,
-      { ...form, width: 768, height: 512, numFrames: 81, steps: 8, guidanceScale: 1 },
-      settings.promptsJson,
-    );
-    setParamIfPresent(compose, ['fps'], 16);
-    setParamIfPresent(compose, ['transition_seconds'], settings.transitionSeconds);
-    setParamIfPresent(upscaler, ['model_id'], VIDEO_DELIVERY_UPSCALER.model);
-    setParamIfPresent(upscaler, ['downscale'], VIDEO_DELIVERY_UPSCALER.downscale);
-    setParamIfPresent(overlay, ['lrc'], settings.lrc);
-    setParamIfPresent(overlay, ['fps'], 16);
-    setParamIfPresent(overlay, ['font_size'], settings.fontSize ?? 58);
-    setParamIfPresent(overlay, ['bottom_margin'], settings.bottomMargin ?? 70);
-    setParamIfPresent(audioGenerate, ['task_type'], 'text2music');
-    setParamIfPresent(audioGenerate, ['prompt'], settings.audio.prompt);
-    setParamIfPresent(audioGenerate, ['negative_prompt'], '');
-    setParamIfPresent(audioGenerate, ['lyrics'], settings.audio.lyrics);
-    setParamIfPresent(audioGenerate, ['audio_duration'], settings.audio.durationSeconds);
-    setParamIfPresent(audioGenerate, ['num_inference_steps'], settings.audio.steps);
-    setParamIfPresent(audioGenerate, ['guidance_scale'], settings.audio.guidanceScale);
-    setParamIfPresent(audioGenerate, ['shift'], settings.audio.shift ?? 3);
-    setParamIfPresent(audioGenerate, ['seed'], settings.audio.seed);
-    setParamIfPresent(audioGenerate, ['bpm'], settings.audio.bpm ?? 0);
-    setParamIfPresent(audioGenerate, ['keyscale'], settings.audio.keyscale ?? '');
-    setParamIfPresent(audioGenerate, ['timesignature'], settings.audio.timesignature ?? '4');
-    setParamIfPresent(audioGenerate, ['vocal_language'], settings.audio.vocalLanguage ?? 'en');
-    setParamIfPresent(audioGenerate, ['sample_rate'], settings.audioFit.targetSampleRate ?? 48000);
-    applyAudioFitValues(audioFit, settings.audioFit);
-    setParamIfPresent(exporter, ['fps'], 16);
-    if (
-      !ensureConnection(quantization, ['quantization_config'], recipe, ['quantization_config']) ||
-      !ensureConnection(recipe, ['execution_recipe'], pipeline, ['execution_recipe']) ||
-      !ensureConnection(pipeline, ['pipeline'], sequence, ['pipeline']) ||
-      !ensureConnection(sequence, ['clips'], compose, ['clip_1']) ||
-      !ensureConnection(compose, ['video'], upscaler, ['image']) ||
-      !ensureConnection(upscaler, ['output'], overlay, ['video']) ||
-      !ensureConnection(overlay, ['output'], exporter, ['video']) ||
-      !ensureConnection(audioGenerate, ['audio'], audioFit, ['audio']) ||
-      !ensureConnection(audioFit, ['output'], exporter, ['audio'])
-    ) {
-      throw new Error('Lyric video nodes were created, but their media handles are unavailable.');
-    }
-    return exporter;
   });
 }

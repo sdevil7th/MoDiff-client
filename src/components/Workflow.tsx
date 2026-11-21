@@ -1133,15 +1133,17 @@ function Workflow() {
         } else {
           undo();
         }
+        saveActiveWorkflowTab(true);
       } else if (key === 'y') {
         event.preventDefault();
         redo();
+        saveActiveWorkflowTab(true);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [redo, undo]);
+  }, [redo, saveActiveWorkflowTab, undo]);
 
   return (
     <GraphConnectionSurface
@@ -1184,6 +1186,15 @@ function Workflow() {
         maxZoom={1.5}
         colorMode={'dark'}
         deleteKeyCode={['Backspace', 'Delete']}
+        onBeforeDelete={async ({ nodes: removedNodes, edges: removedEdges }) => {
+          // React Flow normally emits edge removal before node removal, which
+          // would create two history entries for one keyboard action.
+          useFlowStore.getState().removeElements(
+            removedNodes.map((node) => node.id),
+            removedEdges.map((edge) => edge.id),
+          );
+          return false;
+        }}
         proOptions={{ hideAttribution: true }}
         // Composite execution children can be outside the viewport even while
         // their root is collapsed. Their retained graph edges still require
@@ -1224,7 +1235,9 @@ function Workflow() {
         nodesDraggable
         nodesConnectable
         elementsSelectable
-        elevateEdgesOnSelect
+        // Selection keeps its stroke emphasis without lifting a wire's wide
+        // hit path over unrelated node controls. XYFlow still layers child edges.
+        elevateEdgesOnSelect={false}
         className={`${canvasSuspended ? 'pointer-events-none opacity-0' : ''} ${isConnecting ? 'connecting' : ''} ${isConnectionValid !== null ? (isConnectionValid ? 'valid-connection' : 'invalid-connection') : ''}`}
       >
         <style>{reactFlowCss}</style>

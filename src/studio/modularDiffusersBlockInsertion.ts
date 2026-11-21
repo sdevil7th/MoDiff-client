@@ -4,7 +4,10 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData, NodeParams } from '../stores/useNodeStore';
 import type { HuggingFaceCatalogEntry } from './huggingFaceNodeCatalog';
 import type { HuggingFaceNodeLibrary } from './huggingFaceNodeLibrary';
-import type { HuggingFaceModularConditionalSnapshot } from './huggingFaceModularConditionals';
+import {
+  modularConditionalSnapshotForSource,
+  type HuggingFaceModularConditionalSnapshot,
+} from './huggingFaceModularConditionals';
 import {
   blockDefinitionContentHashV2,
   blockGraphHashV2,
@@ -15,7 +18,7 @@ import {
 } from './blockSchemaV2';
 import { createBlockRootNodeV2, setBlockPresentationV2 } from './blockRuntimeV2';
 import { compactReviewedModularInternalLayoutV2 } from './reviewedModularGraphV2';
-import { addReviewedValuePortsV2 } from './reviewedValuePortsV2';
+import { addReviewedValuePortsV2, selectReviewedBlockFieldParamV2 } from './reviewedValuePortsV2';
 
 const STEP_KEY = 'modules.ModularDiffusers.ReviewedModularWorkflowStep';
 export const HUGGING_FACE_MODULAR_BLOCK_DRAG_PREFIX = 'modiff:hugging-face-modular-block:';
@@ -62,6 +65,9 @@ export function createModularDiffusersCatalogNode(
   const context = entry.modularBlockPlacement;
   if (entry.kind !== 'block' || !context) throw new Error('This catalog row is not a Modular Diffusers block.');
   const definition = library.definitions.find(({ id }) => id === context.definitionId);
+  modularSnapshot = definition
+    ? modularConditionalSnapshotForSource(modularSnapshot, definition.libraryRevision)
+    : null;
   const block = [...library.blockDefinitions, ...(modularSnapshot?.blockDefinitions ?? [])].find(
     ({ id }) => id === context.placement.blockDefinitionId,
   );
@@ -119,14 +125,17 @@ export function createModularDiffusersCatalogNode(
         return;
       }
       const key = base.params[field.name]?.display === 'output' ? `state_input__${field.name}` : field.name;
-      params[key] = manifestInput(base.params[key], field);
+      params[key] = manifestInput(
+        base.params[key] ? selectReviewedBlockFieldParamV2(base.params[key], block) : undefined,
+        field,
+      );
     });
     for (const output of block.outputs) {
       const outputParam = base.params[output.name];
       if (outputParam?.display === 'output') params[output.name] = clone(outputParam);
     }
   }
-  addReviewedValuePortsV2(params, base.params, block.inputs, block.outputs, executionKind);
+  addReviewedValuePortsV2(params, base.params, block.inputs, block.outputs, executionKind, block);
   const metadata = {
     kind: 'upstream_block' as const,
     pipelineClass: context.pipelineClass,

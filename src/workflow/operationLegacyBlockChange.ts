@@ -1,5 +1,5 @@
 import { isLegacyUserBlock, prepareLegacyBlockMovementV2 } from '../studio/legacyBlockMovementV2';
-import type { OperationGraph, OperationStarter } from './operationAuthoring';
+import type { OperationChangeOptions, OperationGraph, OperationStarter } from './operationAuthoring';
 import { planBlockOperationChange } from './operationBlockChange';
 
 /** Read-only adaptation of the selected instance, never a library migration. */
@@ -28,7 +28,7 @@ export function planOwnerBlockOperationChange(
   blockId: string,
   loaderId: string,
   starter: OperationStarter,
-  options: { replaceModel?: boolean; restoreDefaults?: boolean } = {},
+  options: Pick<OperationChangeOptions, 'replaceModel' | 'restoreDefaults' | 'layoutReferenceContext'> = {},
 ) {
   const prepared = prepareOperationBlockGraph(graph, blockId);
   const plan = planBlockOperationChange(prepared.graph, prepared.root.id, loaderId, starter, options);

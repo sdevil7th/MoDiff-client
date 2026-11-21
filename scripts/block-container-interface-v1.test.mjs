@@ -10,7 +10,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let schema;
 let server;
 let fixture, previewFixture;
-let runtime, editing, surfaces, persistence, flowStore, drops, connections, interfaceEditing, previewOptions;
+let runtime,
+  editing,
+  surfaces,
+  persistence,
+  flowStore,
+  drops,
+  connections,
+  interfaceEditing,
+  previewOptions,
+  fieldActions;
 
 before(async () => {
   const storage = new Map();
@@ -47,6 +56,7 @@ before(async () => {
   connections = await server.ssrLoadModule('/src/studio/blockControlConnectionsV2.ts');
   interfaceEditing = await server.ssrLoadModule('/src/studio/blockInterfaceEditingV2.ts');
   previewOptions = await server.ssrLoadModule('/src/studio/blockPreviewOptionsV2.ts');
+  fieldActions = await server.ssrLoadModule('/src/studio/visualStageFieldActions.ts');
   fixture = JSON.parse(
     await readFile(path.join(ROOT, '../MoDiff/tests/fixtures/block_container_interface_v1.json'), 'utf8'),
   );
@@ -87,6 +97,140 @@ function handle(node, direction, fieldId) {
       ([, binding]) => binding.direction === direction && binding.fieldOrPortId === fieldId,
     )?.[0] ?? fieldId
   );
+}
+
+test('a visual executable container keeps native callback fields behind its local aliases', () => {
+  const definition = structuredClone(fixture);
+  definition.source.provider = 'modiff.visual-stages.regression.v1';
+  const stage = definition.graph.nodes[0];
+  stage.data.module = 'modules.Test';
+  stage.data.action = 'Denoise';
+  stage.data.params.width = { type: 'int', value: 768 };
+  stage.containerInterface.controls = [
+    { controlId: 'width', label: 'Width', valueType: 'int', binding: { nodeId: 'stage', fieldId: 'width' }, order: 0 },
+  ];
+  const current = runtime.setBlockPresentationV2(instance(rehash(definition)), { expanded: true });
+  const graph = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+  const visible = graph.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  const fieldKey = Object.keys(visible.data.params).find((key) => key.startsWith('block-local-control:'));
+  const sources = fieldActions.visualStageFieldSources(graph.nodes, {
+    nodeId: visible.id,
+    fieldKey,
+    module: visible.data.module,
+    action: visible.data.action,
+  });
+  assert.equal(sources?.[0].fieldKey, 'width');
+  assert.equal(sources?.[0].param.value, 768);
+  assert.equal(sources?.[0].node.data.action, 'Denoise');
+});
+
+for (const display of ['input', 'output']) {
+  test(`an ordinary user Block native ${display} is not recursively treated as another interface`, () => {
+    const definition = structuredClone(fixture);
+    const native = definition.graph.nodes.find((node) => node.nodeId === 'generate');
+    native.data.params.media = { type: 'image', display };
+    const current = runtime.setBlockPresentationV2(instance(rehash(definition)), {
+      expanded: true,
+      collapsedContainerNodeIds: [],
+    });
+    const graph = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+    const visible = graph.nodes.find((node) => node.data.blockProjectionNodeId === 'generate');
+    assert.ok(visible && !visible.data.blockProjectionContainer);
+    const before = structuredClone(current);
+    // Native callbacks already use the direct owner. The visual-interface
+    // resolver must terminate here instead of following this same socket again.
+    assert.equal(
+      fieldActions.visualStageFieldSources(graph.nodes, {
+        nodeId: visible.id,
+        fieldKey: 'media',
+        module: visible.data.module,
+        action: visible.data.action,
+      }),
+      null,
+    );
+    assert.deepEqual(current, before);
+  });
+}
+
+test('a cyclic projected container socket fails closed without overflowing or rewriting its Block', () => {
+  const definition = structuredClone(fixture);
+  const semantic = definition.graph.nodes.find((node) => node.nodeId === 'stage');
+  semantic.data.module = 'modules.Test';
+  semantic.data.action = 'Container';
+  semantic.data.params.media = { type: 'image', display: 'input' };
+  const current = runtime.setBlockPresentationV2(instance(rehash(definition)), {
+    expanded: true,
+    collapsedContainerNodeIds: [],
+  });
+  const graph = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+  const visible = graph.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+  // A stale/untrusted projection claims that its socket maps back to itself.
+  visible.data.module = 'modules.Test';
+  visible.data.action = 'Container';
+  visible.data.params.media = { type: 'image', display: 'input' };
+  const before = structuredClone(current);
+  assert.equal(
+    fieldActions.visualStageFieldSources(graph.nodes, {
+      nodeId: visible.id,
+      fieldKey: 'media',
+      module: visible.data.module,
+      action: visible.data.action,
+    }),
+    null,
+  );
+  assert.deepEqual(current, before);
+});
+
+for (const nested of [false, true]) {
+  test(`visual stage local field actions resolve the original native owner${nested ? ' after nesting' : ''}`, () => {
+    const definition = structuredClone(fixture);
+    definition.source.provider = 'modiff.visual-stages.regression.v1';
+    let current = instance(rehash(definition));
+    if (nested) {
+      const fragment = current;
+      current = schema.createBlockInstanceV2(rehash(definition), {
+        instanceId: 'outer-visual-stage',
+        position: { x: 0, y: 0 },
+        size: { width: 400, height: 320 },
+        expanded: true,
+      });
+      const get = loadStore(current);
+      drops.insertNodeAtBlockTargetV2(runtime.createBlockRootNodeV2(fragment), get().nodes[0], get(), (node) =>
+        get().addNode(node),
+      );
+      current = get().nodes.find((node) => node.id === current.instanceId).data.blockInstanceV2;
+    }
+    current = runtime.setBlockPresentationV2(current, { expanded: true, collapsedContainerNodeIds: [] });
+    const before = structuredClone(current);
+    const graph = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(current));
+    const container = graph.nodes.find(
+      (node) =>
+        node.data.blockProjectionContainer &&
+        (!nested ||
+          current.effectiveGraph.nodes.find((member) => member.nodeId === node.data.blockProjectionNodeId)
+            ?.parentNodeId) &&
+        Object.values(node.data.params).some((param) => param.fieldOptions?.blockContainerControlV1),
+    );
+    assert.ok(container);
+    const [fieldKey, param] = Object.entries(container.data.params).find(
+      ([, param]) => param.fieldOptions?.blockContainerControlV1,
+    );
+    const binding = connections.blockControlBindingV2(container, fieldKey, param, graph.nodes).control.binding;
+    const props = { nodeId: container.id, fieldKey, module: container.data.module, action: container.data.action };
+    const sources = fieldActions.visualStageFieldSources(graph.nodes, props);
+    assert.ok(sources?.length, 'a projected local control must route to its declared native field');
+    assert.equal(sources[0].node.id, runtime.blockProjectionNodeIdV2(current.instanceId, binding.nodeId));
+    assert.equal(sources[0].fieldKey, binding.fieldId);
+    assert.equal(sources[0].node.data.module, 'modules.Test');
+    assert.equal(sources[0].node.data.action, 'Generate');
+    assert.equal(sources[0].param.value, 'a detailed greenhouse');
+    assert.equal(fieldActions.visualStageFieldSources(graph.nodes, { ...props, action: 'StaleAction' }), null);
+    const ownerId = param.fieldOptions.blockContainerControlV1.ownerId;
+    param.fieldOptions.blockContainerControlV1.ownerId = 'unrelated-owner';
+    assert.equal(fieldActions.visualStageFieldSources(graph.nodes, props), null);
+    param.fieldOptions.blockContainerControlV1.ownerId = ownerId;
+    assert.deepEqual(current, before, 'resolving a callback does not rewrite persisted values or execution');
+  });
 }
 
 test('configuring a container changes only its declaration and not root ports, parameters or sibling nodes', () => {
@@ -405,6 +549,105 @@ test('connected control hints include public drivers and partial mirror targets 
   assert.match(notes.prompt, /1 of 2 targets/);
   assert.match(notes.prompt, /remaining targets use the saved fallback/);
   assert.equal(schema.blockInstanceValueV2(current, 'prompt'), 'saved fallback');
+});
+
+test('runtime availability follows declared root and nested consumers without changing choices or authority', async () => {
+  const options = await server.ssrLoadModule('/src/studio/runtimeOptions.ts');
+  const descriptor = (value, ready) => ({
+    schemaVersion: 1,
+    value,
+    label: value,
+    compatibility: ready ? 'compatible' : 'incompatible',
+    availability: ready ? 'installed' : 'unavailable',
+    installationState: ready ? 'installed' : 'unavailable',
+  });
+  for (const [savedReady, liveReady] of [
+    [false, true],
+    [true, false],
+  ]) {
+    const definition = structuredClone(publicPromptFixture().definitionSnapshot);
+    const supplier = definition.graph.nodes.find((node) => node.nodeId === 'generate');
+    const saved = [descriptor('saved fallback', true), descriptor('reviewed-format', savedReady)];
+    supplier.data.params.prompt.options = saved;
+    const current = instance(rehash(definition));
+    const before = JSON.stringify(current);
+    const projection = project(
+      runtime.setBlockPresentationV2(current, { expanded: true, collapsedContainerNodeIds: ['stage'] }),
+    );
+    const owner = projection.nodes.find((node) => node.id === current.instanceId);
+    const registry = {
+      [`${supplier.data.module}.${supplier.data.action}`]: {
+        params: {
+          prompt: {
+            options: [
+              descriptor('saved fallback', true),
+              descriptor('reviewed-format', liveReady),
+              descriptor('not-authored', true),
+            ],
+          },
+        },
+      },
+    };
+    const rootParam = runtime.blockControlParamsV2(current).prompt;
+    const stage = projection.nodes.find((node) => node.data.blockProjectionNodeId === 'stage');
+    const local = Object.entries(stage.data.params).find(([, param]) => param.fieldOptions?.blockContainerControlV1);
+    for (const [node, key, param] of [
+      [owner, 'prompt', rootParam],
+      [stage, ...local],
+    ]) {
+      const shown = options.blockRuntimeOptionPresentation(param.options, key, param, node, owner, registry);
+      const entries = options.runtimeOptionEntries(shown);
+      assert.deepEqual(
+        entries.map((entry) => entry.value),
+        ['saved fallback', 'reviewed-format'],
+      );
+      assert.equal(entries.find((entry) => entry.value === 'reviewed-format').disabled, !liveReady);
+    }
+    const forged = structuredClone(rootParam);
+    forged.fieldOptions.blockBindingV2.ownerId = 'another-owner';
+    assert.equal(options.blockRuntimeOptionPresentation(saved, 'prompt', forged, owner, owner, registry), null);
+    const dynamic = structuredClone(registry);
+    dynamic[`${supplier.data.module}.${supplier.data.action}`].params.prompt.optionsSource = {};
+    assert.equal(options.blockRuntimeOptionPresentation(saved, 'prompt', rootParam, owner, owner, dynamic), saved);
+    assert.equal(JSON.stringify(current), before);
+  }
+  const definition = structuredClone(publicPromptFixture().definitionSnapshot);
+  const supplier = definition.graph.nodes.find((node) => node.nodeId === 'generate');
+  supplier.data.params.prompt.options = [descriptor('saved fallback', true), descriptor('reviewed-format', false)];
+  const second = structuredClone(supplier);
+  second.nodeId = 'generate2';
+  second.data.action = 'AnotherDeclaredConsumer';
+  second.modularDiffusers.placementPath = ['stage', 'generate2'];
+  second.modularDiffusers.runtimeRole = 'generate2';
+  definition.graph.nodes.push(second);
+  definition.graph.executionOrder.push(second.nodeId);
+  definition.controls[0].mirrorBindings = [{ nodeId: 'generate2', fieldId: 'prompt' }];
+  const current = instance(rehash(definition));
+  const owner = runtime.createBlockRootNodeV2(current);
+  const param = runtime.blockControlParamsV2(current).prompt;
+  const registry = Object.fromEntries(
+    [supplier, second].map((node, index) => [
+      `${node.data.module}.${node.data.action}`,
+      {
+        params: {
+          prompt: { options: [descriptor('saved fallback', true), descriptor('reviewed-format', index === 0)] },
+        },
+      },
+    ]),
+  );
+  const shown = options.blockRuntimeOptionPresentation(param.options, 'prompt', param, owner, owner, registry);
+  assert.equal(
+    options.runtimeOptionEntries(shown).find((entry) => entry.value === 'reviewed-format').disabled,
+    true,
+    'One incompatible mirror must prevent enabling the shared choice.',
+  );
+  registry[`${second.data.module}.${second.data.action}`].params.prompt = { type: 'string' };
+  const freeMirror = options.blockRuntimeOptionPresentation(param.options, 'prompt', param, owner, owner, registry);
+  assert.equal(
+    options.runtimeOptionEntries(freeMirror).find((entry) => entry.value === 'reviewed-format').disabled,
+    false,
+    'An unrestricted string mirror accepts the primary consumer choices.',
+  );
 });
 
 test('internal and public driver conflicts reject atomically in both insertion directions', () => {
@@ -1562,6 +1805,116 @@ test('root Run includes every local branch even without a preview and never runs
       })(),
     );
   }
+});
+
+test('disabled Block leaves survive projection, persistence and whole-workflow export', () => {
+  const baseline = instance(previewFixture);
+  const graph = structuredClone(baseline.effectiveGraph);
+  graph.nodes.find((n) => n.nodeId === 'caption').data.uiState = {
+    disabled: true,
+    errorMessage: 'Transient runtime error',
+    encodingSummaries: { image: { graphHash: 'old-run', value: 'transient' } },
+  };
+  graph.nodes.find((n) => n.nodeId === 'sibling').data.uiState = {
+    disabled: false,
+    validationMessage: 'Transient validation',
+  };
+  const current = runtime.replaceBlockEffectiveGraphV2(baseline, graph);
+  const before = structuredClone(current);
+  const root = runtime.createBlockRootNodeV2(
+    runtime.setBlockPresentationV2(current, { expanded: true, collapsedContainerNodeIds: [] }),
+  );
+  for (const view of [
+    runtime.blockOperationGraphV2(current),
+    runtime.materializeBlockProjectionV2(root),
+    runtime.expandBlockGraphV2ForExecution([root], []),
+  ]) {
+    assert.deepEqual(view.nodes.find((n) => n.data.blockProjectionNodeId === 'caption').data.uiState, {
+      disabled: true,
+    });
+    assert.deepEqual(view.nodes.find((n) => n.data.blockProjectionNodeId === 'sibling').data.uiState, {
+      disabled: false,
+    });
+  }
+  const enabledExport = loadStore(baseline)().exportGraph('disabled-leaf');
+  const disabledId = runtime.blockProjectionNodeIdV2(current.instanceId, 'caption');
+  delete enabledExport.nodes[disabledId];
+  enabledExport.paths = enabledExport.paths.filter((p) => !p.includes(disabledId));
+  const get = loadStore(current);
+  const expected = ['generate', 'sibling'].map((id) => runtime.blockProjectionNodeIdV2(current.instanceId, id));
+  const exported = get().exportGraph('disabled-leaf');
+  assert.deepEqual(exported, enabledExport, 'only the disabled leaf is omitted from the exact API graph');
+  assert.deepEqual(Object.keys(exported.nodes).sort(), expected.sort());
+  assert.deepEqual(exported.paths.map((p) => [...p]).sort(), expected.map((id) => [id]).sort());
+  const saved = JSON.parse(JSON.stringify(get().toObject()));
+  get().replaceGraph(saved);
+  assert.deepEqual(get().exportGraph('disabled-leaf'), exported);
+  assert.deepEqual(
+    get().nodes.find((n) => n.id === current.instanceId).data.blockInstanceV2.definitionSnapshot,
+    baseline.definitionSnapshot,
+  );
+  assert.deepEqual(current, before, 'projection must not rewrite disabled or transient saved data');
+});
+
+test('required image readiness uses directly disabled Block leaves and disabled ancestors', async () => {
+  const { inspectBlockMediaInputsV2 } = await server.ssrLoadModule('/src/studio/blockMediaReadinessV2.ts');
+  const baseline = instance(previewFixture);
+  const graph = structuredClone(baseline.effectiveGraph);
+  const leaf = graph.nodes.find((n) => n.nodeId === 'caption');
+  Object.assign(leaf.data, {
+    module: 'modules.ModularDiffusers',
+    action: 'ImageEncode',
+    label: 'Encode Image',
+    operationAuthoring: {
+      schemaVersion: 1,
+      defaults: {},
+      retained: [],
+      operation: {
+        pipelineClass: 'ExamplePipeline',
+        task: 'image_to_image',
+        operationId: 'diffusion.encode_image',
+        nodeKey: 'modules.ModularDiffusers.ImageEncode',
+        nodeType: 'custom',
+        blockName: 'ImageEncode',
+        decomposition: 'block',
+        support: 'declared',
+        workflowId: null,
+        binding: { pipelineClass: 'ExamplePipeline', values: {} },
+        ports: [
+          {
+            name: 'image',
+            semanticName: 'image',
+            direction: 'input',
+            roles: ['value'],
+            types: ['image'],
+            required: true,
+            hidden: false,
+            semantics: { kind: 'media', scope: null, state: null, owner: 'none', members: [] },
+          },
+        ],
+      },
+    },
+  });
+  leaf.data.params.image = { type: 'image', display: 'input' };
+  const inspect = () => {
+    const current = runtime.replaceBlockEffectiveGraphV2(baseline, graph);
+    const before = structuredClone(current);
+    const root = runtime.createBlockRootNodeV2(current);
+    const issues = inspectBlockMediaInputsV2([root], runtime.expandBlockGraphV2ForExecution([root], []));
+    assert.deepEqual(current, before);
+    assert.deepEqual(current.definitionSnapshot, baseline.definitionSnapshot);
+    return issues;
+  };
+  assert.deepEqual(
+    inspect().map((issue) => issue.message),
+    ['Encode Image needs image before running.'],
+  );
+  leaf.data.uiState = { disabled: true };
+  assert.deepEqual(inspect(), [], 'retained unmatched image stage must not block text-to-image');
+  leaf.data.uiState.disabled = false;
+  assert.equal(inspect().length, 1, 're-enabling the image stage restores required-media validation');
+  graph.nodes.find((n) => n.nodeId === 'stage').data.uiState = { disabled: true };
+  assert.deepEqual(inspect(), [], 'an enabled leaf still inherits its disabled ancestor');
 });
 
 test('nested Run excludes disabled children and explains an entirely disabled subtree', () => {

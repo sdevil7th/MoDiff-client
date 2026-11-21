@@ -3,6 +3,11 @@
 import { create } from 'zustand';
 import config from '../../app.config';
 import { createLatestRequestGate, formatRequestError, requestJson } from '../utils/requestJson';
+import {
+  supervisorControlAddress,
+  supervisorControlFailed,
+  supervisorControlSucceeded,
+} from '../utils/supervisorControl';
 import { useFlowStore } from './useFlowStore';
 import { useRunIssueStore } from './useRunIssueStore';
 import { useStudioStore } from './useStudioStore';
@@ -22,16 +27,16 @@ export type Task = {
   current_node?: string;
   current_node_name?: string;
   phase?: string;
-  current_step?: number;
-  total_steps?: number;
-  component?: string;
-  shard_current?: number;
-  shard_total?: number;
-  eta_seconds?: number;
-  average_step_seconds?: number;
-  elapsed_seconds?: number;
+  current_step?: number | null;
+  total_steps?: number | null;
+  component?: string | null;
+  shard_current?: number | null;
+  shard_total?: number | null;
+  eta_seconds?: number | null;
+  average_step_seconds?: number | null;
+  elapsed_seconds?: number | null;
   last_heartbeat_at?: number;
-  resource_snapshot?: Record<string, unknown>;
+  resource_snapshot?: Record<string, unknown> | null;
   phase_timings?: Record<string, number>;
   sid?: string;
   task_id?: string;
@@ -123,16 +128,18 @@ export function coerceTask(value: unknown): Task | undefined {
     current_node: optionalString(value.current_node) ?? optionalString(value.node),
     current_node_name: optionalString(value.current_node_name) ?? optionalString(value.node_name),
     phase: optionalString(value.phase),
-    current_step: optionalNumber(value.current_step),
-    total_steps: optionalNumber(value.total_steps),
-    component: optionalString(value.component),
-    shard_current: optionalNumber(value.shard_current),
-    shard_total: optionalNumber(value.shard_total),
-    eta_seconds: optionalNumber(value.eta_seconds),
-    average_step_seconds: optionalNumber(value.average_step_seconds),
-    elapsed_seconds: optionalNumber(value.elapsed_seconds),
+    // null explicitly clears a previous phase's telemetry; omission preserves it.
+    current_step: value.current_step === null ? null : optionalNumber(value.current_step),
+    total_steps: value.total_steps === null ? null : optionalNumber(value.total_steps),
+    component: value.component === null ? null : optionalString(value.component),
+    shard_current: value.shard_current === null ? null : optionalNumber(value.shard_current),
+    shard_total: value.shard_total === null ? null : optionalNumber(value.shard_total),
+    eta_seconds: value.eta_seconds === null ? null : optionalNumber(value.eta_seconds),
+    average_step_seconds: value.average_step_seconds === null ? null : optionalNumber(value.average_step_seconds),
+    elapsed_seconds: value.elapsed_seconds === null ? null : optionalNumber(value.elapsed_seconds),
     last_heartbeat_at: optionalNumber(value.last_heartbeat_at),
-    resource_snapshot: isRecord(value.resource_snapshot) ? value.resource_snapshot : undefined,
+    resource_snapshot:
+      value.resource_snapshot === null ? null : isRecord(value.resource_snapshot) ? value.resource_snapshot : undefined,
     phase_timings: isRecord(value.phase_timings)
       ? Object.fromEntries(
           Object.entries(value.phase_timings).filter(
@@ -199,6 +206,7 @@ interface TaskActions {
   setTasks: (current: Task | undefined, queued: Record<string, Task>, recent?: Task[]) => void;
   fetchTasks: () => Promise<void>;
   fetchSupervisorTasks: () => Promise<void>;
+  supervisorControlError: string | null;
   updateProgress: (task_id: string, progress: number, message?: string, details?: Partial<Task>) => void;
   markTaskFailed: (task: Task) => void;
   markTaskCompleted: (task: Task) => void;
@@ -349,6 +357,7 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
   taskCount: 0,
   queueRevision: 0,
   fetchState: { status: 'idle', error: null, requestId: null },
+  supervisorControlError: null,
   focusedTaskId: null,
   setFocusedTaskId: (taskId) => set({ focusedTaskId: taskId }),
 
@@ -380,24 +389,39 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
 
   fetchSupervisorTasks: () => {
     if (supervisorQueueRequest) return supervisorQueueRequest;
+    let address: string | null;
+    try {
+      address = supervisorControlAddress();
+    } catch (error) {
+      supervisorControlFailed();
+      set({ supervisorControlError: formatRequestError(error, 'Could not read supervisor task status.') });
+      return Promise.resolve();
+    }
+    if (!address) return Promise.resolve();
     const ticket = supervisorQueueRequestGate.begin('supervisorQueue');
     const queueRevision = get().queueRevision;
     const request = (async () => {
       try {
-        const payload = await requestJson(`${config.supervisorAddress}/queue`, {
+        const payload = await requestJson(`${address}/queue`, {
           signal: ticket.signal,
           timeoutMs: 2_000,
           parse: parseQueueResponse,
         });
         if (!ticket.isLatest()) return;
+        supervisorControlSucceeded();
+        set({ supervisorControlError: null });
         // A websocket queue snapshot that arrived while this emergency request
         // was in flight is newer and must remain authoritative.
         if (get().queueRevision === queueRevision) {
           get().setTasks(payload.current, payload.queued, payload.recent);
         }
-      } catch {
-        // The control plane is an emergency fallback. Normal websocket/HTTP
-        // connectivity owns visible connection errors.
+      } catch (error) {
+        if (!ticket.isLatest()) return;
+        supervisorControlFailed();
+        set({ supervisorControlError: formatRequestError(error, 'Could not read supervisor task status.') });
+        // Keep the failure available for diagnostics; normal worker HTTP/WS
+        // connectivity owns the visible connection state. Failed legacy probes
+        // back off instead of repeatedly hitting an absent control listener.
       } finally {
         ticket.finish();
         supervisorQueueRequest = null;
@@ -489,8 +513,12 @@ export const useTaskStore = create<TaskState & TaskActions>((set, get) => ({
   },
 
   updateProgress: (task_id, progress, message, details = {}) => {
-    const currentTask = get().currentTask;
+    const { currentTask, sessionRuns } = get();
     if (currentTask === undefined || task_id !== currentTask.task_id) {
+      // A late task_progress frame can follow the terminal queue snapshot.
+      // Preserve the completed receipt even if the canvas no longer owns it.
+      const previous = sessionRuns.find((run) => run.id === task_id);
+      if (previous?.status && TERMINAL_TASK_STATUSES.has(previous.status)) return;
       set((state) => ({
         sessionRuns: mergeSessionRun(state.sessionRuns, {
           id: task_id,

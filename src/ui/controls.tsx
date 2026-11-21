@@ -8,6 +8,8 @@ import {
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
+  Field,
+  Label,
   Listbox,
   ListboxButton,
   ListboxOption,
@@ -595,6 +597,7 @@ export type ModiffSelectOption = {
 };
 
 export type ModiffSelectProps = {
+  'data-run-recovery-field'?: string;
   'aria-describedby'?: string;
   'aria-errormessage'?: string;
   'aria-label'?: string;
@@ -621,6 +624,7 @@ export type ModiffSelectProps = {
 };
 
 export function ModiffSelect({
+  'data-run-recovery-field': recoveryField,
   'aria-describedby': ariaDescribedBy,
   'aria-errormessage': ariaErrorMessage,
   'aria-label': ariaLabel,
@@ -720,6 +724,7 @@ export function ModiffSelect({
             aria-readonly="true"
             aria-required={field.required || undefined}
             data-testid={testId}
+            data-run-recovery-field={recoveryField}
             disabled={field.disabled}
             title={title}
             className={selectButtonClassName}
@@ -736,6 +741,7 @@ export function ModiffSelect({
             aria-labelledby={ariaLabelledBy}
             aria-required={field.required || undefined}
             data-testid={testId}
+            data-run-recovery-field={recoveryField}
             title={title}
             className={selectButtonClassName}
           >
@@ -992,7 +998,8 @@ export function ModiffCheckbox({
   });
 
   return (
-    <label
+    <Field
+      disabled={field.disabled}
       className={cx(
         'inline-flex min-w-0 items-center gap-2 text-modiff-control text-modiff-text',
         field.disabled ? 'cursor-not-allowed' : field.readOnly ? 'cursor-default' : 'cursor-pointer',
@@ -1032,10 +1039,10 @@ export function ModiffCheckbox({
           aria-hidden="true"
         />
       </Checkbox>
-      <span id={labelId} className="min-w-0">
+      <Label id={labelId} htmlFor={field.id} aria-label={ariaLabel} className="min-w-0">
         {label}
-      </span>
-    </label>
+      </Label>
+    </Field>
   );
 }
 

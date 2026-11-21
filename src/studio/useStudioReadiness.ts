@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import type { ModelCacheDiagnostics } from '../stores/useNodeStore';
+import { useNodesStore, type ModelCacheDiagnostics } from '../stores/useNodeStore';
+import { studioWeightFormatProfile } from './weightFormat';
 import { autoResourceInstallTarget, type StudioAutoResourcePlan } from './autoResource';
 import { getStudioWorkflowArtifactRequirements } from './artifactRequirements';
 import { getStudioModelCacheStatus } from './modelCache';
@@ -26,6 +27,8 @@ export function useStudioReadiness({
   backendCapabilities = [],
   backendCapabilitiesAuthoritative = false,
 }: StudioReadinessOptions) {
+  const workflowModelDescriptors = useNodesStore((state) => state.workflowModelDescriptors);
+  const studioExecutionSpecInvalid = useNodesStore((state) => state.studioExecutionSpecInvalid);
   const capability = useMemo(() => {
     const fallback = getProfileForForm(form);
     const backend = backendCapabilities.find((item) => item.modelType === form.modelType);
@@ -45,9 +48,27 @@ export function useStudioReadiness({
     const backend = backendCapabilities.find((item) => item.modelType === form.modelType);
     return backend ? advertisedStudioModes(backend) : [];
   }, [backendCapabilities, backendCapabilitiesAuthoritative, capability.modes, form.modelType]);
+  const selectedCapability = useMemo(
+    () =>
+      studioWeightFormatProfile(
+        form,
+        capability,
+        backendCapabilities,
+        workflowModelDescriptors,
+        studioExecutionSpecInvalid || !backendCapabilitiesAuthoritative,
+      ),
+    [
+      form,
+      capability,
+      backendCapabilities,
+      backendCapabilitiesAuthoritative,
+      workflowModelDescriptors,
+      studioExecutionSpecInvalid,
+    ],
+  );
   const modelStatus = useMemo(
-    () => getStudioModelCacheStatus(capability, hfCache, localModels, modelCacheDiagnostics),
-    [capability, hfCache, localModels, modelCacheDiagnostics],
+    () => getStudioModelCacheStatus(selectedCapability, hfCache, localModels, modelCacheDiagnostics),
+    [selectedCapability, hfCache, localModels, modelCacheDiagnostics],
   );
   const workflowArtifactRequirements = useMemo(
     () =>
@@ -58,8 +79,21 @@ export function useStudioReadiness({
         localModels,
         modelCacheDiagnostics,
         includePipeline: false,
+        backendCapabilities,
+        workflowModelDescriptors,
+        studioExecutionSpecInvalid: studioExecutionSpecInvalid || !backendCapabilitiesAuthoritative,
       }),
-    [autoResourcePlan, form, hfCache, localModels, modelCacheDiagnostics],
+    [
+      autoResourcePlan,
+      form,
+      hfCache,
+      localModels,
+      modelCacheDiagnostics,
+      backendCapabilities,
+      backendCapabilitiesAuthoritative,
+      workflowModelDescriptors,
+      studioExecutionSpecInvalid,
+    ],
   );
   const modeImageRequirements = capability.modeRequirements?.[form.mode]?.requiredImages ?? [];
   const requiresReferenceImage = modeImageRequirements.includes('referenceImages');
@@ -79,15 +113,24 @@ export function useStudioReadiness({
     [autoResourcePlan, form],
   );
   const exactCapabilityRevision =
-    capability.revisionCandidates?.length === 1 ? capability.revisionCandidates[0] : undefined;
+    selectedCapability?.revisionCandidates?.length === 1 ? selectedCapability.revisionCandidates[0] : undefined;
   const missingInstallTarget =
     autoInstallTarget ??
-    (form.resourceMode !== 'auto' && capability.artifactInstallRequired !== false && !modelStatus.runnable
+    (form.resourceMode !== 'auto' &&
+    selectedCapability &&
+    selectedCapability.artifactInstallRequired !== false &&
+    !modelStatus.runnable
       ? {
-          repo: capability.defaultRepo,
-          label: capability.label,
+          repo: selectedCapability.defaultRepo,
+          label: selectedCapability.label,
           revision: exactCapabilityRevision,
-          files: capability.downloadFiles,
+          files: selectedCapability.downloadFiles,
+          ...(form.weightFormat !== undefined && form.weightFormat !== 'native'
+            ? {
+                repair: modelStatus.repairRequired,
+                actionLabel: modelStatus.repairRequired ? 'Repair' : 'Install',
+              }
+            : {}),
         }
       : missingModeRequirement
         ? { repo: missingModeRequirement.repo, label: missingModeRequirement.label }

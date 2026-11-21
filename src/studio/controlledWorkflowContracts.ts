@@ -4,6 +4,11 @@ export const CONTROLLED_WORKFLOW_NODE_KEYS = {
   audioLora: 'modules.DiffusersAudio.LoadAdapter',
   upscaler: 'modules.Spandrel.Upscaler',
   preview: 'modules.Image.Preview',
+  imageLoad: 'modules.Image.Load',
+  imageResize: 'modules.Image.Resize',
+  imageCrop: 'modules.ImageOperations.CropImage',
+  imageMaskComposite: 'modules.ImageOperations.MaskComposite',
+  imageSave: 'modules.Image.Save',
   videoSequence: 'modules.DiffusersVideo.GenerateSequence',
   videoCompose: 'modules.Video.Compose',
   lyricOverlay: 'modules.Video.LyricOverlay',
@@ -26,6 +31,11 @@ export const CONTROLLED_WORKFLOW_NODE_KEYS = {
   qualityVideoLoopResult: 'modules.WorkflowControl.LoopResult',
   qualityVideoJoin: 'modules.Video.ConcatenateAssets',
 } as const;
+
+export function isModelSetupAdapterKey(key: string): boolean {
+  const { lora, directLora, audioLora } = CONTROLLED_WORKFLOW_NODE_KEYS;
+  return key === lora || key === directLora || key === audioLora;
+}
 
 export const CONTROLLED_GRAPH_CONTRACT_IDS = [
   'lora.modular.v1',

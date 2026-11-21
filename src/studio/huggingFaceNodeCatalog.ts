@@ -85,6 +85,57 @@ function titleWords(value: string) {
     .join(' ');
 }
 
+function qualifyDuplicateLabels(
+  entries: HuggingFaceCatalogEntry[],
+  getQualifiers: (entry: HuggingFaceCatalogEntry) => string[],
+) {
+  const groups = new Map<string, HuggingFaceCatalogEntry[]>();
+  for (const entry of entries) {
+    const group = groups.get(entry.label) ?? [];
+    group.push(entry);
+    groups.set(entry.label, group);
+  }
+  return [...groups.values()]
+    .flatMap((group) => {
+      if (group.length === 1) return group;
+      const options = group.map(getQualifiers);
+      // Use one kind of qualifier for the group so that all variants are directly comparable.
+      const scheme = options[0]!.findIndex((_, index) => {
+        const values = options.map((qualifiers) => qualifiers[index]);
+        return values.every(Boolean) && new Set(values).size === group.length;
+      });
+      return scheme < 0
+        ? group
+        : group.map((entry, index) => ({ ...entry, label: `${entry.label} · ${options[index]![scheme]}` }));
+    })
+    .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
+}
+
+function routeLabel(value: string) {
+  return titleWords(
+    value
+      .replace(/(audio|image|img|text|video)2(audio|image|img|text|video)/giu, '$1 to $2')
+      .replace(/\bimg\b/giu, 'image'),
+  );
+}
+
+function modularBlockLabelQualifiers(entry: HuggingFaceCatalogEntry) {
+  const context = entry.modularBlockPlacement!;
+  const family = routeLabel(context.pipelineClass);
+  const branches = (entry.modularBlockContexts ?? [context]).map(({ placement }) =>
+    routeLabel(
+      placement.legacyPath
+        .split('.')
+        .slice(0, -1)
+        .filter((segment) => segment !== 'denoise' && segment !== 'input')
+        .join(' '),
+    ),
+  );
+  const branch = branches.filter(Boolean).sort((left, right) => left.length - right.length)[0] ?? '';
+  const workflow = context.executionScope === 'unpruned_pipeline' ? '' : routeLabel(context.workflowId);
+  return [branch, workflow, family, [family, branch || workflow].filter(Boolean).join(' · ')];
+}
+
 function definitionFamilyLabel(definition: HuggingFaceNodeLibraryDefinition) {
   return definition.label.split('—')[0]?.trim() || words(definition.pipelineClass);
 }
@@ -229,8 +280,8 @@ function deduplicateBlockEntries(entries: HuggingFaceCatalogEntry[], library: Hu
     previous.searchText = `${previous.searchText} ${entry.searchText}`;
   });
 
-  return [...byDefinition.values()]
-    .map((entry) => {
+  return qualifyDuplicateLabels(
+    [...byDefinition.values()].map((entry) => {
       const contexts = entry.modularBlockContexts ?? (entry.modularBlockPlacement ? [entry.modularBlockPlacement] : []);
       const families = uniqueSorted(contexts.map(({ pipelineClass }) => words(pipelineClass)));
       const role = entry.groupPath[entry.groupPath.length - 1] || 'Other';
@@ -252,8 +303,9 @@ function deduplicateBlockEntries(entries: HuggingFaceCatalogEntry[], library: Hu
           families.length === 1 ? families[0]! : 'Shared Across Families',
         ],
       };
-    })
-    .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
+    }),
+    modularBlockLabelQualifiers,
+  );
 }
 
 export function huggingFaceCatalogEntryForPipeline(
@@ -327,60 +379,76 @@ function unprunedBlockEntries(
   library: HuggingFaceNodeLibrary,
   snapshot: HuggingFaceModularConditionalSnapshot,
 ): HuggingFaceCatalogEntry[] {
-  if (snapshot.diffusersRevision !== library.diffusersRevision) return selectedWorkflowBlockEntries(library);
+  if (
+    snapshot.diffusersRevision !== library.diffusersRevision &&
+    !library.sourceSupplements?.some((source) => source.libraryRevision === snapshot.diffusersRevision)
+  )
+    return selectedWorkflowBlockEntries(library);
+  return deduplicateBlockEntries(
+    [snapshot, ...(snapshot.sourceSupplements ?? [])].flatMap((source) => unprunedBlockSourceEntries(library, source)),
+    library,
+  );
+}
+
+function unprunedBlockSourceEntries(
+  library: HuggingFaceNodeLibrary,
+  snapshot: HuggingFaceModularConditionalSnapshot,
+): HuggingFaceCatalogEntry[] {
   const blocks = new Map(snapshot.blockDefinitions.map((block) => [block.id, block]));
   const definitionsByPipeline = new Map<string, HuggingFaceNodeLibraryDefinition[]>();
   library.definitions.forEach((definition) => {
-    if (definition.provider !== 'diffusers' || !definition.blocksClass) return;
+    if (
+      definition.provider !== 'diffusers' ||
+      !definition.blocksClass ||
+      definition.libraryRevision !== snapshot.diffusersRevision
+    )
+      return;
     definitionsByPipeline.set(definition.pipelineClass, [
       ...(definitionsByPipeline.get(definition.pipelineClass) ?? []),
       definition,
     ]);
   });
-  return deduplicateBlockEntries(
-    snapshot.pipelines.flatMap((pipeline) => {
-      const definitions = (definitionsByPipeline.get(pipeline.pipelineClass) ?? []).sort((left, right) =>
-        left.workflowId.localeCompare(right.workflowId),
-      );
-      const context = definitions[0];
-      if (!context) return [];
-      return pipeline.placements.map((placement): HuggingFaceCatalogEntry => {
-        const block = blocks.get(placement.blockDefinitionId)!;
-        const description = block.description || `Reviewed Modular Diffusers block class ${block.className}.`;
-        return {
-          id: `modular-placement:${pipeline.pipelineClass}:unpruned:${placement.path.join('/')}`,
-          kind: 'block',
-          label: words(block.className),
-          description,
-          detail: `${words(pipeline.pipelineClass)} · ${block.kind} · ${placement.legacyPath}`,
-          searchText: [
-            block.className,
-            block.kind,
-            placement.legacyPath,
-            pipeline.pipelineClass,
-            context.blocksClass,
-            ...definitions.map(({ id, workflowId }) => `${id} ${workflowId}`),
-          ]
-            .join(' ')
-            .toLowerCase(),
-          groupPath: [words(pipeline.pipelineClass), modularBlockRole(block.className, block.kind)],
-          readiness: 'composable',
-          readinessLabel: 'Composable',
-          insertable: true,
-          definitionIds: definitions.map(({ id }) => id),
-          modularBlockPlacement: {
-            definitionId: context.id,
-            pipelineClass: pipeline.pipelineClass,
-            blocksClass: context.blocksClass,
-            workflowId: '__unpruned__',
-            placement,
-            executionScope: 'unpruned_pipeline',
-          },
-        };
-      });
-    }),
-    library,
-  );
+  return snapshot.pipelines.flatMap((pipeline) => {
+    const definitions = (definitionsByPipeline.get(pipeline.pipelineClass) ?? []).sort((left, right) =>
+      left.workflowId.localeCompare(right.workflowId),
+    );
+    const context = definitions[0];
+    if (!context) return [];
+    return pipeline.placements.map((placement): HuggingFaceCatalogEntry => {
+      const block = blocks.get(placement.blockDefinitionId)!;
+      const description = block.description || `Reviewed Modular Diffusers block class ${block.className}.`;
+      return {
+        id: `modular-placement:${pipeline.pipelineClass}:unpruned:${placement.path.join('/')}`,
+        kind: 'block',
+        label: words(block.className),
+        description,
+        detail: `${words(pipeline.pipelineClass)} · ${block.kind} · ${placement.legacyPath}`,
+        searchText: [
+          block.className,
+          block.kind,
+          placement.legacyPath,
+          pipeline.pipelineClass,
+          context.blocksClass,
+          ...definitions.map(({ id, workflowId }) => `${id} ${workflowId}`),
+        ]
+          .join(' ')
+          .toLowerCase(),
+        groupPath: [words(pipeline.pipelineClass), modularBlockRole(block.className, block.kind)],
+        readiness: 'composable',
+        readinessLabel: 'Composable',
+        insertable: true,
+        definitionIds: definitions.map(({ id }) => id),
+        modularBlockPlacement: {
+          definitionId: context.id,
+          pipelineClass: pipeline.pipelineClass,
+          blocksClass: context.blocksClass,
+          workflowId: '__unpruned__',
+          placement,
+          executionScope: 'unpruned_pipeline',
+        },
+      };
+    });
+  });
 }
 
 function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEntry[] {
@@ -397,20 +465,20 @@ function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEn
   library.definitions.forEach((definition) => {
     if (definition.provider !== 'diffusers') return;
     definition.components.forEach((component) => {
-      const identity = JSON.stringify([component.name, component.type, component.creationMethod, component.reuseKey]);
-      const current = entries.get(identity) ?? { ...component, definitionIds: new Set<string>() };
+      const id = `diffusers.component:${JSON.stringify([component.name, component.type, component.creationMethod, component.reuseKey])}`;
+      const current = entries.get(id) ?? { ...component, definitionIds: new Set<string>() };
       current.definitionIds.add(definition.id);
-      entries.set(identity, current);
+      entries.set(id, current);
     });
   });
-  return [...entries.entries()]
-    .map(([identity, component]) => {
+  return qualifyDuplicateLabels(
+    [...entries.entries()].map(([id, component]) => {
       const definitionIds = uniqueSorted(component.definitionIds);
       const typeLabel = shortType(component.type);
       const label = `${words(component.name)} — ${words(typeLabel)}`;
       const description = `Reviewed Diffusers component ${component.type}.`;
       return {
-        id: `diffusers.component:${identity}`,
+        id,
         kind: 'component' as const,
         label,
         description,
@@ -441,8 +509,13 @@ function componentEntries(library: HuggingFaceNodeLibrary): HuggingFaceCatalogEn
         insertable: false,
         definitionIds,
       };
-    })
-    .sort((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id));
+    }),
+    (entry) => {
+      const component = entries.get(entry.id)!;
+      const method = titleWords(component.creationMethod.replace(/^from_config$/u, 'from_configuration'));
+      return [method, [method, component.reuseKey.map(titleWords).join(', ')].filter(Boolean).join(' · ')];
+    },
+  );
 }
 
 export function buildHuggingFaceCatalogSections(

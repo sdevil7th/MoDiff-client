@@ -7,7 +7,7 @@ import { captureWorkflowOperationContext } from '../stores/useStudioStore';
 import { blockOperationGraphV2, blockControlParamsV2 } from '../studio/blockRuntimeV2';
 import type { BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isFocusedGuidance } from './encodingNodePresentation';
-import { unpackVisualOperationGroups, restoreVisualOperationGroups } from './visualOperationGroups';
+import { unpackVisualOperationGroups } from './visualOperationGroupProjection';
 import { operationGraphSignature, commitOperationGraph } from './operationGraphTransaction';
 import { requestJson } from '../utils/requestJson';
 import config from '../../app.config';
@@ -27,38 +27,42 @@ export function receiveGuidanceDefinition(id: string, params: unknown) {
  * Opening a saved node never rewrites its graph or reusable definition. */
 export function guidanceFields(instance: BlockInstanceV2) {
   const declared = blockControlParamsV2(instance);
-  return blockOperationGraphV2(instance).nodes.flatMap((stage) =>
-    Object.entries(stage.data.params).flatMap(([field, param]) => {
-      if (
-        param.hidden ||
-        param.isInput ||
-        ['input', 'output'].includes(param.display ?? '') ||
-        param.display?.startsWith('ui_')
-      )
-        return [];
-      const semantic = stage.data.blockProjectionNodeId!;
-      const control = instance.effectiveInterface.controls.find(
-        (c) => c.binding.nodeId === semantic && c.binding.fieldId === field,
-      );
-      if (
-        !control &&
-        (instance.definitionSnapshot.controls.some(
+  return blockOperationGraphV2(instance)
+    .nodes.filter((stage) =>
+      ['guidance', 'guidance_layers'].includes(stage.data.operationAuthoring?.operation.nodeType ?? ''),
+    )
+    .flatMap((stage) =>
+      Object.entries(stage.data.params).flatMap(([field, param]) => {
+        if (
+          param.hidden ||
+          param.isInput ||
+          ['input', 'output'].includes(param.display ?? '') ||
+          param.display?.startsWith('ui_')
+        )
+          return [];
+        const semantic = stage.data.blockProjectionNodeId!;
+        const control = instance.effectiveInterface.controls.find(
           (c) => c.binding.nodeId === semantic && c.binding.fieldId === field,
-        ) ||
-          instance.presentation.removedControlBindings?.some((b) => b.nodeId === semantic && b.fieldId === field))
-      )
-        return []; // Deliberately removed through Configure interface.
-      const id = control?.controlId ?? `${semantic}:${field}`;
-      return [
-        {
-          id,
-          field,
-          stage,
-          param: { ...(control ? declared[id] : param), onChange: undefined, onSignal: undefined } as NodeParams,
-        },
-      ];
-    }),
-  );
+        );
+        if (
+          !control &&
+          (instance.definitionSnapshot.controls.some(
+            (c) => c.binding.nodeId === semantic && c.binding.fieldId === field,
+          ) ||
+            instance.presentation.removedControlBindings?.some((b) => b.nodeId === semantic && b.fieldId === field))
+        )
+          return []; // Deliberately removed through Configure interface.
+        const id = control?.controlId ?? `${semantic}:${field}`;
+        return [
+          {
+            id,
+            field,
+            stage,
+            param: { ...(control ? declared[id] : param), onChange: undefined, onSignal: undefined } as NodeParams,
+          },
+        ];
+      }),
+    );
 }
 
 /** User edits use the existing graph planner and metadata endpoint, atomically. */
@@ -147,6 +151,7 @@ export async function updateGuidanceField(rootId: string, logicalId: string, val
       pending.delete(id);
     }
   }
+  const { restoreVisualOperationGroups } = await import('./visualOperationGroups');
   const restored = restoreVisualOperationGroups(next, unpacked);
   commitOperationGraph(restored, context, signature, 'Edit Guidance');
 }

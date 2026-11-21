@@ -69,6 +69,7 @@ for (const scenario of repairCases)
     await page.addInitScript(() => {
       if (sessionStorage.getItem('loop-repair-proof')) return;
       localStorage.clear();
+      sessionStorage.clear();
       sessionStorage.setItem('loop-repair-proof', '1');
     });
     await page.goto('/');

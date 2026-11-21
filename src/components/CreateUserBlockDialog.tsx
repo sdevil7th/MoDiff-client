@@ -45,6 +45,9 @@ export default function CreateUserBlockDialog({
     >
       {pendingBlock ? (
         <div className="grid gap-4">
+          <p className="text-sm text-modiff-subtle-text">
+            Group the selected canvas nodes into an editable Block. Save it to reuse in other workflows.
+          </p>
           {pendingBlock.error ? (
             <p role="alert" className="text-sm text-modiff-red">
               {pendingBlock.error}

@@ -1,5 +1,7 @@
+import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -36,6 +38,7 @@ import {
   runWithGalleryBrowserRecovery,
   shouldPrepareRuntimeForTemplate,
   taskProgressFingerprint,
+  templateQualificationArgs,
   waitForQueueIdle,
   waitForTaskTerminal,
 } from './template-gallery-runner.mjs';
@@ -50,11 +53,226 @@ import {
   parseCampaignArgs,
   qualityBlockedWorkflowsFromResearch,
 } from './review-generation-campaign.mjs';
+import {
+  assertRetainedExecutionIdentity,
+  retainedGalleryMediaFiles,
+  retainedTemplateBinding,
+} from './template-gallery-repair-contract.mjs';
+import { canonicalGraphIdentity, stableStringify } from './live-proof-provenance.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const portablePath = (value) => value.split(sep).join('/');
 // Unit tests check fixture selection without requiring local review media.
 const availableFixtureOverrides = (workflowId, media) => fixtureOverrides(workflowId, media, () => true);
+const fetchWithoutRunReceipt = (url) =>
+  String(url).includes('/runs/') ? Promise.resolve(new Response(null, { status: 404 })) : fetch(url);
+
+function retainedRepairFixture() {
+  const settings = { mode: 'text_to_image', modelType: 'ExamplePipeline', prompt: 'original brief', seed: 73 };
+  const template = { id: 'original_template' };
+  const revision = 'original-model-revision';
+  const runtime = {
+    lockedSettingsForTemplate: () => ({ ...settings }),
+    promptSettingsHash: () => `prompt:${stableStringify(settings)}`,
+    templateLockHash: (_template, modelRevision = 'catalog') =>
+      `template:${modelRevision}:${stableStringify(settings)}`,
+  };
+  const apiGraphSnapshot = {
+    nodes: { denoise: { module: 'modules.Diffusers', action: 'Denoise', params: { seed: { value: 73 } } } },
+    paths: [['denoise']],
+  };
+  const graph = canonicalGraphIdentity(apiGraphSnapshot);
+  const original = {
+    taskId: 'original-task',
+    capturedAt: '2026-10-06T12:00:00.000Z',
+    template: {
+      id: template.id,
+      lockedSettings: { ...settings },
+      promptSettingsHash: runtime.promptSettingsHash(template),
+      catalogTemplateLockHash: runtime.templateLockHash(template),
+      resolvedTemplateLockHash: runtime.templateLockHash(template, revision),
+    },
+    models: { revisionLock: revision },
+    graphHash: graph.hash,
+    graph,
+    inputs: { items: [] },
+  };
+  const output = { taskId: original.taskId, templateId: template.id, formSnapshot: { ...settings }, apiGraphSnapshot };
+  const events = [
+    { type: 'executed', task_id: original.taskId, node: 'denoise', status: 'succeeded', hasChanged: true },
+    { type: 'graph_completed', task_id: original.taskId },
+    { type: 'task_completed', task_id: original.taskId },
+  ];
+  return {
+    runtime,
+    template,
+    original,
+    output,
+    run: { taskId: original.taskId },
+    events,
+    inputArtifacts: [],
+    settings,
+  };
+}
+
+test('retained proof repair preserves original template and capture identities after exact recipe corroboration', () => {
+  const fixture = retainedRepairFixture();
+  assert.deepEqual(retainedTemplateBinding(fixture), {
+    ...fixture.original.template,
+    capturedAt: fixture.original.capturedAt,
+  });
+});
+
+test('retained proof repair rejects changed creator defaults before relabelling a historical graph', () => {
+  const fixture = retainedRepairFixture();
+  fixture.settings.prompt = 'a different creative brief';
+  assert.throws(() => retainedTemplateBinding(fixture), /creator setting prompt changed/);
+});
+
+test('equal retained settings cannot establish parity for a changed workflow admission', () => {
+  const fixture = retainedRepairFixture();
+  fixture.original.template.catalogTemplateLockHash = 'legacy-template-admission';
+  assert.throws(() => retainedTemplateBinding(fixture), /catalogTemplateLockHash differs/);
+});
+
+test('retained hashes alone cannot hide different submitted graph contents or consumed values', () => {
+  const graphFixture = retainedRepairFixture();
+  graphFixture.output.apiGraphSnapshot.nodes.denoise.params.seed.value = 999;
+  assert.throws(() => retainedTemplateBinding(graphFixture), /executed graph does not match/);
+  const formFixture = retainedRepairFixture();
+  formFixture.output.formSnapshot.seed = 999;
+  assert.throws(() => retainedTemplateBinding(formFixture), /consumed form setting seed differs/);
+});
+
+test('retained proof repair rejects mismatched tasks and missing executed-node receipts', () => {
+  const taskFixture = retainedRepairFixture();
+  taskFixture.run.taskId = 'another-task';
+  assert.throws(() => retainedTemplateBinding(taskFixture), /do not identify the retained task/);
+  const eventFixture = retainedRepairFixture();
+  eventFixture.events = eventFixture.events.filter((event) => event.type !== 'executed');
+  assert.throws(() => retainedTemplateBinding(eventFixture), /execution receipt is missing for graph node/);
+});
+
+test('retained proof repair correlates original pinned media, allowing only proven source bindings', () => {
+  const fixture = retainedRepairFixture();
+  fixture.settings.sourceVideo = '';
+  fixture.original.template = {
+    ...fixture.original.template,
+    lockedSettings: { ...fixture.settings },
+    promptSettingsHash: fixture.runtime.promptSettingsHash(fixture.template),
+    catalogTemplateLockHash: fixture.runtime.templateLockHash(fixture.template),
+    resolvedTemplateLockHash: fixture.runtime.templateLockHash(fixture.template, fixture.original.models.revisionLock),
+  };
+  fixture.output.formSnapshot.sourceVideo = 'retained-video';
+  fixture.inputArtifacts = [
+    { role: 'source_video', path: 'retained-video', contentHash: 'sha256:original', byteSize: 5 },
+  ];
+  fixture.original.inputs.items = [{ ...fixture.inputArtifacts[0] }];
+  assert.equal(retainedTemplateBinding(fixture).capturedAt, fixture.original.capturedAt);
+  fixture.inputArtifacts[0].contentHash = 'sha256:replacement';
+  assert.throws(() => retainedTemplateBinding(fixture), /input media does not match/);
+});
+
+test('retained proof repair requires the original authority instead of recovering it from current hashes', () => {
+  const fixture = retainedRepairFixture();
+  fixture.original = null;
+  assert.throws(() => retainedTemplateBinding(fixture), /original template locked settings are missing/);
+});
+
+test('repeat retained-media discovery excludes repair backups, sidecars and directories and preserves item order', () => {
+  const mediaDir = mkdtempSync(resolve(tmpdir(), 'modiff-repair-media-discovery-'));
+  const base = 'high_quality.run1';
+  try {
+    const images = [`${base}.item10.png`, `${base}.item2.png`, `${base}.item1.webp`];
+    for (const name of images) writeFileSync(resolve(mediaDir, name), 'retained-media');
+    const expected = [`${base}.item1.webp`, `${base}.item2.png`, `${base}.item10.png`];
+    assert.deepEqual(retainedGalleryMediaFiles(mediaDir, base), expected);
+    const evidenceDir = resolve(mediaDir, 'evidence');
+    mkdirSync(evidenceDir);
+    mkdirSync(resolve(mediaDir, `${base}.directory.png`));
+    for (const directory of [mediaDir, evidenceDir]) {
+      for (const name of [
+        `${base}.provenance.json`,
+        `${base}.websocket-events.json.before-repair-original`,
+        `${base}.before-repair-original.png`,
+        `${base}.before.png`,
+        `${base}.recomposed.png`,
+        `${base}.debug.log`,
+      ])
+        writeFileSync(resolve(directory, name), 'metadata');
+    }
+    assert.deepEqual(retainedGalleryMediaFiles(mediaDir, base), expected);
+    assert.deepEqual(retainedGalleryMediaFiles(mediaDir, base), expected);
+  } finally {
+    rmSync(mediaDir, { recursive: true, force: true });
+  }
+});
+
+test('retained proof repair preserves reference order through indexed input roles', () => {
+  const fixture = retainedRepairFixture();
+  fixture.inputArtifacts = [
+    { role: 'reference_image_1', contentHash: 'sha256:first', byteSize: 5 },
+    { role: 'reference_image_2', contentHash: 'sha256:second', byteSize: 6 },
+  ];
+  fixture.original.inputs.items = structuredClone(fixture.inputArtifacts);
+  assert.equal(retainedTemplateBinding(fixture).id, fixture.template.id);
+  fixture.inputArtifacts = [
+    { ...fixture.inputArtifacts[1], role: 'reference_image_1' },
+    { ...fixture.inputArtifacts[0], role: 'reference_image_2' },
+  ];
+  assert.throws(() => retainedTemplateBinding(fixture), /input media does not match/);
+});
+
+test('retained proof repair forbids runtime or source substitution while permitting metadata reconstruction', () => {
+  const original = {
+    taskId: 'original-task',
+    capturedAt: '2026-10-06T12:00:00.000Z',
+    backendSourceFingerprint: 'original-source',
+    backendContractFingerprint: 'original-contract',
+    runtimeFingerprint: 'original-runtime',
+    graphHash: 'original-graph',
+    modelRevision: 'original-model',
+    modelCommit: 'original-commit',
+    inputArtifactsHash: 'original-inputs',
+    runtime: { backendSource: { fingerprint: 'original-source', gitCommit: 'original-commit', files: ['original'] } },
+    model: { repoId: 'original-model', fingerprint: 'original-artifacts' },
+    models: { items: [{ repoId: 'original-model', fingerprint: 'original-artifacts' }] },
+    output: {
+      count: 2,
+      collectionHash: 'original-output-collection',
+      backendCollectionHash: 'original-backend-collection',
+      items: [
+        { index: 0, mediaType: 'image', encodedSha256: 'first-bytes', decodedSha256: 'first-pixels' },
+        { index: 1, mediaType: 'image', encodedSha256: 'second-bytes', decodedSha256: 'second-pixels' },
+      ],
+    },
+  };
+  assert.doesNotThrow(() => assertRetainedExecutionIdentity(original, structuredClone(original)));
+  assert.throws(
+    () => assertRetainedExecutionIdentity(original, { ...original, runtimeFingerprint: 'current-runtime' }),
+    /execution identity runtimeFingerprint/,
+  );
+  const replacement = structuredClone(original);
+  replacement.runtime.backendSource.files = ['replacement'];
+  assert.throws(() => assertRetainedExecutionIdentity(original, replacement), /original backend source inventory/);
+  const wrongWeights = structuredClone(original);
+  wrongWeights.model.fingerprint = 'different-artifacts';
+  assert.throws(() => assertRetainedExecutionIdentity(original, wrongWeights), /original model artifact identity/);
+  const differentImage = structuredClone(original);
+  differentImage.output.items[0].encodedSha256 = 'unrelated-image-bytes';
+  differentImage.output.items[0].decodedSha256 = 'unrelated-image-pixels';
+  assert.throws(() => assertRetainedExecutionIdentity(original, differentImage), /original ordered output identities/);
+  const reversedOutput = structuredClone(original);
+  reversedOutput.output.items.reverse();
+  reversedOutput.output.items = reversedOutput.output.items.map((item, index) => ({ ...item, index }));
+  assert.throws(() => assertRetainedExecutionIdentity(original, reversedOutput), /original ordered output identities/);
+  const missingOriginalBytes = structuredClone(original);
+  delete missingOriginalBytes.output.items[0].encodedSha256;
+  assert.throws(
+    () => assertRetainedExecutionIdentity(missingOriginalBytes, structuredClone(missingOriginalBytes)),
+    /requires the original ordered output identities/,
+  );
+});
 
 test('gallery capture and resume paths have no unresolved variables', () => {
   const messages = new Linter().verify(readFileSync(resolve(ROOT, 'scripts/template-gallery-runner.mjs'), 'utf8'), {
@@ -100,9 +318,7 @@ test('campaign refuses generic two-second audio fixtures for showcase workflows'
     /reviewed workflow-specific sourceAudio fixture/,
   );
   const reviewedFixture = resolve(
-    ROOT,
-    '..',
-    'MoDiff',
+    process.env.MODIFF_BACKEND_DIR || resolve(ROOT, '..', 'MoDiff'),
     'web',
     'template-gallery',
     'ace_step_text_to_audio.current.wav',
@@ -305,12 +521,13 @@ test('review campaign writes extensionless Studio image output with its fetched 
     };
     const page = { evaluate: async () => output };
 
-    const filePath = await copyOutput(
+    const { filePath } = await copyOutput(
       page,
       { taskId: 'task-webp', startedAt: Date.now() },
       'http://127.0.0.1:5192',
       resolve(root, 'campaign-output'),
       'image',
+      { fetchImpl: fetchWithoutRunReceipt },
     );
 
     assert.equal(filePath, resolve(root, 'campaign-output.webp'));
@@ -339,12 +556,13 @@ test('review campaign writes inline text output without treating its payload as 
     };
     const page = { evaluate: async () => output };
 
-    const filePath = await copyOutput(
+    const { filePath } = await copyOutput(
       page,
       { taskId: 'task-text', startedAt: Date.now() },
       'http://127.0.0.1:5192',
       resolve(root, 'campaign-output'),
       'json',
+      { fetchImpl: fetchWithoutRunReceipt },
     );
 
     assert.equal(filePath, resolve(root, 'campaign-output.txt'));
@@ -361,11 +579,24 @@ test('review campaign recovers a late Studio output from the authoritative run r
     bytes.write('RIFF', 0, 'ascii');
     bytes.write('WEBP', 8, 'ascii');
     const mediaUrl = `data:image/webp;base64,${bytes.toString('base64')}`;
+    const mediaHash = `sha256:bytes:${createHash('sha256').update(bytes).digest('hex')}`;
+    const runtimeFingerprint = {
+      fingerprint: `sha256:${'1'.repeat(64)}`,
+      resourceFingerprint: `sha256:${'2'.repeat(64)}`,
+    };
+    const workflowSnapshot = { nodes: [{ id: 'export' }], edges: [] };
     const fetchImpl = async (input) => {
-      if (String(input).includes('/runs/task-late')) {
+      if (String(input) === 'http://127.0.0.1:8088/runs/task-late') {
         return new Response(
           JSON.stringify({
-            outputs: [{ url: mediaUrl, displayType: 'image', taskId: 'task-late' }],
+            task: {
+              task_id: 'task-late',
+              status: 'completed',
+              runtimeFingerprint,
+              workflow_snapshot: workflowSnapshot,
+            },
+            workflow_snapshot: workflowSnapshot,
+            outputs: [{ url: mediaUrl, displayType: 'image', taskId: 'task-late', mediaHash }],
           }),
           { headers: { 'content-type': 'application/json' } },
         );
@@ -373,17 +604,132 @@ test('review campaign recovers a late Studio output from the authoritative run r
       return fetch(input);
     };
 
-    const filePath = await copyOutput(
-      { evaluate: async () => null },
+    const result = await copyOutput(
+      { evaluate: async () => ({ taskId: 'other-newer-run', url: mediaUrl, displayType: 'image' }) },
       { taskId: 'task-late', startedAt: Date.now() },
       'http://127.0.0.1:5192',
       resolve(root, 'campaign-output'),
       'image',
-      { fetchImpl, outputWaitMs: 0, server: 'http://127.0.0.1:8088' },
+      { fetchImpl, outputWaitMs: 20, server: 'http://127.0.0.1:8088' },
     );
 
-    assert.equal(filePath, resolve(root, 'campaign-output.webp'));
-    assert.deepEqual(readFileSync(filePath), bytes);
+    assert.equal(result.filePath, resolve(root, 'campaign-output.webp'));
+    assert.equal(result.mediaHash, mediaHash);
+    assert.deepEqual(result.runtimeFingerprint, runtimeFingerprint);
+    assert.match(result.workflowSnapshotHash, /^sha256:campaign-workflow-snapshot:/);
+    assert.deepEqual(readFileSync(result.filePath), bytes);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('review campaign rejects a mismatched receipt, invalid snapshot or changed media before saving', async () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-review-campaign-identity-'));
+  const fixture = {
+    task: { task_id: 'task-exact', status: 'completed' },
+    workflow_snapshot: { nodes: [{ id: 'export' }], edges: [] },
+    outputs: [
+      {
+        url: 'data:text/plain,original',
+        displayType: 'text',
+        taskId: 'task-exact',
+        mediaHash: `sha256:bytes:${createHash('sha256').update('original').digest('hex')}`,
+      },
+    ],
+  };
+  try {
+    for (const [change, message] of [
+      [
+        (receipt) => {
+          receipt.task.task_id = 'unrelated-task';
+        },
+        /does not match completed task/,
+      ],
+      [
+        (receipt) => {
+          receipt.workflow_snapshot = { graph: [] };
+        },
+        /snapshot/,
+      ],
+      [
+        (receipt) => {
+          receipt.task.runtimeFingerprint = 'sha256:wrong';
+        },
+        /runtime identities/,
+      ],
+      [
+        (receipt) => {
+          receipt.outputs[0].url = 'data:text/plain,changed';
+        },
+        /media hash/,
+      ],
+    ]) {
+      const receipt = structuredClone(fixture);
+      change(receipt);
+      await assert.rejects(
+        copyOutput(
+          { evaluate: async () => null },
+          { taskId: 'task-exact' },
+          'http://127.0.0.1:5192',
+          resolve(root, 'candidate'),
+          'text',
+          {
+            fetchImpl: (input) =>
+              String(input).includes('/runs/') ? Promise.resolve(Response.json(receipt)) : fetch(input),
+            outputWaitMs: 0,
+          },
+        ),
+        message,
+      );
+      assert.equal(existsSync(resolve(root, 'candidate.txt')), false);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('review campaign ignores other live tasks even when no retained receipt is available', async () => {
+  const output = { taskId: 'newer-task', url: 'data:text/plain,newer', displayType: 'text' };
+  await assert.rejects(
+    copyOutput(
+      { evaluate: async () => output },
+      { taskId: 'requested-task' },
+      'http://127.0.0.1:5192',
+      'unused-output',
+      'text',
+      { fetchImpl: fetchWithoutRunReceipt, outputWaitMs: 20 },
+    ),
+    /No studio output URL for task requested-task/,
+  );
+});
+
+test('review campaign retains the video export of a control-video workflow and preserves existing bytes', async () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'modiff-review-campaign-control-video-'));
+  const bytes = 'retained video bytes';
+  const receipt = {
+    task: { task_id: 'task-video', status: 'completed' },
+    outputs: [
+      { taskId: 'task-video', displayType: 'video', url: `data:video/mp4,${encodeURIComponent(bytes)}` },
+      { taskId: 'task-video', displayType: 'image', url: 'data:image/png,unrelated-preview' },
+    ],
+  };
+  const capture = () =>
+    copyOutput(
+      { evaluate: async () => null },
+      { taskId: 'task-video' },
+      'http://127.0.0.1:5192',
+      resolve(root, 'control-video'),
+      'video',
+      {
+        fetchImpl: (input) =>
+          String(input).includes('/runs/') ? Promise.resolve(Response.json(receipt)) : fetch(input),
+      },
+    );
+  try {
+    const result = await capture();
+    assert.equal(result.filePath, resolve(root, 'control-video.mp4'));
+    await assert.rejects(capture(), /Campaign output already exists/);
+    assert.equal(readFileSync(result.filePath, 'utf8'), bytes);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -605,6 +951,41 @@ test('offline evidence repair refuses to substitute current state for a missing 
   }
 });
 
+test('offline evidence repair leaves every sidecar untouched when original template authority is missing', () => {
+  const artifactDir = mkdtempSync(resolve(tmpdir(), 'modiff-retained-template-proof-'));
+  try {
+    const mediaDir = resolve(artifactDir, 'media');
+    const evidenceDir = resolve(mediaDir, 'evidence');
+    mkdirSync(evidenceDir, { recursive: true });
+    const evidencePaths = ['backend-source-before.json'].map((name) => resolve(artifactDir, name));
+    for (const suffix of ['output', 'websocket-events', 'nodes', 'model-fingerprint', 'backend-source-after']) {
+      evidencePaths.push(resolve(evidenceDir, `high_quality.run1.${suffix}.json`));
+    }
+    for (const path of evidencePaths) writeFileSync(path, '{}\n');
+    const before = evidencePaths.map((path) => readFileSync(path));
+    const repaired = spawnSync(
+      process.execPath,
+      [
+        resolve(ROOT, 'scripts/template-gallery-repair-evidence.mjs'),
+        '--media-dir',
+        mediaDir,
+        '--template',
+        'high_quality',
+      ],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+    assert.notEqual(repaired.status, 0);
+    assert.match(repaired.stderr, /requires original run provenance/);
+    assert.deepEqual(
+      evidencePaths.map((path) => readFileSync(path)),
+      before,
+    );
+    assert.equal(existsSync(resolve(evidenceDir, 'high_quality.run1.provenance.json')), false);
+  } finally {
+    rmSync(artifactDir, { recursive: true, force: true });
+  }
+});
+
 test('gallery output waits can distinguish backend progress from an unchanged receipt', () => {
   const loading = {
     status: 'running',
@@ -723,6 +1104,54 @@ test('gallery runner refuses to reuse an occupied implicit frontend port', async
   }
 });
 
+test('gallery runner suppresses workspace checkpoints in both browser storage scopes', async () => {
+  let initialize;
+  await installEphemeralGalleryStorage({
+    addInitScript: async (script) => {
+      initialize = script;
+    },
+    route: async () => {},
+  });
+  class MemoryStorage {
+    values = new Map();
+    getItem(key) {
+      return this.values.get(key) ?? null;
+    }
+    setItem(key, value) {
+      this.values.set(key, String(value));
+    }
+    removeItem(key) {
+      this.values.delete(key);
+    }
+  }
+  const shared = new MemoryStorage();
+  const session = new MemoryStorage();
+  const workspaceKeys = ['modiff.studio', 'modiff.flow'];
+  for (const target of [shared, session]) {
+    for (const key of workspaceKeys) target.setItem(key, 'previous test workspace');
+    target.setItem('modiff.settings', 'preserved preferences');
+  }
+  shared.setItem('studio', 'legacy recovery retained');
+  shared.setItem('reactflow', 'legacy flow retained');
+  runInNewContext(`(${initialize.toString()})()`, {
+    Storage: MemoryStorage,
+    localStorage: shared,
+    sessionStorage: session,
+  });
+  for (const target of [shared, session]) {
+    for (const key of workspaceKeys) {
+      assert.equal(target.getItem(key), null, 'remove prior owned-test workspace bytes');
+      target.setItem(key, 'generated graph must stay ephemeral');
+      assert.equal(target.getItem(key), null, 'block generated workspace writes in both scopes');
+    }
+    assert.equal(target.getItem('modiff.settings'), 'preserved preferences');
+    target.setItem('modiff.settings', 'updated preferences');
+    assert.equal(target.getItem('modiff.settings'), 'updated preferences');
+  }
+  assert.equal(shared.getItem('studio'), 'legacy recovery retained');
+  assert.equal(shared.getItem('reactflow'), 'legacy flow retained');
+});
+
 test('gallery runner disables large persisted graph state before page navigation', async () => {
   let initScript = null;
   await installEphemeralGalleryStorage({
@@ -817,6 +1246,19 @@ test('gallery runner can retain successful locked runs without publishing galler
   assert.match(source, /!result\.sourceOnly && !result\.skipped/);
 });
 
+test('blocked-template registrar lookup is forwarded only by explicit qualification opt-in', () => {
+  const ordinary = parseArgs(['node', 'runner', '--record-qualification']);
+  const explicit = parseArgs(['node', 'runner', '--record-qualification', '--allow-blocked-probe']);
+  const script = resolve(ROOT, 'scripts/template-qualification.mjs');
+  assert.deepEqual(templateQualificationArgs(ordinary), [script]);
+  assert.deepEqual(templateQualificationArgs(explicit), [script, '--allow-blocked-probe']);
+  assert.equal(explicit.publish, false);
+  assert.throws(
+    () => parseArgs(['node', 'runner', '--record-qualification', '--allow-blocked-probe', '--publish']),
+    /qualification-only and cannot be combined with --publish/,
+  );
+});
+
 test('resource qualification capture is a single non-publishing locked-workload run', () => {
   const args = parseArgs([
     'node',
@@ -845,7 +1287,7 @@ test('resource qualification requires an explicit recipe override', () => {
 });
 
 test('gallery runner prevents two capture processes from sharing one app execution session', () => {
-  const directory = mkdtempSync('/tmp/modiff-gallery-lock-');
+  const directory = mkdtempSync(resolve(tmpdir(), 'modiff-gallery-lock-'));
   const lockPath = resolve(directory, '.runner.lock');
   const release = acquireRunnerLock(lockPath, process.pid);
   assert.throws(() => acquireRunnerLock(lockPath, process.pid), /Another template-gallery runner is active/);
@@ -874,6 +1316,10 @@ test('gallery runner selects the generated audio export instead of the source lo
     'upscalePreview',
   );
   assert.equal(preferredOutputRoleForTemplate({ modelType: 'QwenImageModularPipeline' }), '');
+  assert.equal(
+    preferredOutputRoleForTemplate({ mediaType: 'image', workflowBlocks: ['masked_composite'] }),
+    'compositeOutput',
+  );
 });
 
 test('gallery runner reuses runtime only for an explicit matching loader-contract key', () => {
@@ -1224,7 +1670,9 @@ test('gallery runner rejects cached audio/video generation receipts as vacuous d
 
 test('gallery runner accepts generic Diffusers video receipts for Wan and LTX graphs', () => {
   for (const modelType of ['WanVACEPipeline', 'WanVideoPipeline', 'LTXVideoPipeline']) {
-    const template = { modelType };
+    // Today's stage-authoring metadata must not rewrite retained whole-run
+    // evidence during receipt repair. Its original executed graph is authority.
+    const template = { modelType, executionSelection: { authoringRecipeId: 'generic-video-stages:v1' } };
     const output = {
       taskId: `task-${modelType}`,
       apiGraphSnapshot: {

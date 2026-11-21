@@ -4,6 +4,30 @@ import { mkdir, writeFile } from 'node:fs/promises';
 async function ready(page: Page) {
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 120_000 });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
+  const launcher = page.getByTestId('task-launcher');
+  if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Close', exact: true }).click();
+}
+
+async function settledViewport(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        let previous = '',
+          stableSince = performance.now();
+        const deadline = performance.now() + 5000;
+        const check = () => {
+          const style = document.querySelector('.react-flow__viewport')?.getAttribute('style') ?? '';
+          if (style !== previous) {
+            previous = style;
+            stableSince = performance.now();
+          }
+          if (performance.now() - stableSince > 350) resolve();
+          else if (performance.now() > deadline) reject(new Error('Viewport did not settle before the drag'));
+          else requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      }),
+  );
 }
 
 async function geometry(page: Page) {
@@ -70,6 +94,8 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
   const advanced = page.getByRole('button', { name: /Advanced workflow/u });
   if (await advanced.isVisible().catch(() => false)) await advanced.click();
   await page.getByTestId('workflow-tab-new').click();
+  const launcher = page.getByTestId('task-launcher');
+  if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Close', exact: true }).click();
   if (await advanced.isVisible().catch(() => false)) await advanced.click();
   // An ordinary generic host is test setup; catalog admission and the actual
   // drop, editing, disclosure, save and reusable-node dialog are real UI actions.
@@ -127,9 +153,9 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
   const search = page.getByLabel('Search nodes');
   if (!(await search.isVisible())) await page.getByTestId('left-tab-nodes').click();
   await search.fill('Qwen Image — Text To Image');
-  const group = page.getByTestId('node-group-Diffusers-Cluster-Nodes');
-  if ((await group.getByRole('button').first().getAttribute('aria-expanded')) !== 'true')
-    await group.getByRole('button').first().click();
+  const catalogToggle = page.getByRole('button', { name: /^Diffusers Blocks \d+$/u });
+  if ((await catalogToggle.getAttribute('aria-expanded')) !== 'true') await catalogToggle.click();
+  const group = page.getByRole('list', { name: 'Diffusers Blocks', exact: true });
   const row = group
     .locator('[data-testid^="hugging-face-node-row-"]')
     .filter({ hasText: 'Qwen Image — Text To Image' });
@@ -239,7 +265,7 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
   const choices = page.getByTestId(`save-user-block-choices-${inserted.projectedId}`);
   await expect(choices).toBeVisible();
   const response = page.waitForResponse((r) => r.url().endsWith('/studio/blocks') && r.request().method() === 'POST');
-  await choices.getByRole('button', { name: 'Save as new User Node', exact: true }).click();
+  await choices.getByRole('button', { name: 'Save as new Block', exact: true }).click();
   const saved = await response;
   expect(saved.ok(), await saved.text()).toBe(true);
   await expect(choices).toHaveCount(0);
@@ -252,6 +278,7 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
   // execution order, values or links merely because canvas ownership changed.
   await nested().getByRole('button', { name: 'Expand Qwen Image — Text To Image', exact: true }).click();
   await page.getByTestId('arrange-graph').click();
+  await settledViewport(page);
   const entireGraph = () =>
     page.evaluate(async () => {
       const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
@@ -263,15 +290,21 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
     return useFlowStore.getState().nodes.find((node) => node.data.blockProjectionNodeId === 'host-note')!.id;
   });
   const note = page.locator(`.react-flow__node[data-id="${noteId}"]`);
-  const noteBounds = await note.boundingBox(),
+  const noteBounds = await note.locator('header').first().boundingBox(),
     nestedBounds = await nested().boundingBox();
   if (!noteBounds || !nestedBounds) throw new Error('Missing reparent gesture geometry');
-  await page.mouse.move(noteBounds.x + 45, noteBounds.y + 14);
+  await page.mouse.click(500, 150);
+  await page.keyboard.down('Control');
+  await page.mouse.move(noteBounds.x + Math.min(45, noteBounds.width / 3), noteBounds.y + noteBounds.height / 2);
   await page.mouse.down();
-  await page.mouse.move(nestedBounds.x + nestedBounds.width * 0.6, nestedBounds.y + nestedBounds.height * 0.7, {
+  // Keep the target in the visible part of the frame. Its far side can sit
+  // beneath the Studio panel after selecting the source note opens controls.
+  await page.mouse.move(nestedBounds.x + Math.min(70, nestedBounds.width / 4), nestedBounds.y + 100, {
     steps: 18,
   });
+  await expect(note).toHaveClass(/dragging/u);
   await page.mouse.up();
+  await page.keyboard.up('Control');
   const noteParent = async () =>
     (await inspect()).instance.effectiveGraph.nodes.find((node) => node.nodeId === 'host-note')?.parentNodeId;
   await expect.poll(noteParent).toBe(inserted.wrapper!.nodeId);
@@ -325,10 +358,13 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
     owner = await host.boundingBox();
   if (!moving || !owner) throw new Error('Missing subtree detach geometry');
   await page.screenshot({ path: `${evidence}/before-subtree-detach.png` });
+  await page.mouse.click(500, 150);
+  await page.keyboard.down('Control');
   await page.mouse.move(moving.x + Math.min(60, moving.width / 4), moving.y + moving.height / 2);
   await page.mouse.down();
   await page.mouse.move(Math.min(1890, owner.x + owner.width + 70), moving.y + 40, { steps: 20 });
   await page.mouse.up();
+  await page.keyboard.up('Control');
   const detachedState = () =>
     page.evaluate(async () => {
       const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
@@ -351,10 +387,10 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
   await expect.poll(detachedState).toEqual(detachedBeforeRefresh);
   await page.screenshot({ path: `${evidence}/detached-whole-cluster.png` });
   await writeFile(`${evidence}/detached-workflow.json`, JSON.stringify(detachedBeforeRefresh, null, 2));
-  if (process.env.MODIFF_RUN_REJECTED_DRAG === '1') {
-    // Moving a loader with undeclared crossing outputs is not a safe detach.
-    // Exercise the real pointer failure, including the final position already
-    // emitted by React Flow, and require the visible geometry to roll back.
+  if (process.env.MODIFF_RUN_LOADER_DETACH === '1' || process.env.MODIFF_RUN_REJECTED_DRAG === '1') {
+    // Ctrl-drag explicitly moves the owner and preserves declared crossings.
+    // Keep the old opt-in name as a runner alias; ordinary drag now changes
+    // layout only, so the historical undeclared-input rejection is obsolete.
     const detachedRoot = page.getByTestId(`user-block-${detached.id}`);
     await page.getByTestId(`user-block-toggle-${detached.id}`).click();
     const expandNested = page.getByRole('button', {
@@ -398,22 +434,59 @@ test('a whole Qwen catalog Block drops inside a generic Block with editable cont
         }),
     );
     const beforeRejected = await detachedState();
+    const beforeOwnerMove = await entireGraph();
     const loaderBox = await loader.boundingBox(),
       rootBox = await detachedRoot.boundingBox();
     const loaderHeader = await loader.locator('header').first().boundingBox();
     if (!loaderBox || !rootBox) throw new Error('Missing rejected-drag geometry');
     if (!loaderHeader) throw new Error('Missing loader drag header');
+    await page.mouse.click(500, 150);
+    await page.keyboard.down('Control');
     await page.mouse.move(loaderHeader.x + loaderHeader.width / 2, loaderHeader.y + loaderHeader.height / 2);
     await page.mouse.down();
     await page.mouse.move(Math.min(1890, rootBox.x + rootBox.width + 110), loaderBox.y + 30, { steps: 20 });
     await expect(loader).toHaveClass(/dragging/u);
     await page.mouse.up();
-    await expect(
-      page.getByText(/Cannot move .*Configure a public input for .*pipeline_components first/u),
-    ).toBeVisible();
+    await page.keyboard.up('Control');
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+          return useFlowStore
+            .getState()
+            .nodes.some(
+              (node) => node.data.action === 'ModelsLoader' && !node.parentId && !node.data.blockProjectionOwnerId,
+            );
+        }),
+      )
+      .toBe(true);
+    const afterOwnerMove = await entireGraph();
+    const findOwner = (graph: typeof afterOwnerMove) =>
+      Object.entries(graph.nodes).find(([, node]) => node.action === 'ModelsLoader')!;
+    const [oldOwnerId, oldOwner] = findOwner(beforeOwnerMove),
+      [newOwnerId, newOwner] = findOwner(afterOwnerMove);
+    expect(newOwner.params).toEqual(oldOwner.params);
+    const beforeCrossings = Object.values(beforeOwnerMove.nodes)
+      .flatMap((node) =>
+        Object.entries(node.params)
+          .filter(([, value]) => value.sourceId === oldOwnerId)
+          .map(([field, value]) => `${node.module}.${node.action}:${field}:${value.sourceKey}`),
+      )
+      .sort();
+    const afterCrossings = Object.values(afterOwnerMove.nodes)
+      .flatMap((node) =>
+        Object.entries(node.params)
+          .filter(([, value]) => value.sourceId === newOwnerId)
+          .map(([field, value]) => `${node.module}.${node.action}:${field}:${value.sourceKey}`),
+      )
+      .sort();
+    expect(beforeCrossings.length).toBeGreaterThan(0);
+    expect(afterCrossings).toEqual(beforeCrossings);
+    await page.keyboard.press('Control+z');
     await expect.poll(detachedState).toEqual(beforeRejected);
+    expect(await entireGraph()).toEqual(beforeOwnerMove);
     await geometry(page);
-    await page.screenshot({ path: `${evidence}/rejected-loader-detach-restored.png` });
+    await page.screenshot({ path: `${evidence}/loader-detach-undone.png` });
     await page.getByTestId('topbar-save-workflow').click();
     await page.reload();
     await ready(page);

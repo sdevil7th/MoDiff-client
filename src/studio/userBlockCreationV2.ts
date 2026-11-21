@@ -5,7 +5,7 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import type { UserBlockDefinition } from './types';
 import { blockConnectorParamsV2, blockControlParamsV2, canonicalizePersistedBlockGraphV2 } from './blockRuntimeV2';
 import { createUserBlockFromSelection, createUserBlockNode, type BlockSelectionResult } from './userBlocks';
-import { prepareLegacyBlockMovementV2 } from './legacyBlockMovementV2';
+import { prepareLegacyBlockMovementV2 } from './legacyBlockMovementCoreV2';
 
 /** Prepare the native dialog from canonical roots, retaining nested effective content. */
 export function createUserBlockDraftV2(

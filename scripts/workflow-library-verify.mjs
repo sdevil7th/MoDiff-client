@@ -1,10 +1,19 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { canonicalJsonHash, stableJsonValue as stable } from './canonical-json.mjs';
-import { workflowNodeAttentionBackendError, workflowNodeDeviceOffloadError } from './workflow-library-contract.mjs';
+import {
+  workflowNodeAttentionBackendError,
+  hasMachineSpecificWorkflowState,
+  workflowVideoAttentionRecipeError,
+  workflowNodeDeviceOffloadError,
+  verifyCanonicalImagePipelineStages,
+} from './workflow-library-contract.mjs';
 import { verifyNoDeadWorkflowNodes } from './workflow-library-dead-nodes.mjs';
+import { parseCanonicalAuxiliarySources } from './workflow-library-auxiliary-sources.mjs';
+import { canonicalExecutableWorkflowGraph, loadCanonicalWorkflowExpander } from './canonical-workflow-execution.mjs';
 
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolve(process.env.MODIFF_BACKEND_DIR || join(ROOT, '..', 'MoDiff'));
@@ -33,6 +42,9 @@ if (!Array.isArray(manifest.workflows) || manifest.workflows.length !== expected
 }
 
 const pairs = new Set();
+let authoritativeAuxiliarySources = new Map();
+let unpackCanonicalGraph;
+let expandCanonicalBlocks;
 
 function graphLayoutSignature(graph) {
   return stable(
@@ -109,7 +121,7 @@ function verifyCanonicalLayout(workflow, graph, graphLayout) {
   }
 }
 
-function verifyWorkflow(workflow, expectedTier, graphLayout) {
+function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts) {
   if (pairs.has(workflow.id)) throw new Error(`Duplicate canonical workflow: ${workflow.id}`);
   pairs.add(workflow.id);
   if (workflow.supportTier !== expectedTier) throw new Error(`${workflow.id} is not in the ${expectedTier} tier.`);
@@ -133,7 +145,14 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
   const raw = readFileSync(graphPath, 'utf8');
   const graph = JSON.parse(raw);
   verifyCanonicalLayout(workflow, graph, graphLayout);
-  verifyNoDeadWorkflowNodes(workflow, graph);
+  verifyCanonicalImagePipelineStages(workflow, graph, imageStageContracts);
+  const executableGraph = canonicalExecutableWorkflowGraph(graph, expandCanonicalBlocks);
+  const dependencyGraph = workflow.auxiliaryTerminalBinding ? unpackCanonicalGraph(executableGraph) : executableGraph;
+  verifyNoDeadWorkflowNodes(
+    workflow,
+    dependencyGraph,
+    authoritativeAuxiliarySources.get(`${workflow.modelType}|${workflow.mode}`),
+  );
   const nodeIds = new Set((graph.nodes ?? []).map((node) => node.id));
   for (const node of graph.nodes ?? []) {
     if (node.parentId && !nodeIds.has(node.parentId)) {
@@ -146,14 +165,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
       }
     }
     if (node?.data?.action === 'DiffusersExecutionRecipe') {
-      const params = node.data.params ?? {};
-      const attentionBackend = params.attention_backend?.value;
-      const device = params.device?.value;
       const attentionError = workflowNodeAttentionBackendError(node);
       if (attentionError) throw new Error(`${workflow.id} ${attentionError}.`);
-      if (String(attentionBackend ?? '').startsWith('_native_') && String(device ?? '').startsWith('cpu')) {
-        throw new Error(`${workflow.id} selects accelerator attention ${attentionBackend} on ${device}.`);
-      }
     }
     const offloadError = workflowNodeDeviceOffloadError(node);
     if (offloadError) throw new Error(`${workflow.id} ${offloadError}.`);
@@ -395,6 +408,9 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           revision: '3d4d00fc113225e1040f4d3bec504b6ec750c10c',
         },
       };
+      if (pipelineClass === 'AnimateDiffPAGPipeline' && recipeParams.attention_backend?.value !== 'auto') {
+        throw new Error(`${workflow.id} AnimateDiff PAG graph must use its automatic attention default.`);
+      }
       const animateMotion = animateMotionArtifacts[pipelineClass];
       if (animateMotion) {
         const base = pipeline.data.params?.model_id?.value;
@@ -410,7 +426,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           motionRevision !== animateMotion.revision ||
           !workflow.requiredArtifacts.includes(base.value) ||
           !workflow.requiredArtifacts.includes(motion.value) ||
-          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_backend?.value !== 'auto' ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_tiling?.value !== false
         ) {
@@ -426,8 +442,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'zai-org/CogVideoX-2b' ||
           revision !== '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
-          recipeParams.attention_backend?.value !== '_native_math' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
+          recipeParams.attention_backend?.value !== 'auto' ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_slicing?.value !== true ||
           recipeParams.vae_tiling?.value !== false
@@ -448,7 +464,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'rhymes-ai/Allegro' ||
           revision !== 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||
@@ -477,7 +493,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'maxin-cn/Latte-1' ||
           revision !== '0653024365272f061fc44d1078134df22842b687' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||
@@ -506,7 +522,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'genmo/mochi-1-preview' ||
           revision !== '14be5fcea23095ed330cb214647916a451e38b6e' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
           recipeParams.attention_backend?.value !== '_native_math' ||
           recipeParams.attention_components?.value !== '' ||
@@ -543,9 +559,9 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           base.value !== 'Efficient-Large-Model/SANA-Video_2B_480p_diffusers' ||
           revision !== 'db5f398b13ca086d09a50ce156c20527773841b1' ||
           !workflow.requiredArtifacts.includes(base.value) ||
-          quantizationParams.components?.value !== '' ||
+          JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
-          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_backend?.value !== (imageConditioned ? '_native_math' : 'auto') ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_slicing?.value !== true ||
           recipeParams.vae_tiling?.value !== false ||
@@ -570,14 +586,8 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
           throw new Error(`${workflow.id} video generator ${generate.id} does not preserve mode ${workflow.mode}.`);
         }
       }
-      if (['WanPipeline', 'Wan22Pipeline', 'WanTI2VPipeline'].includes(pipelineClass)) {
-        if (
-          recipeParams.attention_backend?.value !== '_native_flash' ||
-          recipeParams.attention_components?.value !== 'transformer'
-        ) {
-          throw new Error(`${workflow.id} Wan text pipeline must select native flash on the transformer.`);
-        }
-      }
+      const attentionError = workflowVideoAttentionRecipeError(pipelineClass, recipeParams);
+      if (attentionError) throw new Error(`${workflow.id} ${attentionError}.`);
     }
   }
   if (workflow.mediaKind === 'image' || workflow.mediaKind === 'audio') {
@@ -704,11 +714,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout) {
   }
   const digest = canonicalJsonHash(graph);
   if (digest !== workflow.graphHash) throw new Error(`${workflow.id} graph hash does not match its manifest.`);
-  if (
-    /(?:file:\/\/|\/(?:home|Users|root|tmp|mnt|workspace)(?:\/|$)|[A-Za-z]:[\\/]|\\\\|localhost|127\.0\.0\.1|\/cache\/)/i.test(
-      raw,
-    )
-  ) {
+  if (hasMachineSpecificWorkflowState(raw)) {
     throw new Error(`${workflow.id} contains machine-specific state.`);
   }
   if (/modules\.WanVACE\.(?:LoadPipeline|Generate)/.test(raw)) {
@@ -725,7 +731,40 @@ const layoutModuleServer = await createServer({
   appType: 'custom',
 });
 try {
+  expandCanonicalBlocks = await loadCanonicalWorkflowExpander(layoutModuleServer);
   const graphLayout = await layoutModuleServer.ssrLoadModule('/src/workflow/graphLayout.ts');
+  const imageStageContracts = {
+    ...(await layoutModuleServer.ssrLoadModule('/src/workflow/imagePipelineStageContracts.ts')),
+    ...(await layoutModuleServer.ssrLoadModule('/src/workflow/operationContracts.ts')),
+  };
+  const sourceBoundWorkflows = [...manifest.workflows, ...(manifest.experimentalWorkflows ?? [])].filter((workflow) =>
+    Object.prototype.hasOwnProperty.call(workflow, 'auxiliaryTerminalBinding'),
+  );
+  if (sourceBoundWorkflows.length > 0) {
+    const python = process.env.MODIFF_BACKEND_PYTHON;
+    if (!python)
+      throw new Error(
+        'Auxiliary-terminal verification requires the declared native MODIFF_BACKEND_PYTHON schema environment.',
+      );
+    const fixture = JSON.parse(
+      execFileSync(python, [join(ROOT, 'scripts', 'template-operation-fixtures.py')], {
+        // The fixture imports the paired first-party source. The manifest's
+        // graph root may be a separate review tree and is not source authority.
+        cwd: resolve(ROOT, '..', 'MoDiff'),
+        input: '[]',
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+      }),
+    );
+    const parsed = await parseCanonicalAuxiliarySources(
+      fixture.publicPayload,
+      sourceBoundWorkflows,
+      layoutModuleServer,
+    );
+    authoritativeAuxiliarySources = parsed.sources;
+    unpackCanonicalGraph = parsed.unpackGraph;
+  }
   const selectedSupported = requestedPair
     ? manifest.workflows.filter((workflow) => `${workflow.modelType}|${workflow.mode}` === requestedPair)
     : manifest.workflows;
@@ -740,7 +779,7 @@ try {
   if (requestedPair && selectedCanonicalCount !== 1) {
     throw new Error(`The requested canonical workflow pair is not unique: ${requestedPair}.`);
   }
-  for (const workflow of selectedSupported) verifyWorkflow(workflow, 'supported', graphLayout);
+  for (const workflow of selectedSupported) verifyWorkflow(workflow, 'supported', graphLayout, imageStageContracts);
 
   const expectedExperimentalCount = Number(manifest.experimentalWorkflowCount ?? 0);
   if (!Number.isInteger(expectedExperimentalCount) || expectedExperimentalCount < 0) {
@@ -754,7 +793,8 @@ try {
       `Expected ${expectedExperimentalCount} qualified experimental workflows, found ${manifest.experimentalWorkflows?.length ?? 0}.`,
     );
   }
-  for (const workflow of selectedExperimental) verifyWorkflow(workflow, 'experimental', graphLayout);
+  for (const workflow of selectedExperimental)
+    verifyWorkflow(workflow, 'experimental', graphLayout, imageStageContracts);
 
   process.stdout.write(
     `Verified ${selectedSupported.length} supported and ${selectedExperimental.length} qualified experimental portable workflows with deterministic canonical layouts.\n`,

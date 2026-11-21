@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "revisions": [
+    {
+      "templateId": "flux_lora_cinematic_octane_3d",
+      "recipeVersion": 3,
+      "previousPromptSha256": "f8a847386a8f87df49167d184c520bb683239fe21a23ae5c855f46914ff40863",
+      "promptSha256": "c692698583d87ddb656c3771568519f03ecf9786715878befd8ecc8513b44296",
+      "lockedSettings": {
+        "guidanceScale": 1,
+        "resourceMode": "expert"
+      },
+      "reason": "Remove injury references and the extra true-CFG pass after the retained portrait and adapter-free control showed soft detail. Keep the original model, adapters, scales, seed, geometry, steps and group offload. The frozen v1 creator contract and its original-source comparison remain unchanged; this revision does not inherit their pixel-parity or publication approval."
+    },
+    {
+      "templateId": "z_image_cinematic_contact_sheet",
+      "recipeVersion": 2,
+      "previousPromptSha256": "e4a436bb655cedadb1a25ae3239ad45b2ac52203fe7e64296601a9a9bf2b3c59",
+      "promptSha256": "705c4fa86a073cd3343989ea75ebd87e04c3483a9ea1e66998fb91c111afdeb4",
+      "lockedSettings": {},
+      "reason": "Resolve the face-in-every-frame instruction that conflicted with the rear-view exit. Limit visible facial continuity to the first three panels and specify a distinct fourth-panel rear view. Keep all model, seed, geometry, steps and resource settings unchanged. Preserve the frozen original creator contract; visual acceptance of the revised result does not grant publication or hardware qualification."
+    },
+    {
+      "templateId": "flux_kontext_multi_reference",
+      "recipeVersion": 2,
+      "previousPromptSha256": "feba808766f5b483920dfb4601e7beea084249e25cba19b4033cba9d951dc03a",
+      "promptSha256": "ddcd45fefd02fe3e7399ad7d12ea6ce4951bcb14add5c16993bf8a389d58ffe5",
+      "lockedSettings": {},
+      "inputBindings": [
+        {
+          "id": "flux-kontext-material-preservation-v2-inputs",
+          "label": "Source bottle and material-only reference",
+          "mediaType": "image",
+          "origin": "template",
+          "requiredAt": "workflow_start",
+          "field": "referenceImages",
+          "defaultAssets": [
+            {
+              "id": "flux_kontext_multi_reference-reference-image-1",
+              "label": "Approved source bottle",
+              "mediaType": "image",
+              "previewPath": "/template-gallery/inputs/flux_kontext_multi_reference.before.webp",
+              "runtimePath": "/template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
+              "runtimeSha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
+              "fileName": "flux_kontext_multi_reference.reference_image_1.webp"
+            },
+            {
+              "id": "flux-kontext-cobalt-material-only-v2",
+              "label": "Cobalt surface colour and texture strip",
+              "mediaType": "image",
+              "runtimePath": "/template-gallery/runtime-inputs/assets/70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34.png",
+              "runtimeSha256": "sha256:bytes:70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34",
+              "fileName": "flux_kontext_multi_reference.material_strip_v2.png"
+            }
+          ]
+        }
+      ],
+      "reason": "Use the predeclared preservation prompt and material-only reference crop of the exact maintainer-accepted run. Preserve the original creator contract and prior Dataset revision. Model, seed, geometry, steps, backend authoring recipe and resource settings remain unchanged; this is reviewed publication, not duplicate or hardware qualification."
+    },
+    {
+      "templateId": "flux_redux_multi_reference",
+      "recipeVersion": 2,
+      "previousPromptSha256": "2e32f96a0d6f7d1e5ef6c02794dc7545f3ef72951a66351e15c00603fbced9cf",
+      "promptSha256": "bd1f7e01f9d5ac05af95a4a50612c47190c4cbaf3af07e9d85e42949b9871717",
+      "lockedSettings": {
+        "seed": 8414,
+        "guidanceScale": 3.5
+      },
+      "workflowBlockSettings": {
+        "encodingInputs": {
+          "role": "imageEncode",
+          "values": {
+            "prompt_embeds_scale": [0.8, 0.2],
+            "pooled_prompt_embeds_scale": [0.8, 0.2]
+          }
+        }
+      },
+      "approvedOutputSha256": "c50df8d364a6065443d8f790a347ad7baf84e8bacf91a15245d28619a9f54bd9",
+      "reason": "Retain the explicitly accepted corrected two-wheel image and its original prompt, seed8414 and80/20 reference arrays. Preserve the original creator contract and rejected output exclusion. The underpass remains a disclosed limitation; no exact duplicate, Auto or hardware qualification follows."
+    }
+  ]
+}

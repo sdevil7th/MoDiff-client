@@ -1,6 +1,6 @@
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
-import { lazy, Suspense, useEffect, useState, useMemo, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import config from '../../app.config';
 
 import {
@@ -35,14 +35,18 @@ import { GraphControlButton } from '../ui/GraphControls';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useStudioStore } from '../stores/useStudioStore';
 import { workflowSnapshotFromGraph } from '../studio/workflowInference';
+import { STUDIO_MODEL_PROFILES } from '../studio/modelProfiles';
+import { getWorkflowShowcases } from '../studio/templateShowcases';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { createLatestRequestGate, formatRequestError, requestJson, RequestError } from '../utils/requestJson';
-import type { WorkflowTab } from '../studio/types';
+import type { StudioModelType, WorkflowTab } from '../studio/types';
 import {
   backendWorkflowTab,
   deleteWorkflowNow,
+  markBackendWorkflow,
   markWorkflowTabOpen,
   saveDetachedWorkflowNow,
+  subscribeBackendWorkflowChanges,
 } from '../studio/useWorkflowBackendSync';
 
 const DeveloperWorkflowLauncher = lazy(() => import('./DeveloperWorkflowLauncher'));
@@ -60,7 +64,7 @@ export interface GraphData {
   requiredArtifacts?: string[];
 }
 
-const graphListRequestGate = createLatestRequestGate<'graphs'>();
+const graphListRequestGate = createLatestRequestGate<'graphs' | 'saved'>();
 const SAVED_WORKFLOWS_PAGE_SIZE = 50;
 
 type SavedWorkflowSummary = Omit<WorkflowTab, 'snapshot'> & { snapshot?: WorkflowTab['snapshot'] };
@@ -121,12 +125,18 @@ function workflowTestId(value: string) {
   return value.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+function workflowModelLabel(node: GraphData) {
+  const profile = STUDIO_MODEL_PROFILES[node.modelType as StudioModelType];
+  return profile?.displayName || profile?.family || node.modelType || '';
+}
+
 function GraphList() {
   const libraryTab = useSettingsStore((s) => s.workflowLibraryView);
   const setLibraryTab = useSettingsStore((s) => s.setWorkflowLibraryView);
   const [isLoading, setIsLoading] = useState(false);
   const [graphs, setGraphs] = useState<GraphData[]>([]);
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflowSummary[]>([]);
+  const acknowledgedChanges = useRef(new Map<string, SavedWorkflowSummary | null>());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [savedPage, setSavedPage] = useState(0);
@@ -147,6 +157,7 @@ function GraphList() {
   const mergeBackendWorkflow = useStudioStore((state) => state.mergeBackendWorkflow);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const showcases = libraryTab === 'examples' ? getWorkflowShowcases(search) : [];
 
   const fetchGraphs = useCallback(async () => {
     const ticket = graphListRequestGate.begin('graphs');
@@ -166,14 +177,50 @@ function GraphList() {
   }, []);
 
   const fetchSavedWorkflows = useCallback(async () => {
+    const ticket = graphListRequestGate.begin('saved');
+    const before = new Map(acknowledgedChanges.current);
     try {
-      const payload = await requestJson<unknown>(`${config.serverAddress}/workflows?view=summary`);
+      const payload = await requestJson<unknown>(`${config.serverAddress}/workflows?view=summary`, {
+        signal: ticket.signal,
+      });
       const records = isRecord(payload) && Array.isArray(payload.workflows) ? payload.workflows : [];
-      setSavedWorkflows(records.map(backendWorkflowSummary).filter((tab): tab is SavedWorkflowSummary => Boolean(tab)));
+      if (!ticket.isLatest()) return;
+      const rows = new Map(
+        records
+          .map(backendWorkflowSummary)
+          .filter((tab): tab is SavedWorkflowSummary => Boolean(tab))
+          .map((tab) => [tab.id, tab]),
+      );
+      // A response requested before Save/Delete must not erase its later
+      // acknowledgement. A fresh manual reload still replaces older summaries.
+      for (const [id, tab] of acknowledgedChanges.current) {
+        if (before.get(id) === tab) continue;
+        if (!tab) rows.delete(id);
+        else if ((rows.get(id)?.backendRevision ?? 0) <= (tab.backendRevision ?? 0)) rows.set(id, tab);
+      }
+      setSavedWorkflows([...rows.values()]);
     } catch (error) {
-      console.warn('Could not refresh My workflows.', error);
+      if (ticket.isLatest()) console.warn('Could not refresh My workflows.', error);
+    } finally {
+      ticket.finish();
     }
   }, []);
+
+  useEffect(
+    () =>
+      subscribeBackendWorkflowChanges(({ id, tab }) => {
+        const summary = tab ? backendWorkflowSummary({ ...tab, revision: tab.backendRevision }) : null;
+        const acknowledged = acknowledgedChanges.current.get(id);
+        if (summary && (acknowledged?.backendRevision ?? 0) > (summary.backendRevision ?? 0)) return;
+        acknowledgedChanges.current.set(id, summary);
+        setSavedWorkflows((current) => {
+          const previous = current.find((item) => item.id === id);
+          if (summary && (previous?.backendRevision ?? 0) > (summary.backendRevision ?? 0)) return current;
+          return [...current.filter((item) => item.id !== id), ...(summary ? [summary] : [])];
+        });
+      }),
+    [],
+  );
 
   // Fetch graphs on component mount
   useEffect(() => {
@@ -247,7 +294,17 @@ function GraphList() {
     if (!filtersActive) return visibleGraphs;
     return allWorkflowFiles.filter(
       (file) =>
-        file.name.toLowerCase().includes(search.toLowerCase()) &&
+        [
+          file.name,
+          file.modelType,
+          workflowModelLabel(file),
+          file.mode?.replace(/_/g, ' '),
+          ...(file.requiredArtifacts ?? []),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(search.trim().toLowerCase()) &&
         (mediaFilter === 'all' || file.mediaKind === mediaFilter) &&
         (modelFilter === 'all' || file.modelType === modelFilter) &&
         (modeFilter === 'all' || file.mode === modeFilter) &&
@@ -280,12 +337,12 @@ function GraphList() {
             return value;
           },
         });
-        createWorkflowTab(
-          node.name || 'Imported graph',
-          workflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form),
-          'import',
-          node.path,
-        );
+        const example = node.modelType && node.mode ? await import('../studio/exampleWorkflow') : null;
+        const snapshot = example
+          ? example.exampleWorkflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form)
+          : workflowSnapshotFromGraph(graph, edgeType, useStudioStore.getState().form);
+        createWorkflowTab(node.name || 'Imported graph', snapshot, 'import', node.path);
+        if (example && !(await example.settleExampleWorkflowCanvas())) return;
         setRightPanelOpen(true);
         setRightPanelTab('studio');
         enqueueSnackbar('Workflow opened as a new tab', { variant: 'success', autoHideDuration: 2200 });
@@ -375,6 +432,8 @@ function GraphList() {
       const complete = await fetchSavedWorkflow(tab);
       markWorkflowTabOpen(complete.id);
       if (!workflowTabs.some((item) => item.id === complete.id)) {
+        // Opening a backend-owned document must not echo it through autosave.
+        markBackendWorkflow(complete);
         mergeBackendWorkflow(complete);
       }
       switchWorkflowTab(complete.id);
@@ -447,13 +506,18 @@ function GraphList() {
           <FileJson2 size={15} className="shrink-0 text-modiff-subtle-text group-hover:text-hf-yellow" />
           <span
             draggable
-            className="min-w-0 flex-1 cursor-grab truncate"
+            className="min-w-0 flex-1 cursor-grab py-1"
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', node.path);
               e.dataTransfer.effectAllowed = 'move';
             }}
           >
-            {node.name}
+            <span className="block truncate">{node.name}</span>
+            {node.modelType ? (
+              <span className="block truncate text-xs text-modiff-subtle-text" title={node.modelType}>
+                {workflowModelLabel(node)}
+              </span>
+            ) : null}
           </span>
           {node.mediaKind ? (
             <span className="text-modiff-tiny rounded bg-modiff-surface-hover/50 px-1.5 py-0.5 uppercase text-modiff-subtle-text">
@@ -697,9 +761,38 @@ function GraphList() {
                   className="min-h-0 flex-1 select-none overflow-y-auto overscroll-contain"
                   data-testid="workflow-list"
                 >
+                  {showcases.map((showcase) => (
+                    <article
+                      key={showcase.id}
+                      className="m-2 space-y-2 rounded-modiff-compact border border-modiff-border p-2"
+                      data-testid={`workflow-showcase-${showcase.id}`}
+                      data-execution-spec-id={showcase.workflowExecutionSpecId}
+                    >
+                      <h3 className="text-sm font-semibold">
+                        {showcase.title} · {showcase.modelLabel}
+                      </h3>
+                      <video
+                        src={showcase.mediaPath}
+                        poster={showcase.posterPath}
+                        preload="none"
+                        controls
+                        playsInline
+                        aria-label={showcase.title}
+                        className="aspect-video w-full"
+                      />
+                      <a
+                        className="text-xs text-modiff-blue underline"
+                        href={showcase.recordPath}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Showcase recipe and review
+                      </a>
+                    </article>
+                  ))}
                   {filteredGraphs.length > 0 ? (
                     filteredGraphs.map((item) => renderDir(item, 0))
-                  ) : visibleSavedWorkflowRows.length === 0 ? (
+                  ) : visibleSavedWorkflowRows.length === 0 && showcases.length === 0 ? (
                     <div className="m-2 rounded-modiff-compact border border-modiff-border bg-modiff-surface p-3 text-sm text-modiff-subtle-text">
                       No saved, imported, or example workflows found.
                     </div>

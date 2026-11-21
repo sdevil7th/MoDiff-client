@@ -88,7 +88,15 @@ const MODEL_SPECIFIC_MODULES = new Set<string>();
 // Discovery only: these existing generic operations keep their backend schemas
 // and execution identities. Inclusion does not add model/task support.
 const GENERIC_NODE_KEYS = new Set([
+  'modules.DiffusersImage.ControlEdit',
+  'modules.DiffusersImage.ControlInpaint',
+  'modules.DiffusersImage.LayerDecompose',
+  'modules.DiffusersImage.PredictMap',
   'modules.DiffusersImage.OutpaintCanvas',
+  'modules.VideoConditioning.Normalize',
+  'modules.VideoConditioning.AlignMask',
+  'modules.VideoConditioning.OutpaintCanvas',
+  'modules.VideoConditioning.EdgePreprocessor',
   'modules.ModularDiffusers.ModelsLoader',
   'modules.ModularDiffusers.AutoModelLoader',
   'modules.ModularDiffusers.EncodePrompt',
@@ -103,7 +111,18 @@ const GENERIC_NODE_KEYS = new Set([
   'modules.ModularDiffusers.Scheduler',
   'modules.ModularDiffusers.Guider',
   'modules.ModularDiffusers.QuantizationConfigNode',
+  'modules.Spandrel.Upscaler',
 ]);
+
+const GENERIC_NODE_ROLES: Readonly<Record<string, NodeSurfaceCategory>> = {
+  'modules.DiffusersImage.LayerDecompose': 'Edit',
+  'modules.DiffusersImage.PredictMap': 'Condition',
+  'modules.ModularDiffusers.ImageEncode': 'Condition',
+  'modules.VideoConditioning.Normalize': 'Condition',
+  'modules.VideoConditioning.AlignMask': 'Edit',
+  'modules.VideoConditioning.OutpaintCanvas': 'Edit',
+  'modules.VideoConditioning.EdgePreprocessor': 'Condition',
+};
 
 export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
   if (entry.visibility === 'internal') return false;
@@ -165,6 +184,8 @@ function textIncludesAny(text: string, values: string[]) {
 }
 
 function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
+  const role = GENERIC_NODE_ROLES[nodeKey(node)];
+  if (role) return role;
   const text = `${key} ${node.category} ${node.label}`.toLowerCase();
   if (textIncludesAny(text, ['adapter', 'lora'])) return 'Adapters';
   if (textIncludesAny(text, ['export', 'save'])) return 'Export';
@@ -182,6 +203,9 @@ function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
 
 function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
   if (node.type === 'group' || node.type === 'loop') return 'internal';
+  // This action requires an admitted definition and placement supplied by the Block compiler.
+  // Its saved execution identity stays available even though its raw schema cannot be authored.
+  if (nodeKey(node) === 'modules.ModularDiffusers.ReviewedModularWorkflowStep') return 'internal';
   if (textIncludesAny(`${key} ${node.label}`, ['nunchaku', 'sd3', 'deprecated'])) return 'experimental';
   if (ESSENTIAL_NODE_KEYS.has(key)) return 'essential';
   if (MODEL_SPECIFIC_MODULES.has(node.module)) return 'advanced';
@@ -201,6 +225,7 @@ function runtimeKindForNode(node: NodeData, key: string): NodeRuntimeKind {
 export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCatalogEntry {
   const runtimeKind = runtimeKindForNode(node, key);
   const visibility = visibilityForNode(node, key);
+  const surfaceCategory = categoryFromNode(node, key);
   const isDiffusersBacked =
     runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated' || runtimeKind === 'experimental_diffusers';
   const specializedReason =
@@ -216,14 +241,14 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
     label: nodeDisplayLabel(node),
     aliases: nodeSearchAliases(node),
     description: node.description,
-    surfaceCategory: categoryFromNode(node, key),
+    surfaceCategory,
     visibility,
     runtimeKind,
     isDiffusersBacked,
     acceleratorStrategy: runtimeKind === 'diffusers_accelerated' ? 'accelerated Diffusers strategy' : undefined,
     specializedReason,
     node,
-    groupPath: nodeBrowsePath(node, categoryFromNode(node, key)),
+    groupPath: nodeBrowsePath(node, surfaceCategory),
   };
 }
 
@@ -259,6 +284,17 @@ export function compareNodeSurfaceCategories(left: NodeSurfaceCategory, right: N
 function nodeBrowsePath(node: NodeData, operation: NodeSurfaceCategory) {
   const module = node.module.toLowerCase();
   const category = (node.category ?? '').toLowerCase();
+  if (
+    category === 'upscaler' &&
+    Object.values(node.params).some(
+      (field) =>
+        (field.display === 'input' || field.isInput) &&
+        Array.isArray(field.type) &&
+        field.type.includes('image') &&
+        field.type.includes('video'),
+    )
+  )
+    return ['Image & Video', 'Upscale'];
   let modality = 'Data & Utilities';
   if (/threed|three_d|3d/u.test(`${module} ${category}`)) modality = '3D';
   else if (/audio|speech/u.test(`${module} ${category}`)) modality = 'Audio';

@@ -36,6 +36,7 @@ import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
 import { NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
+import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { validateCurrentRun } from '../studio/runReadiness';
 import { modiffLayout, sanitizeModiffNodeStyle } from '../theme';
@@ -119,13 +120,15 @@ type NodeSurface = {
   actions?: ReactNode;
   setSize: (width: number, height: number) => void;
   testId?: string;
+  hasAudioPreview?: boolean;
 };
 
 const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurface }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
   const label = nodeDisplayLabel(node.data);
-  const hasAudioPlayer = Object.values(node.data.params).some((param) => param.display === 'ui_audio');
+  const hasAudioPlayer =
+    node.surface?.hasAudioPreview || Object.values(node.data.params).some((param) => param.display === 'ui_audio');
   const minimumNodeWidth = hasAudioPlayer ? modiffLayout.audioPreviewNodeMinWidth : modiffLayout.nodeMinWidth;
   const setParam = useFlowStore((state) => state.setParamWithHistory);
   const setNodeSize = useFlowStore((state) => state.setNodeSize);
@@ -213,7 +216,7 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
   const handleRecompute = useCallback(async () => {
     try {
       const result = await recomputeNodeOutputs([node.id]);
-      if (result.nodes.length) setNodeCached(node.id, false);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar(
         result.nodes.length
           ? 'Outputs will recompute on the next Run. Loaded models are retained.'
@@ -227,11 +230,12 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
 
   const handleClearCache = useCallback(async () => {
     try {
-      await deleteNodeCache([node.id]);
-      setNodeCached(node.id, false);
+      const result = await deleteNodeCache([node.id]);
+      for (const released of result.nodes) setNodeCached(released, false);
       enqueueSnackbar('Node cache released', { variant: 'success', autoHideDuration: 1500 });
     } catch (error) {
-      console.error('Failed to delete cache', error);
+      const message = error instanceof Error ? error.message : String(error);
+      enqueueSnackbar(message, { variant: 'error', autoHideDuration: 2600 });
     }
   }, [node.id, setNodeCached]);
 
@@ -252,32 +256,51 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
 
   const handleRunFromNode = useCallback(async () => {
     closeContextMenu();
-    const validation = validateCurrentRun({ sid, isConnected, includeStudio: false, targetNodeId: node.id });
-    if (!validation.canRun || !sid) return;
-    await coordinateGraphRun({ sid, targetNodeId: node.id });
+    try {
+      const pending = prepareExecutionScope({ targetNodeId: node.id });
+      const executionScope = pending ? await pending : undefined;
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: false,
+        targetNodeId: node.id,
+        executionScope,
+      });
+      if (!validation.canRun || !sid) return;
+      await coordinateGraphRun({ sid, targetNodeId: node.id, executionScope });
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: 'error' });
+    }
   }, [closeContextMenu, isConnected, node.id, sid]);
 
-  const handlePreviewBranch = useCallback(() => {
-    const validation = validateCurrentRun({
-      sid,
-      isConnected,
-      includeStudio: false,
-      showDialog: false,
-      targetNodeId: node.id,
-    });
-    if (!validation.canRun || !sid || !contextMenu) return;
-    const apiGraph = useFlowStore.getState().exportGraph(sid, node.id);
-    const nodeIds = Object.keys(apiGraph.nodes);
-    const cachedNodeIds = useFlowStore
-      .getState()
-      .nodes.filter((item) => nodeIds.includes(item.id) && item.data.isCached)
-      .map((item) => item.id);
-    setBranchPreview({
-      anchor: clampAnchor({ left: contextMenu.mouseX + 180, top: contextMenu.mouseY }, 320, 260),
-      nodeIds,
-      cachedNodeIds,
-    });
-    closeContextMenu();
+  const handlePreviewBranch = useCallback(async () => {
+    try {
+      const pending = prepareExecutionScope({ targetNodeId: node.id });
+      const executionScope = pending ? await pending : undefined;
+      const validation = validateCurrentRun({
+        sid,
+        isConnected,
+        includeStudio: false,
+        showDialog: false,
+        targetNodeId: node.id,
+        executionScope,
+      });
+      if (!validation.canRun || !sid || !contextMenu) return;
+      const apiGraph = useFlowStore.getState().exportGraph(sid, node.id, { executionScope, randomizeSeeds: false });
+      const nodeIds = Object.keys(apiGraph.nodes);
+      const cachedNodeIds = useFlowStore
+        .getState()
+        .nodes.filter((item) => nodeIds.includes(item.id) && item.data.isCached)
+        .map((item) => item.id);
+      setBranchPreview({
+        anchor: clampAnchor({ left: contextMenu.mouseX + 180, top: contextMenu.mouseY }, 320, 260),
+        nodeIds,
+        cachedNodeIds,
+      });
+      closeContextMenu();
+    } catch (error) {
+      enqueueSnackbar(error instanceof Error ? error.message : String(error), { variant: 'error' });
+    }
   }, [closeContextMenu, contextMenu, isConnected, node.id, sid]);
 
   const handleCopyNodeInfo = useCallback(() => {
@@ -491,14 +514,14 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
                 title="Peak node memory usage"
                 onClick={(event) => setMemoryAnchor(anchorBelow(event.currentTarget))}
               >
-                {node.data.memoryUsage?.last ? formatMemory(node.data.memoryUsage.last) : '-'}
+                {formatMemory(node.data.memoryUsage?.last)}
               </FooterMetricButton>
               {memoryAnchor && (
                 <NodePopover anchor={memoryAnchor} onClose={() => setMemoryAnchor(null)} className="p-3">
                   <div className="mb-1 text-sm font-bold text-modiff-text">Peak node VRAM usage</div>
-                  <MetricRow label="Last:">{formatMemory(node.data.memoryUsage?.last ?? 0)}</MetricRow>
-                  <MetricRow label="Min:">{formatMemory(node.data.memoryUsage?.min ?? 0)}</MetricRow>
-                  <MetricRow label="Max:">{formatMemory(node.data.memoryUsage?.max ?? 0)}</MetricRow>
+                  <MetricRow label="Last:">{formatMemory(node.data.memoryUsage?.last)}</MetricRow>
+                  <MetricRow label="Min:">{formatMemory(node.data.memoryUsage?.min)}</MetricRow>
+                  <MetricRow label="Max:">{formatMemory(node.data.memoryUsage?.max)}</MetricRow>
                 </NodePopover>
               )}
               <FooterMetricButton

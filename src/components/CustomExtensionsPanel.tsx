@@ -49,6 +49,9 @@ export default function CustomExtensionsPanel({
 
   return (
     <section className="grid gap-4" aria-label="Custom nodes" data-testid="custom-extensions-panel">
+      <p className="text-sm text-modiff-subtle-text">
+        Add a Python node to run your own code. Save a Block to reuse canvas nodes.
+      </p>
       <div className="flex gap-2" role="group" aria-label="Custom node actions">
         <ModiffButton
           className="aria-pressed:border-hf-yellow aria-pressed:text-hf-yellow"

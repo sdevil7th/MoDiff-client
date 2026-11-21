@@ -2,14 +2,14 @@ import { lazy, Suspense } from 'react';
 import type { NodeProps } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import { CustomNodeFrame, CustomNodeHeaderFrame } from '../ui';
-import { blockConnectorParamsV2 } from '../studio/blockRuntimeV2';
+import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
 import NodeContent from './NodeContent';
 
 const EncodingNode = lazy(() => import('./EncodingNode'));
 
 /** Load the encoding editor only when a workflow contains this node. */
 export default function EncodingNodeRenderer(props: NodeProps<CustomNodeType>) {
-  const ports = blockConnectorParamsV2(props.data.blockInstanceV2!);
+  const ports = nodeConnectorParams(props);
   return (
     <Suspense
       fallback={
@@ -20,7 +20,7 @@ export default function EncodingNodeRenderer(props: NodeProps<CustomNodeType>) {
           </p>
           <NodeContent
             nodeId={props.id}
-            params={{ ...ports.inputs, ...ports.outputs }}
+            params={ports}
             module="MoDiff"
             action="Encoding"
             mode="connectors"

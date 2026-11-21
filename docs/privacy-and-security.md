@@ -26,13 +26,17 @@ Run `./run-dev.sh --no-browser` on the remote host, then open
 
 ## Browser Data
 
-The client persists state in the browser origin's local storage:
+The client keeps page-owned workspace checkpoints in `sessionStorage` and shared preferences in `localStorage`:
 
-| Key               | Typical contents                                                                                     |
-| ----------------- | ---------------------------------------------------------------------------------------------------- |
-| `modiff.flow`     | Visual graph, node parameters, edges, viewport, and related graph state                              |
-| `modiff.settings` | User interface preferences and non-volatile settings                                                 |
-| `modiff.studio`   | Studio form values, workflow tabs, prompts/snippets, template provenance, and recent output metadata |
+| Key               | Storage          | Typical contents                                                                |
+| ----------------- | ---------------- | ------------------------------------------------------------------------------- |
+| `modiff.flow`     | `sessionStorage` | Visual graph, node parameters, edges, and viewport                              |
+| `modiff.settings` | `localStorage`   | User interface preferences and non-volatile settings                            |
+| `modiff.studio`   | `sessionStorage` | Studio form values, workflow tabs, prompts/snippets, imports, and pinned inputs |
+
+Page checkpoints survive reload but are not a backup for closing a page or browser session. Save important workflows to the backend library or export them. Backend-owned output history is restored from `/studio_outputs`, not from these checkpoints.
+
+A page without a checkpoint can recover retained legacy workspace bytes once from shared `localStorage`. Recovery does not overwrite or delete those historical keys. Clearing a page checkpoint does not clear the shared recovery data. If browser storage is blocked or full, live editing remains available and the app warns you to Save or export; it does not redirect workspace writes to shared storage.
 
 Depending on the workflow, these records can contain prompts, negative prompts, seeds, model names, local/backend file references, output URLs, and restorable graph metadata. Anyone with access to the browser profile may be able to inspect them.
 
@@ -127,7 +131,7 @@ For a suspected vulnerability, follow [SECURITY.md](../SECURITY.md) instead of o
 - Restrict permissions on data, cache, model, log, and export directories.
 - Review every custom module/field and optional dependency before enabling it.
 - Keep model artifacts pinned or otherwise provenance-aware when reproducibility matters.
-- Back up workflows intentionally; do not treat browser local storage as a backup.
+- Back up workflows intentionally; do not treat browser storage as a backup.
 - Define retention and cleanup for uploads, outputs, caches, and exported packages.
 - Verify that diagnostics are redacted before sharing them.
 

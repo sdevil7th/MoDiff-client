@@ -85,6 +85,7 @@ function editableParamEntries(node: CustomNodeType) {
     ([key, param]) =>
       param.display !== 'input' &&
       param.display !== 'output' &&
+      !USER_BLOCK_PREVIEW_DISPLAYS.has(param.display ?? '') &&
       !param.hidden &&
       !param.isInput &&
       !['image', 'output', 'images', 'latents'].includes(key),
@@ -139,10 +140,16 @@ function portFromEdge(
   direction: 'input' | 'output',
   index: number,
 ): UserBlockPort {
-  const key = safeHandle(handle, `${direction}-${index + 1}`);
+  // A logical reusable port ID may be sanitized. Its binding must retain the
+  // exact existing field, including a visual Block's colon-qualified alias.
+  // Changing both silently points a newly composed Block at a missing socket.
+  const key =
+    typeof handle === 'string' && Object.prototype.hasOwnProperty.call(node.data.params ?? {}, handle)
+      ? handle
+      : safeHandle(handle, `${direction}-${index + 1}`);
   const param = node.data.params?.[key];
   return {
-    id: key,
+    id: safeHandle(key, `${direction}-${index + 1}`),
     label: paramLabel(node, key),
     nodeId: node.id,
     paramKey: key,
@@ -553,11 +560,44 @@ export function userBlockPreviewParamId(nodeId: string, paramKey: string) {
   return `${USER_BLOCK_PREVIEW_PREFIX}${safeHandle(nodeId, 'node')}__${safeHandle(paramKey, 'preview')}`;
 }
 
+function previewBindingId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,383}$/u.test(value);
+}
+
+function previewBindingFieldId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_.:/-]{0,383}$/u.test(value);
+}
+
+function previewCallerBelongsToOwner(nodeId: string, ownerId: string) {
+  if (nodeId === ownerId) return true;
+  const prefix = `block-v2-node:${ownerId.length}:${ownerId}:`;
+  if (!nodeId.startsWith(prefix)) return false;
+  const suffix = nodeId.slice(prefix.length);
+  const semanticId = suffix.slice(suffix.indexOf(':') + 1);
+  return previewBindingId(semanticId) && blockProjectionNodeIdV2(ownerId, semanticId) === nodeId;
+}
+
 export function userBlockPreviewSource(
   blockNodeId: string,
   blockFieldKey: string,
   fieldOptions: Record<string, unknown> | undefined,
 ) {
+  const binding = fieldOptions?.blockPreviewBindingV2;
+  if (
+    isRecord(binding) &&
+    binding.schemaVersion === 2 &&
+    previewBindingId(binding.ownerId) &&
+    previewBindingId(binding.nodeId) &&
+    previewBindingFieldId(binding.outputPortId) &&
+    typeof binding.mediaType === 'string' &&
+    ['image', 'video', 'audio', 'text', 'file'].includes(binding.mediaType) &&
+    previewCallerBelongsToOwner(blockNodeId, binding.ownerId)
+  ) {
+    return {
+      nodeId: blockProjectionNodeIdV2(binding.ownerId, binding.nodeId),
+      fieldKey: binding.outputPortId,
+    };
+  }
   const sourceNodeId =
     typeof fieldOptions?.userBlockSourceNodeId === 'string' ? fieldOptions.userBlockSourceNodeId : null;
   const sourceFieldKey =

@@ -1,5 +1,5 @@
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { Maximize2, Minimize2, Save, Settings2 } from 'lucide-react';
+import { lazy, memo, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { Info, Maximize2, Minimize2, Save, Settings2 } from 'lucide-react';
 import { type NodeProps, useStoreApi, useUpdateNodeInternals } from '@xyflow/react';
 
 import type { CustomNodeType } from '../stores/useFlowStore';
@@ -8,12 +8,15 @@ import { modiffLayout } from '../theme';
 import { BlockNodeFrame, ModiffIconButton } from '../ui';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
 import { syncManagedNodeControlChange } from '../studio/managedControlSync';
-import { blockContainerPreviewViewsV2 } from '../studio/blockRuntimeV2';
+import { blockContainerPreviewViewsV2, projectedStageKindV2 } from '../studio/blockRuntimeV2';
 import ErrorBoundary from './ErrorBoundary';
 import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
 import BlockInterfaceDialogV2 from './BlockInterfaceDialogV2';
 import BlockCrossingPortsV2 from './BlockCrossingPortsV2';
+import CustomNode from './CustomNode';
+
+const StageImplementationDialog = lazy(() => import('./StageImplementationDialog'));
 
 /**
  * Block-shaped view of one upstream Modular Diffusers placement.
@@ -27,6 +30,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [saveChoicesOpen, setSaveChoicesOpen] = useState(false);
   const [interfaceOpen, setInterfaceOpen] = useState(false);
+  const [inspectOpen, setInspectOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   const connectorRef = useRef<HTMLDivElement>(null);
   const reactFlowStore = useStoreApi();
@@ -42,13 +46,17 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
     return state.nodes.find((candidate) => candidate.id === ownerId)?.data.blockInstanceV2;
   });
   const ownerSourceKind = ownerInstance?.definitionSnapshot.source.kind;
+  const stageKind = projectedStageKindV2(ownerInstance, node.data.blockProjectionNodeId);
   const params = useMemo<CustomNodeType['data']['params']>(() => {
     if (!ownerInstance || !node.data.blockProjectionNodeId) return node.data.params;
     const previews = blockContainerPreviewViewsV2(ownerInstance, node.data.blockProjectionNodeId);
     if (!previews.length) return node.data.params;
     return Object.assign({ ...node.data.params }, ...previews.map((preview) => preview.params));
   }, [node.data.params, node.data.blockProjectionNodeId, ownerInstance]);
-  const label = node.data.label || node.data.action || node.data.blockProjectionNodeId || 'Modular Diffusers Block';
+  const label =
+    stageKind === 'decode'
+      ? 'Decode Latents'
+      : node.data.label || node.data.action || node.data.blockProjectionNodeId || 'Modular Diffusers Block';
   const isContainer = node.data.blockProjectionContainer === true;
   const expanded = isContainer && node.data.blockProjectionContainerExpanded !== false;
   const childCount = node.data.blockProjectionChildCount ?? 0;
@@ -100,7 +108,10 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
       return;
     // This is derived DOM geometry, not a new user edit. Recording it after
     // Undo discarded the pending Redo before the user could restore a wire.
-    setNodeSize(node.id, current.width ?? 280, minimumHeight, { history: false });
+    // This is a measured minimum of the currently collapsed frame, rather
+    // than an old expanded envelope. Mark that proven compact geometry so
+    // hierarchy layout does not discard it as an unmarked legacy size.
+    setNodeSize(node.id, current.width ?? 280, minimumHeight, { history: false, sizeMode: 'compact' });
     updateNodeInternals(node.id);
     scheduleNodeLayoutSync();
   }, [
@@ -114,7 +125,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
   ]);
 
   useLayoutEffect(() => {
-    if (expanded) return undefined;
+    if (expanded || stageKind) return undefined;
     syncCollapsedMinimumHeight();
     if (typeof ResizeObserver === 'undefined') return undefined;
     let frame = 0;
@@ -131,7 +142,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
       observer.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [expanded, syncCollapsedMinimumHeight]);
+  }, [expanded, stageKind, syncCollapsedMinimumHeight]);
 
   const handleResizeStart = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -149,6 +160,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
           node.id,
           Math.max(260, Math.min(modiffLayout.maxNodeWidth, initialWidth + (moveEvent.clientX - startX) / zoom)),
           Math.max(minimumHeight, initialHeight + (moveEvent.clientY - startY) / zoom),
+          { sizeMode: 'compact' },
         );
         scheduleNodeLayoutSync();
       };
@@ -174,6 +186,103 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
     ],
   );
 
+  const actions = (
+    <>
+      {stageKind ? (
+        <ModiffIconButton
+          className="nodrag nowheel"
+          size="compact"
+          label="Inspect implementation"
+          onClick={() => setInspectOpen(true)}
+        >
+          <Info size={15} />
+        </ModiffIconButton>
+      ) : null}
+      <ModiffIconButton
+        className="nodrag nowheel"
+        size="compact"
+        label="Configure exposed inputs, outputs, and controls"
+        onClick={() => setInterfaceOpen(true)}
+        data-testid={`user-block-configure-${node.id}`}
+      >
+        <Settings2 size={15} />
+      </ModiffIconButton>
+      <ModiffIconButton
+        className="nodrag nowheel"
+        size="compact"
+        label={stageKind ? `Save ${label} as User Node` : `Save changes to ${label}`}
+        onClick={() => setSaveChoicesOpen(true)}
+        data-testid={`projected-block-save-${node.id}`}
+      >
+        <Save size={15} />
+      </ModiffIconButton>
+    </>
+  );
+  const controls = (
+    <NodeContent
+      nodeId={node.id}
+      params={params}
+      updateStore={updateStore}
+      module={node.data.module || ''}
+      action={node.data.action || ''}
+      mode="controls"
+      executionStatus={node.data.executionStatus}
+      progressMessage={node.data.progressMessage}
+    />
+  );
+  const connectors = (
+    <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
+      <NodeContent
+        nodeId={node.id}
+        params={Object.fromEntries(
+          Object.entries(params).filter(([, param]) => !param.fieldOptions?.blockConnectedCrossingV2),
+        )}
+        updateStore={updateStore}
+        module={node.data.module || ''}
+        action={node.data.action || ''}
+        mode="connectors"
+      />
+      <BlockCrossingPortsV2 nodeId={node.id} />
+    </ErrorBoundary>
+  );
+  const dialogs = (
+    <>
+      {interfaceOpen ? <BlockInterfaceDialogV2 nodeId={node.id} onClose={() => setInterfaceOpen(false)} /> : null}
+      {saveChoicesOpen ? <BlockSaveDialogV2 nodeId={node.id} onClose={() => setSaveChoicesOpen(false)} /> : null}
+    </>
+  );
+  if (stageKind)
+    return (
+      <>
+        <CustomNode
+          {...node}
+          data={{ ...node.data, label }}
+          surface={{
+            testId: stageKind === 'decode' ? `decode-stage-${node.id}` : `shot-stage-${stageKind}-${node.id}`,
+            actions,
+            controls,
+            connectors,
+            setSize: (width, height) => setNodeSize(node.id, width, height, { sizeMode: 'compact' }),
+          }}
+        />
+        {ownerInstance && inspectOpen ? (
+          <Suspense fallback={null}>
+            <StageImplementationDialog
+              label={label}
+              instance={ownerInstance}
+              semanticNodeId={node.data.blockProjectionNodeId}
+              onClose={() => setInspectOpen(false)}
+              onConfigure={() => {
+                setInspectOpen(false);
+                setInterfaceOpen(true);
+              }}
+            />
+          </Suspense>
+        ) : null}
+        {dialogs}
+      </>
+    );
+
   return (
     <>
       <BlockNodeFrame
@@ -191,24 +300,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
         parentNodeId={node.parentId}
         actions={
           <>
-            <ModiffIconButton
-              className="nodrag nowheel"
-              size="compact"
-              label="Configure exposed inputs, outputs, and controls"
-              onClick={() => setInterfaceOpen(true)}
-              data-testid={`user-block-configure-${node.id}`}
-            >
-              <Settings2 size={15} />
-            </ModiffIconButton>
-            <ModiffIconButton
-              className="nodrag nowheel"
-              size="compact"
-              label={`Save changes to ${label}`}
-              onClick={() => setSaveChoicesOpen(true)}
-              data-testid={`projected-block-save-${node.id}`}
-            >
-              <Save size={15} />
-            </ModiffIconButton>
+            {actions}
             {isContainer ? (
               <ModiffIconButton
                 className="nodrag nowheel"
@@ -225,16 +317,7 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
         controls={
           hasVisibleControls ? (
             <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-              <NodeContent
-                nodeId={node.id}
-                params={params}
-                updateStore={updateStore}
-                module={node.data.module || ''}
-                action={node.data.action || ''}
-                mode="controls"
-                executionStatus={node.data.executionStatus}
-                progressMessage={node.data.progressMessage}
-              />
+              {controls}
             </ErrorBoundary>
           ) : (
             <div className="grid min-h-16 content-center gap-1 text-xs text-modiff-subtle-text">
@@ -249,25 +332,10 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
             </div>
           )
         }
-        connectors={
-          <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
-            <NodeContent
-              nodeId={node.id}
-              params={Object.fromEntries(
-                Object.entries(params).filter(([, param]) => !param.fieldOptions?.blockConnectedCrossingV2),
-              )}
-              updateStore={updateStore}
-              module={node.data.module || ''}
-              action={node.data.action || ''}
-              mode="connectors"
-            />
-            <BlockCrossingPortsV2 nodeId={node.id} />
-          </ErrorBoundary>
-        }
+        connectors={connectors}
         connectorsWhenExpanded
       />
-      {interfaceOpen ? <BlockInterfaceDialogV2 nodeId={node.id} onClose={() => setInterfaceOpen(false)} /> : null}
-      {saveChoicesOpen ? <BlockSaveDialogV2 nodeId={node.id} onClose={() => setSaveChoicesOpen(false)} /> : null}
+      {dialogs}
     </>
   );
 });

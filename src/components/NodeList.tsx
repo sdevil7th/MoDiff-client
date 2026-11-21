@@ -369,7 +369,7 @@ function NodeList() {
         </Suspense>
       ) : null}
       <p className="px-3 pb-2 text-xs text-modiff-subtle-text">
-        Nodes, task Blocks and Saved Blocks share this library. Choose a pipeline to add nodes with its declared inputs.
+        Saved Blocks reuse canvas nodes. Custom nodes run your Python code.
       </p>
 
       <div className="min-h-0 flex-1 select-none overflow-y-auto p-1">
@@ -509,6 +509,7 @@ function getIcon(category: string) {
     case 'embedding':
       return <LayoutGrid size={16} />;
     case 'upscaler':
+    case 'image & video':
       return <Maximize size={16} />;
     case 'image_filter':
       return <Filter size={16} />;

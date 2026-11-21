@@ -83,13 +83,19 @@ for (const entry of manifest.examples ?? []) {
   const publicPreviewPath = `/template-gallery/${entry.templateId}.card-preview.mp4`;
   const previewPath = join(publicRoot, publicPreviewPath.replace(/^\//, ''));
   const preview = templateGalleryContract.video.cardPreview;
-  const durationSeconds = Math.min(Number(entry.durationSeconds ?? preview.durationSeconds), preview.durationSeconds);
+  const loopShortSource = Boolean(
+    template.example?.expectedOutput?.sourceTiming && Number(entry.durationSeconds) < preview.minimumDurationSeconds,
+  );
+  const durationSeconds = loopShortSource
+    ? preview.durationSeconds
+    : Math.min(Number(entry.durationSeconds ?? preview.durationSeconds), preview.durationSeconds);
   const result = spawnSync(
     ffmpeg,
     [
       '-y',
       '-v',
       'error',
+      ...(loopShortSource ? ['-stream_loop', '-1'] : []),
       '-i',
       sourcePath,
       '-t',

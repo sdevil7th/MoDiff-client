@@ -1,10 +1,22 @@
 import type { NodeParams } from '../stores/useNodeStore';
 import type { BlockControlV2, BlockInstanceV2, BlockPortV2 } from '../studio/blockSchemaV2';
 import { workflowTaskCategory } from './workflowTaskBrowser';
+import {
+  COMBINED_INPUT_PROVIDER,
+  VISUAL_STAGE_PROVIDER,
+  visualOperationStageKind,
+  visualStageHasNestedStructure,
+} from './visualOperationGroupProjection';
 
 /** Scope by declared encoder tasks, not by model names or unrelated custom nodes. */
 export function isFocusedImageEncoding(instance: BlockInstanceV2 | undefined) {
-  if (instance?.definitionSnapshot.source.provider !== 'modiff.visual-stages.v1/inputs') return false;
+  if (
+    !instance ||
+    ![`${VISUAL_STAGE_PROVIDER}inputs`, COMBINED_INPUT_PROVIDER].includes(
+      instance.definitionSnapshot.source.provider ?? '',
+    )
+  )
+    return false;
   const encoders = instance.effectiveGraph.nodes.flatMap((stage) => {
     const operation = (
       stage.data.operationAuthoring as { operation?: { task?: string; nodeType?: string } } | undefined
@@ -21,7 +33,9 @@ export function isFocusedImageEncoding(instance: BlockInstanceV2 | undefined) {
 
 /** Only the approved image/audio Guidance recipe gets the ordinary node view. */
 export function isFocusedGuidance(instance: BlockInstanceV2 | undefined) {
-  if (instance?.definitionSnapshot.source.provider !== 'modiff.visual-stages.v1/guidance') return false;
+  if (!instance) return false;
+  const provider = instance?.definitionSnapshot.source.provider;
+  if (provider !== `${VISUAL_STAGE_PROVIDER}guidance` && !isFocusedImageEncoding(instance)) return false;
   const stages = instance.effectiveGraph.nodes.flatMap((stage) => {
     const operation = (
       stage.data.operationAuthoring as { operation?: { task?: string; nodeType?: string } } | undefined
@@ -35,7 +49,9 @@ export function isFocusedGuidance(instance: BlockInstanceV2 | undefined) {
 }
 
 export function isFocusedStageNode(instance: BlockInstanceV2 | undefined) {
-  return isFocusedImageEncoding(instance) || isFocusedGuidance(instance);
+  if (!instance?.effectiveGraph.nodes.length || visualStageHasNestedStructure(instance)) return false;
+  const kind = visualOperationStageKind(instance);
+  return Boolean(kind && (kind !== 'guidance' || isFocusedGuidance(instance)));
 }
 
 /** Rendering only: never remove a declared boundary or an existing connection. */

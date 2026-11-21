@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import config from '../../app.config';
 import { useStudioStore } from '../stores/useStudioStore';
+import { useNodesStore } from '../stores/useNodeStore';
 import { RequestError, requestJson } from '../utils/requestJson';
 import { stableStringify } from './templateExactness';
+import { matchesCleanWorkflowHydrationBaseline, type WorkflowHydrationBaseline } from './workflowHydrationBaseline';
 import type { WorkflowTab } from './types';
+import { forgetFreshWorkflowId, isFreshWorkflowId } from './workflowDocumentOrigin';
 
 function clientId() {
   const key = 'modiff-workflow-client-id';
@@ -49,8 +52,25 @@ function contentSignature(tab: WorkflowTab) {
 }
 
 const backendSignatures = new Map<string, string>();
+const backendBaselines = new Map<string, WorkflowHydrationBaseline>();
+
+function backendOwnsDocument(tab: WorkflowTab) {
+  if (backendSignatures.get(tab.id) === contentSignature(tab)) return true;
+  const baseline = backendBaselines.get(tab.id);
+  return Boolean(baseline && matchesCleanWorkflowHydrationBaseline(tab, baseline));
+}
 const pendingSignatures = new Map<string, string>();
 const saveChains = new Map<string, Promise<void>>();
+type BackendWorkflowChange = { id: string; tab: WorkflowTab | null };
+const backendWorkflowListeners = new Set<(change: BackendWorkflowChange) => void>();
+
+/** Observe acknowledged documents without opening tabs or refetching on edits. */
+export function subscribeBackendWorkflowChanges(listener: (change: BackendWorkflowChange) => void) {
+  backendWorkflowListeners.add(listener);
+  return () => {
+    backendWorkflowListeners.delete(listener);
+  };
+}
 const CLOSED_WORKFLOW_TABS_KEY = 'modiff-closed-workflow-tabs';
 const WORKFLOW_SYNC_TIMEOUT_MS = 120_000;
 
@@ -78,6 +98,7 @@ export function isWorkflowTabClosed(id: string) {
 }
 
 export function markWorkflowTabClosed(id: string) {
+  forgetFreshWorkflowId(id);
   closedWorkflowIds.add(id);
   persistClosedWorkflowIds();
 }
@@ -89,32 +110,62 @@ export function markWorkflowTabOpen(id: string) {
 
 /** Record a server-originated document so websocket updates are not echoed back. */
 export function markBackendWorkflow(tab: WorkflowTab) {
+  forgetFreshWorkflowId(tab.id);
   backendSignatures.set(tab.id, contentSignature(tab));
+  const registry = useNodesStore.getState().nodesRegistry;
+  // Capture only this document's definitions. Later registry changes cannot
+  // authorize ignoring fields absent from the acknowledged document.
+  const definitions = Object.fromEntries(
+    (Array.isArray(tab.snapshot.nodes) ? tab.snapshot.nodes : []).flatMap((node) => {
+      if (!isRecord(node) || !isRecord(node.data)) return [];
+      if (typeof node.data.module !== 'string' || typeof node.data.action !== 'string') return [];
+      const key = `${node.data.module}.${node.data.action}`;
+      return [[key, registry[key]]];
+    }),
+  );
+  if (Array.isArray(tab.snapshot.nodes)) {
+    backendBaselines.set(
+      tab.id,
+      JSON.parse(
+        JSON.stringify({
+          tab: { ...tab, dirty: false },
+          canvasEpoch: useStudioStore.getState().workflowCanvasEpoch,
+          registry: definitions,
+        }),
+      ) as WorkflowHydrationBaseline,
+    );
+  } else {
+    backendBaselines.delete(tab.id);
+  }
   pendingSignatures.delete(tab.id);
+  backendWorkflowListeners.forEach((listener) => listener({ id: tab.id, tab }));
 }
 
 export function forgetBackendWorkflow(id: string) {
+  forgetFreshWorkflowId(id);
   backendSignatures.delete(id);
+  backendBaselines.delete(id);
   pendingSignatures.delete(id);
   closedWorkflowIds.delete(id);
   persistClosedWorkflowIds();
+  backendWorkflowListeners.forEach((listener) => listener({ id, tab: null }));
 }
 
 /**
  * A delayed canvas checkpoint can mark a tab dirty after an explicit save
- * acknowledgement even when its document is still byte-identical to the
- * backend-owned revision. Clear only that exact false-positive marker; a
- * genuinely newer local document remains dirty.
+ * acknowledgement, or after registry hydration adds an empty preview or
+ * disconnected port metadata. Reuse the narrow restore comparison without
+ * changing saved values; a genuinely newer local document remains dirty.
  */
 export function clearDirtyMarkerForExactBackendDocument(id: string) {
   const current = useStudioStore.getState().workflowTabs.find((tab) => tab.id === id);
   if (!current?.dirty) return false;
   const signature = contentSignature(current);
-  if (backendSignatures.get(id) !== signature) return false;
+  if (!backendOwnsDocument(current)) return false;
   let cleared = false;
   useStudioStore.setState((state) => {
     const latest = state.workflowTabs.find((tab) => tab.id === id);
-    if (!latest?.dirty || contentSignature(latest) !== signature || backendSignatures.get(id) !== signature) {
+    if (!latest?.dirty || contentSignature(latest) !== signature || !backendOwnsDocument(latest)) {
       return state;
     }
     cleared = true;
@@ -126,6 +177,8 @@ export function clearDirtyMarkerForExactBackendDocument(id: string) {
 }
 
 async function putWorkflow(tab: WorkflowTab, signal?: AbortSignal) {
+  // Consume before dispatch: a lost/aborted response may still have saved remotely.
+  forgetFreshWorkflowId(tab.id);
   const payload = await requestJson(`${config.serverAddress}/workflows/${encodeURIComponent(tab.id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -142,6 +195,20 @@ async function putWorkflow(tab: WorkflowTab, signal?: AbortSignal) {
     timeoutMs: WORKFLOW_SYNC_TIMEOUT_MS,
   });
   return backendWorkflowTab(payload);
+}
+
+export async function readWorkflowForHydration(tab: WorkflowTab, signal?: AbortSignal) {
+  if (isFreshWorkflowId(tab.id)) return null;
+  try {
+    const payload = await requestJson(`${config.serverAddress}/workflows/${encodeURIComponent(tab.id)}`, {
+      signal,
+      timeoutMs: WORKFLOW_SYNC_TIMEOUT_MS,
+    });
+    return backendWorkflowTab(payload);
+  } catch (error) {
+    if (error instanceof RequestError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 /** Persist a complete backend document without implicitly opening it as a browser tab. */
@@ -195,7 +262,7 @@ export async function deleteWorkflowNow(id: string) {
   useStudioStore.getState().removeBackendWorkflow(id);
 }
 
-function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => void) {
+export function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => void) {
   const signature = contentSignature(tab);
   pendingSignatures.set(tab.id, signature);
   const previous = saveChains.get(tab.id) ?? Promise.resolve();
@@ -204,6 +271,13 @@ function queueWorkflowPut(tab: WorkflowTab, onError: (error: unknown) => void) {
     .then(async () => {
       const current = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
       if (!current || contentSignature(current) !== signature) return;
+      // An explicit Save or websocket acknowledgement may have persisted this
+      // exact document while the autosave waited on the shared write chain.
+      if (backendOwnsDocument(current)) {
+        if (pendingSignatures.get(tab.id) === signature) pendingSignatures.delete(tab.id);
+        clearDirtyMarkerForExactBackendDocument(tab.id);
+        return;
+      }
       try {
         const saved = await putWorkflow(current);
         if (!saved) return;
@@ -255,6 +329,7 @@ export function useWorkflowBackendSync() {
     const cancelHydration = () => {
       if (cancelled) return;
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       controller.abort(new Error('Workflow hydration page lifecycle ended.'));
     };
     // A document reload/close can destroy an in-flight network request without running React's
@@ -272,25 +347,39 @@ export function useWorkflowBackendSync() {
         // other saved document remains available from My workflows or a run.
         for (const tab of store.workflowTabs) {
           if (isWorkflowTabClosed(tab.id)) continue;
-          let backendTab: WorkflowTab | null = null;
-          try {
-            const payload = await requestJson(`${config.serverAddress}/workflows/${encodeURIComponent(tab.id)}`, {
-              signal: controller.signal,
-              timeoutMs: WORKFLOW_SYNC_TIMEOUT_MS,
-            });
-            backendTab = backendWorkflowTab(payload);
-          } catch (error) {
-            if (!(error instanceof RequestError && error.status === 404)) throw error;
-          }
+          const cleanBaseline = tab.dirty ? undefined : (JSON.parse(JSON.stringify(tab)) as WorkflowTab);
+          const readRevision =
+            useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id)?.backendRevision ?? 0;
+          const backendTab = await readWorkflowForHydration(tab, controller.signal);
           if (cancelled) return;
-          if (backendTab && !tab.dirty) {
+          const current = useStudioStore.getState();
+          const latestTab = current.workflowTabs.find((item) => item.id === tab.id);
+          if (isWorkflowTabClosed(tab.id) || !latestTab) continue;
+          // A save/broadcast can overtake this GET. The store rejects its older
+          // revision; its stale content must not replace the acknowledged signature either.
+          if (backendTab && (latestTab.backendRevision ?? 0) > (backendTab.backendRevision ?? 0)) continue;
+          // Dirty protects an unacknowledged document, including a committed PUT whose response was lost.
+          // Reuse only an exact match with the latest open tab; the normal merge still protects live edits.
+          if (backendTab && (!tab.dirty || contentSignature(latestTab) === contentSignature(backendTab))) {
             markBackendWorkflow(backendTab);
-            store.mergeBackendWorkflow(backendTab);
+            current.mergeBackendWorkflow(backendTab, {
+              hydrationBaseline: cleanBaseline && {
+                tab: cleanBaseline,
+                canvasEpoch: store.workflowCanvasEpoch,
+                registry: useNodesStore.getState().nodesRegistry,
+              },
+            });
+            continue;
+          }
+          // Skip a missing read only when an exact acknowledgement overtook it.
+          // An acknowledgement predating this GET cannot waive genuine recreation.
+          if (!backendTab && (latestTab.backendRevision ?? 0) > readRevision && backendOwnsDocument(latestTab)) {
+            clearDirtyMarkerForExactBackendDocument(tab.id);
             continue;
           }
           // A new local document, or a synchronous checkpoint newer than the
           // last backend revision, must be uploaded before hydration finishes.
-          const saved = await putWorkflow(tab, controller.signal);
+          const saved = await putWorkflow(latestTab, controller.signal);
           if (cancelled || !saved) continue;
           markBackendWorkflow(saved);
           const latest = useStudioStore.getState().workflowTabs.find((item) => item.id === tab.id);
@@ -308,7 +397,6 @@ export function useWorkflowBackendSync() {
     return () => {
       window.removeEventListener('pagehide', handlePageHide);
       cancelHydration();
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, [workflowCanvasHydrated]);
 
@@ -318,7 +406,7 @@ export function useWorkflowBackendSync() {
       const current = useStudioStore.getState().workflowTabs;
       current.forEach((tab) => {
         const signature = contentSignature(tab);
-        if (backendSignatures.get(tab.id) === signature) {
+        if (backendOwnsDocument(tab)) {
           if (tab.dirty) clearDirtyMarkerForExactBackendDocument(tab.id);
           return;
         }

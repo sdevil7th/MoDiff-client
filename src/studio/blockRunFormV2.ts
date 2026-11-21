@@ -27,9 +27,11 @@ type OutputLike = Readonly<{
 }>;
 
 const CONTROL_TO_FORM_FIELD: Readonly<Record<string, keyof StudioFormState>> = Object.freeze({
+  audio: 'sourceAudio',
   auto_offload: 'autoOffload',
   batch_size: 'batchSize',
   conditioning_scale: 'conditioningScale',
+  chunk_length_seconds: 'speechChunkSeconds',
   control_image: 'controlImage',
   control_mode: 'controlMode',
   control_video: 'controlVideo',
@@ -43,6 +45,7 @@ const CONTROL_TO_FORM_FIELD: Readonly<Record<string, keyof StudioFormState>> = O
   ip_adapter_image: 'ipAdapterImage',
   ip_adapter_scale: 'ipAdapterScale',
   lyrics: 'lyrics',
+  language: 'speechLanguage',
   mask_image: 'maskImage',
   mask_video: 'maskVideo',
   max_sequence_length: 'maxSequenceLength',
@@ -63,9 +66,22 @@ const CONTROL_TO_FORM_FIELD: Readonly<Record<string, keyof StudioFormState>> = O
   source_audio: 'sourceAudio',
   source_video: 'sourceVideo',
   strength: 'strength',
+  stride_length_seconds: 'speechStrideSeconds',
+  timestamps: 'speechTimestamps',
   width: 'width',
   modelVariant: 'modelRepo',
 });
+
+const SINGLE_MEDIA_FORM_FIELDS = new Set<keyof StudioFormState>([
+  'sourceAudio',
+  'referenceAudio',
+  'sourceVideo',
+  'controlVideo',
+  'maskVideo',
+  'controlImage',
+  'maskImage',
+  'ipAdapterImage',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -98,7 +114,20 @@ function formFieldForControl(controlId: string, bindingFieldId: string, form: St
   );
 }
 
-export function projectBlockControlValueV2(value: BlockJsonValue, current: StudioFormState[keyof StudioFormState]) {
+export function projectBlockControlValueV2(
+  value: BlockJsonValue,
+  current: StudioFormState[keyof StudioFormState],
+  field?: keyof StudioFormState,
+) {
+  if (
+    field &&
+    SINGLE_MEDIA_FORM_FIELDS.has(field) &&
+    typeof current === 'string' &&
+    Array.isArray(value) &&
+    value.length === 1 &&
+    typeof value[0] === 'string'
+  )
+    return value[0];
   if (typeof current === 'number') {
     if (isRecord(value) && Object.prototype.hasOwnProperty.call(value, 'value')) {
       return projectBlockControlValueV2(value.value as BlockJsonValue, current);
@@ -177,7 +206,7 @@ export function registeredBlockRunFormV2(
     if (value === undefined) return;
     const field = formFieldForControl(control.controlId, control.binding.fieldId, projected);
     if (!field) return;
-    (projected as Record<string, unknown>)[field] = projectBlockControlValueV2(value, projected[field]);
+    (projected as Record<string, unknown>)[field] = projectBlockControlValueV2(value, projected[field], field);
     if (
       field === 'seed' &&
       isRecord(value) &&
@@ -231,7 +260,7 @@ export function userBlockRunFormV2(instanceValue: BlockInstanceV2) {
       if (value === undefined) continue;
       const field = formFieldForControl(fieldId, fieldId, projected);
       if (!field || ['modelType', 'modelRepo', 'mode', 'resourceMode'].includes(field)) continue;
-      const normalized = projectBlockControlValueV2(value as BlockJsonValue, projected[field]);
+      const normalized = projectBlockControlValueV2(value as BlockJsonValue, projected[field], field);
       if (values.has(field) && JSON.stringify(values.get(field)) !== JSON.stringify(normalized)) return null;
       values.set(field, normalized as BlockJsonValue);
       if (field === 'seed' && isRecord(value) && typeof value.isRandom === 'boolean')
