@@ -1760,6 +1760,53 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
     assert.equal(JSON.stringify(instance), saved, catalogId);
   }
 
+  for (const workflow of ['image2video', 'text2image', 'text2video', 'video2video', 'text2video_with_sound']) {
+    const catalogId = `diffusers.modular:Cosmos3OmniModularPipeline:${workflow}`;
+    const result = [...compilerSuccesses.values()].find(({ definition }) => definition.id === catalogId);
+    assert.ok(result, catalogId);
+    const instance = result.compiledInstance;
+    const wrapperId = 'container:decode/standard';
+    if (workflow === 'text2video_with_sound') {
+      assert.equal(runtime.projectedStageKindV2(instance, wrapperId), null, catalogId);
+      continue;
+    }
+    const expanded = runtime.setBlockPresentationV2(instance, {
+      expanded: true,
+      collapsedContainerNodeIds: instance.presentation.collapsedContainerNodeIds.filter(
+        (id) => id !== 'container:decode',
+      ),
+    });
+    const projection = runtime.materializeBlockProjectionV2(runtime.createBlockRootNodeV2(expanded));
+    const wrapper = projection.nodes.find((node) => node.data.blockProjectionNodeId === wrapperId);
+    assert.ok(wrapper, catalogId);
+    assert.equal(runtime.projectedStageKindV2(expanded, wrapperId), 'decode', catalogId);
+    assert.equal(wrapper.data.blockProjectionContainerExpanded, false, catalogId);
+    assert.equal(
+      projection.nodes.some((node) => node.data.blockProjectionNodeId === 'decode'),
+      false,
+      catalogId,
+    );
+    const sockets = Object.entries(wrapper.data.params).map(([handle, field]) => [
+      runtime.blockProjectionConnectionEndpointV2(wrapper, handle, field.display)?.fieldOrPortId,
+      field.display,
+      field.type,
+    ]);
+    assert.deepEqual(
+      sockets.sort(),
+      [
+        ['latents', 'input', 'latent'],
+        ['output_type', 'input', 'string'],
+        ['state_in', 'input', 'modular_workflow_state'],
+        ['state_out', 'output', 'modular_workflow_state'],
+        ['videos', 'output', workflow === 'text2image' ? 'image' : 'video'],
+      ].sort(),
+      catalogId,
+    );
+    assert.deepEqual(runtime.blockOperationGraphV2(expanded), runtime.blockOperationGraphV2(instance), catalogId);
+    assert.deepEqual(expanded.definitionSnapshot, instance.definitionSnapshot, catalogId);
+    assert.deepEqual(expanded.effectiveGraph, instance.effectiveGraph, catalogId);
+  }
+
   const qwenDefinition = snapshot.library.definitions.find(
     (definition) => definition.id === 'diffusers.modular:QwenImageModularPipeline:text2image',
   );

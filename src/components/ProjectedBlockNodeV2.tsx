@@ -8,7 +8,7 @@ import { modiffLayout } from '../theme';
 import { BlockNodeFrame, ModiffIconButton } from '../ui';
 import { useNodeLayoutSync } from '../utils/useNodeLayoutSync';
 import { syncManagedNodeControlChange } from '../studio/managedControlSync';
-import { blockContainerPreviewViewsV2, storyboardStageKindV2 } from '../studio/blockRuntimeV2';
+import { blockContainerPreviewViewsV2, projectedStageKindV2 } from '../studio/blockRuntimeV2';
 import ErrorBoundary from './ErrorBoundary';
 import NodeContent from './NodeContent';
 import BlockSaveDialogV2 from './BlockSaveDialogV2';
@@ -46,14 +46,17 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
     return state.nodes.find((candidate) => candidate.id === ownerId)?.data.blockInstanceV2;
   });
   const ownerSourceKind = ownerInstance?.definitionSnapshot.source.kind;
-  const stageKind = storyboardStageKindV2(ownerInstance, node.data.blockProjectionNodeId);
+  const stageKind = projectedStageKindV2(ownerInstance, node.data.blockProjectionNodeId);
   const params = useMemo<CustomNodeType['data']['params']>(() => {
     if (!ownerInstance || !node.data.blockProjectionNodeId) return node.data.params;
     const previews = blockContainerPreviewViewsV2(ownerInstance, node.data.blockProjectionNodeId);
     if (!previews.length) return node.data.params;
     return Object.assign({ ...node.data.params }, ...previews.map((preview) => preview.params));
   }, [node.data.params, node.data.blockProjectionNodeId, ownerInstance]);
-  const label = node.data.label || node.data.action || node.data.blockProjectionNodeId || 'Modular Diffusers Block';
+  const label =
+    stageKind === 'decode'
+      ? 'Decode Latents'
+      : node.data.label || node.data.action || node.data.blockProjectionNodeId || 'Modular Diffusers Block';
   const isContainer = node.data.blockProjectionContainer === true;
   const expanded = isContainer && node.data.blockProjectionContainerExpanded !== false;
   const childCount = node.data.blockProjectionChildCount ?? 0;
@@ -253,8 +256,9 @@ const ProjectedBlockNodeV2 = memo((node: NodeProps<CustomNodeType>) => {
       <>
         <CustomNode
           {...node}
+          data={{ ...node.data, label }}
           surface={{
-            testId: `shot-stage-${stageKind}-${node.id}`,
+            testId: stageKind === 'decode' ? `decode-stage-${node.id}` : `shot-stage-${stageKind}-${node.id}`,
             actions,
             controls,
             connectors,

@@ -1912,6 +1912,42 @@ export function storyboardStageKindV2(instance: BlockInstanceV2 | undefined, sem
   }
 }
 
+const COSMOS_DECODE_WRAPPER_ID = 'container:decode/standard';
+
+function compactCosmosDecoderV2(instance: BlockInstanceV2, nodeId: string | undefined) {
+  const { source, ownership } = instance.definitionSnapshot;
+  if (
+    nodeId !== COSMOS_DECODE_WRAPPER_ID ||
+    ownership.kind !== 'registered' ||
+    source.pipelineClass !== 'Cosmos3OmniModularPipeline' ||
+    !/^(?:image2video|text2image|text2video|video2video)$/u.test(source.workflow ?? '')
+  )
+    return null;
+  const graph = instance.effectiveGraph;
+  const wrapper = graph.nodes.find((node) => node.nodeId === nodeId);
+  if (wrapper?.modularDiffusers?.blockClass !== 'Cosmos3DecodeStep' || wrapper.containerInterface) return null;
+  const parents = blockGraphParentIdsV2(graph);
+  const children = graph.nodes.filter((node) => parents.get(node.nodeId) === nodeId);
+  const decoder = children[0];
+  if (
+    children.length !== 1 ||
+    !decoder ||
+    decoder.nodeId !== 'decode' ||
+    decoder.modularDiffusers?.blockClass !== 'Cosmos3VideoDecodeStep' ||
+    decoder.containerInterface ||
+    [...parents.values()].includes(decoder.nodeId) ||
+    Object.values(sourceParams(decoder)).some((field) => !field.hidden && !connectorDirection(field))
+  )
+    return null;
+  return decoder;
+}
+
+export function projectedStageKindV2(instance: BlockInstanceV2 | undefined, semanticNodeId: string | undefined) {
+  return instance && compactCosmosDecoderV2(instance, semanticNodeId)
+    ? 'decode'
+    : storyboardStageKindV2(instance, semanticNodeId);
+}
+
 function collapsedCanvasContainerIdsV2(instance: BlockInstanceV2) {
   const collapsed = new Set(instance.presentation.collapsedContainerNodeIds ?? []);
   if (instance.definitionSnapshot.source.provider === STORYBOARD_SHOT_PROVIDER) {
@@ -1919,6 +1955,7 @@ function collapsedCanvasContainerIdsV2(instance: BlockInstanceV2) {
       if (storyboardStageKindV2(instance, node.nodeId)) collapsed.add(node.nodeId);
     }
   }
+  if (compactCosmosDecoderV2(instance, COSMOS_DECODE_WRAPPER_ID)) collapsed.add(COSMOS_DECODE_WRAPPER_ID);
   return collapsed;
 }
 
@@ -2151,10 +2188,25 @@ function blockProjectionSurfaceV2(instance: BlockInstanceV2): BlockProjectionSur
       nodeId: port.binding.nodeId,
       fieldOrPortId: port.binding.fieldOrPortId,
     };
-    const preferred = { label: port.label, valueType: port.valueType, required: port.required };
+    const preferred = {
+      label: registeredOutputLabelV2(instance, port),
+      valueType: port.valueType,
+      required: port.required,
+    };
     addEndpoint(endpoint, preferred);
     addEndpointToVisibleContainers(endpoint, preferred);
   });
+
+  // This single-operation stage keeps every native socket, including optional
+  // sockets that do not participate in a default crossing connection.
+  const compactDecoder = compactCosmosDecoderV2(instance, COSMOS_DECODE_WRAPPER_ID);
+  if (compactDecoder && visibleNodeIds.has(COSMOS_DECODE_WRAPPER_ID)) {
+    for (const [fieldOrPortId, field] of Object.entries(sourceParams(compactDecoder))) {
+      const direction = connectorDirection(field);
+      if (!direction || field.hidden) continue;
+      addEndpointAtNode(COSMOS_DECODE_WRAPPER_ID, { direction, nodeId: compactDecoder.nodeId, fieldOrPortId }, {});
+    }
+  }
 
   // A nested Block's declared public sockets also remain available on its
   // unopened descendants. Do not leak a local interface into ancestors above

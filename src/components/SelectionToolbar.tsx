@@ -1,6 +1,6 @@
 import { moveBlockSelectionPreparedV2, topLevelBlockSelectionV2 } from '../studio/blockSelectionMovesV2';
 import { isFocusedStageNode } from '../workflow/encodingNodePresentation';
-import { storyboardStageKindV2 } from '../studio/blockRuntimeV2';
+import { projectedStageKindV2 } from '../studio/blockRuntimeV2';
 import {
   forwardRef,
   lazy,
@@ -171,9 +171,9 @@ export function SelectionToolbar({
     singleNode.data.blockProjectionNodeId
       ? singleNode
       : null;
-  const isShotStage = Boolean(
+  const isCompactStage = Boolean(
     singleProjectedModular &&
-    storyboardStageKindV2(
+    projectedStageKindV2(
       nodes.find((node) => node.id === singleProjectedModular.data.blockProjectionOwnerId)?.data.blockInstanceV2,
       singleProjectedModular.data.blockProjectionNodeId,
     ),
@@ -355,7 +355,7 @@ export function SelectionToolbar({
 
   const handleToggleProjectedContainer = useCallback(() => {
     if (
-      isShotStage ||
+      isCompactStage ||
       !singleProjectedModular?.data.blockProjectionContainer ||
       !singleProjectedModular.data.blockProjectionOwnerId ||
       !singleProjectedModular.data.blockProjectionNodeId
@@ -366,7 +366,7 @@ export function SelectionToolbar({
       singleProjectedModular.data.blockProjectionNodeId,
     );
     useStudioStore.getState().saveActiveWorkflowTab(true);
-  }, [isShotStage, singleProjectedModular, toggleBlockContainerExpandedV2]);
+  }, [isCompactStage, singleProjectedModular, toggleBlockContainerExpandedV2]);
 
   const handleDuplicateNode = useCallback(() => {
     if (!singleActionNode) return;
@@ -552,13 +552,13 @@ export function SelectionToolbar({
       {singleProjectedModular && (
         <>
           <ToolbarActionButton
-            label={isShotStage ? 'Save stage as User Node' : 'Save Block changes'}
+            label={isCompactStage ? 'Save stage as User Node' : 'Save Block changes'}
             onClick={() => setSaveNodeId(singleProjectedModular.id)}
             data-testid="selection-toolbar-save-modular-subtree"
           >
             <Save size={16} />
           </ToolbarActionButton>
-          {singleProjectedModular.data.blockProjectionContainer && !isShotStage ? (
+          {singleProjectedModular.data.blockProjectionContainer && !isCompactStage ? (
             <ToolbarActionButton
               label={
                 singleProjectedModular.data.blockProjectionContainerExpanded !== false

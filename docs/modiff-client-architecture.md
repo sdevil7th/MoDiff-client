@@ -1964,6 +1964,13 @@ labels are presentation defaults for the exact registered output
 descriptors. Editing a port label overrides the default. The displayed
 name leaves the saved identifier, type, binding and definition hash intact.
 
+The four registered Cosmos 3 Omni routes whose standard decode container
+has exactly one decoder display an ordinary Decode Latents stage. The stage
+projects every decoder socket, including the unwired Latents and Output Type
+inputs. Inspect Implementation shows the original decoder. Audio branches
+and customized container interfaces retain their own expandable views. The
+projection leaves the stored hierarchy and execution graph intact.
+
 Running from a generic User Node root resolves to a terminal media preview
 inside that specific expanded instance (or its first terminal node when it
 has no media preview). Both the store export and run coordinator use this
