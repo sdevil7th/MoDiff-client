@@ -50,9 +50,10 @@ const UTILITY_OPTION_LABELS: Record<string, Record<string, Record<string, string
 export function builtinUtilityOptionPresentation(identity: string, field: string, options: NodeParamOptions) {
   const labels = UTILITY_OPTION_LABELS[identity]?.[field];
   if (!labels || !Array.isArray(options)) return options;
+  const hasLabel = (value: string) => Object.prototype.hasOwnProperty.call(labels, value);
   return options.map((option) => {
-    if (typeof option === 'string' && Object.hasOwn(labels, option)) return { value: option, label: labels[option] };
-    if (isOptionDescriptor(option) && option.label === option.value && Object.hasOwn(labels, option.value))
+    if (typeof option === 'string' && hasLabel(option)) return { value: option, label: labels[option] };
+    if (isOptionDescriptor(option) && option.label === option.value && hasLabel(option.value))
       return { ...option, label: labels[option.value] };
     return option;
   });
