@@ -1518,6 +1518,58 @@ test('fresh example layout follows its document while initial form settings sett
   }
 });
 
+test('fresh paired image inputs have room for the first previews without changing their saved fields', async () => {
+  const { exampleWorkflowSnapshotFromGraph, settleExampleWorkflowCanvas } = await server.ssrLoadModule(
+    '/src/studio/exampleWorkflow.ts',
+  );
+  const flow = flowStoreModule.useFlowStore;
+  const studio = studioStoreModule.useStudioStore;
+  const oldFlow = flow.getState();
+  const oldStudio = studio.getState();
+  const canonical = JSON.parse(
+    fs.readFileSync(
+      path.resolve(
+        process.env.MODIFF_BACKEND_DIR ?? path.join(ROOT, '../MoDiff'),
+        'data/graphs/studio/stable-diffusion-pipeline/inpaint.json',
+      ),
+      'utf8',
+    ),
+  );
+  const original = structuredClone(canonical);
+  const opened = exampleWorkflowSnapshotFromGraph(canonical, 'default', oldStudio.form);
+  const nodes = opened.nodes.map((item) => ({ ...item, measured: { width: 400, height: 302 } }));
+  const sources = nodes.filter((item) => ['node-05', 'node-06'].includes(item.id));
+  const initialLayout = graphLayout.arrangeGraphNodes(nodes, opened.edges);
+  const separation = (items) =>
+    Math.abs(items.find(({ id }) => id === 'node-05').position.y - items.find(({ id }) => id === 'node-06').position.y);
+  try {
+    flow.setState({ nodes, edges: opened.edges, layoutRevision: 0 });
+    studio.setState({ activeWorkflowTabId: null, workflowCanvasEpoch: 0, workflowFormEpoch: 0 });
+    assert.equal(await settleExampleWorkflowCanvas(), true);
+    const laidOut = flow.getState().nodes;
+    assert.ok(
+      separation(laidOut) >= separation(initialLayout) + 200,
+      'The blank image stack must have room for a decoded preview and its next file row.',
+    );
+    for (const source of sources) {
+      const actual = laidOut.find(({ id }) => id === source.id);
+      assert.deepEqual(actual.data.params, source.data.params);
+      assert.deepEqual(actual.measured, source.measured);
+    }
+    assert.deepEqual(canonical, original);
+    assert.deepEqual(flow.getState().edges, opened.edges);
+    await flow.getState().arrangeGraph({ history: false });
+    assert.equal(
+      separation(flow.getState().nodes),
+      separation(initialLayout),
+      'Explicit Arrange stays based on the currently rendered sizes.',
+    );
+  } finally {
+    flow.setState(oldFlow);
+    studio.setState(oldStudio);
+  }
+});
+
 test('graph finalization wait preserves failures and reports a bounded timeout', async () => {
   const failed = graphFinalization.settleGraphFinalization(Promise.reject(new Error('dynamic field failure')));
   const failedResult = await graphFinalization.waitForSettledGraphFinalization(failed, 100);

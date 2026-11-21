@@ -42,6 +42,16 @@ const pinsByTemplate = new Map(
       outputSize: { width: 128, height: 96 },
       outputExtension: 'webp',
     },
+    wav2vec2_station_announcement: {
+      associationSha256: '74534ec594b1fd02b8913ff572fcaf7984b78a2533550ab6e6d58aee11bac514',
+      backendSourceFingerprint:
+        'sha256:backend-source-v1:98ee8d4a895829905e82d8fefeea42b93e55c96252a5456561eada6ffef3c764',
+      backendContractFingerprint:
+        'sha256:backend-contract-v1:0a28031ff08ae7b2858c04f373cdb65b75ee0a0bf66ba3ccec2a65ee033cdca9',
+      templateRevisionHash: 'fc0cb2cf3751967eb0ab2910d5b17fd0796bdf047cfc48871e5266346d925e37',
+      capturedAt: '2026-11-21T03:22:14.027Z',
+      outputExtension: 'json',
+    },
     whisper_tiny_blue_cup_transcription: {
       associationSha256: '17998ed9f920a3656b4b30178f18b03ef3c709dcaf6e43cfdd7c0804fa5c7b8c',
       backendSourceFingerprint:

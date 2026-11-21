@@ -11,7 +11,28 @@ import { verifyRetainedSpeechGalleryEvidence } from './retained-speech-gallery-e
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const fileRecord = (path, bytes) => ({ path, bytes: bytes.length, sha256: hash(bytes) });
 
-function fixture(t) {
+const whisper = {
+  modelType: 'HuggingFaceSpeechRecognitionModel',
+  templateId: 'whisper_tiny_blue_cup_transcription',
+  sourceTask: 'task-template:whisper-tiny:speech-to-text:v1',
+  repo: 'openai/whisper-tiny',
+  revision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af',
+  loader: 'LoadSpeechRecognitionModel',
+  consumer: 'TranscribeAudio',
+  timestamps: 'segment',
+};
+const wav2vec = {
+  modelType: 'HuggingFaceCTCSpeechRecognitionModel',
+  templateId: 'wav2vec2_station_announcement',
+  sourceTask: 'task-template:wav2vec2-base-960h:speech-to-text:v1',
+  repo: 'facebook/wav2vec2-base-960h',
+  revision: '22aad52d435eb6dbaf354bdad9b0da84ce7d6156',
+  loader: 'LoadCTCSpeechRecognitionModel',
+  consumer: 'TranscribeCTCAudio',
+  timestamps: 'word',
+};
+
+function fixture(t, route = whisper) {
   const evidenceRoot = mkdtempSync(join(tmpdir(), 'modiff-retained-speech-'));
   t.after(() => rmSync(evidenceRoot, { recursive: true, force: true }));
   const store = (path, bytes) => {
@@ -22,10 +43,10 @@ function fixture(t) {
   const transcript = {
     schemaVersion: 1,
     task: 'transcribe',
-    text: 'Private verified recording.',
-    timestampMode: 'segment',
+    text: route === wav2vec ? 'READY' : 'Private verified recording.',
+    timestampMode: route.timestamps,
     durationSeconds,
-    segments: [{ text: 'Private verified recording.', start: 0, end: durationSeconds }],
+    segments: [{ text: route === wav2vec ? 'READY' : 'Private verified recording.', start: 0, end: durationSeconds }],
   };
   const structured = Buffer.from(JSON.stringify(transcript, null, 2));
   const wav = Buffer.from(
@@ -36,8 +57,8 @@ function fixture(t) {
   const output = store('native.output.txt', Buffer.from(JSON.stringify([structured.toString('utf8')])));
   const stages = [
     ['modules.Audio', 'Load'],
-    ['modules.HuggingFaceSpeech', 'LoadSpeechRecognitionModel'],
-    ['modules.HuggingFaceSpeech', 'TranscribeAudio'],
+    ['modules.HuggingFaceSpeech', route.loader],
+    ['modules.HuggingFaceSpeech', route.consumer],
     ['modules.Primitive', 'DataViewer'],
   ];
   const nodes = Object.fromEntries(
@@ -58,10 +79,19 @@ function fixture(t) {
   };
   const storeJson = (path, value) => store(path, Buffer.from(JSON.stringify(value)));
   const storeCapture = () => storeJson('capture.json', { nodes: storeJson('nodes.json', registry) });
+  const workflowId = route.modelType + ':speech_to_text';
+  const descriptorBytes = Buffer.from(JSON.stringify({ schemaVersion: 1, workflowId, graphHash: graph.hash }));
   const recipe = {
-    workflowId: 'HuggingFaceSpeechRecognitionModel:speech_to_text',
-    sourceTaskTemplateId: 'task-template:whisper-tiny:speech-to-text:v1',
-    template: { id: 'whisper_tiny_blue_cup_transcription' },
+    workflowId,
+    sourceTaskTemplateId: route.sourceTask,
+    template: {
+      id: route.templateId,
+      modelType: route.modelType,
+      mode: 'speech_to_text',
+      modelArtifact: { source: 'hub', value: route.repo, revision: route.revision },
+    },
+    originalReceiptSha256: hash(descriptorBytes),
+    retainedGraphHash: graph.hash,
     inputLocatorSha256: hash('local.source.wav'),
     inputSha256: input.sha256,
   };
@@ -72,6 +102,8 @@ function fixture(t) {
     workflowId: recipe.workflowId,
     task: 'speech_to_text',
     sourceTemplateId: recipe.sourceTaskTemplateId,
+    modelType: route.modelType,
+    modelSet: [{ repoId: route.repo, revision: route.revision }],
     inputBinding: {
       field: 'file',
       sourceValue: 'local.source.wav',
@@ -84,7 +116,7 @@ function fixture(t) {
     transcriptEvidence: {
       storage: 'native-text-json',
       durationSeconds,
-      timestampMode: 'segment',
+      timestampMode: route.timestamps,
       segmentCount: 1,
     },
   };
@@ -99,7 +131,7 @@ function fixture(t) {
   };
   const galleryOutput = { bytes: structured, ref: fileRecord('transcript.json', structured) };
   return {
-    args: { recipe, native: { receipt, provenance, evidenceRoot }, galleryOutput },
+    args: { recipe, native: { receipt, provenance, evidenceRoot, descriptorBytes }, galleryOutput },
     transcript,
     store,
     storeJson,
@@ -188,4 +220,77 @@ test('rejects a rehashed incomplete native node inventory', (t) => {
   delete registry.nodes['modules.Audio.Load'];
   args.native.provenance.evidenceFiles.capture = storeCapture();
   assert.throws(() => verifyRetainedSpeechGalleryEvidence(args), /missing a native node contract/u);
+});
+
+test('verified Wav2Vec2 Gallery proof binds the pinned CTC word result and private WAV', (t) => {
+  const { args, transcript, backendContractFingerprint } = fixture(t, wav2vec);
+  const proof = verifyRetainedSpeechGalleryEvidence(args);
+  assert.deepEqual(proof, {
+    output: {
+      mediaType: 'json',
+      sourceOutputHash: args.native.receipt.outputHash,
+      outputEncodedSha256: 'sha256:bytes:' + args.galleryOutput.ref.sha256,
+      decodedMediaHash: 'sha256:canonical-json:' + canonicalJsonHash(transcript),
+      outputBytes: args.galleryOutput.bytes.length,
+    },
+    inputSha256: args.recipe.inputSha256,
+    backendContractFingerprint,
+  });
+});
+
+test('a Wav2Vec2 draft cannot substitute another checkpoint, route, or native descriptor', (t) => {
+  const { args } = fixture(t, wav2vec);
+  const { recipe, native } = args;
+  const wrongArtifact = { ...recipe.template.modelArtifact, revision: 'a'.repeat(40) };
+  assert.throws(
+    () =>
+      verifyRetainedSpeechGalleryEvidence({
+        ...args,
+        recipe: { ...recipe, template: { ...recipe.template, modelArtifact: wrongArtifact } },
+      }),
+    /template model pin differs/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedSpeechGalleryEvidence({
+        ...args,
+        recipe: { ...recipe, workflowId: whisper.modelType + ':speech_to_text' },
+      }),
+    /workflow differs from the reviewed template/u,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedSpeechGalleryEvidence({ ...args, native: { ...native, descriptorBytes: Buffer.from('changed') } }),
+    /descriptor differs/u,
+  );
+});
+
+test('Wav2Vec2 rejects a consistently rehashed segment result and private audio publication', (t) => {
+  const { args, transcript, store, wav } = fixture(t, wav2vec);
+  assert.throws(
+    () => verifyRetainedSpeechGalleryEvidence({ ...args, galleryInput: { bytes: wav } }),
+    /audio source stays private/u,
+  );
+  transcript.timestampMode = 'segment';
+  const bytes = Buffer.from(JSON.stringify(transcript));
+  args.galleryOutput = { bytes, ref: fileRecord('transcript.json', bytes) };
+  const output = store('native.output.txt', Buffer.from(JSON.stringify([bytes.toString('utf8')])));
+  args.native.provenance.evidenceFiles.output = output;
+  args.native.receipt.outputHash = 'sha256:bytes:' + output.sha256;
+  args.native.receipt.transcriptEvidence.timestampMode = 'segment';
+  assert.throws(() => verifyRetainedSpeechGalleryEvidence(args), /timestamp mode differs from the reviewed route/u);
+});
+
+test('Wav2Vec2 rejects substituted Whisper nodes even if the edited graph and node registry agree', (t) => {
+  const { args, submission, registry, storeCapture, storeJson } = fixture(t, wav2vec);
+  const previous = 'modules.HuggingFaceSpeech.' + wav2vec.consumer;
+  const replacement = 'modules.HuggingFaceSpeech.' + whisper.consumer;
+  submission.nodes['node-3'].action = whisper.consumer;
+  registry.nodes[replacement] = { ...registry.nodes[previous], action: whisper.consumer };
+  delete registry.nodes[previous];
+  args.native.provenance.evidenceFiles.capture = storeCapture();
+  args.native.provenance.evidenceFiles.graphRequest = storeJson('graph-request.json', submission);
+  args.native.receipt.graphHash = canonicalGraphIdentity(submission).hash;
+  args.recipe.retainedGraphHash = args.native.receipt.graphHash;
+  assert.throws(() => verifyRetainedSpeechGalleryEvidence(args), /differs from the reviewed node identities/u);
 });

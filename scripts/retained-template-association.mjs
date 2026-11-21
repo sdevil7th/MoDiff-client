@@ -42,6 +42,18 @@ const WHISPER_LCM_REVIEW_SCOPES = {
       'Accepted as a creative dawn reinterpretation with the disclosed terrain changes and stronger alpenglow.',
   },
 };
+const WAV2VEC2_TEMPLATE_ID = 'wav2vec2_station_announcement';
+const WAV2VEC2_REVIEW_SCOPE = {
+  folder: 'wav2vec2',
+  proofKind: 'real_backend_input_bound_model_variant',
+  output: 'transcript.json',
+  reviewFile: 'review.json',
+  provenanceFile: 'technical-record.json',
+  decision: 'accepted_with_disclosed_limitations',
+  technicalRecipe: 'speech_transcription',
+  acceptanceStatement:
+    'Accepted the exact saved station announcement transcript and word timestamps with the disclosed limitations.',
+};
 const SANA_TEMPLATE_ID = 'sana_sprint_monochrome_tiger';
 const SANA_WORKFLOW_ID = 'SanaSprintPipeline:edit_image';
 const SANA_REVIEW_SCOPE_SHA256 = '09c91c7aa04229e591a86849d399dcf557ca61bdecfc3ac25e7b935795113263';
@@ -159,6 +171,50 @@ function verifiedSanaRecipe(draft, native, recipe) {
   };
 }
 
+function verifiedWav2Vec2Recipe(draft, receipt, output, speech) {
+  assert.equal(draft.status, 'private_review_candidate');
+  assert.equal(draft.workflowId, receipt.workflowId);
+  assert.deepEqual([{ repoId: draft.model.repoId, revision: draft.model.revision }], receipt.modelSet);
+  assert.equal(draft.model.publisherLicenseDeclaration, 'Apache-2.0');
+  assert.equal(draft.platform, 'Windows CUDA');
+  assert.equal(draft.graphHash, receipt.graphHash);
+  assert.equal(draft.runtimeFingerprint, receipt.runtimeFingerprint);
+  assert.equal(draft.measuredElapsedSeconds, receipt.executionDurationSeconds);
+  assert.equal(draft.measuredPeakAllocatedBytes, receipt.peakMemoryBytes);
+  assert.deepEqual(draft.observedSettings, {
+    timestamps: receipt.transcriptEvidence.timestampMode,
+    chunkLengthSeconds: 30,
+    chunkStrideSeconds: 5,
+  });
+  assert.deepEqual(draft.input, {
+    origin: 'synthetic station announcement',
+    format: 'PCM16 WAV',
+    sampleRate: receipt.inputBinding.decodedAudio.sampleRate,
+    channels: receipt.inputBinding.decodedAudio.shape[1],
+    durationSeconds: receipt.transcriptEvidence.durationSeconds,
+    sha256: speech.inputSha256,
+  });
+  assert.deepEqual(draft.output, {
+    path: WAV2VEC2_REVIEW_SCOPE.output,
+    mediaType: output.mediaType,
+    sha256: output.outputEncodedSha256.slice('sha256:bytes:'.length),
+    byteSize: output.outputBytes,
+    nativeTransportSha256: output.sourceOutputHash.slice('sha256:bytes:'.length),
+    projection: 'Exact UTF-8 bytes of the single JSON string in the native text result.',
+  });
+  return {
+    backendContractFingerprint: speech.backendContractFingerprint,
+    recipeObservation: {
+      platform: draft.platform,
+      modelPublisherLicense: draft.model.publisherLicenseDeclaration,
+      input: { ...draft.input, galleryScope: 'private_source_hash_only' },
+      settings: draft.observedSettings,
+      transcript: receipt.transcriptEvidence,
+      outputProjection: draft.output.projection,
+    },
+  };
+}
+
 function verifiedTechnicalRecipe({ scope, recipe, candidate, native, reviewedRecipe, output, speech }) {
   const { bytes, ref } = reviewedRecipe;
   const { receipt } = native;
@@ -166,6 +222,7 @@ function verifiedTechnicalRecipe({ scope, recipe, candidate, native, reviewedRec
   assert.equal(ref.sha256, candidate.draftProvenanceSha256);
   const draft = JSON.parse(bytes);
   assert.equal(draft.schemaVersion, 1);
+  if (scope === WAV2VEC2_REVIEW_SCOPE) return verifiedWav2Vec2Recipe(draft, receipt, output, speech);
   assert.equal(draft.templateId, recipe.template.id);
   assert.equal(draft.workflowId, receipt.workflowId);
   assert.equal(draft.sourceTaskContractId, receipt.sourceTemplateId);
@@ -270,7 +327,9 @@ export function assessRetainedTemplateAssociation({
     ? SPANDREL_SCOPE
     : template.id === SANA_TEMPLATE_ID
       ? SANA_REVIEW_SCOPE
-      : (BOUND_REVIEW_SCOPES[template.id] ?? WHISPER_LCM_REVIEW_SCOPES[template.id]);
+      : template.id === WAV2VEC2_TEMPLATE_ID
+        ? WAV2VEC2_REVIEW_SCOPE
+        : (BOUND_REVIEW_SCOPES[template.id] ?? WHISPER_LCM_REVIEW_SCOPES[template.id]);
   assert.ok(scope, 'Retained Gallery template scope is not reviewed.');
   const { evidence, receipt, evidenceRoot, descriptorBytes } = native;
   assert.equal(candidate.templateId, template.id);
@@ -469,7 +528,9 @@ export function assessRetainedTemplateAssociation({
 // does not supply template or resource fields to the original native run.
 export function finalizeRetainedQualityReview({ association, draft, reviewer, reviewedAt }) {
   const spandrel = association.templateId === SPANDREL_TEMPLATE_ID;
-  if (spandrel) assert.equal(draft.ratingMethod, 'maintainer_qualitative_acceptance');
+  const wav2vec2 = association.templateId === WAV2VEC2_TEMPLATE_ID;
+  const qualitative = spandrel || wav2vec2;
+  if (qualitative) assert.equal(draft.ratingMethod, 'maintainer_qualitative_acceptance');
   const bindings = {
     templateId: association.templateId,
     templateLockHash: association.galleryTemplateLockHash,
@@ -488,7 +549,7 @@ export function finalizeRetainedQualityReview({ association, draft, reviewer, re
     reviewStatus: 'approved_reviewed',
     reviewer,
     reviewedAt,
-    ...(spandrel ? { ratingMethod: draft.ratingMethod } : {}),
+    ...(qualitative ? { ratingMethod: draft.ratingMethod } : {}),
     rubric: draft.rubric,
     scores: draft.scores,
     hardFailures: draft.hardFailures,
@@ -506,7 +567,9 @@ export function finalizeRetainedQualityReview({ association, draft, reviewer, re
       statement:
         (association.templateId === SANA_TEMPLATE_ID
           ? SANA_REVIEW_SCOPE.acceptanceStatement
-          : WHISPER_LCM_REVIEW_SCOPES[association.templateId]?.acceptanceStatement) ??
+          : wav2vec2
+            ? WAV2VEC2_REVIEW_SCOPE.acceptanceStatement
+            : WHISPER_LCM_REVIEW_SCOPES[association.templateId]?.acceptanceStatement) ??
         (spandrel
           ? 'Accepted as a technical preview of the exact saved synthetic gradient and 2× delivery with the disclosed limitations.'
           : 'Accepted as a technical depth preview with the reviewed scores and the disclosed limits of the synthetic ramp.'),
@@ -516,6 +579,29 @@ export function finalizeRetainedQualityReview({ association, draft, reviewer, re
   const errors = validateQualityReview(review, bindings, 'approved_reviewed');
   assert.deepEqual(errors, [], 'The finalized review does not meet Gallery quality rules.');
   return review;
+}
+
+function projectApprovedWav2Vec2Review(original, receipt, template) {
+  assert.equal(original.schemaVersion, 1);
+  assert.equal(original.reviewStatus, 'pending_review');
+  assert.equal(original.approved, false);
+  assert.equal(original.redistributionApproved, false);
+  const [contentCheck, timingCheck, receiptCheck] = original.observations;
+  return {
+    schemaVersion: 2,
+    outputSha256: original.outputSha256,
+    graphHash: receipt.graphHash,
+    runtimeFingerprint: receipt.runtimeFingerprint,
+    modelRevision: template.modelArtifact.value + '@' + template.modelArtifact.revision,
+    ratingMethod: 'maintainer_qualitative_acceptance',
+    rubric: { taskAdherence: null, artifactControl: null, modalityQuality: null },
+    scores: { promptAdherence: null, composition: null, technicalExecution: null, templateUsefulness: null },
+    hardFailures: [],
+    objectiveChecks: { status: 'pass', checks: [receiptCheck] },
+    modalityReview: { status: 'pass', checks: [contentCheck, timingCheck] },
+    summary: original.observations.join(' '),
+    knownLimitations: original.limitations,
+  };
 }
 
 async function readReviewBatch({ approvalRoot, vite, nativeBySha, scopes, approvalSha256 }) {
@@ -557,7 +643,9 @@ async function readReviewBatch({ approvalRoot, vite, nativeBySha, scopes, approv
       recipe.reviewedTemplateSha256,
       'The staged template definition differs from the reviewed recipe.',
     );
-    const names = [scope.output, 'proposed-review.json', 'proposed-provenance.json'];
+    const reviewFile = scope.reviewFile ?? 'proposed-review.json';
+    const provenanceFile = scope.provenanceFile ?? 'proposed-provenance.json';
+    const names = [scope.output, reviewFile, provenanceFile];
     if (scope.input) names.push(scope.input);
     assert.ok(Array.isArray(candidate.files) && candidate.files.length === names.length);
     const files = new Map(
@@ -573,12 +661,14 @@ async function readReviewBatch({ approvalRoot, vite, nativeBySha, scopes, approv
         return [name, { ref, ...readCanonicalEvidenceFile(join(approvalRoot, 'reviewed'), ref, 2 * 1024 * 1024) }];
       }),
     );
-    assert.equal(files.get('proposed-review.json').ref.sha256, candidate.draftReviewSha256);
-    assert.equal(files.get('proposed-provenance.json').ref.sha256, candidate.draftProvenanceSha256);
+    assert.equal(files.get(reviewFile).ref.sha256, candidate.draftReviewSha256);
+    assert.equal(files.get(provenanceFile).ref.sha256, candidate.draftProvenanceSha256);
     const native = nativeBySha.get(recipe.originalReceiptSha256);
     assert.ok(native, 'The approved original native receipt could not be verified.');
     const media = files.get(scope.output);
-    const draft = JSON.parse(files.get('proposed-review.json').bytes);
+    const original = JSON.parse(files.get(reviewFile).bytes);
+    const wav2vec2 = scope === WAV2VEC2_REVIEW_SCOPE;
+    const draft = wav2vec2 ? projectApprovedWav2Vec2Review(original, native.receipt, template) : original;
     assert.equal(draft.outputSha256, media.ref.sha256);
     assert.equal(draft.graphHash, native.receipt.graphHash);
     assert.equal(draft.runtimeFingerprint, native.receipt.runtimeFingerprint);
@@ -587,7 +677,7 @@ async function readReviewBatch({ approvalRoot, vite, nativeBySha, scopes, approv
       !draft.reviewer && !draft.reviewedAt,
       'The reviewed draft must preserve original pending review metadata.',
     );
-    if (scope.technicalRecipe) {
+    if (scope.technicalRecipe && !wav2vec2) {
       assert.deepEqual(draft.scores, candidate.reviewedScores);
       assert.equal(draft.schemaVersion, 2);
       if (scope.input) {
@@ -601,14 +691,14 @@ async function readReviewBatch({ approvalRoot, vite, nativeBySha, scopes, approv
       native,
       galleryOutput: media,
       galleryInput: scope.input ? files.get(scope.input) : undefined,
-      reviewedRecipe: files.get('proposed-provenance.json'),
+      reviewedRecipe: files.get(provenanceFile),
       catalogLock: {
         templateLockHash: getTemplateLockHash(template),
         galleryTemplateLockHash: getTemplateLockHash(template, draft.modelRevision),
         promptSettingsHash: getPromptSettingsHash(settings),
       },
     });
-    assert.equal(draft.decodedMediaHash, association.output.decodedMediaHash);
+    if (!wav2vec2) assert.equal(draft.decodedMediaHash, association.output.decodedMediaHash);
     const qualityReview = finalizeRetainedQualityReview({
       association,
       draft,
@@ -639,6 +729,14 @@ export function readApprovedWhisperLcmBatch(args) {
     ...args,
     scopes: WHISPER_LCM_REVIEW_SCOPES,
     approvalSha256: 'ba369c5fff89e379be66714d3ecbf1a0e3a9555e2b5ffbc9cb54210d862ec30b',
+  });
+}
+
+export function readApprovedWav2Vec2Review(args) {
+  return readReviewBatch({
+    ...args,
+    scopes: { [WAV2VEC2_TEMPLATE_ID]: WAV2VEC2_REVIEW_SCOPE },
+    approvalSha256: '5a790d4a6c9f82b2e00140b8d1c62fc3721c0b66856e4e2e7f2440890772b0e0',
   });
 }
 
@@ -745,7 +843,13 @@ export async function readReviewedBoundTemplateAssociations({ approvalRoot, vite
     nativeBySha,
   });
   const sana = await readApprovedSanaReview({ approvalRoot: join(approvalRoot, 'sana-sprint'), vite, nativeBySha });
-  const records = sana ? [...current, ...audited, sana] : [...current, ...audited];
+  const wav2vec2 = await readApprovedWav2Vec2Review({
+    approvalRoot: join(approvalRoot, 'wav2vec2'),
+    vite,
+    nativeBySha,
+  });
+  const records = [...current, ...audited, ...wav2vec2];
+  if (sana) records.push(sana);
   const associations = new Map();
   for (const { association } of records) {
     assert.ok(!associations.has(association.workflowId), 'Retained Gallery workflow association is duplicated.');

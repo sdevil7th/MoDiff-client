@@ -256,6 +256,7 @@ export type StudioTemplateId =
   | 'smollm2_rain_gauge'
   | 'spandrel_x2_synthetic_gradient'
   | 'whisper_tiny_blue_cup_transcription'
+  | 'wav2vec2_station_announcement'
   | 'lcm_dawn_alpine_lake'
   | 'sana_sprint_monochrome_tiger'
   | 'minimax_h3_image_old_town_cat'

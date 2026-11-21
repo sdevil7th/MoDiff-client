@@ -73,7 +73,7 @@ const media = (inputs, outputs, files) => ({
   files,
 });
 
-function speechRoute(workflowId) {
+export function speechRoute(workflowId) {
   const route = routes.get(workflowId);
   assert.ok(route, 'Unsupported private speech evidence route.');
   return route;

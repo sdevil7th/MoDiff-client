@@ -8,26 +8,27 @@ type Presentation = { label: string; previous: string[]; imageGeneration?: true 
 const PRESENTATIONS: Record<string, Presentation> = {
   'modules.Audio.Load': { label: 'Load Audio', previous: ['Load'] },
   'modules.Image.Load': { label: 'Load Image', previous: ['Load'] },
+  'modules.Video.Load': { label: 'Load Video', previous: ['Load'] },
   'modules.ModularDiffusers.ModelsLoader': {
     label: 'Load Modular Components',
-    previous: ['Load Models', 'Load model'],
+    previous: ['Load Models', 'Load model', 'Diffusers.LoadPipeline'],
   },
   'modules.ModularDiffusers.AutoModelLoader': { label: 'Load Model Component', previous: ['Load Model'] },
   'modules.DiffusersImage.LoadPipeline': {
     label: 'Load Image Pipeline',
-    previous: ['Load Diffusers Image Pipeline', 'Load pipeline'],
+    previous: ['Load Diffusers Image Pipeline', 'Load pipeline', 'Diffusers.LoadPipeline'],
   },
   'modules.DiffusersAudio.LoadPipeline': {
     label: 'Load Audio Pipeline',
-    previous: ['Load Diffusers Audio Pipeline', 'Load pipeline'],
+    previous: ['Load Diffusers Audio Pipeline', 'Load pipeline', 'Diffusers.LoadPipeline'],
   },
   'modules.DiffusersVideo.LoadPipeline': {
     label: 'Load Video Pipeline',
-    previous: ['Load Diffusers Video Pipeline', 'Load pipeline'],
+    previous: ['Load Diffusers Video Pipeline', 'Load pipeline', 'Diffusers.LoadPipeline'],
   },
   'modules.DiffusersThreeD.LoadPipeline': {
     label: 'Load 3D Pipeline',
-    previous: ['Load Diffusers 3D Pipeline', 'Load 3D pipeline'],
+    previous: ['Load Diffusers 3D Pipeline', 'Load 3D pipeline', 'Diffusers.LoadPipeline'],
   },
   'modules.DiffusersVideo.WanVACELoadPipeline': {
     label: 'Load Wan VACE Pipeline',
@@ -35,11 +36,11 @@ const PRESENTATIONS: Record<string, Presentation> = {
   },
   'modules.DiffusersImage.Generate': {
     label: 'Generate Image',
-    previous: ['Diffusers Image Generate', 'Generate image'],
+    previous: ['Diffusers Image Generate', 'Generate image', 'Diffusers.Generate'],
   },
   'modules.DiffusersAudio.Generate': {
     label: 'Generate Audio',
-    previous: ['Diffusers Audio Generate', 'Generate audio'],
+    previous: ['Diffusers Audio Generate', 'Generate audio', 'Diffusers.GenerateAudio'],
   },
   'modules.DiffusersImage.LoadAdapter': {
     label: 'Load Image Adapter',
@@ -51,7 +52,7 @@ const PRESENTATIONS: Record<string, Presentation> = {
   },
   'modules.DiffusersThreeD.GenerateRenderedArtifact': {
     label: 'Render 3D Orbit',
-    previous: ['Diffusers 3D Rendered Generate', 'Render 3D orbit'],
+    previous: ['Diffusers 3D Rendered Generate', 'Render 3D orbit', 'Diffusers.Generate3D'],
   },
   'modules.Video.LyricOverlay': {
     label: 'Add Timed Lyrics',
@@ -64,27 +65,27 @@ const PRESENTATIONS: Record<string, Presentation> = {
   },
   'modules.DiffusersImage.ControlGenerate': {
     label: 'Generate Image with Control',
-    previous: ['Diffusers Control Generate', 'Generate image'],
+    previous: ['Diffusers Control Generate', 'Generate image', 'Diffusers.Control'],
     imageGeneration: true,
   },
   'modules.DiffusersImage.Edit': {
     label: 'Edit Image',
-    previous: ['Diffusers Image Edit', 'Edit image'],
+    previous: ['Diffusers Image Edit', 'Edit image', 'Diffusers.Edit'],
     imageGeneration: true,
   },
   'modules.DiffusersImage.ControlEdit': {
     label: 'Edit Image with Control',
-    previous: ['Diffusers Control Edit', 'Edit image'],
+    previous: ['Diffusers Control Edit', 'Edit image', 'Diffusers.ControlEdit'],
     imageGeneration: true,
   },
   'modules.DiffusersImage.Inpaint': {
     label: 'Inpaint Image',
-    previous: ['Diffusers Image Inpaint', 'Inpaint'],
+    previous: ['Diffusers Image Inpaint', 'Inpaint', 'Diffusers.Inpaint'],
     imageGeneration: true,
   },
   'modules.DiffusersImage.ControlInpaint': {
     label: 'Inpaint Image with Control',
-    previous: ['Diffusers Control Inpaint', 'Edit image'],
+    previous: ['Diffusers Control Inpaint', 'Edit image', 'Diffusers.ControlInpaint'],
     imageGeneration: true,
   },
   'modules.DiffusersImage.LayerDecompose': {
@@ -107,7 +108,7 @@ const PRESENTATIONS: Record<string, Presentation> = {
   'modules.Spandrel.Upscaler': { label: 'Upscale Image or Video', previous: ['Upscale with model'] },
   'modules.DiffusersVideo.Generate': {
     label: 'Generate Video',
-    previous: ['Diffusers Video Generate', 'Generate video'],
+    previous: ['Diffusers Video Generate', 'Generate video', 'Diffusers.Generate'],
   },
   'modules.DiffusersVideo.GenerateShotJob': {
     label: 'Generate Video Shot',
@@ -123,7 +124,29 @@ const PRESENTATIONS: Record<string, Presentation> = {
   },
   'modules.DiffusersVideo.GenerateVideoAudio': {
     label: 'Generate Video and Audio',
-    previous: ['Diffusers Video + Audio Generate', 'Generate video + audio'],
+    previous: ['Diffusers Video + Audio Generate', 'Generate video + audio', 'Diffusers.Generate'],
+  },
+};
+
+// The generic loader can serve distinct workflow inputs. Use the authored
+// role when present; its generic catalog entry carries no workflow role.
+const MEDIA_ROLE_CAPTIONS: Record<string, Record<string, string>> = {
+  'modules.Image.Load': {
+    loadImage: 'Source Image',
+    loadMask: 'Mask',
+    loadControlImage: 'Control Image',
+    loadIPAdapterImage: 'Reference Image',
+    loadLastImage: 'Last Frame',
+  },
+  'modules.Audio.Load': { loadAudio: 'Source Audio', loadReferenceAudio: 'Reference Audio' },
+  'modules.Video.Load': {
+    loadVideo: 'Source Video',
+    loadReferenceVideo: 'Reference Video',
+    loadControlVideo: 'Control Video',
+    loadMaskVideo: 'Mask Video',
+    loadPoseVideo: 'Pose Video',
+    loadFaceVideo: 'Face Video',
+    loadBackgroundVideo: 'Background Video',
   },
 };
 
@@ -173,8 +196,23 @@ export function imageActionCaption(operation: Pick<OperationContract, 'nodeKey' 
   return presentation.label;
 }
 
-export function nodeDisplayLabel(node: Pick<NodeData, 'module' | 'action' | 'label' | 'operationAuthoring'>): string {
+export function nodeDisplayLabel(
+  node: Pick<NodeData, 'module' | 'action' | 'label' | 'operationAuthoring' | 'studioRole'>,
+): string {
   const identity = `${node.module}.${node.action}`;
+  const presentation = PRESENTATIONS[identity];
+  const roleLabels = MEDIA_ROLE_CAPTIONS[identity];
+  const roleLabel = node.studioRole ? roleLabels?.[node.studioRole] : undefined;
+  if (
+    presentation &&
+    typeof roleLabel === 'string' &&
+    (!node.label ||
+      node.label === identity ||
+      node.label === presentation.label ||
+      presentation.previous.includes(node.label))
+  ) {
+    return roleLabel;
+  }
   const operation = node.operationAuthoring?.operation;
   if (node.operationAuthoring && node.label) {
     // The starter derives this default from the shared operation ID. Refine
@@ -183,7 +221,6 @@ export function nodeDisplayLabel(node: Pick<NodeData, 'module' | 'action' | 'lab
       return imageActionCaption(operation) ?? node.label;
     return node.label;
   }
-  const presentation = PRESENTATIONS[identity];
   if (presentation && (!node.label || node.label === identity || presentation.previous.includes(node.label)))
     return presentation.label;
   return node.label || `${node.module}.${node.action}`;

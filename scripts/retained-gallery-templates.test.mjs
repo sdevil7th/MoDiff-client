@@ -278,7 +278,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
               .slice(0, 2)
               .map(({ key }) => key)
               .sort(),
-            ['modules.Audio.Load#1', 'modules.HuggingFaceSpeech.LoadSpeechRecognitionModel#1'],
+            ['modules.Audio.Load#1', 'modules.HuggingFaceSpeech.' + spec.loaderAction + '#1'],
           );
           assert.equal(paths.length, 1);
           return {

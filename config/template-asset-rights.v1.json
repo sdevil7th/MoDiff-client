@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:1345dca546164326458297b1a75b056cefa8fccb94da13f60301b3ddcd21ca3a",
+  "assetSetId": "sha256:canonical-json:4434e38c233eb32820d8903661684c0d91b77edf6fae07035a8ea7edd8760651",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -5337,25 +5337,25 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:7aec0be529d3d015f42cc48d9eea0302afc8727097235fe3fa558bf73ec6c8c5",
+      "sha256": "sha256:bytes:a13452fd3e4a7e389f4bf5ef0e79fcd5e029bc12ce8fc329ba29319cd044ae30",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
-      "humanLikenessConsent": "not-applicable",
-      "marks": [],
-      "reviewedBy": "MoDiff workspace maintainer",
-      "reviewedAt": "2026-11-20",
-      "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "40060ba701188a6d287df07e0852c6497d109885495e6fc85a19e8371ef73906",
-      "publicationBasis": "Maintainer approved both exact Sana Sprint images and redistribution of the redacted review and recipe records.",
       "creationMethod": "Project-authored redacted retained Gallery review, provenance or registration metadata",
       "sourceUrl": null,
       "sourceRevision": null,
       "sourceLicense": "MoDiff-authored Gallery metadata",
       "modelTerms": [],
       "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
       "requiredAttribution": [],
-      "assetLicense": "Apache-2.0"
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-21",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "5a790d4a6c9f82b2e00140b8d1c62fc3721c0b66856e4e2e7f2440890772b0e0",
+      "publicationBasis": "Maintainer approved the exact Wav2Vec2 transcript, the disclosed limitations and the redacted review and technical records under Apache-2.0. The source WAV is private."
     },
     {
       "path": "template-gallery/marigold_depth_synthetic_ramp.webp",
@@ -10253,6 +10253,50 @@
       "provenanceTemplateId": "wan_video_long_showcase"
     },
     {
+      "path": "template-gallery/reviews/wav2vec2_station_announcement.quality-review.json",
+      "sha256": "sha256:bytes:7baa800c8cbcdc9fb820deaa07c82e1755f24720eb00a254753ab487cd02ebf1",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted retained Gallery review, provenance or registration metadata",
+      "sourceUrl": null,
+      "sourceRevision": null,
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-21",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "5a790d4a6c9f82b2e00140b8d1c62fc3721c0b66856e4e2e7f2440890772b0e0",
+      "publicationBasis": "Maintainer approved the exact Wav2Vec2 transcript, the disclosed limitations and the redacted review and technical records under Apache-2.0. The source WAV is private."
+    },
+    {
+      "path": "template-gallery/reviews/wav2vec2_station_announcement.retained-template-provenance.json",
+      "sha256": "sha256:bytes:4eb550b72db5b3c48a5dc5a1807067dc92ca77d9c288cbcc6e66e8fe3d15e78c",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted retained Gallery review, provenance or registration metadata",
+      "sourceUrl": null,
+      "sourceRevision": null,
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-21",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "5a790d4a6c9f82b2e00140b8d1c62fc3721c0b66856e4e2e7f2440890772b0e0",
+      "publicationBasis": "Maintainer approved the exact Wav2Vec2 transcript, the disclosed limitations and the redacted review and technical records under Apache-2.0. The source WAV is private."
+    },
+    {
       "path": "template-gallery/reviews/whisper_tiny_blue_cup_transcription.quality-review.json",
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
       "humanLikenessConsent": "not-applicable",
@@ -13561,6 +13605,33 @@
       "humanApprovalPacketSHA256": "03b66b4631afb15032d62a1705331b56f6b12c4882c23945175ec92cc45a506f",
       "publicationBasis": "Register the six approved assets now while Moonflower runs on Linux. Use Windows in parallel wherever possible, and keep the longer workflows separate for AMD cloud.",
       "provenanceTemplateId": "wan_video_long_showcase"
+    },
+    {
+      "path": "template-gallery/wav2vec2_station_announcement.json",
+      "sha256": "sha256:bytes:619cc94b2dda660e87ae3c2a684aa2c7e7cc56c6d9b6df86f488ab4eea690751",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact retained Wav2Vec2 transcription of a project-authored synthetic station announcement",
+      "sourceUrl": "https://huggingface.co/facebook/wav2vec2-base-960h/tree/22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+      "sourceRevision": "facebook/wav2vec2-base-960h@22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+      "sourceLicense": "Project-authored synthetic content processed by the pinned Wav2Vec2 model (Apache-2.0 declaration)",
+      "modelTerms": [
+        "facebook/wav2vec2-base-960h@22aad52d435eb6dbaf354bdad9b0da84ce7d6156 — pinned Hub card Apache-2.0 declaration. https://huggingface.co/facebook/wav2vec2-base-960h/tree/22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Meta Wav2Vec2 Base 960h. https://huggingface.co/facebook/wav2vec2-base-960h/tree/22aad52d435eb6dbaf354bdad9b0da84ce7d6156"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-21",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "5a790d4a6c9f82b2e00140b8d1c62fc3721c0b66856e4e2e7f2440890772b0e0",
+      "publicationBasis": "Maintainer approved the exact Wav2Vec2 transcript, the disclosed limitations and the redacted review and technical records under Apache-2.0. The source WAV is private.",
+      "provenanceTemplateId": "wav2vec2_station_announcement"
     },
     {
       "path": "template-gallery/whisper_tiny_blue_cup_transcription.json",

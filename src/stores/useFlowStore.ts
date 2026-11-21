@@ -182,6 +182,7 @@ export type ReplaceGraphOptions = FlowGraphReplacementOptions & {
 
 export type ArrangeGraphOptions = {
   history?: boolean;
+  reserveFirstImagePreviewSpace?: boolean;
 };
 
 export type FlowStore = {
@@ -2564,7 +2565,7 @@ export const useFlowStore = create<FlowStore>()(
       arrangeGraph: async (options = {}) => {
         const applyLayout = () => {
           set((state) => {
-            const arranged = arrangeGraphNodes(state.nodes, state.edges).map((node) => {
+            const arranged = arrangeGraphNodes(state.nodes, state.edges, options).map((node) => {
               const instance = node.data.blockInstanceV2;
               if (!instance) return node;
               return {

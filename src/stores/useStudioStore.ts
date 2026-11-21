@@ -1788,19 +1788,21 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
         const presetValues = getPreset(template.presetId)?.values || {};
         const lockedValues = getTemplateLockedSettings(template);
         set((state) => {
-          const form = resolveStudioResourceForm({
-            ...state.form,
-            ...defaults,
-            ...presetValues,
-            ...lockedValues,
-            // Missing legacy template storage means native, not the prior tab selection.
-            weightFormat: lockedValues.weightFormat,
-            ...inputDefaults,
-            mode: template.mode,
-            modelType: template.modelType,
-            prompt: template.prompt,
-            negativePrompt: template.negativePrompt ?? lockedValues.negativePrompt,
-          });
+          const form = resolveStudioResourceForm(
+            normalizeAuthoredSpeechTimestamps({
+              ...state.form,
+              ...defaults,
+              ...presetValues,
+              ...lockedValues,
+              // Missing legacy template storage means native, not the prior tab selection.
+              weightFormat: lockedValues.weightFormat,
+              ...inputDefaults,
+              mode: template.mode,
+              modelType: template.modelType,
+              prompt: template.prompt,
+              negativePrompt: template.negativePrompt ?? lockedValues.negativePrompt,
+            }),
+          );
           return {
             selectedMode: template.mode,
             activeTemplateId: template.id,

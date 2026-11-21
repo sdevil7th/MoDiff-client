@@ -80,6 +80,75 @@ test('user titles remain intact and a registry alias uses the executable identit
   assert.equal(catalog.getNodeCatalogEntry({ ...data, label: 'My border preparation' }).label, 'My border preparation');
 });
 
+test('canonical portable captions display their exact execution action while retaining authored titles and data', () => {
+  const stock = [
+    ['DiffusersAudio', 'Generate', 'Diffusers.GenerateAudio', 'Generate Audio'],
+    ['DiffusersAudio', 'LoadPipeline', 'Diffusers.LoadPipeline', 'Load Audio Pipeline'],
+    ['DiffusersImage', 'ControlEdit', 'Diffusers.ControlEdit', 'Edit Image with Control'],
+    ['DiffusersImage', 'ControlGenerate', 'Diffusers.Control', 'Generate Image with Control'],
+    ['DiffusersImage', 'ControlInpaint', 'Diffusers.ControlInpaint', 'Inpaint Image with Control'],
+    ['DiffusersImage', 'Edit', 'Diffusers.Edit', 'Edit Image'],
+    ['DiffusersImage', 'Generate', 'Diffusers.Generate', 'Generate Image'],
+    ['DiffusersImage', 'Inpaint', 'Diffusers.Inpaint', 'Inpaint Image'],
+    ['DiffusersImage', 'LoadPipeline', 'Diffusers.LoadPipeline', 'Load Image Pipeline'],
+    ['DiffusersThreeD', 'GenerateRenderedArtifact', 'Diffusers.Generate3D', 'Render 3D Orbit'],
+    ['DiffusersThreeD', 'LoadPipeline', 'Diffusers.LoadPipeline', 'Load 3D Pipeline'],
+    ['DiffusersVideo', 'Generate', 'Diffusers.Generate', 'Generate Video'],
+    ['DiffusersVideo', 'GenerateVideoAudio', 'Diffusers.Generate', 'Generate Video and Audio'],
+    ['DiffusersVideo', 'LoadPipeline', 'Diffusers.LoadPipeline', 'Load Video Pipeline'],
+    ['ModularDiffusers', 'ModelsLoader', 'Diffusers.LoadPipeline', 'Load Modular Components'],
+  ];
+  for (const [module, action, label, expected] of stock) {
+    const data = node(module, action, label);
+    const before = JSON.stringify(data);
+    assert.equal(presentation.nodeDisplayLabel(data), expected, module + '.' + action);
+    assert.equal(catalog.nodeCatalogEntryMatchesSearch(catalog.getNodeCatalogEntry(data), label), true);
+    assert.equal(presentation.nodeDisplayLabel({ ...data, label: label + ' for my scene' }), label + ' for my scene');
+    assert.equal(presentation.nodeDisplayLabel({ ...data, module: 'custom.Models' }), label);
+    assert.equal(JSON.stringify(data), before);
+  }
+  const authored = node('DiffusersImage', 'Edit', 'Diffusers.Generate');
+  assert.equal(presentation.nodeDisplayLabel(authored), 'Diffusers.Generate');
+});
+
+test('stock media loaders show their bound role without changing custom names or unbound palette entries', () => {
+  const stock = [
+    ['Image', 'loadImage', 'Source Image'],
+    ['Image', 'loadMask', 'Mask'],
+    ['Image', 'loadControlImage', 'Control Image'],
+    ['Image', 'loadIPAdapterImage', 'Reference Image'],
+    ['Image', 'loadLastImage', 'Last Frame'],
+    ['Audio', 'loadAudio', 'Source Audio'],
+    ['Audio', 'loadReferenceAudio', 'Reference Audio'],
+    ['Video', 'loadVideo', 'Source Video'],
+    ['Video', 'loadReferenceVideo', 'Reference Video'],
+    ['Video', 'loadControlVideo', 'Control Video'],
+    ['Video', 'loadMaskVideo', 'Mask Video'],
+    ['Video', 'loadPoseVideo', 'Pose Video'],
+    ['Video', 'loadFaceVideo', 'Face Video'],
+    ['Video', 'loadBackgroundVideo', 'Background Video'],
+  ];
+  for (const [module, studioRole, expected] of stock) {
+    const label = 'Load ' + module;
+    const data = { ...node(module, 'Load', label), studioRole };
+    const before = JSON.stringify(data);
+    assert.equal(presentation.nodeDisplayLabel(data), expected);
+    assert.equal(
+      presentation.nodeDisplayLabel({ ...data, label: 'Reference from my camera' }),
+      'Reference from my camera',
+    );
+    assert.equal(presentation.nodeDisplayLabel({ ...data, studioRole: 'unknownRole' }), label);
+    assert.equal(presentation.nodeDisplayLabel({ ...data, module: 'custom.Media' }), label);
+    assert.equal(presentation.nodeDisplayLabel({ ...data, action: 'Clone' }), label);
+    assert.equal(presentation.nodeDisplayLabel({ ...data, studioRole: undefined }), label);
+    assert.equal(JSON.stringify(data), before);
+  }
+  assert.equal(
+    presentation.nodeDisplayLabel({ ...node('Audio', 'Load', 'Load Audio'), studioRole: 'loadMask' }),
+    'Load Audio',
+  );
+});
+
 test('managed image actions show their exact task instead of the shared generation operation title', () => {
   const cases = [
     ['Edit', 'edit_image', 'Edit Image'],

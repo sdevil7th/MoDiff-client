@@ -2632,6 +2632,13 @@ test('managed speech authoring uses exact backend timestamp options without rewr
   studio.getState().updateForm({ modelType: ctc });
   assert.equal(studio.getState().form.speechTimestamps, 'word');
 
+  const templateFor = (modelType) => ({ id: 'speech-template-fixture', modelType, mode: 'speech_to_text', prompt: '' });
+  studio.getState().applyTemplate(templateFor(ctc), { sourceAudio: ['@data/audio/template-input.wav'] });
+  assert.equal(studio.getState().form.speechTimestamps, 'word', 'Fresh CTC templates must use the CTC node default');
+  assert.deepEqual(studio.getState().form.sourceAudio, ['@data/audio/template-input.wav']);
+  studio.getState().applyTemplate(templateFor(whisper));
+  assert.equal(studio.getState().form.speechTimestamps, 'segment', 'Fresh Whisper templates retain segment timestamps');
+
   // Loading a persisted draft does not take the explicit task/model authoring path.
   studio.setState({ form: { ...studio.getState().form, speechTimestamps: 'segment' } });
   studio.getState().updateForm({ sourceAudio: ['@data/audio/old-input.wav'] });

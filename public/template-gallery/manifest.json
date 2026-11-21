@@ -3059,6 +3059,32 @@
       "afterPath": "/template-gallery/sana_sprint_monochrome_tiger.webp",
       "width": 1024,
       "height": 1024
+    },
+    {
+      "templateId": "wav2vec2_station_announcement",
+      "promptSettingsHash": "ps_583a0762",
+      "templateLockHash": "tpl_51e4cb19",
+      "modelRevision": "facebook/wav2vec2-base-960h@22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+      "runtimeFingerprint": "sha256:stable-runtime-v1:51bd86273b54d35996cab8f90c9884f84513a199813ecd2dc36f7fb3ab1999f9",
+      "graphHash": "sha256:canonical-graph-v1:36c5afc09d6f5f3be0cf44ba472bc514313464e2c61616a1c934a254f137c1c1",
+      "proofLockHash": "sha256:retained-template-association-v1:744bc0abced124474f03240e240b1a820d646757eea3ddccad260b38f33d2261",
+      "backendSourceFingerprint": "sha256:backend-source-v1:98ee8d4a895829905e82d8fefeea42b93e55c96252a5456561eada6ffef3c764",
+      "backendContractFingerprint": "sha256:backend-contract-v1:0a28031ff08ae7b2858c04f373cdb65b75ee0a0bf66ba3ccec2a65ee033cdca9",
+      "modelCommit": "22aad52d435eb6dbaf354bdad9b0da84ce7d6156",
+      "templateRevisionHash": "fc0cb2cf3751967eb0ab2910d5b17fd0796bdf047cfc48871e5266346d925e37",
+      "provenancePath": "/template-gallery/reviews/wav2vec2_station_announcement.retained-template-provenance.json",
+      "provenanceHash": "sha256:canonical-json:d4173d1919726f061fc4c2be89f510f5be75ed176662a579117d434b107ede02",
+      "outputPath": "/template-gallery/wav2vec2_station_announcement.json",
+      "thumbnailPath": "/template-gallery/wav2vec2_station_announcement.json",
+      "mediaHash": "sha256:canonical-json:782f1411a9387b269ccb02331e7b0d916be891a557459e650680afdf53634425",
+      "mediaType": "json",
+      "verificationTimestamp": "2026-11-21T03:22:14.027Z",
+      "qualityReviewPath": "/template-gallery/reviews/wav2vec2_station_announcement.quality-review.json",
+      "qualityReviewHash": "sha256:canonical-json:25491a0413f46367afc2a7f2bd139809327c90bef1def36728feca3e3f71353d",
+      "verificationStatus": "reviewed",
+      "qualityReviewStatus": "approved_reviewed",
+      "reviewer": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-21T06:49:19.885Z"
     }
   ]
 }

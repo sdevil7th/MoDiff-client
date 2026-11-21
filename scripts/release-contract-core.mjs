@@ -676,6 +676,14 @@ export async function exportCanonicalWorkflowGraphs(clientRoot, graphs) {
 // authoring row. A new or edited standalone capture cannot use that baseline.
 const RETAINED_AUTHORING_ARCHIVES = new Map([
   [
+    'HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
+    {
+      descriptorSha256: '226c35aaf3a811a8077e0caae4b4652daaf332d3c7718a095f238afde982f7ee',
+      bytes: 3666,
+      sha256: '16d68385a8e5fad61049a63f68846a1e848e2729d70ff915c5ebb1d704261534',
+    },
+  ],
+  [
     'MarigoldDepthPipeline:depth_estimation',
     {
       descriptorSha256: '1c358ef18df00556b704f826c706674d5ddbd89d8ad091478da862b8ad87c6ea',

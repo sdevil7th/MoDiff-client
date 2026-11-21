@@ -6,7 +6,9 @@ export const GRAPH_LAYOUT_HORIZONTAL_GAP = 140;
 export const GRAPH_LAYOUT_VERTICAL_GAP = 72;
 
 type Size = { width: number; height: number };
+type SizeOfNode = (node: CustomNodeType) => Size;
 type Point = { x: number; y: number };
+type GraphLayoutOptions = { reserveFirstImagePreviewSpace?: boolean };
 
 type Component = {
   id: number;
@@ -53,6 +55,25 @@ export function graphNodeSize(node: CustomNodeType): Size {
       styleDimension(node.style?.height) ??
       fallbackHeight,
   };
+}
+
+function firstImagePreviewSpace(node: CustomNodeType): number {
+  const file = node.data.params.file;
+  if (
+    node.parentId ||
+    node.data.type !== 'custom' ||
+    node.data.module !== 'modules.Image' ||
+    node.data.action !== 'Load' ||
+    file?.display !== 'filebrowser' ||
+    file.hidden
+  )
+    return 0;
+  const values = Array.isArray(file.value) ? file.value : [file.value];
+  if (values.some((value) => typeof value === 'string' && value.trim())) return 0;
+  // FileBrowserField adds a 360px × 16:9 preview and a spare filename row
+  // once the first image is bound. Allow their combined height in the
+  // initial Example spacing without changing the node's measured size.
+  return 240;
 }
 
 function tarjanComponents(ids: string[], adjacency: Map<string, Set<string>>) {
@@ -168,7 +189,7 @@ function reorderRanks(
   }
 }
 
-function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>): Map<string, Point> {
+function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>, sizeOf: SizeOfNode): Map<string, Point> {
   const ids = nodes.map((node) => node.id);
   const idSet = new Set(ids);
   const adjacency = new Map(ids.map((id) => [id, new Set<string>()]));
@@ -181,7 +202,7 @@ function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>): M
   const componentByNode = new Map<string, number>();
   const components = rawComponents.map((members, id) => {
     members.forEach((member) => componentByNode.set(member, id));
-    const sizes = members.map((member) => graphNodeSize(nodeById.get(member)!));
+    const sizes = members.map((member) => sizeOf(nodeById.get(member)!));
     return {
       id,
       members,
@@ -248,7 +269,7 @@ function layoutLevel(nodes: CustomNodeType[], pairs: Array<[string, string]>): M
       const component = components[componentId]!;
       let memberY = y;
       component.members.forEach((member) => {
-        const size = graphNodeSize(nodeById.get(member)!);
+        const size = sizeOf(nodeById.get(member)!);
         positions.set(member, {
           x: (rankX.get(rank) ?? 0) + (component.width - size.width) / 2,
           y: memberY,
@@ -288,8 +309,18 @@ function containerPadding(node: CustomNodeType | undefined) {
  * out first, containers are resized, and then each container participates as a
  * single node in its parent's topology.
  */
-export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): CustomNodeType[] {
+export function arrangeGraphNodes(
+  nodes: CustomNodeType[],
+  edges: Edge[],
+  options: GraphLayoutOptions = {},
+): CustomNodeType[] {
   if (nodes.length < 2) return nodes;
+  const sizeOf: SizeOfNode = options.reserveFirstImagePreviewSpace
+    ? (node) => {
+        const size = graphNodeSize(node);
+        return { ...size, height: size.height + firstImagePreviewSpace(node) };
+      }
+    : graphNodeSize;
   // V2 internals are a derived hierarchical projection, not independent graph
   // documents. Moving/resizing them here bypasses their durable presentation
   // and competes with the recursive Block fitter. Arrange each V2 root as one
@@ -326,7 +357,7 @@ export function arrangeGraphNodes(nodes: CustomNodeType[], edges: Edge[]): Custo
       pairKeys.add(key);
       pairs.push([source, target]);
     });
-    const positions = layoutLevel(levelNodes, pairs);
+    const positions = layoutLevel(levelNodes, pairs, sizeOf);
     const parent = parentId ? nextById.get(parentId) : undefined;
     const padding = containerPadding(parent);
     levelNodes.forEach((node) => {
