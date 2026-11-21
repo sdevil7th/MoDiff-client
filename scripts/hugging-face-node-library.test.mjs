@@ -89,12 +89,14 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
     for (const view of ['common', 'advanced', 'experimental', 'all'])
       assert.equal(matches(entry('modules.ModularDiffusers', action), view), true, action);
   }
-  for (const action of ['ReviewedModularWorkflowStep', 'WorkflowKrea2Denoise', 'DynamicBlockNode']) {
+  for (const action of ['WorkflowKrea2Denoise', 'DynamicBlockNode']) {
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'common'), false);
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'experimental'), false);
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'advanced'), true);
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'all'), true);
   }
+  for (const view of ['common', 'advanced', 'experimental', 'all'])
+    assert.equal(matches(entry('modules.ModularDiffusers', 'ReviewedModularWorkflowStep'), view), false);
   for (const module of ['modules.Primitive', 'modules.Text', 'custom.my_nodes'])
     assert.equal(matches(entry(module, 'TextValue'), 'common'), true);
   assert.equal(matches(entry('modules.Image', 'Preview'), 'common'), true);
