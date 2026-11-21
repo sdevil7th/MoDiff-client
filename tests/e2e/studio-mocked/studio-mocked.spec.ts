@@ -1019,8 +1019,11 @@ test('late-loaded media input previews retain arranged geometry and reachable co
   expect(graphPosts).toBe(0);
 });
 
-test('media utility controls follow the selected operation without losing saved values or wires', async ({ page }) => {
-  const { registry } = await generateTemplateSchemas([]);
+let utilitySchemaFixture: Promise<ImageTemplateSchemaFixture> | undefined;
+
+async function openUtilityTestCanvas(page: Page) {
+  utilitySchemaFixture ??= generateTemplateSchemas([]);
+  const { registry } = await utilitySchemaFixture;
   await ensureFrontend();
   await installMockRoutes(page);
   await page.route('**/media/preview?**', (route) => route.fulfill({ contentType: 'video/mp4', body: '' }));
@@ -1030,6 +1033,20 @@ test('media utility controls follow the selected operation without losing saved 
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
   await dismissTaskLauncher(page);
+  return registry;
+}
+
+function utilityField(node: Locator, key: string) {
+  return node.locator(`[data-key="${key}"]`);
+}
+
+async function chooseUtilityOption(page: Page, node: Locator, key: string, option: string) {
+  await utilityField(node, key).getByRole('button').click();
+  await page.getByRole('option', { name: option, exact: true }).click();
+}
+
+test('media utility controls follow the selected operation without losing saved values or wires', async ({ page }) => {
+  const registry = await openUtilityTestCanvas(page);
   const prepared = await page.evaluate(async (registry) => {
     const [{ createNodeFromRegistry }, { getFormDefaultsForMode }, { buildWorkflowPackage }] = await Promise.all([
       import('/src/workflow/nodeFactory.ts'),
@@ -1068,11 +1085,8 @@ test('media utility controls follow the selected operation without losing saved 
   await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
   const audio = page.locator(`.react-flow__node[data-id="${prepared.audioId}"]`);
   const video = page.locator(`.react-flow__node[data-id="${prepared.videoId}"]`);
-  const field = (node: Locator, key: string) => node.locator(`[data-key="${key}"]`);
-  const choose = async (node: Locator, key: string, option: string) => {
-    await field(node, key).getByRole('button').click();
-    await page.getByRole('option', { name: option, exact: true }).click();
-  };
+  const field = utilityField;
+  const choose = (node: Locator, key: string, option: string) => chooseUtilityOption(page, node, key, option);
   const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
 
   await expect(field(audio, 'start_seconds')).toBeHidden();
@@ -1115,6 +1129,71 @@ test('media utility controls follow the selected operation without losing saved 
   await expect(continued).toHaveAccessibleName(/Continuation Audio/u);
   await expect(field(video, 'selection_mode')).toBeHidden();
   await expect(field(video, 'start_seconds').locator('input')).toHaveValue(/^3\.250*$/u);
+});
+
+test('image and text utilities show controls for the effective action', async ({ page }) => {
+  await page.setViewportSize({ width: 1560, height: 920 });
+  const registry = await openUtilityTestCanvas(page);
+  const prepared = await page.evaluate(async (registry) => {
+    const [{ createNodeFromRegistry }, { getFormDefaultsForMode }, { buildWorkflowPackage }] = await Promise.all([
+      import('/src/workflow/nodeFactory.ts'),
+      import('/src/studio/modelProfiles.ts'),
+      import('/src/studio/workflowPackage.ts'),
+    ]);
+    const image = createNodeFromRegistry('modules.ImageOperations.ProcessImage', registry, { x: 0, y: 0 })!;
+    const text = createNodeFromRegistry('modules.Text.ProcessText', registry, { x: 470, y: 0 })!;
+    image.data.params.operation!.value = 'image_crop';
+    image.data.params.x!.value = 7;
+    text.data.params.operation!.value = 'data_conversion';
+    text.data.params.target_type!.value = 'float';
+    text.data.params.alternate_source!.value = 'Saved alternate branch.';
+    const packageData = buildWorkflowPackage({
+      form: getFormDefaultsForMode('image_crop', 'BuiltinImageOperation'),
+      graph: { nodes: [image, text], edges: [] },
+    });
+    return { packageData, imageId: image.id, textId: text.id };
+  }, registry);
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'image-text-utilities.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(prepared.packageData)),
+  });
+  await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+  const image = page.locator(`.react-flow__node[data-id="${prepared.imageId}"]`);
+  const text = page.locator(`.react-flow__node[data-id="${prepared.textId}"]`);
+  const choose = (node: Locator, key: string, option: string) => chooseUtilityOption(page, node, key, option);
+
+  await expect(utilityField(image, 'brightness')).toBeHidden();
+  await expect(utilityField(image, 'x').locator('input')).toHaveValue('7');
+  await expect(utilityField(image, 'mask')).toBeHidden();
+  await choose(image, 'operation', 'image_filter');
+  await expect(utilityField(image, 'amount')).toBeVisible();
+  await expect(utilityField(image, 'seed')).toBeHidden();
+  await expect(utilityField(image, 'threshold')).toBeHidden();
+  await choose(image, 'filter_operation', 'unsharp_mask');
+  await expect(utilityField(image, 'threshold')).toBeVisible();
+  await choose(image, 'filter_operation', 'film_grain');
+  await expect(utilityField(image, 'threshold')).toBeHidden();
+  await expect(utilityField(image, 'seed')).toBeVisible();
+  await choose(image, 'operation', 'mask_composite');
+  await expect(utilityField(image, 'mask')).toBeVisible();
+  await expect(utilityField(image, 'filter_operation')).toBeHidden();
+  await choose(image, 'operation', 'image_crop');
+  await expect(utilityField(image, 'x').locator('input')).toHaveValue('7');
+
+  await expect(utilityField(text, 'target_type')).toContainText('Float');
+  await expect(utilityField(text, 'index')).toBeHidden();
+  await expect(utilityField(text, 'alternate_source')).toBeHidden();
+  await choose(text, 'operation', 'Select Text Branch');
+  await expect(utilityField(text, 'alternate_source').locator('textarea')).toHaveValue('Saved alternate branch.');
+  await expect(utilityField(text, 'condition')).toBeVisible();
+  await expect(utilityField(text, 'target_type')).toBeHidden();
+  await choose(text, 'operation', 'Select Line');
+  await expect(utilityField(text, 'index')).toBeVisible();
+  await expect(utilityField(text, 'alternate_source')).toBeHidden();
+  await choose(text, 'operation', 'Convert Data');
+  await expect(utilityField(text, 'target_type')).toContainText('Float');
 });
 
 test('renamed declared video output stays runnable after ordinary import Save and reload', async ({ page }) => {
