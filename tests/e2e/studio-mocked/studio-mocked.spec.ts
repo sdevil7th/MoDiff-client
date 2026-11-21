@@ -1197,6 +1197,84 @@ test('image and text utilities show controls for the effective action', async ({
   await expect(utilityField(text, 'target_type')).toContainText('Float');
 });
 
+test('video canvas expansion needs only the source and preserves the prepared mask choice', async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 900 });
+  const registry = await openUtilityTestCanvas(page);
+  const prepared = await page.evaluate(async (registry) => {
+    const [{ createNodeFromRegistry }, { getFormDefaultsForMode }, { buildWorkflowPackage }] = await Promise.all([
+      import('/src/workflow/nodeFactory.ts'),
+      import('/src/studio/modelProfiles.ts'),
+      import('/src/studio/workflowPackage.ts'),
+    ]);
+    const source = createNodeFromRegistry('modules.Video.Load', registry, { x: 0, y: 0 })!;
+    source.data.params.file!.value = ['@data/videos/source.mp4'];
+    const canvas = createNodeFromRegistry('modules.VideoConditioning.OutpaintCanvas', registry, { x: 470, y: 0 })!;
+    canvas.data.params.left!.value = 16;
+    // Exercise an older saved node through the live conditional declaration.
+    delete canvas.data.params.prepared_mask_file!.required;
+    delete canvas.data.params.prepared_mask_file!.requiredWhen;
+    const edge = {
+      id: 'source-to-canvas',
+      source: source.id,
+      sourceHandle: 'video',
+      target: canvas.id,
+      targetHandle: 'video',
+    };
+    const packageData = buildWorkflowPackage({
+      form: getFormDefaultsForMode('video_frame_extract', 'BuiltinVideoOperation'),
+      graph: { nodes: [source, canvas], edges: [edge] },
+    });
+    return { packageData, canvasId: canvas.id, edge };
+  }, registry);
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'video-canvas-expansion.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(prepared.packageData)),
+  });
+  await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+  const canvas = page.locator(`.react-flow__node[data-id="${prepared.canvasId}"]`);
+  const maskEditor = utilityField(canvas, 'prepared_mask_file').filter({ has: page.locator('input[type="file"]') });
+  const read = () =>
+    page.evaluate(async (canvasId) => {
+      const [{ useFlowStore }, { useNodesStore }, { inspectRequiredGraphInputs }] = await Promise.all([
+        import('/src/stores/useFlowStore.ts'),
+        import('/src/stores/useNodeStore.ts'),
+        import('/src/studio/requiredGraphInputs.ts'),
+      ]);
+      const { nodes, edges } = useFlowStore.getState();
+      const definitions = useNodesStore.getState().nodesRegistry;
+      return {
+        missing: inspectRequiredGraphInputs(nodes, { nodes, edges }, definitions).map(({ fieldId }) => fieldId),
+        maskFile: nodes.find(({ id }) => id === canvasId)?.data.params.prepared_mask_file?.value,
+        sourceHandle: edges.find(({ target }) => target === canvasId)?.sourceHandle,
+      };
+    }, prepared.canvasId);
+
+  await expect(maskEditor).toBeHidden();
+  await expect(utilityField(canvas, 'left').locator('input')).toHaveValue('16');
+  expect((await read()).missing).toEqual([]);
+  await chooseUtilityOption(page, canvas, 'preparation', 'Use Prepared Mask');
+  await expect(maskEditor).toBeVisible();
+  await expect(utilityField(canvas, 'left')).toBeHidden();
+  expect((await read()).missing).toEqual(['prepared_mask_file']);
+
+  const maskPath = '@data/videos/prepared-mask.mp4';
+  const maskInput = maskEditor.getByRole('textbox');
+  await maskInput.fill(maskPath);
+  await maskInput.blur();
+  expect((await read()).missing).toEqual([]);
+  await chooseUtilityOption(page, canvas, 'preparation', 'Expand Canvas');
+  await expect(maskEditor).toBeHidden();
+  await expect(utilityField(canvas, 'left').locator('input')).toHaveValue('16');
+  expect(await read()).toMatchObject({ missing: [], maskFile: [maskPath], sourceHandle: prepared.edge.sourceHandle });
+  await expect(page.getByTestId(`node-handle-${prepared.canvasId}-canvas`)).toBeVisible();
+  await expect(page.getByTestId(`node-handle-${prepared.canvasId}-mask`)).toBeVisible();
+  await chooseUtilityOption(page, canvas, 'preparation', 'Use Prepared Mask');
+  await expect(maskInput).toHaveValue(maskPath);
+  expect((await read()).missing).toEqual([]);
+});
+
 test('renamed declared video output stays runnable after ordinary import Save and reload', async ({ page }) => {
   const fixture = await generateTemplateSchemas([]);
   await ensureFrontend();

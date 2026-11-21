@@ -37,6 +37,9 @@ const UTILITY_OPTION_LABELS: Record<string, Record<string, Record<string, string
     },
     selection_mode: FRAME_SELECTION_LABELS,
   },
+  'modules.VideoConditioning.OutpaintCanvas': {
+    preparation: { expand: 'Expand Canvas', prepared: 'Use Prepared Mask' },
+  },
   'modules.ImageOperations.ProcessImage': {
     operation: {
       image_adjustment: 'Adjust Image',
@@ -81,6 +84,10 @@ const FIELDS_BY_UTILITY: Record<string, Record<string, readonly string[]>> = {
     video_trim: ['start_seconds', 'end_seconds', 'video'],
     video_reverse: ['video'],
     video_tile: ['columns', 'sync', 'gap', 'background', 'video'],
+  },
+  'modules.VideoConditioning.OutpaintCanvas': {
+    expand: ['left', 'right', 'top', 'bottom', 'fill_color'],
+    prepared: ['prepared_mask_file', 'invert', 'threshold', 'grow_pixels'],
   },
   'modules.ImageOperations.ProcessImage': {
     image_adjustment: ['brightness', 'contrast', 'saturation', 'sharpness', 'gamma', 'temperature', 'tint'],
@@ -128,7 +135,8 @@ export function builtinUtilityOperationPresentation(identity: string, params: Re
     return { inactive: new Set(inactiveFrameSelectionControls(params.mode)), continuation: false };
   if (!Object.prototype.hasOwnProperty.call(FIELDS_BY_UTILITY, identity)) return undefined;
   const fields = FIELDS_BY_UTILITY[identity]!;
-  const operation = savedSelector(params.operation);
+  const selector = identity === 'modules.VideoConditioning.OutpaintCanvas' ? params.preparation : params.operation;
+  const operation = savedSelector(selector);
   if (!operation || !Object.prototype.hasOwnProperty.call(fields, operation)) return undefined;
   const active = new Set(fields[operation]);
 
