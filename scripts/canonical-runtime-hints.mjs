@@ -94,14 +94,14 @@ export function canonicalPixArtSigmaPagRuntimeHintAccounting(args) {
   return canonicalRuntimeHintAccounting(args, 'text_to_image', 'canonical-pixart-sigma-pag-runtime-hints-v1', 2);
 }
 
-export function directImagePromptRuntimeHintAccounting(args) {
-  const savedSd15 = args.plan.modelType === 'StableDiffusionPipeline';
+export function directImagePromptRuntimeHintAccounting(args, profile) {
   assert.ok(
-    savedSd15 || ['PRXPipeline', 'StableDiffusionXLPipeline'].includes(args.plan.modelType),
+    profile && args.plan.modelType === profile.modelType,
     'Direct image snapshot model is outside reviewed scope.',
   );
-  const stageName = savedSd15 ? 'Saved SD1.5' : 'Direct image';
-  const expectedBlockCount = savedSd15 ? 2 : 1;
+  const savedGenerateBlock = profile.savedGenerateBlock === true;
+  const stageName = savedGenerateBlock ? 'Saved direct image' : 'Direct image';
+  const expectedBlockCount = savedGenerateBlock ? 2 : 1;
   const nodes = args.apiGraph.runtimeHints?.workflowSnapshot?.nodes;
   assert.ok(Array.isArray(nodes), `Original ${stageName} workflow snapshot is missing.`);
   const blocks = nodes.filter((node) => node.data?.blockInstanceV2);
@@ -118,13 +118,13 @@ export function directImagePromptRuntimeHintAccounting(args) {
     ['DiffusersExecutionRecipe', 'LoadPipeline', 'PipelineQuantizationConfigV2'],
     `${stageName} Model Setup member scope differs.`,
   );
-  if (savedSd15) same(members[1], ['Generate'], 'Saved SD1.5 Generate member scope differs.');
+  if (savedGenerateBlock) same(members[1], ['Generate'], 'Saved direct image Generate member scope differs.');
   same(
     nodes
       .filter((node) => !node.data?.blockInstanceV2)
       .map((node) => node.data?.action)
       .sort(),
-    savedSd15 ? ['Preview'] : ['Generate', 'Preview'],
+    savedGenerateBlock ? ['Preview'] : ['Generate', 'Preview'],
     `${stageName} ordinary executable node scope differs.`,
   );
   return canonicalRuntimeHintAccounting(

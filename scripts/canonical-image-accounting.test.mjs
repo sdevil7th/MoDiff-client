@@ -10,6 +10,7 @@ import {
   canonicalAccountingExecutionPlan,
   createRunProvenance,
   directImagePromptAccountingExecutionPlan,
+  directImagePromptRoutes,
   stableStringify,
 } from './live-proof-provenance.mjs';
 import { exportCanonicalWorkflowGraphs, readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
@@ -54,6 +55,7 @@ const project = (kind, values, sourceNodeId, sourcePortId) => ({
 let synthetic;
 let syntheticPrx;
 let syntheticSdxl;
+let syntheticSd15Pag;
 const syntheticRetained = new Map();
 before(async () => {
   synthetic = await syntheticImageCase({
@@ -75,22 +77,33 @@ before(async () => {
     platform: 'Linux-x86_64',
     backend: 'rocm',
   });
+  syntheticSd15Pag = await syntheticImageCase({
+    modelType: 'StableDiffusionPAGPipeline',
+    graphPath: 'stable-diffusion-pag-pipeline/text-to-image.json',
+    size: 512,
+    platform: 'Windows-11',
+    backend: 'cuda',
+  });
   for (const profile of retainedProfiles) syntheticRetained.set(profile.modelType, await syntheticImageCase(profile));
 });
 
 async function syntheticImageCase({ modelType, graphPath, size, platform, backend }) {
   const directPrx = modelType === 'PRXPipeline';
   const directSdxl = modelType === 'StableDiffusionXLPipeline';
-  const directImage = directPrx || directSdxl;
+  const directPag = modelType === 'StableDiffusionPAGPipeline';
+  const directImage = directPrx || directSdxl || directPag;
   const retained = platform !== undefined && !directImage;
   const generateAction = retained ? 'UnconditionalGenerate' : 'Generate';
   const taskMode = retained ? 'unconditional_image' : 'text_to_image';
   const graph = JSON.parse(readFileSync(join(backendRoot, 'data/graphs/studio', graphPath), 'utf8'));
   if (directImage) {
     const generate = graph.nodes.find((node) => node.data.action === 'Generate');
-    generate.data.params.prompt.value = directSdxl
-      ? 'A rain-soaked Victorian conservatory with a wet terracotta aisle and fern beds.'
-      : 'Editorial product photograph of a single silver compass.';
+    const prompt = {
+      StableDiffusionXLPipeline: 'A rain-soaked Victorian conservatory with a wet terracotta aisle and fern beds.',
+      StableDiffusionPAGPipeline: 'A weathered copper watering can on a rain-dark slate step.',
+      PRXPipeline: 'Editorial product photograph of a single silver compass.',
+    };
+    generate.data.params.prompt.value = prompt[modelType];
   }
   const [expected] = await exportCanonicalWorkflowGraphs(clientRoot, [graph]);
   const form = { modelType, mode: taskMode, ...(retained ? { resourceMode: 'expert' } : {}) };
@@ -210,10 +223,9 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
             'control_guidance_start',
             'image_guidance_scale',
             'layers',
-            ...(directSdxl ? ['max_sequence_length'] : []),
+            ...(!directPrx ? ['max_sequence_length'] : []),
             'padding_mask_crop',
-            'pag_adaptive_scale',
-            'pag_scale',
+            ...(!directPag ? ['pag_adaptive_scale', 'pag_scale'] : []),
             'resolution',
             'strength',
             'use_en_prompt',
@@ -270,7 +282,7 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
           disposition: 'superseded',
           reason: 'connected-recipe',
         };
-      } else if (retained && node.action === 'LoadPipeline' && key === 'device_map') {
+      } else if ((retained || directPag) && node.action === 'LoadPipeline' && key === 'device_map') {
         field = { ...field, value: 'cuda', disposition: 'superseded', reason: 'loader-normalization' };
       } else if (key === 'image_contract') {
         field = {
@@ -294,7 +306,7 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
     if (node.action === generateAction) {
       row.fields.executed_task = legacy(taskMode);
       if (!retained) for (const [key, value] of Object.entries(emptyConditioning)) row.fields[key] = legacy(value);
-      if (directSdxl) row.fields.max_sequence_length = legacy(null);
+      if (directSdxl || directPag) row.fields.max_sequence_length = legacy(null);
     }
     consumed.nodes.push(row);
   }
@@ -472,14 +484,17 @@ test('saved SD1.5 stage owners still require the original native completion evid
   const setup = block(['LoadPipeline', 'PipelineQuantizationConfigV2', 'DiffusersExecutionRecipe']);
   const generate = block(['Generate']);
   const verify = (modelType, nodes) =>
-    directImagePromptRuntimeHintAccounting({
-      plan: { modelType },
-      apiGraph: { runtimeHints: { workflowSnapshot: { nodes } } },
-    });
+    directImagePromptRuntimeHintAccounting(
+      {
+        plan: { modelType },
+        apiGraph: { runtimeHints: { workflowSnapshot: { nodes } } },
+      },
+      directImagePromptRoutes.find((profile) => profile.modelType === modelType),
+    );
   assert.throws(() => verify('StableDiffusionPipeline', [preview, setup, generate]), /original completion evidence/u);
   assert.throws(
     () => verify('StableDiffusionPipeline', [preview, setup, block(['Preview'])]),
-    /Saved SD1.5 Generate member scope differs/u,
+    /Saved direct image Generate member scope differs/u,
   );
   assert.throws(
     () => verify('StableDiffusionPipeline', [preview, setup, { data: { action: 'Generate' } }]),
@@ -487,6 +502,24 @@ test('saved SD1.5 stage owners still require the original native completion evid
   );
   assert.throws(() => verify('PRXPipeline', [preview, setup, generate]), /exact saved stage owners/u);
   assert.throws(() => verify('SanaSprintPipeline', [preview, setup, generate]), /outside reviewed scope/u);
+});
+
+test('SD1.5 PAG prompt variant requires both locked PAG values in typed consumption evidence', () => {
+  const { plan } = projection(syntheticSd15Pag, directImagePromptAccountingExecutionPlan);
+  assert.equal(plan.runtimeHintAccounting.policy, 'direct-image-prompt-runtime-hints-v1');
+  assert.equal(plan.offloadMode, 'none');
+  const generate = (proof) =>
+    proof.executedOutput.resolvedExecutionInputs.nodes.find((node) => node.action === 'Generate');
+  assert.equal(generate(syntheticSd15Pag).fieldAccounting.fields.strength.disposition, 'inactive');
+  const missingScalar = structuredClone(syntheticSd15Pag);
+  delete generate(missingScalar).fieldAccounting.fields.pag_adaptive_scale;
+  assert.throws(() => projection(missingScalar, directImagePromptAccountingExecutionPlan));
+  const changedScalar = structuredClone(syntheticSd15Pag);
+  generate(changedScalar).fieldAccounting.fields.pag_scale.value = 4;
+  assert.throws(() => projection(changedScalar, directImagePromptAccountingExecutionPlan));
+  const legacyScalar = structuredClone(syntheticSd15Pag);
+  generate(legacyScalar).fields.pag_scale = { value: 3, source: 'literal' };
+  assert.throws(() => projection(legacyScalar, directImagePromptAccountingExecutionPlan), /legacy controls/u);
 });
 
 test('staged PixArt evidence derives a correlated Expert CPU-offload plan without altering the originals', () => {

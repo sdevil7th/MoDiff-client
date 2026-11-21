@@ -2211,6 +2211,7 @@ const plainImageInactive =
     ' ',
   );
 const plainImageLegacyNull = ['control_guidance_start', 'conditioning_scale', 'strength', 'control_guidance_end'];
+const sd15PagScalars = ['pag_scale', 'pag_adaptive_scale'];
 export const directImagePromptRoutes = [
   {
     format: 'modiff.private.prx-prompt-variant.v1',
@@ -2238,6 +2239,7 @@ export const directImagePromptRoutes = [
   },
   {
     format: 'modiff.private.sd15-prompt-variant.v1',
+    savedGenerateBlock: true,
     workflowId: 'StableDiffusionPipeline:text_to_image',
     modelType: 'StableDiffusionPipeline',
     modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
@@ -2281,6 +2283,33 @@ export const directImagePromptRoutes = [
       max_sequence_length: 512,
       seed: 42,
       negative_prompt: '',
+    },
+  },
+  {
+    format: 'modiff.private.sd15-pag-prompt-variant.v1',
+    workflowId: 'StableDiffusionPAGPipeline:text_to_image',
+    modelType: 'StableDiffusionPAGPipeline',
+    modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+    modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+    active: [...plainImageActive, 'negative_prompt', ...sd15PagScalars],
+    inactive: [...plainImageInactive.filter((key) => !sd15PagScalars.includes(key)), 'max_sequence_length'],
+    legacyNull: [...plainImageLegacyNull, 'max_sequence_length'],
+    // These effective settings are present only in typed field accounting.
+    typedOnly: sd15PagScalars,
+    platform: /^Windows-/u,
+    backend: 'cuda',
+    dtype: 'float32',
+    offload: 'none',
+    deviceMap: 'cuda',
+    generation: {
+      width: 512,
+      height: 512,
+      num_inference_steps: 30,
+      guidance_scale: 7.5,
+      seed: 42,
+      negative_prompt: '',
+      pag_scale: 3,
+      pag_adaptive_scale: 0,
     },
   },
 ];
@@ -2793,7 +2822,11 @@ function imageAccountingExecutionPlan(
     );
     accountingKeys(
       generate.row.fields,
-      [...promptVariant.active, 'executed_task', ...legacyNullFields],
+      [
+        ...promptVariant.active.filter((key) => !promptVariant.typedOnly?.includes(key)),
+        'executed_task',
+        ...legacyNullFields,
+      ],
       'Direct image legacy controls are incomplete or unexpected.',
     );
     const contract = generate.node.params.image_contract.value;
@@ -2849,7 +2882,7 @@ function imageAccountingExecutionPlan(
   };
   if (apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0) {
     const accountHints = promptVariant
-      ? directImagePromptRuntimeHintAccounting
+      ? (args) => directImagePromptRuntimeHintAccounting(args, promptVariant)
       : retainedUnconditional
         ? canonicalRetainedUnconditionalRuntimeHintAccounting
         : isPixArt
