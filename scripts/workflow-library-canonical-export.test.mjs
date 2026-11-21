@@ -432,6 +432,140 @@ test('Model Setup shows connected VAE recipe controls and retains each loader fa
   }
 });
 
+test('Model Setup hides the stock conditioning picker only when the loader declares it inactive', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const graphName = 'stable-diffusion-xl-pipeline/text-to-image';
+  const load = (name) => JSON.parse(readFileSync(path.join(backend, `data/graphs/studio/${name}.json`), 'utf8'));
+  const projection = (source) => {
+    const grouped = groups.groupNewOperationGraph(source);
+    const setup = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+    assert.ok(setup);
+    const instance = setup.data.blockInstanceV2;
+    const graph = blockRuntime.blockOperationGraphV2(instance);
+    const loader = graph.nodes.find(
+      ({ data }) => data.module === 'modules.DiffusersImage' && data.action === 'LoadPipeline',
+    );
+    assert.ok(loader);
+    const field = (fieldId) => {
+      const found = instance.effectiveInterface.controls.find(
+        (control) =>
+          control.binding.nodeId === loader.data.blockProjectionNodeId && control.binding.fieldId === fieldId,
+      );
+      assert.ok(found, fieldId);
+      return found;
+    };
+    const { controlParams } = blockRuntime.blockViewModelV2(instance);
+    const conditioning = field('conditioning_model_id');
+    return {
+      grouped,
+      setup,
+      instance,
+      graph,
+      loader,
+      controlParams,
+      conditioning,
+      modelId: field('model_id').controlId,
+    };
+  };
+  const active = (context, graph = context.graph, edges = [], root = context.setup) => {
+    const projected = modelSetupControlParams(context.instance, graph, context.controlParams, edges);
+    assert.ok(projected[context.modelId], 'Base model picker remains available');
+    return {
+      stage: Object.hasOwn(projected, context.conditioning.controlId),
+      inspector: Object.hasOwn(graphNodeControlParams(root, edges), context.conditioning.controlId),
+    };
+  };
+  const source = load(graphName);
+  const inactive = projection(source);
+  const before = structuredClone(inactive.grouped);
+  assert.equal(inactive.loader.data.params.conditioning_kind.value, 'none');
+  assert.equal(inactive.controlParams[inactive.conditioning.controlId].display, 'modelselect');
+  assert.equal(inactive.controlParams[inactive.conditioning.controlId].hidden, false);
+  assert.deepEqual(active(inactive), { stage: false, inspector: false });
+  const api = (sourceGraph) =>
+    canonicalGraphIdentity(
+      flowStore
+        .getState()
+        .exportGraph('model-setup-conditioning-visibility', undefined, { sourceGraph, randomizeSeeds: false }),
+    );
+  assert.deepEqual(inactive.grouped, before, 'Projection must preserve the entire saved graph and interface.');
+  assert.deepEqual(api(inactive.grouped), api(source));
+
+  for (const [name, kind] of [
+    ['stable-diffusion-xl-control-net-pipeline/control-image', 'controlnet'],
+    ['stable-diffusion-xl-adapter-pipeline/control-image', 't2i_adapter'],
+  ]) {
+    const enabled = projection(load(name));
+    assert.equal(enabled.loader.data.params.conditioning_kind.value, kind);
+    assert.deepEqual(active(enabled), { stage: true, inspector: true }, name);
+  }
+
+  const supplier = {
+    id: 'typed-value-source',
+    type: 'basic',
+    position: { x: 0, y: 0 },
+    data: {
+      module: 'modules.Primitive',
+      action: 'TextValue',
+      label: 'Text Value',
+      params: {
+        text: { type: 'string', display: 'text', value: 'a value supplied at execution' },
+        output: { type: 'string', display: 'output' },
+      },
+    },
+  };
+  for (const fieldOrPortId of ['conditioning_kind', 'conditioning_model_id']) {
+    const edge = {
+      id: `dynamically-supplied-${fieldOrPortId}`,
+      source: supplier.id,
+      sourceHandle: 'output',
+      target: inactive.setup.id,
+      targetHandle: `block-crossing:input:${encodeURIComponent(inactive.loader.data.blockProjectionNodeId)}:${fieldOrPortId}`,
+    };
+    const wired = {
+      ...inactive.grouped,
+      nodes: [...inactive.grouped.nodes, supplier],
+      edges: [...inactive.grouped.edges, edge],
+    };
+    const exportWithSupplier = api(wired);
+    const consumer = exportWithSupplier.canonicalGraph.nodes.find(({ action }) => action === 'LoadPipeline');
+    assert.equal(consumer.params[fieldOrPortId].sourceKey, 'output');
+    assert.deepEqual(active(inactive, inactive.graph, wired.edges), { stage: true, inspector: true }, fieldOrPortId);
+    assert.deepEqual(api(wired), exportWithSupplier);
+    assert.deepEqual(
+      active(inactive),
+      { stage: false, inspector: false },
+      `Revert after disconnecting ${fieldOrPortId}`,
+    );
+    assert.deepEqual(inactive.grouped, before);
+  }
+
+  const unresolved = load(graphName);
+  const unresolvedSelector = unresolved.nodes.find(({ data }) => data.action === 'LoadPipeline').data.params
+    .conditioning_kind;
+  delete unresolvedSelector.value;
+  delete unresolvedSelector.default;
+  assert.deepEqual(active(projection(unresolved)), { stage: true, inspector: true }, 'No literal selector authority');
+
+  const interfaceControl = { ...inactive.conditioning, group: 'My loader settings' };
+  const customInstance = blockRuntime.replaceBlockEffectiveInterfaceV2(inactive.instance, {
+    ...inactive.instance.effectiveInterface,
+    controls: inactive.instance.effectiveInterface.controls.map((control) =>
+      control.controlId === interfaceControl.controlId ? interfaceControl : control,
+    ),
+  });
+  const custom = { ...inactive.setup, data: { ...inactive.setup.data, blockInstanceV2: customInstance } };
+  const customParams = blockRuntime.blockViewModelV2(customInstance).controlParams;
+  const customGraph = blockRuntime.blockOperationGraphV2(customInstance);
+  const customView = modelSetupControlParams(customInstance, customGraph, customParams);
+  assert.equal(customView[interfaceControl.controlId].label, interfaceControl.label);
+  assert.equal(graphNodeControlParams(custom)[interfaceControl.controlId].label, interfaceControl.label);
+  assert.equal(
+    modelSetupControlGroupLabel(interfaceControl.group, [interfaceControl], customGraph),
+    interfaceControl.group,
+  );
+});
+
 test('Model Setup scopes VAE precedence to each owner and distinguishes base model revision', () => {
   const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   const stageControls = (relative) => {

@@ -82,7 +82,7 @@ const EncodingNode = memo((node: NodeProps<CustomNodeType>) => {
               <GuidanceNodeControls instance={instance} />
             ) : (
               <Suspense fallback={<p role="status">Loading stage controls…</p>}>
-                <StageNodeControls node={{ ...node, position: view.position }} updateStore={update} />
+                <StageNodeControls node={{ ...node, position: view.position }} edges={edges} updateStore={update} />
               </Suspense>
             ),
           actions: (

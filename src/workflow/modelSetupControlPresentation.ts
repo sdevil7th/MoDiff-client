@@ -1,5 +1,8 @@
+import type { Edge } from '@xyflow/react';
+import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
-import { blockProjectionNodeIdV2, type BlockFlowGraphV2 } from '../studio/blockRuntimeV2';
+import { blockCrossingHandleV2 } from '../studio/blockCrossingConnectionsV2';
+import { blockInputPortBindingsV2, blockProjectionNodeIdV2, type BlockFlowGraphV2 } from '../studio/blockRuntimeV2';
 import type { BlockControlV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isModelSetupAdapterKey } from '../studio/controlledWorkflowContracts';
 import { nodeDisplayLabel } from './nodePresentation';
@@ -7,6 +10,8 @@ import { nodeDisplayLabel } from './nodePresentation';
 const IMAGE_LOADER = 'modules.DiffusersImage.LoadPipeline';
 const AUDIO_LOADER = 'modules.DiffusersAudio.LoadPipeline';
 const EXECUTION_RECIPE = 'modules.DiffusersRuntime.DiffusersExecutionRecipe';
+const CONDITIONING_KIND = 'conditioning_kind';
+const CONDITIONING_MODEL = 'conditioning_model_id';
 const RECIPE_SOCKET = 'execution_recipe';
 const RECIPE_TYPE = 'diffusers_execution_recipe';
 const VAE_FALLBACKS: Record<string, Record<string, string>> = {
@@ -27,12 +32,36 @@ export function modelSetupControlGroupLabel(
   return member?.data.label === group ? nodeDisplayLabel(member.data) : group;
 }
 
+function hasConditioningSupplier(
+  instance: BlockInstanceV2,
+  owner: CustomNodeType,
+  internalEdges: readonly Edge[],
+  workflowEdges: readonly Edge[],
+) {
+  const fields = [CONDITIONING_KIND, CONDITIONING_MODEL];
+  if (internalEdges.some((edge) => edge.target === owner.id && fields.includes(edge.targetHandle ?? ''))) return true;
+  const nodeId = owner.data.blockProjectionNodeId!;
+  const handles = new Set(
+    fields.map((fieldOrPortId) => blockCrossingHandleV2({ nodeId, fieldOrPortId, direction: 'input' })),
+  );
+  for (const port of instance.effectiveInterface.boundary.inputs) {
+    if (
+      blockInputPortBindingsV2(port).some(
+        (binding) => binding.nodeId === nodeId && fields.includes(binding.fieldOrPortId),
+      )
+    )
+      handles.add(port.portId);
+  }
+  return workflowEdges.some((edge) => edge.target === instance.instanceId && handles.has(edge.targetHandle ?? ''));
+}
+
 /** Only compact Model Setup's displayed controls change. The loader's
  * fallback still belongs to its saved leaf and becomes active on disconnect. */
 export function modelSetupControlParams(
   instance: BlockInstanceV2,
   graph: BlockFlowGraphV2,
   params: Record<string, NodeParams>,
+  workflowEdges: readonly Edge[] = [],
 ): Record<string, NodeParams> {
   const controls = instance.effectiveInterface.controls;
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
@@ -53,6 +82,29 @@ export function modelSetupControlParams(
     const field = params[control.controlId];
     if (!owner || !field) continue;
     const nodeKey = `${owner.data.module}.${owner.data.action}`;
+    const declared = owner.data.params[fieldId];
+    const conditioning = owner.data.params[CONDITIONING_KIND];
+    // Portable graphs can retain the unfiltered loader schema. Use an exact,
+    // unconnected selector as evidence instead of resolving a supplier or reseeding a value.
+    if (
+      nodeKey === IMAGE_LOADER &&
+      fieldId === CONDITIONING_MODEL &&
+      declared?.display === 'modelselect' &&
+      control.label === declared.label &&
+      control.group === owner.data.label?.trim() &&
+      !control.sealed &&
+      !control.mirrorBindings?.length &&
+      !owner.data.uiState?.disabled &&
+      conditioning?.value === 'none' &&
+      !conditioning.isConnected &&
+      !conditioning.signal &&
+      !declared.isConnected &&
+      !declared.signal &&
+      !hasConditioningSupplier(instance, owner, graph.edges, workflowEdges)
+    ) {
+      delete visible[control.controlId];
+      continue;
+    }
     if (
       hasAdapterRevision &&
       fieldId === 'revision' &&

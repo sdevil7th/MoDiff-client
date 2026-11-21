@@ -326,6 +326,7 @@ export default function StudioPanel() {
         ? `${runReadiness.warningIssues.length} warning${runReadiness.warningIssues.length === 1 ? '' : 's'}`
         : undefined;
   const graphNodes = useFlowStore(useShallow((state) => state.nodes));
+  const graphEdges = useFlowStore((state) => state.edges);
   // A template can fail before its graph skeleton is committed (for example,
   // when the connected backend is missing a required node contract). Keep the
   // selected template's task controls and readiness issue visible in that
@@ -336,8 +337,8 @@ export default function StudioPanel() {
   const selectedGraphNodes = useMemo(() => graphNodes.filter((node) => node.selected), [graphNodes]);
   const inspectExactNode = true;
   const graphInputCandidates = useMemo(
-    () => (inspectExactNode ? graphParamInputCandidates(graphNodes, pinnedGraphInputIds) : []),
-    [graphNodes, inspectExactNode, pinnedGraphInputIds],
+    () => (inspectExactNode ? graphParamInputCandidates(graphNodes, pinnedGraphInputIds, graphEdges) : []),
+    [graphNodes, graphEdges, inspectExactNode, pinnedGraphInputIds],
   );
   const effectivePinnedGraphInputIds = pinnedGraphInputIds.filter((id) =>
     graphInputCandidates.some((input) => input.id === id),

@@ -37097,6 +37097,70 @@ test('reusable canvas Blocks and Python nodes explain their different authoring 
   expect(await optionalStageApi(page)).toEqual(before);
 });
 
+test('Model Setup and Inspector expose the conditioning picker only on eligible image examples', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /^\/(?:graph|hf_download|execute)(?:\/|$)/u.test(new URL(request.url()).pathname)
+    )
+      requests.push(request.url());
+  });
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+
+  for (const [name, conditioning] of [
+    ['stable-diffusion-xl-pipeline/text-to-image', false],
+    ['stable-diffusion-xl-control-net-pipeline/control-image', true],
+    ['stable-diffusion-xl-adapter-pipeline/control-image', true],
+  ] as const) {
+    const source = JSON.parse(await fs.readFile(path.join(BACKEND_ROOT, `data/graphs/studio/${name}.json`), 'utf8'));
+    const setup = await page.evaluate(async (graph) => {
+      const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+      const { groupNewOperationGraph, visualOperationGroup } = await import('/src/workflow/visualOperationGroups.ts');
+      const grouped = groupNewOperationGraph(graph);
+      const node = grouped.nodes.find((candidate) => visualOperationGroup(candidate) === 'setup')!;
+      const controls = node.data.blockInstanceV2!.effectiveInterface.controls;
+      const field = (name: string) => controls.find(({ binding }) => binding.fieldId === name)?.controlId;
+      useFlowStore.getState().replaceGraph(grouped);
+      return { id: node.id, base: field('model_id'), conditioning: field('conditioning_model_id') };
+    }, source);
+    expect(setup.base).toBeTruthy();
+    expect(setup.conditioning).toBeTruthy();
+    const graphBefore = await optionalStageApi(page);
+    await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
+    const card = page.getByTestId(`setup-node-${setup.id}`);
+    const chooser = (root: Locator, field: string) =>
+      root.locator(`[data-key="${field}"]`).getByRole('button', { name: 'Choose model', exact: true });
+    await expect(chooser(card, setup.base!)).toBeVisible();
+    if (conditioning) await expect(chooser(card, setup.conditioning!)).toBeVisible();
+    else await expect(chooser(card, setup.conditioning!)).toHaveCount(0);
+    await card.locator('header').first().click();
+    await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+    const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+    await expect(chooser(inspector, setup.base!)).toBeVisible();
+    if (conditioning) await expect(chooser(inspector, setup.conditioning!)).toBeVisible();
+    else await expect(chooser(inspector, setup.conditioning!)).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    expect(await optionalStageApi(page)).toEqual(graphBefore);
+    if (!conditioning) {
+      await page.getByTestId('topbar-save-workflow-options').click();
+      await page.getByTestId('topbar-save-workflow-as').click();
+      await page.getByTestId('save-workflow-name').fill('Base text-to-image Model Setup');
+      await page.getByTestId('confirm-save-workflow').click();
+      await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(chooser(card, setup.base!)).toBeVisible();
+      await expect(chooser(card, setup.conditioning!)).toHaveCount(0);
+      expect(await optionalStageApi(page)).toEqual(graphBefore);
+    }
+  }
+  expect(requests).toEqual([]);
+});
+
 test('Model Setup VAE settings show the connected recipe once on the canvas and in the inspector', async ({ page }) => {
   const source = JSON.parse(
     await fs.readFile(path.join(BACKEND_ROOT, 'data/graphs/studio/ddim-pipeline/unconditional-image.json'), 'utf8'),
