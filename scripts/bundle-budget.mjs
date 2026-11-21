@@ -490,6 +490,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // The pinned Qwen 2.1 Turbo terms add 125 gzip bytes (522009 -> 522134).
+  125 +
   // Saved attention receipts for five video routes add 267 measured bytes.
   // Keep the previous 17-byte headroom and the existing chunk membership.
   267 +
@@ -750,6 +752,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The pinned Qwen 2.1 Turbo terms add 126 startup gzip bytes (700494 -> 700620).
+  126 +
   // The same receipt compatibility adds 271 measured startup bytes.
   // Keep 20 bytes of headroom and the existing deferred limits.
   271 +

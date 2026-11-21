@@ -34,6 +34,27 @@ const auxiliarySelections = [
     },
   })),
 ];
+const qwenImage21Models = [
+  {
+    pipelineClass: 'QwenImage21Pipeline',
+    executionProfileId: 'qwen-image-21:direct',
+    repository: 'Qwen/Qwen-Image-2.1',
+    revision: '790c92633540aa0cb11d9abf19eb46d861714758',
+  },
+  {
+    pipelineClass: 'QwenImage21TurboPipeline',
+    executionProfileId: 'qwen-image-21-turbo:direct',
+    repository: 'Qwen/Qwen-Image-2.1-Turbo',
+    revision: 'fc13ba1986fcb905854dc8de2f52eee395f49b5b',
+  },
+];
+const qwenImage21Tasks = ['text_to_image', 'edit_image', 'multi_image_reference_edit'];
+const qwenImage21Selections = qwenImage21Models.flatMap(({ pipelineClass, executionProfileId }) =>
+  qwenImage21Tasks.map((task) => ({
+    id: `${pipelineClass}:${task}`,
+    selection: { pipelineClass, task, executionProfileId },
+  })),
+);
 before(async () => {
   globalThis.window = { location: { origin: 'http://127.0.0.1:5191' } };
   server = await createServer({
@@ -46,20 +67,142 @@ before(async () => {
   requests = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
   hashes = await server.ssrLoadModule('/src/studio/stableHash.ts');
   const operations = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
-  const backend = path.resolve('../MoDiff');
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   const python = process.env.MODIFF_BACKEND_PYTHON || path.join(backend, '.venv', 'Scripts/python.exe');
   fixture = JSON.parse(
-    execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py')], {
+    execFileSync(python, [path.resolve('scripts/template-operation-fixtures.py'), '--mock-cuda'], {
       cwd: backend,
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
-      input: JSON.stringify([{ id: 'z_image_quick_concept', selection }, ...auxiliarySelections]),
+      input: JSON.stringify([
+        { id: 'z_image_quick_concept', selection },
+        ...auxiliarySelections,
+        ...qwenImage21Selections,
+      ]),
     }),
   );
   contracts = operations.parseOperationContracts(
     fixture.publicPayload.operationContracts,
     fixture.publicPayload.operationContractSchemaVersion,
   );
+});
+
+test('the generic Qwen Image 2.1 workflows discover and switch to the exact Turbo model', async (t) => {
+  const { parsePipelineSupport } = await server.ssrLoadModule('/src/workflow/operationCatalog.ts');
+  const { parseStudioModelCapabilities } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const { parseWorkflowModelDescriptors, workflowChoices } = await server.ssrLoadModule(
+    '/src/workflow/workflowChoices.ts',
+  );
+  const { createWorkflowDraft } = await server.ssrLoadModule('/src/workflow/workflowDraft.ts');
+  const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { buildWorkflowPackage, parseWorkflowPackage } = await server.ssrLoadModule('/src/studio/workflowPackage.ts');
+  const { DEFAULT_STUDIO_FORM } = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
+  const { operationFieldValue, planOperationChange } = await server.ssrLoadModule(
+    '/src/workflow/operationAuthoring.ts',
+  );
+  const { groupNewOperationGraph, unpackVisualOperationGroups } = await server.ssrLoadModule(
+    '/src/workflow/visualOperationGroups.ts',
+  );
+  const { publicPayload, recipes, registry } = fixture;
+  const support = parsePipelineSupport(
+    publicPayload.pipelineSupport,
+    publicPayload.pipelineSupportSchemaVersion,
+    contracts,
+  );
+  const { capabilities } = parseStudioModelCapabilities(publicPayload);
+  const descriptors = parseWorkflowModelDescriptors(publicPayload, support, capabilities);
+  const choices = workflowChoices(support, capabilities, [], [], null, descriptors);
+  const [, turboModel] = qwenImage21Models;
+  const turboDescriptor = descriptors.find(({ profileId }) => profileId === turboModel.executionProfileId);
+  const artifact = turboDescriptor?.inventory?.nativeSelection;
+  assert.equal(artifact?.repo, turboModel.repository);
+  assert.equal(artifact?.revision, turboModel.revision);
+  assert.equal(artifact.downloadFiles.length, 18);
+  assert.ok(artifact.downloadFiles.includes('model_index.json'));
+  assert.ok(artifact.downloadFiles.includes('LICENSE'));
+  assert.equal(turboDescriptor.supportsLora, false);
+  const leaf = (draft, action) =>
+    unpackVisualOperationGroups(draft).graph.nodes.find((node) => node.data.action === action);
+  const exportGraph = (sourceGraph) =>
+    useFlowStore.getState().exportGraph('qwen-turbo-contract', undefined, { sourceGraph, randomizeSeeds: false });
+  const checkOwner = (owner, model) => {
+    assert.equal(owner.data.module, 'modules.DiffusersImage');
+    assert.deepEqual(operationFieldValue(owner.data.params.model_id), { source: 'hub', value: model.repository });
+    assert.equal(operationFieldValue(owner.data.params.revision), model.revision);
+  };
+
+  for (const task of qwenImage21Tasks) {
+    await t.test(task, () => {
+      const starters = qwenImage21Models.map((model) => {
+        const choice = choices.find(
+          ({ profileId, task: mode }) => profileId === model.executionProfileId && mode === task,
+        );
+        assert.equal(choice?.repo, model.repository);
+        const row = recipes.find(({ id }) => id === `${model.pipelineClass}:${task}`);
+        return requests.parseOperationStarter(row.starter, model.pipelineClass, task, contracts, {
+          executionProfileId: model.executionProfileId,
+        });
+      });
+      const [baseModel] = qwenImage21Models;
+      const [baseStarter, turboStarter] = starters;
+      const base = createWorkflowDraft(baseStarter, registry).graph;
+      const owner = leaf(base, 'LoadPipeline');
+      checkOwner(owner, baseModel);
+      const action = task === 'text_to_image' ? 'Generate' : 'Edit';
+      const freshTurbo = leaf(createWorkflowDraft(turboStarter, registry).graph, action);
+      assert.equal(freshTurbo.data.module, 'modules.DiffusersImage');
+      const turboFields = freshTurbo.data.params;
+      assert.equal(operationFieldValue(turboFields.num_inference_steps), 8);
+      assert.equal(operationFieldValue(turboFields.guidance_scale), 1);
+      assert.equal(turboFields.num_inference_steps.hidden, true);
+      assert.equal(turboFields.negative_prompt?.hidden, true);
+      assert.equal(turboFields.sigmas?.hidden, true);
+      assert.equal(turboFields.guidance_scale.hidden, true);
+
+      const request = 'Painted porcelain on an oak bench, photographed under soft window light.';
+      const source = unpackVisualOperationGroups(base).graph;
+      const generation = source.nodes.find((node) => node.data.action === action);
+      generation.data.params.prompt.value = request;
+      generation.data.params.guidance_scale.value = 5;
+      generation.data.params.negative_prompt.value = 'harsh shadows';
+      generation.data.params.num_inference_steps.value = 22;
+      const fileInputs = task === 'edit_image' ? ['first.png'] : ['first.png', 'second.png'];
+      if (task !== 'text_to_image') leaf(source, 'Load').data.params.file.value = fileInputs;
+      const authored = groupNewOperationGraph(source);
+      const turbo = planOperationChange(authored, leaf(authored, 'LoadPipeline').id, turboStarter, {
+        replaceModel: true,
+        baseline: baseStarter,
+      }).graph;
+      const turboOwner = leaf(turbo, 'LoadPipeline');
+      const turboGeneration = leaf(turbo, action);
+      checkOwner(turboOwner, turboModel);
+      assert.equal(operationFieldValue(turboGeneration.data.params.prompt), request);
+      assert.equal(operationFieldValue(turboGeneration.data.params.num_inference_steps), 8);
+      assert.equal(operationFieldValue(turboGeneration.data.params.guidance_scale), 1);
+      assert.equal(operationFieldValue(turboGeneration.data.params.negative_prompt), '');
+      if (task !== 'text_to_image')
+        assert.deepEqual(operationFieldValue(leaf(turbo, 'Load').data.params.file), fileInputs);
+
+      const savedGraph = { ...turbo, viewport: { x: 0, y: 0, zoom: 1 } };
+      const apiGraph = exportGraph(savedGraph);
+      const saved = buildWorkflowPackage({
+        apiGraph,
+        form: { ...DEFAULT_STUDIO_FORM, mode: task },
+        graph: savedGraph,
+        workflowModelType: turboModel.pipelineClass,
+      });
+      const imported = parseWorkflowPackage(JSON.parse(JSON.stringify(saved)));
+      assert.ok(imported);
+      assert.deepEqual(exportGraph(imported.snapshot), apiGraph);
+
+      const restored = planOperationChange(turbo, turboOwner.id, baseStarter, {
+        replaceModel: true,
+        baseline: turboStarter,
+      }).graph;
+      checkOwner(leaf(restored, 'LoadPipeline'), baseModel);
+      assert.equal(operationFieldValue(leaf(restored, action).data.params.prompt), request);
+    });
+  }
 });
 
 test('protects auxiliary model identity while keeping declared Qwen and SDXL Control bindings', async (t) => {

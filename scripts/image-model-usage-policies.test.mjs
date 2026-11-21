@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 
 let server, policies, profiles, templates, artifactCatalog, captionProvenance;
+const backend = resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
 
 before(async () => {
   globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
@@ -19,13 +21,33 @@ before(async () => {
   policies = await server.ssrLoadModule('/src/studio/modelUsagePolicies.ts');
   profiles = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
   templates = await server.ssrLoadModule('/src/studio/templates.ts');
-  artifactCatalog = JSON.parse(await readFile('../MoDiff/data/model-artifact-catalog.json', 'utf8'));
+  artifactCatalog = JSON.parse(await readFile(resolve(backend, 'data/model-artifact-catalog.json'), 'utf8'));
   captionProvenance = JSON.parse(
-    await readFile('../MoDiff/data/cosmos3-super-t2i-publisher-caption-provenance.v1.json', 'utf8'),
+    await readFile(resolve(backend, 'data/cosmos3-super-t2i-publisher-caption-provenance.v1.json'), 'utf8'),
   );
 });
 
 after(async () => server?.close());
+
+test('Qwen Image 2.1 Turbo requires acknowledgement of its pinned public checkpoint', () => {
+  const repository = 'Qwen/Qwen-Image-2.1-Turbo';
+  const entry = artifactCatalog.models.find(({ modelType }) => modelType === 'QwenImage21TurboPipeline');
+  assert.equal(entry.baseRepo, repository);
+  assert.equal(entry.baseLicense, 'qwen-research');
+  const [policy] = policies.acknowledgementRequiredForRepository(repository, entry.baseRevision);
+  assert.equal(policy.repository, repository);
+  assert.equal(policy.useScope, 'license_review_required');
+  assert.equal(policy.access, 'public');
+  assert.equal(policy.reviewedRevision, 'fc13ba1986fcb905854dc8de2f52eee395f49b5b');
+  assert.equal(policy.reviewedRevision, entry.baseRevision);
+  assert.equal(policy.termsUrl, `https://huggingface.co/${repository}/blob/${entry.baseRevision}/LICENSE`);
+  assert.match(policy.shortSummary, /non-commercial research and evaluation/u);
+  assert.equal(policies.repositoryRequiresHuggingFaceGate(repository), false);
+  assert.deepEqual(policies.acknowledgementRequiredForRepository('Qwen/Qwen-Image-2.1'), []);
+  const key = policies.usagePolicyAcknowledgementKey([policy]);
+  assert.ok(key);
+  assert.notEqual(key, policies.usagePolicyAcknowledgementKey([{ ...policy, revision: 'a'.repeat(40) }]));
+});
 
 test('LTX-2.5 Full has separate revision-bound model terms and gated access', () => {
   const repo = 'Lightricks/LTX-2.5-Diffusers';
@@ -90,7 +112,7 @@ test('Cosmos Super uses its public OpenMDW terms while mandatory Guardrail keeps
   assert.equal(policy.reviewedRevision, captionProvenance.revision);
   assert.equal(pin.license, 'openmdw-1.1');
   assert.equal(policy.termsUrl, captionProvenance.publisherLicenseUrl);
-  const license = await readFile(`../MoDiff/${captionProvenance.licenseFile}`);
+  const license = await readFile(resolve(backend, captionProvenance.licenseFile));
   assert.equal(createHash('sha256').update(license).digest('hex'), captionProvenance.licenseFileSha256);
   assert.equal(policy.access, 'public');
   assert.equal(policy.useScope, 'commercial_allowed');

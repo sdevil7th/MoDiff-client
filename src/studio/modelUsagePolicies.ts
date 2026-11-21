@@ -74,6 +74,9 @@ export type ResolvedModelUsagePolicy = ModelUsagePolicy & {
 const UNDECLARED_MOTION_RIGHTS_NOTICE =
   'This snapshot does not declare a license for its motion weights. Independently establish authorization before use; MoDiff grants no rights.';
 
+const QWEN_IMAGE_21_TURBO_REPO = 'Qwen/Qwen-Image-2.1-Turbo';
+const QWEN_IMAGE_21_TURBO_REVISION = 'fc13ba1986fcb905854dc8de2f52eee395f49b5b';
+
 const fluxDevPolicy = (
   repository: string,
   reviewedRevision: string,
@@ -134,6 +137,19 @@ function hunyuanVideo15Policy(
  * repository name, a license substring, a GPU type, or a template id.
  */
 export const MODEL_USAGE_POLICIES: Readonly<Record<string, ModelUsagePolicy>> = Object.freeze({
+  [QWEN_IMAGE_21_TURBO_REPO]: {
+    id: 'qwen-research-license:qwen-image-2.1-turbo',
+    repository: QWEN_IMAGE_21_TURBO_REPO,
+    useScope: 'license_review_required',
+    acknowledgementRequired: true,
+    shortSummary:
+      'The Qwen Research License is limited to non-commercial research and evaluation. Commercial use requires a separate license.',
+    termsUrl: `https://huggingface.co/${QWEN_IMAGE_21_TURBO_REPO}/blob/${QWEN_IMAGE_21_TURBO_REVISION}/LICENSE`,
+    access: 'public',
+    reviewedRevision: QWEN_IMAGE_21_TURBO_REVISION,
+    policyVersion: '2026-11-21',
+    reviewedAt: '2026-11-21',
+  },
   [FLUX2_DEV_REPO]: {
     id: 'flux-non-commercial-license-v2.1:flux2-dev',
     repository: FLUX2_DEV_REPO,
