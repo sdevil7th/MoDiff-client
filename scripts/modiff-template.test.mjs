@@ -4579,12 +4579,16 @@ test('every template name identifies its exact model and operation', () => {
       template.mode === 'image_upscale' && template.modelType === 'SpandrelImageUpscale'
         ? `Spandrel ${modelName}`
         : modelName;
-    // Keep the archived title of the exact reviewed Sana recipe. Its detailed
-    // card has separate model and operation labels, including the 0.6B variant.
+    // The archived review titles are exact. The card identifies each variant
+    // and operation separately.
     if (template.id === 'sana_sprint_monochrome_tiger') {
       assert.equal(template.label, 'Sana Sprint — Monochrome Tiger');
       assert.equal(modelLabel, 'Sana Sprint 0.6B');
       assert.equal(template.mode, 'edit_image');
+    } else if (template.id === 'wav2vec2_station_announcement') {
+      assert.equal(template.label, 'Wav2Vec2 — Station Announcement');
+      assert.equal(modelLabel, 'Wav2Vec2 Base 960h');
+      assert.equal(template.mode, 'speech_to_text');
     } else {
       assert.ok(template.label.startsWith(`${modelLabel} — `), `${template.id} must begin with its model name`);
     }
