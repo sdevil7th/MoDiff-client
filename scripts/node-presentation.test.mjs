@@ -222,6 +222,10 @@ test('ordinary controls and sockets distinguish requested settings from supplied
     ['Image.Merge', 'image_to', 'Image To', 'Base image'],
     ['Image.Merge', 'output', 'Output', 'Composite image'],
     ['Image.ApplyMask', 'output', 'Output', 'Masked image'],
+    ['Image.Compare', 'image_1', 'Image From', 'Before image'],
+    ['Image.Compare', 'image_2', 'Image To', 'After image'],
+    ['Image.Preview', 'export', 'Export', 'Image indices'],
+    ['Video.FrameExtract', 'fps', 'FPS', 'Frame-list FPS'],
     ['VideoConditioning.FirstLastFrames', 'first', 'First', 'First frame'],
     ['VideoConditioning.FirstLastFrames', 'last', 'Last', 'Last frame'],
     ['VideoConditioning.FirstLastFrames', 'references', 'References', 'Frame pair'],
@@ -290,6 +294,68 @@ test('utility enum captions retain values, live status and authored labels', () 
     options,
   );
   assert.equal(descriptor.label, descriptor.value);
+});
+
+test('direct and generic image filters keep only effective controls without replacing saved settings', () => {
+  const { builtinUtilityOperationPresentation, builtinUtilityOptionPresentation } = utilityPresentation;
+  const direct = 'modules.ImageOperations.FilterImage';
+  const generic = 'modules.ImageOperations.ProcessImage';
+  const params = { operation: { default: 'gaussian_blur' }, threshold: { value: 11 }, seed: { value: 23 } };
+  const snapshot = structuredClone(params);
+  assert.deepEqual([...builtinUtilityOperationPresentation(direct, params).inactive].sort(), ['seed', 'threshold']);
+  for (const [filter, unavailable] of [
+    ['unsharp_mask', 'seed'],
+    ['film_grain', 'threshold'],
+  ]) {
+    const directView = builtinUtilityOperationPresentation(direct, { ...params, operation: { value: filter } });
+    const genericView = builtinUtilityOperationPresentation(generic, {
+      ...params,
+      operation: { value: 'image_filter' },
+      filter_operation: { value: filter },
+    });
+    assert.deepEqual([...directView.inactive], [unavailable]);
+    assert.equal(genericView.inactive.has(unavailable), true);
+    assert.equal(genericView.inactive.has(unavailable === 'seed' ? 'threshold' : 'seed'), false);
+  }
+  assert.deepEqual(
+    [
+      ...builtinUtilityOperationPresentation(direct, { operation: { value: 'gaussian_blur', isConnected: true } })
+        .inactive,
+    ],
+    [],
+  );
+  assert.equal(builtinUtilityOperationPresentation('custom.Custom.FilterImage', params), undefined);
+  assert.deepEqual(builtinUtilityOptionPresentation(direct, 'operation', ['gaussian_blur', 'film_grain']), [
+    { value: 'gaussian_blur', label: 'Gaussian Blur' },
+    { value: 'film_grain', label: 'Film Grain' },
+  ]);
+  assert.deepEqual(params, snapshot);
+});
+
+test('direct frame extraction shows the selected timing input and preserves frame-list FPS', () => {
+  const { builtinUtilityOperationPresentation, builtinUtilityOptionPresentation } = utilityPresentation;
+  const action = 'modules.Video.FrameExtract';
+  const params = { mode: { default: 'first_last' }, fps: { value: 24 }, timecodes: { value: '1.25' } };
+  const before = structuredClone(params);
+  assert.deepEqual(
+    [...builtinUtilityOperationPresentation(action, params).inactive],
+    ['indices', 'timecodes', 'every_n'],
+  );
+  for (const active of ['indices', 'timecodes', 'every_n']) {
+    const { inactive } = builtinUtilityOperationPresentation(action, { ...params, mode: { value: active } });
+    assert.equal(inactive.size, 2);
+    assert.equal(inactive.has(active), false);
+    assert.equal(inactive.has('fps'), false);
+  }
+  assert.deepEqual(
+    [...builtinUtilityOperationPresentation(action, { mode: { value: 'timecodes', isConnected: true } }).inactive],
+    [],
+  );
+  assert.deepEqual(builtinUtilityOptionPresentation(action, 'mode', ['first_last', 'timecodes']), [
+    { value: 'first_last', label: 'First and Last Frames' },
+    { value: 'timecodes', label: 'Timecodes' },
+  ]);
+  assert.deepEqual(params, before);
 });
 
 test('discoverability reflects the encoder role and both declared upscale media types', () => {

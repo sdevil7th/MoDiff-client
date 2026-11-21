@@ -1,6 +1,27 @@
 import { isOptionDescriptor } from '../studio/runtimeOptions';
 import type { NodeParamOptions, NodeParams } from '../stores/useNodeStore';
 
+const DIRECT_IMAGE_FILTER = 'modules.ImageOperations.FilterImage';
+const DIRECT_FRAME_EXTRACT = 'modules.Video.FrameExtract';
+const FILTER_LABELS = {
+  gaussian_blur: 'Gaussian Blur',
+  box_blur: 'Box Blur',
+  sharpen: 'Sharpen',
+  unsharp_mask: 'Unsharp Mask',
+  glow: 'Glow',
+  film_grain: 'Film Grain',
+  chromatic_aberration: 'Chromatic Aberration',
+};
+
+const FRAME_SELECTION_LABELS = {
+  first: 'First Frame',
+  last: 'Last Frame',
+  first_last: 'First and Last Frames',
+  indices: 'Frame Indices',
+  timecodes: 'Timecodes',
+  every_n: 'Every N Frames',
+};
+
 const UTILITY_OPTION_LABELS: Record<string, Record<string, Record<string, string>>> = {
   'modules.Audio.ProcessAudio': {
     operation: { audio_trim: 'Trim Audio', audio_join: 'Join Audio', audio_loudness_match: 'Match Loudness' },
@@ -14,14 +35,7 @@ const UTILITY_OPTION_LABELS: Record<string, Record<string, Record<string, string
       video_reverse: 'Reverse Video',
       video_tile: 'Tile Clips',
     },
-    selection_mode: {
-      first: 'First Frame',
-      last: 'Last Frame',
-      first_last: 'First and Last Frames',
-      indices: 'Frame Indices',
-      timecodes: 'Timecodes',
-      every_n: 'Every N Frames',
-    },
+    selection_mode: FRAME_SELECTION_LABELS,
   },
   'modules.ImageOperations.ProcessImage': {
     operation: {
@@ -34,16 +48,10 @@ const UTILITY_OPTION_LABELS: Record<string, Record<string, Record<string, string
       image_channels: 'Extract Channels',
       mask_composite: 'Composite with Mask',
     },
-    filter_operation: {
-      gaussian_blur: 'Gaussian Blur',
-      box_blur: 'Box Blur',
-      sharpen: 'Sharpen',
-      unsharp_mask: 'Unsharp Mask',
-      glow: 'Glow',
-      film_grain: 'Film Grain',
-      chromatic_aberration: 'Chromatic Aberration',
-    },
+    filter_operation: FILTER_LABELS,
   },
+  [DIRECT_IMAGE_FILTER]: { operation: FILTER_LABELS },
+  [DIRECT_FRAME_EXTRACT]: { mode: FRAME_SELECTION_LABELS },
 };
 
 /** Label stock enum values without replacing saved choices or authored option labels. */
@@ -60,16 +68,6 @@ export function builtinUtilityOptionPresentation(identity: string, field: string
 }
 
 const EXTRACT_DETAIL_FIELDS = ['indices', 'timecodes', 'every_n'];
-const EXTRACT_BOUNDARIES = ['first', 'last', 'first_last'];
-const FILTER_TYPES = [
-  'gaussian_blur',
-  'box_blur',
-  'sharpen',
-  'unsharp_mask',
-  'glow',
-  'film_grain',
-  'chromatic_aberration',
-];
 const FIELDS_BY_UTILITY: Record<string, Record<string, readonly string[]>> = {
   'modules.Audio.ProcessAudio': {
     audio_trim: ['start_seconds', 'duration_seconds', 'target_sample_rate', 'normalize_peak'],
@@ -107,8 +105,27 @@ function savedSelector(field: NodeParams | undefined) {
   return typeof value === 'string' ? value : undefined;
 }
 
+function inactiveFilterControls(filter: NodeParams | undefined) {
+  const value = savedSelector(filter);
+  if (!value || !Object.prototype.hasOwnProperty.call(FILTER_LABELS, value)) return [];
+  const inactive: string[] = [];
+  if (value !== 'unsharp_mask') inactive.push('threshold');
+  if (value !== 'film_grain') inactive.push('seed');
+  return inactive;
+}
+
+function inactiveFrameSelectionControls(selection: NodeParams | undefined) {
+  const value = savedSelector(selection);
+  if (!value || !Object.prototype.hasOwnProperty.call(FRAME_SELECTION_LABELS, value)) return [];
+  return EXTRACT_DETAIL_FIELDS.filter((field) => field !== value);
+}
+
 /** Filter only the ordinary utility presentation. Keep saved settings and handle IDs available. */
 export function builtinUtilityOperationPresentation(identity: string, params: Record<string, NodeParams>) {
+  if (identity === DIRECT_IMAGE_FILTER)
+    return { inactive: new Set(inactiveFilterControls(params.operation)), continuation: false };
+  if (identity === DIRECT_FRAME_EXTRACT)
+    return { inactive: new Set(inactiveFrameSelectionControls(params.mode)), continuation: false };
   if (!Object.prototype.hasOwnProperty.call(FIELDS_BY_UTILITY, identity)) return undefined;
   const fields = FIELDS_BY_UTILITY[identity]!;
   const operation = savedSelector(params.operation);
@@ -116,19 +133,10 @@ export function builtinUtilityOperationPresentation(identity: string, params: Re
   const active = new Set(fields[operation]);
 
   if (operation === 'video_frame_extract') {
-    const selection = savedSelector(params.selection_mode);
-    if (selection && [...EXTRACT_DETAIL_FIELDS, ...EXTRACT_BOUNDARIES].includes(selection)) {
-      for (const field of EXTRACT_DETAIL_FIELDS) {
-        if (field !== selection) active.delete(field);
-      }
-    }
+    for (const key of inactiveFrameSelectionControls(params.selection_mode)) active.delete(key);
   }
   if (operation === 'image_filter') {
-    const filter = savedSelector(params.filter_operation);
-    if (filter && FILTER_TYPES.includes(filter)) {
-      if (filter !== 'unsharp_mask') active.delete('threshold');
-      if (filter !== 'film_grain') active.delete('seed');
-    }
+    for (const key of inactiveFilterControls(params.filter_operation)) active.delete(key);
   }
   const inactive = new Set(
     Object.values(fields)

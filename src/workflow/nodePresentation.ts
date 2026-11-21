@@ -164,6 +164,12 @@ const FIELD_PRESENTATIONS: Record<string, Record<string, readonly [string, strin
     output: ['Output', 'Composite image'],
   },
   'modules.Image.ApplyMask': { output: ['Output', 'Masked image'] },
+  'modules.Image.Compare': {
+    image_1: ['Image From', 'Before image'],
+    image_2: ['Image To', 'After image'],
+  },
+  'modules.Image.Preview': { export: ['Export', 'Image indices'] },
+  'modules.Video.FrameExtract': { fps: ['FPS', 'Frame-list FPS'] },
   'modules.VideoConditioning.FirstLastFrames': {
     video: ['Video', 'Source video'],
     first: ['First', 'First frame'],
