@@ -206,6 +206,7 @@ const FIELD_PRESENTATIONS: Record<string, Record<string, readonly [string, strin
   'modules.Audio.FitDuration': {
     target_sample_rate: ['Target SR', 'Target sample rate'],
   },
+  'modules.Audio.ProcessAudio': { max_adjustment_db: ['Maximum Loudness Adjustment', 'Max gain change (dB)'] },
 };
 
 const MEASURED_DIMENSION_ACTIONS = new Set([

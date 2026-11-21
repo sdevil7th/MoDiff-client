@@ -1,4 +1,62 @@
-import type { NodeParams } from '../stores/useNodeStore';
+import { isOptionDescriptor } from '../studio/runtimeOptions';
+import type { NodeParamOptions, NodeParams } from '../stores/useNodeStore';
+
+const UTILITY_OPTION_LABELS: Record<string, Record<string, Record<string, string>>> = {
+  'modules.Audio.ProcessAudio': {
+    operation: { audio_trim: 'Trim Audio', audio_join: 'Join Audio', audio_loudness_match: 'Match Loudness' },
+  },
+  'modules.Video.ProcessVideo': {
+    operation: {
+      video_frame_extract: 'Extract Frames',
+      frame_interpolation: 'Interpolate Frames',
+      video_stitch: 'Stitch Clips',
+      video_trim: 'Trim Video',
+      video_reverse: 'Reverse Video',
+      video_tile: 'Tile Clips',
+    },
+    selection_mode: {
+      first: 'First Frame',
+      last: 'Last Frame',
+      first_last: 'First and Last Frames',
+      indices: 'Frame Indices',
+      timecodes: 'Timecodes',
+      every_n: 'Every N Frames',
+    },
+  },
+  'modules.ImageOperations.ProcessImage': {
+    operation: {
+      image_adjustment: 'Adjust Image',
+      image_filter: 'Filter Image',
+      image_crop: 'Crop Image',
+      image_upscale: 'Resize Image',
+      image_stitch: 'Stitch Images',
+      image_tile: 'Split into Tiles',
+      image_channels: 'Extract Channels',
+      mask_composite: 'Composite with Mask',
+    },
+    filter_operation: {
+      gaussian_blur: 'Gaussian Blur',
+      box_blur: 'Box Blur',
+      sharpen: 'Sharpen',
+      unsharp_mask: 'Unsharp Mask',
+      glow: 'Glow',
+      film_grain: 'Film Grain',
+      chromatic_aberration: 'Chromatic Aberration',
+    },
+  },
+};
+
+/** Label stock enum values without replacing saved choices or authored option labels. */
+export function builtinUtilityOptionPresentation(identity: string, field: string, options: NodeParamOptions) {
+  const labels = UTILITY_OPTION_LABELS[identity]?.[field];
+  if (!labels || !Array.isArray(options)) return options;
+  return options.map((option) => {
+    if (typeof option === 'string' && Object.hasOwn(labels, option)) return { value: option, label: labels[option] };
+    if (isOptionDescriptor(option) && option.label === option.value && Object.hasOwn(labels, option.value))
+      return { ...option, label: labels[option.value] };
+    return option;
+  });
+}
 
 const EXTRACT_DETAIL_FIELDS = ['indices', 'timecodes', 'every_n'];
 const EXTRACT_BOUNDARIES = ['first', 'last', 'first_last'];

@@ -6,6 +6,7 @@ let server;
 let catalog;
 let browser;
 let presentation;
+let utilityPresentation;
 let operationCatalog;
 const cases = [
   ['ModularDiffusers', 'ModelsLoader', 'Load Models', 'Load Modular Components'],
@@ -54,6 +55,7 @@ before(async () => {
   catalog = await server.ssrLoadModule('/src/studio/nodeCatalog.ts');
   browser = await server.ssrLoadModule('/src/workflow/workflowTaskBrowser.ts');
   presentation = await server.ssrLoadModule('/src/workflow/nodePresentation.ts');
+  utilityPresentation = await server.ssrLoadModule('/src/workflow/builtinUtilityOperationPresentation.ts');
   operationCatalog = await server.ssrLoadModule('/src/workflow/operationCatalog.ts');
 });
 after(async () => server?.close());
@@ -265,6 +267,29 @@ test('the reviewed Block placement helper stays resolvable but cannot be inserte
   }
   const custom = catalog.getNodeCatalogEntry({ ...step, module: 'custom.Example' });
   assert.equal(catalog.nodeCatalogEntryMatchesView(custom, 'common'), true);
+});
+
+test('utility enum captions retain values, live status and authored labels', () => {
+  const descriptor = {
+    schemaVersion: 1,
+    value: 'audio_loudness_match',
+    label: 'audio_loudness_match',
+    compatibility: 'unknown',
+    availability: 'unavailable',
+    installationState: 'unavailable',
+    disabledReason: 'Retain this status',
+  };
+  const custom = { ...descriptor, value: 'audio_join', label: 'My soundtrack join' };
+  const options = ['audio_trim', descriptor, custom];
+  assert.deepEqual(
+    utilityPresentation.builtinUtilityOptionPresentation('modules.Audio.ProcessAudio', 'operation', options),
+    [{ value: 'audio_trim', label: 'Trim Audio' }, { ...descriptor, label: 'Match Loudness' }, custom],
+  );
+  assert.equal(
+    utilityPresentation.builtinUtilityOptionPresentation('custom.Audio.ProcessAudio', 'operation', options),
+    options,
+  );
+  assert.equal(descriptor.label, descriptor.value);
 });
 
 test('discoverability reflects the encoder role and both declared upscale media types', () => {

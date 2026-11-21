@@ -34,7 +34,10 @@ import { operationOwnsModel } from '../workflow/operationContracts';
 import { nodeFieldDisplayLabel } from '../workflow/nodePresentation';
 import { fileBackedMediaPreviewUrl } from '../studio/outputUtils';
 import { unresolvedSignalControls } from '../workflow/signalControlPresentation';
-import { builtinUtilityOperationPresentation } from '../workflow/builtinUtilityOperationPresentation';
+import {
+  builtinUtilityOperationPresentation,
+  builtinUtilityOptionPresentation,
+} from '../workflow/builtinUtilityOperationPresentation';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -237,8 +240,12 @@ const NodeContent = memo(function NodeContent({
       module,
       key,
       display,
-      blockRuntimeOptionPresentation(data.options || [], key, data, graphNode, blockOwner, nodesRegistry) ??
-        registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[identity]?.params),
+      builtinUtilityOptionPresentation(
+        identity,
+        key,
+        blockRuntimeOptionPresentation(data.options || [], key, data, graphNode, blockOwner, nodesRegistry) ??
+          registeredRuntimeOptionPresentation(data.options || [], key, nodesRegistry[identity]?.params),
+      ),
     );
     const fieldType = getFieldType(display, dataType, options);
     // A managed model choice already resolves the repository, implementation
