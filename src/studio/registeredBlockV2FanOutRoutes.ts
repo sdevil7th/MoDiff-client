@@ -1757,8 +1757,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Base', revision: '5c50b6bc90eae9bd815d2a50b0c9877e3fd2cf88' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-adfac216',
-    compiledDefinitionCanonicalSha256: 'sha256:b657d30a3b13bb1122e3077569bf162a8e312d4df5bc1f8612da745cc7f9f02d',
+    compiledDefinitionContentHash: 'block-definition-v2-08f6fb44',
+    compiledDefinitionCanonicalSha256: 'sha256:649d94de75f2d95687c5c1d2caffb4b1e6f13619c8ccef1d37b00183c6372929',
     controlFanOuts: [
       {
         source: 'width',
@@ -1803,6 +1803,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       outputs: [
         { portId: 'height', role: 'loadImage', fieldId: 'height' },
         { portId: 'width', role: 'loadImage', fieldId: 'width' },
+        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
       ],
     },
   },
@@ -1825,8 +1826,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Base', revision: '5c50b6bc90eae9bd815d2a50b0c9877e3fd2cf88' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-f4239c5e',
-    compiledDefinitionCanonicalSha256: 'sha256:92e2a3cc4eed10f22208a75382380cf041d0dd8b40e53eab3f6ecc276ad01f5f',
+    compiledDefinitionContentHash: 'block-definition-v2-fef10cd4',
+    compiledDefinitionCanonicalSha256: 'sha256:75f8f1cc64acb8e4904e403bb558f850ca6115799b3148530b683a517efa5ed6',
     controlFanOuts: [
       {
         source: 'width',
@@ -1871,6 +1872,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       outputs: [
         { portId: 'height', role: 'loadVideo', fieldId: 'height' },
         { portId: 'width', role: 'loadVideo', fieldId: 'width' },
+        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
       ],
     },
   },
@@ -1895,8 +1897,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Distilled', revision: 'b991c0379a018f4de3227d95468237f56066f5bb' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-cc90157b',
-    compiledDefinitionCanonicalSha256: 'sha256:c0ba64dd152981981fb47a8b00669731f6f30d0ae17a986bb4adfe364f780118',
+    compiledDefinitionContentHash: 'block-definition-v2-eb6ac085',
+    compiledDefinitionCanonicalSha256: 'sha256:9f04481aeb6443cee6e39d18bb703c2ca5dfb9018a34ca98632cc4eeb3391c64',
     controlFanOuts: [
       {
         source: 'width',
@@ -1940,6 +1942,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       outputs: [
         { portId: 'height', role: 'loadImage', fieldId: 'height' },
         { portId: 'width', role: 'loadImage', fieldId: 'width' },
+        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
       ],
     },
   },
@@ -1964,8 +1967,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Distilled', revision: 'b991c0379a018f4de3227d95468237f56066f5bb' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-436870d8',
-    compiledDefinitionCanonicalSha256: 'sha256:db5d77e9c4bbd905d0075d19c10b1ef9f62c77e235d8ead409d1e167e54ea0db',
+    compiledDefinitionContentHash: 'block-definition-v2-2b8cd0c6',
+    compiledDefinitionCanonicalSha256: 'sha256:a0d75a3e1b9fe9d14524ae285f8bf6a30566d6ba5be1b7869c582bb7ac344264',
     controlFanOuts: [
       {
         source: 'width',
@@ -2009,6 +2012,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       outputs: [
         { portId: 'height', role: 'loadVideo', fieldId: 'height' },
         { portId: 'width', role: 'loadVideo', fieldId: 'width' },
+        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
       ],
     },
   },
@@ -2033,8 +2037,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Mid', revision: '477c55427ec0ea774bdebd0fbe736313cfc5a312' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-29db419c',
-    compiledDefinitionCanonicalSha256: 'sha256:fe384ffc7ae3aa84c4e5bd89ceea31e5f824cbd407c0933b04c65790cd40e6a6',
+    compiledDefinitionContentHash: 'block-definition-v2-b1545162',
+    compiledDefinitionCanonicalSha256: 'sha256:2a3d9d7eadcc5f0e9c83070fead2231c9e7ee5fd70c7fcd4b618ab80e3478693',
     controlFanOuts: [
       {
         source: 'width',
@@ -2078,6 +2082,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       outputs: [
         { portId: 'height', role: 'loadImage', fieldId: 'height' },
         { portId: 'width', role: 'loadImage', fieldId: 'width' },
+        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
       ],
     },
   },
@@ -2102,8 +2107,8 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
     },
     artifact: { repo: 'BestWishYsh/Helios-Mid', revision: '477c55427ec0ea774bdebd0fbe736313cfc5a312' },
     dynamicFieldActions: [{ event: 'onChange', field: 'model_type', role: 'models', valueSource: 'pipelineClass' }],
-    compiledDefinitionContentHash: 'block-definition-v2-96feb2c3',
-    compiledDefinitionCanonicalSha256: 'sha256:15ade38e8eac9ae3a386867fb0a835ceb307d5a8a4b8729d6af5167371b5702a',
+    compiledDefinitionContentHash: 'block-definition-v2-5429a7b5',
+    compiledDefinitionCanonicalSha256: 'sha256:6105ac04e9451d4e1a7728b662d7fd791a31e08e622067925b08e3e3563d734b',
     controlFanOuts: [
       {
         source: 'width',
@@ -2147,6 +2152,7 @@ export const REGISTERED_BLOCK_V2_FANOUT_ROUTES = Object.freeze([
       outputs: [
         { portId: 'height', role: 'loadVideo', fieldId: 'height' },
         { portId: 'width', role: 'loadVideo', fieldId: 'width' },
+        { portId: 'videos', role: 'videoExport', fieldId: 'file', adaptation: 'media_file_export', mediaType: 'video' },
       ],
     },
   },

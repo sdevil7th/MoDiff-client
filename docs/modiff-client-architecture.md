@@ -1950,6 +1950,14 @@ Do not relax generic input validation to accept an image file adaptation on a
 video loader. The focused regression exports both creators with only their
 required media paths supplied.
 
+Helios Base, Pyramid, and Pyramid Distilled expose the generated video file
+on the Image-to-Video and Video-to-Video Block boundary. Source width and
+height remain independent outputs and describe the loaded input. The rendered
+preview still comes from the same Video Export action. Saved instances retain
+their original immutable graph and public sockets. Auto recognizes the exact
+prior catalog definitions and applies the same graph, interface and resource
+checks when those instances reopen.
+
 Running from a generic User Node root resolves to a terminal media preview
 inside that specific expanded instance (or its first terminal node when it
 has no media preview). Both the store export and run coordinator use this

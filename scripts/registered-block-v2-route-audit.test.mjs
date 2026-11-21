@@ -1336,6 +1336,36 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
           `the exact graph leaves required runtime sockets unbound: ${unboundRequiredInputs.join(', ')}`,
         );
         assert.equal(compiled.definition.source.executionAdmissionId, admission.id);
+        if (
+          /^diffusers\.modular:Helios(?:Pyramid(?:Distilled)?)?ModularPipeline:(?:image2video|video2video)$/u.test(
+            definition.id,
+          )
+        ) {
+          const outputs = compiled.definition.boundary.outputs;
+          assert.deepEqual(
+            outputs.map(({ portId, valueType, binding }) => ({ portId, valueType, binding })),
+            [
+              {
+                portId: 'height',
+                valueType: 'int',
+                binding: {
+                  nodeId: definition.workflowId === 'image2video' ? 'loadImage' : 'loadVideo',
+                  fieldOrPortId: 'height',
+                },
+              },
+              {
+                portId: 'width',
+                valueType: 'int',
+                binding: {
+                  nodeId: definition.workflowId === 'image2video' ? 'loadImage' : 'loadVideo',
+                  fieldOrPortId: 'width',
+                },
+              },
+              { portId: 'videos', valueType: 'video', binding: { nodeId: 'videoExport', fieldOrPortId: 'file' } },
+            ],
+            'the generated movie must be wireable independently of the source dimensions',
+          );
+        }
         if (definition.id === 'diffusers.modular:QwenImageEditModularPipeline:image_conditioned') {
           for (const dimension of ['width', 'height']) {
             const input = compiled.definition.boundary.inputs.find(({ portId }) => portId === `${dimension}_input`);
