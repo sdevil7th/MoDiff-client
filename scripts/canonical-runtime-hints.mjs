@@ -39,7 +39,7 @@ export function assertCanonicalAccountingGraphEnvelope(apiGraph) {
 // Preserve the existing importer while the same envelope is reused by image accounting.
 export const assertCanonicalDdimGraphEnvelope = assertCanonicalAccountingGraphEnvelope;
 
-function assertSnapshotOwners(snapshot, apiGraph, staged) {
+function assertSnapshotOwners(snapshot, apiGraph, expectedBlockCount) {
   const owners = [];
   const check = (id, data) => {
     const node = apiGraph.nodes[id];
@@ -55,7 +55,7 @@ function assertSnapshotOwners(snapshot, apiGraph, staged) {
       check(node.id, node.data);
       continue;
     }
-    assert.ok(staged, 'Block snapshot authority is outside ordinary DDIM scope.');
+    assert.ok(expectedBlockCount > 0, 'Block snapshot authority is outside ordinary DDIM scope.');
     assert.equal(node.data.module, 'MoDiff');
     assert.equal(node.data.action, 'BlockV2');
     assert.equal(block.instanceId, node.id, 'Workflow snapshot Block owner differs.');
@@ -70,7 +70,7 @@ function assertSnapshotOwners(snapshot, apiGraph, staged) {
       check(id, leaf.data);
     }
   }
-  if (staged) assert.equal(blockCount, 2, 'Reviewed image stage owners differ.');
+  assert.equal(blockCount, expectedBlockCount, 'Reviewed stage owners differ.');
   same(owners.sort(), Object.keys(apiGraph.nodes).sort(), 'Workflow snapshot owner scope differs.');
 }
 
@@ -91,7 +91,48 @@ export function canonicalDdimRuntimeHintAccounting(args) {
 
 // The reviewed PixArt route is a staged Expert graph with transport hints only.
 export function canonicalPixArtSigmaPagRuntimeHintAccounting(args) {
-  return canonicalRuntimeHintAccounting(args, 'text_to_image', 'canonical-pixart-sigma-pag-runtime-hints-v1', true);
+  return canonicalRuntimeHintAccounting(args, 'text_to_image', 'canonical-pixart-sigma-pag-runtime-hints-v1', 2);
+}
+
+export function directImagePromptRuntimeHintAccounting(args) {
+  const savedSd15 = args.plan.modelType === 'StableDiffusionPipeline';
+  assert.ok(
+    savedSd15 || args.plan.modelType === 'PRXPipeline',
+    'Direct image snapshot model is outside reviewed scope.',
+  );
+  const stageName = savedSd15 ? 'Saved SD1.5' : 'PRX';
+  const expectedBlockCount = savedSd15 ? 2 : 1;
+  const nodes = args.apiGraph.runtimeHints?.workflowSnapshot?.nodes;
+  assert.ok(Array.isArray(nodes), `Original ${stageName} workflow snapshot is missing.`);
+  const blocks = nodes.filter((node) => node.data?.blockInstanceV2);
+  assert.equal(blocks.length, expectedBlockCount, `${stageName} requires the exact saved stage owners.`);
+  const members = blocks
+    .map((node) => {
+      const leaves = node.data.blockInstanceV2.effectiveGraph?.nodes;
+      assert.ok(Array.isArray(leaves), `${stageName} stage members are missing.`);
+      return leaves.map((leaf) => leaf.data?.action).sort();
+    })
+    .sort((a, b) => b.length - a.length);
+  same(
+    members[0],
+    ['DiffusersExecutionRecipe', 'LoadPipeline', 'PipelineQuantizationConfigV2'],
+    `${stageName} Model Setup member scope differs.`,
+  );
+  if (savedSd15) same(members[1], ['Generate'], 'Saved SD1.5 Generate member scope differs.');
+  same(
+    nodes
+      .filter((node) => !node.data?.blockInstanceV2)
+      .map((node) => node.data?.action)
+      .sort(),
+    savedSd15 ? ['Preview'] : ['Generate', 'Preview'],
+    `${stageName} ordinary executable node scope differs.`,
+  );
+  return canonicalRuntimeHintAccounting(
+    args,
+    'text_to_image',
+    'direct-image-prompt-runtime-hints-v1',
+    expectedBlockCount,
+  );
 }
 
 export function canonicalRetainedUnconditionalRuntimeHintAccounting(args) {
@@ -99,19 +140,19 @@ export function canonicalRetainedUnconditionalRuntimeHintAccounting(args) {
     args,
     'unconditional_image',
     'canonical-retained-unconditional-runtime-hints-v1',
-    true,
+    2,
   );
 }
 
 export function canonicalMarigoldPreviewRuntimeHintAccounting(args) {
-  return canonicalRuntimeHintAccounting(args, 'depth_estimation', 'canonical-marigold-preview-runtime-hints-v1', true);
+  return canonicalRuntimeHintAccounting(args, 'depth_estimation', 'canonical-marigold-preview-runtime-hints-v1', 2);
 }
 
 function canonicalRuntimeHintAccounting(
   { apiGraph, consumed, plan, runtimeEvidence, digest },
   taskMode,
   policy,
-  staged = false,
+  expectedBlockCount = 0,
 ) {
   const hints = apiGraph.runtimeHints;
   assert.ok(record(runtimeEvidence), 'Declared runtime hints require original completion evidence.');
@@ -120,7 +161,7 @@ function canonicalRuntimeHintAccounting(
   const task = run?.task;
   const managed = Object.hasOwn(hints, 'source');
   assert.ok(
-    !staged || (!managed && !Object.hasOwn(hints, 'nodeId')),
+    expectedBlockCount === 0 || (!managed && !Object.hasOwn(hints, 'nodeId')),
     'Image accounting requires full-graph transport-only hints.',
   );
   const optional = optionalTransportKeys.filter((key) => Object.hasOwn(hints, key));
@@ -270,7 +311,7 @@ function canonicalRuntimeHintAccounting(
     record(snapshot) && Array.isArray(snapshot.nodes) && Array.isArray(snapshot.edges),
     'Original workflow snapshot is missing.',
   );
-  assertSnapshotOwners(snapshot, apiGraph, staged);
+  assertSnapshotOwners(snapshot, apiGraph, expectedBlockCount);
   same(snapshot.studioForm, output.formSnapshot, 'Submitted snapshot/output form differs.');
   assert.equal(output.formSnapshot?.modelType, plan.modelType, 'Original hinted form model differs.');
   assert.equal(output.formSnapshot?.mode, taskMode, 'Original hinted form task differs.');

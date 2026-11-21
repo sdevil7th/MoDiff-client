@@ -8,6 +8,8 @@ import {
   backendSourceEvidence,
   canonicalGraphIdentity,
   normalizeBackendRuntime,
+  directImagePromptAccountingExecutionPlan,
+  directImagePromptRoutes,
   selectBackendRuntimeFingerprintEvidence,
   selectInstalledModelIdentity,
   stableStringify,
@@ -84,6 +86,21 @@ const videoRoute = {
   ],
 };
 
+const imagePromptRoute = {
+  outputKind: 'image',
+  displayType: 'image',
+  contentType: 'image/webp',
+  loaderContract: ['modules.DiffusersImage.LoadPipeline'],
+  bindSeed: true,
+  chain: [
+    ['quantization', 'modules.DiffusersRuntime', 'PipelineQuantizationConfigV2', ''],
+    ['recipe', 'modules.DiffusersRuntime', 'DiffusersExecutionRecipe', ''],
+    ['loader', 'modules.DiffusersImage', 'LoadPipeline', ''],
+    ['generator', 'modules.DiffusersImage', 'Generate', ''],
+    ['preview', 'modules.Image', 'Preview', ''],
+  ],
+};
+
 const same = (actual, expected, message) => assert.equal(stableStringify(actual), stableStringify(expected), message);
 const keys = (record, fields, message) => same(Object.keys(record ?? {}).sort(), [...fields].sort(), message);
 const digest = (value) => createHash('sha256').update(value).digest('hex');
@@ -123,7 +140,8 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   const baseline = canonicalGraphIdentity(original);
   assert.equal(baseline.hash, baselineHash, 'The current authored prompt recipe differs from the original baseline.');
   const expected = structuredClone(original);
-  const promptSlot = owners(profile, expected).generator.node.params.prompt;
+  const expectedInputs = owners(profile, expected).generator.node.params;
+  const promptSlot = expectedInputs.prompt;
   assert.equal(promptSlot.value, '', 'The current authored prompt is already filled.');
   assert.ok(!promptSlot.sourceId, 'The authored prompt must be an unconnected literal.');
   const submittedOwners = owners(profile, output);
@@ -131,10 +149,23 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   assert.ok(typeof prompt === 'string' && prompt.length <= 4096 && prompt.trim() === prompt && prompt.length > 0);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt), 'Prompt exercise contains an unsupported control character.');
   promptSlot.value = prompt;
+  let seed;
+  if (profile.bindSeed) {
+    const seedSlot = expectedInputs.seed;
+    const actualSeed = submittedOwners.generator.node.params.seed;
+    for (const input of [seedSlot, actualSeed])
+      assert.ok(input && !input.sourceId && !input.sourceKey, 'Prompt variant requires a literal seed.');
+    const raw = actualSeed.value;
+    seed = typeof raw === 'string' && /^(?:0|[1-9][0-9]*)$/u.test(raw) ? Number(raw) : raw;
+    assert.ok(Number.isSafeInteger(seed) && seed >= 0, 'Prompt variant requires a safely representable unsigned seed.');
+    seedSlot.value = raw;
+  }
   const identity = canonicalGraphIdentity(expected);
-  for (const graph of [created, output])
-    same(canonicalGraphIdentity(graph), identity, 'Prompt variant changed a field or wire outside the empty prompt.');
-  return { ...submittedOwners, identity, prompt };
+  const mismatch = profile.bindSeed
+    ? 'Prompt variant changed a field or wire outside the bound prompt and seed.'
+    : 'Prompt variant changed a field or wire outside the empty prompt.';
+  for (const graph of [created, output]) same(canonicalGraphIdentity(graph), identity, mismatch);
+  return { ...submittedOwners, identity, prompt, expected, seed };
 }
 
 function validateConsumedPromptVariant(profile, bound, output) {
@@ -198,6 +229,21 @@ function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted
   same(bound.loader.node.params.model_id.value, { source: 'hub', value: profile.modelRepo });
   assert.equal(bound.loader.node.params.revision.value, profile.modelRevision);
   return { runtime, measurement: task.runtimeMeasurement };
+}
+
+function validateImagePromptPreparation(preparation, modelType) {
+  if (preparation?.performed !== true) {
+    validateUnmodifiedExpertPreparation(preparation, modelType);
+    return;
+  }
+  const { cleanup, reasons, ...unchanged } = preparation;
+  validateUnmodifiedExpertPreparation({ ...unchanged, performed: false, cleanup: null, reasons: [] }, modelType);
+  same(reasons, ['cached model family is unknown'], 'Unreviewed direct image cache cleanup.');
+  keys(cleanup, ['released', 'allocatorTrimmed', 'errors']);
+  same(cleanup.errors, [], 'Direct image cache cleanup failed.');
+  assert.equal(typeof cleanup.allocatorTrimmed, 'boolean');
+  keys(cleanup.released, ['nodes', 'models', 'diffusers_components', 'offload_files']);
+  assert.ok(Object.values(cleanup.released).every((count) => Number.isSafeInteger(count) && count >= 0));
 }
 
 export function validatePromptVariantText(bytes, item, bound, runtime) {
@@ -286,8 +332,10 @@ export function validatePromptVariantVideo(decoded, item, bound) {
 
 export async function readPromptVariantEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
-  const profiles = [textRoute, videoRoute];
-  const profile = profiles.find(({ workflowId }) => workflowId === target.workflowId);
+  const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
+  const profile = imageRoute
+    ? { ...imagePromptRoute, ...imageRoute }
+    : [textRoute, videoRoute].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
@@ -311,6 +359,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     'modelObservations',
     'inputs',
     'outputs',
+    ...(imageRoute ? ['graphRequest', 'graphAcknowledgment'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.format, profile.format);
@@ -356,12 +405,28 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     outputPackage,
     run,
     graphCompleted,
+    ...(imageRoute
+      ? {
+          graphRequest: json(evidence.graphRequest),
+          graphAcknowledgment: json(evidence.graphAcknowledgment),
+          validatePreparation: (preparation) => validateImagePromptPreparation(preparation, target.modelType),
+        }
+      : {}),
     ...(profile === videoRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
       : {}),
   });
   same(hints.workflowSnapshot.studioForm, output.formSnapshot, 'Run snapshot form differs from persisted form.');
-  validateConsumedPromptVariant(profile, bound, output);
+  const accounting = imageRoute
+    ? directImagePromptAccountingExecutionPlan({
+        expectedApiGraph: bound.expected,
+        apiGraph: submitted,
+        consumed: output.resolvedExecutionInputs,
+        target,
+        runtimeEvidence: { run, output, graphCompleted },
+      })
+    : null;
+  if (!accounting) validateConsumedPromptVariant(profile, bound, output);
   const nodes = json(evidence.nodes);
   const backendContract = backendContractIdentity(nodes, bound.identity.canonicalGraph);
   assert.ok(backendContract.fingerprint, 'Native backend contract fingerprint is missing.');
@@ -395,15 +460,20 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     contentType: profile.contentType,
   });
   assert.match(output.id, /^run-output-[a-f0-9]{24}$/u);
-  const extension = profile === textRoute ? 'txt' : 'mp4';
+  const extension = imageRoute ? 'webp' : profile === textRoute ? 'txt' : 'mp4';
   assert.equal(item.backendPath, `@data/studio/outputs/${output.id}_item_00.${extension}`);
   assert.equal(output.mediaCollectionHash, `sha256:collection:${digest(JSON.stringify([item.mediaHash]))}`);
   let decodedOutput;
   if (profile === textRoute) {
     decodedOutput = validatePromptVariantText(media.bytes, item, bound, runtime);
-  } else {
+  } else if (profile === videoRoute) {
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
     decodedOutput = validatePromptVariantVideo(await decodedMediaHash(media.file, 'video'), item, bound);
+  } else {
+    const { decodedMediaHash, technicalMediaErrors } = await import('./template-gallery-harness.mjs');
+    const decoded = await decodedMediaHash(media.file, 'image');
+    same(technicalMediaErrors(decoded, { width: item.width, height: item.height }), []);
+    decodedOutput = { kind: 'image', hash: decoded.hash, width: decoded.width, height: decoded.height };
   }
   for (const ref of retainedFiles) readCanonicalEvidenceFile(root, ref, 16 * 1024 * 1024);
   assert.ok(readFileSync(evidencePath).equals(descriptorBytes), 'Prompt variant descriptor changed during validation.');
@@ -425,8 +495,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     peakMemoryBytes: measurement.peakAllocatedBytes,
     canonicalDefaultsExecuted: false,
     promptBinding: { nodeId: bound.generator.id, field: 'prompt', sha256: digest(bound.prompt) },
+    ...(accounting ? { seedBinding: { nodeId: bound.generator.id, field: 'seed', value: bound.seed } } : {}),
     decodedOutput,
-    observationLimits: { fullConsumedFieldAccounting: false, physicalPlatformQualification: false },
+    observationLimits: { fullConsumedFieldAccounting: Boolean(accounting), physicalPlatformQualification: false },
     qualificationClaims: {
       publicTemplate: false,
       qualityApproved: false,

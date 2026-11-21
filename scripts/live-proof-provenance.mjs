@@ -12,6 +12,7 @@ import {
   canonicalDdimRuntimeHintAccounting,
   canonicalPixArtSigmaPagRuntimeHintAccounting,
   canonicalRetainedUnconditionalRuntimeHintAccounting,
+  directImagePromptRuntimeHintAccounting,
 } from './canonical-runtime-hints.mjs';
 import {
   capturedNativeGraphSubmission,
@@ -2204,6 +2205,61 @@ const pixArtSigmaPag = {
       ' ',
     ),
 };
+const plainImageActive = 'prompt seed width height num_inference_steps guidance_scale output_type'.split(' ');
+const plainImageInactive =
+  'image_guidance_scale pag_adaptive_scale pag_scale cfg_normalize control_guidance_end control_guidance_start layers padding_mask_crop resolution strength use_en_prompt'.split(
+    ' ',
+  );
+const plainImageLegacyNull = ['control_guidance_start', 'conditioning_scale', 'strength', 'control_guidance_end'];
+export const directImagePromptRoutes = [
+  {
+    format: 'modiff.private.prx-prompt-variant.v1',
+    workflowId: 'PRXPipeline:text_to_image',
+    modelType: 'PRXPipeline',
+    modelRepo: 'Photoroom/prx-512-t2i-sft',
+    modelRevision: '2996423bc26e8eaca48774fac1797484214dfea0',
+    active: [...plainImageActive, 'negative_prompt', 'max_sequence_length'],
+    inactive: plainImageInactive,
+    legacyNull: plainImageLegacyNull,
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    dtype: 'bfloat16',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    generation: {
+      width: 512,
+      height: 512,
+      num_inference_steps: 28,
+      guidance_scale: 5,
+      max_sequence_length: 256,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
+  {
+    format: 'modiff.private.sd15-prompt-variant.v1',
+    workflowId: 'StableDiffusionPipeline:text_to_image',
+    modelType: 'StableDiffusionPipeline',
+    modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+    modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+    active: [...plainImageActive, 'negative_prompt'],
+    inactive: [...plainImageInactive, 'max_sequence_length'],
+    legacyNull: [...plainImageLegacyNull, 'max_sequence_length'],
+    platform: /^Windows-/u,
+    backend: 'cuda',
+    dtype: 'float32',
+    offload: 'none',
+    deviceMap: 'cuda',
+    generation: {
+      width: 512,
+      height: 512,
+      num_inference_steps: 30,
+      guidance_scale: 7.5,
+      seed: 8319,
+      negative_prompt: '',
+    },
+  },
+];
 const retainedUnconditionalRecipes = {
   DDPMPipeline: {
     repoId: 'google/ddpm-cifar10-32',
@@ -2287,6 +2343,19 @@ function accountingDigest(kind, value) {
  * Native acceptance remains separate; the default factory path stays unchanged.
  */
 export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target, runtimeEvidence }) {
+  return imageAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target, runtimeEvidence });
+}
+
+export function directImagePromptAccountingExecutionPlan(args) {
+  const profile = directImagePromptRoutes.find(({ workflowId }) => workflowId === args.target.workflowId);
+  assert.ok(profile, 'Direct image prompt accounting route is outside the reviewed scope.');
+  return imageAccountingExecutionPlan(args, profile);
+}
+
+function imageAccountingExecutionPlan(
+  { expectedApiGraph, apiGraph, consumed, target, runtimeEvidence },
+  promptVariant,
+) {
   assertCanonicalAccountingGraphEnvelope(expectedApiGraph);
   assertCanonicalAccountingGraphEnvelope(apiGraph);
   same(
@@ -2295,24 +2364,33 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     'Accounting graph is not the canonical export.',
   );
   const isPixArt = target.modelType === pixArtSigmaPag.modelType;
+  const conditional = promptVariant ?? (isPixArt ? pixArtSigmaPag : null);
+  const legacyNullFields = promptVariant?.legacyNull ?? (isPixArt ? pixArtLegacyNullFields : []);
   const retainedUnconditional = Object.hasOwn(retainedUnconditionalRecipes, target.modelType)
     ? retainedUnconditionalRecipes[target.modelType]
     : null;
   assert.ok(
-    isPixArt || retainedUnconditional || target.modelType === 'DDIMPipeline',
+    conditional || retainedUnconditional || target.modelType === 'DDIMPipeline',
     'Canonical accounting model is outside the reviewed scope.',
   );
-  assert.equal(target.task, isPixArt ? 'text_to_image' : 'unconditional_image');
-  if (isPixArt) {
-    assert.equal(target.workflowId, pixArtSigmaPag.workflowId);
-    same(target.modelSet, pixArtSigmaPag.modelSet, 'PixArt model is outside the reviewed accounting scope.');
+  assert.equal(target.task, conditional ? 'text_to_image' : 'unconditional_image');
+  if (conditional) {
+    assert.equal(target.modelType, conditional.modelType);
+    assert.equal(target.workflowId, conditional.workflowId);
+    const modelSet = promptVariant
+      ? [{ repoId: promptVariant.modelRepo, revision: promptVariant.modelRevision }]
+      : conditional.modelSet;
+    same(target.modelSet, modelSet, 'Conditional image model is outside the reviewed accounting scope.');
   }
   if (retainedUnconditional) {
     const { repoId, revision } = retainedUnconditional;
     assert.equal(target.workflowId, `${target.modelType}:unconditional_image`);
     same(target.modelSet, [{ repoId, revision }], 'Retained unconditional model is outside the reviewed scope.');
   }
-  const generateAction = isPixArt ? 'Generate' : 'UnconditionalGenerate';
+  const generateAction = conditional ? 'Generate' : 'UnconditionalGenerate';
+  const generationFields = conditional
+    ? ['image_contract', ...conditional.active, ...conditional.inactive]
+    : accountingFields[generateAction];
   assert.equal(consumed?.schemaVersion, 1);
   assert.equal(consumed.source, 'backend-execution');
   assert.equal(consumed.truncated, false);
@@ -2359,7 +2437,7 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     same(section.unaccountedFields, [], 'Unaccounted graph fields remain.');
     assert.ok(JSON.stringify(section).length <= 65_536, 'Accounting section exceeds its bound.');
     const expectedFields = [
-      ...accountingFields[row.action],
+      ...(row.action === generateAction ? generationFields : accountingFields[row.action]),
       ...(row.action === 'LoadPipeline' && Object.hasOwn(node.params, 'execution_profile_id')
         ? ['execution_profile_id']
         : []),
@@ -2408,8 +2486,8 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
         assert.equal(field.value, target.task);
         continue;
       }
-      if (isPixArt && row.action === 'Generate' && pixArtLegacyNullFields.includes(key)) {
-        assert.equal(field.value, null, `Inactive legacy control was passed to PixArt: ${key}`);
+      if (row.action === 'Generate' && legacyNullFields.includes(key)) {
+        assert.equal(field.value, null, `Inactive legacy control was passed to the pipeline: ${key}`);
         continue;
       }
       const accounted = section.fields[key];
@@ -2492,7 +2570,7 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
   assert.equal(value(recipe, 'device_map'), 'none', 'Split/manual placement is outside the bounded accounting scope.');
   assert.equal(
     value(recipe, 'offload_mode'),
-    isPixArt ? 'model_cpu' : 'none',
+    promptVariant?.offload ?? (isPixArt ? 'model_cpu' : 'none'),
     'Offload is outside the reviewed accounting scope.',
   );
   const projection = (item, kind, values, producer) => {
@@ -2599,19 +2677,19 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     target.modelSet,
     'Executed model set differs.',
   );
-  const inactive = new Set(
-    isPixArt ? pixArtSigmaPag.inactive : ['class_label', ...(retainedUnconditional ? ['eta'] : [])],
-  );
-  for (const key of accountingFields[generateAction]) {
+  const inactive = new Set(conditional?.inactive ?? ['class_label', ...(retainedUnconditional ? ['eta'] : [])]);
+  for (const key of generationFields) {
     if (key === 'image_contract') {
       assert.equal(fields(generate)[key].disposition, 'metadata');
       continue;
     }
+    const inputValue = fields(generate)[key].inputValue;
+    const effective = promptVariant && key === 'seed' ? Number(inputValue) : inputValue;
     check(
       generate,
       key,
       inactive.has(key) ? 'inactive' : 'consumed',
-      fields(generate)[key].inputValue,
+      effective,
       inactive.has(key) ? 'adapter-inactive' : undefined,
     );
   }
@@ -2684,6 +2762,43 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
       'PixArt output height differs from generation.',
     );
   }
+  if (promptVariant) {
+    assert.ok(
+      typeof value(generate, 'prompt') === 'string' && value(generate, 'prompt').trim(),
+      'Direct image accounting needs the authored prompt.',
+    );
+    accountingKeys(
+      generate.row.fields,
+      [...promptVariant.active, 'executed_task', ...legacyNullFields],
+      'Direct image legacy controls are incomplete or unexpected.',
+    );
+    const contract = generate.node.params.image_contract.value;
+    assert.equal(contract.pipelineClass, target.modelType);
+    assert.equal(contract.mode, target.task);
+    for (const [key, expected] of Object.entries(promptVariant.generation))
+      assert.equal(value(generate, key), expected, `Direct image ${key} is outside the reviewed accounting scope.`);
+    assert.ok(Number.isSafeInteger(value(generate, 'seed')) && value(generate, 'seed') >= 0);
+    assert.equal(value(owner, 'dtype'), promptVariant.dtype);
+    assert.equal(value(owner, 'device'), 'cuda:0');
+    assert.equal(value(owner, 'device_map'), promptVariant.deviceMap);
+    assert.equal(recipeValues.attention_backend, 'auto');
+    same(recipeValues.attention_components, [], 'Direct image attention component scope differs.');
+    for (const key of ['regional_compile', 'channels_last', 'layerwise_casting'])
+      assert.equal(recipeValues[key], false);
+    assert.equal(recipeValues.denoiser_cache, 'none');
+    assert.ok(
+      apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0,
+      'Direct image accounting requires original submission and completion evidence.',
+    );
+    const { output } = runtimeEvidence ?? {};
+    assert.equal(output?.fieldKey, 'preview');
+    assert.equal(output.mediaItems?.length, 1);
+    same(
+      [output.mediaItems[0].width, output.mediaItems[0].height],
+      [value(generate, 'width'), value(generate, 'height')],
+      'Native image dimensions differ from the dispatched recipe.',
+    );
+  }
   check(preview, 'device', 'inactive', fields(preview).device.inputValue, 'already-decoded-image');
   check(preview, 'export', 'consumed', fields(preview).export.inputValue);
   const plan = {
@@ -2709,11 +2824,13 @@ export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, c
     layerwiseCasting: recipeValues.layerwise_casting,
   };
   if (apiGraph.runtimeHints && Object.keys(apiGraph.runtimeHints).length > 0) {
-    const accountHints = retainedUnconditional
-      ? canonicalRetainedUnconditionalRuntimeHintAccounting
-      : isPixArt
-        ? canonicalPixArtSigmaPagRuntimeHintAccounting
-        : canonicalDdimRuntimeHintAccounting;
+    const accountHints = promptVariant
+      ? directImagePromptRuntimeHintAccounting
+      : retainedUnconditional
+        ? canonicalRetainedUnconditionalRuntimeHintAccounting
+        : isPixArt
+          ? canonicalPixArtSigmaPagRuntimeHintAccounting
+          : canonicalDdimRuntimeHintAccounting;
     plan.runtimeHintAccounting = accountHints({
       apiGraph,
       consumed,

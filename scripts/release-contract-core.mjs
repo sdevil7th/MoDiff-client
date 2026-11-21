@@ -840,8 +840,12 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     });
   }
   if (
-    evidence.format === 'modiff.private.smollm2-prompt-variant.v1' ||
-    evidence.format === 'modiff.private.shap-e-prompt-variant.v1'
+    [
+      'modiff.private.smollm2-prompt-variant.v1',
+      'modiff.private.shap-e-prompt-variant.v1',
+      'modiff.private.prx-prompt-variant.v1',
+      'modiff.private.sd15-prompt-variant.v1',
+    ].includes(evidence.format)
   ) {
     const { readPromptVariantEvidence } = await import('./prompt-variant-evidence.mjs');
     return readPromptVariantEvidence({

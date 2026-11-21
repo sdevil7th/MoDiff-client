@@ -75,6 +75,43 @@ test('a prompt variant fills a single empty literal and keeps all other fields a
   );
 });
 
+test('an image prompt variant binds the authored seed with the prompt and accepts no other controls', () => {
+  const profile = {
+    bindSeed: true,
+    chain: [['generator', 'Fixture', 'Generate', 'prompt seed']],
+  };
+  const baseline = {
+    sid: 'fixture',
+    paths: [['generator']],
+    nodes: {
+      generator: {
+        module: 'Fixture',
+        action: 'Generate',
+        params: { prompt: { value: '' }, seed: { value: 42 }, num_inference_steps: { value: 2 } },
+      },
+    },
+  };
+  const creator = structuredClone(baseline);
+  creator.nodes.generator.params.prompt.value = 'A close photograph of a painted ceramic bowl.';
+  creator.nodes.generator.params.seed.value = 1093;
+  const submitted = { ...structuredClone(creator), runtimeHints: {} };
+  const baselineHash = canonicalGraphIdentity(baseline).hash;
+  const bound = bindPromptVariant(profile, baseline, creator, submitted, baselineHash);
+  assert.equal(bound.seed, 1093);
+  assert.deepEqual(bound.expected.nodes.generator.params, creator.nodes.generator.params);
+  assert.equal(baseline.nodes.generator.params.seed.value, 42);
+
+  const wrongStep = structuredClone(submitted);
+  wrongStep.nodes.generator.params.num_inference_steps.value = 4;
+  assert.throws(() => bindPromptVariant(profile, baseline, creator, wrongStep, baselineHash), /outside the bound/u);
+  const invalidSeed = structuredClone(submitted);
+  invalidSeed.nodes.generator.params.seed.value = -1;
+  assert.throws(() => bindPromptVariant(profile, baseline, creator, invalidSeed, baselineHash), /unsigned seed/u);
+  const connectedSeed = structuredClone(submitted);
+  connectedSeed.nodes.generator.params.seed.sourceId = 'generator';
+  assert.throws(() => bindPromptVariant(profile, baseline, creator, connectedSeed, baselineHash), /literal seed/u);
+});
+
 test('the native text output binds exact durable JSON, prompt route and local model receipt', () => {
   const model = {
     schemaVersion: 1,

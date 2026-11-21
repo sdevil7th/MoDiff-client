@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 import { protocolFactoryArguments } from './canonical-provenance-fixtures.mjs';
-import { canonicalAccountingExecutionPlan, createRunProvenance, stableStringify } from './live-proof-provenance.mjs';
+import { directImagePromptRuntimeHintAccounting } from './canonical-runtime-hints.mjs';
+import {
+  canonicalAccountingExecutionPlan,
+  createRunProvenance,
+  directImagePromptAccountingExecutionPlan,
+  stableStringify,
+} from './live-proof-provenance.mjs';
 import { exportCanonicalWorkflowGraphs, readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
 
 const clientRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -46,6 +52,7 @@ const project = (kind, values, sourceNodeId, sourcePortId) => ({
 // The canonical input is the actual exporter output. The stage transport,
 // runtime and accounting observations are synthetic and never registered.
 let synthetic;
+let syntheticPrx;
 const syntheticRetained = new Map();
 before(async () => {
   synthetic = await syntheticImageCase({
@@ -53,22 +60,35 @@ before(async () => {
     graphPath: 'pix-art-sigma-pag-pipeline/text-to-image.json',
     size: 1024,
   });
+  syntheticPrx = await syntheticImageCase({
+    modelType: 'PRXPipeline',
+    graphPath: 'prx-pipeline/text-to-image.json',
+    size: 512,
+    platform: 'Linux-x86_64',
+    backend: 'rocm',
+  });
   for (const profile of retainedProfiles) syntheticRetained.set(profile.modelType, await syntheticImageCase(profile));
 });
 
 async function syntheticImageCase({ modelType, graphPath, size, platform, backend }) {
-  const retained = platform !== undefined;
+  const directPrx = modelType === 'PRXPipeline';
+  const retained = platform !== undefined && !directPrx;
   const generateAction = retained ? 'UnconditionalGenerate' : 'Generate';
   const taskMode = retained ? 'unconditional_image' : 'text_to_image';
   const graph = JSON.parse(readFileSync(join(backendRoot, 'data/graphs/studio', graphPath), 'utf8'));
+  if (directPrx) {
+    const generate = graph.nodes.find((node) => node.data.action === 'Generate');
+    generate.data.params.prompt.value = 'Editorial product photograph of a single silver compass.';
+  }
   const [expected] = await exportCanonicalWorkflowGraphs(clientRoot, [graph]);
   const form = { modelType, mode: taskMode, ...(retained ? { resourceMode: 'expert' } : {}) };
-  const visualNodes = graph.nodes.filter((node) => node.data.action === 'Preview');
+  const visualNodes = graph.nodes.filter(
+    (node) => node.data.action === 'Preview' || (directPrx && node.data.action === 'Generate'),
+  );
   const ids = new Map(visualNodes.map((node) => [node.id, node.id]));
-  for (const [id, pick] of [
-    ['setup', (node) => node.data.action !== generateAction],
-    ['generate', (node) => node.data.action === generateAction],
-  ]) {
+  const staged = [['setup', (node) => node.data.action !== generateAction]];
+  if (!directPrx) staged.push(['generate', (node) => node.data.action === generateAction]);
+  for (const [id, pick] of staged) {
     const leaves = graph.nodes.filter((node) => !ids.has(node.id) && pick(node));
     const nodes = leaves.map(({ id: nodeId, data }) => {
       ids.set(nodeId, `block-v2-node:${id.length}:${id}:${nodeId.length}:${nodeId}`);
@@ -85,9 +105,9 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
     for (const param of Object.values(node.params)) if (param.sourceId) param.sourceId = ids.get(param.sourceId);
   apiGraph.paths = apiGraph.paths.map((path) => path.map((id) => ids.get(id)));
   const expectedApiGraph = structuredClone(apiGraph);
-  const nodeId = visualNodes[0].id;
+  const nodeId = visualNodes.find((node) => node.data.action === 'Preview').id;
   const base = protocolFactoryArguments(apiGraph);
-  if (retained) {
+  if (platform) {
     base.runtimeFingerprint.packages.platform = platform;
     base.executionReceipt.runtimeMeasurement.backend = backend;
     base.executionReceipt.runtimeMeasurement.device = 'cuda:0';
@@ -170,6 +190,23 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
       'use_en_prompt',
     ],
     UnconditionalGenerate: ['eta', 'class_label'],
+    ...(directPrx
+      ? {
+          Generate: [
+            'cfg_normalize',
+            'control_guidance_end',
+            'control_guidance_start',
+            'image_guidance_scale',
+            'layers',
+            'padding_mask_crop',
+            'pag_adaptive_scale',
+            'pag_scale',
+            'resolution',
+            'strength',
+            'use_en_prompt',
+          ],
+        }
+      : {}),
     Preview: ['device'],
   };
   const replacedLoaderFields = {
@@ -317,9 +354,9 @@ async function syntheticImageCase({ modelType, graphPath, size, platform, backen
   };
 }
 
-const projection = (value) => {
+const projection = (value, reader = canonicalAccountingExecutionPlan) => {
   const { expectedApiGraph, target, run, graphCompleted } = value.canonicalAccountingProof;
-  return canonicalAccountingExecutionPlan({
+  return reader({
     expectedApiGraph,
     target,
     apiGraph: value.apiGraph,
@@ -327,6 +364,79 @@ const projection = (value) => {
     runtimeEvidence: { run, graphCompleted, output: value.executedOutput },
   });
 };
+
+test('PRX prompt variant accepts the exact cached pin and complete scoped accounting', () => {
+  const before = structuredClone(syntheticPrx);
+  const accepted = projection(syntheticPrx, directImagePromptAccountingExecutionPlan);
+  assert.equal(accepted.plan.runtimeHintAccounting.policy, 'direct-image-prompt-runtime-hints-v1');
+  assert.equal(accepted.plan.offloadMode, 'model_cpu');
+  assert.deepEqual(syntheticPrx, before);
+  assert.throws(() => projection(syntheticPrx), /outside the reviewed scope/u);
+});
+
+test('PRX prompt variant rejects alternate model pins, sequence accounting and controls', () => {
+  const wrongOwner = structuredClone(syntheticPrx);
+  const snapshot = wrongOwner.apiGraph.runtimeHints.workflowSnapshot;
+  const generateNode = snapshot.nodes.find((node) => node.data.action === 'Generate');
+  const setup = snapshot.nodes.find((node) => node.data.blockInstanceV2);
+  setup.data.blockInstanceV2.effectiveGraph.nodes.push({ nodeId: generateNode.id, data: generateNode.data });
+  snapshot.nodes = snapshot.nodes.filter((node) => node.id !== generateNode.id);
+  assert.throws(
+    () => projection(wrongOwner, directImagePromptAccountingExecutionPlan),
+    /PRX Model Setup member scope differs/u,
+  );
+  const wrongPin = structuredClone(syntheticPrx);
+  wrongPin.canonicalAccountingProof.target.modelSet[0].revision = 'e'.repeat(40);
+  assert.throws(
+    () => projection(wrongPin, directImagePromptAccountingExecutionPlan),
+    /Conditional image model is outside the reviewed accounting scope/u,
+  );
+  const misplacedLimit = structuredClone(syntheticPrx);
+  const generate = misplacedLimit.executedOutput.resolvedExecutionInputs.nodes.find((row) => row.action === 'Generate');
+  const reported = generate.fieldAccounting.fields.max_sequence_length;
+  reported.disposition = 'inactive';
+  reported.reason = 'adapter-inactive';
+  delete generate.fields.max_sequence_length;
+  assert.throws(() => projection(misplacedLimit, directImagePromptAccountingExecutionPlan));
+  const wrongValue = structuredClone(syntheticPrx);
+  const wrongGenerate = wrongValue.executedOutput.resolvedExecutionInputs.nodes.find(
+    (row) => row.action === 'Generate',
+  );
+  wrongGenerate.fieldAccounting.fields.max_sequence_length.value = 224;
+  wrongGenerate.fields.max_sequence_length.value = 224;
+  assert.throws(() => projection(wrongValue, directImagePromptAccountingExecutionPlan));
+  const incomplete = structuredClone(syntheticPrx);
+  const incompleteGenerate = incomplete.executedOutput.resolvedExecutionInputs.nodes.find(
+    (row) => row.action === 'Generate',
+  );
+  delete incompleteGenerate.fieldAccounting.fields.cfg_normalize;
+  assert.throws(() => projection(incomplete, directImagePromptAccountingExecutionPlan));
+});
+
+test('saved SD1.5 stage owners still require the original native completion evidence', () => {
+  const block = (actions) => ({
+    data: { blockInstanceV2: { effectiveGraph: { nodes: actions.map((action) => ({ data: { action } })) } } },
+  });
+  const preview = { data: { action: 'Preview' } };
+  const setup = block(['LoadPipeline', 'PipelineQuantizationConfigV2', 'DiffusersExecutionRecipe']);
+  const generate = block(['Generate']);
+  const verify = (modelType, nodes) =>
+    directImagePromptRuntimeHintAccounting({
+      plan: { modelType },
+      apiGraph: { runtimeHints: { workflowSnapshot: { nodes } } },
+    });
+  assert.throws(() => verify('StableDiffusionPipeline', [preview, setup, generate]), /original completion evidence/u);
+  assert.throws(
+    () => verify('StableDiffusionPipeline', [preview, setup, block(['Preview'])]),
+    /Saved SD1.5 Generate member scope differs/u,
+  );
+  assert.throws(
+    () => verify('StableDiffusionPipeline', [preview, setup, { data: { action: 'Generate' } }]),
+    /exact saved stage owners/u,
+  );
+  assert.throws(() => verify('PRXPipeline', [preview, setup, generate]), /exact saved stage owners/u);
+  assert.throws(() => verify('SanaSprintPipeline', [preview, setup, generate]), /outside reviewed scope/u);
+});
 
 test('staged PixArt evidence derives a correlated Expert CPU-offload plan without altering the originals', () => {
   const before = structuredClone(synthetic);
