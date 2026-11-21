@@ -1128,7 +1128,7 @@ test('actual registered materialization rejects a changed sealed ControlNet offl
   );
 });
 
-test('every explicitly routed admission is an exact backend schema-v6 compiler success with fixed runtime probes', () => {
+test('every explicitly routed admission is an exact backend schema-v6 compiler success with fixed runtime probes', async () => {
   const parsedLibrary = nodeLibraryModule.parseHuggingFaceNodeLibrary(snapshot.library);
   assert.equal(parsedLibrary.definitions.length, snapshot.library.definitions.length);
   const specs = new Map(snapshot.specs.map((spec) => [spec.id, spec]));
@@ -1709,6 +1709,57 @@ test('every explicitly routed admission is an exact backend schema-v6 compiler s
         `${definition.id} falsely presents an equivalent standard executor as exact upstream blocks`,
       );
     });
+  const runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  for (const [catalogId, portId, savedLabel, displayLabel, type] of [
+    ['diffusers.modular:Cosmos3DistilledModularPipeline:text2image', 'images', 'videos', 'Image', 'image'],
+    ['diffusers.modular:Cosmos3OmniModularPipeline:text2image', 'images', 'videos', 'Image', 'image'],
+    [
+      'transformers.composite:HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
+      'result',
+      'result',
+      'Transcript',
+      'any',
+    ],
+    [
+      'transformers.composite:HuggingFaceSpeechRecognitionModel:speech_to_text',
+      'result',
+      'result',
+      'Transcript',
+      'any',
+    ],
+    [
+      'transformers.composite:HuggingFaceSpeechRecognitionModel:speech_translation',
+      'result',
+      'result',
+      'Transcript',
+      'any',
+    ],
+    ['diffusers.modular:Cosmos3OmniModularPipeline:image2video', 'videos', 'videos', 'videos', 'video'],
+  ]) {
+    const result = [...compilerSuccesses.values()].find(({ definition }) => definition.id === catalogId);
+    assert.ok(result, catalogId);
+    const instance = result.compiledInstance;
+    const saved = JSON.stringify(instance);
+    const { boundary, controls } = instance.effectiveInterface;
+    const publicPort = boundary.outputs.find((port) => port.portId === portId);
+    assert.equal(publicPort.label, savedLabel, catalogId);
+    const projected = runtime.blockConnectorParamsV2(instance).outputs[portId];
+    assert.equal(projected.label, displayLabel, catalogId);
+    assert.equal(projected.type, type, catalogId);
+    assert.equal(projected.fieldOptions.blockBindingV2.logicalId, portId, catalogId);
+    assert.equal(projected.fieldOptions.blockBindingV2.nodeId, publicPort.binding.nodeId, catalogId);
+    assert.equal(projected.fieldOptions.blockBindingV2.fieldOrPortId, publicPort.binding.fieldOrPortId, catalogId);
+    const edited = runtime.replaceBlockEffectiveInterfaceV2(instance, {
+      controls,
+      boundary: {
+        ...boundary,
+        outputs: boundary.outputs.map((port) => (port.portId === portId ? { ...port, label: 'My output' } : port)),
+      },
+    });
+    assert.equal(runtime.blockConnectorParamsV2(edited).outputs[portId].label, 'My output', catalogId);
+    assert.equal(JSON.stringify(instance), saved, catalogId);
+  }
+
   const qwenDefinition = snapshot.library.definitions.find(
     (definition) => definition.id === 'diffusers.modular:QwenImageModularPipeline:text2image',
   );

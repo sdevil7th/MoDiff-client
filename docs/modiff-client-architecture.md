@@ -1958,6 +1958,12 @@ their original immutable graph and public sockets. Auto recognizes the exact
 prior catalog definitions and applies the same graph, interface and resource
 checks when those instances reopen.
 
+The registered Cosmos 3 text-to-image outputs appear as Image on the
+canvas. Wav2Vec2 and Whisper text outputs appear as Transcript. These
+labels are presentation defaults for the exact registered output
+descriptors. Editing a port label overrides the default. The displayed
+name leaves the saved identifier, type, binding and definition hash intact.
+
 Running from a generic User Node root resolves to a terminal media preview
 inside that specific expanded instance (or its first terminal node when it
 has no media preview). Both the store export and run coordinator use this

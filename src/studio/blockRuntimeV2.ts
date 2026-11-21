@@ -446,6 +446,52 @@ function controlParamsForNormalizedInstanceV2(instance: BlockInstanceV2): Record
   );
 }
 
+const IMAGE_RESULT_LABEL_V2 = {
+  portId: 'images',
+  savedLabel: 'videos',
+  displayLabel: 'Image',
+  valueType: 'image',
+  nodeId: 'decode',
+  fieldOrPortId: 'videos',
+};
+const TRANSCRIPT_RESULT_LABEL_V2 = {
+  portId: 'result',
+  savedLabel: 'result',
+  displayLabel: 'Transcript',
+  valueType: 'any',
+  nodeId: 'transcribeAudio',
+  fieldOrPortId: 'transcript',
+};
+
+// Keep these user-facing aliases out of the immutable registered interfaces.
+const REGISTERED_OUTPUT_LABELS_V2 = new Map([
+  [
+    'diffusers.cluster-admission:Cosmos3DistilledModularPipeline:text2image:workflow:official_top_level_blocks',
+    IMAGE_RESULT_LABEL_V2,
+  ],
+  [
+    'diffusers.cluster-admission:Cosmos3OmniModularPipeline:text2image:workflow:official_top_level_blocks',
+    IMAGE_RESULT_LABEL_V2,
+  ],
+  ['transformers.cluster-admission:HuggingFaceCTCSpeechRecognitionModel:speech_to_text', TRANSCRIPT_RESULT_LABEL_V2],
+  ['transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_to_text', TRANSCRIPT_RESULT_LABEL_V2],
+  ['transformers.cluster-admission:HuggingFaceSpeechRecognitionModel:speech_translation', TRANSCRIPT_RESULT_LABEL_V2],
+]);
+
+function registeredOutputLabelV2(instance: BlockInstanceV2, port: BlockPortV2) {
+  const { definitionId, source, ownership } = instance.definitionSnapshot;
+  const alias = REGISTERED_OUTPUT_LABELS_V2.get(definitionId);
+  return ownership.kind === 'registered' &&
+    source.executionAdmissionId === definitionId &&
+    alias?.portId === port.portId &&
+    alias.savedLabel === port.label &&
+    alias.valueType === port.valueType &&
+    alias.nodeId === port.binding.nodeId &&
+    alias.fieldOrPortId === port.binding.fieldOrPortId
+    ? alias.displayLabel
+    : port.label;
+}
+
 function connectorParam(instance: BlockInstanceV2, port: BlockPortV2, direction: 'input' | 'output'): NodeParams {
   const base = sourceParam(instance, port.binding.nodeId, port.binding.fieldOrPortId);
   if (base?.signalCompatibility?.action === '$node') {
@@ -479,7 +525,7 @@ function connectorParam(instance: BlockInstanceV2, port: BlockPortV2, direction:
   const union = normalizeBlockValueTypeV2(port.valueType);
   return {
     ...(base ? cloneJson(base) : {}),
-    label: port.label,
+    label: direction === 'output' ? registeredOutputLabelV2(instance, port) : port.label,
     type: Array.isArray(union) ? (union as string[]) : port.valueType,
     display: direction,
     required: port.required,
