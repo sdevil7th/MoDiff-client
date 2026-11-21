@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { validateLateNativeImageVariantRun, validateNativeVariantRun } from './native-variant-run-evidence.mjs';
-import { bindPrivateImageEditGraph, readPrivateImageEditEvidence } from './private-image-edit-evidence.mjs';
+import {
+  bindPrivateImageEditGraph,
+  readPrivateImageEditEvidence,
+  validatePrivateImageEditRuntimePlatform,
+} from './private-image-edit-evidence.mjs';
 
 function archivedImage() {
   const target = { task: 'edit_image', modelType: 'LatentConsistencyModelPipeline' };
@@ -235,9 +239,7 @@ test('private direct image edit graph binds exactly one empty file and one empty
   assert.throws(invoke, /Unexpected evidence fields/u);
 });
 
-test('SDXL private Edit evidence requires the reviewed checkpoint before reading its descriptor', async () => {
-  const modelType = 'StableDiffusionXLPipeline';
-  const repo = 'stabilityai/stable-diffusion-xl-base-1.0';
+function assertPinnedPrivateEdit({ modelType, graphPath, sourceTemplateId, repo, exactRevision }) {
   const makeOptions = (revision) => {
     const graph = {
       nodes: [
@@ -256,9 +258,9 @@ test('SDXL private Edit evidence requires the reviewed checkpoint before reading
       id: modelType + ':edit_image',
       modelType,
       mode: 'edit_image',
-      graphPath: 'studio/stable-diffusion-xl-pipeline/edit-image.json',
+      graphPath,
       graphHash: canonicalJsonHash(graph),
-      sourceTemplateId: 'task-template:sdxl-base:edit-image:v1',
+      sourceTemplateId,
       requiredArtifacts: [repo],
     };
     const authoring = {
@@ -273,8 +275,41 @@ test('SDXL private Edit evidence requires the reviewed checkpoint before reading
     };
     return { manifest, graph, authoring, evidencePath: '' };
   };
-  await assert.rejects(readPrivateImageEditEvidence(makeOptions('462165984030d82259a11f4367a4eed129e94a7b')), {
-    code: 'ENOENT',
-  });
-  await assert.rejects(readPrivateImageEditEvidence(makeOptions('0'.repeat(40))), /Private edit model pin differs/u);
+  return Promise.all([
+    assert.rejects(readPrivateImageEditEvidence(makeOptions(exactRevision)), { code: 'ENOENT' }),
+    assert.rejects(readPrivateImageEditEvidence(makeOptions('0'.repeat(40))), /Private edit model pin differs/u),
+  ]);
+}
+
+test('SDXL private Edit evidence requires the reviewed checkpoint before reading its descriptor', () =>
+  assertPinnedPrivateEdit({
+    modelType: 'StableDiffusionXLPipeline',
+    graphPath: 'studio/stable-diffusion-xl-pipeline/edit-image.json',
+    sourceTemplateId: 'task-template:sdxl-base:edit-image:v1',
+    repo: 'stabilityai/stable-diffusion-xl-base-1.0',
+    exactRevision: '462165984030d82259a11f4367a4eed129e94a7b',
+  }));
+
+test('SD1.5 private Edit evidence requires the reviewed checkpoint before reading its descriptor', () =>
+  assertPinnedPrivateEdit({
+    modelType: 'StableDiffusionPipeline',
+    graphPath: 'studio/stable-diffusion-pipeline/edit-image.json',
+    sourceTemplateId: 'task-template:sd15-base:edit-image:v1',
+    repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+    exactRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+  }));
+
+test('only the scoped SD1.5 Edit route accepts the observed Windows CUDA runtime', () => {
+  const sd15 = 'StableDiffusionPipeline:edit_image';
+  const sdxl = 'StableDiffusionXLPipeline:edit_image';
+  const windows = 'Windows-11-10.0.26300-SP0';
+  const linux = 'Linux-7.0.0-38-generic-x86_64-with-glibc2.43';
+  assert.doesNotThrow(() => validatePrivateImageEditRuntimePlatform(sd15, windows, 'cuda'));
+  assert.doesNotThrow(() => validatePrivateImageEditRuntimePlatform(sd15, linux, 'rocm'));
+  assert.throws(() => validatePrivateImageEditRuntimePlatform(sd15, windows, 'rocm'));
+  assert.throws(() => validatePrivateImageEditRuntimePlatform(sd15, linux, 'cuda'));
+  assert.throws(() => validatePrivateImageEditRuntimePlatform(sd15, 'Darwin-26.0', 'mps'));
+  assert.throws(() => validatePrivateImageEditRuntimePlatform('StableDiffusionPipeline:inpaint', windows, 'cuda'));
+  assert.doesNotThrow(() => validatePrivateImageEditRuntimePlatform(sdxl, linux, 'rocm'));
+  assert.throws(() => validatePrivateImageEditRuntimePlatform(sdxl, windows, 'cuda'));
 });

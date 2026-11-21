@@ -1,5 +1,7 @@
 import type { Edge, Viewport } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
+import { useNodesStore } from '../stores/useNodeStore';
+import { unpackVisualOperationGroups } from '../workflow/visualOperationGroupProjection';
 import {
   BUILTIN_AUDIO_OPERATION_MODES,
   BUILTIN_DATA_OPERATION_MODES,
@@ -323,6 +325,91 @@ function declaredModelType(nodes: NodeLike[], fallback: StudioModelType) {
   // context rather than selecting a different profile from catalog order.
   if (repos.includes(STUDIO_MODEL_PROFILES[fallback].defaultRepo)) return fallback;
   return Object.values(STUDIO_MODEL_PROFILES).find((profile) => repos.includes(profile.defaultRepo))?.modelType;
+}
+
+/** Repair a same-repository summary only when the ordinary graph carries a
+ * uniquely identified direct execution specification and its connected task.
+ * The projection is inspected and never saved back into the document. */
+export function restoreReviewedDirectImageModelType(
+  nodes: CustomNodeType[],
+  edges: Edge[],
+  form: StudioFormState,
+): StudioFormState {
+  const registry = useNodesStore.getState();
+  if (!registry.studioModelCapabilitiesAuthoritative || registry.studioExecutionSpecInvalid) return form;
+  const authoredRepo = STUDIO_MODEL_PROFILES[form.modelType]?.defaultRepo;
+  if (!authoredRepo) return form;
+  let graph;
+  try {
+    graph = unpackVisualOperationGroups({ nodes, edges }).graph;
+  } catch {
+    return form;
+  }
+  const loaders = graph.nodes.filter(isModelLoader);
+  const loader = loaders[0];
+  if (
+    loaders.length !== 1 ||
+    !loader ||
+    nodeKey(loader) !== 'modules.DiffusersImage.LoadPipeline' ||
+    loader.data.studioOwned !== true ||
+    loader.data.studioRole !== 'diffusersImagePipeline' ||
+    paramValue(loader, ['model_type']) !== undefined ||
+    paramValue(loader, ['mode']) !== form.mode
+  )
+    return form;
+  const selection = paramValue(loader, ['model_id']);
+  if (
+    typeof selection !== 'object' ||
+    !selection ||
+    !('source' in selection) ||
+    selection.source !== 'hub' ||
+    stringValue(selection) !== authoredRepo
+  )
+    return form;
+  const pipeline = paramValue(loader, ['pipeline_class']);
+  const specs = registry.studioModelCapabilities.flatMap((profile) => profile.studioExecutionSpecs ?? []);
+  const routes = specs.filter(
+    (spec) =>
+      spec.mode === form.mode &&
+      spec.executionPath === 'direct-diffusers-image' &&
+      spec.loaderModule === loader.data.module &&
+      spec.loaderAction === loader.data.action &&
+      spec.pipelineClass === pipeline &&
+      spec.defaultRepo === authoredRepo,
+  );
+  const route = routes[0];
+  if (routes.length !== 1 || !route || route.modelType === form.modelType) return form;
+  const consumers = graph.edges.filter(
+    (edge) => edge.source === loader.id && edge.sourceHandle === 'pipeline' && edge.targetHandle === 'pipeline',
+  );
+  if (consumers.length !== 1) return form;
+  const consumer = graph.nodes.find((node) => node.id === consumers[0]?.target);
+  const consumerRole = consumer?.data.studioRole;
+  if (
+    !consumer ||
+    !consumerRole ||
+    consumer.data.studioOwned !== true ||
+    !route.roles.some(([role, key]) => role === consumerRole && key === nodeKey(consumer)) ||
+    !route.edges.some(
+      ([sourceRole, sourcePort, targetRole, targetPort]) =>
+        sourceRole === loader.data.studioRole &&
+        sourcePort === 'pipeline' &&
+        targetRole === consumerRole &&
+        targetPort === 'pipeline',
+    )
+  )
+    return form;
+  const contract = paramValue(consumer, ['image_contract']);
+  if (
+    !contract ||
+    typeof contract !== 'object' ||
+    !('pipelineClass' in contract) ||
+    contract.pipelineClass !== route.pipelineClass ||
+    !('mode' in contract) ||
+    contract.mode !== route.mode
+  )
+    return form;
+  return { ...form, modelType: route.modelType };
 }
 
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
@@ -790,7 +877,7 @@ export function workflowSnapshotFromGraph(
     ...edge,
     type: edge.type ?? edgeType,
   }));
-  const form = inferStudioFormFromWorkflow(nodes, fallback);
+  const form = restoreReviewedDirectImageModelType(nodes, edges, inferStudioFormFromWorkflow(nodes, fallback));
   const adopted = adoptManagedWorkflowGraph(nodes, edges, form);
   return {
     nodes: adopted?.nodes ?? nodes,

@@ -28,6 +28,7 @@ export const PRIVATE_IMAGE_EDIT_FORMAT = 'modiff.private.lcm-source-bound-edit.v
 export const DIRECT_IMAGE_EDIT_FORMAT = 'modiff.private.direct-image-edit-source-bound.v1';
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
 const imageGeometry = ['height', 'max_sequence_length', 'width'];
+const stableDiffusionEditConsumed = [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'];
 const editRoutes = new Map([
   [
     'LatentConsistencyModelPipeline:edit_image',
@@ -54,6 +55,20 @@ const editRoutes = new Map([
     },
   ],
   [
+    'StableDiffusionPipeline:edit_image',
+    {
+      modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      loaderClass: 'StableDiffusionImg2ImgPipeline',
+      format: DIRECT_IMAGE_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-edit-observation.v1',
+      consumed: stableDiffusionEditConsumed,
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      windowsCudaRuntime: true,
+    },
+  ],
+  [
     'StableDiffusionXLPipeline:edit_image',
     {
       modelRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
@@ -61,7 +76,7 @@ const editRoutes = new Map([
       loaderClass: 'StableDiffusionXLImg2ImgPipeline',
       format: DIRECT_IMAGE_EDIT_FORMAT,
       captureFormat: 'modiff.private.direct-image-edit-observation.v1',
-      consumed: [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'],
+      consumed: stableDiffusionEditConsumed,
       fullOrLateNativeSnapshot: true,
       inputPathPrefix: '@data/images/',
     },
@@ -236,7 +251,26 @@ async function verifySourceBinding(clientRoot, bound, output, input) {
   }
 }
 
-function validateRuntime(task, hints, completion, observation, bound, { modelRepo, modelRevision, loaderClass }) {
+export function validatePrivateImageEditRuntimePlatform(workflowId, platform, backend) {
+  const route = editRoutes.get(workflowId);
+  assert.ok(route, 'Unknown private image-edit evidence route.');
+  if (route.windowsCudaRuntime && /^Windows-/iu.test(platform)) {
+    assert.equal(backend, 'cuda');
+  } else {
+    assert.match(platform, /Linux/iu);
+    assert.equal(backend, 'rocm');
+  }
+}
+
+function validateRuntime(
+  task,
+  hints,
+  completion,
+  observation,
+  bound,
+  workflowId,
+  { modelRepo, modelRevision, loaderClass },
+) {
   same(
     completion.runtimeHints,
     {
@@ -247,9 +281,8 @@ function validateRuntime(task, hints, completion, observation, bound, { modelRep
     'Native completion runtime envelope differs.',
   );
   const runtime = selectBackendRuntimeFingerprintEvidence([task.runtimeFingerprint]);
-  assert.match(runtime.packages.platform, /Linux/iu);
+  validatePrivateImageEditRuntimePlatform(workflowId, runtime.packages.platform, task.runtimeMeasurement.backend);
   assert.equal(runtime.torch.cuda_available, true);
-  assert.equal(task.runtimeMeasurement.backend, 'rocm');
   assert.equal(task.runtimeMeasurement.device, 'cuda:0');
   const { elapsedSeconds, peakAllocatedBytes, peakReservedBytes, peakMeasurementVersion } = task.runtimeMeasurement;
   assert.equal(peakMeasurementVersion, 2);
@@ -419,6 +452,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     graphCompleted,
     json(capture.modelObservations[0]),
     bound,
+    workflowId,
     route,
   );
   for (const ref of retainedFiles) readCanonicalEvidenceFile(evidenceRoot, ref, 16 * 1024 * 1024);

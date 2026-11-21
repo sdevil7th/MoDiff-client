@@ -53,7 +53,11 @@ import {
   stableStringify,
 } from '../studio/templateExactness';
 import { STUDIO_TEMPLATES, getPreset } from '../studio/templates';
-import { adoptManagedWorkflowGraph, inferStudioFormFromWorkflow } from '../studio/workflowInference';
+import {
+  adoptManagedWorkflowGraph,
+  inferStudioFormFromWorkflow,
+  restoreReviewedDirectImageModelType,
+} from '../studio/workflowInference';
 import { createLatestRequestGate, formatRequestError, requestBlob } from '../utils/requestJson';
 import { createPageCheckpointStorage } from '../utils/checkpointStorage';
 import { restoreManagedAttentionDefault, restoreSavedAttentionDefaults } from '../workflow/savedAttentionCompatibility';
@@ -676,7 +680,11 @@ function normalizeWorkflowSnapshot(
     value.studioForm.mode === persistedStudioForm.mode &&
     value.studioForm.modelType === persistedStudioForm.modelType;
   const inferOrdinaryForm = ordinaryTaskImport && (intent === 'import' || !hasPersistedForm);
-  const studioForm = adoptedGraph || inferOrdinaryForm ? inferredManagedForm : persistedStudioForm;
+  const inferredOrSavedForm = adoptedGraph || inferOrdinaryForm ? inferredManagedForm : persistedStudioForm;
+  const studioForm =
+    activeTemplateId || persistedGraphBinding || adoptedGraph
+      ? inferredOrSavedForm
+      : restoreReviewedDirectImageModelType(nodes, edges, inferredOrSavedForm);
   const normalizedNodes = adoptedGraph?.nodes ?? nodes;
   const executionNormalizedNodes =
     ordinaryTaskImport || ordinaryOperationGraph

@@ -283,6 +283,87 @@ test('fresh ordinary graph inference still defaults to Automatic without a saved
   assert.equal(inference.inferStudioFormFromWorkflow(snapshot.nodes, snapshot.studioForm).resourceMode, 'auto');
 });
 
+test('an exact SDXL direct task keeps its own model identity despite a same-checkpoint modular form', async () => {
+  const { workflowSnapshotFromGraph, restoreReviewedDirectImageModelType } = await server.ssrLoadModule(
+    '/src/studio/workflowInference.ts',
+  );
+  const { useNodesStore } = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
+  const originalRegistry = useNodesStore.getState();
+  const selection = { source: 'hub', value: 'stabilityai/stable-diffusion-xl-base-1.0' };
+  const routes = [
+    ['edit_image', 'Edit', 'diffusersImageEdit', 'StableDiffusionXLImg2ImgPipeline'],
+    ['inpaint', 'Inpaint', 'diffusersImageInpaint', 'StableDiffusionXLInpaintPipeline'],
+  ];
+  useNodesStore.setState({
+    studioModelCapabilitiesAuthoritative: true,
+    studioExecutionSpecInvalid: false,
+    studioModelCapabilities: [
+      {
+        modelType: 'StableDiffusionXLPipeline',
+        studioExecutionSpecs: routes.map(([mode, action, role, pipelineClass]) => ({
+          modelType: 'StableDiffusionXLPipeline',
+          mode,
+          pipelineClass,
+          defaultRepo: selection.value,
+          loaderModule: 'modules.DiffusersImage',
+          loaderAction: 'LoadPipeline',
+          executionPath: 'direct-diffusers-image',
+          roles: [[role, `modules.DiffusersImage.${action}`]],
+          edges: [['diffusersImagePipeline', 'pipeline', role, 'pipeline']],
+        })),
+      },
+    ],
+  });
+  try {
+    for (const [mode, action, role, pipelineClass] of routes) {
+      const form = { ...defaultForm, mode, modelType: 'StableDiffusionXLModularPipeline' };
+      const graph = ordinaryImageSnapshot('modules.DiffusersImage', action, 'expert');
+      const loader = graph.nodes.find((node) => node.id === 'model');
+      const consumer = graph.nodes.find((node) => node.id === 'operation');
+      Object.assign(loader.data, {
+        module: 'modules.DiffusersImage',
+        action: 'LoadPipeline',
+        studioOwned: true,
+        studioRole: 'diffusersImagePipeline',
+        params: {
+          model_id: { value: selection },
+          pipeline_class: { value: pipelineClass },
+          mode: { value: mode },
+        },
+      });
+      Object.assign(consumer.data, {
+        studioOwned: true,
+        studioRole: role,
+        params: { image_contract: { value: { pipelineClass, mode } } },
+      });
+      graph.edges.push({
+        id: 'model-wire',
+        source: 'model',
+        sourceHandle: 'pipeline',
+        target: 'operation',
+        targetHandle: 'pipeline',
+      });
+      const original = structuredClone(graph);
+      const reopened = workflowSnapshotFromGraph(graph, 'default', form);
+      assert.equal(reopened.studioForm.modelType, 'StableDiffusionXLPipeline');
+      assert.equal(reopened.studioForm.mode, mode);
+      assert.deepEqual(restoreReviewedDirectImageModelType(graph.nodes, graph.edges, form), {
+        ...form,
+        modelType: 'StableDiffusionXLPipeline',
+      });
+      assert.deepEqual(graph, original);
+      assert.equal(restoreReviewedDirectImageModelType(graph.nodes, [], form), form);
+      const authored = { ...form, modelType: 'StableDiffusionXLInstructPix2PixPipeline' };
+      assert.equal(restoreReviewedDirectImageModelType(graph.nodes, graph.edges, authored), authored);
+      loader.data.module = 'modules.ModularDiffusers';
+      loader.data.action = 'ModelsLoader';
+      assert.equal(restoreReviewedDirectImageModelType(graph.nodes, graph.edges, form), form);
+    }
+  } finally {
+    useNodesStore.setState(originalRegistry);
+  }
+});
+
 test('passive ordinary image restore preserves the complete saved form and does not autosave an inferred summary', async (t) => {
   const previousFlow = flow.getState();
   const previousStudio = studio.getState();

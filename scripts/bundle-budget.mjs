@@ -490,6 +490,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Exact connected model summaries add 501 gzip bytes (523747 -> 524248).
+  501 +
   // Exact Inpaint input evidence and shared role labels add 65 gzip bytes.
   65 +
   // Wav2Vec2 registration and role-aware node captions add 1113 bytes (522569 -> 523682).
@@ -759,6 +761,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same change adds 498 aggregate startup gzip bytes (702235 -> 702733).
+  498 +
   // The same changes add 68 aggregate startup gzip bytes.
   68 +
   // The same changes add 1115 aggregate startup bytes (701052 -> 702167).
