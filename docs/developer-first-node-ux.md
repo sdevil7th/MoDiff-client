@@ -198,6 +198,12 @@ separate values. A stock image loader whose conditioning selector is set to None
 hides the auxiliary model picker and revision in Model Setup and Inspector.
 Connected supplier controls and the saved values remain available when applicable.
 
+Use role-specific captions for inputs and outputs. Image composition names the
+overlay and base separately, and generated dimensions are labeled as measured
+outputs. Presentation changes preserve authored names, field IDs and socket types.
+The raw reviewed modular placement action stays resolvable for saved workflows.
+The registered Block picker supplies the exact contract and is its authoring path.
+
 Recorded ordinary video stage inputs keep condition strength and denoise
 strength separate. A source-video pixel digest identifies the ordered frozen
 PIL frames used by Encode Inputs, alongside their count; it is not a source-file

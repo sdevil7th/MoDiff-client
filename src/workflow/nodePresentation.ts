@@ -14,6 +14,10 @@ const PRESENTATIONS: Record<string, Presentation> = {
     previous: ['Load Models', 'Load model', 'Diffusers.LoadPipeline'],
   },
   'modules.ModularDiffusers.AutoModelLoader': { label: 'Load Model Component', previous: ['Load Model'] },
+  'modules.ModularDiffusers.WorkflowJointAVReferenceAssembler': {
+    label: 'Add Ordered Media Reference',
+    previous: ['Add Ordered Video or Audio Reference'],
+  },
   'modules.DiffusersImage.LoadPipeline': {
     label: 'Load Image Pipeline',
     previous: ['Load Diffusers Image Pipeline', 'Load pipeline', 'Diffusers.LoadPipeline'],
@@ -99,7 +103,10 @@ const PRESENTATIONS: Record<string, Presentation> = {
   },
   'modules.Audio.Preview': { label: 'Preview Audio', previous: ['Preview'] },
   'modules.Image.Preview': { label: 'Preview Image', previous: ['Preview'] },
-  'modules.ModularDiffusers.LatentsPreview': { label: 'Preview Latents', previous: ['Latents Preview', 'Preview'] },
+  'modules.ModularDiffusers.LatentsPreview': {
+    label: 'Preview 4-Channel Latent',
+    previous: ['Latents Preview', 'Preview Latents', 'Preview'],
+  },
   'modules.Audio.Export': { label: 'Export Audio', previous: ['Export'] },
   'modules.Image.Save': { label: 'Save Image', previous: ['Export'] },
   'modules.Primitive.ExportData': { label: 'Export Data', previous: ['Export'] },
@@ -151,6 +158,18 @@ const MEDIA_ROLE_CAPTIONS: Record<string, Record<string, string>> = {
 };
 
 const FIELD_PRESENTATIONS: Record<string, Record<string, readonly [string, string]>> = {
+  'modules.Image.Merge': {
+    image_from: ['Image From', 'Overlay image'],
+    image_to: ['Image To', 'Base image'],
+    output: ['Output', 'Composite image'],
+  },
+  'modules.Image.ApplyMask': { output: ['Output', 'Masked image'] },
+  'modules.VideoConditioning.FirstLastFrames': {
+    video: ['Video', 'Source video'],
+    first: ['First', 'First frame'],
+    last: ['Last', 'Last frame'],
+    references: ['References', 'Frame pair'],
+  },
   'modules.VideoConditioning.Normalize': {
     video: ['Video', 'Source frames'],
     num_frames: ['Frames', 'Target frames'],
@@ -162,6 +181,20 @@ const FIELD_PRESENTATIONS: Record<string, Record<string, readonly [string, strin
     scheduler: ['Scheduler', 'Scheduler type'],
     scheduler_out: ['Scheduler', 'Configured scheduler'],
   },
+  'modules.ModularDiffusers.Guider': {
+    guider: ['Guider', 'Guidance type'],
+    guider_out: ['Guider', 'Configured guider'],
+  },
+  'modules.ModularDiffusers.ModelsLoader': {
+    unet: ['Denoise Model', 'Denoiser override'],
+    vae: ['VAE', 'VAE override'],
+    unet_out: ['Denoise Model', 'Loaded denoiser'],
+    vae_out: ['VAE', 'Loaded VAE'],
+  },
+  'modules.DiffusersRuntime.ApplyPipelineRuntimeConfig': {
+    configured_pipeline: ['Pipeline', 'Configured pipeline'],
+  },
+  'modules.DiffusersImage.LoadAdapter': { output: ['Pipeline', 'Adapted pipeline'] },
   'modules.Video.MuxAudioAsset': {
     fit: ['Duration', 'Audio fit'],
     duration_seconds: ['Duration', 'Measured duration (s)'],
@@ -175,10 +208,31 @@ const FIELD_PRESENTATIONS: Record<string, Record<string, readonly [string, strin
   },
 };
 
+const MEASURED_DIMENSION_ACTIONS = new Set([
+  'modules.DiffusersImage.Generate',
+  'modules.DiffusersImage.Edit',
+  'modules.DiffusersImage.Inpaint',
+  'modules.DiffusersImage.ControlGenerate',
+  'modules.DiffusersImage.ControlEdit',
+  'modules.DiffusersImage.ControlInpaint',
+  'modules.DiffusersImage.LayerDecompose',
+  'modules.DiffusersImage.Denoise',
+  'modules.DiffusersImage.DecodeLatents',
+  'modules.DiffusersVideo.Generate',
+  'modules.DiffusersVideo.GenerateVideoAudio',
+  'modules.DiffusersVideo.GenerateSequence',
+  'modules.DiffusersVideo.Denoise',
+]);
+
 /** Improve built-in captions at render time while keeping authored aliases and field IDs. */
 export function nodeFieldDisplayLabel(identity: string, field: string, label: string): string {
   const presentation = FIELD_PRESENTATIONS[identity]?.[field];
-  return presentation?.[0] === label ? presentation[1] : label;
+  if (presentation?.[0] === label) return presentation[1];
+  if (MEASURED_DIMENSION_ACTIONS.has(identity)) {
+    if (field === 'width_out' && label === 'Width') return 'Actual width';
+    if (field === 'height_out' && label === 'Height') return 'Actual height';
+  }
+  return label;
 }
 
 /** Built-in composite metadata carries an exact runtime key, not a user title. */

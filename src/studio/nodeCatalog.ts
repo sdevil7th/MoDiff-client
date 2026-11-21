@@ -203,6 +203,9 @@ function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
 
 function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
   if (node.type === 'group' || node.type === 'loop') return 'internal';
+  // This action requires an admitted definition and placement supplied by the Block compiler.
+  // Its saved execution identity stays available even though its raw schema cannot be authored.
+  if (nodeKey(node) === 'modules.ModularDiffusers.ReviewedModularWorkflowStep') return 'internal';
   if (textIncludesAny(`${key} ${node.label}`, ['nunchaku', 'sd3', 'deprecated'])) return 'experimental';
   if (ESSENTIAL_NODE_KEYS.has(key)) return 'essential';
   if (MODEL_SPECIFIC_MODULES.has(node.module)) return 'advanced';

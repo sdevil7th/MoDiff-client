@@ -10,6 +10,12 @@ let operationCatalog;
 const cases = [
   ['ModularDiffusers', 'ModelsLoader', 'Load Models', 'Load Modular Components'],
   ['ModularDiffusers', 'AutoModelLoader', 'Load Model', 'Load Model Component'],
+  [
+    'ModularDiffusers',
+    'WorkflowJointAVReferenceAssembler',
+    'Add Ordered Video or Audio Reference',
+    'Add Ordered Media Reference',
+  ],
   ['DiffusersImage', 'LoadPipeline', 'Load Diffusers Image Pipeline', 'Load Image Pipeline'],
   ['DiffusersAudio', 'LoadPipeline', 'Load Diffusers Audio Pipeline', 'Load Audio Pipeline'],
   ['DiffusersVideo', 'LoadPipeline', 'Load Diffusers Video Pipeline', 'Load Video Pipeline'],
@@ -27,7 +33,7 @@ const cases = [
   ['DiffusersImage', 'ControlInpaint', 'Diffusers Control Inpaint', 'Inpaint Image with Control'],
   ['Audio', 'Preview', 'Preview Audio', 'Preview Audio'],
   ['Image', 'Preview', 'Preview Image', 'Preview Image'],
-  ['ModularDiffusers', 'LatentsPreview', 'Latents Preview', 'Preview Latents'],
+  ['ModularDiffusers', 'LatentsPreview', 'Latents Preview', 'Preview 4-Channel Latent'],
   ['Audio', 'Export', 'Export Audio', 'Export Audio'],
   ['Image', 'Save', 'Save Image', 'Save Image'],
   ['Primitive', 'ExportData', 'Export Data', 'Export Data'],
@@ -210,6 +216,25 @@ test('common discovery shows ordinary image and video preparation but keeps nati
 
 test('ordinary controls and sockets distinguish requested settings from supplied or measured results', () => {
   const fields = [
+    ['Image.Merge', 'image_from', 'Image From', 'Overlay image'],
+    ['Image.Merge', 'image_to', 'Image To', 'Base image'],
+    ['Image.Merge', 'output', 'Output', 'Composite image'],
+    ['Image.ApplyMask', 'output', 'Output', 'Masked image'],
+    ['VideoConditioning.FirstLastFrames', 'first', 'First', 'First frame'],
+    ['VideoConditioning.FirstLastFrames', 'last', 'Last', 'Last frame'],
+    ['VideoConditioning.FirstLastFrames', 'references', 'References', 'Frame pair'],
+    ['ModularDiffusers.Guider', 'guider', 'Guider', 'Guidance type'],
+    ['ModularDiffusers.Guider', 'guider_out', 'Guider', 'Configured guider'],
+    ['ModularDiffusers.ModelsLoader', 'unet', 'Denoise Model', 'Denoiser override'],
+    ['ModularDiffusers.ModelsLoader', 'unet_out', 'Denoise Model', 'Loaded denoiser'],
+    ['ModularDiffusers.ModelsLoader', 'vae', 'VAE', 'VAE override'],
+    ['ModularDiffusers.ModelsLoader', 'vae_out', 'VAE', 'Loaded VAE'],
+    ['DiffusersRuntime.ApplyPipelineRuntimeConfig', 'configured_pipeline', 'Pipeline', 'Configured pipeline'],
+    ['DiffusersImage.LoadAdapter', 'output', 'Pipeline', 'Adapted pipeline'],
+    ['DiffusersImage.Generate', 'width_out', 'Width', 'Actual width'],
+    ['DiffusersImage.Inpaint', 'height_out', 'Height', 'Actual height'],
+    ['DiffusersVideo.Denoise', 'width_out', 'Width', 'Actual width'],
+    ['DiffusersVideo.GenerateVideoAudio', 'height_out', 'Height', 'Actual height'],
     ['VideoConditioning.Normalize', 'video', 'Video', 'Source frames'],
     ['VideoConditioning.Normalize', 'num_frames', 'Frames', 'Target frames'],
     ['VideoConditioning.Normalize', 'output', 'Video', 'Normalized video'],
@@ -229,6 +254,17 @@ test('ordinary controls and sockets distinguish requested settings from supplied
     assert.equal(presentation.nodeFieldDisplayLabel(key, field, 'My title'), 'My title');
     assert.equal(presentation.nodeFieldDisplayLabel(`custom.${action}`, field, label), label);
   }
+});
+
+test('the reviewed Block placement helper stays resolvable but cannot be inserted from discovery', () => {
+  const step = node('ModularDiffusers', 'ReviewedModularWorkflowStep', 'Reviewed Modular Diffusers Block');
+  const [entry] = catalog.nodeCatalogEntries({ 'modules.ModularDiffusers.ReviewedModularWorkflowStep': step });
+  assert.equal(entry.node, step);
+  for (const view of ['common', 'advanced', 'experimental', 'all']) {
+    assert.equal(catalog.nodeCatalogEntryMatchesView(entry, view), false);
+  }
+  const custom = catalog.getNodeCatalogEntry({ ...step, module: 'custom.Example' });
+  assert.equal(catalog.nodeCatalogEntryMatchesView(custom, 'common'), true);
 });
 
 test('discoverability reflects the encoder role and both declared upscale media types', () => {
