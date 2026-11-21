@@ -39584,7 +39584,8 @@ async function openAudioStageTemplate(
       const terms = page.getByRole('dialog', { name: 'Review model terms', exact: true });
       await terms.getByRole('button', { name: 'I have reviewed and agree \u2014 Create graph', exact: true }).click();
     }
-    await expect(browser).toHaveCount(0);
+    // The nine-scene lyric recipe builds both branches and lays out the full graph before closing.
+    await expect(browser).toHaveCount(0, templateId === 'ace_step_lyric_music_video' ? { timeout: 30_000 } : undefined);
   }
   await expect
     .poll(() =>
