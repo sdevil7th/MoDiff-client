@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Pair R04 damaged-metadata readiness and the existing setup contract.
-          ref: eb151722a3e02c8feae6d97d1cc8046463afcc6e
+          ref: 86c2e281917afaf734c48c31f7b79c5ec1cfa0b2
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -89,7 +89,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: eb151722a3e02c8feae6d97d1cc8046463afcc6e
+          ref: 86c2e281917afaf734c48c31f7b79c5ec1cfa0b2
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
