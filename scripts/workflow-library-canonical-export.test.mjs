@@ -40,7 +40,8 @@ test('repeated shot processors retain only unanimous fallback defaults with unch
 });
 import { canonicalExecutableWorkflowGraph, loadCanonicalWorkflowExpander } from './canonical-workflow-execution.mjs';
 
-let server, hooks, flowStore, groups, blockSchema, fixture, templates, builder, defaults, exactness, operations;
+let server, hooks, flowStore, groups, blockSchema, blockRuntime, modelSetupControlParams, graphNodeControlParams;
+let fixture, templates, builder, defaults, exactness, operations;
 let requests;
 let shared;
 const ids = ['qwen_text_rendering', 'cosmos3_super_text_to_image', 'qwen_outpaint_aspect_template'];
@@ -69,6 +70,9 @@ before(async () => {
   assert.ok(templates.every(Boolean));
   ({ useFlowStore: flowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts'));
   groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
+  blockRuntime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
+  ({ modelSetupControlParams } = await server.ssrLoadModule('/src/workflow/modelSetupControlPresentation.ts'));
+  ({ graphNodeControlParams } = await server.ssrLoadModule('/src/studio/graphNodeControls.ts'));
   shared = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts');
   blockSchema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
   builder = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
@@ -337,6 +341,107 @@ test('whole-pipeline examples fold connected runtime settings into the shared Mo
   }
 });
 
+test('Model Setup shows connected VAE recipe controls and retains each loader fallback', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const examples = [
+    ['studio/ddim-pipeline/unconditional-image.json', ['slicing', 'tiling']],
+    ['studio/long-cat-audio-di-t-pipeline/text-to-audio.json', ['tiling']],
+  ];
+  for (const [relative, modes] of examples) {
+    const source = JSON.parse(readFileSync(path.join(backend, 'data/graphs', relative), 'utf8'));
+    const grouped = groups.groupNewOperationGraph(source);
+    const setup = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+    assert.ok(setup, relative);
+    const instance = setup.data.blockInstanceV2;
+    const before = structuredClone(instance);
+    const graph = blockRuntime.blockOperationGraphV2(instance);
+    const view = blockRuntime.blockViewModelV2(instance);
+    const visible = modelSetupControlParams(instance, graph, view.controlParams);
+    const inspector = graphNodeControlParams(setup);
+    const disconnected = {
+      ...graph,
+      edges: graph.edges.filter((edge) => edge.targetHandle !== 'execution_recipe'),
+    };
+    const fallback = modelSetupControlParams(instance, disconnected, view.controlParams);
+    const competing = {
+      ...graph,
+      edges: [...graph.edges, ...graph.edges.filter((edge) => edge.targetHandle === 'execution_recipe')],
+    };
+    const unresolved = modelSetupControlParams(instance, competing, view.controlParams);
+    for (const mode of modes) {
+      const direct = instance.effectiveInterface.controls.find(
+        (control) => control.binding.fieldId === `enable_vae_${mode}`,
+      );
+      const recipe = instance.effectiveInterface.controls.find((control) => control.binding.fieldId === `vae_${mode}`);
+      assert.equal(view.controlParams[direct.controlId].value ?? view.controlParams[direct.controlId].default, true);
+      assert.equal(visible[recipe.controlId].value ?? visible[recipe.controlId].default, false);
+      assert.equal(Object.hasOwn(visible, direct.controlId), false, relative);
+      assert.equal(Object.hasOwn(inspector, direct.controlId), false, relative);
+      assert.equal(inspector[recipe.controlId].label, visible[recipe.controlId].label, relative);
+      assert.equal(fallback[direct.controlId], view.controlParams[direct.controlId], relative);
+      assert.equal(unresolved[direct.controlId], view.controlParams[direct.controlId], relative);
+      const customInterface = {
+        ...instance,
+        effectiveInterface: {
+          ...instance.effectiveInterface,
+          controls: instance.effectiveInterface.controls.map((control) =>
+            control.controlId === direct.controlId ? { ...control, label: 'My fallback' } : control,
+          ),
+        },
+      };
+      assert.ok(
+        modelSetupControlParams(customInterface, graph, view.controlParams)[direct.controlId],
+        `${relative}: retain explicitly named controls`,
+      );
+    }
+    assert.deepEqual(instance, before, `${relative}: render must preserve saved values, graph and interface`);
+    const api = (sourceGraph) =>
+      canonicalGraphIdentity(
+        flowStore.getState().exportGraph('model-setup-precedence', undefined, { sourceGraph, randomizeSeeds: false }),
+      );
+    assert.deepEqual(api(grouped), api(source), relative);
+  }
+});
+
+test('Model Setup scopes VAE precedence to each owner and distinguishes base model revision', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const stageControls = (relative) => {
+    const source = JSON.parse(readFileSync(path.join(backend, 'data/graphs', relative), 'utf8'));
+    return groups
+      .groupNewOperationGraph(source)
+      .nodes.filter((node) => groups.visualOperationGroup(node) === 'setup')
+      .map((node) => {
+        const instance = node.data.blockInstanceV2;
+        const before = structuredClone(instance);
+        const graph = blockRuntime.blockOperationGraphV2(instance);
+        const { controlParams } = blockRuntime.blockViewModelV2(instance);
+        const visible = modelSetupControlParams(instance, graph, controlParams);
+        assert.deepEqual(instance, before, relative);
+        return { instance, graph, controlParams, visible };
+      });
+  };
+  const movie = stageControls('studio/wan-ti2-v-pipeline/text-to-video.json');
+  assert.equal(movie.length, 2);
+  const audio = movie.find(({ graph }) => graph.nodes.some((node) => node.data.module === 'modules.DiffusersAudio'));
+  const video = movie.find(({ graph }) => graph.nodes.some((node) => node.data.module === 'modules.DiffusersVideo'));
+  const audioFallback = audio.instance.effectiveInterface.controls.find(
+    (control) => control.binding.fieldId === 'enable_vae_tiling',
+  );
+  assert.equal(Object.hasOwn(audio.visible, audioFallback.controlId), false);
+  assert.deepEqual(video.visible, video.controlParams);
+
+  const [adapterExample] = stageControls('studio/flux-dev-pipeline/text-to-image--flux-lora-ghibli-story.json');
+  const revisionControls = adapterExample.instance.effectiveInterface.controls.filter(
+    (control) => control.binding.fieldId === 'revision',
+  );
+  assert.equal(revisionControls.length, 2);
+  assert.deepEqual(revisionControls.map(({ controlId }) => adapterExample.visible[controlId].label).sort(), [
+    'Base model revision',
+    'Revision',
+  ]);
+  assert.notEqual(...revisionControls.map(({ controlId }) => adapterExample.visible[controlId].value));
+});
+
 test('whole-pipeline video inputs combine their actual Load and Normalize operations', () => {
   const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   for (const relative of [
@@ -386,12 +491,11 @@ test('whole-pipeline Generate retains its authored executable fields during live
     flowStore.getState().replaceGraph(groups.groupNewOperationGraph(graph), { clearRemovedCache: false });
     const live = { nodes: flowStore.getState().nodes, edges: flowStore.getState().edges };
     assert.deepEqual(identity(live), expected, 'Opening a reviewed example must not add inactive guidance overrides.');
-    const generate = live.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
-    assert.ok(generate, 'Whole native generation has the same editable Generate stage.');
-    assert.deepEqual(
-      generate.data.blockInstanceV2.effectiveGraph.nodes.map((node) => node.data.action),
-      ['Generate'],
+    const generate = live.nodes.find(
+      (node) => node.data.module === 'modules.DiffusersImage' && node.data.action === 'Generate',
     );
+    assert.ok(generate, 'Whole native generation has the same editable Generate stage.');
+    assert.equal(generate.data.blockInstanceV2, undefined);
   } finally {
     useNodesStore.setState({ nodesRegistry: previous });
   }

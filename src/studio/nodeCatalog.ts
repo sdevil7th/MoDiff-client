@@ -88,7 +88,15 @@ const MODEL_SPECIFIC_MODULES = new Set<string>();
 // Discovery only: these existing generic operations keep their backend schemas
 // and execution identities. Inclusion does not add model/task support.
 const GENERIC_NODE_KEYS = new Set([
+  'modules.DiffusersImage.ControlEdit',
+  'modules.DiffusersImage.ControlInpaint',
+  'modules.DiffusersImage.LayerDecompose',
+  'modules.DiffusersImage.PredictMap',
   'modules.DiffusersImage.OutpaintCanvas',
+  'modules.VideoConditioning.Normalize',
+  'modules.VideoConditioning.AlignMask',
+  'modules.VideoConditioning.OutpaintCanvas',
+  'modules.VideoConditioning.EdgePreprocessor',
   'modules.ModularDiffusers.ModelsLoader',
   'modules.ModularDiffusers.AutoModelLoader',
   'modules.ModularDiffusers.EncodePrompt',
@@ -105,6 +113,16 @@ const GENERIC_NODE_KEYS = new Set([
   'modules.ModularDiffusers.QuantizationConfigNode',
   'modules.Spandrel.Upscaler',
 ]);
+
+const GENERIC_NODE_ROLES: Readonly<Record<string, NodeSurfaceCategory>> = {
+  'modules.DiffusersImage.LayerDecompose': 'Edit',
+  'modules.DiffusersImage.PredictMap': 'Condition',
+  'modules.ModularDiffusers.ImageEncode': 'Condition',
+  'modules.VideoConditioning.Normalize': 'Condition',
+  'modules.VideoConditioning.AlignMask': 'Edit',
+  'modules.VideoConditioning.OutpaintCanvas': 'Edit',
+  'modules.VideoConditioning.EdgePreprocessor': 'Condition',
+};
 
 export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
   if (entry.visibility === 'internal') return false;
@@ -166,7 +184,8 @@ function textIncludesAny(text: string, values: string[]) {
 }
 
 function categoryFromNode(node: NodeData, key: string): NodeSurfaceCategory {
-  if (nodeKey(node) === 'modules.ModularDiffusers.ImageEncode') return 'Condition';
+  const role = GENERIC_NODE_ROLES[nodeKey(node)];
+  if (role) return role;
   const text = `${key} ${node.category} ${node.label}`.toLowerCase();
   if (textIncludesAny(text, ['adapter', 'lora'])) return 'Adapters';
   if (textIncludesAny(text, ['export', 'save'])) return 'Export';

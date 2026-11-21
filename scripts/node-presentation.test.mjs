@@ -6,6 +6,7 @@ let server;
 let catalog;
 let browser;
 let presentation;
+let operationCatalog;
 const cases = [
   ['ModularDiffusers', 'ModelsLoader', 'Load Models', 'Load Modular Components'],
   ['ModularDiffusers', 'AutoModelLoader', 'Load Model', 'Load Model Component'],
@@ -47,6 +48,7 @@ before(async () => {
   catalog = await server.ssrLoadModule('/src/studio/nodeCatalog.ts');
   browser = await server.ssrLoadModule('/src/workflow/workflowTaskBrowser.ts');
   presentation = await server.ssrLoadModule('/src/workflow/nodePresentation.ts');
+  operationCatalog = await server.ssrLoadModule('/src/workflow/operationCatalog.ts');
 });
 after(async () => server?.close());
 
@@ -76,6 +78,65 @@ test('user titles remain intact and a registry alias uses the executable identit
   const data = node('DiffusersImage', 'OutpaintCanvas', 'Outpaint Canvas');
   assert.equal(catalog.getNodeCatalogEntry(data, 'legacy.canvas').label, 'Prepare Outpaint Canvas');
   assert.equal(catalog.getNodeCatalogEntry({ ...data, label: 'My border preparation' }).label, 'My border preparation');
+});
+
+test('managed image actions show their exact task instead of the shared generation operation title', () => {
+  const cases = [
+    ['Edit', 'edit_image', 'Edit Image'],
+    ['Edit', 'multi_image_reference_edit', 'Edit Image'],
+    ['Inpaint', 'inpaint', 'Inpaint Image'],
+    ['Inpaint', 'outpaint', 'Outpaint Image'],
+    ['ControlGenerate', 'control_image', 'Generate Image with Control'],
+    ['ControlEdit', 'control_edit_image', 'Edit Image with Control'],
+    ['ControlInpaint', 'control_inpaint', 'Inpaint Image with Control'],
+    ['UnconditionalGenerate', 'unconditional_image', 'Generate Unconditional Image'],
+  ];
+  for (const [action, task, expected] of cases) {
+    const data = {
+      ...node('DiffusersImage', action, 'Generate Image'),
+      operationAuthoring: {
+        operation: { operationId: 'diffusion.generate_image', nodeKey: `modules.DiffusersImage.${action}`, task },
+      },
+    };
+    const before = JSON.stringify(data);
+    assert.equal(presentation.nodeDisplayLabel(data), expected);
+    assert.equal(operationCatalog.operationLabel(data.operationAuthoring.operation), expected);
+    assert.equal(presentation.nodeDisplayLabel({ ...data, label: 'My authored stage' }), 'My authored stage');
+    assert.equal(presentation.nodeDisplayLabel({ ...data, module: 'custom.Images' }), 'Generate Image');
+    assert.equal(JSON.stringify(data), before);
+  }
+  assert.equal(
+    operationCatalog.operationLabel({ operationId: 'diffusion.generate_image', nodeKey: 'custom.Images.Edit' }),
+    'Generate image',
+  );
+});
+
+test('common discovery shows ordinary image and video preparation but keeps native recipe details advanced', () => {
+  const cases = [
+    ['DiffusersImage', 'ControlEdit', 'Edit'],
+    ['DiffusersImage', 'ControlInpaint', 'Edit'],
+    ['DiffusersImage', 'LayerDecompose', 'Edit'],
+    ['DiffusersImage', 'PredictMap', 'Condition'],
+    ['VideoConditioning', 'Normalize', 'Condition'],
+    ['VideoConditioning', 'AlignMask', 'Edit'],
+    ['VideoConditioning', 'OutpaintCanvas', 'Edit'],
+    ['VideoConditioning', 'EdgePreprocessor', 'Condition'],
+  ];
+  for (const [module, action, category] of cases) {
+    const entry = catalog.getNodeCatalogEntry(node(module, action, action));
+    assert.equal(entry.surfaceCategory, category);
+    assert.ok(catalog.nodeCatalogEntryMatchesView(entry, 'common'));
+    assert.equal(entry.dragKey, `modules.${module}.${action}`);
+  }
+  for (const [module, action] of [
+    ['DiffusersRuntime', 'PipelineQuantizationConfigV2'],
+    ['DiffusersRuntime', 'DiffusersExecutionRecipe'],
+    ['ModularDiffusers', 'WorkflowMiniMaxH3TextEncode'],
+  ]) {
+    const entry = catalog.getNodeCatalogEntry(node(module, action, action));
+    assert.equal(catalog.nodeCatalogEntryMatchesView(entry, 'common'), false);
+    assert.ok(catalog.nodeCatalogEntryMatchesView(entry, 'advanced'));
+  }
 });
 
 test('ordinary controls and sockets distinguish requested settings from supplied or measured results', () => {

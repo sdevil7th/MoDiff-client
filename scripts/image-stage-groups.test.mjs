@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
 
@@ -30,6 +32,29 @@ before(async () => {
   runtime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
 });
 after(async () => server?.close());
+
+test('whole-pipeline examples keep one-action generation on the ordinary node', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const cases = [
+    ['sana-sprint-pipeline/text-to-image', 'Generate'],
+    ['qwen-image-edit-pipeline/edit-image', 'Edit'],
+    ['stable-diffusion-pipeline/control-inpaint', 'ControlInpaint'],
+    ['wan-vace-pipeline/text-to-video', 'Generate'],
+    ['long-cat-audio-di-t-pipeline/text-to-audio', 'Generate'],
+  ];
+  for (const [graphPath, action] of cases) {
+    const graph = JSON.parse(readFileSync(path.join(backend, 'data/graphs/studio', graphPath + '.json'), 'utf8'));
+    const before = structuredClone(graph);
+    const draft = groups.groupNewOperationGraph(graph);
+    const original = graph.nodes.find((node) => node.data.action === action);
+    const actual = draft.nodes.find((node) => node.id === original.id);
+    assert.ok(actual, graphPath + ' must show ' + action + ' directly');
+    assert.equal(actual.data.blockInstanceV2, undefined);
+    assert.deepEqual(actual.data.params, original.data.params);
+    assert.ok(draft.nodes.some((node) => groups.visualOperationGroup(node) === 'setup'));
+    assert.deepEqual(graph, before);
+  }
+});
 
 function ordinaryImage({ task = 'text_to_image', withGuidance = true } = {}) {
   const pipelineClass = 'FutureImagePipeline';

@@ -821,7 +821,19 @@ test('new single-shot templates expose the agreed source, mask, generate and del
     };
     const graph = builder.createTemplateOperationGraph(template, form, row.starter, fixture.registry, spec, capability);
     const kinds = graph.nodes.map((node) => groups.visualOperationGroup(node));
-    for (const kind of ['setup', 'inputs', 'generate', 'output']) assert.ok(kinds.includes(kind), `${row.id}:${kind}`);
+    for (const kind of ['setup', 'inputs', 'output']) assert.ok(kinds.includes(kind), `${row.id}:${kind}`);
+    const groupedGenerate = graph.nodes.find((node) => groups.visualOperationGroup(node) === 'generate');
+    const ordinaryGenerate = graph.nodes.find(
+      (node) => node.data.module === 'modules.DiffusersVideo' && node.data.action === 'Generate',
+    );
+    if (ordinaryGenerate) {
+      assert.equal(template.modelType, 'WanVACEPipeline');
+      assert.equal(ordinaryGenerate.data.blockInstanceV2, undefined);
+      assert.equal(groupedGenerate, undefined);
+    } else {
+      assert.ok(groupedGenerate, `${row.id}:generate`);
+      assert.ok(groupedGenerate.data.blockInstanceV2.effectiveGraph.nodes.length > 1);
+    }
     if (
       ['video_color_edit', 'video_to_video', 'video_inpaint', 'video_outpaint', 'control_to_video'].includes(
         template.mode,

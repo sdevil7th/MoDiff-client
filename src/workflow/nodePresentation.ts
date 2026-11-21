@@ -1,6 +1,7 @@
 import type { NodeData } from '../stores/useNodeStore';
+import type { OperationContract } from './operationContracts';
 
-type Presentation = { label: string; previous: string[] };
+type Presentation = { label: string; previous: string[]; imageGeneration?: true };
 
 /** Presentation only. Never replace execution identities or infer an operation
  * from a substring in its class name. Unrecognized and user-defined titles stay intact. */
@@ -59,21 +60,38 @@ const PRESENTATIONS: Record<string, Presentation> = {
   'modules.DiffusersImage.UnconditionalGenerate': {
     label: 'Generate Unconditional Image',
     previous: ['Diffusers Unconditional Image Generate', 'Sample image'],
+    imageGeneration: true,
   },
   'modules.DiffusersImage.ControlGenerate': {
     label: 'Generate Image with Control',
     previous: ['Diffusers Control Generate', 'Generate image'],
+    imageGeneration: true,
   },
-  'modules.DiffusersImage.Edit': { label: 'Edit Image', previous: ['Diffusers Image Edit', 'Edit image'] },
+  'modules.DiffusersImage.Edit': {
+    label: 'Edit Image',
+    previous: ['Diffusers Image Edit', 'Edit image'],
+    imageGeneration: true,
+  },
   'modules.DiffusersImage.ControlEdit': {
     label: 'Edit Image with Control',
     previous: ['Diffusers Control Edit', 'Edit image'],
+    imageGeneration: true,
   },
-  'modules.DiffusersImage.Inpaint': { label: 'Inpaint Image', previous: ['Diffusers Image Inpaint', 'Inpaint'] },
+  'modules.DiffusersImage.Inpaint': {
+    label: 'Inpaint Image',
+    previous: ['Diffusers Image Inpaint', 'Inpaint'],
+    imageGeneration: true,
+  },
   'modules.DiffusersImage.ControlInpaint': {
     label: 'Inpaint Image with Control',
     previous: ['Diffusers Control Inpaint', 'Edit image'],
+    imageGeneration: true,
   },
+  'modules.DiffusersImage.LayerDecompose': {
+    label: 'Decompose Image Layers',
+    previous: ['Diffusers Layer Decompose'],
+  },
+  'modules.DiffusersImage.PredictMap': { label: 'Predict Image Map', previous: ['Diffusers Predict Map'] },
   'modules.DiffusersImage.OutpaintCanvas': {
     label: 'Prepare Outpaint Canvas',
     previous: ['Outpaint Canvas', 'Edit image'],
@@ -145,11 +163,26 @@ export function builtinNodeDisplayLabel(identity: string, fallback: string) {
   return PRESENTATIONS[identity]?.label ?? fallback;
 }
 
+/** Give distinct built-in image tasks their own caption when the backend
+ * binds them to the shared generation operation. */
+export function imageActionCaption(operation: Pick<OperationContract, 'nodeKey' | 'operationId' | 'task'>) {
+  if (operation.operationId !== 'diffusion.generate_image') return undefined;
+  const presentation = PRESENTATIONS[operation.nodeKey];
+  if (!presentation?.imageGeneration) return undefined;
+  if (operation.nodeKey === 'modules.DiffusersImage.Inpaint' && operation.task === 'outpaint') return 'Outpaint Image';
+  return presentation.label;
+}
+
 export function nodeDisplayLabel(node: Pick<NodeData, 'module' | 'action' | 'label' | 'operationAuthoring'>): string {
-  // Canonical authoring nodes already have a task-specific semantic label. Raw
-  // implementation names must not replace that label on a bound workflow.
-  if (node.operationAuthoring && node.label) return node.label;
   const identity = `${node.module}.${node.action}`;
+  const operation = node.operationAuthoring?.operation;
+  if (node.operationAuthoring && node.label) {
+    // The starter derives this default from the shared operation ID. Refine
+    // that caption without rewriting it or overriding a distinct saved title.
+    if (node.label === 'Generate Image' && operation?.nodeKey === identity)
+      return imageActionCaption(operation) ?? node.label;
+    return node.label;
+  }
   const presentation = PRESENTATIONS[identity];
   if (presentation && (!node.label || node.label === identity || presentation.previous.includes(node.label)))
     return presentation.label;

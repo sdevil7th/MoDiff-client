@@ -190,6 +190,12 @@ with declared non-image outputs omits the empty image LoRA panel. Existing
 adapter rows and external connections remain inspectable, and supported audio
 routes retain their declared adapter controls.
 
+When a directly connected execution recipe supplies a VAE setting inside Model
+Setup, the node and inspector show the recipe control. The loader's saved
+fallback value remains available in the implementation and returns to the node
+when the recipe is disconnected. Base model and adapter revisions keep their
+separate values.
+
 Recorded ordinary video stage inputs keep condition strength and denoise
 strength separate. A source-video pixel digest identifies the ordered frozen
 PIL frames used by Encode Inputs, alongside their count; it is not a source-file

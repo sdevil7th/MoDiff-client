@@ -37097,6 +37097,41 @@ test('reusable canvas Blocks and Python nodes explain their different authoring 
   expect(await optionalStageApi(page)).toEqual(before);
 });
 
+test('Model Setup VAE settings show the connected recipe once on the canvas and in the inspector', async ({ page }) => {
+  const source = JSON.parse(
+    await fs.readFile(path.join(BACKEND_ROOT, 'data/graphs/studio/ddim-pipeline/unconditional-image.json'), 'utf8'),
+  );
+  await page.setViewportSize({ width: 1920, height: 1200 });
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  const setupId = await page.evaluate(async (graph) => {
+    const { useFlowStore } = await import('/src/stores/useFlowStore.ts');
+    const { groupNewOperationGraph, visualOperationGroup } = await import('/src/workflow/visualOperationGroups.ts');
+    const grouped = groupNewOperationGraph(graph);
+    const setup = grouped.nodes.find((node) => visualOperationGroup(node) === 'setup')!;
+    useFlowStore.getState().replaceGraph(grouped);
+    return setup.id;
+  }, source);
+  const card = page.getByTestId(`setup-node-${setupId}`);
+  const tiling = card.getByRole('switch', { name: /^VAE tiling$/iu });
+  const slicing = card.getByRole('switch', { name: /^VAE slicing$/iu });
+  await expect(tiling).toHaveCount(1, { timeout: 45_000 });
+  await expect(slicing).toHaveCount(1);
+  await expect(tiling).not.toBeChecked();
+  await card.locator('header').first().click();
+  await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
+  const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
+  const inspectorTiling = inspector.getByRole('switch', { name: /^VAE tiling$/iu });
+  await expect(inspectorTiling).toHaveCount(1);
+  await expect(inspectorTiling).not.toBeChecked();
+  await inspectorTiling.click();
+  await expect(inspectorTiling).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(tiling).toBeChecked();
+});
+
 test('optional Model Setup and Image Output preserve native stages, task review, separate, Undo and reusable save', async ({
   page,
 }) => {

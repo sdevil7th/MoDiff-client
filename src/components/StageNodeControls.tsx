@@ -9,6 +9,7 @@ import { BlockOwnerChoices } from './OperationOwnerControls';
 import NodeContent from './NodeContent';
 import ModelSetupAdapterControls from './ModelSetupAdapterControls';
 import { isModelSetupAdapter } from '../workflow/modelSetupAdapters';
+import { modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
 
 /** The same exposed fields, model planner and preview authority as Block V2,
  * presented within the ordinary node shell. No second state or executor. */
@@ -24,6 +25,7 @@ export default function StageNodeControls({
   const { view, groups } = useMemo(() => {
     const view = blockViewModelV2(instance);
     const graph = blockOperationGraphV2(instance);
+    const controlParams = setup ? modelSetupControlParams(instance, graph, view.controlParams) : view.controlParams;
     const owners = new Set(
       graph.nodes
         .filter((n) => operationOwnsModel(n.data.operationAuthoring?.operation))
@@ -32,18 +34,20 @@ export default function StageNodeControls({
     const adapters = new Set(graph.nodes.filter(isModelSetupAdapter).map((node) => node.data.blockProjectionNodeId));
     const controls = instance.effectiveInterface.controls.filter(
       (control) =>
+        controlParams[control.controlId] !== undefined &&
         !(
           setup &&
           owners.has(control.binding.nodeId) &&
           ['repo_id', 'model_id', 'model_type'].includes(control.binding.fieldId)
-        ) && !(setup && adapters.has(control.binding.nodeId)),
+        ) &&
+        !(setup && adapters.has(control.binding.nodeId)),
     );
     const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))].map((group) => ({
       label: group,
       params: Object.fromEntries(
         controls
           .filter((control) => (control.group ?? 'Settings') === group)
-          .map((control) => [control.controlId, view.controlParams[control.controlId]!]),
+          .map((control) => [control.controlId, controlParams[control.controlId]!]),
       ),
     }));
     return { view, groups };

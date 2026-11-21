@@ -11,6 +11,7 @@ import {
 } from '../studio/blockRuntimeV2';
 import { enqueueSnackbar } from '../ui/snackbar';
 import { operationAuthoring } from '../workflow/operationAuthoringHint';
+import { isWholePipelineStage } from '../workflow/wholePipelineStage';
 import { projectFlowCacheStatus } from './flowRuntimeCache';
 import { handleEdgesChange, reconcileGraphConnections } from './flowConnectionMutations';
 import type { CustomNodeType, FlowStore } from './useFlowStore';
@@ -48,6 +49,9 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
     const liveParams = definition?.params;
     const storedParams = node.data.params;
     const operation = operationAuthoring(node)?.operation;
+    // These actions share registry fields across several pipelines. The
+    // stored fields belong to the selected pipeline, even on an ordinary card.
+    const preserveFields = isWholePipelineStage(node.data);
     const params = Object.fromEntries(
       Object.entries(storedParams).map(([fieldKey, storedParam]) => {
         const liveParam = liveParams?.[fieldKey];
@@ -71,6 +75,7 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
     );
     for (const [fieldKey, liveParam] of Object.entries(liveParams ?? {})) {
       if (hasOwn(storedParams, fieldKey)) continue;
+      if (preserveFields && !liveParam.display?.startsWith('ui_')) continue;
       // The generic registry contains sockets for other pipeline/task modes.
       // An authored operation's selected contract owns its missing inputs;
       // UI fields and hidden scalar defaults still hydrate normally.

@@ -26,6 +26,7 @@ import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibili
 import { hasInlineScalarControl } from '../studio/inlineScalarControl';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { groupStoryboardShots } from './storyboardShotPresentation';
+import { isWholePipelineStage } from './wholePipelineStage';
 
 import {
   visualOperationGroup,
@@ -1211,6 +1212,7 @@ export function groupOperationStages(
   ownerId: string,
   kinds: VisualOperationGroup[] = ['inputs', 'guidance'],
   combineGuidance = false,
+  preferOrdinaryStages = false,
 ) {
   const unpacked = unpackVisualOperationGroups(graph);
   const grouped = new Set([...unpacked.members.values()].flat());
@@ -1224,6 +1226,8 @@ export function groupOperationStages(
     if (kind === 'output' && members.some((node) => generated.has(node.id)))
       members = members.filter((node) => !generated.has(node.id));
     if (members.some((node) => grouped.has(node.id))) continue;
+    if (preferOrdinaryStages && kind === 'generate' && members.length === 1 && isWholePipelineStage(members[0]!.data))
+      continue;
     if (members.length) {
       next = groupVisualStages(
         next,
@@ -1259,21 +1263,29 @@ export function groupNewOperationGraph(graph: OperationGraph, options: { legacyS
   for (const owner of graph.nodes.filter((node) => operationOwnsModel(operationAuthoring(node)?.operation)))
     next =
       workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Image'
-        ? groupOperationStages(next, owner.id, ['inputs', 'setup', 'generate', 'output', 'references', 'mask'], true)
+        ? groupOperationStages(
+            next,
+            owner.id,
+            ['inputs', 'setup', 'generate', 'output', 'references', 'mask'],
+            true,
+            true,
+          )
         : workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Video'
-          ? groupOperationStages(next, owner.id, [
-              'inputs',
-              'guidance',
-              'setup',
-              'videoInput',
-              'imageInput',
-              'references',
-              'mask',
-              'generate',
-              'output',
-            ])
+          ? groupOperationStages(
+              next,
+              owner.id,
+              ['inputs', 'guidance', 'setup', 'videoInput', 'imageInput', 'references', 'mask', 'generate', 'output'],
+              false,
+              true,
+            )
           : workflowTaskCategory(operationAuthoring(owner)?.operation.task ?? '') === 'Audio'
-            ? groupOperationStages(next, owner.id, ['inputs', 'guidance', 'setup', 'generate', 'output', 'videoInput'])
+            ? groupOperationStages(
+                next,
+                owner.id,
+                ['inputs', 'guidance', 'setup', 'generate', 'output', 'videoInput'],
+                false,
+                true,
+              )
             : groupOperationStages(next, owner.id);
   // The same real input preparation can precede a whole native pipeline.
   // Keep a separately consumed original clip external, with its own preview.
@@ -1467,9 +1479,8 @@ export function groupNewOperationGraph(graph: OperationGraph, options: { legacyS
       members.map((node) => node.id),
       'setup',
     );
-    // Keep the authored call fields inside the same real V2 Generate boundary.
-    // Live root-schema hydration must not add inactive controls for other models.
-    for (const node of generation) next = groupVisualStages(next, [node.id], 'generate');
+    for (const node of generation)
+      if (!isWholePipelineStage(node.data)) next = groupVisualStages(next, [node.id], 'generate');
   }
   // Export remains its own stage after an intervening upscale, assembly or
   // independent soundtrack. Group the actual file exporter and its complete

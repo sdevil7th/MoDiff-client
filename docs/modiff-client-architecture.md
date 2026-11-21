@@ -137,7 +137,12 @@ nodes, descendants, incident edges and separately selected edges. The existing
 Block deletion checks run before removing any selected wires. One Undo restores
 the complete graph; a rejected structural deletion leaves the selection intact.
 
-Built-in stage cards use the ordinary node surface with the existing interface,
+Single-action whole-pipeline generation uses its ordinary node card. Loading a
+workflow with an authored pipeline field set restores the registered actions
+for those fields and retains the selected contract's field inventory.
+Presentation changes preserve the ordered executable graph.
+
+Built-in grouped stage cards use the ordinary node surface with the existing interface,
 bindings, and graph lowering. A saved expanded stage restores as a single card.
 Shot groups and reusable Blocks keep their composition controls. Inside an
 authored Shot, the generated image input, encoding and generation stages use

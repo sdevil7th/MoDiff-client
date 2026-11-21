@@ -8,6 +8,7 @@ import {
   type OperationPort,
 } from './operationContracts';
 import { blockValueTypesAreCompatibleV2 } from '../studio/blockValueTypeCompatibilityV2';
+import { imageActionCaption } from './nodePresentation';
 
 export type PipelineTaskSupport = {
   task: string;
@@ -165,10 +166,13 @@ const ORDER = [
   'postprocess_media',
 ];
 export function operationLabel(operation: OperationContract) {
-  return operation.operationId
-    .split('.')[1]!
-    .replace(/_/gu, ' ')
-    .replace(/^./u, (c) => c.toUpperCase());
+  return (
+    imageActionCaption(operation) ??
+    operation.operationId
+      .split('.')[1]!
+      .replace(/_/gu, ' ')
+      .replace(/^./u, (c) => c.toUpperCase())
+  );
 }
 export function operationsForTask(
   operations: OperationContract[],

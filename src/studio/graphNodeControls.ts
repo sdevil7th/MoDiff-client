@@ -2,10 +2,17 @@ import { hasInlineScalarControl } from './inlineScalarControl';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { NodeParams } from '../stores/useNodeStore';
 import { useStudioStore } from '../stores/useStudioStore';
-import { blockControlParamsV2, blockModularParentIdsV2, materializeBlockProjectionV2 } from './blockRuntimeV2';
+import {
+  blockControlParamsV2,
+  blockModularParentIdsV2,
+  blockOperationGraphV2,
+  materializeBlockProjectionV2,
+} from './blockRuntimeV2';
 import type { BlockJsonValue } from './blockSchemaV2';
 import { syncManagedNodeControlChange } from './managedControlSync';
 import type { AppModeInput } from './types';
+import { modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
+import { visualOperationGroup } from '../workflow/visualOperationGroupProjection';
 
 export type GraphInputCandidate = AppModeInput & { node: CustomNodeType; param: NodeParams };
 
@@ -15,10 +22,15 @@ const expandedByInstance = new WeakMap<object, CustomNodeType[]>();
 
 /** The inspector is another view of the canvas control contract, never a schema owner. */
 export function graphNodeControlParams(node: CustomNodeType): Record<string, NodeParams> {
-  const source = node.data.blockInstanceV2 ?? node.data.params;
+  const instance = node.data.blockInstanceV2;
+  const source = instance ?? node.data.params;
   const cached = controlsBySource.get(source);
   if (cached) return cached;
-  const params = node.data.blockInstanceV2 ? blockControlParamsV2(node.data.blockInstanceV2) : node.data.params;
+  const base = instance ? blockControlParamsV2(instance) : node.data.params;
+  const params =
+    instance && visualOperationGroup(node) === 'setup'
+      ? modelSetupControlParams(instance, blockOperationGraphV2(instance), base)
+      : base;
   const controls = Object.fromEntries(
     Object.entries(params)
       .filter(([key, param]) => {

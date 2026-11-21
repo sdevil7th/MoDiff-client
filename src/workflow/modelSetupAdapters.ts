@@ -13,6 +13,7 @@ import { createNodeFromRegistry } from './nodeFactory';
 import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { hasInlineScalarControl } from '../studio/inlineScalarControl';
 import { MAX_ORDERED_ADAPTERS, orderedAdapterChainLinks } from '../studio/adapterChainLinks';
+import { CONTROLLED_WORKFLOW_NODE_KEYS, isModelSetupAdapterKey } from '../studio/controlledWorkflowContracts';
 import { parseImageAdapterAuthoringPolicy } from '../studio/optionalRuntimes';
 import { declaredImagePipelineStageTail, operationScope } from './operationScope';
 import { deepEqual } from '../utils/deepEqual';
@@ -23,12 +24,10 @@ import {
   visualOperationGroup,
 } from './visualOperationGroups';
 
-const NATIVE = 'modules.ModularDiffusers.Lora';
-const DIRECT = 'modules.DiffusersImage.LoadAdapter';
-const AUDIO = 'modules.DiffusersAudio.LoadAdapter';
+const { lora: NATIVE, directLora: DIRECT, audioLora: AUDIO } = CONTROLLED_WORKFLOW_NODE_KEYS;
 const key = (node: CustomNodeType) => `${node.data.module}.${node.data.action}`;
 export function isModelSetupAdapter(node: CustomNodeType) {
-  return [NATIVE, DIRECT, AUDIO].includes(key(node));
+  return isModelSetupAdapterKey(key(node));
 }
 
 function adapterTransportUnavailable(owner: CustomNodeType, adapterKey: string): string | null {

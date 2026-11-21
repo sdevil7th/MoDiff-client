@@ -32,6 +32,11 @@ export const CONTROLLED_WORKFLOW_NODE_KEYS = {
   qualityVideoJoin: 'modules.Video.ConcatenateAssets',
 } as const;
 
+export function isModelSetupAdapterKey(key: string): boolean {
+  const { lora, directLora, audioLora } = CONTROLLED_WORKFLOW_NODE_KEYS;
+  return key === lora || key === directLora || key === audioLora;
+}
+
 export const CONTROLLED_GRAPH_CONTRACT_IDS = [
   'lora.modular.v1',
   'lora.diffusers-image.v1',
