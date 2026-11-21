@@ -360,6 +360,38 @@ test('connected built-in loaders need files only when supplying declared require
   }
 });
 
+test('required files name their Source Image and Mask while preserving custom names and targets', async () => {
+  const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
+  for (const [role, caption] of [
+    ['loadImage', 'Source Image'],
+    ['loadMask', 'Mask'],
+  ]) {
+    const f = fixture('', { required: false });
+    f.instance.effectiveGraph.nodes = [{ nodeId: 'loadMask' }];
+    Object.assign(f.leaf.data, { label: 'Load Image', studioRole: role });
+    Object.assign(f.leaf.data.params.file, { required: true, label: 'file' });
+    const checks = [
+      [(visible) => inspectRequiredGraphInputs(visible, f.graph, {}), 'needs file before running.'],
+      [(visible) => inspect(visible, f.graph), 'needs a file before running.'],
+    ];
+    const before = structuredClone(f);
+    for (const [check, message] of checks) {
+      const [visible] = check([...f.roots, f.leaf]);
+      assert.equal(visible.message, caption + ' ' + message);
+      assert.equal(visible.nodeId, f.leaf.id);
+      assert.equal(visible.fieldId, 'file');
+      const [collapsed] = check(f.roots);
+      assert.equal(collapsed.message, visible.message);
+      assert.equal(collapsed.nodeId, f.root.id);
+      assert.equal(collapsed.fieldId, undefined);
+    }
+    assert.deepEqual(f, before);
+    f.leaf.data.label = 'My studio reference';
+    for (const [check, message] of checks)
+      assert.equal(check([...f.roots, f.leaf])[0].message, 'My studio reference ' + message);
+  }
+});
+
 test('required model inputs use current registry contracts inside collapsed Blocks', async () => {
   const { inspectRequiredGraphInputs } = await server.ssrLoadModule('/src/studio/requiredGraphInputs.ts');
   const { roots, graph, leaf, instance } = fixture('');

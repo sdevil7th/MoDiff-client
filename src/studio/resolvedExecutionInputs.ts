@@ -36,7 +36,7 @@ export type ExecutionFieldAccounting = {
   complete: boolean;
 };
 type ExecutionAccountingProjection = {
-  kind: 'disabled-quantization-v1' | 'execution-recipe-v1' | 'decoded-image-v1';
+  kind: 'disabled-quantization-v1' | 'execution-recipe-v1' | 'decoded-image-v1' | 'decoded-mask-v1';
   values: Record<string, InputValue>;
   sha256: string;
 };
@@ -441,6 +441,7 @@ const accountingNames: Record<string, string[]> = {
     'image_contract batch_size seed num_inference_steps eta class_label output_type'.split(' '),
   'DiffusersImage.Generate': conditionalImageAccountingNames,
   'DiffusersImage.Edit': [...conditionalImageAccountingNames, 'reference_strength'],
+  'DiffusersImage.Inpaint': [...conditionalImageAccountingNames, 'reference_strength'],
   'HuggingFaceSpeech.TranscribeAudio': [
     'task',
     'language',
@@ -461,6 +462,7 @@ const accountingPorts: Record<string, [Record<string, string>, Record<string, st
   'DiffusersImage.UnconditionalGenerate': [{}, {}],
   'DiffusersImage.Generate': [{}, {}],
   'DiffusersImage.Edit': [{ image: 'decoded-image-v1' }, {}],
+  'DiffusersImage.Inpaint': [{ image: 'decoded-image-v1', mask_image: 'decoded-mask-v1' }, {}],
   'HuggingFaceSpeech.TranscribeAudio': [{}, {}],
   'HuggingFaceSpeech.TranscribeCTCAudio': [{}, {}],
   'Image.Preview': [{}, {}],
@@ -488,18 +490,19 @@ const accountingOrigin = (value: Record<string, unknown>) =>
     text(value.sourcePortId) &&
     Boolean(value.sourcePortId));
 
-function decodedImageProjectionValues(values: Record<string, unknown>): boolean {
+function decodedImageProjectionValues(values: Record<string, unknown>, expectedMode: 'RGB' | 'L'): boolean {
   const { mode, width, height, byteSize, sha256 } = values;
+  const channels = expectedMode === 'L' ? 1 : 3;
   const positiveInteger = (value: unknown): value is number =>
     typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
   return (
     exactKeys(values, ['mode', 'width', 'height', 'byteSize', 'sha256']) &&
-    mode === 'RGB' &&
+    mode === expectedMode &&
     positiveInteger(width) &&
     positiveInteger(height) &&
     positiveInteger(byteSize) &&
     byteSize <= 64 * 1024 * 1024 &&
-    width * height * 3 === byteSize &&
+    width * height * channels === byteSize &&
     digest(sha256)
   );
 }
@@ -581,9 +584,9 @@ function fieldAccounting(value: unknown, scope: string): ExecutionFieldAccountin
       if (projection.kind === 'disabled-quantization-v1') {
         if (!exactKeys(values, ['backend', 'disabled']) || values.backend !== 'none' || values.disabled !== true)
           return undefined;
-      } else if (projection.kind === 'decoded-image-v1') {
+      } else if (projection.kind === 'decoded-image-v1' || projection.kind === 'decoded-mask-v1') {
         if (
-          !decodedImageProjectionValues(values) ||
+          !decodedImageProjectionValues(values, projection.kind === 'decoded-mask-v1' ? 'L' : 'RGB') ||
           (projection.source !== 'connected' && (value.complete || value.omittedFields[port] !== 'unsupported-origin'))
         )
           return undefined;

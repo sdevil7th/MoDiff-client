@@ -9,7 +9,7 @@ import { BlockOwnerChoices } from './OperationOwnerControls';
 import NodeContent from './NodeContent';
 import ModelSetupAdapterControls from './ModelSetupAdapterControls';
 import { isModelSetupAdapter } from '../workflow/modelSetupAdapters';
-import { modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
+import { modelSetupControlGroupLabel, modelSetupControlParams } from '../workflow/modelSetupControlPresentation';
 
 /** The same exposed fields, model planner and preview authority as Block V2,
  * presented within the ordinary node shell. No second state or executor. */
@@ -42,14 +42,16 @@ export default function StageNodeControls({
         ) &&
         !(setup && adapters.has(control.binding.nodeId)),
     );
-    const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))].map((group) => ({
-      label: group,
-      params: Object.fromEntries(
-        controls
-          .filter((control) => (control.group ?? 'Settings') === group)
-          .map((control) => [control.controlId, controlParams[control.controlId]!]),
-      ),
-    }));
+    const groups = [...new Set(controls.map((control) => control.group ?? 'Settings'))].map((group) => {
+      const groupControls = controls.filter((control) => (control.group ?? 'Settings') === group);
+      return {
+        key: group,
+        label: setup ? modelSetupControlGroupLabel(group, groupControls, graph) : group,
+        params: Object.fromEntries(
+          groupControls.map((control) => [control.controlId, controlParams[control.controlId]!]),
+        ),
+      };
+    });
     return { view, groups };
   }, [instance, setup]);
   return (
@@ -58,7 +60,7 @@ export default function StageNodeControls({
       {setup ? <ModelSetupAdapterControls node={node} updateStore={updateStore} /> : null}
       {groups.map((group) => (
         <ModiffDisclosure
-          key={group.label}
+          key={group.key}
           label={group.label}
           defaultOpen
           unmount={false}

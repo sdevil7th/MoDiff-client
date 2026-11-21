@@ -1,7 +1,8 @@
 import type { NodeParams } from '../stores/useNodeStore';
 import { blockProjectionNodeIdV2, type BlockFlowGraphV2 } from '../studio/blockRuntimeV2';
-import type { BlockInstanceV2 } from '../studio/blockSchemaV2';
+import type { BlockControlV2, BlockInstanceV2 } from '../studio/blockSchemaV2';
 import { isModelSetupAdapterKey } from '../studio/controlledWorkflowContracts';
+import { nodeDisplayLabel } from './nodePresentation';
 
 const IMAGE_LOADER = 'modules.DiffusersImage.LoadPipeline';
 const AUDIO_LOADER = 'modules.DiffusersAudio.LoadPipeline';
@@ -12,6 +13,19 @@ const VAE_FALLBACKS: Record<string, Record<string, string>> = {
   [IMAGE_LOADER]: { enable_vae_slicing: 'vae_slicing', enable_vae_tiling: 'vae_tiling' },
   [AUDIO_LOADER]: { enable_vae_tiling: 'vae_tiling' },
 };
+
+// Only a section copied from one member's own title should follow its
+// display caption. A custom or shared section keeps its authored name.
+export function modelSetupControlGroupLabel(
+  group: string,
+  controls: readonly BlockControlV2[],
+  graph: BlockFlowGraphV2,
+): string {
+  const memberId = controls[0]?.binding.nodeId;
+  if (!memberId || !controls.every((control) => control.binding.nodeId === memberId)) return group;
+  const member = graph.nodes.find((node) => node.data.blockProjectionNodeId === memberId);
+  return member?.data.label === group ? nodeDisplayLabel(member.data) : group;
+}
 
 /** Only compact Model Setup's displayed controls change. The loader's
  * fallback still belongs to its saved leaf and becomes active on disconnect. */

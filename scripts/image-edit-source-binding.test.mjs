@@ -11,7 +11,7 @@ const fixture = JSON.parse(
 );
 const decode = (sample) => sample.receipt.nodes.find((row) => row.nodeId === sample.loadId).mediaEvidence;
 const accounting = (sample) => sample.receipt.nodes.find((row) => row.nodeId === sample.editId).fieldAccounting;
-let server, verify;
+let server, verify, verifyInpaint;
 
 before(async () => {
   server = await createServer({
@@ -19,7 +19,8 @@ before(async () => {
     configFile: false,
     server: { middlewareMode: true, ws: false },
   });
-  ({ verifyImageEditSourceBinding: verify } = await server.ssrLoadModule('/scripts/image-edit-source-binding.mjs'));
+  ({ verifyImageEditSourceBinding: verify, verifyImageInpaintSourceBinding: verifyInpaint } =
+    await server.ssrLoadModule('/scripts/image-edit-source-binding.mjs'));
 });
 
 after(async () => server?.close());
@@ -115,4 +116,117 @@ test('the earlier deliberate-resize producer trace cannot prove original pixels'
   projection.sourceNodeId = modified.loadId;
   accounting(modified).inputProjections.image = projection;
   assert.throws(() => verify(modified), /pixels or geometry/u);
+});
+
+function pairedInpaintFixture() {
+  const value = structuredClone(fixture);
+  const { submittedApi, receipt, editId: inpaintId, loadId: sourceId } = value;
+  const maskId = 'mask';
+  const target = submittedApi.nodes[inpaintId];
+  target.action = 'Inpaint';
+  target.params.mask_image = { display: 'input', sourceId: maskId, sourceKey: 'image' };
+  const mask = (submittedApi.nodes[maskId] = structuredClone(submittedApi.nodes[sourceId]));
+  mask.params.file.value = ['@data/images/test-mask.png'];
+  const literal = (value) => ({ value, source: 'literal' });
+  const observed = receipt.nodes.find((row) => row.nodeId === inpaintId);
+  observed.action = 'Inpaint';
+  observed.fields.executed_task = literal('inpaint');
+  receipt.summary.executedTask = 'inpaint';
+  const loaded = structuredClone(receipt.nodes.find((row) => row.nodeId === sourceId));
+  loaded.nodeId = maskId;
+  const [file] = loaded.mediaEvidence.files.file;
+  file.sourceValue = mask.params.file.value[0];
+  file.sha256 = 'c'.repeat(64);
+  const [decoded] = loaded.mediaEvidence.outputs.image;
+  decoded.mode = 'L';
+  decoded.byteSize = decoded.width * decoded.height;
+  decoded.sha256 = 'd'.repeat(64);
+  loaded.fields.source_modes = literal(['L']);
+  loaded.fields.source_hashes = literal([file.sha256]);
+  receipt.nodes.push(loaded);
+  receipt.ambiguousFields.push('imageSourceHashes', 'imageSourceModes');
+  delete receipt.summary.imageSourceHashes;
+  delete receipt.summary.imageSourceModes;
+  const { kind: _kind, ...pixels } = decoded;
+  observed.fieldAccounting.inputProjections.mask_image = {
+    kind: 'decoded-mask-v1',
+    values: pixels,
+    sha256: createHash('sha256')
+      .update(`decoded-mask-v1\n${JSON.stringify(stableJsonValue(pixels))}`, 'ascii')
+      .digest('hex'),
+    source: 'connected',
+    sourceNodeId: maskId,
+    sourcePortId: 'image',
+  };
+  const owner = 'model';
+  target.params.pipeline = { display: 'input', sourceId: owner, sourceKey: 'pipeline' };
+  const module = 'modules.DiffusersImage';
+  const action = 'LoadPipeline';
+  const modelRepo = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
+  const controls = {
+    model_id: modelRepo,
+    mode: 'inpaint',
+    pipeline_class: 'StableDiffusionInpaintPipeline',
+    revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+  };
+  submittedApi.nodes[owner] = {
+    module,
+    action,
+    params: Object.fromEntries(
+      Object.entries(controls).map(([key, item]) => [
+        key,
+        { value: key === 'model_id' ? { source: 'hub', value: item } : item },
+      ]),
+    ),
+  };
+  const ownerRecord = {
+    nodeId: owner,
+    module,
+    action,
+    fields: Object.fromEntries(Object.entries(controls).map(([key, item]) => [key, literal(item)])),
+    omittedFields: {},
+  };
+  receipt.nodes.push(ownerRecord);
+  Object.assign(receipt.summary, {
+    repo: modelRepo,
+    executionMode: controls.mode,
+    modelType: controls.pipeline_class,
+    revision: controls.revision,
+  });
+  return { submittedApi, receipt, outputIdentity: value.outputIdentity, sourceId, maskId, inpaintId };
+}
+
+test('direct Inpaint independently joins the RGB source and grayscale mask to their actual call', () => {
+  const sample = pairedInpaintFixture();
+  const original = structuredClone(sample);
+  const joined = verifyInpaint(sample);
+  assert.equal(joined.source.decodedImage.mode, 'RGB');
+  assert.equal(joined.mask.decodedImage.mode, 'L');
+  assert.equal(joined.mask.sourceFile.sourceValue, '@data/images/test-mask.png');
+  assert.deepEqual(sample, original);
+});
+
+test('direct Inpaint rejects missing, swapped, rehashed or overridden mask evidence and a mismatched model pin', () => {
+  const inputProjections = (s) => s.receipt.nodes[0].fieldAccounting.inputProjections;
+  const mutate = [
+    (s) => delete inputProjections(s).mask_image,
+    (s) => (s.submittedApi.nodes[s.inpaintId].params.mask_image.sourceId = s.sourceId),
+    (s) => (inputProjections(s).mask_image.sourceNodeId = s.sourceId),
+    (s) => (inputProjections(s).mask_image.kind = 'decoded-image-v1'),
+    (s) => (inputProjections(s).mask_image.source = 'override'),
+    (s) => {
+      const projection = inputProjections(s).mask_image;
+      projection.values.sha256 = 'e'.repeat(64);
+      projection.sha256 = createHash('sha256')
+        .update(`decoded-mask-v1\n${JSON.stringify(stableJsonValue(projection.values))}`, 'ascii')
+        .digest('hex');
+    },
+    (s) => (s.receipt.nodes.find((row) => row.nodeId === 'model').fields.revision.value = '0'.repeat(40)),
+    (s) => (s.outputIdentity.attemptIndex = 1),
+  ];
+  for (const change of mutate) {
+    const sample = pairedInpaintFixture();
+    change(sample);
+    assert.throws(() => verifyInpaint(sample));
+  }
 });

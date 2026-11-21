@@ -41,6 +41,7 @@ test('repeated shot processors retain only unanimous fallback defaults with unch
 import { canonicalExecutableWorkflowGraph, loadCanonicalWorkflowExpander } from './canonical-workflow-execution.mjs';
 
 let server, hooks, flowStore, groups, blockSchema, blockRuntime, modelSetupControlParams, graphNodeControlParams;
+let modelSetupControlGroupLabel;
 let fixture, templates, builder, defaults, exactness, operations;
 let requests;
 let shared;
@@ -71,7 +72,9 @@ before(async () => {
   ({ useFlowStore: flowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts'));
   groups = await server.ssrLoadModule('/src/workflow/visualOperationGroups.ts');
   blockRuntime = await server.ssrLoadModule('/src/studio/blockRuntimeV2.ts');
-  ({ modelSetupControlParams } = await server.ssrLoadModule('/src/workflow/modelSetupControlPresentation.ts'));
+  ({ modelSetupControlGroupLabel, modelSetupControlParams } = await server.ssrLoadModule(
+    '/src/workflow/modelSetupControlPresentation.ts',
+  ));
   ({ graphNodeControlParams } = await server.ssrLoadModule('/src/studio/graphNodeControls.ts'));
   shared = await server.ssrLoadModule('/src/workflow/operationSharedInputs.ts');
   blockSchema = await server.ssrLoadModule('/src/studio/blockSchemaV2.ts');
@@ -339,6 +342,32 @@ test('whole-pipeline examples fold connected runtime settings into the shared Mo
     );
     assert.deepEqual(graph, original);
   }
+});
+
+test('Model Setup subsections use the bound loader caption without renaming a saved group', () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
+  const pathToEdit = 'data/graphs/studio/stable-diffusion-xl-pipeline/edit-image.json';
+  const source = JSON.parse(readFileSync(path.join(backend, pathToEdit), 'utf8'));
+  const grouped = groups.groupNewOperationGraph(source);
+  const setup = grouped.nodes.find((node) => groups.visualOperationGroup(node) === 'setup');
+  assert.ok(setup);
+  const instance = setup.data.blockInstanceV2;
+  const graph = blockRuntime.blockOperationGraphV2(instance);
+  const before = structuredClone(instance);
+  const title = 'Diffusers.LoadPipeline';
+  const controls = instance.effectiveInterface.controls.filter((control) => control.group === title);
+  assert.ok(controls.length > 0);
+  assert.equal(modelSetupControlGroupLabel(title, controls, graph), 'Load Image Pipeline');
+  assert.equal(modelSetupControlGroupLabel('My loader settings', controls, graph), 'My loader settings');
+  const other = instance.effectiveInterface.controls.find((control) => control.group !== title);
+  assert.ok(other);
+  assert.equal(modelSetupControlGroupLabel(title, [...controls, other], graph), title);
+  assert.deepEqual(instance, before);
+  const api = (sourceGraph) =>
+    canonicalGraphIdentity(
+      flowStore.getState().exportGraph('model-setup-subsections', undefined, { sourceGraph, randomizeSeeds: false }),
+    );
+  assert.deepEqual(api(grouped), api(source));
 });
 
 test('Model Setup shows connected VAE recipe controls and retains each loader fallback', () => {

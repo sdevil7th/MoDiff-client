@@ -490,6 +490,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Exact Inpaint input evidence and shared role labels add 65 gzip bytes.
+  65 +
   // Wav2Vec2 registration and role-aware node captions add 1113 bytes (522569 -> 523682).
   1113 +
   // Generic stage cards and connected Model Setup controls add 435 gzip bytes
@@ -757,6 +759,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same changes add 68 aggregate startup gzip bytes.
+  68 +
   // The same changes add 1115 aggregate startup bytes (701052 -> 702167).
   1115 +
   // Generic stage presentation adds 432 startup gzip bytes (700620 -> 701052).
@@ -1085,6 +1089,8 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  // Bound media input receipts and stage captions add 173 deferred gzip bytes.
+  173 +
   // Initial media preview spacing and workflow labels add 148 deferred bytes (354889 -> 355037).
   148 +
   // The stage and inspector changes add 504 deferred gzip bytes (354385 -> 354889).

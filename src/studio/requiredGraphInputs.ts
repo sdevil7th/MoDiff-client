@@ -3,6 +3,7 @@ import { executableFlowNodes } from '../stores/flowGraphExport';
 import type { Edge } from '@xyflow/react';
 import type { CustomNodeType } from '../stores/useFlowStore';
 import type { NodeData } from '../stores/useNodeStore';
+import { nodeDisplayLabel } from '../workflow/nodePresentation';
 import type { RunReadinessIssue } from './types';
 import { runtimeProgressTarget } from './userBlocks';
 import { connectionTypesAreCompatible } from '../theme/connectionTypes';
@@ -97,7 +98,7 @@ export function inspectRequiredGraphInputs(
         action: 'inspect_node',
         nodeId: target,
         ...(target === node.id ? { fieldId: field } : {}),
-        message: `${node.data.label || node.data.action} needs ${saved.label || field} before running.`,
+        message: `${nodeDisplayLabel(node.data)} needs ${saved.label || field} before running.`,
         details:
           param.display === 'filebrowser'
             ? `Select the required media file in ${saved.label || field}. Expand the Block if the Load node is inside it.`
