@@ -1019,6 +1019,104 @@ test('late-loaded media input previews retain arranged geometry and reachable co
   expect(graphPosts).toBe(0);
 });
 
+test('media utility controls follow the selected operation without losing saved values or wires', async ({ page }) => {
+  const { registry } = await generateTemplateSchemas([]);
+  await ensureFrontend();
+  await installMockRoutes(page);
+  await page.route('**/media/preview?**', (route) => route.fulfill({ contentType: 'video/mp4', body: '' }));
+  await page.route('**/nodes**', (route) =>
+    route.fulfill({ json: { instance: 'mock', nodes: { ...mockRegistry, ...registry } } }),
+  );
+  await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await dismissTaskLauncher(page);
+  const prepared = await page.evaluate(async (registry) => {
+    const [{ createNodeFromRegistry }, { getFormDefaultsForMode }, { buildWorkflowPackage }] = await Promise.all([
+      import('/src/workflow/nodeFactory.ts'),
+      import('/src/studio/modelProfiles.ts'),
+      import('/src/studio/workflowPackage.ts'),
+    ]);
+    const source = createNodeFromRegistry('modules.Audio.Load', registry, { x: 0, y: 0 })!;
+    const audio = createNodeFromRegistry('modules.Audio.ProcessAudio', registry, { x: 350, y: 0 })!;
+    const video = createNodeFromRegistry('modules.Video.ProcessVideo', registry, { x: 750, y: 0 })!;
+    audio.data.params.operation!.value = 'audio_join';
+    audio.data.params.boundary_fade_seconds!.value = 0.14;
+    video.data.params.operation!.value = 'video_frame_extract';
+    video.data.params.selection_mode!.value = 'indices';
+    video.data.params.indices!.value = '1,8';
+    video.data.params.start_seconds!.value = 3.25;
+    video.data.params.videos!.value = ['@data/videos/scene.mp4'];
+    const edge = {
+      id: 'saved-continuation',
+      source: source.id,
+      sourceHandle: 'audio',
+      target: audio.id,
+      targetHandle: 'reference',
+    };
+    const packageData = buildWorkflowPackage({
+      form: getFormDefaultsForMode('video_frame_extract', 'BuiltinVideoOperation'),
+      graph: { nodes: [source, audio, video], edges: [edge], viewport: { x: 30, y: 80, zoom: 0.65 } },
+    });
+    return { packageData, audioId: audio.id, videoId: video.id };
+  }, registry);
+  await page.getByTestId('topbar-gallery').click();
+  await page.getByTestId('gallery-import-workflow-input').setInputFiles({
+    name: 'media-utilities.workflow.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(prepared.packageData)),
+  });
+  await expect(page.getByRole('dialog', { name: 'Output Gallery', exact: true })).toBeHidden();
+  const audio = page.locator(`.react-flow__node[data-id="${prepared.audioId}"]`);
+  const video = page.locator(`.react-flow__node[data-id="${prepared.videoId}"]`);
+  const field = (node: Locator, key: string) => node.locator(`[data-key="${key}"]`);
+  const choose = async (node: Locator, key: string, option: string) => {
+    await field(node, key).getByRole('button').click();
+    await page.getByRole('option', { name: option, exact: true }).click();
+  };
+  const read = () => page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+
+  await expect(field(audio, 'start_seconds')).toBeHidden();
+  await expect(field(audio, 'boundary_fade_seconds')).toBeVisible();
+  const continued = page.getByTestId(`node-handle-${prepared.audioId}-reference`);
+  await expect(continued).toHaveAccessibleName(/Continuation Audio/u);
+  await choose(audio, 'operation', 'audio_trim');
+  await expect(field(audio, 'start_seconds')).toBeVisible();
+  await expect(field(audio, 'boundary_fade_seconds')).toBeHidden();
+  await expect(continued).toBeVisible();
+  await choose(audio, 'operation', 'audio_loudness_match');
+  await expect(continued).toHaveAccessibleName(/Reference Audio/u);
+  await expect(field(audio, 'target_peak_dbfs')).toBeVisible();
+  await choose(audio, 'operation', 'audio_join');
+  await expect(field(audio, 'boundary_fade_seconds').locator('input')).toHaveValue(/^0\.140*$/u);
+
+  await expect(field(video, 'start_seconds')).toBeHidden();
+  await expect(field(video, 'fps')).toBeHidden();
+  await expect(field(video, 'images')).toBeVisible();
+  await expect(field(video, 'video')).toBeHidden();
+  await choose(video, 'selection_mode', 'last');
+  await expect(field(video, 'indices')).toBeHidden();
+  await choose(video, 'selection_mode', 'indices');
+  await expect(field(video, 'indices').locator('input')).toHaveValue('1,8');
+  await choose(video, 'operation', 'video_trim');
+  await expect(field(video, 'selection_mode')).toBeHidden();
+  await expect(field(video, 'start_seconds').locator('input')).toHaveValue(/^3\.250*$/u);
+  await expect(field(video, 'images')).toBeHidden();
+  await expect(field(video, 'video')).toBeVisible();
+
+  const before = await read();
+  await page.getByTestId('topbar-save-workflow-options').click();
+  await page.getByTestId('topbar-save-workflow-as').click();
+  await page.getByTestId('save-workflow-name').fill('Saved media utilities');
+  await page.getByTestId('confirm-save-workflow').click();
+  await expect(page.getByTestId('save-workflow-dialog')).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
+  await expect.poll(read).toEqual(before);
+  await expect(continued).toHaveAccessibleName(/Continuation Audio/u);
+  await expect(field(video, 'selection_mode')).toBeHidden();
+  await expect(field(video, 'start_seconds').locator('input')).toHaveValue(/^3\.250*$/u);
+});
+
 test('renamed declared video output stays runnable after ordinary import Save and reload', async ({ page }) => {
   const fixture = await generateTemplateSchemas([]);
   await ensureFrontend();

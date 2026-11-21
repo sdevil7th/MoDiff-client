@@ -34,6 +34,7 @@ import { operationOwnsModel } from '../workflow/operationContracts';
 import { nodeFieldDisplayLabel } from '../workflow/nodePresentation';
 import { fileBackedMediaPreviewUrl } from '../studio/outputUtils';
 import { unresolvedSignalControls } from '../workflow/signalControlPresentation';
+import { builtinMediaOperationPresentation } from '../workflow/builtinMediaOperationPresentation';
 
 import HandleField from '../fields/HandleField';
 import InputField from '../fields/InputField';
@@ -217,12 +218,16 @@ const NodeContent = memo(function NodeContent({
   const autoModeActive = studioResourceMode === 'auto' && controlledStudioNode;
   const autoFormPatch = formPatchForAutoCandidate(selectedCandidate, studioForm);
   const identity = `${module}.${action}`;
+  const mediaOperation = builtinMediaOperationPresentation(identity, graphNode?.data.params ?? params);
   const signalControls = useFlowStore(
     useShallow((state) => unresolvedSignalControls(nodeId, nodesRegistry[identity]?.params, state)),
   );
   const fields = Object.entries(params).flatMap(([key, data]: [string, NodeParams]) => {
     const declaredLabel = data.label ?? key.charAt(0).toUpperCase() + key.slice(1);
-    const label = nodeFieldDisplayLabel(identity, key, declaredLabel);
+    const label =
+      mediaOperation?.continuation && key === 'reference' && declaredLabel === 'Reference Audio'
+        ? 'Continuation Audio'
+        : nodeFieldDisplayLabel(identity, key, declaredLabel);
     const display = data.isInput ? 'input' : data.display || '';
     const dataType = (
       Array.isArray(data.type) && data.type.length > 0 ? data.type[0] : data.type || 'string'
@@ -243,7 +248,8 @@ const NodeContent = memo(function NodeContent({
     // low-level/custom contract authoring.
     const derivedPipelineType =
       key === 'model_type' && operationOwnsModel(graphNode?.data.operationAuthoring?.operation);
-    const hidden = Boolean(data.hidden || derivedPipelineType || signalControls.has(key));
+    const inactiveMediaField = mediaOperation?.inactive.has(key);
+    const hidden = Boolean(data.hidden || derivedPipelineType || signalControls.has(key) || inactiveMediaField);
     const configuredValue = data.value ?? data.default;
     const selectedFile = params.file?.value ?? params.file?.default;
     let fileBackedLoaderPreview: string | string[] | undefined;
@@ -301,6 +307,7 @@ const NodeContent = memo(function NodeContent({
       fieldOptions: {
         ...data.fieldOptions,
         ...(label !== declaredLabel ? { wrapConnectionLabel: true } : {}),
+        ...(inactiveMediaField && isConnected ? { connectionDescription: 'Unused by this operation' } : {}),
         ...(connectionNotes[key] ? { connectedControlNote: connectionNotes[key] } : {}),
       },
       artifacts: data.artifacts,
