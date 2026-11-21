@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { canonicalJsonHash } from './canonical-json.mjs';
 import { validateLateNativeImageVariantRun, validateNativeVariantRun } from './native-variant-run-evidence.mjs';
-import { bindPrivateImageEditGraph } from './private-image-edit-evidence.mjs';
+import { bindPrivateImageEditGraph, readPrivateImageEditEvidence } from './private-image-edit-evidence.mjs';
 
 function archivedImage() {
   const target = { task: 'edit_image', modelType: 'LatentConsistencyModelPipeline' };
@@ -210,8 +211,70 @@ test('private direct image edit graph binds exactly one empty file and one empty
   assert.throws(() => bindVariant({ ...strengthVariant, original: 0.5 }));
   submitted.nodes.edit.params.strength.value = 0.8;
   assert.throws(() => bindVariant(), /differs outside/u);
+  const scoped = { ...input, sourceValue: '@data/images/source.webp' };
+  submitted.nodes.source.params.file.value = [scoped.sourceValue];
+  assert.equal(
+    bindPrivateImageEditGraph({ expected, submitted, input: scoped, inputPathPrefix: '@data/images/' }).prompt,
+    'A lake at dawn.',
+  );
+  for (const sourceValue of ['source.webp', '@data/videos/source.webp', '@data/images/../source.webp']) {
+    submitted.nodes.source.params.file.value = [sourceValue];
+    assert.throws(() =>
+      bindPrivateImageEditGraph({
+        expected,
+        submitted,
+        input: { ...scoped, sourceValue },
+        inputPathPrefix: '@data/images/',
+      }),
+    );
+  }
+  submitted.nodes.source.params.file.value = [input.sourceValue];
   submitted.nodes.edit.params.image.sourceKey = 'mask';
   assert.throws(invoke, /differs outside/u);
   submitted.loops = [];
   assert.throws(invoke, /Unexpected evidence fields/u);
+});
+
+test('SDXL private Edit evidence requires the reviewed checkpoint before reading its descriptor', async () => {
+  const modelType = 'StableDiffusionXLPipeline';
+  const repo = 'stabilityai/stable-diffusion-xl-base-1.0';
+  const makeOptions = (revision) => {
+    const graph = {
+      nodes: [
+        {
+          id: 'model',
+          data: {
+            module: 'modules.DiffusersImage',
+            action: 'LoadPipeline',
+            params: { model_id: { value: { source: 'hub', value: repo } }, revision: { value: revision } },
+          },
+        },
+      ],
+      edges: [],
+    };
+    const manifest = {
+      id: modelType + ':edit_image',
+      modelType,
+      mode: 'edit_image',
+      graphPath: 'studio/stable-diffusion-xl-pipeline/edit-image.json',
+      graphHash: canonicalJsonHash(graph),
+      sourceTemplateId: 'task-template:sdxl-base:edit-image:v1',
+      requiredArtifacts: [repo],
+    };
+    const authoring = {
+      id: 'template-authoring:' + manifest.id,
+      canonicalWorkflowId: manifest.id,
+      modelType,
+      mode: manifest.mode,
+      canonicalGraph: { path: manifest.graphPath, sha256: manifest.graphHash },
+      defaultsPlan: { sourceGraphSha256: manifest.graphHash },
+      artifactPlan: { requiredArtifacts: [repo] },
+      outputPlan: { mediaKinds: ['image'], minimumAssetCount: 1 },
+    };
+    return { manifest, graph, authoring, evidencePath: '' };
+  };
+  await assert.rejects(readPrivateImageEditEvidence(makeOptions('462165984030d82259a11f4367a4eed129e94a7b')), {
+    code: 'ENOENT',
+  });
+  await assert.rejects(readPrivateImageEditEvidence(makeOptions('0'.repeat(40))), /Private edit model pin differs/u);
 });

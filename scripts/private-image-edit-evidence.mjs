@@ -53,6 +53,19 @@ const editRoutes = new Map([
       strengthVariant: { original: 0.5, retained: 0.75 },
     },
   ],
+  [
+    'StableDiffusionXLPipeline:edit_image',
+    {
+      modelRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
+      modelRevision: '462165984030d82259a11f4367a4eed129e94a7b',
+      loaderClass: 'StableDiffusionXLImg2ImgPipeline',
+      format: DIRECT_IMAGE_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-edit-observation.v1',
+      consumed: [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'],
+      fullOrLateNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+    },
+  ],
 ]);
 const lcmRoute = editRoutes.get('LatentConsistencyModelPipeline:edit_image');
 
@@ -106,7 +119,7 @@ function directOwners(api, hinted = false) {
   );
 }
 
-export function bindPrivateImageEditGraph({ expected, submitted, input, strengthVariant }) {
+export function bindPrivateImageEditGraph({ expected, submitted, input, strengthVariant, inputPathPrefix = '' }) {
   const bound = structuredClone(expected);
   const canonical = directOwners(bound);
   const observed = directOwners(submitted, Object.hasOwn(submitted, 'runtimeHints'));
@@ -116,7 +129,8 @@ export function bindPrivateImageEditGraph({ expected, submitted, input, strength
   assert.equal(canonicalPrompt.value, '');
   assert.equal(input.nodeId, observed.source.id);
   assert.equal(input.field, 'file');
-  assert.match(input.sourceValue, /^[a-zA-Z0-9_-][\w.-]{0,200}\.webp$/u);
+  assert.ok(typeof input.sourceValue === 'string' && input.sourceValue.startsWith(inputPathPrefix));
+  assert.match(input.sourceValue.slice(inputPathPrefix.length), /^[a-zA-Z0-9_-][\w.-]{0,200}\.webp$/u);
   const prompt = observed.edit.node.params.prompt.value;
   assert.ok(typeof prompt === 'string' && prompt.length > 0 && prompt.length <= 4096 && prompt.trim() === prompt);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt));
@@ -263,7 +277,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.ok(route, 'Unknown private image-edit evidence route.');
   const { modelRepo, modelRevision, loaderClass } = route;
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
-  same(target.modelSet, [{ repoId: modelRepo, revision: modelRevision }]);
+  same(target.modelSet, [{ repoId: modelRepo, revision: modelRevision }], 'Private edit model pin differs.');
   same(target.outputPlan.mediaKinds, ['image']);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   const stat = lstatSync(evidencePath);
@@ -340,6 +354,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     submitted: graphRequest,
     input,
     strengthVariant: route.strengthVariant,
+    inputPathPrefix: route.inputPathPrefix,
   });
   for (const api of [creator.apiGraph, ...visualExports]) {
     directOwners(api);
@@ -358,11 +373,13 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     persistedOutput,
     validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, loaderClass),
   };
-  if (route.fullNativeSnapshot) {
+  const hasNativeSnapshot =
+    route.fullNativeSnapshot || (route.fullOrLateNativeSnapshot && run.outputs[0]?.apiGraphSnapshot !== undefined);
+  if (hasNativeSnapshot) {
     assert.equal(run.outputs.length, 1);
     same(run.outputs[0], persistedOutput, 'Saved native output differs from the at-close output store.');
   }
-  const validateRun = route.fullNativeSnapshot ? validateNativeVariantRun : validateLateNativeImageVariantRun;
+  const validateRun = hasNativeSnapshot ? validateNativeVariantRun : validateLateNativeImageVariantRun;
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
   validatePrivateImageEditFields(bound, output, route.consumed);
