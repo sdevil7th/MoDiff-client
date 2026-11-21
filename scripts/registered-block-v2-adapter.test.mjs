@@ -1077,7 +1077,7 @@ test('every reviewed direct-media projection is explicit and undeclared media ha
       .filter(({ mediaType }) => mediaType !== undefined)
       .map((binding) => ({ registeredRoute, binding })),
   );
-  assert.equal(reviewedMediaBindings.length, 114);
+  assert.equal(reviewedMediaBindings.length, 120);
   assert.equal(
     reviewedMediaBindings.every(({ binding }) => binding.adaptation !== undefined),
     true,
