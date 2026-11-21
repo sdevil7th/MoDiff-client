@@ -1093,8 +1093,8 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
-  // Conditioning picker visibility adds 328 deferred gzip bytes (355104 -> 355432).
-  328 +
+  // Applicable conditioning controls add 646 deferred gzip bytes (355104 -> 355750).
+  646 +
   // Bound media input receipts and stage captions add 173 deferred gzip bytes.
   173 +
   // Initial media preview spacing and workflow labels add 148 deferred bytes (354889 -> 355037).

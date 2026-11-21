@@ -195,8 +195,8 @@ Setup, the node and inspector show the recipe control. The loader's saved
 fallback value remains available in the implementation and returns to the node
 when the recipe is disconnected. Base model and adapter revisions keep their
 separate values. A stock image loader whose conditioning selector is set to None
-hides the auxiliary model picker in Model Setup and Inspector. Connected supplier
-controls and the saved picker value remain available when applicable.
+hides the auxiliary model picker and revision in Model Setup and Inspector.
+Connected supplier controls and the saved values remain available when applicable.
 
 Recorded ordinary video stage inputs keep condition strength and denoise
 strength separate. A source-video pixel digest identifies the ordered frozen

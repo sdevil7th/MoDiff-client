@@ -12,6 +12,7 @@ const AUDIO_LOADER = 'modules.DiffusersAudio.LoadPipeline';
 const EXECUTION_RECIPE = 'modules.DiffusersRuntime.DiffusersExecutionRecipe';
 const CONDITIONING_KIND = 'conditioning_kind';
 const CONDITIONING_MODEL = 'conditioning_model_id';
+const CONDITIONING_REVISION = 'conditioning_revision';
 const RECIPE_SOCKET = 'execution_recipe';
 const RECIPE_TYPE = 'diffusers_execution_recipe';
 const VAE_FALLBACKS: Record<string, Record<string, string>> = {
@@ -38,7 +39,7 @@ function hasConditioningSupplier(
   internalEdges: readonly Edge[],
   workflowEdges: readonly Edge[],
 ) {
-  const fields = [CONDITIONING_KIND, CONDITIONING_MODEL];
+  const fields = [CONDITIONING_KIND, CONDITIONING_MODEL, CONDITIONING_REVISION];
   if (internalEdges.some((edge) => edge.target === owner.id && fields.includes(edge.targetHandle ?? ''))) return true;
   const nodeId = owner.data.blockProjectionNodeId!;
   const handles = new Set(
@@ -88,8 +89,8 @@ export function modelSetupControlParams(
     // unconnected selector as evidence instead of resolving a supplier or reseeding a value.
     if (
       nodeKey === IMAGE_LOADER &&
-      fieldId === CONDITIONING_MODEL &&
-      declared?.display === 'modelselect' &&
+      ((fieldId === CONDITIONING_MODEL && declared?.display === 'modelselect') ||
+        (fieldId === CONDITIONING_REVISION && declared?.type === 'string')) &&
       control.label === declared.label &&
       control.group === owner.data.label?.trim() &&
       !control.sealed &&

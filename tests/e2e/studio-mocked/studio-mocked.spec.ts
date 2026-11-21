@@ -37097,7 +37097,7 @@ test('reusable canvas Blocks and Python nodes explain their different authoring 
   expect(await optionalStageApi(page)).toEqual(before);
 });
 
-test('Model Setup and Inspector expose the conditioning picker only on eligible image examples', async ({ page }) => {
+test('Model Setup and Inspector expose conditioning controls only on eligible image examples', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1200 });
   await ensureFrontend();
   await installMockRoutes(page);
@@ -37126,10 +37126,16 @@ test('Model Setup and Inspector expose the conditioning picker only on eligible 
       const controls = node.data.blockInstanceV2!.effectiveInterface.controls;
       const field = (name: string) => controls.find(({ binding }) => binding.fieldId === name)?.controlId;
       useFlowStore.getState().replaceGraph(grouped);
-      return { id: node.id, base: field('model_id'), conditioning: field('conditioning_model_id') };
+      return {
+        id: node.id,
+        base: field('model_id'),
+        conditioning: field('conditioning_model_id'),
+        revision: field('conditioning_revision'),
+      };
     }, source);
     expect(setup.base).toBeTruthy();
     expect(setup.conditioning).toBeTruthy();
+    expect(setup.revision).toBeTruthy();
     const graphBefore = await optionalStageApi(page);
     await page.getByRole('button', { name: 'Arrange graph', exact: true }).click();
     const card = page.getByTestId(`setup-node-${setup.id}`);
@@ -37138,12 +37144,14 @@ test('Model Setup and Inspector expose the conditioning picker only on eligible 
     await expect(chooser(card, setup.base!)).toBeVisible();
     if (conditioning) await expect(chooser(card, setup.conditioning!)).toBeVisible();
     else await expect(chooser(card, setup.conditioning!)).toHaveCount(0);
+    await expect(card.locator(`[data-key="${setup.revision}"]`)).toHaveCount(conditioning ? 1 : 0);
     await card.locator('header').first().click();
     await page.getByRole('button', { name: 'Inspect node', exact: true }).click();
     const inspector = page.getByRole('dialog', { name: 'Node inspector', exact: true });
     await expect(chooser(inspector, setup.base!)).toBeVisible();
     if (conditioning) await expect(chooser(inspector, setup.conditioning!)).toBeVisible();
     else await expect(chooser(inspector, setup.conditioning!)).toHaveCount(0);
+    await expect(inspector.locator(`[data-key="${setup.revision}"]`)).toHaveCount(conditioning ? 1 : 0);
     await page.keyboard.press('Escape');
     expect(await optionalStageApi(page)).toEqual(graphBefore);
     if (!conditioning) {
@@ -37155,6 +37163,7 @@ test('Model Setup and Inspector expose the conditioning picker only on eligible 
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(chooser(card, setup.base!)).toBeVisible();
       await expect(chooser(card, setup.conditioning!)).toHaveCount(0);
+      await expect(card.locator(`[data-key="${setup.revision}"]`)).toHaveCount(0);
       expect(await optionalStageApi(page)).toEqual(graphBefore);
     }
   }

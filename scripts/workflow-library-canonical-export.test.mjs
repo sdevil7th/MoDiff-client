@@ -432,7 +432,7 @@ test('Model Setup shows connected VAE recipe controls and retains each loader fa
   }
 });
 
-test('Model Setup hides the stock conditioning picker only when the loader declares it inactive', () => {
+test('Model Setup hides the stock conditioning controls only when the loader declares it inactive', () => {
   const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff');
   const graphName = 'stable-diffusion-xl-pipeline/text-to-image';
   const load = (name) => JSON.parse(readFileSync(path.join(backend, `data/graphs/studio/${name}.json`), 'utf8'));
@@ -464,16 +464,19 @@ test('Model Setup hides the stock conditioning picker only when the loader decla
       loader,
       controlParams,
       conditioning,
+      conditioningRevision: field('conditioning_revision'),
       modelId: field('model_id').controlId,
     };
   };
   const active = (context, graph = context.graph, edges = [], root = context.setup) => {
     const projected = modelSetupControlParams(context.instance, graph, context.controlParams, edges);
     assert.ok(projected[context.modelId], 'Base model picker remains available');
-    return {
-      stage: Object.hasOwn(projected, context.conditioning.controlId),
-      inspector: Object.hasOwn(graphNodeControlParams(root, edges), context.conditioning.controlId),
-    };
+    const inspector = graphNodeControlParams(root, edges);
+    const stageVisible = Object.hasOwn(projected, context.conditioning.controlId);
+    const inspectorVisible = Object.hasOwn(inspector, context.conditioning.controlId);
+    assert.equal(Object.hasOwn(projected, context.conditioningRevision.controlId), stageVisible);
+    assert.equal(Object.hasOwn(inspector, context.conditioningRevision.controlId), inspectorVisible);
+    return { stage: stageVisible, inspector: inspectorVisible };
   };
   const source = load(graphName);
   const inactive = projection(source);
@@ -514,7 +517,7 @@ test('Model Setup hides the stock conditioning picker only when the loader decla
       },
     },
   };
-  for (const fieldOrPortId of ['conditioning_kind', 'conditioning_model_id']) {
+  for (const fieldOrPortId of ['conditioning_kind', 'conditioning_model_id', 'conditioning_revision']) {
     const edge = {
       id: `dynamically-supplied-${fieldOrPortId}`,
       source: supplier.id,
