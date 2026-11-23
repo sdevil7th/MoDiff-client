@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { dragWireToCanvas } from '../dragWireToCanvas';
 
 // Run against scripts/run_node_ux_backend.py, never an operator's normal state.
 const remote = process.env.MODIFF_NODE_UX_REPO;
@@ -51,11 +52,15 @@ test('detecting a Python file does not enable it; intentional Load and Reload do
 test.beforeEach(async ({ page }) => {
   page.setDefaultTimeout(15_000);
   test.skip(process.env.MODIFF_NODE_UX_ISOLATED !== '1', 'Requires explicitly isolated backend');
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated, null, {
+    timeout: 90_000,
+  });
   await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 120_000 });
   const launcher = page.getByTestId('task-launcher');
   if (await launcher.isVisible()) await launcher.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByTestId('left-tab-nodes').click();
+  if (!(await page.getByTestId('node-group-custom-nodes').isVisible()))
+    await page.getByTestId('left-tab-nodes').click();
   await expect(page.getByTestId('node-group-custom-nodes')).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Creator', exact: true })).toHaveCount(0);
 });
@@ -98,17 +103,14 @@ for (const kind of ['local', 'hub', 'git'] as const) {
     const socket = page.locator(
       `.react-flow__handle.source[data-handleid="${kind === 'local' ? 'result' : 'out_result'}"]`,
     );
-    const box = await socket.boundingBox();
-    const pane = await page.locator('.react-flow__pane').boundingBox();
-    if (!box || !pane) throw new Error('Missing canvas or output socket');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(pane.x + pane.width - 150, pane.y + pane.height - 120, { steps: 12 });
-    await page.mouse.up();
+    await dragWireToCanvas(page, socket);
     await page.getByLabel('Show unverified matches (generic or missing types)').check();
     await page.getByPlaceholder('Search nodes and Blocks').fill('Data Viewer');
     await page.getByRole('option').filter({ hasText: 'Data Viewer' }).first().click();
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
+    // This operator-reviewed extension has no automatic resource contract.
+    const automatic = page.getByRole('button', { name: 'Memory policy: Automatic. Click to switch.', exact: true });
+    if (await automatic.isVisible()) await automatic.click();
     await page.getByTestId('studio-run').click();
     await expect
       .poll(

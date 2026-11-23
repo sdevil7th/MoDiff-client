@@ -170,6 +170,7 @@ const NodeSearchDialog = ({
       ? visualStageMatches(stageCatalog, nodes, searchQuery, {
           all: view === 'advanced' || view === 'all',
           targeted: Boolean(handleType),
+          showModelHints: !handleType,
           operations: pipeline ? operationsForTask(operations, pipeline, task) : undefined,
           compatible: (node, op) =>
             !handleType ||
@@ -288,7 +289,7 @@ const NodeSearchDialog = ({
 
   const selectEntry = useCallback(
     async (entry: SearchEntry) => {
-      if (pending.current) return;
+      if (pending.current || entry.stage?.requiresModel) return;
       const request = new AbortController();
       const context = captureWorkflowOperationContext();
       const selection = useNodeDiscoveryStore.getState().selection;
@@ -379,7 +380,7 @@ const NodeSearchDialog = ({
       id={`node-search-${index}`}
       role="option"
       aria-selected={index === activeIndex}
-      disabled={busy}
+      disabled={busy || entry.stage?.requiresModel}
       aria-busy={busy || undefined}
       onClick={() => void selectEntry(entry)}
       className={cx(

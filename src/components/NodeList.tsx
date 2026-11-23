@@ -140,6 +140,7 @@ function NodeList() {
         ? visualStageMatches(stageCatalog, nodesRegistry, search, {
             all: effectiveCatalogView === 'advanced' || effectiveCatalogView === 'all',
             targeted: showMoreStages,
+            showModelHints: true,
             operations: pipeline ? operationsForTask(operationContracts, pipeline, task) : undefined,
           })
         : [],

@@ -40,6 +40,27 @@ before(async () => {
     }
 });
 after(async () => await server?.close());
+test('an exact decomposed action can be located before model selection without becoming insertable', () => {
+  const node = 'modules.ModularDiffusers.WorkflowImageDenoise';
+  const definitions = {
+    ...registry,
+    [node]: { module: 'modules.ModularDiffusers', action: 'WorkflowImageDenoise', label: 'Denoise', params: {} },
+  };
+  const search = (query, options) => api.visualStageMatches(catalog, definitions, query, options);
+  for (const query of [node, 'WorkflowImageDenoise']) {
+    const hits = search(query, { showModelHints: true }).filter((hit) => hit.requiresModel);
+    assert.deepEqual(
+      hits.map((hit) => hit.stage.id),
+      ['generate-image', 'edit-image', 'inpaint-image'],
+    );
+    for (const hit of hits) {
+      assert.deepEqual(hit.choices, []);
+      assert.equal(api.stageFromDrag(api.stageDragKey(hit.stage, hit.mode), catalog, definitions), null);
+    }
+    assert.equal(search(query, { showModelHints: false }).length, 0);
+    assert.equal(search(query, { showModelHints: true, operations: [] }).length, 0);
+  }
+});
 test('shipped image and video stages use the same picker titles after reopening and preserve user titles', async () => {
   const { exampleWorkflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
   const { normalizePersistedFlowState } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');

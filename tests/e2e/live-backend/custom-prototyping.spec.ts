@@ -103,8 +103,9 @@ test('fresh documented custom package enables and reloads through the rendered U
     await expect(customButton).toBeVisible();
     await page.screenshot({ path: resolve(output, 'custom-category.png') });
 
-    await page.getByTestId('node-row-modules-Primitive-TextValue').click();
     await customButton.click();
+    await search.fill('modules.Primitive.TextValue');
+    await page.getByTestId('node-row-modules-Primitive-TextValue').click();
     await search.fill('Export Data');
     await page.getByTestId('node-row-modules-Primitive-ExportData').click();
     await search.fill('');

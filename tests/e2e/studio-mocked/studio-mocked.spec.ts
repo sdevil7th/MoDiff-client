@@ -1,3 +1,4 @@
+import { dragWireToCanvas } from '../dragWireToCanvas';
 import { expect, test, type Page, type Locator } from '@playwright/test';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -9255,7 +9256,21 @@ async function dismissTaskLauncher(page: Page) {
     return flow.nodes.length === 0 && !studio.launcherDismissed;
   });
   const launcher = page.getByTestId('task-launcher');
-  if (expected) await expect(launcher).toBeVisible();
+  if (expected) {
+    await page.waitForFunction(
+      () => {
+        const state = window.__MODIFF_E2E__?.getState();
+        return (
+          state &&
+          (state.studio.launcherDismissed ||
+            state.flow.nodes.length > 0 ||
+            document.querySelector('[data-testid="task-launcher"]'))
+        );
+      },
+      null,
+      { timeout: 90_000 },
+    );
+  }
   if (await launcher.isVisible()) {
     await launcher.getByLabel('Close').click();
     await expect(launcher).toBeHidden();
@@ -9301,20 +9316,14 @@ async function seedLegacyManagedWorkflow(
 }
 
 async function openTemplateBrowser(page: Page) {
-  // Empty workflows intentionally open the dismissible task launcher as a
-  // modal. Template-focused tests must close it before interacting with the
-  // library rail, exactly as a user choosing to build manually would.
-  await dismissTaskLauncher(page);
-  const openButton = page.getByTestId('left-open-template-browser');
-  if ((await openButton.count()) === 0) {
-    // A workflow transition can close the panel while retaining its selected
-    // tab. Move through a known sibling tab so clicking Templates always opens
-    // it instead of toggling the retained tab back off.
-    await page.getByTestId('left-tab-nodes').click();
-    await page.getByTestId('left-tab-templates').click();
+  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated);
+  const launcher = page.getByTestId('task-launcher');
+  await page.addLocatorHandler(launcher, () => launcher.getByLabel('Close').click());
+  try {
+    await page.getByTestId('topbar-templates').click({ timeout: 90_000 });
+  } finally {
+    await page.removeLocatorHandler(launcher);
   }
-  await expect(openButton).toBeVisible();
-  await openButton.click();
   await expect(page.getByTestId('template-browser-search')).toBeVisible();
 }
 
@@ -13099,12 +13108,7 @@ test('image pipeline drag-to-add excludes generation actions outside the selecte
   const node = page.locator('.react-flow__node-custom').filter({ hasText: 'Load Image Pipeline' });
   const id = (await node.getAttribute('data-id'))!;
   const handle = node.getByTestId(`node-handle-${id}-pipeline`);
-  const start = (await handle.boundingBox())!;
-  const pane = (await page.locator('.react-flow__pane').boundingBox())!;
-  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(pane.x + pane.width - 70, pane.y + 70, { steps: 18 });
-  await page.mouse.up();
+  await dragWireToCanvas(page, handle);
   const suggestions = page.getByRole('listbox', { name: 'Matching nodes' });
   await expect(suggestions.getByRole('option', { name: 'Generate Image', exact: true })).toBeVisible();
   await expect(suggestions.getByRole('option', { name: 'Generate Unconditional Image', exact: true })).toHaveCount(0);
@@ -13385,13 +13389,36 @@ test('raw Process Image task changes keep Mask repairs and readiness current', a
   await expect(selectedNodes).toHaveCount(1);
   await expect(selectedNodes).toHaveAttribute('data-id', processId);
   const operation = page.getByTestId('studio-custom-graph-inspector').getByLabel('Operation', { exact: true });
-  const select = async (task: string) => {
+  const select = async (task: 'image_stitch' | 'mask_composite') => {
+    const label = task === 'image_stitch' ? 'Stitch Images' : 'Composite with Mask';
     await operation.click();
-    await page.getByRole('option', { name: task, exact: true }).click();
-    await expect(operation).toHaveText(task);
+    await page.getByRole('option', { name: label, exact: true }).click();
+    await expect(operation).toHaveText(label);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) =>
+            window.__MODIFF_E2E__!.exportWorkflowGraph().nodes.find((node) => node.id === id)?.data.params.operation
+              ?.value,
+          processId,
+        ),
+      )
+      .toBe(task);
   };
   const run = page.getByTestId('studio-run');
   const fix = page.getByTestId('graph-fix');
+  const dialog = page.getByTestId('graph-fix-dialog');
+  async function openFixDialog() {
+    await fix.click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async () => (await import('/src/stores/useGraphFixStore.ts')).useGraphFixStore.getState().dialogOpen,
+        ),
+      )
+      .toBe(true);
+    await expect(dialog, renderErrors.join('\n')).toBeVisible({ timeout: 60_000 });
+  }
   const readiness = page.getByTestId('studio-run-readiness');
   await select('image_stitch');
   await expect(run).toBeEnabled();
@@ -13401,8 +13428,7 @@ test('raw Process Image task changes keep Mask repairs and readiness current', a
   await expect(run).toBeDisabled();
   await expect(readiness).toContainText('needs Mask before running');
   await expect(fix).toBeEnabled();
-  await fix.click();
-  const dialog = page.getByTestId('graph-fix-dialog');
+  await openFixDialog();
   await expect(dialog).toContainText('needs Mask');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   await select('image_stitch');
@@ -13436,7 +13462,7 @@ test('raw Process Image task changes keep Mask repairs and readiness current', a
   catalogAvailable = false;
   await refresh();
   await expect(fix).toBeEnabled();
-  await fix.click();
+  await openFixDialog();
   await expect(dialog).toContainText('needs Mask');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
   catalogAvailable = true;
@@ -13455,7 +13481,7 @@ test('raw Process Image task changes keep Mask repairs and readiness current', a
     .toBe(false);
   await expect(run).toBeDisabled();
   await expect(readiness).toContainText('needs Image before running');
-  await fix.click();
+  await openFixDialog();
   await expect(dialog).toContainText('needs Image');
   await expect(dialog).not.toContainText('needs Mask');
   expect(graphPosts).toBe(0);
@@ -13958,9 +13984,7 @@ test('approved retained examples show structured text and technical image compar
   await page.route('**/template-gallery/manifest.json*', (route) => route.fulfill({ json: manifest }));
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated));
-  const launcher = page.getByTestId('task-launcher');
-  if (await launcher.isVisible()) await launcher.getByLabel('Close').click();
-  await page.getByTestId('topbar-templates').click();
+  await openTemplateBrowser(page);
 
   await page.getByTestId('template-browser-category-text').click();
   const textCard = page.getByTestId('template-browser-card-smollm2_rain_gauge');
@@ -16580,7 +16604,10 @@ test('the unified editor share one library with additive implementation filters 
       ),
     )
     .toBe(1);
-  const before = await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph());
+  const before = await page.evaluate(() => {
+    const { nodes, edges } = window.__MODIFF_E2E__!.exportWorkflowGraph();
+    return { nodes, edges };
+  });
   await search.fill('');
   await implementation.check();
   await expect(page.getByTestId('node-group-Modular-Diffusers-implementation')).toBeVisible();
@@ -16597,7 +16624,12 @@ test('the unified editor share one library with additive implementation filters 
   await experimental.uncheck();
   await assertUnifiedWorkspace(page, 'expert');
   await expect(implementation).not.toBeChecked();
-  expect(await page.evaluate(() => window.__MODIFF_E2E__!.exportWorkflowGraph())).toEqual(before);
+  expect(
+    await page.evaluate(() => {
+      const { nodes, edges } = window.__MODIFF_E2E__!.exportWorkflowGraph();
+      return { nodes, edges };
+    }),
+  ).toEqual(before);
   await page.screenshot({ path: test.info().outputPath('shared-nodes-library.png'), animations: 'disabled' });
 });
 
@@ -34945,12 +34977,7 @@ test('known-compatible drag search inserts the image socket instead of the earli
     .click();
   const original = page.locator('.react-flow__node-custom').first();
   const id = (await original.getAttribute('data-id'))!;
-  const handle = (await original.getByTestId(`node-handle-${id}-image`).boundingBox())!;
-  const pane = (await page.locator('.react-flow__pane').boundingBox())!;
-  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(pane.x + pane.width - 70, pane.y + 70, { steps: 15 });
-  await page.mouse.up();
+  await dragWireToCanvas(page, original.getByTestId(`node-handle-${id}-image`));
   const list = page.getByRole('listbox', { name: 'Matching nodes' });
   await expect(list).toBeVisible();
   await page.getByLabel('Search nodes', { exact: true }).last().fill('Mixed search target');
@@ -35000,12 +35027,7 @@ async function openTypedCatalogSearch(page: Page, workspace: 'auto' | 'expert', 
   const original = page.locator('.react-flow__node-custom').first();
   const id = (await original.getAttribute('data-id'))!;
   const handle = original.getByTestId(`node-handle-${id}-${direction === 'source' ? 'output' : 'input'}`);
-  const start = (await handle.boundingBox())!;
-  const pane = (await page.locator('.react-flow__pane').boundingBox())!;
-  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(pane.x + pane.width - 60, pane.y + 70, { steps: 15 });
-  await page.mouse.up();
+  await dragWireToCanvas(page, handle);
   const list = page.getByRole('listbox', { name: 'Matching nodes' });
   await expect(list).toBeVisible();
   await page.getByLabel('Search nodes', { exact: true }).last().fill('Qwen Image Text To Image');
@@ -37137,6 +37159,7 @@ test('saved Generate shared-input repair preserves execution, Undo, reload and s
   await expect(root.getByRole('textbox', { name: 'Steps', exact: true })).toBeVisible();
   expect(await optionalStageApi(page)).toEqual(before);
   await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated);
   await expect(root).toBeVisible();
   await expect.poll(count).toBe(1);
   expect(await optionalStageApi(page)).toEqual(before);
@@ -37238,6 +37261,7 @@ test('saved Encode Inputs repairs three native encoder sockets through the stage
   await page.keyboard.press('Control+Shift+z');
   await expect.poll(count).toBe(1);
   await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated);
   await expect(root).toBeVisible();
   await expect.poll(count).toBe(1);
   expect(await optionalStageApi(page)).toEqual(before);

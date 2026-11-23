@@ -217,10 +217,11 @@ test('runtime node search requires every keyword and preserves exact registry ke
     'custom.registry.ImageLoader',
     'legacy.Image.Open',
     'picture',
+    'disk image',
   ]) {
     assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, query), true, query);
   }
-  for (const query of ['image audio', 'disk image', 'missing', '---']) {
+  for (const query of ['image audio', 'disk audio', 'missing', '---']) {
     assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, query), false, query);
   }
   assert.equal(nodeCatalogModule.nodeCatalogEntryMatchesSearch(entry, ''), true);

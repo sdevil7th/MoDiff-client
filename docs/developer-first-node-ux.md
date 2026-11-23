@@ -350,3 +350,5 @@ rate entered on the stage and carry no audio track.
 Browse starts with 15 everyday stages. Show task stages adds 14. Advanced includes six more. Search by stage or action, for example `KSampler`, `CheckpointLoaderSimple`, `Canny` or `fit audio duration`. Expand a result to choose an available action. A search from a wire also checks its type, direction and role. The Docs tab shows the action in the selected stage. Custom authors can declare searchable `searchTerms` on their node class.
 
 Choose **Show on canvas** to locate an existing instance. For an independently inserted node, open its help menu and use **Stage action** to switch modes. The editor restores values for the selected mode and identifies any wire that needs your attention. For a model-bound workflow, use Model Setup to change the model or task for the connected stages.
+
+Searching an exact older implementation name such as `WorkflowImageDenoise` on an empty canvas lists the stages that can own it. Select a compatible model and task to enable the action. Searching from a wire shows the insertable choices for that port.

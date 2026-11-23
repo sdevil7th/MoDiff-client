@@ -31,7 +31,13 @@ export type VisualStage = {
 };
 export type VisualCatalog = { version: 1; stages: VisualStage[] };
 export type StageChoice = { mode: StageMode; definition: NodeData; operation?: OperationContract };
-export type StageMatch = StageChoice & { stage: VisualStage; score: number; detail: string; choices: StageChoice[] };
+export type StageMatch = StageChoice & {
+  stage: VisualStage;
+  score: number;
+  detail: string;
+  choices: StageChoice[];
+  requiresModel?: boolean;
+};
 
 const text = (value: unknown, limit: number): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= limit;
@@ -179,6 +185,7 @@ export function visualStageMatches(
     targeted?: boolean;
     compatible?: (node: NodeData, operation?: OperationContract) => boolean;
     operations?: OperationContract[];
+    showModelHints?: boolean;
   } = {},
 ): StageMatch[] {
   const query = words(search);
@@ -228,6 +235,30 @@ export function visualStageMatches(
         const term = query && mode.terms?.find((term) => compact(words(term)) === compact(query));
         const detail = term && words(term) !== words(mode.label) ? mode.label + ' · ' + term : mode.label;
         best = { stage, ...choice, score, detail, choices };
+      }
+    }
+    if (query && !options.operations && options.showModelHints && stage.modelBound) {
+      // Historical implementation names can locate their owner before a model is selected.
+      // A hint carries no executable binding and is never offered for a typed wire.
+      const member = stage.members?.find((key) => {
+        const node = registry[key];
+        return (
+          node &&
+          [key, node.action].some((name) => compact(words(name)) === compact(query)) &&
+          !catalog.stages.some((s) => s.modes.some((m) => m.node === key))
+        );
+      });
+      if (member) {
+        const definition = registry[member]!;
+        best = {
+          stage,
+          definition,
+          mode: { node: member, label: definition.label },
+          score: 95,
+          choices: [],
+          detail: definition.label + ' · Select a compatible model and task to add this action.',
+          requiresModel: true,
+        };
       }
     }
     if (best) results.push(best);

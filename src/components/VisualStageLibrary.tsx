@@ -79,7 +79,8 @@ export default function VisualStageLibrary({
             <ModiffButton
               fullWidth
               align="left"
-              draggable
+              disabled={match.requiresModel}
+              draggable={!match.requiresModel}
               title={match.stage.summary}
               data-testid={'stage-add-' + match.stage.id}
               onDragStart={(event) => {

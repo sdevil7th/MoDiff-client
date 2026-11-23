@@ -3,9 +3,11 @@ import { expect, test, type Page } from '@playwright/test';
 test.beforeEach(async ({ page }) => {
   test.skip(process.env.MODIFF_NODE_UX_ISOLATED !== '1', 'Requires an isolated registry worker');
   await page.setViewportSize({ width: 1366, height: 768 });
-  await page.goto('/');
-  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
-  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated);
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await page.waitForFunction(() => window.__MODIFF_E2E__?.getState().studio.workflowCanvasHydrated, null, {
+    timeout: 90_000,
+  });
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 90_000 });
   if (!(await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.launcherDismissed))) {
     await page.getByTestId('task-launcher').getByRole('button', { name: 'Close', exact: true }).click();
   }

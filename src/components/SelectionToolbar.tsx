@@ -304,25 +304,44 @@ export function SelectionToolbar({
       else if (right <= maxLeft) left = Math.max(left, right);
     }
 
-    const alternativeTop = preferAbove ? belowSelection : aboveSelection;
-    if (alternativeTop >= minTop && alternativeTop <= maxTop && !overlapsActivity(left, alternativeTop)) {
-      const overlapsCard = (y: number) => {
-        const start = screenToFlowPosition({ x: left, y }, { snapToGrid: false });
-        const end = screenToFlowPosition({ x: left + toolbarWidth, y: y + toolbarHeight }, { snapToGrid: false });
-        return getIntersectingNodes({ ...start, width: end.x - start.x, height: end.y - start.y }).some(
-          (node) =>
-            !node.hidden &&
-            node.measured?.width &&
-            node.measured?.height &&
-            node.data.type !== 'group' &&
-            node.data.type !== 'loop' &&
-            !node.data.blockInstanceV2?.presentation.expanded &&
-            !node.data.blockProjectionContainerExpanded,
-        );
-      };
-      // Stay next to the selection when the preferred side would intercept a
-      // neighboring node and the opposite side is clear.
-      if (overlapsCard(top) && !overlapsCard(alternativeTop)) top = alternativeTop;
+    const overlapsCard = (x: number, y: number) => {
+      // Include handles which sit just outside the node rectangle.
+      const start = screenToFlowPosition({ x: x - TOOLBAR_MARGIN, y: y - TOOLBAR_MARGIN }, { snapToGrid: false });
+      const end = screenToFlowPosition(
+        { x: x + toolbarWidth + TOOLBAR_MARGIN, y: y + toolbarHeight + TOOLBAR_MARGIN },
+        { snapToGrid: false },
+      );
+      return getIntersectingNodes({ ...start, width: end.x - start.x, height: end.y - start.y }).some(
+        (node) =>
+          !node.hidden &&
+          node.measured?.width &&
+          node.measured?.height &&
+          node.data.type !== 'group' &&
+          node.data.type !== 'loop' &&
+          !node.data.blockInstanceV2?.presentation.expanded &&
+          !node.data.blockProjectionContainerExpanded,
+      );
+    };
+    if (overlapsCard(left, top)) {
+      const alternativeTop = preferAbove ? belowSelection : aboveSelection;
+      const positions: [number, number][] = [
+        [left, alternativeTop],
+        [left, minTop],
+        [left, maxTop],
+        [minLeft, top],
+        [maxLeft, top],
+        [minLeft, minTop],
+        [maxLeft, minTop],
+        [minLeft, maxTop],
+        [maxLeft, maxTop],
+      ];
+      for (const [x, y] of positions) {
+        if (x < minLeft || x > maxLeft || y < minTop || y > maxTop || overlapsActivity(x, y) || overlapsCard(x, y))
+          continue;
+        left = x;
+        top = y;
+        break;
+      }
     }
 
     toolbar.style.setProperty('--modiff-selection-toolbar-x', `${Math.round(left)}px`);
