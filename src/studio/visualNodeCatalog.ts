@@ -326,6 +326,14 @@ export function visualNodeTitle(catalog: VisualCatalog | null, node: NodeData, r
         const owningStage = catalog.stages.find((stage) => stage.memberTasks?.includes(task));
         if (owningStage) return owningStage.label;
       }
+      // A whole action can take media and produce text. Use its published
+      // action before interpreting input or output media ports as a fallback.
+      const [member] = instance.effectiveGraph.nodes;
+      if (member && instance.effectiveGraph.nodes.length === 1) {
+        const key = `${member.data.module}.${member.data.action}`;
+        const owningStage = catalog.stages.find((stage) => stage.modes.some((mode) => mode.node === key));
+        if (owningStage) return owningStage.label;
+      }
       return catalog.stages.find((stage) => stage.id === 'generate-' + media)?.label ?? original;
     }
     return catalog.stages.find((stage) => stage.id === projectedStages[kind])?.label ?? original;

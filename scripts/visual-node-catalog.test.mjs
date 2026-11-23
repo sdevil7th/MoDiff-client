@@ -61,13 +61,14 @@ test('an exact decomposed action can be located before model selection without b
     assert.equal(search(query, { showModelHints: true, operations: [] }).length, 0);
   }
 });
-test('shipped image and video stages use the same picker titles after reopening and preserve user titles', async () => {
+test('shipped image, video, and caption stages use picker titles after reopening and preserve user titles', async () => {
   const { exampleWorkflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
   const { normalizePersistedFlowState } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
   const { DEFAULT_STUDIO_FORM } = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
   for (const [file, expected] of [
     ['z-image-modular-pipeline/text-to-image', 'Generate Image'],
     ['wan-video-pipeline/text-to-video', 'Generate Video'],
+    ['hugging-face-image-text-to-text-model/image-to-text', 'Generate Text'],
   ]) {
     const raw = JSON.parse(readFileSync(new URL('../../MoDiff/data/graphs/studio/' + file + '.json', import.meta.url)));
     const fresh = exampleWorkflowSnapshotFromGraph(raw, 'default', DEFAULT_STUDIO_FORM);

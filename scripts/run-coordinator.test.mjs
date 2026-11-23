@@ -2018,6 +2018,61 @@ test('dynamic field and completion messages mutate only their owning workflow ca
   assert.equal(flowStoreModule.useFlowStore.getState().getParam('preview', 'output', 'disabled'), false);
 });
 
+test('a whole-pipeline field update keeps absent inactive controls out of older graphs', async () => {
+  const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid() {}, setLoopTimer() {} };
+  studioStoreModule.useStudioStore.setState({
+    activeWorkflowTabId: 'workflow-origin',
+    workflowCanvasEpoch: 12,
+    workflowTabs: [{ id: 'workflow-origin' }],
+  });
+  const store = flowStoreModule.useFlowStore;
+  store.setState({
+    nodes: [
+      {
+        id: 'video',
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'custom',
+          module: 'modules.DiffusersVideo',
+          action: 'Generate',
+          label: 'Generate Video',
+          category: 'Video',
+          params: {
+            pipeline: { display: 'input', type: 'video_diffusion_pipeline' },
+            stg_scale: { value: 2, hidden: false, type: 'float' },
+          },
+        },
+      },
+    ],
+    edges: [],
+  });
+  const update = (field, params) =>
+    websocketModule.handleWebsocketMessage(
+      {
+        type: 'set_field_params',
+        sid: 'session-1',
+        node: 'video',
+        field,
+        params,
+        workflow_tab_id: 'workflow-origin',
+        workflow_canvas_epoch: 12,
+      },
+      context,
+    );
+  update('audio_guidance_scale', { hidden: true });
+  update('stg_scale', { hidden: true });
+  await Promise.resolve();
+  let params = store.getState().nodes[0].data.params;
+  assert.equal(Object.hasOwn(params, 'audio_guidance_scale'), false);
+  assert.equal(params.stg_scale.hidden, true);
+  assert.equal(params.stg_scale.value, 2);
+  update('audio_guidance_scale', { hidden: false, value: 7 });
+  await Promise.resolve();
+  params = store.getState().nodes[0].data.params;
+  assert.equal(params.audio_guidance_scale.value, 7);
+});
+
 test('owned set_field_params messages reconcile opaque signals across connected generic fields', async () => {
   const context = {
     sid: 'session-1',

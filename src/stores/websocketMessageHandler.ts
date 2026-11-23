@@ -5,6 +5,7 @@ import { blockOperationGraphV2 } from '../studio/blockRuntimeV2';
 import { markStudioGraphDefinitionPending, syncStudioGraphDefinition } from '../studio/graphBridge';
 import { collapsedHuggingFaceClusterPreviewTarget } from '../studio/huggingFaceClusterGraph';
 import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
+import { isWholePipelineStage } from '../workflow/wholePipelineStage';
 import { coordinateGraphRun } from '../studio/runCoordinator';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import { blockPreviewTargetV2, collapsedUserBlockPreviewTarget, runtimeProgressTarget } from '../studio/userBlocks';
@@ -1246,6 +1247,11 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       const nodeId = message.node;
       const field = message.field;
       const params = message.params;
+      if (params.hidden === true && !hasOwn(params, 'value') && !hasOwn(params, 'signal')) {
+        const target = useFlowStore.getState().nodes.find((node) => node.id === nodeId);
+        // A visibility update must not add an inactive literal to an older recipe.
+        if (target && !hasOwn(target.data.params, field) && isWholePipelineStage(target.data)) break;
+      }
       const workflowContext = captureWorkflowOperationContext();
       const schemaPending = markStudioGraphDefinitionPending(nodeId, Object.keys(params) as Array<keyof NodeParams>);
       const previousSignal = useFlowStore.getState().getParam(nodeId, field, 'signal');
