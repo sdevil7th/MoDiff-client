@@ -38,9 +38,11 @@ decoder. A real upscaler between decode and export remains a separate stage.
 When an upscaler or separately produced soundtrack follows decoding, the
 connected denoiser and decoder appear as **Generate**. The shared pipeline
 input feeds both operations and checks that the selected model supports both
-actions. An exclusive video loader and normalizer appear as **Video Input**.
-The file picker previews the source. Target width, height, frames and fit
-control the normalized clip. Expand either Block to inspect its operations.
+actions. An exclusive video loader and normalizer appear in one input stage.
+The card uses its declared role, such as **Source Video** or **Control Video**,
+and shows **Video Input** when the saved workflow has no role. The file picker
+previews the clip. Target width, height, frames and fit control normalization.
+Use **Edit stages** to inspect the underlying operations.
 
 In a saved workflow, choose **Model Setup → options → Simplify connected
 stages** to apply the same grouping to that branch. Undo restores its previous

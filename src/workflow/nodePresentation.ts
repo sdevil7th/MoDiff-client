@@ -157,6 +157,11 @@ const MEDIA_ROLE_CAPTIONS: Record<string, Record<string, string>> = {
   },
 };
 
+export function mediaRoleCaption(identity: string, role: unknown) {
+  const caption = typeof role === 'string' ? MEDIA_ROLE_CAPTIONS[identity]?.[role] : undefined;
+  return typeof caption === 'string' ? caption : undefined;
+}
+
 const FIELD_PRESENTATIONS: Record<string, Record<string, readonly [string, string]>> = {
   'modules.Image.Merge': {
     image_from: ['Image From', 'Overlay image'],
@@ -262,8 +267,7 @@ export function nodeDisplayLabel(
 ): string {
   const identity = `${node.module}.${node.action}`;
   const presentation = PRESENTATIONS[identity];
-  const roleLabels = MEDIA_ROLE_CAPTIONS[identity];
-  const roleLabel = node.studioRole ? roleLabels?.[node.studioRole] : undefined;
+  const roleLabel = mediaRoleCaption(identity, node.studioRole);
   if (
     presentation &&
     typeof roleLabel === 'string' &&

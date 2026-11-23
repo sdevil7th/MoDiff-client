@@ -1,6 +1,6 @@
 import type { NodeData } from '../stores/useNodeStore';
 import type { OperationContract } from '../workflow/operationContracts';
-import { nodeDisplayLabel, nodeSearchAliases } from '../workflow/nodePresentation';
+import { mediaRoleCaption, nodeDisplayLabel, nodeSearchAliases } from '../workflow/nodePresentation';
 import { isOptionDescriptor, optionDescriptorIsSelectable } from './runtimeOptions';
 import { isRecord } from '../utils/isRecord';
 import {
@@ -301,7 +301,6 @@ const projectedStages: Partial<Record<VisualOperationGroup, string>> = {
   setup: 'model-setup',
   inputs: 'encode-inputs',
   imageInput: 'media-input',
-  videoInput: 'media-input',
   output: 'export',
   composite: 'composite',
   references: 'references',
@@ -317,6 +316,12 @@ export function visualNodeTitle(catalog: VisualCatalog | null, node: NodeData, r
     if (!kind || visualStageHasNestedStructure(instance)) return original;
     const media = visualOperationGroupMedia({ data: node });
     if (original !== visualStagePresentation(kind, media).label) return original;
+    if (kind === 'videoInput') {
+      const loaders = instance.effectiveGraph.nodes.filter(
+        ({ data }) => data.module === 'modules.Video' && data.action === 'Load',
+      );
+      return (loaders.length === 1 && mediaRoleCaption('modules.Video.Load', loaders[0]?.data.studioRole)) || original;
+    }
     if (kind === 'generate') {
       for (const member of instance.effectiveGraph.nodes) {
         const hint = member.data.operationAuthoring;

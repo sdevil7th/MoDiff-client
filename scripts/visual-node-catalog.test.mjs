@@ -83,6 +83,25 @@ test('shipped image, video, and caption stages use picker titles after reopening
     }
   }
 });
+test('projected video inputs identify source and control roles after reopening', async () => {
+  const { exampleWorkflowSnapshotFromGraph } = await server.ssrLoadModule('/src/studio/exampleWorkflow.ts');
+  const { normalizePersistedFlowState } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const { DEFAULT_STUDIO_FORM } = await server.ssrLoadModule('/src/studio/modelProfiles.ts');
+  const file =
+    '../../MoDiff/data/graphs/studio/animate-diff-video-to-video-control-net-pipeline/control-video-to-video.json';
+  const raw = JSON.parse(readFileSync(new URL(file, import.meta.url)));
+  const fresh = exampleWorkflowSnapshotFromGraph(raw, 'default', DEFAULT_STUDIO_FORM);
+  for (const state of [fresh, normalizePersistedFlowState(structuredClone(fresh))]) {
+    const inputs = state.nodes.filter((node) => node.data.label === 'Video Input');
+    assert.equal(inputs.length, 2);
+    assert.deepEqual(inputs.map((node) => api.visualNodeTitle(catalog, node.data)).sort(), [
+      'Control Video',
+      'Source Video',
+    ]);
+    const data = { ...inputs[0].data, label: 'Opening plate' };
+    assert.equal(api.visualNodeTitle(catalog, data), 'Opening plate');
+  }
+});
 test('35 stages, tiered browsing and every published alias and exact ID can reach its stage', () => {
   const results = (query, options) => api.visualStageMatches(catalog, registry, query, options);
   assert.equal(results('').length, 15);
