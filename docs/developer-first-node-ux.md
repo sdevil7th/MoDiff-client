@@ -344,3 +344,9 @@ recipes acquire the input when the user connects or edits it.
 The file picker is the fallback when the Source input is disconnected. Files
 carry their own frame rate and embedded audio. Decoded frames use the frame
 rate entered on the stage and carry no audio track.
+
+## Finding a stage by its action
+
+Browse starts with 15 everyday stages. Show task stages adds 14. Advanced includes six more. Search by stage or action, for example `KSampler`, `CheckpointLoaderSimple`, `Canny` or `fit audio duration`. Expand a result to choose an available action. A search from a wire also checks its type, direction and role. The Docs tab shows the action in the selected stage. Custom authors can declare searchable `searchTerms` on their node class.
+
+Choose **Show on canvas** to locate an existing instance. For an independently inserted node, open its help menu and use **Stage action** to switch modes. The editor restores values for the selected mode and identifies any wire that needs your attention. For a model-bound workflow, use Model Setup to change the model or task for the connected stages.

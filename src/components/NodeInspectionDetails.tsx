@@ -11,6 +11,7 @@ import { nodeConnectorParams } from '../studio/nodeConnectorResolution';
 import { isOptionalEncodingHandle } from '../workflow/encodingOptionalInput';
 import { nodeFieldDisplayLabel } from '../workflow/nodePresentation';
 import { unresolvedSignalControls } from '../workflow/signalControlPresentation';
+import { visualStageForNode } from '../studio/visualNodeCatalog';
 
 /** Read only. Selecting a section cannot resolve schemas, import code or allocate models. */
 export default function NodeInspectionDetails({
@@ -24,6 +25,7 @@ export default function NodeInspectionDetails({
   const owner = useFlowStore((state) => state.nodes.find((item) => item.id === node.data.blockProjectionOwnerId));
   const extension = useNodesStore((state) => state.customModules.find((item) => item.moduleKey === node.data.module));
   const hint = operationAuthoring(node);
+  const catalog = useNodesStore((state) => state.visualNodeCatalog);
   const instance = node.data.blockInstanceV2;
   const source = instance?.definitionSnapshot.source;
   const identity = `${node.data.module}.${node.data.action}`;
@@ -115,8 +117,21 @@ export default function NodeInspectionDetails({
 
   if (section === 'docs') {
     const description = instance?.definitionSnapshot.description || node.data.description;
+    const actions = instance
+      ? instance.effectiveGraph.nodes
+          .filter((entry) => !entry.containerInterface)
+          .map((entry) => (typeof entry.data.label === 'string' ? entry.data.label : entry.nodeType))
+      : [visualStageForNode(catalog, node.data)?.mode.label ?? node.data.label];
     return (
       <div className="grid gap-3 break-words text-xs text-modiff-text">
+        <div>
+          <h3 className="font-semibold">What this stage does</h3>
+          <ul>
+            {actions.map((action, i) => (
+              <li key={i}>{action}</li>
+            ))}
+          </ul>
+        </div>
         <p className="whitespace-pre-wrap">{description || 'No description supplied by this node.'}</p>
         {instance ? (
           <p>

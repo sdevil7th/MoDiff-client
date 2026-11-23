@@ -20,9 +20,11 @@ import { withOperationAuthoring } from '../workflow/operationAuthoring';
 export default function OperationCatalogPanel({
   search,
   onInsert,
+  represented,
 }: {
   search: string;
   onInsert: (key: string, node: NodeData) => void;
+  represented?: Set<OperationContract>;
 }) {
   const operations = useNodesStore((state) => state.operationContracts);
   const registry = useNodesStore((state) => state.nodesRegistry);
@@ -103,35 +105,37 @@ export default function OperationCatalogPanel({
         ) : null}
       </div>
       {selected?.operationIds.length ? <OperationGraphControls pipeline={pipeline} task={selected.task} /> : null}
-      {entries.map((operation) => (
-        <TreeButtonRow
-          key={operation.operationId}
-          level={0}
-          draggable={!busy}
-          onDragStart={(event) => {
-            if (busy) {
-              event.preventDefault();
-              return;
-            }
-            event.dataTransfer.setData('text/plain', beginOperationDrag(operation));
-            event.dataTransfer.effectAllowed = 'move';
-          }}
-          onDragEnd={endOperationDrag}
-          disabled={busy}
-          aria-busy={busy || undefined}
-          onClick={() => void insert(operation)}
-          title={`Add ${operationLabel(operation)} for ${operation.pipelineClass}. ${operation.decomposition === 'pipeline' ? 'This operation calls the complete pipeline.' : 'Uses the existing node execution path.'}`}
-        >
-          <span className="min-w-0 flex-1 break-words">{operationLabel(operation)}</span>
-          <span className="text-xs text-modiff-subtle-text">
-            {operation.decomposition === 'pipeline'
-              ? 'Pipeline'
-              : operation.decomposition === 'loader'
-                ? 'Load'
-                : 'Node'}
-          </span>
-        </TreeButtonRow>
-      ))}
+      {entries
+        .filter((operation) => !represented?.has(operation))
+        .map((operation) => (
+          <TreeButtonRow
+            key={operation.operationId}
+            level={0}
+            draggable={!busy}
+            onDragStart={(event) => {
+              if (busy) {
+                event.preventDefault();
+                return;
+              }
+              event.dataTransfer.setData('text/plain', beginOperationDrag(operation));
+              event.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragEnd={endOperationDrag}
+            disabled={busy}
+            aria-busy={busy || undefined}
+            onClick={() => void insert(operation)}
+            title={`Add ${operationLabel(operation)} for ${operation.pipelineClass}. ${operation.decomposition === 'pipeline' ? 'This operation calls the complete pipeline.' : 'Uses the existing node execution path.'}`}
+          >
+            <span className="min-w-0 flex-1 break-words">{operationLabel(operation)}</span>
+            <span className="text-xs text-modiff-subtle-text">
+              {operation.decomposition === 'pipeline'
+                ? 'Pipeline'
+                : operation.decomposition === 'loader'
+                  ? 'Load'
+                  : 'Node'}
+            </span>
+          </TreeButtonRow>
+        ))}
       {selected && !entries.length && selected.operationIds.length > 0 ? (
         <p className="px-2 text-xs text-modiff-subtle-text">No operations match this search.</p>
       ) : null}

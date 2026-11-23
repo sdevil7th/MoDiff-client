@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: sdevil7th/MoDiff
-          # Pair R04 damaged-metadata readiness and the existing setup contract.
-          ref: 86c2e281917afaf734c48c31f7b79c5ec1cfa0b2
+          # Pair the visual stage catalog and custom action search metadata.
+          ref: 413a2bca931d9dd56a8a4a1e2750a338abb9a4a5
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -89,7 +89,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 86c2e281917afaf734c48c31f7b79c5ec1cfa0b2
+          ref: 413a2bca931d9dd56a8a4a1e2750a338abb9a4a5
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

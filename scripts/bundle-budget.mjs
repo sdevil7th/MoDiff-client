@@ -490,6 +490,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Stage discovery, action search and compatible mode changes (524253 -> 528821 gzip bytes).
+  4568 +
   // Exact connected model summaries add 501 gzip bytes (523747 -> 524248).
   501 +
   // Exact Inpaint input evidence and shared role labels add 65 gzip bytes.
@@ -761,6 +763,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // Stage discovery, action search and compatible mode changes (702737 -> 707310 gzip bytes).
+  4573 +
   // The same change adds 498 aggregate startup gzip bytes (702235 -> 702733).
   498 +
   // The same changes add 68 aggregate startup gzip bytes.
@@ -1093,6 +1097,8 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  // Stage discovery, action search and compatible mode changes (355589 -> 357408 gzip bytes).
+  1819 +
   // Applicable conditioning controls add 646 deferred gzip bytes (355104 -> 355750).
   646 +
   // Bound media input receipts and stage captions add 173 deferred gzip bytes.

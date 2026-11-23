@@ -304,6 +304,8 @@ export function nodeCatalogEntryMatchesSearch(entry: NodeCatalogEntry, search: s
     entry.node.module,
     entry.node.action,
     entry.node.category,
+    entry.description,
+    ...(entry.node.searchTerms ?? []),
   ]);
 }
 

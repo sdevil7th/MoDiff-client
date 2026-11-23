@@ -1,3 +1,5 @@
+import { isRecord } from '../utils/isRecord';
+import { parseVisualCatalog, type VisualCatalog } from '../studio/visualNodeCatalog';
 import { parseTaskArtifactSelections } from '../workflow/workflowModelInventory';
 import { bindEncodingInputCapabilities, bindEncodingRouteResolver } from '../workflow/encodingOptionalInput';
 import {
@@ -77,6 +79,7 @@ export type NodeData = {
   category: string;
   params: Record<string, NodeParams>;
   description?: string;
+  searchTerms?: string[];
   style?: ModiffNodeStyle;
   resizable?: boolean;
   skipParamsCheck?: boolean;
@@ -93,6 +96,8 @@ export type NodeData = {
   minimized?: boolean;
   headerColor?: string;
   uiState?: {
+    inactiveGuidance?: Record<string, unknown>;
+    stageActionDrafts?: Record<string, Record<string, unknown>>;
     collapsed?: boolean;
     blockExpanded?: boolean;
     blockCollapsedWidth?: number;
@@ -441,6 +446,7 @@ export type RuntimeStatus = {
 
 type NodesStore = {
   nodesRegistry: Record<string, NodeData>;
+  visualNodeCatalog: VisualCatalog | null;
   isLoading: boolean;
   instance: string;
   error: string | null;
@@ -627,9 +633,7 @@ function notifyHfDownloadTransition(previous: HfDownloadProgress | undefined, ne
   }
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
+export { isRecord };
 
 export function payloadRecord(value: unknown, fallbackMessage: string) {
   if (!isRecord(value)) throw new Error(fallbackMessage);
@@ -657,6 +661,14 @@ export function parseNodesResponse(value: unknown) {
     ) {
       throw new Error(`Node definition ${key} is invalid.`);
     }
+    const terms = definition.searchTerms;
+    if (
+      terms !== undefined &&
+      (!Array.isArray(terms) ||
+        terms.length > 32 ||
+        terms.some((term) => typeof term !== 'string' || !term.trim() || term.length > 96))
+    )
+      throw new Error(`Node definition ${key} has invalid search terms.`);
     for (const [field, param] of Object.entries(definition.params)) {
       if (
         isRecord(param) &&
@@ -668,6 +680,7 @@ export function parseNodesResponse(value: unknown) {
   });
   return {
     nodes: payload.nodes as unknown as Record<string, NodeData>,
+    visualNodeCatalog: parseVisualCatalog(payload.visualNodeCatalog),
     instance: typeof payload.instance === 'string' ? payload.instance : '',
   };
 }
@@ -1100,6 +1113,7 @@ async function runCustomModuleAction(
 
 export const useNodesStore = create<NodesStore>()((set, get) => ({
   nodesRegistry: {},
+  visualNodeCatalog: null,
   isLoading: false,
   instance: '',
   error: null,
@@ -1428,7 +1442,12 @@ export const useNodesStore = create<NodesStore>()((set, get) => ({
           timeoutMs: 120_000,
           parse: parseNodesResponse,
         }),
-      (data) => ({ nodesRegistry: data.nodes, instance: data.instance, error: null }),
+      (data) => ({
+        nodesRegistry: data.nodes,
+        visualNodeCatalog: data.visualNodeCatalog,
+        instance: data.instance,
+        error: null,
+      }),
       (message) => ({ error: message }),
       `Server ${config.serverAddress} is not responding. Check if the server is running and the address is correct.`,
     );

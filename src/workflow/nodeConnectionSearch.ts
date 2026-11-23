@@ -106,6 +106,7 @@ export function operationSearchEntries(
   origin?: ConnectionSearchOrigin | null,
   allowUnverified = false,
 ) {
+  if (!pipeline || !task) return [];
   const aliases = new Map(
     nodeCatalogEntries(registry).map((entry) => [
       runtimeNodeIdentityV2(entry.node),
@@ -142,6 +143,25 @@ export function operationSearchEntries(
         !registry[op.nodeKey] ||
         matchingNodeHandleForDrop(registry[op.nodeKey]!, dataType, handleType, origin, allowUnverified),
     );
+}
+
+/** Test the exact operation boundary. A compatible field in the raw schema
+ * may be hidden or sealed by the selected model. */
+export function stageOperationMatchesWire(
+  node: NodeData,
+  op: OperationContract,
+  dataType: NodeParams['type'] | null,
+  handleType: HandleDirection,
+  origin?: ConnectionSearchOrigin | null,
+  allowUnverified = false,
+) {
+  const shown = prepareOperationConnection(node, op, dataType, handleType);
+  return op.ports.some(
+    (port) =>
+      !port.hidden &&
+      port.direction === (handleType === 'source' ? 'input' : 'output') &&
+      matchingNodeHandleForDrop(shown, dataType, handleType, origin, allowUnverified, port.name),
+  );
 }
 
 /** Expose a new node's declared value socket just as dropping a wire on its

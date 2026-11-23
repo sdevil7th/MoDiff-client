@@ -24,7 +24,12 @@ export function useNodeDiscovery() {
     useShallow((s) => ({ view: s.view, selection: s.selection, setView: s.setView, select: s.select })),
   );
   const context = useStudioStore(
-    useShallow((s) => ({ workflowTabId: s.activeWorkflowTabId, canvasEpoch: s.workflowCanvasEpoch })),
+    useShallow((s) => ({
+      workflowTabId: s.activeWorkflowTabId,
+      canvasEpoch: s.workflowCanvasEpoch,
+      model: s.graphBinding ? s.form.modelType : '',
+      task: s.graphBinding ? s.form.mode : '',
+    })),
   );
   const support = useNodesStore((s) => s.pipelineSupport);
   const selection =
@@ -32,9 +37,12 @@ export function useNodeDiscovery() {
     state.selection.context.canvasEpoch === context.canvasEpoch
       ? state.selection
       : null;
-  const entry = support.find((item) => item.pipelineClass === selection?.pipeline);
+  const inferred = support.find(
+    (item) => item.pipelineClass === context.model && item.tasks.some((t) => t.task === context.task),
+  );
+  const entry = selection ? support.find((item) => item.pipelineClass === selection.pipeline) : inferred;
   const selected =
-    entry?.tasks.find((item) => item.task === selection?.task) ??
+    entry?.tasks.find((item) => item.task === (selection?.task ?? context.task)) ??
     entry?.tasks.find((item) => item.operationIds.length > 0) ??
     entry?.tasks[0];
   return { ...state, pipeline: entry?.pipelineClass ?? '', task: selected?.task ?? '', entry, selected, support };

@@ -744,3 +744,12 @@ AI-assisted contributions are welcome, but the contributor remains responsible f
 ## Code Of Conduct
 
 Participation in this project is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Be constructive, assume good intent, and focus review on the work and its impact.
+
+## Visual node discovery
+
+The backend publishes the versioned visual node catalog with the full node registry. Give each new user action a destination in the existing stage catalog and describe its action in language a user can search. Test the published mode against its real schema, both pickers, a typed wire and a saved graph. Preserve author titles, connection roles, model ownership and executable identities. Run the paired catalog tests from the backend and client repositories.
+
+```text
+python -m pytest -q tests/test_visual_node_catalog.py
+node --test scripts/visual-node-catalog.test.mjs
+```

@@ -1,4 +1,6 @@
-import { nodeDisplayLabel } from '../workflow/nodePresentation';
+import { visualNodeTitle, visualStageForNode } from '../studio/visualNodeCatalog';
+import ImageGuidanceChoice from './ImageGuidanceChoice';
+import StageActionChoice from './StageActionChoice';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { NodeProps, useStoreApi } from '@xyflow/react';
@@ -33,7 +35,7 @@ import {
 } from 'lucide-react';
 
 import { CustomNodeType, useFlowStore } from '../stores/useFlowStore';
-import { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useWebsocketStore } from '../stores/useWebsocketStore';
 import { prepareExecutionScope } from '../workflow/prepareExecutionScope';
@@ -126,7 +128,10 @@ type NodeSurface = {
 const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurface }) => {
   const nodeRef = useRef<HTMLDivElement>(null);
   const style = sanitizeModiffNodeStyle(node.data.style, `${node.id}.node`);
-  const label = nodeDisplayLabel(node.data);
+  const catalog = useNodesStore((state) => state.visualNodeCatalog);
+  const registered = useNodesStore((state) => state.nodesRegistry[`${node.data.module}.${node.data.action}`]);
+  const stage = node.surface ? null : visualStageForNode(catalog, node.data);
+  const label = visualNodeTitle(catalog, node.data, registered);
   const hasAudioPlayer =
     node.surface?.hasAudioPreview || Object.values(node.data.params).some((param) => param.display === 'ui_audio');
   const minimumNodeWidth = hasAudioPlayer ? modiffLayout.audioPreviewNodeMinWidth : modiffLayout.nodeMinWidth;
@@ -387,7 +392,9 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
     >
       <CustomNodeHeaderFrame headerColor={node.data.headerColor}>
         <div className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold">{label}</span>
+          <span className="block truncate text-sm font-bold" title={stage ? `${label} · ${stage.mode.label}` : label}>
+            {label}
+          </span>
           {showDisabledForRun && <span className="block truncate text-xs text-hf-orange">Disabled for run export</span>}
           {recentChangeLabel && <span className="block truncate text-xs text-hf-yellow">{recentChangeLabel}</span>}
         </div>
@@ -425,6 +432,12 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
           {helpAnchor && (
             <NodePopover anchor={helpAnchor} onClose={() => setHelpAnchor(null)} className="max-w-[480px] p-3">
               <div className="text-base font-bold text-modiff-text">{label}</div>
+              {stage && <StageActionChoice nodeId={node.id} />}
+              {stage && (
+                <p className="mt-1 text-sm text-modiff-text">
+                  <b>What this stage does</b> · {stage.mode.label}
+                </p>
+              )}
               {node.data.description && <div className="mt-1 text-sm text-modiff-text">{node.data.description}</div>}
               {Object.entries(node.data.params).map(([key, param]) =>
                 param.description ? (
@@ -456,6 +469,10 @@ const CustomNode = memo((node: NodeProps<CustomNodeType> & { surface?: NodeSurfa
             data-testid={`node-scroll-body-${node.id}`}
           >
             <ErrorBoundary module={node.data.module || ''} action={node.data.action || ''}>
+              {stage && !node.surface && stage.mode.label !== label && (
+                <p className="text-xs text-modiff-subtle-text">{stage.mode.label}</p>
+              )}
+              {stage?.mode.guidance && !node.surface && <ImageGuidanceChoice nodeId={node.id} />}
               {node.surface?.controls ?? (
                 <NodeContent
                   nodeId={node.id}

@@ -1,4 +1,6 @@
 import { nodeDisplayLabel } from '../workflow/nodePresentation';
+import { visualStageMatches, type StageMatch } from '../studio/visualNodeCatalog';
+import { operationsForTask } from '../workflow/operationCatalog';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
@@ -24,6 +26,7 @@ import {
   connectionSearchEntries,
   operationSearchEntries,
   prepareOperationConnection,
+  stageOperationMatchesWire,
   rankConnectionSearchEntries,
   matchingNodeHandleForDrop,
   savedBlockSearchEntries,
@@ -41,6 +44,7 @@ import { buildHuggingFaceCatalogSections, type HuggingFaceCatalogEntry } from '.
 import { catalogNodeSearchEntries, createCatalogSearchNode } from '../workflow/catalogNodeSearch';
 
 type SearchEntry = {
+  stage?: StageMatch;
   key: string;
   label: string;
   node?: NodeData;
@@ -71,6 +75,7 @@ const NodeSearchDialog = ({
 }: NodeSearchDialogProps) => {
   const { pipeline, task, view, support } = useNodeDiscovery();
   const operations = useNodesStore((s) => s.operationContracts);
+  const stageCatalog = useNodesStore((s) => s.visualNodeCatalog);
   const resolve = useNodesStore((s) => s.resolveOperation);
   const workflow = useStudioStore((s) => s.activeWorkflowTabId);
   const canvasEpoch = useStudioStore((s) => s.workflowCanvasEpoch);
@@ -161,7 +166,27 @@ const NodeSearchDialog = ({
   );
   const browsingCommon = (view === 'common' || view === 'experimental') && !handleType && !searchQuery.trim();
   const filteredNodes = useMemo<SearchEntry[]>(() => {
+    const stages = stageCatalog
+      ? visualStageMatches(stageCatalog, nodes, searchQuery, {
+          all: view === 'advanced' || view === 'all',
+          targeted: Boolean(handleType),
+          operations: pipeline ? operationsForTask(operations, pipeline, task) : undefined,
+          compatible: (node, op) =>
+            !handleType ||
+            (op
+              ? stageOperationMatchesWire(node, op, dataType, handleType, origin, allowUnverified)
+              : Boolean(matchingNodeHandleForDrop(node, dataType, handleType, origin, allowUnverified))),
+        })
+      : [];
+    const represented = new Set(stages.map((s) => s.operation).filter(Boolean));
     const entries = [
+      ...stages.map((stage) => ({
+        stage,
+        key: 'stage:' + stage.stage.id,
+        label: stage.stage.label,
+        node: stage.definition,
+        operation: stage.operation,
+      })),
       ...operationSearchEntries(
         operations,
         pipeline,
@@ -172,19 +197,29 @@ const NodeSearchDialog = ({
         nodes,
         origin,
         allowUnverified,
-      ).map((operation) => ({
-        key: `operation:${operation.operationId}`,
-        label: operationLabel(operation),
-        operation,
-        node: nodes[operation.nodeKey],
+      )
+        .filter((operation) => !represented.has(operation))
+        .map((operation) => ({
+          key: `operation:${operation.operationId}`,
+          label: operationLabel(operation),
+          operation,
+          node: nodes[operation.nodeKey],
+        })),
+      ...connectionSearchEntries(
+        stageCatalog
+          ? Object.fromEntries(Object.entries(catalogNodes).filter(([, node]) => node.module.startsWith('custom.')))
+          : catalogNodes,
+        dataType,
+        handleType,
+        searchQuery,
+        view,
+        origin,
+        allowUnverified,
+      ).map(([key, node]) => ({
+        key,
+        node,
+        label: nodeDisplayLabel(node),
       })),
-      ...connectionSearchEntries(catalogNodes, dataType, handleType, searchQuery, view, origin, allowUnverified).map(
-        ([key, node]) => ({
-          key,
-          node,
-          label: nodeDisplayLabel(node),
-        }),
-      ),
       ...(browsingCommon && !browseBlocks ? [] : catalogEntries).map((catalog) => ({
         key: `catalog:${catalog.id}`,
         label: catalog.label,
@@ -200,6 +235,7 @@ const NodeSearchDialog = ({
     ];
     return rankConnectionSearchEntries(entries, dataType, handleType, origin);
   }, [
+    stageCatalog,
     catalogNodes,
     operations,
     pipeline,
@@ -283,10 +319,11 @@ const NodeSearchDialog = ({
           createNode = (position) => createStoredUserBlockNode(block, position);
         } else if (entry.node) {
           const node = entry.node;
-          createNode = (position) => createNodeFromRegistry(entry.key, { [entry.key]: node }, position)!;
+          const key = entry.stage?.mode.node ?? entry.key;
+          createNode = (position) => createNodeFromRegistry(key, { [key]: node }, position)!;
         } else return;
         if (request.signal.aborted || useNodeDiscoveryStore.getState().selection !== selection) return;
-        assertWorkflowOperationContext(context, { includeForm: false });
+        assertWorkflowOperationContext(context, { includeForm: Boolean(entry.operation && entry.stage && !selection) });
         await onSelect(createNode, request.signal, allowUnverified);
         if (request.signal.aborted) return;
         handleClose();
@@ -351,6 +388,7 @@ const NodeSearchDialog = ({
       )}
     >
       <div className="truncate text-sm text-modiff-text">{entry.label}</div>
+      {entry.stage && <div className="break-words text-xs text-modiff-subtle-text">{entry.stage.detail}</div>}
       {entry.block ? <div className="text-xs text-modiff-subtle-text">Saved Block · {entry.revision}</div> : null}
       {entry.catalog ? (
         <div className="text-xs text-modiff-subtle-text">

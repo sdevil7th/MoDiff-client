@@ -79,15 +79,13 @@ test('ordinary media and scheduler cards distinguish controls and sockets withou
 test('the common palette offers dual-media upscaling and groups Encode Image with conditioning', async ({ page }) => {
   const search = page.getByLabel('Search nodes', { exact: true });
   await search.fill('video upscale');
-  const upscale = page.getByTestId('node-group-Image-Video').getByRole('button', { name: 'Upscale Image or Video' });
+  const upscale = page.getByTestId('stage-add-upscale');
   await expect(upscale).toBeVisible();
   await search.fill('image upscale');
   await expect(upscale).toBeVisible();
   await search.fill('Encode Image');
   await expect(
-    page
-      .getByTestId('node-subgroup-runtime-Models-Components-Condition')
-      .getByTestId('node-row-modules-ModularDiffusers-ImageEncode'),
+    page.getByTestId('stage-add-encode-inputs').getByTestId('node-row-modules-ModularDiffusers-ImageEncode'),
   ).toBeVisible();
 });
 

@@ -1,10 +1,10 @@
-import { nodeDisplayLabel } from '../workflow/nodePresentation';
+import { visualNodeTitle } from '../studio/visualNodeCatalog';
 import { useCallback, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useFlowStore } from '../stores/useFlowStore';
 import { Pin, PinOff } from 'lucide-react';
 import type { CustomNodeType } from '../stores/useFlowStore';
-import type { NodeParams } from '../stores/useNodeStore';
+import { useNodesStore, type NodeParams } from '../stores/useNodeStore';
 import {
   graphNodeControlParams,
   updateGraphNodeControl,
@@ -39,6 +39,8 @@ export function GraphNodeInputs({
   controlIdPrefix?: string;
 }) {
   const [disclosureState, setDisclosureState] = useState<Record<string, boolean>>({});
+  const catalog = useNodesStore((state) => state.visualNodeCatalog);
+  const registry = useNodesStore((state) => state.nodesRegistry);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
   const incomingEdges = useFlowStore(
@@ -90,7 +92,7 @@ export function GraphNodeInputs({
           const disclosureKey = `${workflowId ?? 'unscoped'}:${node.id}`;
           const rememberedOpen = disclosureState[disclosureKey] ?? inspectorDisclosureMemory.get(disclosureKey);
           const defaultOpen = selected || (rememberedOpen ?? index === 0);
-          const label = nodeDisplayLabel(node.data);
+          const label = visualNodeTitle(catalog, node.data, registry[node.data.module + '.' + node.data.action]);
           const fieldCount = Object.keys(params).length;
 
           const controls = !nodes.some(({ id }) => id === node.id) ? (

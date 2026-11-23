@@ -9,6 +9,7 @@ const python = `from modiff.NodeBase import NodeBase
 MODIFF_RUNTIME_ROLE = "data"
 class Proof(NodeBase):
     label = "Local import proof"
+    searchTerms = ["initial phrase lookup"]
     params = {"text": {"type": "string", "display": "text", "default": "local proof"}, "result": {"type": "string", "display": "output"}}
     def execute(self, text):
         return {"result": text + " passed"}
@@ -32,11 +33,18 @@ test('detecting a Python file does not enable it; intentional Load and Reload do
     .last();
   await card.getByRole('button', { name: 'Load', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Reload', exact: true })).toBeVisible();
-  await writeFile(file, python.replace('Local import proof', 'Reloaded local proof'));
+  await writeFile(
+    file,
+    python
+      .replace('Local import proof', 'Reloaded local proof')
+      .replace('initial phrase lookup', 'refreshed phrase lookup'),
+  );
   await card.getByRole('button', { name: 'Reload', exact: true }).click();
   await expect(dialog.getByRole('status')).toContainText('loaded');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByPlaceholder('Search nodes').fill(name);
+  await page.getByPlaceholder('Search nodes').fill('initial phrase lookup');
+  await expect(group.getByRole('button', { name: 'Reloaded local proof', exact: true })).toHaveCount(0);
+  await page.getByPlaceholder('Search nodes').fill('refreshed phrase lookup');
   await expect(group.getByRole('button', { name: 'Reloaded local proof', exact: true })).toBeVisible();
 });
 

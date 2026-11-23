@@ -12,6 +12,7 @@ import {
 import { useNodesStore, type NodeData } from '../stores/useNodeStore';
 import { pythonFileImport } from '../studio/customExtensions';
 import { OPERATION_DRAG_PREFIX, takeOperationDrag } from './operationDrag';
+import { STAGE_DRAG_PREFIX, stageFromDrag } from '../studio/visualNodeCatalog';
 import { useFlowStore, type CustomNodeType } from '../stores/useFlowStore';
 import type { WorkflowTab, WorkflowTabSnapshot } from '../studio/types';
 import { enqueueSnackbar } from '../ui/snackbar';
@@ -414,7 +415,15 @@ export function useWorkflowDrop({
           pendingOperations.current.delete(request);
         }
       } else {
-        newNode = createNodeFromRegistry(data, nodesRegistry, position);
+        if (data.startsWith(STAGE_DRAG_PREFIX)) {
+          const definition = stageFromDrag(data, useNodesStore.getState().visualNodeCatalog, nodesRegistry);
+          if (!definition) {
+            showGraphImportError('This stage action is unavailable. Select it again in the library.');
+            return;
+          }
+          const key = `${definition.module}.${definition.action}`;
+          newNode = createNodeFromRegistry(key, { [key]: definition }, position);
+        } else newNode = createNodeFromRegistry(data, nodesRegistry, position);
       }
       if (!newNode) {
         showGraphImportError(`Node ${data} not found. Reload the page to refresh the node list.`);

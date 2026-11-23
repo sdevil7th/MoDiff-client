@@ -3,6 +3,7 @@ import { Boxes, ChevronDown } from 'lucide-react';
 import { useNodesStore } from '../stores/useNodeStore';
 import { ModiffButton, TreeButtonRow, TreeChildrenPanel } from '../ui';
 import { cx } from '../utils/classNames';
+import { matchesSearchKeywords } from '../utils/searchKeywords';
 
 /** Discovery reads files only; loading remains an explicit management action. */
 export default function CustomNodeLibrary({
@@ -45,7 +46,8 @@ export default function CustomNodeLibrary({
       return [];
     const label = node.label || node.action;
     const category = (typeof node.category === 'string' && node.category.trim()) || 'Uncategorized';
-    if (needle && !`${label} ${key} ${category}`.toLowerCase().includes(needle)) return [];
+    if (!matchesSearchKeywords(search, [label, key, category, node.description, ...(node.searchTerms ?? [])]))
+      return [];
     return [{ key, label, category }];
   });
   const categories = new Map<string, typeof entries>();
