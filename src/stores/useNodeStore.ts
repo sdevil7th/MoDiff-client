@@ -66,7 +66,7 @@ import { createLatestRequestGate, formatRequestError, requestJson, RequestError 
 import { useStudioStore } from './useStudioStore';
 
 export type NodeParamOptions = unknown[] | Record<string, unknown>;
-export type NodeParamSignal = { direction: 'input' | 'output'; origin?: string; value: unknown };
+export type NodeParamSignal = { direction: 'input' | 'output'; origin?: string; value: unknown; fixed?: boolean };
 export type NodeExecutionStatus = 'queued' | 'running' | 'completed' | 'cached' | 'failed' | 'cancelled' | 'succeeded';
 
 export type NodeData = {

@@ -325,3 +325,22 @@ repository you can access). Do not point the isolated fixture root at operator
 data. Remote tests skip explicitly without a repository; skips are not evidence.
 Native Windows/RTX4080 and all-model generation qualification are separate from
 these Linux UI/contract checks.
+
+For a new speech graph, add **Transcribe Audio** and wire a speech model and
+source audio. The model connection controls which settings appear. A
+sequence-to-sequence recognizer offers language, translation and three timing
+choices. A CTC recognizer offers plain text or word timing. Switching back
+restores the settings for the previous recognizer. Saved CTC recipes retain
+their original action and timestamp field.
+
+Saved graphs discard transient signal values. A loader that always supplies
+the same model family can declare its output signal `fixed: true`. Reopening
+restores that capability from the installed registry. Mark a newly added
+optional input with `fieldOptions.omitInactiveDefault` when a disconnected
+default has no effect. Older graphs then offer the socket, and their executable
+recipes acquire the input when the user connects or edits it.
+
+**Process Video** accepts files, retained clips and decoded frame sequences.
+The file picker is the fallback when the Source input is disconnected. Files
+carry their own frame rate and embedded audio. Decoded frames use the frame
+rate entered on the stage and carry no audio track.

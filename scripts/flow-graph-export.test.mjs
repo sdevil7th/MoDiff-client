@@ -60,6 +60,33 @@ function exportSeed(value, setParam = () => {}) {
   return graph.nodes.generate.params.seed;
 }
 
+test('optional stage inputs preserve old execution defaults and every explicit wire or nondefault', () => {
+  const source = { ...seedNode(5), id: 'supplier' };
+  source.data.params = { result: { display: 'output', type: 'string' } };
+  const stage = seedNode(6);
+  const settings = { hidden: true, default: 'word', value: 'word', fieldOptions: { omitInactiveDefault: true } };
+  stage.data.params = { timing: settings, source: { display: 'input', fieldOptions: { omitInactiveDefault: true } } };
+  const run = (edges = []) =>
+    exportModule.buildApiGraphExport({
+      nodes: [source, stage],
+      edges,
+      sid: 'test',
+      setParam() {},
+      randomizeSeeds: false,
+    }).nodes.generate.params;
+  assert.deepEqual(run(), {});
+  settings.value = 'none';
+  assert.equal(run().timing.value, 'none');
+  settings.value = 'word';
+  settings.hidden = false;
+  assert.equal(run().timing.value, 'word');
+  assert.equal(
+    run([{ id: 'wire', source: 'supplier', sourceHandle: 'result', target: 'generate', targetHandle: 'source' }]).source
+      .sourceId,
+    'supplier',
+  );
+});
+
 function loopMember(id) {
   return {
     id,

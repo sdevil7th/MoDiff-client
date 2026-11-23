@@ -362,6 +362,23 @@ test('direct frame extraction shows the selected timing input and preserves fram
   assert.deepEqual(params, before);
 });
 
+test('one discoverable transcription stage and one video editor accept typed connections', () => {
+  const entry = (action) => catalog.getNodeCatalogEntry(node('HuggingFaceSpeech', action, action));
+  assert.ok(catalog.nodeCatalogEntryMatchesView(entry('TranscribeAudio'), 'common'));
+  assert.equal(catalog.nodeCatalogEntryMatchesView(entry('TranscribeCTCAudio'), 'common'), false);
+  const saved = { operation: { value: 'video_trim' }, videos: { value: ['original.mp4'] }, fps: { value: 25 } };
+  const backup = structuredClone(saved);
+  for (const connected of [false, true, false]) {
+    const view = utilityPresentation.builtinUtilityOperationPresentation('modules.Video.ProcessVideo', {
+      ...saved,
+      source: { isConnected: connected },
+    });
+    assert.equal(view.inactive.has('videos'), connected);
+    assert.equal(view.inactive.has('fps'), !connected);
+  }
+  assert.deepEqual(saved, backup);
+});
+
 test('discoverability reflects the encoder role and both declared upscale media types', () => {
   const encoder = { ...node('ModularDiffusers', 'ImageEncode', 'Encode Image'), category: 'sampler' };
   const upscaler = {

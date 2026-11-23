@@ -115,6 +115,7 @@ const GENERIC_NODE_KEYS = new Set([
 const GENERIC_NODE_ROLES: Readonly<Record<string, NodeSurfaceCategory>> = {
   'modules.ImageOperations.ProcessImage': 'Image',
   'modules.Audio.ProcessAudio': 'Audio',
+  'modules.HuggingFaceSpeech.TranscribeAudio': 'Audio',
   'modules.Video.ProcessVideo': 'Video',
   'modules.DiffusersImage.LayerDecompose': 'Edit',
   'modules.DiffusersImage.PredictMap': 'Condition',
@@ -168,6 +169,7 @@ export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeC
 }
 
 const ESSENTIAL_NODE_KEYS = new Set([
+  'modules.HuggingFaceSpeech.TranscribeAudio',
   'modules.ImageOperations.ProcessImage',
   'modules.Video.ProcessVideo',
   'modules.Audio.ProcessAudio',

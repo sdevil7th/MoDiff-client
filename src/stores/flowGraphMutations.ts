@@ -66,6 +66,9 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
           : { ...(liveParam?.hidden ? liveParam : {}), ...storedParam };
         if (fullLiveField && hasOwn(storedParam, 'value')) mergedParam.value = storedParam.value;
         if (fullLiveField && hasOwn(storedParam, 'artifacts')) mergedParam.artifacts = storedParam.artifacts;
+        // Snapshots discard runtime signal payloads. A fixed capability comes
+        // from the installed node, including when the saved schema predates it.
+        if (liveParam?.signal?.fixed) mergedParam.signal = liveParam.signal;
         for (const behaviorKey of ['onChange', 'onSignal'] as const) {
           if (liveParam && hasOwn(liveParam, behaviorKey)) mergedParam[behaviorKey] = liveParam[behaviorKey];
           else delete mergedParam[behaviorKey];
@@ -86,7 +89,8 @@ function withLiveFieldContracts(nodes: CustomNodeType[]) {
         !operation.ports.some((port) => port.direction === 'input' && port.name === fieldKey)
       )
         continue;
-      if (liveParam.display?.startsWith('ui_') || liveParam.hidden) params[fieldKey] = { ...liveParam };
+      if (liveParam.display?.startsWith('ui_') || liveParam.hidden || liveParam.fieldOptions?.omitInactiveDefault)
+        params[fieldKey] = { ...liveParam };
     }
     return { ...node, data: { ...node.data, params } };
   });

@@ -147,25 +147,11 @@ export function selectFlowGraphExecutionScope({
     if (!executableNodes.some((node) => node.id === id))
       throw new Error(`Target node with id ${id} not found in executable nodes`);
 
-  const getIncomingNodes = (nodeId: string): FlowGraphNode[] => {
-    const node = executableNodes.find((n) => n.id === nodeId);
-    if (!node) return [];
-    return getIncomers(node, executableNodes, edges);
-  };
-
-  const getOutgoingNodes = (nodeId: string): FlowGraphNode[] => {
-    const node = executableNodes.find((n) => n.id === nodeId);
-    if (!node) return [];
-    return getOutgoers(node, executableNodes, edges);
-  };
-
+  const byId = new Map(executableNodes.map((node) => [node.id, node]));
   const walkBackwards = (nodeId: string, visited = new Set<string>()): string[] => {
-    if (visited.has(nodeId)) {
-      return [];
-    }
-
+    if (visited.has(nodeId)) return [];
     visited.add(nodeId);
-    const incomingNodes = getIncomingNodes(nodeId);
+    const incomingNodes = getIncomers(byId.get(nodeId)!, executableNodes, edges);
     const dependencies: string[] = [];
     for (const node of incomingNodes) {
       dependencies.push(...walkBackwards(node.id, visited));
@@ -175,49 +161,14 @@ export function selectFlowGraphExecutionScope({
     return dependencies;
   };
 
-  let nodesToInclude: string[] = [];
-
-  if (targets.length) {
-    nodesToInclude = [...new Set(targets.flatMap((id) => walkBackwards(id)))];
-  } else {
-    const outputNodes = executableNodes.filter((node) => {
-      const outgoers = getOutgoingNodes(node.id);
-      return outgoers.length === 0;
-    });
-
-    const endNodes = outputNodes.length > 0 ? outputNodes : executableNodes;
-    const allPathNodes = new Set<string>();
-    endNodes.forEach((node) => {
-      const path = walkBackwards(node.id);
-      path.forEach((nodeId) => allPathNodes.add(nodeId));
-    });
-
-    nodesToInclude = Array.from(allPathNodes);
+  let terminals = targets;
+  if (!terminals.length) {
+    const sinks = executableNodes.filter((node) => !getOutgoers(node, executableNodes, edges).length);
+    terminals = (sinks.length ? sinks : executableNodes).map((node) => node.id);
   }
-
-  const paths: string[][] = [];
-
-  if (targets.length) {
-    for (const id of targets) {
-      const path = walkBackwards(id);
-      if (path.length > 0) paths.push(path);
-    }
-  } else {
-    const outputNodes = executableNodes.filter((node) => {
-      const outgoers = getOutgoingNodes(node.id);
-      return outgoers.length === 0;
-    });
-
-    const endNodes = outputNodes.length > 0 ? outputNodes : executableNodes;
-    endNodes.forEach((node) => {
-      const path = walkBackwards(node.id);
-      if (path.length > 0) {
-        paths.push(path);
-      }
-    });
-  }
-
-  return { nodes: executableNodes.filter((node) => nodesToInclude.includes(node.id)), paths };
+  const paths = terminals.map((id) => walkBackwards(id));
+  const included = new Set(paths.flat());
+  return { nodes: executableNodes.filter((node) => included.has(node.id)), paths };
 }
 
 export function buildApiGraphExport({
@@ -288,6 +239,16 @@ export function buildApiGraphExport({
       const incomingEdge = edges.find(
         (edge) => edge.target === node.id && edge.targetHandle === paramName && includedNodeIds.has(edge.source),
       );
+
+      // Optional additions keep older recipes byte-compatible. Authored nondefaults
+      // and actual edges are exported even when their editor is hidden.
+      if (
+        !incomingEdge &&
+        paramData.fieldOptions?.omitInactiveDefault === true &&
+        (paramData.hidden || paramData.display === 'input') &&
+        (exportValue ?? null) === (paramData.default ?? null)
+      )
+        return;
 
       if (incomingEdge) {
         param.sourceId = incomingEdge.source;

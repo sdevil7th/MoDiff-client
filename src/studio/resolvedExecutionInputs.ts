@@ -446,6 +446,7 @@ const accountingNames: Record<string, string[]> = {
     'task',
     'language',
     'timestamps',
+    'ctc_timestamps',
     'chunk_length_seconds',
     'stride_length_seconds',
   ],

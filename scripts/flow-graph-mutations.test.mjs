@@ -694,6 +694,22 @@ test('graph replacement preserves dynamic visibility and required inputs even wh
   assert.equal(params.missing_identity.hidden, true);
 });
 
+test('an older ordinary graph restores fixed capabilities and adds new optional sockets from its registry', () => {
+  const signal = { direction: 'output', origin: 'pipeline_class', value: 'family', fixed: true };
+  const model = { display: 'output', type: 'model' };
+  const source = { display: 'input', type: 'video', fieldOptions: { omitInactiveDefault: true } };
+  nodeStoreModule.useNodesStore.setState({
+    nodesRegistry: { 'modules.Test.Edit': node('Edit', { model: { ...model, signal }, source }).data },
+  });
+  const store = flowStoreModule.useFlowStore.getState;
+  for (const oldModel of [model, { ...model, signal: { ...signal, value: 'old' } }]) {
+    store().replaceGraph({ nodes: [node('Edit', { model: oldModel })], edges: [] });
+    const params = store().nodes[0].data.params;
+    assert.deepEqual(params.model.signal, signal);
+    assert.equal(params.source.type, 'video');
+  }
+});
+
 test('pre-registry graph replacement strips stored behavior and restores only the arriving live contract', () => {
   flowStoreModule.useFlowStore.getState().replaceGraph({
     nodes: [

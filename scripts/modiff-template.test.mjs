@@ -1427,6 +1427,40 @@ test('Whisper Tiny exposes generic transcription and translation contracts', () 
   assert.equal(translation.mode, 'speech_translation');
 });
 
+test('reopening a shared transcriber follows its wired loader and preserves both timing choices', async () => {
+  const saved = async (family) =>
+    JSON.parse(
+      await readFile(path.join(ROOT, '..', 'MoDiff', 'data/graphs/studio', family, 'speech-to-text.json'), 'utf8'),
+    );
+  const whisper = await saved('hugging-face-speech-recognition-model');
+  const ctc = await saved('hugging-face-ctc-speech-recognition-model');
+  const loader = ctc.nodes.find((node) => node.data.studioRole === 'speechModel');
+  loader.id = 'alternative';
+  const stage = whisper.nodes.find((node) => node.data.studioRole === 'transcribeAudio');
+  Object.assign(stage.data.params, {
+    task: { value: 'translate' },
+    language: { value: 'French' },
+    timestamps: { value: 'segment' },
+    ctc_timestamps: { value: 'none' },
+  });
+  whisper.nodes.push(loader);
+  const wire = whisper.edges.find((edge) => edge.target === stage.id && edge.targetHandle === 'model');
+  const originalSource = wire.source;
+  const settings = structuredClone(stage.data.params);
+  for (const source of [loader.id, originalSource, loader.id]) {
+    wire.source = source;
+    const { studioForm } = workflowInferenceModule.workflowSnapshotFromGraph(whisper, 'default');
+    assert.equal(
+      studioForm.modelType,
+      source === loader.id ? 'HuggingFaceCTCSpeechRecognitionModel' : 'HuggingFaceSpeechRecognitionModel',
+    );
+    assert.equal(studioForm.mode, source === loader.id ? 'speech_to_text' : 'speech_translation');
+    assert.equal(studioForm.speechTimestamps, source === loader.id ? 'none' : 'segment');
+    assert.equal(studioForm.speechLanguage, source === loader.id ? '' : 'French');
+  }
+  assert.deepEqual(stage.data.params, settings);
+});
+
 test('equivalent Modular Diffusers Cluster identities retain their exact standard execution profiles', () => {
   const expected = {
     ErnieImageModularPipeline: {

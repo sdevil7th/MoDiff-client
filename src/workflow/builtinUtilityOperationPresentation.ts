@@ -151,8 +151,9 @@ export function builtinUtilityOperationPresentation(identity: string, params: Re
       .flat()
       .filter((field) => !active.has(field)),
   );
-  // The saved generic FPS value is unused. Frame extraction reads the source FPS,
-  // and interpolation exposes its own target FPS.
-  if (identity === 'modules.Video.ProcessVideo') inactive.add('fps');
+  if (identity === 'modules.Video.ProcessVideo') {
+    if (params.source?.isConnected) inactive.add('videos');
+    else inactive.add('fps');
+  }
   return { inactive, continuation: operation === 'audio_join' };
 }

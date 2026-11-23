@@ -662,7 +662,7 @@ function normalizeWorkflowSnapshot(
     );
   const inferredManagedForm = shouldRecoverManagedIdentity
     ? resolveStudioResourceForm({
-        ...inferStudioFormFromWorkflow(nodes, persistedStudioForm),
+        ...inferStudioFormFromWorkflow(nodes, persistedStudioForm, edges as import('@xyflow/react').Edge[]),
         // Graph inference refreshes the recipe summary, not the document's
         // explicit memory policy. Missing/invalid legacy values already coerce to Auto.
         resourceMode: persistedStudioForm.resourceMode,

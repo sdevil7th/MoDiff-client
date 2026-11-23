@@ -3,9 +3,6 @@ import type { CustomNodeType } from '../stores/useFlowStore';
 import { useNodesStore } from '../stores/useNodeStore';
 import { unpackVisualOperationGroups } from '../workflow/visualOperationGroupProjection';
 import {
-  BUILTIN_AUDIO_OPERATION_MODES,
-  BUILTIN_DATA_OPERATION_MODES,
-  BUILTIN_VIDEO_OPERATION_MODES,
   DEFAULT_STUDIO_FORM,
   QWEN_OUTPAINT_CANVAS_NODE_KEY,
   STUDIO_MODEL_PROFILES,
@@ -40,7 +37,7 @@ type NodeLike = {
     category?: string;
     studioRole?: string;
     studioOwned?: boolean;
-    params?: Record<string, { value?: unknown; default?: unknown }>;
+    params?: Record<string, { value?: unknown; default?: unknown; isConnected?: boolean }>;
   };
 };
 
@@ -92,14 +89,6 @@ function arrayStringValue(value: unknown) {
 
 function nodeKey(node: NodeLike) {
   return `${node.data?.module ?? ''}.${node.data?.action ?? ''}`;
-}
-
-function findNode(nodes: NodeLike[], predicate: (node: NodeLike) => boolean) {
-  return nodes.find(predicate);
-}
-
-function findNodes(nodes: NodeLike[], predicate: (node: NodeLike) => boolean) {
-  return nodes.filter(predicate);
 }
 
 type ManagedWorkflowAdoption = {
@@ -194,23 +183,12 @@ function adoptRoleMarkedWorkflow(
   const managedNodeSet = new Set(executableNodes.map((node) => node.id));
   if (edges.some((edge) => !managedNodeSet.has(edge.source) || !managedNodeSet.has(edge.target))) return null;
 
-  const executableNodeIds = new Set(executableNodes.map((node) => node.id));
-  const adoptedManagedNodes = executableNodes.map((node) => ({
-    ...node,
-    data: { ...node.data, studioOwned: true },
-  }));
-  const adoptedNodes = nodes.map((node) => {
-    const managed = adoptedManagedNodes.find((candidate) => candidate.id === node.id);
-    return managed ?? node;
-  });
+  const adoptedNodes = nodes.map((node) =>
+    managedNodeSet.has(node.id) ? { ...node, data: { ...node.data, studioOwned: true } } : node,
+  );
   return {
     nodes: adoptedNodes,
-    binding: bindingForManagedNodes(
-      adoptedManagedNodes.filter((node) => executableNodeIds.has(node.id)),
-      edges,
-      form,
-      roleNodeIds,
-    ),
+    binding: bindingForManagedNodes(executableNodes, edges, form, roleNodeIds),
   };
 }
 
@@ -412,107 +390,52 @@ export function restoreReviewedDirectImageModelType(
   return { ...form, modelType: route.modelType };
 }
 
+// Preserve the published default and precedence when several processors occur in one graph.
+const VIDEO_PROCESSOR = ['BuiltinVideoOperation', 'videoOperation', 'modules.Video.ProcessVideo'] as const;
+const VIDEO_UPSCALER = ['SpandrelVideoUpscale', 'videoUpscaler', 'modules.Video.UpscaleVideo'] as const;
+const PROCESSORS = [
+  ['BuiltinDataOperation', 'dataOperation', 'modules.Text.ProcessText'],
+  ['BuiltinAudioOperation', 'audioOperation', 'modules.Audio.ProcessAudio'],
+  ['BuiltinImageOperation', 'imageOperation', 'modules.ImageOperations.ProcessImage'],
+  VIDEO_PROCESSOR,
+  VIDEO_UPSCALER,
+  ['SpandrelImageUpscale', 'imageUpscaler', 'modules.Spandrel.Upscaler'],
+] as const;
+
+function findProcessor(nodes: NodeLike[], [, role, key]: (typeof PROCESSORS)[number]) {
+  return nodes.find((node) => node.data?.studioRole === role || nodeKey(node) === key);
+}
+
 function inferModelType(nodes: NodeLike[], fallback: StudioFormState): StudioModelType {
   // A processing stage is not the generation model. Prefer the existing
   // loader declarations before the standalone-operation fallbacks, independent
   // of canvas order. This summary never changes the executable graph.
   const loadedModel = declaredModelType(nodes.filter(isModelLoader), fallback.modelType);
   if (loadedModel) return loadedModel;
-  if (nodes.some((node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText')) {
-    return 'BuiltinDataOperation';
-  }
-  if (
-    nodes.some((node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio')
-  ) {
-    return 'BuiltinAudioOperation';
-  }
-  if (
-    nodes.some(
-      (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
-    )
-  ) {
-    return 'BuiltinImageOperation';
-  }
-  if (
-    nodes.some((node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo')
-  ) {
-    return 'BuiltinVideoOperation';
-  }
-  if (
-    nodes.some((node) => node.data?.studioRole === 'videoUpscaler' || nodeKey(node) === 'modules.Video.UpscaleVideo')
-  ) {
-    return 'SpandrelVideoUpscale';
-  }
-  if (
-    nodes.some((node) => node.data?.studioRole === 'imageUpscaler' || nodeKey(node) === 'modules.Spandrel.Upscaler')
-  ) {
-    return 'SpandrelImageUpscale';
+  for (const processor of PROCESSORS) {
+    if (findProcessor(nodes, processor)) return processor[0];
   }
   return declaredModelType(nodes, fallback.modelType) ?? fallback.modelType;
 }
 
-function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: StudioFormState): StudioMode {
+function inferMode(
+  nodes: NodeLike[],
+  modelType: StudioModelType,
+  fallback: StudioFormState,
+  speech: NodeLike | undefined,
+): StudioMode {
   const roles = new Set(nodes.map((node) => String(node.data?.studioRole ?? '')));
   const keys = new Set(nodes.map(nodeKey));
-  if (modelType === 'BuiltinDataOperation') {
-    const operationNode = findNode(
-      nodes,
-      (node) => node.data?.studioRole === 'dataOperation' || nodeKey(node) === 'modules.Text.ProcessText',
-    );
-    const operation = stringValue(paramValue(operationNode, ['operation']));
-    return BUILTIN_DATA_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'text_select';
-  }
-  if (modelType === 'BuiltinAudioOperation') {
-    const operationNode = findNode(
-      nodes,
-      (node) => node.data?.studioRole === 'audioOperation' || nodeKey(node) === 'modules.Audio.ProcessAudio',
-    );
-    const operation = stringValue(paramValue(operationNode, ['operation']));
-    return BUILTIN_AUDIO_OPERATION_MODES.includes(operation as StudioMode) ? (operation as StudioMode) : 'audio_trim';
-  }
-  if (modelType === 'BuiltinImageOperation') {
-    const operationNode = findNode(
-      nodes,
-      (node) => node.data?.studioRole === 'imageOperation' || nodeKey(node) === 'modules.ImageOperations.ProcessImage',
-    );
-    const operation = stringValue(paramValue(operationNode, ['operation']));
-    if (
-      [
-        'image_adjustment',
-        'image_filter',
-        'image_crop',
-        'image_upscale',
-        'image_stitch',
-        'image_tile',
-        'image_channels',
-        'mask_composite',
-      ].includes(operation)
-    ) {
-      return operation as StudioMode;
-    }
-    return 'image_adjustment';
-  }
-  if (modelType === 'BuiltinVideoOperation') {
-    const operationNode = findNode(
-      nodes,
-      (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
-    );
-    const operation = stringValue(paramValue(operationNode, ['operation']));
-    if (BUILTIN_VIDEO_OPERATION_MODES.includes(operation as StudioMode)) {
-      return operation as StudioMode;
-    }
-    return 'video_frame_extract';
-  }
-  if (modelType === 'SpandrelVideoUpscale') {
-    return 'video_upscale';
-  }
-  if (modelType === 'SpandrelImageUpscale') {
-    return 'image_upscale';
+  const hasRoleOrAction = (role: string, action: string) => roles.has(role) || keys.has(action);
+  const processor = PROCESSORS.find(([type]) => type === modelType);
+  if (processor) {
+    const mode = stringValue(paramValue(findProcessor(nodes, processor), ['operation'])) as StudioMode;
+    const modes = STUDIO_MODEL_PROFILES[processor[0]].modes;
+    return modes.includes(mode) ? mode : modes[0]!;
   }
   if (
     modelType === 'ShapEPipeline' ||
-    roles.has('diffusersThreeDGenerate') ||
-    keys.has('modules.DiffusersThreeD.GenerateRenderedArtifact')
+    hasRoleOrAction('diffusersThreeDGenerate', 'modules.DiffusersThreeD.GenerateRenderedArtifact')
   ) {
     return 'text_to_3d';
   }
@@ -535,26 +458,21 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   }
 
   if (keys.has('modules.HuggingFaceTransformers.GenerateAnyToAny')) {
-    const generateNode = findNode(
-      nodes,
-      (node) => nodeKey(node) === 'modules.HuggingFaceTransformers.GenerateAnyToAny',
-    );
+    const generateNode = nodes.find((node) => nodeKey(node) === 'modules.HuggingFaceTransformers.GenerateAnyToAny');
     if (stringValue(paramValue(generateNode, ['generation_mode'])) === 'image') return 'text_to_image';
     return keys.has('modules.Image.Load') ? 'image_to_text' : 'text_generation';
   }
 
   if (
     modelType === 'HuggingFaceImageTextToTextModel' ||
-    roles.has('transformersImageTextGenerate') ||
-    keys.has('modules.HuggingFaceTransformers.GenerateImageVideoText')
+    hasRoleOrAction('transformersImageTextGenerate', 'modules.HuggingFaceTransformers.GenerateImageVideoText')
   ) {
     return 'image_to_text';
   }
 
   if (
     modelType === 'HuggingFaceTextGenerationModel' ||
-    roles.has('transformersTextGenerate') ||
-    keys.has('modules.HuggingFaceTransformers.GenerateText')
+    hasRoleOrAction('transformersTextGenerate', 'modules.HuggingFaceTransformers.GenerateText')
   ) {
     return 'text_generation';
   }
@@ -562,29 +480,19 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   if (
     modelType === 'HuggingFaceSpeechRecognitionModel' ||
     modelType === 'HuggingFaceCTCSpeechRecognitionModel' ||
-    roles.has('transcribeAudio') ||
-    keys.has('modules.HuggingFaceSpeech.TranscribeAudio') ||
-    keys.has('modules.HuggingFaceSpeech.TranscribeCTCAudio')
+    speech
   ) {
-    const actionNode = findNode(
-      nodes,
-      (node) =>
-        node.data?.studioRole === 'transcribeAudio' ||
-        nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeAudio' ||
-        nodeKey(node) === 'modules.HuggingFaceSpeech.TranscribeCTCAudio',
-    );
-    return stringValue(paramValue(actionNode, ['task'])) === 'translate' ? 'speech_translation' : 'speech_to_text';
+    if (modelType === 'HuggingFaceCTCSpeechRecognitionModel') return 'speech_to_text';
+    return stringValue(paramValue(speech, ['task'])) === 'translate' ? 'speech_translation' : 'speech_to_text';
   }
 
   if (
     modelType === 'AceStepAudioPipeline' ||
     modelType === 'StableAudioPipeline' ||
-    roles.has('audioGenerate') ||
-    keys.has('modules.DiffusersAudio.Generate')
+    hasRoleOrAction('audioGenerate', 'modules.DiffusersAudio.Generate')
   ) {
     if (roles.has('loadAudio')) {
-      const generateNode = findNode(
-        nodes,
+      const generateNode = nodes.find(
         (node) => node.data?.studioRole === 'audioGenerate' || nodeKey(node) === 'modules.DiffusersAudio.Generate',
       );
       const taskType = stringValue(paramValue(generateNode, ['task_type']));
@@ -596,28 +504,26 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   }
 
   if (modelType.startsWith('Flux') || keys.has('modules.DiffusersImage.LoadPipeline')) {
-    if (roles.has('diffusersUnconditionalGenerate') || keys.has('modules.DiffusersImage.UnconditionalGenerate'))
+    if (hasRoleOrAction('diffusersUnconditionalGenerate', 'modules.DiffusersImage.UnconditionalGenerate'))
       return 'unconditional_image';
-    if (roles.has('diffusersPredictMap') || keys.has('modules.DiffusersImage.PredictMap')) return 'depth_estimation';
-    if (roles.has('diffusersImageLayerDecompose') || keys.has('modules.DiffusersImage.LayerDecompose'))
+    if (hasRoleOrAction('diffusersPredictMap', 'modules.DiffusersImage.PredictMap')) return 'depth_estimation';
+    if (hasRoleOrAction('diffusersImageLayerDecompose', 'modules.DiffusersImage.LayerDecompose'))
       return 'layer_decomposition';
-    if (roles.has('diffusersImageControlInpaint') || keys.has('modules.DiffusersImage.ControlInpaint'))
+    if (hasRoleOrAction('diffusersImageControlInpaint', 'modules.DiffusersImage.ControlInpaint'))
       return 'control_inpaint';
-    if (roles.has('diffusersImageControlEdit') || keys.has('modules.DiffusersImage.ControlEdit'))
-      return 'control_edit_image';
-    if (roles.has('diffusersImageControl') || keys.has('modules.DiffusersImage.ControlGenerate'))
-      return 'control_image';
-    if (roles.has('outpaintCanvas') || roles.has('qwenOutpaintCanvas') || keys.has(QWEN_OUTPAINT_CANVAS_NODE_KEY))
+    if (hasRoleOrAction('diffusersImageControlEdit', 'modules.DiffusersImage.ControlEdit')) return 'control_edit_image';
+    if (hasRoleOrAction('diffusersImageControl', 'modules.DiffusersImage.ControlGenerate')) return 'control_image';
+    if (roles.has('outpaintCanvas') || hasRoleOrAction('qwenOutpaintCanvas', QWEN_OUTPAINT_CANVAS_NODE_KEY))
       return 'outpaint';
-    if (roles.has('diffusersImageInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
-    if (roles.has('diffusersImageEdit') || keys.has('modules.DiffusersImage.Edit')) return 'edit_image';
+    if (hasRoleOrAction('diffusersImageInpaint', 'modules.DiffusersImage.Inpaint')) return 'inpaint';
+    if (hasRoleOrAction('diffusersImageEdit', 'modules.DiffusersImage.Edit')) return 'edit_image';
     return 'text_to_image';
   }
 
-  if (roles.has('controlnet') || keys.has('modules.ModularDiffusers.Controlnet')) return 'control_image';
-  if (roles.has('qwenOutpaintCanvas') || keys.has(QWEN_OUTPAINT_CANVAS_NODE_KEY)) return 'outpaint';
-  if (roles.has('qwenInpaint') || keys.has('modules.DiffusersImage.Inpaint')) return 'inpaint';
-  if (roles.has('applyMask') || roles.has('loadMask') || keys.has('modules.Image.ApplyMask')) return 'inpaint';
+  if (hasRoleOrAction('controlnet', 'modules.ModularDiffusers.Controlnet')) return 'control_image';
+  if (hasRoleOrAction('qwenOutpaintCanvas', QWEN_OUTPAINT_CANVAS_NODE_KEY)) return 'outpaint';
+  if (hasRoleOrAction('qwenInpaint', 'modules.DiffusersImage.Inpaint')) return 'inpaint';
+  if (roles.has('applyMask') || hasRoleOrAction('loadMask', 'modules.Image.ApplyMask')) return 'inpaint';
   if (modelType === 'QwenImageLayeredModularPipeline') return 'layer_decomposition';
   if (modelType === 'QwenImageEditPlusModularPipeline') return 'multi_image_reference_edit';
   if (modelType === 'QwenImageEditModularPipeline') return 'edit_image';
@@ -625,132 +531,103 @@ function inferMode(nodes: NodeLike[], modelType: StudioModelType, fallback: Stud
   return getDefaultModeForModel(modelType);
 }
 
+function isGenerationStage(node: NodeLike) {
+  return (
+    [
+      'wanGenerate',
+      'qwenGenerate',
+      'qwenInpaint',
+      'diffusersImageGenerate',
+      'diffusersUnconditionalGenerate',
+      'diffusersPredictMap',
+      'diffusersImageEdit',
+      'diffusersImageInpaint',
+      'diffusersImageControl',
+      'diffusersImageControlEdit',
+      'diffusersImageControlInpaint',
+      'diffusersImageLayerDecompose',
+      'audioGenerate',
+      'transcribeAudio',
+    ].includes(String(node.data?.studioRole)) ||
+    [
+      'Generate',
+      'UnconditionalGenerate',
+      'PredictMap',
+      'Inpaint',
+      'Edit',
+      'ControlGenerate',
+      'ControlEdit',
+      'ControlInpaint',
+      'LayerDecompose',
+      'TranscribeAudio',
+      'TranscribeCTCAudio',
+      'GenerateAnyToAny',
+    ].includes(String(node.data?.action))
+  );
+}
+
 export function inferStudioFormFromWorkflow(
   nodesInput: unknown[],
   fallback: StudioFormState = DEFAULT_STUDIO_FORM,
+  edges: Edge[] = [],
 ): StudioFormState {
   const nodes = nodesInput.filter(isNodeLike);
-  const modelType = inferModelType(nodes, fallback);
-  const mode = inferMode(nodes, modelType, fallback);
-  const defaults = getFormDefaultsForMode(mode, modelType);
-  const promptNode = findNode(
-    nodes,
-    (node) =>
-      [
-        'prompt',
-        'wanGenerate',
-        'qwenGenerate',
-        'qwenInpaint',
-        'diffusersImageGenerate',
-        'diffusersUnconditionalGenerate',
-        'diffusersPredictMap',
-        'diffusersImageEdit',
-        'diffusersImageInpaint',
-        'diffusersImageControl',
-        'diffusersImageControlEdit',
-        'diffusersImageControlInpaint',
-        'diffusersImageLayerDecompose',
-        'audioGenerate',
-        'dataOperation',
-        'transcribeAudio',
-      ].includes(String(node.data?.studioRole)) ||
-      [
-        'EncodePrompt',
-        'EncodeInputs',
-        'Generate',
-        'UnconditionalGenerate',
-        'PredictMap',
-        'Inpaint',
-        'Edit',
-        'ControlGenerate',
-        'ControlEdit',
-        'ControlInpaint',
-        'LayerDecompose',
-        'TranscribeAudio',
-        'GenerateAnyToAny',
-        'ProcessText',
-      ].includes(String(node.data?.action)),
+  const transcribers = nodes.filter(
+    (n) =>
+      n.data?.studioRole === 'transcribeAudio' ||
+      (n.data?.module === 'modules.HuggingFaceSpeech' &&
+        ['TranscribeAudio', 'TranscribeCTCAudio'].includes(String(n.data.action))),
   );
-  const denoiseNode = findNode(nodes, (node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
+  const modelWire =
+    transcribers.length === 1 &&
+    edges.find((e) => e.target === transcribers[0]?.id && e.targetHandle === 'model' && e.sourceHandle === 'model');
+  const speechLoader =
+    modelWire && nodes.find((n) => n.id === modelWire.source && n.data?.module === 'modules.HuggingFaceSpeech');
+  const modelType =
+    (speechLoader && declaredModelType([speechLoader], fallback.modelType)) || inferModelType(nodes, fallback);
+  const mode = inferMode(nodes, modelType, fallback, transcribers[0]);
+  const defaults = getFormDefaultsForMode(mode, modelType);
+  const promptNode = nodes.find(
+    (node) =>
+      isGenerationStage(node) ||
+      ['prompt', 'dataOperation'].includes(String(node.data?.studioRole)) ||
+      ['EncodePrompt', 'EncodeInputs', 'ProcessText'].includes(String(node.data?.action)),
+  );
+  const denoiseNode = nodes.find((node) => node.data?.studioRole === 'denoise' || node.data?.action === 'Denoise');
   const modelNode =
-    findNode(nodes, isModelLoader) ??
-    findNode(
-      nodes,
+    speechLoader ||
+    nodes.find(isModelLoader) ||
+    nodes.find(
       (node) =>
         ['imageUpscaler', 'videoUpscaler'].includes(String(node.data?.studioRole)) ||
         ['Upscaler', 'UpscaleVideo'].includes(String(node.data?.action)),
     );
-  const quantizationNode = findNode(
-    nodes,
+  const quantizationNode = nodes.find(
     (node) => node.data?.studioRole === 'qwenQuantization' || node.data?.action === 'QuantizationConfigNode',
   );
-  const generateNode = findNode(
-    nodes,
-    (node) =>
-      [
-        'wanGenerate',
-        'qwenGenerate',
-        'qwenInpaint',
-        'diffusersImageGenerate',
-        'diffusersUnconditionalGenerate',
-        'diffusersPredictMap',
-        'diffusersImageEdit',
-        'diffusersImageInpaint',
-        'diffusersImageControl',
-        'diffusersImageControlEdit',
-        'diffusersImageControlInpaint',
-        'diffusersImageLayerDecompose',
-        'audioGenerate',
-        'transcribeAudio',
-      ].includes(String(node.data?.studioRole)) ||
-      [
-        'Generate',
-        'Denoise',
-        'UnconditionalGenerate',
-        'PredictMap',
-        'Inpaint',
-        'Edit',
-        'ControlGenerate',
-        'ControlEdit',
-        'ControlInpaint',
-        'LayerDecompose',
-        'TranscribeAudio',
-        'GenerateAnyToAny',
-      ].includes(String(node.data?.action)),
-  );
-  const outpaintNode = findNode(
-    nodes,
+  const generateNode = nodes.find((node) => isGenerationStage(node) || node.data?.action === 'Denoise');
+  const outpaintNode = nodes.find(
     (node) =>
       node.data?.studioRole === 'outpaintCanvas' ||
       node.data?.studioRole === 'qwenOutpaintCanvas' ||
       nodeKey(node) === QWEN_OUTPAINT_CANVAS_NODE_KEY,
   );
-  const loadImages = findNodes(
-    nodes,
-    (node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Image.'),
-  );
-  const loadVideos = findNodes(
-    nodes,
-    (node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Video.'),
-  );
-  const loadAudios = findNodes(
-    nodes,
-    (node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Audio.'),
-  );
+  const loadImages = nodes.filter((node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Image.'));
+  const loadVideos = nodes.filter((node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Video.'));
+  const loadAudios = nodes.filter((node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Audio.'));
   const sourceVideoNode =
     loadVideos.find((node) => node.data?.studioRole === 'loadVideo') ??
     loadVideos.find((node) => !['loadControlVideo', 'loadMaskVideo'].includes(String(node.data?.studioRole)));
   const maskVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadMaskVideo');
   const controlVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadControlVideo');
-  const videoOperationNode = findNode(
-    nodes,
-    (node) => node.data?.studioRole === 'videoOperation' || nodeKey(node) === 'modules.Video.ProcessVideo',
-  );
-  const videoUpscaleNode = findNode(
-    nodes,
-    (node) => node.data?.studioRole === 'videoUpscaler' || nodeKey(node) === 'modules.Video.UpscaleVideo',
-  );
-  const operationVideos = arrayStringValue(paramValue(videoOperationNode, ['videos']));
+  const videoOperationNode = findProcessor(nodes, VIDEO_PROCESSOR);
+  const videoUpscaleNode = findProcessor(nodes, VIDEO_UPSCALER);
+  const operationVideos =
+    videoOperationNode &&
+    (videoOperationNode.data?.params?.source?.isConnected ||
+      edges.some((edge) => edge.target === videoOperationNode.id && edge.targetHandle === 'source'))
+      ? []
+      : arrayStringValue(paramValue(videoOperationNode, ['videos']));
   const loadImageNode = loadImages.find((node) => node.data?.studioRole === 'loadImage') ?? loadImages[0];
   const loadControlImageNode = loadImages.find((node) => node.data?.studioRole === 'loadControlImage');
   const loadMaskNode = loadImages.find((node) => node.data?.studioRole === 'loadMask');
@@ -829,10 +706,18 @@ export function inferStudioFormFromWorkflow(
     controlVideo: stringValue(paramValue(controlVideoNode, ['file'])),
     sourceAudio: stringValue(paramValue(loadAudioNode, ['file'])),
     referenceAudio: stringValue(paramValue(loadReferenceAudioNode, ['file'])),
-    speechLanguage: stringValue(paramValue(generateNode, ['language'])) || defaults.speechLanguage,
+    speechLanguage:
+      modelType === 'HuggingFaceCTCSpeechRecognitionModel'
+        ? defaults.speechLanguage
+        : stringValue(paramValue(generateNode, ['language'])) || defaults.speechLanguage,
     speechTimestamps:
-      (stringValue(paramValue(generateNode, ['timestamps'])) as StudioFormState['speechTimestamps']) ||
-      defaults.speechTimestamps,
+      (stringValue(
+        paramValue(generateNode, [
+          modelType === 'HuggingFaceCTCSpeechRecognitionModel' && generateNode?.data?.action === 'TranscribeAudio'
+            ? 'ctc_timestamps'
+            : 'timestamps',
+        ]),
+      ) as StudioFormState['speechTimestamps']) || defaults.speechTimestamps,
     speechChunkSeconds: numberValue(paramValue(generateNode, ['chunk_length_seconds']), defaults.speechChunkSeconds),
     speechStrideSeconds: numberValue(paramValue(generateNode, ['stride_length_seconds']), defaults.speechStrideSeconds),
     lyrics: stringValue(paramValue(generateNode, ['lyrics'])) || defaults.lyrics,
@@ -849,7 +734,7 @@ export function inferStudioFormFromWorkflow(
     numFrames: numberValue(paramValue(generateNode, ['num_frames']), defaults.numFrames),
     fps: numberValue(
       paramValue(
-        findNode(nodes, (node) => node.data?.studioRole === 'videoExport' || nodeKey(node) === 'modules.Video.Export'),
+        nodes.find((node) => node.data?.studioRole === 'videoExport' || nodeKey(node) === 'modules.Video.Export'),
         ['fps'],
       ) ?? paramValue(videoUpscaleNode, ['fps']),
       defaults.fps,
@@ -877,7 +762,7 @@ export function workflowSnapshotFromGraph(
     ...edge,
     type: edge.type ?? edgeType,
   }));
-  const form = restoreReviewedDirectImageModelType(nodes, edges, inferStudioFormFromWorkflow(nodes, fallback));
+  const form = restoreReviewedDirectImageModelType(nodes, edges, inferStudioFormFromWorkflow(nodes, fallback, edges));
   const adopted = adoptManagedWorkflowGraph(nodes, edges, form);
   return {
     nodes: adopted?.nodes ?? nodes,
