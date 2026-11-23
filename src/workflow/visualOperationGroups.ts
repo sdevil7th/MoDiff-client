@@ -768,8 +768,8 @@ export function groupVisualStages(
       // example Image.Load.path). The explicit Block interface still needs a
       // non-empty name without changing the original leaf field.
       let label = (typeof param.label === 'string' && param.label.trim()) || field;
-      if (kind === 'videoInput' && node.data.studioRole === 'loadControlVideo' && field === 'file')
-        label = 'Control video';
+      if (kind === 'videoInput' && nodeKey(node) === 'modules.Video.Load' && field === 'file')
+        label = node.data.studioRole === 'loadControlVideo' ? 'Control video' : 'Source video';
       if (
         kind === 'videoInput' &&
         nodeKey(node) === 'modules.Video.Load' &&

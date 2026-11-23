@@ -96,6 +96,17 @@ test('bundled examples fold exclusively owned media preparation even when a proc
       );
     const grouped = groups.groupNewOperationGraph(graph);
     assert.ok(hasStage(grouped), file);
+    if (
+      graph.nodes.some((n) => n.data.studioRole === 'loadControlVideo') &&
+      graph.nodes.some((n) => n.data.studioRole === 'loadVideo')
+    ) {
+      const pickers = grouped.nodes
+        .filter((n) => groups.visualOperationGroup(n) === 'videoInput')
+        .flatMap((n) => n.data.blockInstanceV2.effectiveInterface.controls)
+        .filter((control) => control.binding.fieldId === 'file')
+        .map((control) => control.label);
+      assert.deepEqual(pickers.sort(), ['Control video', 'Source video']);
+    }
     assert.deepEqual(exported(grouped), exported(graph), file);
     assert.deepEqual(exported(normalizePersistedFlowState(structuredClone(grouped))), exported(graph), file);
     assert.deepEqual(graph, before);
