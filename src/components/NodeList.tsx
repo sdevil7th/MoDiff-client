@@ -4,7 +4,7 @@ import CustomNodeLibrary from './CustomNodeLibrary';
 import { useNodeDiscovery } from '../stores/useNodeDiscoveryStore';
 import RuntimeNodeGroupsV2 from './RuntimeNodeGroupsV2';
 import VisualStageLibrary from './VisualStageLibrary';
-import { visualStageMatches } from '../studio/visualNodeCatalog';
+import { representedStageOperations, visualStageMatches } from '../studio/visualNodeCatalog';
 import { operationsForTask } from '../workflow/operationCatalog';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
@@ -147,10 +147,7 @@ function NodeList() {
     [stageCatalog, nodesRegistry, search, effectiveCatalogView, showMoreStages, operationContracts, pipeline, task],
   );
   const rawRegistryVisible = !stageCatalog;
-  const represented = useMemo(
-    () => new Set(stageResults.flatMap((s) => s.choices.flatMap((c) => (c.operation ? [c.operation] : [])))),
-    [stageResults],
-  );
+  const represented = useMemo(() => representedStageOperations(stageResults), [stageResults]);
   const catalogNodes = useMemo(
     () =>
       runtimeCatalogNodes(nodesRegistry, operationContracts, pipelineSupport, effectiveCatalogView, { pipeline, task }),

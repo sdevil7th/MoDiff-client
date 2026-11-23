@@ -230,7 +230,10 @@ export function visualStageMatches(
         if (options.compatible && !options.compatible(node, operation)) continue;
         const choice = { mode, definition: node, operation };
         choices.push(choice);
-        const score = relevance(query, stage, mode, registry[mode.node]!);
+        const score =
+          query && operation?.operationId && words(operation.operationId) === query
+            ? 96
+            : relevance(query, stage, mode, registry[mode.node]!);
         if (!score || (best && best.score >= score)) continue;
         const term = query && mode.terms?.find((term) => compact(words(term)) === compact(query));
         const detail = term && words(term) !== words(mode.label) ? mode.label + ' · ' + term : mode.label;
@@ -264,6 +267,10 @@ export function visualStageMatches(
     if (best) results.push(best);
   }
   return results.sort((a, b) => b.score - a.score);
+}
+
+export function representedStageOperations(matches: StageMatch[]) {
+  return new Set(matches.flatMap((match) => match.choices.flatMap(({ operation }) => (operation ? [operation] : []))));
 }
 
 export function visualStageForNode(catalog: VisualCatalog | null, node: NodeData) {

@@ -33,7 +33,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Pair the visual stage catalog and custom action search metadata.
-          ref: 9a81a9f798b24f37915de90a73ee68a8f07ac634
+          ref: 2a47c734f037db7ce91f0570aecfd1a6e5909c0a
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup
@@ -89,7 +89,7 @@ jobs:
         with:
           repository: sdevil7th/MoDiff
           # Match the immutable backend revision in the Client quality job.
-          ref: 9a81a9f798b24f37915de90a73ee68a8f07ac634
+          ref: 2a47c734f037db7ce91f0570aecfd1a6e5909c0a
           path: MoDiff
           persist-credentials: false
       - name: Verify the pinned backend supports native setup

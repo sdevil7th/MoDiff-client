@@ -1,5 +1,5 @@
 import { nodeDisplayLabel } from '../workflow/nodePresentation';
-import { visualStageMatches, type StageMatch } from '../studio/visualNodeCatalog';
+import { representedStageOperations, visualStageMatches, type StageMatch } from '../studio/visualNodeCatalog';
 import { operationsForTask } from '../workflow/operationCatalog';
 // Derived from cubiq/Mellon-client and modified by the MoDiff project.
 
@@ -179,7 +179,7 @@ const NodeSearchDialog = ({
               : Boolean(matchingNodeHandleForDrop(node, dataType, handleType, origin, allowUnverified))),
         })
       : [];
-    const represented = new Set(stages.map((s) => s.operation).filter(Boolean));
+    const represented = representedStageOperations(stages);
     const entries = [
       ...stages.map((stage) => ({
         stage,

@@ -149,6 +149,26 @@ test('selected model, required wire and disabled preset narrow insertable choice
   assert.equal(api.parseVisualCatalog(undefined), null);
   assert.throws(() => api.parseVisualCatalog({ ...metadata, stages: [metadata.stages[0], metadata.stages[0]] }));
 });
+test('multiple compatible bindings share one stage result and the exact operation selects its own binding', () => {
+  const base = { nodeKey: 'modules.DiffusersImage.Generate', pipelineClass: 'Image', task: 'text_to_image' };
+  const guided = { ...base, nodeKey: 'modules.DiffusersImage.ControlGenerate', operationId: 'image.control.generate' };
+  const plain = { ...base, operationId: 'image.base.generate' };
+  const operations = [plain, guided];
+  const visible = api.visualStageMatches(catalog, registry, '', { operations });
+  assert.equal(visible.filter((hit) => hit.stage.id === 'generate-image').length, 1);
+  assert.ok(operations.every((op) => api.representedStageOperations(visible).has(op)));
+  const matching = api.visualStageMatches(catalog, registry, guided.operationId, { operations });
+  assert.equal(matching[0].operation, guided);
+  assert.equal(matching[0].stage.id, 'generate-image');
+  assert.ok(
+    !api
+      .visualStageMatches(catalog, registry, guided.operationId, {
+        operations,
+        compatible: (_node, op) => op === plain,
+      })
+      .some((hit) => hit.operation === guided),
+  );
+});
 test('control guidance preserves identity, compatible values and guide wires across model changes', () => {
   const make = (action, more = {}) => ({
     module: 'modules.DiffusersImage',
