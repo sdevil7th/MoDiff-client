@@ -490,6 +490,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Preserve older whole-pipeline sockets across passive updates (529176 -> 529202 bytes).
+  26 +
   // Use the saved media roles on video input cards (529131 -> 529176 gzip bytes).
   45 +
   // Preserve saved video controls and resolve caption stage names (+87 bytes).
@@ -770,6 +772,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same scoped compatibility fix adds 25 bytes across startup (707663 -> 707688).
+  25 +
   // The same input titles add 47 bytes across the startup closure.
   47 +
   // The same saved-workflow corrections add 84 bytes across startup.

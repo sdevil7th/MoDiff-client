@@ -501,6 +501,11 @@ function scheduleStudioDefinitionSync() {
   }, 80);
 }
 
+function isOmittedWholePipelineField(nodeId: string, field: string) {
+  const node = useFlowStore.getState().nodes.find((entry) => entry.id === nodeId);
+  return node && isWholePipelineStage(node.data) && !hasOwn(node.data.params, field);
+}
+
 export function handleWebsocketMessage(message: WebsocketMessage, context: WebsocketMessageHandlerContext) {
   switch (message.type) {
     case 'welcome': {
@@ -1220,7 +1225,9 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       const visibility = message.fields as Record<string, boolean>;
       const schemaPending = markStudioGraphDefinitionPending(nodeId, ['hidden']);
       Object.keys(visibility).forEach((key) => {
-        useFlowStore.getState().setParam(nodeId, key, !visibility[key], 'hidden');
+        if (!isOmittedWholePipelineField(nodeId, key)) {
+          useFlowStore.getState().setParam(nodeId, key, !visibility[key], 'hidden');
+        }
       });
       if (schemaPending) scheduleStudioDefinitionSync();
       break;
@@ -1247,10 +1254,15 @@ export function handleWebsocketMessage(message: WebsocketMessage, context: Webso
       const nodeId = message.node;
       const field = message.field;
       const params = message.params;
-      if (params.hidden === true && !hasOwn(params, 'value') && !hasOwn(params, 'signal')) {
-        const target = useFlowStore.getState().nodes.find((node) => node.id === nodeId);
-        // A visibility update must not add an inactive literal to an older recipe.
-        if (target && !hasOwn(target.data.params, field) && isWholePipelineStage(target.data)) break;
+      const visibilityOnly = Object.keys(params).every((key) => key === 'hidden' || key === 'disabled');
+      // Passive presentation updates cannot create a field absent from a saved stage.
+      if (
+        (params.hidden === true || visibilityOnly) &&
+        !hasOwn(params, 'value') &&
+        !hasOwn(params, 'signal') &&
+        isOmittedWholePipelineField(nodeId, field)
+      ) {
+        break;
       }
       const workflowContext = captureWorkflowOperationContext();
       const schemaPending = markStudioGraphDefinitionPending(nodeId, Object.keys(params) as Array<keyof NodeParams>);

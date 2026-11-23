@@ -11,6 +11,8 @@ reference images or source video. The selected Wan 2.2 5B backend route currentl
 accepts text only. Model names and cached weights do not prove another task is
 supported. Existing whole-pipeline graphs retain their original representation;
 loading an old workflow does not migrate its nodes or discard saved settings.
+For whole-pipeline stages, passive visibility updates affect existing fields.
+A newly declared field or explicit value can still appear after a model change.
 
 Choose a supported task and exact model selection, enter the prompt and required
 media, and review the resource settings before Run. The backend owns loading,

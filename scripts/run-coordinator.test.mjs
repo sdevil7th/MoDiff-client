@@ -2018,7 +2018,7 @@ test('dynamic field and completion messages mutate only their owning workflow ca
   assert.equal(flowStoreModule.useFlowStore.getState().getParam('preview', 'output', 'disabled'), false);
 });
 
-test('a whole-pipeline field update keeps absent inactive controls out of older graphs', async () => {
+test('a whole-pipeline field update preserves old graph fields and accepts declared controls', async () => {
   const context = { sid: 'session-1', ws: {}, getSid: () => 'session-1', setSid() {}, setLoopTimer() {} };
   studioStoreModule.useStudioStore.setState({
     activeWorkflowTabId: 'workflow-origin',
@@ -2061,16 +2061,38 @@ test('a whole-pipeline field update keeps absent inactive controls out of older 
       context,
     );
   update('audio_guidance_scale', { hidden: true });
+  update('encoded_inputs', { hidden: false });
   update('stg_scale', { hidden: true });
+  websocketModule.handleWebsocketMessage(
+    {
+      type: 'set_field_visibility',
+      sid: 'session-1',
+      node: 'video',
+      fields: { reference_video: true, stg_scale: false },
+      workflow_tab_id: 'workflow-origin',
+      workflow_canvas_epoch: 12,
+    },
+    context,
+  );
   await Promise.resolve();
   let params = store.getState().nodes[0].data.params;
   assert.equal(Object.hasOwn(params, 'audio_guidance_scale'), false);
+  assert.equal(Object.hasOwn(params, 'encoded_inputs'), false);
+  assert.equal(Object.hasOwn(params, 'reference_video'), false);
   assert.equal(params.stg_scale.hidden, true);
   assert.equal(params.stg_scale.value, 2);
   update('audio_guidance_scale', { hidden: false, value: 7 });
+  update('encoded_inputs', { hidden: false, display: 'input', type: 'video_conditioning', required: true });
   await Promise.resolve();
   params = store.getState().nodes[0].data.params;
   assert.equal(params.audio_guidance_scale.value, 7);
+  assert.deepEqual(params.encoded_inputs, {
+    disabled: false,
+    hidden: false,
+    display: 'input',
+    type: 'video_conditioning',
+    required: true,
+  });
 });
 
 test('owned set_field_params messages reconcile opaque signals across connected generic fields', async () => {
