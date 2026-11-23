@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
@@ -53,6 +54,63 @@ test('whole-pipeline examples keep one-action generation on the ordinary node', 
     assert.deepEqual(actual.data.params, original.data.params);
     assert.ok(draft.nodes.some((node) => groups.visualOperationGroup(node) === 'setup'));
     assert.deepEqual(graph, before);
+  }
+});
+
+test('bundled examples fold exclusively owned media preparation even when a processor consumes its result', async () => {
+  const backend = path.resolve(process.env.MODIFF_BACKEND_DIR || '../MoDiff', 'data/graphs');
+  const { useFlowStore, normalizePersistedFlowState } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
+  const exported = (sourceGraph) =>
+    canonicalGraphIdentity(
+      useFlowStore.getState().exportGraph('stage-check', undefined, { sourceGraph, randomizeSeeds: false }),
+    );
+  const cases = [
+    ['studio/animate-diff-control-net-pipeline/control-to-video', 'videoInput', ['Load', 'Normalize']],
+    [
+      'studio/animate-diff-video-to-video-control-net-pipeline/control-video-to-video',
+      'videoInput',
+      ['Load', 'Normalize'],
+    ],
+    ['studio/wan-vace-pipeline/video-inpaint', 'mask', ['AlignMask', 'Load']],
+    ...['flux3-distilled-modular-pipeline', 'flux3-modular-pipeline'].map((family) => [
+      'experimental/' +
+        family +
+        '/edit-image--flux3-klein-' +
+        (family.startsWith('flux3-distilled') ? '' : 'base-') +
+        'fp8r512-multi-reference-edit',
+      'composite',
+      ['Resize', 'Resize', 'Resize', 'CropImage', 'MaskComposite'],
+    ]),
+  ];
+  for (const [file, kind, expected] of cases) {
+    const graph = JSON.parse(readFileSync(path.join(backend, file + '.json'), 'utf8'));
+    const before = structuredClone(graph);
+    const hasStage = (grouped) =>
+      grouped.nodes.some(
+        (n) =>
+          groups.visualOperationGroup(n) === kind &&
+          JSON.stringify(n.data.blockInstanceV2.effectiveGraph.nodes.map((m) => m.data.action).sort()) ===
+            JSON.stringify([...expected].sort()) &&
+          (kind !== 'videoInput' ||
+            n.data.blockInstanceV2.effectiveGraph.nodes.some((m) => m.data.studioRole === 'loadControlVideo')),
+      );
+    const grouped = groups.groupNewOperationGraph(graph);
+    assert.ok(hasStage(grouped), file);
+    assert.deepEqual(exported(grouped), exported(graph), file);
+    assert.deepEqual(exported(normalizePersistedFlowState(structuredClone(grouped))), exported(graph), file);
+    assert.deepEqual(graph, before);
+    // A second consumer uses the unprepared input/foreground. Folding it would hide a real branch.
+    const member = graph.nodes.find((n) =>
+      kind === 'composite'
+        ? n.data.action === 'CropImage'
+        : n.data.studioRole === (kind === 'mask' ? 'loadMaskVideo' : 'loadControlVideo'),
+    );
+    const wire = graph.edges.find((e) => e.source === member.id);
+    const preview = structuredClone(graph.nodes.find((n) => n.id === wire.target));
+    preview.id = 'independent-consumer';
+    graph.nodes.push(preview);
+    graph.edges.push({ ...wire, id: 'extra-output-consumer', target: preview.id });
+    assert.equal(hasStage(groups.groupNewOperationGraph(graph)), false, file);
   }
 });
 

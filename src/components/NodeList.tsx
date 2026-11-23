@@ -160,18 +160,17 @@ function NodeList() {
     [allHuggingFaceSections, search, effectiveCatalogView],
   );
   const huggingFaceCatalogCount = useMemo(
-    () =>
-      filterHuggingFaceCatalogSections(allHuggingFaceSections, '', effectiveCatalogView).reduce(
-        (total, section) => total + section.entries.length,
-        0,
-      ),
-    [allHuggingFaceSections, effectiveCatalogView],
+    () => huggingFaceSections.reduce((total, section) => total + section.entries.length, 0),
+    [huggingFaceSections],
   );
   const runtimeNodeCount = useMemo(
     () =>
-      nodeCatalogEntries(catalogNodes).filter((entry) => nodeCatalogEntryMatchesView(entry, effectiveCatalogView))
-        .length,
-    [catalogNodes, effectiveCatalogView],
+      nodeCatalogEntries(catalogNodes).filter(
+        (entry) =>
+          nodeCatalogEntryMatchesView(entry, effectiveCatalogView, Boolean(search.trim())) &&
+          nodeCatalogEntryMatchesSearch(entry, search),
+      ).length,
+    [catalogNodes, effectiveCatalogView, search],
   );
 
   const handleInsertUserBlock = useCallback(
@@ -994,7 +993,7 @@ function NodeGroupList({
 
   const groups = useMemo(() => {
     return nodeCatalogEntries(nodes)
-      .filter((entry) => nodeCatalogEntryMatchesView(entry, view))
+      .filter((entry) => nodeCatalogEntryMatchesView(entry, view, Boolean(search.trim())))
       .filter((entry) => nodeCatalogEntryMatchesSearch(entry, search))
       .reduce(
         (acc, entry) => {

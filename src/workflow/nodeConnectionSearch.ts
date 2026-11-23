@@ -41,7 +41,7 @@ export function connectionSearchEntries(
   allowUnverified = false,
 ): [string, NodeData][] {
   return nodeCatalogEntries(registry)
-    .filter((entry) => nodeCatalogEntryMatchesView(entry, view))
+    .filter((entry) => nodeCatalogEntryMatchesView(entry, view, Boolean(handleType || search.trim())))
     .filter((entry) => nodeCatalogEntryMatchesSearch(entry, search))
     .filter(
       (entry) => !handleType || matchingNodeHandleForDrop(entry.node, dataType, handleType, origin, allowUnverified),

@@ -34758,6 +34758,14 @@ for (const workspace of ['expert'] as const) {
     await page.locator('.react-flow__pane').dblclick({ position: { x: 300, y: 200 } });
     const list = page.getByRole('listbox', { name: 'Matching nodes' });
     await expect(list).toBeVisible();
+    const browse = page.getByRole('checkbox', { name: /Include catalog Blocks/u });
+    const qwen = list.getByRole('option').filter({ hasText: 'Qwen Image — Text To Image' });
+    await expect(browse).toBeVisible();
+    await expect(qwen).toHaveCount(0);
+    await browse.click();
+    await expect(qwen).toHaveCount(1);
+    await browse.click();
+    await expect(qwen).toHaveCount(0);
     await page.locator('input[aria-label="Search nodes"]').last().fill('Qwen Image Text To Image');
     const option = list.getByRole('option').filter({ hasText: 'Qwen Image — Text To Image' });
     await expect(option).toHaveCount(1);

@@ -85,10 +85,23 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
   const entry = (module, action, extra = {}) =>
     nodeCatalogModule.getNodeCatalogEntry({ module, action, label: action, category: 'Test', params: {}, ...extra });
   const matches = nodeCatalogModule.nodeCatalogEntryMatchesView;
-  for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents', 'ImageEncode']) {
+  for (const action of ['ModelsLoader', 'ImageEncode']) {
     for (const view of ['common', 'advanced', 'experimental', 'all'])
       assert.equal(matches(entry('modules.ModularDiffusers', action), view), true, action);
   }
+  for (const action of ['EncodePrompt', 'Denoise', 'DecodeLatents', 'Scheduler']) {
+    const item = entry('modules.ModularDiffusers', action);
+    assert.equal(matches(item, 'common'), false);
+    assert.equal(matches(item, 'common', true), true);
+    assert.equal(matches(item, 'advanced'), true);
+  }
+  for (const [module, action] of [
+    ['modules.ImageOperations', 'ProcessImage'],
+    ['modules.Audio', 'ProcessAudio'],
+    ['modules.Video', 'ProcessVideo'],
+    ['modules.Text', 'ProcessText'],
+  ])
+    assert.ok(matches(entry(module, action), 'common'));
   for (const action of ['WorkflowKrea2Denoise', 'DynamicBlockNode']) {
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'common'), false);
     assert.equal(matches(entry('modules.ModularDiffusers', action), 'experimental'), false);
@@ -106,7 +119,7 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
     assert.equal(matches(entry('modules.Image', action, { type: 'group' }), 'common'), false);
   }
   for (const [module, actions] of [
-    ['modules.ImageFilters', ['Canny', 'UnsharpMask', 'GuidedBlur', 'AdaptiveSharpening', 'GaussianBlur']],
+    ['modules.ImageFilters', ['Canny']],
     ['modules.Color', ['Invert']],
     ['modules.DiffusersImage', ['OutpaintCanvas']],
   ]) {
@@ -115,6 +128,11 @@ test('one common catalog includes generic nodes, utilities and custom nodes with
         assert.equal(matches(entry(module, action), view), true, `${module}.${action} in ${view}`);
       assert.equal(matches(entry(module, action, { type: 'group' }), 'common'), false);
     }
+  }
+  for (const action of ['UnsharpMask', 'GuidedBlur', 'AdaptiveSharpening', 'GaussianBlur']) {
+    assert.equal(matches(entry('modules.ImageFilters', action), 'common'), false);
+    assert.ok(matches(entry('modules.ImageFilters', action), 'common', true));
+    assert.ok(matches(entry('modules.ImageFilters', action), 'advanced'));
   }
   assert.equal(matches(entry('modules.ImageFiltersExperimental', 'Canny'), 'common'), false);
   assert.equal(matches(entry('modules.DiffusersImage', 'UnreviewedInternal'), 'common'), false);

@@ -94,9 +94,10 @@ minimal native image graph has five stages including Preview. The connected
 SDXL starter also exposes Guider and Layers, giving seven nodes with Preview;
 attaching an image adds Load Image and Image Encode, giving nine executable nodes.
 New eligible starters now present these as six and seven top-level nodes using
-the visual groups below. It does not replace the execution graph. Model/catalog variants are not node
-kinds. Isolated startup registered234 built-in definitions; the default public
-palette showed63 entries, separately from121 upstream catalog entries.
+the visual groups below. It does not replace the execution graph. The registry includes implementation actions and compatibility identities.
+The common picker lists ordinary stages and media processors. Searching by name,
+dragging from a compatible socket, or enabling implementation nodes reveals
+specialists. The sidebar counts matching runtime nodes and catalog entries separately.
 
 ## Encode Inputs and Guidance
 

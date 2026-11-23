@@ -22,7 +22,7 @@ import { declaredImagePipelineStageTail, operationScope } from './operationScope
 import { operationOwnsModel } from './operationContracts';
 import { remapOperationAuthoring } from './operationSharedInputs';
 import { workflowTaskCategory } from './workflowTaskBrowser';
-import { connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
+import { connectionTypes, connectionTypesAreCompatible } from '../theme/connectionTypeCompatibility';
 import { hasInlineScalarControl } from '../studio/inlineScalarControl';
 import { nodeConnectorParam } from '../studio/nodeConnectorResolution';
 import { groupStoryboardShots } from './storyboardShotPresentation';
@@ -1243,6 +1243,69 @@ export function groupOperationStages(
   return next;
 }
 
+/** Only fold preparation whose intermediate result belongs to one downstream step. */
+function exclusiveMediaSupplier(
+  graph: OperationGraph,
+  target: CustomNodeType,
+  input: string,
+  output: string,
+  type: 'image' | 'video',
+) {
+  const wires = graph.edges.filter((edge) => edge.target === target.id && edge.targetHandle === input);
+  const wire = wires[0];
+  if (wires.length !== 1 || wire?.sourceHandle !== output) return;
+  const source = graph.nodes.find((node) => node.id === wire.source);
+  const field = target.data.params[input];
+  if (
+    !source ||
+    source.parentId ||
+    source.data.blockInstanceV2 ||
+    source.data.blockProjectionOwnerId ||
+    source.data.params[output]?.display !== 'output' ||
+    source.data.params[output]?.type !== type ||
+    !field ||
+    !(field.display === 'input' || field.isInput) ||
+    !connectionTypes(field.type).includes(type) ||
+    graph.edges.some((edge) => edge.source === source.id && edge !== wire)
+  )
+    return;
+  return source;
+}
+
+function groupMediaPreparation(graph: OperationGraph) {
+  let next = graph;
+  for (const end of graph.nodes) {
+    if (end.parentId || end.data.blockInstanceV2 || end.data.blockProjectionOwnerId) continue;
+    const key = nodeKey(end);
+    if (key === 'modules.ImageOperations.MaskComposite') {
+      const members = [end.id];
+      let source = exclusiveMediaSupplier(next, end, 'foreground', 'output', 'image');
+      while (
+        source &&
+        !members.includes(source.id) &&
+        ['modules.Image.Resize', 'modules.ImageOperations.CropImage'].includes(nodeKey(source))
+      ) {
+        members.push(source.id);
+        source = exclusiveMediaSupplier(next, source, 'image', 'output', 'image');
+      }
+      if (members.length > 1) next = groupVisualStages(next, members, 'composite');
+      continue;
+    }
+    const mask = key === 'modules.VideoConditioning.AlignMask';
+    if (!mask && key !== 'modules.VideoConditioning.Normalize') continue;
+    const loader = exclusiveMediaSupplier(next, end, mask ? 'mask' : 'video', 'video', 'video');
+    if (!loader || nodeKey(loader) !== 'modules.Video.Load') continue;
+    // A direct generator, an edge processor or another typed consumer may use the prepared clip.
+    const consumed = next.edges.some((edge) => {
+      if (edge.source !== end.id || edge.sourceHandle !== 'output') return false;
+      const field = next.nodes.find((node) => node.id === edge.target)?.data.params[edge.targetHandle ?? ''];
+      return field && (field.display === 'input' || field.isInput) && connectionTypes(field.type).includes('video');
+    });
+    if (consumed) next = groupVisualStages(next, [loader.id, end.id], mask ? 'mask' : 'videoInput');
+  }
+  return next;
+}
+
 export function groupNewOperationGraph(graph: OperationGraph, options: { legacyStageOrder?: boolean } = {}) {
   // Existing decomposed template creators retain their historical traversal.
   // Fresh Example imports instead preserve the canonical source's own order.
@@ -1287,46 +1350,7 @@ export function groupNewOperationGraph(graph: OperationGraph, options: { legacyS
                 true,
               )
             : groupOperationStages(next, owner.id);
-  // The same real input preparation can precede a whole native pipeline.
-  // Keep a separately consumed original clip external, with its own preview.
-  for (const prepare of [...next.nodes]) {
-    if (
-      prepare.parentId ||
-      prepare.data.blockInstanceV2 ||
-      prepare.data.blockProjectionOwnerId ||
-      nodeKey(prepare) !== 'modules.VideoConditioning.Normalize'
-    )
-      continue;
-    const incoming = next.edges.filter((edge) => edge.target === prepare.id && edge.targetHandle === 'video');
-    const wire = incoming[0];
-    if (incoming.length !== 1 || wire?.sourceHandle !== 'video') continue;
-    const loader = next.nodes.find((node) => node.id === wire.source);
-    if (
-      !loader ||
-      loader.parentId ||
-      loader.data.blockInstanceV2 ||
-      loader.data.blockProjectionOwnerId ||
-      nodeKey(loader) !== 'modules.Video.Load' ||
-      next.edges.some((edge) => edge.source === loader.id && edge.target !== prepare.id)
-    )
-      continue;
-    const consumers = next.edges.filter((edge) => edge.source === prepare.id && edge.sourceHandle === 'output');
-    if (
-      !consumers.length ||
-      !consumers.some((edge) => {
-        const target = next.nodes.find((node) => node.id === edge.target);
-        const input = target?.data.params[edge.targetHandle ?? ''];
-        return (
-          target?.data.module === 'modules.DiffusersVideo' &&
-          ['Generate', 'GenerateVideoAudio'].includes(target.data.action) &&
-          input?.type === 'video' &&
-          (input.display === 'input' || input.isInput)
-        );
-      })
-    )
-      continue;
-    next = groupVisualStages(next, [loader.id, prepare.id], 'videoInput');
-  }
+  next = groupMediaPreparation(next);
   // Whole-pipeline paths already perform encoding/generation/decoding inside
   // their real native Generate operation. Fold only their actual setup chain;
   // do not invent an Encode stage or assign operation-authoring authority.

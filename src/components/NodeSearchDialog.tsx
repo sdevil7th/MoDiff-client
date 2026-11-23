@@ -81,6 +81,7 @@ const NodeSearchDialog = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [builtInOpen, setBuiltInOpen] = useState(true);
   const [customOpen, setCustomOpen] = useState(true);
+  const [browseBlocks, setBrowseBlocks] = useState(false);
   const [allowUnverified, setAllowUnverified] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const blocks = useUserBlockStore((state) => state.blocks);
@@ -158,6 +159,7 @@ const NodeSearchDialog = ({
     () => runtimeCatalogNodes(nodes, operations, support, view, { pipeline, task }),
     [nodes, operations, support, view, pipeline, task],
   );
+  const browsingCommon = (view === 'common' || view === 'experimental') && !handleType && !searchQuery.trim();
   const filteredNodes = useMemo<SearchEntry[]>(() => {
     const entries = [
       ...operationSearchEntries(
@@ -183,7 +185,11 @@ const NodeSearchDialog = ({
           label: nodeDisplayLabel(node),
         }),
       ),
-      ...catalogEntries.map((catalog) => ({ key: `catalog:${catalog.id}`, label: catalog.label, catalog })),
+      ...(browsingCommon && !browseBlocks ? [] : catalogEntries).map((catalog) => ({
+        key: `catalog:${catalog.id}`,
+        label: catalog.label,
+        catalog,
+      })),
       ...savedEntries
         .filter(
           ({ block, node }) =>
@@ -205,6 +211,8 @@ const NodeSearchDialog = ({
     savedEntries,
     nodes,
     catalogEntries,
+    browsingCommon,
+    browseBlocks,
     origin,
     allowUnverified,
   ]);
@@ -237,6 +245,7 @@ const NodeSearchDialog = ({
     onClose();
     setTimeout(() => {
       setSearchQuery('');
+      setBrowseBlocks(false);
       setSelectedIndex(0);
     }, 0);
   }, [onClose]);
@@ -409,6 +418,15 @@ const NodeSearchDialog = ({
       </div>
 
       <NodeDiscoveryFilters />
+      {browsingCommon && catalogEntries.length > 0 ? (
+        <div className="px-3 pb-2">
+          <ModiffCheckbox
+            label={`Include catalog Blocks (${catalogEntries.length})`}
+            checked={browseBlocks}
+            onCheckedChange={setBrowseBlocks}
+          />
+        </div>
+      ) : null}
       <OperationDiscoveryFields inPopover />
       {resolutionError ? (
         <p role="alert" className="px-3 pb-2 text-xs text-modiff-text">

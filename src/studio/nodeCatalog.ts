@@ -83,8 +83,6 @@ const SURFACE_CATEGORY_ORDER: NodeSurfaceCategory[] = [
   'Utility',
 ];
 
-const MODEL_SPECIFIC_MODULES = new Set<string>();
-
 // Discovery only: these existing generic operations keep their backend schemas
 // and execution identities. Inclusion does not add model/task support.
 const GENERIC_NODE_KEYS = new Set([
@@ -115,6 +113,9 @@ const GENERIC_NODE_KEYS = new Set([
 ]);
 
 const GENERIC_NODE_ROLES: Readonly<Record<string, NodeSurfaceCategory>> = {
+  'modules.ImageOperations.ProcessImage': 'Image',
+  'modules.Audio.ProcessAudio': 'Audio',
+  'modules.Video.ProcessVideo': 'Video',
   'modules.DiffusersImage.LayerDecompose': 'Edit',
   'modules.DiffusersImage.PredictMap': 'Condition',
   'modules.ModularDiffusers.ImageEncode': 'Condition',
@@ -124,12 +125,37 @@ const GENERIC_NODE_ROLES: Readonly<Record<string, NodeSurfaceCategory>> = {
   'modules.VideoConditioning.EdgePreprocessor': 'Condition',
 };
 
-export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView) {
+// These public controls have an independent wiring use. Offer them on a
+// relevant search or wire drag, and in the full implementation browser.
+const SPECIALIST_ACTIONS = new Set([
+  'modules.ModularDiffusers.AutoModelLoader',
+  'modules.ModularDiffusers.Denoise',
+  'modules.ModularDiffusers.DecodeLatents',
+  'modules.ModularDiffusers.EncodePrompt',
+  'modules.ModularDiffusers.ImageEmbeddings',
+  'modules.ModularDiffusers.LatentsPreview',
+  'modules.ModularDiffusers.QuantizationConfigNode',
+  'modules.ModularDiffusers.Guider',
+  'modules.ModularDiffusers.Scheduler',
+  'modules.DiffusersImage.ControlGenerate',
+  'modules.DiffusersImage.ControlEdit',
+  'modules.DiffusersImage.ControlInpaint',
+  'modules.DiffusersImage.UnconditionalGenerate',
+  'modules.DiffusersAudio.SetAdapters',
+  'modules.DiffusersAudio.FuseAdapters',
+  'modules.DiffusersVideo.GenerateSequence',
+  'modules.ImageFilters.GaussianBlur',
+  'modules.ImageFilters.GuidedBlur',
+  'modules.ImageFilters.UnsharpMask',
+  'modules.ImageFilters.AdaptiveSharpening',
+]);
+
+export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeCatalogView, targeted = false) {
   if (entry.visibility === 'internal') return false;
   if (entry.visibility === 'experimental') return view === 'experimental' || view === 'all';
+  if (view === 'advanced' || view === 'all') return true;
+  if (SPECIALIST_ACTIONS.has(nodeKey(entry.node))) return targeted;
   return (
-    view === 'advanced' ||
-    view === 'all' ||
     entry.visibility === 'essential' ||
     GENERIC_NODE_KEYS.has(nodeKey(entry.node)) ||
     entry.node.module === 'modules.Primitive' ||
@@ -142,6 +168,9 @@ export function nodeCatalogEntryMatchesView(entry: NodeCatalogEntry, view: NodeC
 }
 
 const ESSENTIAL_NODE_KEYS = new Set([
+  'modules.ImageOperations.ProcessImage',
+  'modules.Video.ProcessVideo',
+  'modules.Audio.ProcessAudio',
   'modules.DiffusersImage.LoadPipeline',
   'modules.DiffusersAudio.LoadPipeline',
   'modules.DiffusersImage.Generate',
@@ -208,7 +237,6 @@ function visibilityForNode(node: NodeData, key: string): NodeCatalogVisibility {
   if (nodeKey(node) === 'modules.ModularDiffusers.ReviewedModularWorkflowStep') return 'internal';
   if (textIncludesAny(`${key} ${node.label}`, ['nunchaku', 'sd3', 'deprecated'])) return 'experimental';
   if (ESSENTIAL_NODE_KEYS.has(key)) return 'essential';
-  if (MODEL_SPECIFIC_MODULES.has(node.module)) return 'advanced';
   if (node.module === 'modules.ModularDiffusers') return 'advanced';
   if (node.module === 'modules.ModelArtifact') return 'advanced';
   if (node.module.startsWith('custom.')) return 'essential';
@@ -231,7 +259,7 @@ export function getNodeCatalogEntry(node: NodeData, key = nodeKey(node)): NodeCa
   const specializedReason =
     visibility === 'experimental'
       ? 'Experimental Diffusers node. Enable experimental discovery to find it.'
-      : MODEL_SPECIFIC_MODULES.has(node.module) || node.module === 'modules.ModularDiffusers'
+      : node.module === 'modules.ModularDiffusers'
         ? 'Backend strategy node. Studio routes normal workflows through profiles.'
         : undefined;
 

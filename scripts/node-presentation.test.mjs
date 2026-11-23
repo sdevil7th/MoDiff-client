@@ -202,7 +202,11 @@ test('common discovery shows ordinary image and video preparation but keeps nati
   for (const [module, action, category] of cases) {
     const entry = catalog.getNodeCatalogEntry(node(module, action, action));
     assert.equal(entry.surfaceCategory, category);
-    assert.ok(catalog.nodeCatalogEntryMatchesView(entry, 'common'));
+    assert.equal(
+      catalog.nodeCatalogEntryMatchesView(entry, 'common'),
+      !['ControlEdit', 'ControlInpaint'].includes(action),
+    );
+    assert.ok(catalog.nodeCatalogEntryMatchesView(entry, 'common', true));
     assert.equal(entry.dragKey, `modules.${module}.${action}`);
   }
   for (const [module, action] of [
