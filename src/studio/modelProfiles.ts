@@ -782,7 +782,7 @@ export const ANIMATEDIFF_MOTION_REQUIREMENT: StudioModelRequirement = {
   revision: ANIMATEDIFF_MOTION_REVISION,
   kind: 'adapter',
   requiredForModes: ['text_to_video'],
-  description: 'Pinned fp16 safetensors AnimateDiff motion module.',
+  downloadFiles: ['.gitattributes', 'README.md', 'config.json', 'diffusion_pytorch_model.safetensors'],
 };
 
 export const ANIMATELCM_MOTION_REQUIREMENT: StudioModelRequirement = {

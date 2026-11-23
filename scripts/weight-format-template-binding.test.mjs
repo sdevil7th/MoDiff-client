@@ -408,6 +408,28 @@ test('native-only cache cannot satisfy a distinct variant and deduplication pres
   );
 });
 
+test('AnimateDiff readiness requires the standard motion file at the pinned revision', async () => {
+  const { ANIMATEDIFF_MOTION_REQUIREMENT: motion, ANIMATELCM_MOTION_REQUIREMENT: lcm } =
+    await load('studio/modelProfiles');
+  const { getRepoCacheStatus } = await load('studio/modelCache');
+  const files = ['.gitattributes', 'README.md', 'config.json', 'diffusion_pytorch_model.safetensors'];
+  assert.deepEqual(motion.downloadFiles, files);
+  assert.notEqual(lcm.repo, motion.repo);
+  const cachedSelection = (weight) => ({
+    id: motion.repo,
+    installed: true,
+    complete: true,
+    observed_selections: [{ revision: motion.revision, files: [...files.slice(0, -1), weight], complete: true }],
+  });
+  const status = (weight) =>
+    getRepoCacheStatus(motion.repo, [cachedSelection(weight)], [], null, {
+      revision: motion.revision,
+      files: motion.downloadFiles,
+    });
+  assert.equal(status('diffusion_pytorch_model.fp16.safetensors').runnable, false);
+  assert.equal(status('diffusion_pytorch_model.safetensors').runnable, true);
+});
+
 test('observed exact cached selections supersede native receipts without confusing variants or repository prefixes', async () => {
   const { getRepoCacheStatus, getStudioModelCacheStatus } = await load('studio/modelCache');
   const { getGraphWorkflowArtifactRequirements } = await load('studio/artifactRequirements');
