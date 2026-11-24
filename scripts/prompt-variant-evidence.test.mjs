@@ -395,6 +395,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['ChromaPipeline:text_to_image', 'MODIFF_CHROMA_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['Lumina2Pipeline:text_to_image', 'MODIFF_LUMINA2_SAVED_PROMPT_EVIDENCE', 'image'],
   ['HunyuanDiTPipeline:text_to_image', 'MODIFF_HUNYUAN_DIT_SAVED_PROMPT_EVIDENCE', 'image'],
+  ['HunyuanDiTPAGPipeline:text_to_image', 'MODIFF_HUNYUAN_DIT_PAG_SAVED_PROMPT_EVIDENCE', 'image'],
   ['OmniGenPipeline:text_to_image', 'MODIFF_OMNIGEN_SAVED_PROMPT_EVIDENCE', 'image'],
   ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
@@ -437,6 +438,9 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
       if (route?.retainedObservationSource || workflowId === 'Wan22Pipeline:text_to_video') {
         assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
+        if (route?.typedOnly) {
+          assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, route.typedOnly);
+        }
         const packagePath = join(temp, evidence.outputPackage.path);
         const runPath = join(temp, evidence.runDetail.path);
         const originalPackage = readFileSync(packagePath);
@@ -559,6 +563,7 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
     'ChromaPipeline:text_to_image',
     'Lumina2Pipeline:text_to_image',
     'HunyuanDiTPipeline:text_to_image',
+    'HunyuanDiTPAGPipeline:text_to_image',
     'OmniGenPipeline:text_to_image',
     'SanaSprintPipeline:text_to_image',
     'StableDiffusionXLPAGPipeline:text_to_image',

@@ -2266,6 +2266,35 @@ export const directImagePromptRoutes = [
     },
   },
   {
+    format: 'modiff.private.hunyuan-dit-pag-prompt-variant.v1',
+    workflowId: 'HunyuanDiTPAGPipeline:text_to_image',
+    modelType: 'HunyuanDiTPAGPipeline',
+    modelRepo: 'Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled',
+    modelRevision: 'ba991d1546d8c50936c4c16398ed0a87b9b99fb1',
+    retainedObservationSource:
+      'sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3',
+    active: [...plainImageActive, 'negative_prompt', ...pagScalars],
+    inactive: [...plainImageInactive.filter((key) => !pagScalars.includes(key)), 'max_sequence_length'],
+    legacyNull: [...plainImageLegacyNull, 'max_sequence_length'],
+    typedOnly: pagScalars,
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    dtype: 'float16',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 25,
+      guidance_scale: 5,
+      max_sequence_length: 256,
+      seed: 42,
+      negative_prompt: '',
+      pag_scale: 3,
+      pag_adaptive_scale: 0,
+    },
+  },
+  {
     format: 'modiff.private.omnigen-prompt-variant.v1',
     workflowId: 'OmniGenPipeline:text_to_image',
     modelType: 'OmniGenPipeline',
@@ -2957,7 +2986,11 @@ function imageAccountingExecutionPlan(
     if (retainedGenerator && row.action === generateAction) {
       accountingKeys(
         row.fields,
-        [...conditional.active, 'executed_task', ...legacyNullFields],
+        [
+          ...conditional.active.filter((key) => !conditional.typedOnly?.includes(key)),
+          'executed_task',
+          ...legacyNullFields,
+        ],
         'Retained adapter controls are incomplete or unexpected.',
       );
       for (const [key, item] of Object.entries(row.fields)) {
@@ -3061,7 +3094,9 @@ function imageAccountingExecutionPlan(
   const fields = (entry) => entry.row.fieldAccounting.fields;
   const value = (entry, key) => {
     if (retainedGenerator && entry === generate)
-      return conditional.active.includes(key) ? entry.row.fields[key].value : entry.node.params[key]?.value;
+      return conditional.active.includes(key) && !conditional.typedOnly?.includes(key)
+        ? entry.row.fields[key].value
+        : entry.node.params[key]?.value;
     return fields(entry)[key].value;
   };
   const check = (entry, key, disposition, effective, reason) => {

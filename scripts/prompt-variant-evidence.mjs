@@ -996,6 +996,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     observationLimits: {
       fullConsumedFieldAccounting: Boolean(accounting && !accounting.retainedGenerator),
       physicalPlatformQualification: false,
+      ...(accounting?.retainedGenerator && imageRoute.typedOnly?.length
+        ? { configuredUnobservedControls: [...imageRoute.typedOnly] }
+        : {}),
       ...(sampledCpuMemory ? { memoryMeasurement: 'sampled_worker_rss' } : {}),
     },
     qualificationClaims: {
