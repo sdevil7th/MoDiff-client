@@ -495,7 +495,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           !workflow.requiredArtifacts.includes(base.value) ||
           JSON.stringify(quantizationParams.components?.value) !== '[]' ||
           recipeParams.offload_mode?.value !== 'sequential_cpu' ||
-          recipeParams.attention_backend?.value !== '_native_math' ||
+          recipeParams.attention_backend?.value !== 'auto' ||
           recipeParams.attention_components?.value !== '' ||
           recipeParams.vae_slicing?.value !== true ||
           recipeParams.vae_tiling?.value !== false ||

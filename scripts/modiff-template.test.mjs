@@ -1053,6 +1053,19 @@ test('final direct image and LTX2 routes stay additive, Expert-only, and media t
   ]);
 });
 
+test('outpaint uses the selected model canvas defaults and keeps other task defaults', () => {
+  const defaults = profilesModule.getFormDefaultsForMode('outpaint', 'ChromaInpaintPipeline');
+  assert.deepEqual([defaults.width, defaults.height, defaults.aspectRatio], [1024, 768, '4:3']);
+  assert.deepEqual(
+    [defaults.outpaintLeft, defaults.outpaintRight, defaults.outpaintOverlap, defaults.outpaintFeather],
+    [96, 96, 48, 16],
+  );
+  const inpaint = profilesModule.getFormDefaultsForMode('inpaint', 'ChromaInpaintPipeline');
+  assert.deepEqual([inpaint.width, inpaint.height, inpaint.outpaintLeft], [1024, 1024, 256]);
+  const other = profilesModule.getFormDefaultsForMode('outpaint', 'ZImageInpaintPipeline');
+  assert.deepEqual([other.width, other.height, other.outpaintLeft, other.outpaintRight], [1344, 768, 256, 256]);
+});
+
 test('generic direct outpaint and synchronized LTX2 workflows infer exact modes and fields', () => {
   const node = (id, module, action, studioRole, params = {}) => ({
     id,

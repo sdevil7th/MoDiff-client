@@ -926,8 +926,15 @@ export function isStudioModelDiffusersBacked(profile: StudioModelProfile) {
   return profile.isDiffusersBacked ?? (runtimeKind === 'diffusers' || runtimeKind === 'diffusers_accelerated');
 }
 
+type StudioModelAuthoringDefaults = StudioModelProfile & {
+  outpaintDefaults?: Pick<
+    StudioFormState,
+    'width' | 'height' | 'aspectRatio' | 'outpaintLeft' | 'outpaintRight' | 'outpaintOverlap' | 'outpaintFeather'
+  >;
+};
+
 type StudioModelProfileSource = Omit<
-  StudioModelProfile,
+  StudioModelAuthoringDefaults,
   | 'modelType'
   | 'label'
   | 'displayName'
@@ -3511,22 +3518,33 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
     lowVramSide: 1024,
     lowVramOffload: 'sequential_cpu',
   }),
-  ChromaInpaintPipeline: expertImageRouteProfile({
-    family: 'Chroma',
-    defaultRepo: CHROMA1_HD_REPO,
-    revision: CHROMA1_HD_REVISION,
-    modes: ['inpaint', 'outpaint'],
-    modeRequirements: {
-      inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
-      outpaint: { requiredImages: ['referenceImages'] },
+  ChromaInpaintPipeline: {
+    ...expertImageRouteProfile({
+      family: 'Chroma',
+      defaultRepo: CHROMA1_HD_REPO,
+      revision: CHROMA1_HD_REVISION,
+      modes: ['inpaint', 'outpaint'],
+      modeRequirements: {
+        inpaint: { requiredImages: ['referenceImages', 'maskImage'] },
+        outpaint: { requiredImages: ['referenceImages'] },
+      },
+      recommendedSteps: 28,
+      recommendedGuidance: 7,
+      recommendedMaxSequenceLength: 512,
+      supportFlags: 3,
+      lowVramSide: 1024,
+      lowVramOffload: 'sequential_cpu',
+    }),
+    outpaintDefaults: {
+      width: 1024,
+      height: 768,
+      aspectRatio: '4:3',
+      outpaintLeft: 96,
+      outpaintRight: 96,
+      outpaintOverlap: 48,
+      outpaintFeather: 16,
     },
-    recommendedSteps: 28,
-    recommendedGuidance: 7,
-    recommendedMaxSequenceLength: 512,
-    supportFlags: 3,
-    lowVramSide: 1024,
-    lowVramOffload: 'sequential_cpu',
-  }),
+  },
   LTX2Pipeline: {
     ...expertVideoProfile(
       planningVideoProfile('LTX Video', LTX2_REPO, ['text_to_video'], {}, 0),
@@ -3876,7 +3894,7 @@ export const STUDIO_MODEL_PROFILES = Object.fromEntries(
       },
     ];
   }),
-) as Record<StudioModelType, StudioModelProfile>;
+) as Record<StudioModelType, StudioModelAuthoringDefaults>;
 
 export const STUDIO_MODEL_LABELS = Object.fromEntries(
   Object.entries(STUDIO_MODEL_PROFILES).map(([modelType, profile]) => [modelType, profile.label]),
@@ -4815,7 +4833,7 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
   const modeDefaults = profile.modeDefaults?.[mode];
   const size =
     mode === 'outpaint'
-      ? { aspectRatio: '16:9' as const, width: 1344, height: 768 }
+      ? (profile.outpaintDefaults ?? { aspectRatio: '16:9' as const, width: 1344, height: 768 })
       : {
           ...profile.defaultSize,
           width: modeDefaults?.width ?? profile.defaultSize.width,
@@ -4824,11 +4842,9 @@ export function getFormDefaultsForMode(mode: StudioMode, preferredModel?: Studio
 
   return {
     ...DEFAULT_STUDIO_FORM,
+    ...size,
     mode,
     modelType,
-    aspectRatio: size.aspectRatio,
-    width: size.width,
-    height: size.height,
     dtype: profile.defaultDtype,
     steps: mode === 'outpaint' ? 32 : (modeDefaults?.steps ?? profile.recommendedSteps),
     guidanceScale: modeDefaults?.guidanceScale ?? profile.recommendedGuidance,
