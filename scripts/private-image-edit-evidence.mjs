@@ -26,6 +26,7 @@ import {
 
 export const PRIVATE_IMAGE_EDIT_FORMAT = 'modiff.private.lcm-source-bound-edit.v1';
 export const DIRECT_IMAGE_EDIT_FORMAT = 'modiff.private.direct-image-edit-source-bound.v1';
+export const NATIVE_PNG_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-png.v1';
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
 const imageGeometry = ['height', 'max_sequence_length', 'width'];
 const stableDiffusionEditConsumed = [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'];
@@ -66,6 +67,7 @@ const editRoutes = new Map([
       fullNativeSnapshot: true,
       inputPathPrefix: '@data/images/',
       windowsCudaRuntime: true,
+      nativePngEvidence: true,
     },
   ],
   [
@@ -134,7 +136,14 @@ function directOwners(api, hinted = false) {
   );
 }
 
-export function bindPrivateImageEditGraph({ expected, submitted, input, strengthVariant, inputPathPrefix = '' }) {
+export function bindPrivateImageEditGraph({
+  expected,
+  submitted,
+  input,
+  strengthVariant,
+  inputPathPrefix = '',
+  nativePngEvidence = false,
+}) {
   const bound = structuredClone(expected);
   const canonical = directOwners(bound);
   const observed = directOwners(submitted, Object.hasOwn(submitted, 'runtimeHints'));
@@ -145,7 +154,8 @@ export function bindPrivateImageEditGraph({ expected, submitted, input, strength
   assert.equal(input.nodeId, observed.source.id);
   assert.equal(input.field, 'file');
   assert.ok(typeof input.sourceValue === 'string' && input.sourceValue.startsWith(inputPathPrefix));
-  assert.match(input.sourceValue.slice(inputPathPrefix.length), /^[a-zA-Z0-9_-][\w.-]{0,200}\.webp$/u);
+  const safeBasename = nativePngEvidence ? /^[a-zA-Z0-9_-][\w.-]{0,200}\.png$/u : /^[a-zA-Z0-9_-][\w.-]{0,200}\.webp$/u;
+  assert.match(input.sourceValue.slice(inputPathPrefix.length), safeBasename);
   const prompt = observed.edit.node.params.prompt.value;
   assert.ok(typeof prompt === 'string' && prompt.length > 0 && prompt.length <= 4096 && prompt.trim() === prompt);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt));
@@ -304,6 +314,29 @@ function validateRuntime(
   return { runtime, elapsedSeconds, peakAllocatedBytes };
 }
 
+export function verifyRetainedPngUpload(upload, input, decoded, bytes) {
+  keys(upload, ['error', 'path', 'media']);
+  assert.equal(upload.error, false);
+  assert.equal(upload.path, input.sourceValue);
+  assert.match(input.sourceValue, /^@data\/images\/[a-zA-Z0-9_-][\w.-]{0,200}\.png$/u);
+  same(
+    upload.media,
+    {
+      filename: input.sourceValue.split('/').at(-1),
+      extension: '.png',
+      sizeBytes: bytes.length,
+      sha256: sha256(bytes),
+      kind: 'image',
+      mimeType: 'image/png',
+      width: decoded.width,
+      height: decoded.height,
+      frames: 1,
+    },
+    'The retained source upload differs from the exact native PNG input.',
+  );
+  assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'The retained source is not PNG.');
+}
+
 export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {
   const workflowId = manifest.id;
   const route = editRoutes.get(workflowId);
@@ -317,6 +350,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= 65_536);
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes);
+  const nativePngEvidence = route.nativePngEvidence === true && evidence.format === NATIVE_PNG_EDIT_FORMAT;
   keys(evidence, [
     'schemaVersion',
     'format',
@@ -325,11 +359,10 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     'graphRequest',
     'graphAcknowledgment',
     'persistedOutputs',
-    'inputServerBefore',
-    'inputServerAfter',
+    ...(nativePngEvidence ? ['inputUpload'] : ['inputServerBefore', 'inputServerAfter']),
   ]);
   assert.equal(evidence.schemaVersion, 1);
-  assert.equal(evidence.format, route.format);
+  assert.equal(evidence.format, nativePngEvidence ? NATIVE_PNG_EDIT_FORMAT : route.format);
   assert.equal(evidence.workflowId, workflowId);
   const evidenceRoot = realpathSync(dirname(evidencePath));
   const retainedFiles = [];
@@ -388,6 +421,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     input,
     strengthVariant: route.strengthVariant,
     inputPathPrefix: route.inputPathPrefix,
+    nativePngEvidence,
   });
   for (const api of [creator.apiGraph, ...visualExports]) {
     directOwners(api);
@@ -418,8 +452,12 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   validatePrivateImageEditFields(bound, output, route.consumed);
   const decodedInput = await verifySourceBinding(clientRoot, bound, output, input);
   const inputMedia = read(input.file);
-  for (const ref of [evidence.inputServerBefore, evidence.inputServerAfter]) {
-    assert.ok(read(ref).bytes.equals(inputMedia.bytes), 'The server-bound source bytes differ.');
+  if (nativePngEvidence) {
+    verifyRetainedPngUpload(json(evidence.inputUpload), input, decodedInput, inputMedia.bytes);
+  } else {
+    for (const ref of [evidence.inputServerBefore, evidence.inputServerAfter]) {
+      assert.ok(read(ref).bytes.equals(inputMedia.bytes), 'The server-bound source bytes differ.');
+    }
   }
   const media = read(outputRef.file);
   const item = validateNativeVariantOutput({
@@ -480,6 +518,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       fullConsumedFieldAccounting: false,
       editConsumerControlsObserved: true,
       sourceGeometryQualified: false,
+      ...(nativePngEvidence ? { sourceByteWitness: 'native-load-consumer-and-upload' } : {}),
       physicalPlatformQualification: false,
     },
     qualificationClaims: {

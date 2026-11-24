@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { validateLateNativeImageVariantRun, validateNativeVariantRun } from './native-variant-run-evidence.mjs';
@@ -6,6 +7,7 @@ import {
   bindPrivateImageEditGraph,
   readPrivateImageEditEvidence,
   validatePrivateImageEditRuntimePlatform,
+  verifyRetainedPngUpload,
 } from './private-image-edit-evidence.mjs';
 
 function archivedImage() {
@@ -312,4 +314,43 @@ test('only the scoped SD1.5 Edit route accepts the observed Windows CUDA runtime
   assert.throws(() => validatePrivateImageEditRuntimePlatform('StableDiffusionPipeline:inpaint', windows, 'cuda'));
   assert.doesNotThrow(() => validatePrivateImageEditRuntimePlatform(sdxl, linux, 'rocm'));
   assert.throws(() => validatePrivateImageEditRuntimePlatform(sdxl, windows, 'cuda'));
+});
+
+test('retained native PNG upload binds an exact safe path, file bytes and decoded dimensions', () => {
+  const bytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0AMAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const sourceValue = '@data/images/study.png';
+  const metadata = { width: 1, height: 1 };
+  const upload = {
+    error: false,
+    path: sourceValue,
+    media: {
+      filename: 'study.png',
+      extension: '.png',
+      sizeBytes: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      kind: 'image',
+      mimeType: 'image/png',
+      ...metadata,
+      frames: 1,
+    },
+  };
+  verifyRetainedPngUpload(upload, { sourceValue }, metadata, bytes);
+  for (const bad of [
+    { ...upload, path: '@data/images/other.png' },
+    { ...upload, media: { ...upload.media, sha256: 'a'.repeat(64) } },
+    { ...upload, media: { ...upload.media, width: 2 } },
+    { ...upload, media: { ...upload.media, mimeType: 'image/webp' } },
+  ]) {
+    assert.throws(() => verifyRetainedPngUpload(bad, { sourceValue }, metadata, bytes));
+  }
+  const wrongMagic = Buffer.from(bytes);
+  wrongMagic[0] = 0;
+  const magicWitness = {
+    ...upload,
+    media: { ...upload.media, sha256: createHash('sha256').update(wrongMagic).digest('hex') },
+  };
+  assert.throws(() => verifyRetainedPngUpload(magicWitness, { sourceValue }, metadata, wrongMagic), /not PNG/u);
 });

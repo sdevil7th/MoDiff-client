@@ -808,9 +808,11 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     return readCanonicalSpeechEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
   }
   if (
-    ['modiff.private.lcm-source-bound-edit.v1', 'modiff.private.direct-image-edit-source-bound.v1'].includes(
-      evidence.format,
-    )
+    [
+      'modiff.private.lcm-source-bound-edit.v1',
+      'modiff.private.direct-image-edit-source-bound.v1',
+      'modiff.private.direct-image-edit-native-png.v1',
+    ].includes(evidence.format)
   ) {
     const { readPrivateImageEditEvidence } = await import('./private-image-edit-evidence.mjs');
     return readPrivateImageEditEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
