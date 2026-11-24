@@ -52,6 +52,19 @@ const textRoute = {
   ],
 };
 
+const janusTextRoute = {
+  ...textRoute,
+  format: 'modiff.private.janus-text-prompt-variant.v1',
+  workflowId: 'HuggingFaceAnyToAnyModel:text_generation',
+  modelRepo: 'deepseek-community/Janus-Pro-1B',
+  modelRevision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
+  chain: [
+    ['loader', 'modules.HuggingFaceTransformers', 'LoadAnyToAnyModel', 'device dtype model_id pipeline_class revision'],
+    ['generator', 'modules.HuggingFaceTransformers', 'GenerateAnyToAny', 'prompt'],
+    ['preview', 'modules.Primitive', 'DataViewer', ''],
+  ],
+};
+
 const videoRoute = {
   format: 'modiff.private.shap-e-prompt-variant.v1',
   workflowId: 'ShapEPipeline:text_to_3d',
@@ -247,7 +260,7 @@ function validateImagePromptPreparation(preparation, modelType) {
   assert.ok(Object.values(cleanup.released).every((count) => Number.isSafeInteger(count) && count >= 0));
 }
 
-export function validatePromptVariantText(bytes, item, bound, runtime) {
+function nativeTextResult(bytes, item) {
   const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   assert.ok(bytes.equals(Buffer.from(text)), 'Original JSON output encoding differs.');
   const payload = JSON.parse(text);
@@ -256,15 +269,23 @@ export function validatePromptVariantText(bytes, item, bound, runtime) {
     stableStringify(item.value) === stableStringify(payload),
     'Original text does not match the saved native output.',
   );
-  const result = JSON.parse(payload[0]);
-  keys(result, ['schemaVersion', 'task', 'text', 'finishReason', 'inputTokens', 'generatedTokens', 'modelReceipt']);
+  return JSON.parse(payload[0]);
+}
+
+function validateGeneratedText(result, bound) {
   assert.equal(result.schemaVersion, 1);
-  assert.equal(result.task, 'text-generation');
   assert.ok(typeof result.text === 'string' && result.text.trim() && result.text.length <= 4096);
   assert.ok(['stop', 'length'].includes(result.finishReason));
   assert.ok(Number.isSafeInteger(result.inputTokens) && result.inputTokens > 0);
   assert.ok(Number.isSafeInteger(result.generatedTokens) && result.generatedTokens > 0);
   assert.ok(result.generatedTokens <= bound.generator.node.params.max_new_tokens.value);
+}
+
+export function validatePromptVariantText(bytes, item, bound, runtime) {
+  const result = nativeTextResult(bytes, item);
+  keys(result, ['schemaVersion', 'task', 'text', 'finishReason', 'inputTokens', 'generatedTokens', 'modelReceipt']);
+  assert.equal(result.task, 'text-generation');
+  validateGeneratedText(result, bound);
   const { receiptDigest, ...record } = result.modelReceipt;
   const version = runtime.packages.transformers;
   assert.match(version, /^\d+(?:\.\d+){2}(?:[a-z0-9.+-]+)?$/u);
@@ -291,6 +312,79 @@ export function validatePromptVariantText(bytes, item, bound, runtime) {
     'Native text model-selection receipt differs from the executed local recipe.',
   );
   assert.equal(receiptDigest, `sha256:${canonicalJsonHash(record)}`, 'Native text model receipt digest differs.');
+  return {
+    schemaVersion: 1,
+    kind: 'json',
+    finishReason: result.finishReason,
+    inputTokens: result.inputTokens,
+    generatedTokens: result.generatedTokens,
+    modelReceiptDigest: receiptDigest,
+  };
+}
+
+function validateJanusPromptVariantText(bytes, item, bound, runtime) {
+  const result = nativeTextResult(bytes, item);
+  keys(result, [
+    'schemaVersion',
+    'task',
+    'adapter',
+    'outputModality',
+    'text',
+    'image',
+    'audio',
+    'finishReason',
+    'inputTokens',
+    'generatedTokens',
+    'inputImageCount',
+    'inputMediaPixels',
+    'modelReceipt',
+  ]);
+  assert.equal(result.task, 'any-to-any-generation');
+  assert.equal(result.adapter, 'janus-v1');
+  assert.equal(result.outputModality, 'text');
+  assert.equal(result.image, null);
+  assert.equal(result.audio, null);
+  assert.equal(result.inputImageCount, 0);
+  assert.equal(result.inputMediaPixels, 0);
+  validateGeneratedText(result, bound);
+  const { receiptDigest, ...record } = result.modelReceipt;
+  const version = runtime.packages.transformers;
+  assert.match(version, /^\d+(?:\.\d+){2}(?:[a-z0-9.+-]+)?$/u);
+  same(
+    record,
+    {
+      schemaVersion: 1,
+      library: 'transformers',
+      task: 'any-to-any-generation',
+      adapter: {
+        adapterId: 'janus-v1',
+        imageGeneration: { height: 384, patchSize: 16, tokenCount: 576, width: 384 },
+        inputModalities: ['image', 'text'],
+        modelType: 'janus',
+        outputModalities: ['image', 'text'],
+      },
+      loader: {
+        configAutoClass: 'AutoConfig',
+        modelAutoClass: 'AutoModelForMultimodalLM',
+        pipelineClass: 'AnyToAnyPipeline',
+        preprocessorAutoClass: 'AutoProcessor',
+      },
+      runtime: {
+        architectures: ['JanusForConditionalGeneration'],
+        device: bound.loader.node.params.device.value,
+        dtype: bound.loader.node.params.dtype.value,
+        modelClass: 'JanusForConditionalGeneration',
+        modelType: 'janus',
+        pipelineClass: 'AnyToAnyPipeline',
+        preprocessorClass: 'JanusProcessor',
+        transformersVersion: version,
+      },
+      security: { hostedInference: false, localFilesOnly: true, safetensorsOnly: true, trustRemoteCode: false },
+      source: { kind: 'hub', repository: janusTextRoute.modelRepo, revision: janusTextRoute.modelRevision },
+    },
+    'Native Janus model-selection receipt differs from the executed local recipe.',
+  );
+  assert.equal(receiptDigest, `sha256:${canonicalJsonHash(record)}`, 'Native Janus model receipt digest differs.');
   return {
     schemaVersion: 1,
     kind: 'json',
@@ -336,8 +430,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
   const profile = imageRoute
     ? { ...imagePromptRoute, ...imageRoute }
-    : [textRoute, videoRoute].find(({ workflowId }) => workflowId === target.workflowId);
+    : [textRoute, janusTextRoute, videoRoute].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
+  const requiresOriginalRequest = imageRoute !== undefined || profile === janusTextRoute;
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   assert.ok(target.outputPlan.mediaKinds.includes(profile.outputKind));
@@ -360,7 +455,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     'modelObservations',
     'inputs',
     'outputs',
-    ...(imageRoute ? ['graphRequest', 'graphAcknowledgment'] : []),
+    ...(requiresOriginalRequest ? ['graphRequest', 'graphAcknowledgment'] : []),
     ...(profile.lateNativeSnapshot ? ['persistedOutputs'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
@@ -407,12 +502,14 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     outputPackage,
     run,
     graphCompleted,
-    ...(imageRoute
+    ...(requiresOriginalRequest
       ? {
           graphRequest: json(evidence.graphRequest),
           graphAcknowledgment: json(evidence.graphAcknowledgment),
-          validatePreparation: (preparation) => validateImagePromptPreparation(preparation, target.modelType),
         }
+      : {}),
+    ...(imageRoute
+      ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, target.modelType) }
       : {}),
     ...(profile === videoRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
@@ -474,12 +571,14 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     contentType: profile.contentType,
   });
   assert.match(output.id, /^run-output-[a-f0-9]{24}$/u);
-  const extension = imageRoute ? 'webp' : profile === textRoute ? 'txt' : 'mp4';
+  const extension = imageRoute ? 'webp' : profile.outputKind === 'json' ? 'txt' : 'mp4';
   assert.equal(item.backendPath, `@data/studio/outputs/${output.id}_item_00.${extension}`);
   assert.equal(output.mediaCollectionHash, `sha256:collection:${digest(JSON.stringify([item.mediaHash]))}`);
   let decodedOutput;
   if (profile === textRoute) {
     decodedOutput = validatePromptVariantText(media.bytes, item, bound, runtime);
+  } else if (profile === janusTextRoute) {
+    decodedOutput = validateJanusPromptVariantText(media.bytes, item, bound, runtime);
   } else if (profile === videoRoute) {
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
     decodedOutput = validatePromptVariantVideo(await decodedMediaHash(media.file, 'video'), item, bound);

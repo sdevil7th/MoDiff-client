@@ -283,6 +283,7 @@ test('the video variant needs independently decoded and moving geometry at the n
 });
 
 for (const [workflowId, variable, kind] of [
+  ['HuggingFaceAnyToAnyModel:text_generation', 'MODIFF_JANUS_TEXT_PROMPT_EVIDENCE', 'json'],
   ['LuminaPipeline:text_to_image', 'MODIFF_LUMINA_PROMPT_EVIDENCE', 'image'],
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
@@ -323,7 +324,7 @@ for (const [workflowId, variable, kind] of [
       writeFileSync(changedPath, JSON.stringify(evidence));
       await assert.rejects(
         () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-        /another-execution/u,
+        /another-execution|Archived authoring requires the exact original capture/u,
       );
       assert.ok(readFileSync(evidencePath).equals(original.descriptorBytes));
     } finally {
