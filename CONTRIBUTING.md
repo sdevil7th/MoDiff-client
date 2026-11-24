@@ -537,6 +537,12 @@ execution with that prompt or file and needs a reviewed recipe to bind it for
 release. Native-resolution DDIM, DDPM, and Consistency samples are technical
 canaries under the project's model review policy.
 
+The SD1.5 Inpaint path accepts a separate native PNG descriptor with original
+source and mask uploads. The reader verifies that the two distinct Load nodes
+produced the recorded RGB source and grayscale mask and that those exact pixels
+and dimensions reached their respective Inpaint ports. Its receipt binds the
+source and mask separately to the saved Expert execution.
+
 The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge, Spandrel
 Real-ESRGAN 2×, Whisper Tiny transcription and LCM dawn edit use declarations in
 `src/studio/retainedGalleryTemplates.ts`. They share

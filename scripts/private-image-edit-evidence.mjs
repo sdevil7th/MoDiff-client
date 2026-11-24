@@ -27,6 +27,7 @@ import {
 export const PRIVATE_IMAGE_EDIT_FORMAT = 'modiff.private.lcm-source-bound-edit.v1';
 export const DIRECT_IMAGE_EDIT_FORMAT = 'modiff.private.direct-image-edit-source-bound.v1';
 export const NATIVE_PNG_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-png.v1';
+export const NATIVE_PNG_INPAINT_FORMAT = 'modiff.private.direct-image-inpaint-native-png.v1';
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
 const imageGeometry = ['height', 'max_sequence_length', 'width'];
 const stableDiffusionEditConsumed = [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'];
@@ -71,6 +72,22 @@ const editRoutes = new Map([
     },
   ],
   [
+    'StableDiffusionPipeline:inpaint',
+    {
+      modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      loaderClass: 'StableDiffusionInpaintPipeline',
+      format: NATIVE_PNG_INPAINT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-inpaint-observation.v1',
+      consumed: [...stableDiffusionEditConsumed, 'width', 'height'],
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      windowsCudaRuntime: true,
+      nativePngEvidence: true,
+      masked: true,
+    },
+  ],
+  [
     'StableDiffusionXLPipeline:edit_image',
     {
       modelRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
@@ -93,6 +110,12 @@ const ownerOrder = [
   ['source', 'modules.Image', 'Load'],
   ['edit', 'modules.DiffusersImage', 'Edit'],
   ['preview', 'modules.Image', 'Preview'],
+];
+const inpaintOwners = [
+  ...ownerOrder.slice(0, 4),
+  ['mask', 'modules.Image', 'Load'],
+  ['edit', 'modules.DiffusersImage', 'Inpaint'],
+  ownerOrder.at(-1),
 ];
 const editableFields = [
   ...baseConsumed,
@@ -117,15 +140,16 @@ const same = (a, b, message) => assert.equal(stableStringify(a), stableStringify
 const keys = (row, expected) =>
   same(Object.keys(row ?? {}).sort(), [...expected].sort(), 'Unexpected evidence fields.');
 
-function directOwners(api, hinted = false) {
+function directOwners(api, hinted = false, masked = false) {
   keys(api, ['sid', 'nodes', 'paths', ...(hinted ? ['runtimeHints'] : [])]);
-  assert.equal(Object.keys(api.nodes).length, ownerOrder.length);
+  const owners = masked ? inpaintOwners : ownerOrder;
+  assert.equal(Object.keys(api.nodes).length, owners.length);
   assert.equal(api.paths.length, 1);
   const route = api.paths[0];
-  assert.equal(route.length, ownerOrder.length);
-  assert.equal(new Set(route).size, ownerOrder.length);
+  assert.equal(route.length, owners.length);
+  assert.equal(new Set(route).size, owners.length);
   return Object.fromEntries(
-    ownerOrder.map(([role, module, action], index) => {
+    owners.map(([role, module, action], index) => {
       const id = route[index];
       const node = api.nodes[id];
       keys(node, ['module', 'action', 'params']);
@@ -140,26 +164,32 @@ export function bindPrivateImageEditGraph({
   expected,
   submitted,
   input,
+  maskInput,
   strengthVariant,
   inputPathPrefix = '',
   nativePngEvidence = false,
 }) {
   const bound = structuredClone(expected);
-  const canonical = directOwners(bound);
-  const observed = directOwners(submitted, Object.hasOwn(submitted, 'runtimeHints'));
-  const canonicalInput = canonical.source.node.params.file;
+  const masked = maskInput !== undefined;
+  const canonical = directOwners(bound, false, masked);
+  const observed = directOwners(submitted, Object.hasOwn(submitted, 'runtimeHints'), masked);
   const canonicalPrompt = canonical.edit.node.params.prompt;
-  assert.deepEqual(canonicalInput, { value: [], display: 'filebrowser' });
   assert.equal(canonicalPrompt.value, '');
-  assert.equal(input.nodeId, observed.source.id);
-  assert.equal(input.field, 'file');
-  assert.ok(typeof input.sourceValue === 'string' && input.sourceValue.startsWith(inputPathPrefix));
   const safeBasename = nativePngEvidence ? /^[a-zA-Z0-9_-][\w.-]{0,200}\.png$/u : /^[a-zA-Z0-9_-][\w.-]{0,200}\.webp$/u;
-  assert.match(input.sourceValue.slice(inputPathPrefix.length), safeBasename);
+  const bindFile = (role, reference) => {
+    const field = canonical[role].node.params.file;
+    assert.deepEqual(field, { value: role === 'mask' ? '' : [], display: 'filebrowser' });
+    assert.equal(reference.nodeId, observed[role].id);
+    assert.equal(reference.field, 'file');
+    assert.ok(typeof reference.sourceValue === 'string' && reference.sourceValue.startsWith(inputPathPrefix));
+    assert.match(reference.sourceValue.slice(inputPathPrefix.length), safeBasename);
+    field.value = [reference.sourceValue];
+  };
+  bindFile('source', input);
+  if (masked) bindFile('mask', maskInput);
   const prompt = observed.edit.node.params.prompt.value;
   assert.ok(typeof prompt === 'string' && prompt.length > 0 && prompt.length <= 4096 && prompt.trim() === prompt);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt));
-  canonicalInput.value = [input.sourceValue];
   canonicalPrompt.value = prompt;
   if (strengthVariant) {
     assert.equal(canonical.edit.node.params.strength.value, strengthVariant.original);
@@ -179,8 +209,12 @@ export function validatePrivateImageEditFields(bound, output, consumed = lcmRout
   for (const field of ['unavailableFields', 'uncapturedNodeIds']) same(accounting[field], []);
   // The legacy flat summary combines the GPU loader/recipe and the inactive
   // CPU preview selector. Only its exact, independently scoped causes are safe.
-  same(accounting.ambiguousFields, ['device']);
-  const roles = ownerOrder.map(([role]) => bound[role]);
+  // Source and mask also each publish their own exact decoded image facts.
+  same(
+    accounting.ambiguousFields,
+    bound.mask ? ['device', 'imageAlphaChannel', 'imageSourceHashes', 'imageSourceModes'] : ['device'],
+  );
+  const roles = (bound.mask ? inpaintOwners : ownerOrder).map(([role]) => bound[role]);
   same(accounting.nodes.map(({ nodeId }) => nodeId).sort(), roles.map(({ id }) => id).sort());
   for (const { id, node } of roles) {
     const observed = accounting.nodes.find(({ nodeId }) => nodeId === id);
@@ -204,13 +238,13 @@ export function validatePrivateImageEditFields(bound, output, consumed = lcmRout
   assert.equal(complete, true);
   same(unaccountedFields, []);
   same(omittedFields, {});
-  keys(inputProjections, ['image']);
+  keys(inputProjections, bound.mask ? ['image', 'mask_image'] : ['image']);
   keys(outputProjections, []);
   const params = bound.edit.node.params;
   const metadata = 'image_contract';
   const known = [...editableFields, metadata];
   keys(fields, known);
-  keys(params, [...known, 'image', 'pipeline']);
+  keys(params, [...known, 'image', 'pipeline', ...(bound.mask ? ['mask_image'] : [])]);
   for (const field of known) {
     const value = params[field].value;
     assert.notEqual(value, undefined);
@@ -244,8 +278,23 @@ async function verifySourceBinding(clientRoot, bound, output, input) {
     appType: 'custom',
   });
   try {
-    const { verifyImageEditSourceBinding } = await server.ssrLoadModule('/scripts/image-edit-source-binding.mjs');
+    const { verifyImageEditSourceBinding, verifyImageInpaintSourceBinding } = await server.ssrLoadModule(
+      '/scripts/image-edit-source-binding.mjs',
+    );
     const receipt = output.resolvedExecutionInputs;
+    if (bound.mask) {
+      const { source, mask } = verifyImageInpaintSourceBinding({
+        submittedApi: output.apiGraphSnapshot,
+        receipt,
+        outputIdentity: output,
+        sourceId: bound.source.id,
+        maskId: bound.mask.id,
+        inpaintId: bound.edit.id,
+      });
+      assert.equal(source.sourceFile.sha256, input.file.sha256);
+      assert.equal(source.sourceFile.byteSize, input.file.bytes);
+      return { decodedInput: source.decodedImage, mask };
+    }
     const joined = verifyImageEditSourceBinding({
       submittedApi: output.apiGraphSnapshot,
       receipt,
@@ -255,7 +304,7 @@ async function verifySourceBinding(clientRoot, bound, output, input) {
     });
     assert.equal(joined.sourceFile.sha256, input.file.sha256);
     assert.equal(joined.sourceFile.byteSize, input.file.bytes);
-    return joined.decodedImage;
+    return { decodedInput: joined.decodedImage };
   } finally {
     await server.close();
   }
@@ -350,7 +399,9 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= 65_536);
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes);
-  const nativePngEvidence = route.nativePngEvidence === true && evidence.format === NATIVE_PNG_EDIT_FORMAT;
+  const masked = route.masked === true;
+  const pngFormat = masked ? NATIVE_PNG_INPAINT_FORMAT : NATIVE_PNG_EDIT_FORMAT;
+  const nativePngEvidence = route.nativePngEvidence === true && evidence.format === pngFormat;
   keys(evidence, [
     'schemaVersion',
     'format',
@@ -360,9 +411,10 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     'graphAcknowledgment',
     'persistedOutputs',
     ...(nativePngEvidence ? ['inputUpload'] : ['inputServerBefore', 'inputServerAfter']),
+    ...(masked ? ['maskUpload'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
-  assert.equal(evidence.format, nativePngEvidence ? NATIVE_PNG_EDIT_FORMAT : route.format);
+  assert.equal(evidence.format, nativePngEvidence ? pngFormat : route.format);
   assert.equal(evidence.workflowId, workflowId);
   const evidenceRoot = realpathSync(dirname(evidencePath));
   const retainedFiles = [];
@@ -393,12 +445,12 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.equal(capture.format, route.captureFormat);
   assert.equal(capture.workflowId, workflowId);
   same(capture.qualificationClaims, { releaseEligible: false, technicalVariant: true });
-  assert.equal(capture.inputs.length, 1);
+  assert.equal(capture.inputs.length, masked ? 2 : 1);
   assert.equal(capture.outputs.length, 1);
   assert.equal(capture.modelObservations.length, 1);
-  const [input] = capture.inputs;
+  const [input, maskInput] = capture.inputs;
   const [outputRef] = capture.outputs;
-  keys(input, ['nodeId', 'field', 'sourceValue', 'file']);
+  for (const source of capture.inputs) keys(source, ['nodeId', 'field', 'sourceValue', 'file']);
   keys(outputRef, ['backendPath', 'mediaType', 'file']);
   const creator = json(capture.creatorPackage);
   const outputPackage = json(capture.outputPackage);
@@ -419,12 +471,13 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     expected,
     submitted: graphRequest,
     input,
+    maskInput,
     strengthVariant: route.strengthVariant,
     inputPathPrefix: route.inputPathPrefix,
     nativePngEvidence,
   });
   for (const api of [creator.apiGraph, ...visualExports]) {
-    directOwners(api);
+    directOwners(api, false, masked);
     same(canonicalGraphIdentity(api), bound.identity, 'A saved visual owner graph differs from the original Run.');
   }
   const runOptions = {
@@ -450,7 +503,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
   validatePrivateImageEditFields(bound, output, route.consumed);
-  const decodedInput = await verifySourceBinding(clientRoot, bound, output, input);
+  const { decodedInput, mask } = await verifySourceBinding(clientRoot, bound, output, input);
   const inputMedia = read(input.file);
   if (nativePngEvidence) {
     verifyRetainedPngUpload(json(evidence.inputUpload), input, decodedInput, inputMedia.bytes);
@@ -458,6 +511,12 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     for (const ref of [evidence.inputServerBefore, evidence.inputServerAfter]) {
       assert.ok(read(ref).bytes.equals(inputMedia.bytes), 'The server-bound source bytes differ.');
     }
+  }
+  if (masked) {
+    const maskMedia = read(maskInput.file);
+    assert.equal(mask.sourceFile.sha256, maskInput.file.sha256);
+    assert.equal(mask.sourceFile.byteSize, maskInput.file.bytes);
+    verifyRetainedPngUpload(json(evidence.maskUpload), maskInput, mask.decodedImage, maskMedia.bytes);
   }
   const media = read(outputRef.file);
   const item = validateNativeVariantOutput({
@@ -512,6 +571,16 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     peakMemoryBytes: peakAllocatedBytes,
     canonicalDefaultsExecuted: false,
     inputBinding: { nodeId: input.nodeId, field: 'file', sha256: input.file.sha256, decodedImage: decodedInput },
+    ...(masked
+      ? {
+          maskBinding: {
+            nodeId: maskInput.nodeId,
+            field: 'file',
+            sha256: maskInput.file.sha256,
+            decodedImage: mask.decodedImage,
+          },
+        }
+      : {}),
     promptBinding: { nodeId: bound.edit.id, field: 'prompt', sha256: sha256(bound.prompt) },
     decodedOutput: { hash: decoded.hash, width: decoded.width, height: decoded.height },
     observationLimits: {
@@ -519,6 +588,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       editConsumerControlsObserved: true,
       sourceGeometryQualified: false,
       ...(nativePngEvidence ? { sourceByteWitness: 'native-load-consumer-and-upload' } : {}),
+      ...(masked ? { maskByteWitness: 'native-load-consumer-and-upload' } : {}),
       physicalPlatformQualification: false,
     },
     qualificationClaims: {

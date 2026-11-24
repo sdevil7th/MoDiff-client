@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { validateLateNativeImageVariantRun, validateNativeVariantRun } from './native-variant-run-evidence.mjs';
+import { readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
 import {
   bindPrivateImageEditGraph,
   readPrivateImageEditEvidence,
@@ -241,7 +246,7 @@ test('private direct image edit graph binds exactly one empty file and one empty
   assert.throws(invoke, /Unexpected evidence fields/u);
 });
 
-function assertPinnedPrivateEdit({ modelType, graphPath, sourceTemplateId, repo, exactRevision }) {
+function assertPinnedPrivateEdit({ modelType, task = 'edit_image', graphPath, sourceTemplateId, repo, exactRevision }) {
   const makeOptions = (revision) => {
     const graph = {
       nodes: [
@@ -257,9 +262,9 @@ function assertPinnedPrivateEdit({ modelType, graphPath, sourceTemplateId, repo,
       edges: [],
     };
     const manifest = {
-      id: modelType + ':edit_image',
+      id: modelType + ':' + task,
       modelType,
-      mode: 'edit_image',
+      mode: task,
       graphPath,
       graphHash: canonicalJsonHash(graph),
       sourceTemplateId,
@@ -301,7 +306,7 @@ test('SD1.5 private Edit evidence requires the reviewed checkpoint before readin
     exactRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
   }));
 
-test('only the scoped SD1.5 Edit route accepts the observed Windows CUDA runtime', () => {
+test('only the scoped SD1.5 Edit and Inpaint routes accept the observed Windows CUDA runtime', () => {
   const sd15 = 'StableDiffusionPipeline:edit_image';
   const sdxl = 'StableDiffusionXLPipeline:edit_image';
   const windows = 'Windows-11-10.0.26300-SP0';
@@ -311,10 +316,61 @@ test('only the scoped SD1.5 Edit route accepts the observed Windows CUDA runtime
   assert.throws(() => validatePrivateImageEditRuntimePlatform(sd15, windows, 'rocm'));
   assert.throws(() => validatePrivateImageEditRuntimePlatform(sd15, linux, 'cuda'));
   assert.throws(() => validatePrivateImageEditRuntimePlatform(sd15, 'Darwin-26.0', 'mps'));
-  assert.throws(() => validatePrivateImageEditRuntimePlatform('StableDiffusionPipeline:inpaint', windows, 'cuda'));
+  assert.doesNotThrow(() =>
+    validatePrivateImageEditRuntimePlatform('StableDiffusionPipeline:inpaint', windows, 'cuda'),
+  );
+  assert.throws(() =>
+    validatePrivateImageEditRuntimePlatform('StableDiffusionPipeline:control_inpaint', windows, 'cuda'),
+  );
   assert.doesNotThrow(() => validatePrivateImageEditRuntimePlatform(sdxl, linux, 'rocm'));
   assert.throws(() => validatePrivateImageEditRuntimePlatform(sdxl, windows, 'cuda'));
 });
+
+test('SD1.5 masked evidence requires the reviewed checkpoint before reading its descriptor', () =>
+  assertPinnedPrivateEdit({
+    modelType: 'StableDiffusionPipeline',
+    task: 'inpaint',
+    graphPath: 'studio/stable-diffusion-pipeline/inpaint.json',
+    sourceTemplateId: 'task-template:sd15-base:inpaint:v1',
+    repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+    exactRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+  }));
+
+const retainedMaskEvidence = process.env.MODIFF_SD15_INPAINT_EVIDENCE;
+test(
+  'saved Inpaint evidence binds two original PNG uploads to their distinct consumed ports',
+  {
+    skip: !retainedMaskEvidence,
+  },
+  async () => {
+    const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+    const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '..', 'MoDiff'));
+    const evidencePath = resolve(retainedMaskEvidence);
+    const args = { clientRoot, backendRoot, workflowId: 'StableDiffusionPipeline:inpaint', evidencePath };
+    const original = await readCanonicalWorkflowEvidence(args);
+    const { receipt } = original;
+    assert.equal(receipt.inputBinding.decodedImage.mode, 'RGB');
+    assert.equal(receipt.maskBinding.decodedImage.mode, 'L');
+    assert.notEqual(receipt.inputBinding.sha256, receipt.maskBinding.sha256);
+    assert.ok(Object.values(receipt.qualificationClaims).every((flag) => flag === false));
+
+    const root = mkdtempSync(join(tmpdir(), 'modiff-inpaint-evidence-'));
+    try {
+      for (const file of original.retainedFiles) {
+        assert.equal(basename(file.path), file.path);
+        copyFileSync(file.absolutePath, join(root, file.path));
+      }
+      const swapped = JSON.parse(original.descriptorBytes);
+      [swapped.inputUpload, swapped.maskUpload] = [swapped.maskUpload, swapped.inputUpload];
+      const changedPath = join(root, 'evidence.json');
+      writeFileSync(changedPath, JSON.stringify(swapped));
+      await assert.rejects(readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }));
+      assert.deepEqual(readFileSync(evidencePath), original.descriptorBytes);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test('retained native PNG upload binds an exact safe path, file bytes and decoded dimensions', () => {
   const bytes = Buffer.from(

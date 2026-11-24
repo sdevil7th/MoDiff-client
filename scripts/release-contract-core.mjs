@@ -812,6 +812,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.lcm-source-bound-edit.v1',
       'modiff.private.direct-image-edit-source-bound.v1',
       'modiff.private.direct-image-edit-native-png.v1',
+      'modiff.private.direct-image-inpaint-native-png.v1',
     ].includes(evidence.format)
   ) {
     const { readPrivateImageEditEvidence } = await import('./private-image-edit-evidence.mjs');
