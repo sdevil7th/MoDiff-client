@@ -118,7 +118,13 @@ test('the earlier deliberate-resize producer trace cannot prove original pixels'
   assert.throws(() => verify(modified), /pixels or geometry/u);
 });
 
-function pairedInpaintFixture() {
+function pairedInpaintFixture(
+  expectedOwner = {
+    modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+    modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+    loaderClass: 'StableDiffusionInpaintPipeline',
+  },
+) {
   const value = structuredClone(fixture);
   const { submittedApi, receipt, editId: inpaintId, loadId: sourceId } = value;
   const maskId = 'mask';
@@ -162,12 +168,12 @@ function pairedInpaintFixture() {
   target.params.pipeline = { display: 'input', sourceId: owner, sourceKey: 'pipeline' };
   const module = 'modules.DiffusersImage';
   const action = 'LoadPipeline';
-  const modelRepo = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
+  const { modelRepo, modelRevision, loaderClass } = expectedOwner;
   const controls = {
     model_id: modelRepo,
     mode: 'inpaint',
-    pipeline_class: 'StableDiffusionInpaintPipeline',
-    revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+    pipeline_class: loaderClass,
+    revision: modelRevision,
   };
   submittedApi.nodes[owner] = {
     module,
@@ -193,8 +199,19 @@ function pairedInpaintFixture() {
     modelType: controls.pipeline_class,
     revision: controls.revision,
   });
-  return { submittedApi, receipt, outputIdentity: value.outputIdentity, sourceId, maskId, inpaintId };
+  return { submittedApi, receipt, outputIdentity: value.outputIdentity, sourceId, maskId, inpaintId, expectedOwner };
 }
+
+test('direct SDXL Inpaint rejects an otherwise valid source and mask from an SD 1.5 recipe', () => {
+  const expectedOwner = {
+    modelRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
+    modelRevision: '462165984030d82259a11f4367a4eed129e94a7b',
+    loaderClass: 'StableDiffusionXLInpaintPipeline',
+  };
+  const sample = pairedInpaintFixture(expectedOwner);
+  assert.equal(verifyInpaint(sample).mask.decodedImage.mode, 'L');
+  assert.throws(() => verifyInpaint({ ...pairedInpaintFixture(), expectedOwner }));
+});
 
 test('direct Inpaint independently joins the RGB source and grayscale mask to their actual call', () => {
   const sample = pairedInpaintFixture();

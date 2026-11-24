@@ -100,6 +100,23 @@ const editRoutes = new Map([
       inputPathPrefix: '@data/images/',
     },
   ],
+  [
+    'StableDiffusionXLPipeline:inpaint',
+    {
+      modelRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
+      modelRevision: '462165984030d82259a11f4367a4eed129e94a7b',
+      loaderClass: 'StableDiffusionXLInpaintPipeline',
+      format: NATIVE_PNG_INPAINT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-inpaint-observation.v1',
+      consumed: [...stableDiffusionEditConsumed, 'width', 'height'],
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      windowsCudaRuntime: true,
+      nativePngEvidence: true,
+      masked: true,
+      strengthVariant: { original: 0.8, retained: 1 },
+    },
+  ],
 ]);
 const lcmRoute = editRoutes.get('LatentConsistencyModelPipeline:edit_image');
 
@@ -267,7 +284,7 @@ export function validatePrivateImageEditFields(bound, output, consumed = lcmRout
   return fields;
 }
 
-async function verifySourceBinding(clientRoot, bound, output, input) {
+async function verifySourceBinding(clientRoot, bound, output, input, route) {
   const { createServer } = await import('vite');
   const server = await createServer({
     root: clientRoot,
@@ -290,6 +307,7 @@ async function verifySourceBinding(clientRoot, bound, output, input) {
         sourceId: bound.source.id,
         maskId: bound.mask.id,
         inpaintId: bound.edit.id,
+        expectedOwner: route,
       });
       assert.equal(source.sourceFile.sha256, input.file.sha256);
       assert.equal(source.sourceFile.byteSize, input.file.bytes);
@@ -503,7 +521,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
   validatePrivateImageEditFields(bound, output, route.consumed);
-  const { decodedInput, mask } = await verifySourceBinding(clientRoot, bound, output, input);
+  const { decodedInput, mask } = await verifySourceBinding(clientRoot, bound, output, input, route);
   const inputMedia = read(input.file);
   if (nativePngEvidence) {
     verifyRetainedPngUpload(json(evidence.inputUpload), input, decodedInput, inputMedia.bytes);

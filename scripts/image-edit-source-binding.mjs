@@ -26,6 +26,7 @@ export function verifyImageInpaintSourceBinding({
   sourceId,
   maskId,
   inpaintId,
+  expectedOwner,
 }) {
   assert.notEqual(sourceId, maskId, 'Source and mask must be separate Image.Load nodes.');
   const { observed, inputs } = verifyImageSourceBindings({
@@ -50,13 +51,13 @@ export function verifyImageInpaintSourceBinding({
   const observedOwner = observed.nodes.find((row) => row.nodeId === ownerId);
   assert.equal(observedOwner?.module, owner.module);
   assert.equal(observedOwner.action, owner.action);
-  const repo = 'stable-diffusion-v1-5/stable-diffusion-v1-5';
+  const { modelRepo: repo, modelRevision, loaderClass } = expectedOwner;
   assert.deepEqual(owner.params.model_id.value, { source: 'hub', value: repo });
   assert.deepEqual(observedOwner.fields.model_id, literal(repo));
   for (const [field, value] of Object.entries({
     mode: 'inpaint',
-    pipeline_class: 'StableDiffusionInpaintPipeline',
-    revision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+    pipeline_class: loaderClass,
+    revision: modelRevision,
   })) {
     assert.equal(owner.params[field].value, value, `Unexpected Inpaint loader ${field}.`);
     assert.deepEqual(observedOwner.fields[field], literal(value), `Unexpected native Inpaint loader ${field}.`);

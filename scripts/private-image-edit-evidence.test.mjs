@@ -306,7 +306,7 @@ test('SD1.5 private Edit evidence requires the reviewed checkpoint before readin
     exactRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
   }));
 
-test('only the scoped SD1.5 Edit and Inpaint routes accept the observed Windows CUDA runtime', () => {
+test('only the reviewed edit and masked routes accept the observed Windows CUDA runtime', () => {
   const sd15 = 'StableDiffusionPipeline:edit_image';
   const sdxl = 'StableDiffusionXLPipeline:edit_image';
   const windows = 'Windows-11-10.0.26300-SP0';
@@ -319,6 +319,10 @@ test('only the scoped SD1.5 Edit and Inpaint routes accept the observed Windows 
   assert.doesNotThrow(() =>
     validatePrivateImageEditRuntimePlatform('StableDiffusionPipeline:inpaint', windows, 'cuda'),
   );
+  assert.doesNotThrow(() =>
+    validatePrivateImageEditRuntimePlatform('StableDiffusionXLPipeline:inpaint', windows, 'cuda'),
+  );
+  assert.throws(() => validatePrivateImageEditRuntimePlatform('StableDiffusionXLPipeline:inpaint', windows, 'rocm'));
   assert.throws(() =>
     validatePrivateImageEditRuntimePlatform('StableDiffusionPipeline:control_inpaint', windows, 'cuda'),
   );
@@ -334,6 +338,16 @@ test('SD1.5 masked evidence requires the reviewed checkpoint before reading its 
     sourceTemplateId: 'task-template:sd15-base:inpaint:v1',
     repo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
     exactRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+  }));
+
+test('SDXL masked evidence requires the reviewed checkpoint before reading its descriptor', () =>
+  assertPinnedPrivateEdit({
+    modelType: 'StableDiffusionXLPipeline',
+    task: 'inpaint',
+    graphPath: 'studio/stable-diffusion-xl-pipeline/inpaint.json',
+    sourceTemplateId: 'task-template:sdxl-base:inpaint:v1',
+    repo: 'stabilityai/stable-diffusion-xl-base-1.0',
+    exactRevision: '462165984030d82259a11f4367a4eed129e94a7b',
   }));
 
 const retainedMaskEvidence = process.env.MODIFF_SD15_INPAINT_EVIDENCE;
