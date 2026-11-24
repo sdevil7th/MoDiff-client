@@ -378,6 +378,38 @@ test('Wan motion evidence distinguishes reference, motion, face, background, and
   }
 });
 
+test('layer decomposition evidence retains one input and the ordered output stack', async () => {
+  const { parseBuiltinMediaEvidence } = await server.ssrLoadModule('/src/studio/builtinMediaEvidence.ts');
+  const source = { kind: 'image', sha256: 'a'.repeat(64), byteSize: 4, width: 1, height: 1, mode: 'RGBA' };
+  const layers = ['b', 'c', 'd'].map((digit) => ({ ...source, sha256: digit.repeat(64) }));
+  const capture = {
+    schemaVersion: 1,
+    source: 'native-builtin-media-v1',
+    status: 'complete',
+    controls: { layers: 3, resolution: 640, cfg_normalize: true, use_en_prompt: false },
+    inputs: { image: [source] },
+    outputs: { images: layers },
+    files: {},
+  };
+  const scope = 'DiffusersImage.LayerDecompose';
+  assert.deepEqual(parseBuiltinMediaEvidence(capture, scope), capture);
+  for (const mutate of [
+    (row) => {
+      row.outputs.images.pop();
+    },
+    (row) => {
+      row.inputs.image.push(source);
+    },
+    (row) => {
+      row.controls.cfg_normalize = 'true';
+    },
+  ]) {
+    const changed = structuredClone(capture);
+    mutate(changed);
+    assert.equal(parseBuiltinMediaEvidence(changed, scope), undefined);
+  }
+});
+
 test('native builtin media metadata survives strict parsing without granting model evidence', async () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
   const python =

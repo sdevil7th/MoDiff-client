@@ -32,6 +32,12 @@ export const BUILTIN_MEDIA_EVIDENCE_SCOPES: Record<
 > = {
   'Image.Load': { controls: 'alpha_channel', inputs: [], outputs: ['image'], files: ['file'] },
   'Image.Preview': { controls: 'device export', inputs: ['image'], outputs: ['output', 'filtered'], files: [] },
+  'DiffusersImage.LayerDecompose': {
+    controls: 'layers resolution cfg_normalize use_en_prompt',
+    inputs: ['image'],
+    outputs: ['images'],
+    files: [],
+  },
   'ImageOperations.ProcessImage': {
     controls: imageControls,
     inputs: ['image', 'mask'],
@@ -188,6 +194,16 @@ export function parseBuiltinMediaEvidence(value: unknown, scope: string): Builti
     const { video } = value.outputs;
     if (!Array.isArray(video) || video.length !== 1 || video[0]?.kind !== 'video') return undefined;
     if (!Array.isArray(value.files.file) || value.files.file.length !== 1) return undefined;
+  }
+  if (scope === 'DiffusersImage.LayerDecompose') {
+    const { layers, resolution, cfg_normalize, use_en_prompt } = value.controls;
+    if (!uint(layers) || layers < 1 || layers > 10 || !uint(resolution) || resolution === 0) return undefined;
+    if (typeof cfg_normalize !== 'boolean' || typeof use_en_prompt !== 'boolean') return undefined;
+    const source = value.inputs.image;
+    const stack = value.outputs.images;
+    if (!Array.isArray(source) || source.length !== 1 || source[0]?.kind !== 'image') return undefined;
+    if (!Array.isArray(stack) || stack.length !== layers || !stack.every((item) => item.kind === 'image'))
+      return undefined;
   }
   if (scope === 'DiffusersVideo.Generate') {
     if (value.controls.mode !== 'character_animate' && value.controls.mode !== 'character_replace') return undefined;

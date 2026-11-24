@@ -800,6 +800,13 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.workflowId, workflowId);
   if (
+    workflowId === 'QwenImageLayeredPipeline:layer_decomposition' &&
+    evidence.format === 'modiff.private.native-layer-decomposition.v1'
+  ) {
+    const { readLayerDecompositionEvidence } = await import('./layer-decomposition-evidence.mjs');
+    return readLayerDecompositionEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
+  }
+  if (
     evidence.format === 'modiff.private.speech-to-text-input-bound.v1' &&
     [
       'HuggingFaceSpeechRecognitionModel:speech_to_text',
