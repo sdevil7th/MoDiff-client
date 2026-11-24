@@ -66,6 +66,11 @@ restarting only the frontend is insufficient. Historical V2 receipts without
 this worker attestation require a fresh run and cannot be upgraded from the
 current checkout.
 
+The release candidate report splits verified standalone executions into
+`alreadyReleaseEligible` and `awaitingReleaseEligibility`. The first group
+is already included in the eligible workflow total. The second group still
+needs the release evidence listed against each workflow.
+
 ```bash
 npm run release:qualification:run -- \
   --dry-run \

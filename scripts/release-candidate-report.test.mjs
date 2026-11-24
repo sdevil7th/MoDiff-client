@@ -167,6 +167,7 @@ test('candidate report counts exact runs and bound variants without granting rel
       exactModelWorkflows: 1,
       boundVariants: 2,
       deterministicWorkflows: 1,
+      alreadyReleaseEligible: 1,
       awaitingReleaseEligibility: 3,
     });
     assert.deepEqual(report.incompleteWorkflows, [

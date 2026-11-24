@@ -109,6 +109,7 @@ const standaloneExecution = {
   exactModelWorkflows: 0,
   boundVariants: 0,
   deterministicWorkflows: 0,
+  alreadyReleaseEligible: 0,
   awaitingReleaseEligibility: 0,
 };
 for (const workflow of contract.workflows) {
@@ -116,7 +117,8 @@ for (const workflow of contract.workflows) {
   if (!scope || !workflow.lastSuccessfulRealRun) continue;
   standaloneExecution[scope] += 1;
   standaloneExecution.verified += 1;
-  if (!workflow.releaseEligible) standaloneExecution.awaitingReleaseEligibility += 1;
+  if (workflow.releaseEligible) standaloneExecution.alreadyReleaseEligible += 1;
+  else standaloneExecution.awaitingReleaseEligibility += 1;
 }
 const missingFieldCounts = {};
 for (const template of contract.templates) {
