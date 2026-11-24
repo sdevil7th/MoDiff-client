@@ -173,6 +173,45 @@ const audioRoute = {
   ],
 };
 
+const wanA14BRoute = {
+  format: 'modiff.private.wan-a14b-video-prompt-variant.v1',
+  workflowId: 'Wan22Pipeline:text_to_video',
+  modelType: 'Wan22Pipeline',
+  outputKind: 'video',
+  displayType: 'video',
+  contentType: 'video/mp4',
+  platform: /^Linux-/u,
+  backend: 'rocm',
+  previousExpertFamily: 'WanAnimatePipeline',
+  modelRepo: 'Wan-AI/Wan2.2-T2V-A14B-Diffusers',
+  modelRevision: '5be7df9619b54f4e2667b2755bc6a756675b5cd7',
+  loaderContract: ['modules.DiffusersVideo.LoadPipeline'],
+  bindSeed: true,
+  executedTask: 'text_to_video',
+  chain: [
+    ['quantization', 'modules.DiffusersRuntime', 'PipelineQuantizationConfigV2', 'dtype'],
+    [
+      'recipe',
+      'modules.DiffusersRuntime',
+      'DiffusersExecutionRecipe',
+      'attention_backend device offload_mode vae_slicing vae_tiling',
+    ],
+    [
+      'loader',
+      'modules.DiffusersVideo',
+      'LoadPipeline',
+      'auto_offload device dtype model_id offload_mode pipeline_class revision',
+    ],
+    [
+      'generator',
+      'modules.DiffusersVideo',
+      'Generate',
+      'conditioning_scale frame_rate guidance_scale height max_sequence_length negative_prompt num_frames num_inference_steps output_type prompt secondary_guidance_scale seed strength true_cfg_scale width',
+    ],
+    ['preview', 'modules.Video', 'Export', 'fps'],
+  ],
+};
+
 const imagePromptRoute = {
   outputKind: 'image',
   displayType: 'image',
@@ -645,12 +684,16 @@ function validateSmolVlmCaption(bytes, item, bound, runtime, source) {
 export function validatePromptVariantVideo(decoded, item, bound) {
   const frameSize = bound.generator.node.params.frame_size.value;
   const fps = bound.preview.node.params.fps.value;
+  return validateNativeVideoDelivery(decoded, item, { width: frameSize, height: frameSize, fps, frames: 20 });
+}
+
+function validateNativeVideoDelivery(decoded, item, { width, height, fps, frames }) {
   const native = item.mediaMetadata;
   assert.equal(native.source, 'encoded-file');
-  assert.equal(native.width, frameSize);
-  assert.equal(native.height, frameSize);
+  assert.equal(native.width, width);
+  assert.equal(native.height, height);
   assert.equal(native.fps, fps);
-  assert.equal(native.frame_count, 20);
+  assert.equal(native.frame_count, frames);
   assert.ok(Math.abs(native.duration_seconds - native.frame_count / fps) <= 0.01);
   same(
     [decoded.width, decoded.height, decoded.fps, decoded.frames],
@@ -677,9 +720,16 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
   const profile = imageRoute
     ? { ...imagePromptRoute, ...imageRoute }
-    : [textRoute, janusTextRoute, janusImageRoute, janusCaptionRoute, smolVlmCaptionRoute, videoRoute, audioRoute].find(
-        ({ workflowId }) => workflowId === target.workflowId,
-      );
+    : [
+        textRoute,
+        janusTextRoute,
+        janusImageRoute,
+        janusCaptionRoute,
+        smolVlmCaptionRoute,
+        videoRoute,
+        audioRoute,
+        wanA14BRoute,
+      ].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
   const requiresOriginalRequest =
     imageRoute !== undefined ||
@@ -687,7 +737,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     profile === janusImageRoute ||
     profile === janusCaptionRoute ||
     profile === smolVlmCaptionRoute ||
-    profile === audioRoute;
+    profile === audioRoute ||
+    profile === wanA14BRoute;
   const sampledCpuMemory = profile.executionDevice === 'cpu:0';
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
@@ -775,7 +826,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
           graphAcknowledgment: json(evidence.graphAcknowledgment),
         }
       : {}),
-    ...(imageRoute
+    ...(imageRoute || profile === wanA14BRoute
       ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
       : {}),
     ...(profile === videoRoute || profile === audioRoute
@@ -881,9 +932,18 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     decodedOutput = validateJanusPromptVariantText(media.bytes, item, bound, runtime, inputBinding?.decodedImage);
   } else if (profile === smolVlmCaptionRoute) {
     decodedOutput = validateSmolVlmCaption(media.bytes, item, bound, runtime, inputBinding.decodedImage);
-  } else if (profile === videoRoute) {
+  } else if (profile === videoRoute || profile === wanA14BRoute) {
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
-    decodedOutput = validatePromptVariantVideo(await decodedMediaHash(media.file, 'video'), item, bound);
+    const decoded = await decodedMediaHash(media.file, 'video');
+    if (profile === wanA14BRoute) {
+      const { width, height, num_frames } = bound.generator.node.params;
+      decodedOutput = validateNativeVideoDelivery(decoded, item, {
+        width: width.value,
+        height: height.value,
+        frames: num_frames.value,
+        fps: bound.preview.node.params.fps.value,
+      });
+    } else decodedOutput = validatePromptVariantVideo(decoded, item, bound);
   } else if (profile === audioRoute) {
     assert.equal(media.bytes.toString('ascii', 0, 4), 'RIFF');
     assert.equal(media.bytes.toString('ascii', 8, 12), 'WAVE');

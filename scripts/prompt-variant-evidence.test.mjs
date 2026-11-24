@@ -384,6 +384,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['Kandinsky3Pipeline:text_to_image', 'MODIFF_KANDINSKY3_CPU_PROMPT_EVIDENCE', 'image'],
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
+  ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['LongCatAudioDiTPipeline:text_to_audio', 'MODIFF_LONGCAT_AUDIO_PROMPT_EVIDENCE', 'audio'],
   ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLTurboPipeline:text_to_image', 'MODIFF_SDXL_TURBO_PROMPT_EVIDENCE', 'image'],
@@ -434,33 +435,40 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
       const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
-      if (route?.retainedObservationSource) {
+      if (route?.retainedObservationSource || workflowId === 'Wan22Pipeline:text_to_video') {
         assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
         const packagePath = join(temp, evidence.outputPackage.path);
-        const originalPackage = readFileSync(packagePath);
-        const altered = JSON.parse(originalPackage);
-        const owner = altered.latestOutput.resolvedExecutionInputs.nodes.find((node) => node.action === 'Generate');
-        assert.equal(owner.fieldAccounting, undefined);
-        owner.fields.num_inference_steps.value += 1;
-        const replacement = Buffer.from(JSON.stringify(altered));
-        const descriptor = structuredClone(evidence);
-        descriptor.outputPackage = {
-          ...evidence.outputPackage,
-          bytes: replacement.length,
-          sha256: digest(replacement),
-        };
         const runPath = join(temp, evidence.runDetail.path);
+        const originalPackage = readFileSync(packagePath);
         const originalRun = readFileSync(runPath);
+        const changed = JSON.parse(originalPackage);
+        const inputs = changed.latestOutput.resolvedExecutionInputs;
+        const sampler = inputs.nodes.find((node) => node.action === 'Generate');
+        let expectedFailure;
+        if (route?.retainedObservationSource) {
+          assert.equal(sampler.fieldAccounting, undefined);
+          sampler.fields.num_inference_steps.value += 1;
+          expectedFailure = /Retained adapter control differs: num_inference_steps/u;
+        } else {
+          assert.equal(sampler.fields.secondary_guidance_scale.value, 3.5);
+          sampler.fields.secondary_guidance_scale.value = 0;
+          expectedFailure = /Actual consumed fields differ for Generate/u;
+        }
         const run = JSON.parse(originalRun);
-        run.outputs[0].resolvedExecutionInputs = altered.latestOutput.resolvedExecutionInputs;
-        const changedRun = Buffer.from(JSON.stringify(run));
-        descriptor.runDetail = { ...evidence.runDetail, bytes: changedRun.length, sha256: digest(changedRun) };
-        writeFileSync(packagePath, replacement);
-        writeFileSync(runPath, changedRun);
-        writeFileSync(changedPath, JSON.stringify(descriptor));
+        run.outputs[0].resolvedExecutionInputs = inputs;
+        const substituted = structuredClone(evidence);
+        for (const [field, path, data] of [
+          ['outputPackage', packagePath, changed],
+          ['runDetail', runPath, run],
+        ]) {
+          const bytes = Buffer.from(JSON.stringify(data));
+          substituted[field] = { ...substituted[field], bytes: bytes.length, sha256: digest(bytes) };
+          writeFileSync(path, bytes);
+        }
+        writeFileSync(changedPath, JSON.stringify(substituted));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-          /Retained adapter control differs: num_inference_steps/u,
+          expectedFailure,
         );
         writeFileSync(packagePath, originalPackage);
         writeFileSync(runPath, originalRun);
