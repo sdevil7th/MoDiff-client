@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { coerceResolvedExecutionInputs } from '../src/studio/resolvedExecutionInputs.ts';
 import { stableJsonValue } from './canonical-json.mjs';
+import { verifyNativeLoadedImage } from './native-image-load-evidence.mjs';
 
 const literal = (value) => ({ value, source: 'literal' });
 
@@ -111,35 +112,7 @@ function verifyImageSourceBindings({ submittedApi, receipt, outputIdentity, cons
 }
 
 function verifyOneDecodedSource(load, loaded, projection, { loadId, mode, projectionKind, action }) {
-  assert.equal(load?.module, 'modules.Image');
-  assert.equal(load.action, 'Load');
-  assert.equal(loaded?.module, load.module);
-  assert.equal(loaded.action, load.action);
-  assert.deepEqual(loaded.omittedFields, {});
-
-  const media = loaded.mediaEvidence;
-  assert.equal(media?.status, 'complete', 'The native source decode is missing.');
-  assert.equal(media.files.file?.length, 1, 'A single native file observation is required.');
-  const [file] = media.files.file;
-  assert.ok(typeof file.sourceValue === 'string' && file.sourceValue && file.byteSize > 0 && !file.converted);
-  assert.deepEqual(
-    load.params.file,
-    { display: 'filebrowser', value: [file.sourceValue] },
-    'Image.Load file differs from the declared selection.',
-  );
-  assert.equal(media.outputs.image?.length, 1, 'A single native decoded image is required.');
-  const [{ kind, ...decoded }] = media.outputs.image;
-  assert.equal(kind, 'image');
-  assert.equal(decoded.mode, mode);
-  assert.deepEqual(media.controls, { alpha_channel: load.params.alpha_channel.value });
-  assert.deepEqual(loaded.fields, {
-    alpha_channel: literal(media.controls.alpha_channel),
-    source_hashes: literal([file.sha256]),
-    source_widths: literal([decoded.width]),
-    source_heights: literal([decoded.height]),
-    source_modes: literal([mode]),
-  });
-
+  const { sourceFile, decodedImage: decoded } = verifyNativeLoadedImage(load, loaded, mode);
   assert.equal(projection.kind, projectionKind);
   assert.equal(projection.source, 'connected');
   assert.equal(projection.sourceNodeId, loadId, `${action} recorded a different source node.`);
@@ -149,5 +122,5 @@ function verifyOneDecodedSource(load, loaded, projection, { loadId, mode, projec
     .update(`${projectionKind}\n${JSON.stringify(stableJsonValue(decoded))}`, 'ascii')
     .digest('hex');
   assert.equal(projection.sha256, digest, `${action} image projection digest differs.`);
-  return { sourceFile: file, decodedImage: decoded };
+  return { sourceFile, decodedImage: decoded };
 }

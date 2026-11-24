@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { canonicalJsonHash } from './canonical-json.mjs';
+import { verifyNativeLoadedImage } from './native-image-load-evidence.mjs';
 import {
   backendContractIdentity,
   backendSourceEvidence,
@@ -63,6 +64,25 @@ const janusTextRoute = {
     ['generator', 'modules.HuggingFaceTransformers', 'GenerateAnyToAny', 'prompt'],
     ['preview', 'modules.Primitive', 'DataViewer', ''],
   ],
+};
+
+const janusImageRoute = {
+  ...janusTextRoute,
+  format: 'modiff.private.janus-image-prompt-variant.v1',
+  workflowId: 'HuggingFaceAnyToAnyModel:text_to_image',
+  outputKind: 'image',
+  displayType: 'image',
+  contentType: 'image/webp',
+  chain: [...janusTextRoute.chain.slice(0, 2), ['preview', 'modules.Image', 'Preview', 'device']],
+};
+
+const janusCaptionRoute = {
+  ...janusTextRoute,
+  format: 'modiff.private.janus-caption-variant.v1',
+  workflowId: 'HuggingFaceAnyToAnyModel:image_to_text',
+  bindsImage: true,
+  baselinePrompt: 'Describe the image.',
+  chain: [['source', 'modules.Image', 'Load', ''], ...janusTextRoute.chain],
 };
 
 const videoRoute = {
@@ -141,22 +161,36 @@ function owners(profile, api) {
       keys(node, ['module', 'action', 'params'], 'Unreviewed prompt variant node definition.');
       assert.equal(node.module, module);
       assert.equal(node.action, action);
-      assert.ok(!Object.values(node.params).some((param) => param.display === 'filebrowser'));
+      const fileFields = Object.keys(node.params).filter((name) => node.params[name].display === 'filebrowser');
+      same(fileFields, role === 'source' && profile.bindsImage ? ['file'] : []);
       return [role, { id, node, capturedFields: capturedFields ? capturedFields.split(' ') : [] }];
     }),
   );
 }
 
-export function bindPromptVariant(profile, original, created, output, baselineHash) {
+export function bindPromptVariant(profile, original, created, output, baselineHash, sourceValue) {
   graphEnvelope(original);
   graphEnvelope(created);
   graphEnvelope(output, true);
   const baseline = canonicalGraphIdentity(original);
   assert.equal(baseline.hash, baselineHash, 'The current authored prompt recipe differs from the original baseline.');
   const expected = structuredClone(original);
-  const expectedInputs = owners(profile, expected).generator.node.params;
+  const expectedOwners = owners(profile, expected);
+  const expectedInputs = expectedOwners.generator.node.params;
+  if (profile.bindsImage) {
+    assert.match(sourceValue, /^@data\/images\/[a-z0-9_-]{1,120}[.]png$/iu);
+    const { params } = expectedOwners.source.node;
+    same(params.file, { display: 'filebrowser', value: [] });
+    assert.equal(params.alpha_channel.value, 'ignore');
+    same(expectedInputs.images, { display: 'input', sourceId: expectedOwners.source.id, sourceKey: 'image' });
+    params.file.value = [sourceValue];
+  }
   const promptSlot = expectedInputs.prompt;
-  assert.equal(promptSlot.value, '', 'The current authored prompt is already filled.');
+  assert.equal(
+    promptSlot.value,
+    profile.baselinePrompt ?? '',
+    'The authored prompt differs from the reviewed default.',
+  );
   assert.ok(!promptSlot.sourceId, 'The authored prompt must be an unconnected literal.');
   const submittedOwners = owners(profile, output);
   const prompt = submittedOwners.generator.node.params.prompt.value;
@@ -175,14 +209,16 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
     seedSlot.value = raw;
   }
   const identity = canonicalGraphIdentity(expected);
-  const mismatch = profile.bindSeed
-    ? 'Prompt variant changed a field or wire outside the bound prompt and seed.'
-    : 'Prompt variant changed a field or wire outside the empty prompt.';
+  const mismatch = profile.bindsImage
+    ? 'Caption variant changed the canonical graph outside its bound source and prompt.'
+    : profile.bindSeed
+      ? 'Prompt variant changed a field or wire outside the bound prompt and seed.'
+      : 'Prompt variant changed a field or wire outside the empty prompt.';
   for (const graph of [created, output]) same(canonicalGraphIdentity(graph), identity, mismatch);
   return { ...submittedOwners, identity, prompt, expected, seed };
 }
 
-function validateConsumedPromptVariant(profile, bound, output) {
+function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
   const consumed = output.resolvedExecutionInputs;
   assert.equal(consumed.schemaVersion, 1);
   assert.equal(consumed.source, 'backend-execution');
@@ -197,11 +233,20 @@ function validateConsumedPromptVariant(profile, bound, output) {
     roles.map(({ id }) => id).sort(),
     'Native prompt variant scope differs.',
   );
+  let image;
   for (const { id, node, capturedFields } of roles) {
     const row = consumed.nodes.find(({ nodeId }) => nodeId === id);
     assert.equal(row.module, node.module);
     assert.equal(row.action, node.action);
     same(row.omittedFields, {});
+    if (profile.bindsImage && id === bound.source.id) {
+      const { sourceFile, decodedImage } = verifyNativeLoadedImage(node, row, 'RGB');
+      assert.equal(sourceFile.sourceValue, suppliedImage.sourceValue);
+      assert.equal(sourceFile.sha256, suppliedImage.file.sha256, 'Caption source bytes differ from the native load.');
+      assert.equal(sourceFile.byteSize, suppliedImage.file.bytes);
+      image = { nodeId: id, field: 'file', sha256: sourceFile.sha256, decodedImage };
+      continue;
+    }
     const expected = Object.fromEntries(
       capturedFields.map((field) => {
         const { value, sourceId } = node.params[field];
@@ -212,7 +257,7 @@ function validateConsumedPromptVariant(profile, bound, output) {
     );
     same(row.fields, expected, `Actual consumed fields differ for ${node.action}.`);
   }
-  return consumed;
+  return image;
 }
 
 function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted, observation) {
@@ -322,7 +367,7 @@ export function validatePromptVariantText(bytes, item, bound, runtime) {
   };
 }
 
-function validateJanusPromptVariantText(bytes, item, bound, runtime) {
+function validateJanusPromptVariantText(bytes, item, bound, runtime, source) {
   const result = nativeTextResult(bytes, item);
   keys(result, [
     'schemaVersion',
@@ -344,8 +389,8 @@ function validateJanusPromptVariantText(bytes, item, bound, runtime) {
   assert.equal(result.outputModality, 'text');
   assert.equal(result.image, null);
   assert.equal(result.audio, null);
-  assert.equal(result.inputImageCount, 0);
-  assert.equal(result.inputMediaPixels, 0);
+  assert.equal(result.inputImageCount, source ? 1 : 0);
+  assert.equal(result.inputMediaPixels, source ? source.width * source.height : 0);
   validateGeneratedText(result, bound);
   const { receiptDigest, ...record } = result.modelReceipt;
   const version = runtime.packages.transformers;
@@ -430,9 +475,15 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
   const profile = imageRoute
     ? { ...imagePromptRoute, ...imageRoute }
-    : [textRoute, janusTextRoute, videoRoute].find(({ workflowId }) => workflowId === target.workflowId);
+    : [textRoute, janusTextRoute, janusImageRoute, janusCaptionRoute, videoRoute].find(
+        ({ workflowId }) => workflowId === target.workflowId,
+      );
   assert.ok(profile, 'Prompt variant route is not reviewed.');
-  const requiresOriginalRequest = imageRoute !== undefined || profile === janusTextRoute;
+  const requiresOriginalRequest =
+    imageRoute !== undefined ||
+    profile === janusTextRoute ||
+    profile === janusImageRoute ||
+    profile === janusCaptionRoute;
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   assert.ok(target.outputPlan.mediaKinds.includes(profile.outputKind));
@@ -461,7 +512,10 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.format, profile.format);
   assert.equal(evidence.workflowId, profile.workflowId);
-  same(evidence.inputs, []);
+  assert.ok(Array.isArray(evidence.inputs));
+  assert.equal(evidence.inputs.length, profile.bindsImage ? 1 : 0);
+  const [suppliedImage] = evidence.inputs;
+  if (suppliedImage) keys(suppliedImage, ['sourceValue', 'file', 'upload']);
   assert.equal(evidence.modelObservations.length, 1);
   assert.equal(evidence.outputs.length, 1);
   const [outputRef] = evidence.outputs;
@@ -485,7 +539,14 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     outputPackage.latestOutput.graphSnapshot,
     run.workflow_snapshot,
   ]);
-  const bound = bindPromptVariant(profile, expectedApi, creator.apiGraph, submitted, evidence.originalGraphHash);
+  const bound = bindPromptVariant(
+    profile,
+    expectedApi,
+    creator.apiGraph,
+    submitted,
+    evidence.originalGraphHash,
+    suppliedImage?.sourceValue,
+  );
   for (const api of [creatorApi, outputApi, runApi]) {
     graphEnvelope(api);
     same(
@@ -537,15 +598,40 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         runtimeEvidence: { run: accountingRun, output, graphCompleted },
       })
     : null;
-  if (!accounting) validateConsumedPromptVariant(profile, bound, output);
+  const inputBinding = accounting ? undefined : validateConsumedPromptVariant(profile, bound, output, suppliedImage);
+  if (suppliedImage) {
+    const source = read(suppliedImage.file, 2 * 1024 * 1024);
+    const upload = json(suppliedImage.upload);
+    const { width, height } = inputBinding.decodedImage;
+    assert.equal(upload.error, false);
+    assert.equal(upload.path, suppliedImage.sourceValue);
+    same(
+      upload.media,
+      {
+        filename: suppliedImage.sourceValue.split('/').at(-1),
+        extension: '.png',
+        sizeBytes: source.bytes.length,
+        sha256: inputBinding.sha256,
+        kind: 'image',
+        mimeType: 'image/png',
+        width,
+        height,
+        frames: 1,
+      },
+      'Caption input differs from the original image upload.',
+    );
+  }
   const nodes = json(evidence.nodes);
   const backendContract = backendContractIdentity(nodes, bound.identity.canonicalGraph);
   assert.ok(backendContract.fingerprint, 'Native backend contract fingerprint is missing.');
-  for (const [, module, action] of profile.chain) {
+  for (const [role, module, action] of profile.chain) {
     const contract = (nodes.nodes ?? nodes)[`${module}.${action}`];
     assert.equal(contract?.module, module);
     assert.equal(contract.action, action);
-    assert.ok(Object.values(contract.params).every(({ display }) => display !== 'filebrowser'));
+    same(
+      Object.keys(contract.params).filter((name) => contract.params[name].display === 'filebrowser'),
+      role === 'source' && profile.bindsImage ? ['file'] : [],
+    );
   }
   const source = backendSourceEvidence({
     before: json(evidence.backendSourceBefore).identity,
@@ -571,14 +657,14 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     contentType: profile.contentType,
   });
   assert.match(output.id, /^run-output-[a-f0-9]{24}$/u);
-  const extension = imageRoute ? 'webp' : profile.outputKind === 'json' ? 'txt' : 'mp4';
+  const extension = { image: 'webp', json: 'txt', video: 'mp4' }[profile.outputKind];
   assert.equal(item.backendPath, `@data/studio/outputs/${output.id}_item_00.${extension}`);
   assert.equal(output.mediaCollectionHash, `sha256:collection:${digest(JSON.stringify([item.mediaHash]))}`);
   let decodedOutput;
   if (profile === textRoute) {
     decodedOutput = validatePromptVariantText(media.bytes, item, bound, runtime);
-  } else if (profile === janusTextRoute) {
-    decodedOutput = validateJanusPromptVariantText(media.bytes, item, bound, runtime);
+  } else if (profile === janusTextRoute || profile === janusCaptionRoute) {
+    decodedOutput = validateJanusPromptVariantText(media.bytes, item, bound, runtime, inputBinding?.decodedImage);
   } else if (profile === videoRoute) {
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
     decodedOutput = validatePromptVariantVideo(await decodedMediaHash(media.file, 'video'), item, bound);
@@ -586,6 +672,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     const { decodedMediaHash, technicalMediaErrors } = await import('./template-gallery-harness.mjs');
     const decoded = await decodedMediaHash(media.file, 'image');
     same(technicalMediaErrors(decoded, { width: item.width, height: item.height }), []);
+    if (profile === janusImageRoute) {
+      same([decoded.width, decoded.height], [384, 384], 'Janus image dimensions differ from the reviewed image route.');
+    }
     decodedOutput = { kind: 'image', hash: decoded.hash, width: decoded.width, height: decoded.height };
   }
   for (const ref of retainedFiles) readCanonicalEvidenceFile(root, ref, 16 * 1024 * 1024);
@@ -593,7 +682,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   const receipt = {
     schemaVersion: 1,
     format: 'modiff.canonical-workflow-run-receipt.v1',
-    proofKind: 'real_backend_prompt_bound_model_variant',
+    proofKind: inputBinding ? 'real_backend_input_bound_model_variant' : 'real_backend_prompt_bound_model_variant',
     ...target,
     taskId: task.task_id,
     outputId: output.id,
@@ -608,6 +697,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     peakMemoryBytes: measurement.peakAllocatedBytes,
     canonicalDefaultsExecuted: false,
     promptBinding: { nodeId: bound.generator.id, field: 'prompt', sha256: digest(bound.prompt) },
+    ...(inputBinding ? { inputBinding } : {}),
     ...(accounting ? { seedBinding: { nodeId: bound.generator.id, field: 'seed', value: bound.seed } } : {}),
     decodedOutput,
     observationLimits: { fullConsumedFieldAccounting: Boolean(accounting), physicalPlatformQualification: false },
@@ -621,7 +711,10 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   };
   return {
     receipt,
-    provenance: { format: 'modiff.prompt-bound-model-variant-proof.v1', receipt },
+    provenance: {
+      format: inputBinding ? 'modiff.input-bound-model-variant-proof.v1' : 'modiff.prompt-bound-model-variant-proof.v1',
+      receipt,
+    },
     evidence,
     descriptorBytes,
     retainedFiles,

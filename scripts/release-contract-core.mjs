@@ -847,6 +847,8 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     [
       'modiff.private.smollm2-prompt-variant.v1',
       'modiff.private.janus-text-prompt-variant.v1',
+      'modiff.private.janus-image-prompt-variant.v1',
+      'modiff.private.janus-caption-variant.v1',
       'modiff.private.shap-e-prompt-variant.v1',
     ].includes(evidence.format) ||
     directImagePromptRoutes.some(({ format }) => format === evidence.format)

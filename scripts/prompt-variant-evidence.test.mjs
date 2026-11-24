@@ -282,8 +282,15 @@ test('the video variant needs independently decoded and moving geometry at the n
   assert.throws(() => validatePromptVariantVideo({ ...decoded, uniqueFrameRatio: 0.1 }, item, bound));
 });
 
-for (const [workflowId, variable, kind] of [
+for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_model_variant'] of [
   ['HuggingFaceAnyToAnyModel:text_generation', 'MODIFF_JANUS_TEXT_PROMPT_EVIDENCE', 'json'],
+  ['HuggingFaceAnyToAnyModel:text_to_image', 'MODIFF_JANUS_IMAGE_PROMPT_EVIDENCE', 'image'],
+  [
+    'HuggingFaceAnyToAnyModel:image_to_text',
+    'MODIFF_JANUS_CAPTION_EVIDENCE',
+    'json',
+    'real_backend_input_bound_model_variant',
+  ],
   ['LuminaPipeline:text_to_image', 'MODIFF_LUMINA_PROMPT_EVIDENCE', 'image'],
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
@@ -300,7 +307,7 @@ for (const [workflowId, variable, kind] of [
     const evidencePath = resolve(saved);
     const args = { clientRoot, backendRoot, workflowId, evidencePath };
     const original = await readCanonicalWorkflowEvidence(args);
-    assert.equal(original.receipt.proofKind, 'real_backend_prompt_bound_model_variant');
+    assert.equal(original.receipt.proofKind, proofKind);
     assert.equal(original.receipt.canonicalDefaultsExecuted, false);
     assert.equal(original.receipt.decodedOutput.kind, kind);
     assert.ok(Object.values(original.receipt.qualificationClaims).every((claim) => claim === false));
@@ -314,6 +321,21 @@ for (const [workflowId, variable, kind] of [
       }
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
+      if (proofKind === 'real_backend_input_bound_model_variant') {
+        const [input] = evidence.inputs;
+        const path = join(temp, input.file.path);
+        const originalBytes = readFileSync(path);
+        const replacement = Buffer.concat([originalBytes, Buffer.from([0])]);
+        const substituted = structuredClone(evidence);
+        substituted.inputs[0].file = { ...input.file, bytes: replacement.length, sha256: digest(replacement) };
+        writeFileSync(path, replacement);
+        writeFileSync(changedPath, JSON.stringify(substituted));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Caption source bytes differ from the native load/u,
+        );
+        writeFileSync(path, originalBytes);
+      }
       const completionPath = join(temp, evidence.graphCompleted.path);
       const completion = JSON.parse(readFileSync(completionPath));
       completion.task_id = 'another-execution';
