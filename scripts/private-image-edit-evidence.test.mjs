@@ -350,6 +350,44 @@ test('SDXL masked evidence requires the reviewed checkpoint before reading its d
     exactRevision: '462165984030d82259a11f4367a4eed129e94a7b',
   }));
 
+const retainedSdxlEvidence = process.env.MODIFF_SDXL_EDIT_NATIVE_PNG_EVIDENCE;
+test(
+  'saved SDXL edit binds the original PNG upload and consumed RGB input',
+  { skip: !retainedSdxlEvidence },
+  async () => {
+    const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+    const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '..', 'MoDiff'));
+    const evidencePath = resolve(retainedSdxlEvidence);
+    const args = { clientRoot, backendRoot, workflowId: 'StableDiffusionXLPipeline:edit_image', evidencePath };
+    const original = await readCanonicalWorkflowEvidence(args);
+    const { receipt } = original;
+    assert.equal(receipt.inputBinding.sha256, 'e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87');
+    assert.equal(receipt.inputBinding.decodedImage.mode, 'RGB');
+    assert.ok(Object.values(receipt.qualificationClaims).every((flag) => flag === false));
+
+    const root = mkdtempSync(join(tmpdir(), 'modiff-sdxl-edit-evidence-'));
+    try {
+      for (const file of original.retainedFiles) {
+        assert.equal(basename(file.path), file.path);
+        copyFileSync(file.absolutePath, join(root, file.path));
+      }
+      const descriptor = JSON.parse(original.descriptorBytes);
+      const uploadPath = join(root, descriptor.inputUpload.path);
+      const upload = JSON.parse(readFileSync(uploadPath, 'utf8'));
+      upload.media.sha256 = '0'.repeat(64);
+      const changedUpload = Buffer.from(JSON.stringify(upload));
+      writeFileSync(uploadPath, changedUpload);
+      descriptor.inputUpload.bytes = changedUpload.length;
+      descriptor.inputUpload.sha256 = createHash('sha256').update(changedUpload).digest('hex');
+      const changedPath = join(root, 'evidence.json');
+      writeFileSync(changedPath, JSON.stringify(descriptor));
+      await assert.rejects(readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
 const retainedMaskEvidence = process.env.MODIFF_SD15_INPAINT_EVIDENCE;
 test(
   'saved Inpaint evidence binds two original PNG uploads to their distinct consumed ports',

@@ -98,6 +98,7 @@ const editRoutes = new Map([
       consumed: stableDiffusionEditConsumed,
       fullOrLateNativeSnapshot: true,
       inputPathPrefix: '@data/images/',
+      nativePngEvidence: true,
     },
   ],
   [
