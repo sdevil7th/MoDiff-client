@@ -19,6 +19,7 @@ export function verifyRetainedStructuredText({ receipt, transportBytes, structur
     'HuggingFaceTextGenerationModel:text_generation': ['real_backend_prompt_bound_model_variant', 'text-generation'],
     'HuggingFaceAnyToAnyModel:text_generation': ['real_backend_prompt_bound_model_variant', 'any-to-any-generation'],
     'HuggingFaceAnyToAnyModel:image_to_text': ['real_backend_input_bound_model_variant', 'any-to-any-generation'],
+    'HuggingFaceImageTextToTextModel:image_to_text': ['real_backend_input_bound_model_variant', 'image-video-to-text'],
   };
   const route = Object.hasOwn(textRoutes, receipt?.workflowId) ? textRoutes[receipt.workflowId] : null;
   assert.ok(
@@ -67,6 +68,13 @@ export function verifyRetainedStructuredText({ receipt, transportBytes, structur
     assert.equal(native.outputModality, 'text');
     assert.equal(native.inputImageCount, caption ? 1 : 0);
     assert.equal(native.inputMediaPixels, caption ? source.width * source.height : 0);
+  }
+  if (native.task === 'image-video-to-text') {
+    const source = receipt.inputBinding?.decodedImage;
+    assert.ok(source, 'Caption result is missing its original source evidence.');
+    assert.equal(native.imageCount, 1);
+    assert.equal(native.videoFrameCount, 0);
+    assert.equal(native.mediaPixels, source.width * source.height);
   }
   const { receiptDigest, ...model } = native.modelReceipt;
   assert.equal(receiptDigest, `sha256:${canonicalJsonHash(model)}`, 'Native text model receipt digest differs.');

@@ -85,6 +85,28 @@ const janusCaptionRoute = {
   chain: [['source', 'modules.Image', 'Load', ''], ...janusTextRoute.chain],
 };
 
+const smolVlmCaptionRoute = {
+  ...textRoute,
+  format: 'modiff.private.smolvlm-caption-variant.v1',
+  workflowId: 'HuggingFaceImageTextToTextModel:image_to_text',
+  modelRepo: 'HuggingFaceTB/SmolVLM-256M-Instruct',
+  modelRevision: '7e3e67edbbed1bf9888184d9df282b700a323964',
+  bindsImage: true,
+  baselinePrompt: 'Describe the image.',
+  executedTask: 'image_to_text',
+  chain: [
+    ['source', 'modules.Image', 'Load', ''],
+    [
+      'loader',
+      'modules.HuggingFaceTransformers',
+      'LoadImageTextToTextModel',
+      'device dtype model_id pipeline_class revision',
+    ],
+    ['generator', 'modules.HuggingFaceTransformers', 'GenerateImageVideoText', 'prompt'],
+    ['preview', 'modules.Primitive', 'DataViewer', ''],
+  ],
+};
+
 const videoRoute = {
   format: 'modiff.private.shap-e-prompt-variant.v1',
   workflowId: 'ShapEPipeline:text_to_3d',
@@ -255,6 +277,9 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
         return [field, { value: field === 'model_id' ? value.value : value, source: 'literal' }];
       }),
     );
+    if (profile.executedTask && id === bound.generator.id) {
+      expected.executed_task = { value: profile.executedTask, source: 'literal' };
+    }
     same(row.fields, expected, `Actual consumed fields differ for ${node.action}.`);
   }
   return image;
@@ -440,6 +465,61 @@ function validateJanusPromptVariantText(bytes, item, bound, runtime, source) {
   };
 }
 
+function validateSmolVlmCaption(bytes, item, bound, runtime, source) {
+  const result = nativeTextResult(bytes, item);
+  keys(result, [
+    'schemaVersion',
+    'task',
+    'text',
+    'finishReason',
+    'inputTokens',
+    'generatedTokens',
+    'imageCount',
+    'videoFrameCount',
+    'mediaPixels',
+    'modelReceipt',
+  ]);
+  assert.equal(result.task, 'image-video-to-text');
+  assert.equal(result.imageCount, 1);
+  assert.equal(result.videoFrameCount, 0);
+  assert.equal(result.mediaPixels, source.width * source.height);
+  validateGeneratedText(result, bound);
+  const { receiptDigest, ...record } = result.modelReceipt;
+  const version = runtime.packages.transformers;
+  assert.match(version, /^\d+(?:\.\d+){2}(?:[a-z0-9.+-]+)?$/u);
+  same(
+    record,
+    {
+      schemaVersion: 1,
+      library: 'transformers',
+      task: 'image-video-to-text',
+      loader: { modelAutoClass: 'AutoModelForImageTextToText', preprocessorAutoClass: 'AutoProcessor' },
+      runtime: {
+        architectures: ['Idefics3ForConditionalGeneration'],
+        device: bound.loader.node.params.device.value,
+        dtype: bound.loader.node.params.dtype.value,
+        modelClass: 'Idefics3ForConditionalGeneration',
+        modelType: 'idefics3',
+        preprocessorClass: 'Idefics3Processor',
+        quantization: { mode: 'none' },
+        transformersVersion: version,
+      },
+      security: { hostedInference: false, localFilesOnly: true, safetensorsOnly: true, trustRemoteCode: false },
+      source: { kind: 'hub', repository: smolVlmCaptionRoute.modelRepo, revision: smolVlmCaptionRoute.modelRevision },
+    },
+    'Native SmolVLM model-selection receipt differs from the executed local recipe.',
+  );
+  assert.equal(receiptDigest, `sha256:${canonicalJsonHash(record)}`, 'Native SmolVLM model receipt digest differs.');
+  return {
+    schemaVersion: 1,
+    kind: 'json',
+    finishReason: result.finishReason,
+    inputTokens: result.inputTokens,
+    generatedTokens: result.generatedTokens,
+    modelReceiptDigest: receiptDigest,
+  };
+}
+
 export function validatePromptVariantVideo(decoded, item, bound) {
   const frameSize = bound.generator.node.params.frame_size.value;
   const fps = bound.preview.node.params.fps.value;
@@ -475,7 +555,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
   const profile = imageRoute
     ? { ...imagePromptRoute, ...imageRoute }
-    : [textRoute, janusTextRoute, janusImageRoute, janusCaptionRoute, videoRoute].find(
+    : [textRoute, janusTextRoute, janusImageRoute, janusCaptionRoute, smolVlmCaptionRoute, videoRoute].find(
         ({ workflowId }) => workflowId === target.workflowId,
       );
   assert.ok(profile, 'Prompt variant route is not reviewed.');
@@ -483,7 +563,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     imageRoute !== undefined ||
     profile === janusTextRoute ||
     profile === janusImageRoute ||
-    profile === janusCaptionRoute;
+    profile === janusCaptionRoute ||
+    profile === smolVlmCaptionRoute;
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   assert.ok(target.outputPlan.mediaKinds.includes(profile.outputKind));
@@ -665,6 +746,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     decodedOutput = validatePromptVariantText(media.bytes, item, bound, runtime);
   } else if (profile === janusTextRoute || profile === janusCaptionRoute) {
     decodedOutput = validateJanusPromptVariantText(media.bytes, item, bound, runtime, inputBinding?.decodedImage);
+  } else if (profile === smolVlmCaptionRoute) {
+    decodedOutput = validateSmolVlmCaption(media.bytes, item, bound, runtime, inputBinding.decodedImage);
   } else if (profile === videoRoute) {
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
     decodedOutput = validatePromptVariantVideo(await decodedMediaHash(media.file, 'video'), item, bound);
