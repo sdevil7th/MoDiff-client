@@ -2214,6 +2214,84 @@ const plainImageLegacyNull = ['control_guidance_start', 'conditioning_scale', 's
 const pagScalars = ['pag_scale', 'pag_adaptive_scale'];
 export const directImagePromptRoutes = [
   {
+    format: 'modiff.private.lumina2-prompt-variant.v1',
+    workflowId: 'Lumina2Pipeline:text_to_image',
+    modelType: 'Lumina2Pipeline',
+    modelRepo: 'Alpha-VLLM/Lumina-Image-2.0',
+    modelRevision: '53504abd8178b30685b6c4c7a4cd181ff78b73e9',
+    retainedObservationSource:
+      'sha256:backend-source-v1:057b165c6ef6225461649a47077562dffad098a2d37d639a13bf0e73088d79ab',
+    active: [...plainImageActive, 'negative_prompt', 'max_sequence_length'],
+    inactive: plainImageInactive,
+    legacyNull: plainImageLegacyNull,
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    dtype: 'bfloat16',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 50,
+      guidance_scale: 4,
+      max_sequence_length: 256,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
+  {
+    format: 'modiff.private.hunyuan-dit-prompt-variant.v1',
+    workflowId: 'HunyuanDiTPipeline:text_to_image',
+    modelType: 'HunyuanDiTPipeline',
+    modelRepo: 'Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled',
+    modelRevision: 'ba991d1546d8c50936c4c16398ed0a87b9b99fb1',
+    retainedObservationSource:
+      'sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3',
+    active: [...plainImageActive, 'negative_prompt'],
+    inactive: [...plainImageInactive, 'max_sequence_length'],
+    legacyNull: [...plainImageLegacyNull, 'max_sequence_length'],
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    dtype: 'float16',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 25,
+      guidance_scale: 5,
+      max_sequence_length: 256,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
+  {
+    format: 'modiff.private.omnigen-prompt-variant.v1',
+    workflowId: 'OmniGenPipeline:text_to_image',
+    modelType: 'OmniGenPipeline',
+    modelRepo: 'Shitao/OmniGen-v1-diffusers',
+    modelRevision: '016e2f61d12a98303f6bbdf122687694d7984268',
+    retainedObservationSource:
+      'sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3',
+    active: plainImageActive,
+    inactive: [...plainImageInactive, 'negative_prompt', 'max_sequence_length'],
+    legacyNull: [...plainImageLegacyNull, 'negative_prompt', 'max_sequence_length'],
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    dtype: 'bfloat16',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 50,
+      guidance_scale: 2.5,
+      max_sequence_length: 256,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
+  {
     format: 'modiff.private.kandinsky3-cpu-prompt-variant.v1',
     workflowId: 'Kandinsky3Pipeline:text_to_image',
     modelType: 'Kandinsky3Pipeline',
@@ -2834,6 +2912,19 @@ function imageAccountingExecutionPlan(
     same(target.modelSet, [{ repoId, revision }], 'Retained unconditional model is outside the reviewed scope.');
   }
   const generateAction = conditional ? 'Generate' : 'UnconditionalGenerate';
+  const retainedGenerator = Boolean(
+    promptVariant?.retainedObservationSource &&
+    consumed?.nodes?.find((row) => row.action === 'Generate')?.fieldAccounting === undefined,
+  );
+  if (retainedGenerator) {
+    assert.equal(
+      runtimeEvidence?.sourceFingerprint,
+      promptVariant.retainedObservationSource,
+      'Retained image source differs from the reviewed adapter.',
+    );
+    same(consumed.ambiguousFields, ['device'], 'Unexpected ambiguity in retained image consumption.');
+    same(consumed.unavailableFields, [], 'Required retained image controls are unavailable.');
+  }
   const generationFields = conditional
     ? ['image_contract', ...conditional.active, ...conditional.inactive]
     : accountingFields[generateAction];
@@ -2863,6 +2954,22 @@ function imageAccountingExecutionPlan(
     assert.ok(!byAction.has(row.action), 'Accounting owner is not unique.');
     byAction.set(row.action, { row, node });
     same(row.omittedFields, {}, 'Legacy consumed fields were omitted.');
+    if (retainedGenerator && row.action === generateAction) {
+      accountingKeys(
+        row.fields,
+        [...conditional.active, 'executed_task', ...legacyNullFields],
+        'Retained adapter controls are incomplete or unexpected.',
+      );
+      for (const [key, item] of Object.entries(row.fields)) {
+        accountingKeys(item, ['value', 'source'], 'Retained control origin is incomplete.');
+        assert.equal(item.source, 'literal');
+        const expected =
+          key === 'executed_task' ? target.task : legacyNullFields.includes(key) ? null : node.params[key]?.value;
+        assert.notEqual(expected, undefined, 'Retained control is absent from the graph.');
+        same(item.value, expected, `Retained adapter control differs: ${key}`);
+      }
+      continue;
+    }
     const section = row.fieldAccounting;
     accountingKeys(
       section,
@@ -2952,7 +3059,11 @@ function imageAccountingExecutionPlan(
   assert.ok(owner && recipe && quant && generate && preview, 'Canonical accounting roles are incomplete.');
   assert.equal(consumed.nodeId, preview.row.nodeId, 'Accounting output owner differs.');
   const fields = (entry) => entry.row.fieldAccounting.fields;
-  const value = (entry, key) => fields(entry)[key].value;
+  const value = (entry, key) => {
+    if (retainedGenerator && entry === generate)
+      return conditional.active.includes(key) ? entry.row.fields[key].value : entry.node.params[key]?.value;
+    return fields(entry)[key].value;
+  };
   const check = (entry, key, disposition, effective, reason) => {
     const field = fields(entry)[key];
     assert.equal(field.disposition, disposition, `Wrong disposition: ${entry.row.nodeId}.${key}`);
@@ -3035,6 +3146,7 @@ function imageAccountingExecutionPlan(
     }
   };
   for (const entry of byAction.values()) {
+    if (retainedGenerator && entry === generate) continue;
     const section = entry.row.fieldAccounting;
     const inputPort = entry === owner ? 'execution_recipe' : entry === recipe ? 'quantization_config' : null;
     const outputPort = entry === recipe ? 'execution_recipe' : entry === quant ? 'quantization_config' : null;
@@ -3124,7 +3236,7 @@ function imageAccountingExecutionPlan(
     'Executed model set differs.',
   );
   const inactive = new Set(conditional?.inactive ?? ['class_label', ...(retainedUnconditional ? ['eta'] : [])]);
-  for (const key of generationFields) {
+  for (const key of retainedGenerator ? [] : generationFields) {
     if (key === 'image_contract') {
       assert.equal(fields(generate)[key].disposition, 'metadata');
       continue;
@@ -3289,7 +3401,12 @@ function imageAccountingExecutionPlan(
       digest: sha256Value,
     });
   }
-  return { ownerId: owner.row.nodeId, plan, hash: sha256Value('execution-plan-v1', plan) };
+  return {
+    ownerId: owner.row.nodeId,
+    plan,
+    hash: sha256Value('execution-plan-v1', plan),
+    ...(retainedGenerator ? { retainedGenerator: true } : {}),
+  };
 }
 
 function canonicalAccountingProofPlan({ apiGraph, executedOutput, executionReceipt, taskId, proof }) {

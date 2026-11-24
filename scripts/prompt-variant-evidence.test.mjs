@@ -392,6 +392,9 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['LatentConsistencyModelPipeline:text_to_image', 'MODIFF_LCM_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['SanaPipeline:text_to_image', 'MODIFF_SANA_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['ChromaPipeline:text_to_image', 'MODIFF_CHROMA_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['Lumina2Pipeline:text_to_image', 'MODIFF_LUMINA2_SAVED_PROMPT_EVIDENCE', 'image'],
+  ['HunyuanDiTPipeline:text_to_image', 'MODIFF_HUNYUAN_DIT_SAVED_PROMPT_EVIDENCE', 'image'],
+  ['OmniGenPipeline:text_to_image', 'MODIFF_OMNIGEN_SAVED_PROMPT_EVIDENCE', 'image'],
   ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
 ]) {
@@ -430,6 +433,38 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       }
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
+      const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
+      if (route?.retainedObservationSource) {
+        assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
+        const packagePath = join(temp, evidence.outputPackage.path);
+        const originalPackage = readFileSync(packagePath);
+        const altered = JSON.parse(originalPackage);
+        const owner = altered.latestOutput.resolvedExecutionInputs.nodes.find((node) => node.action === 'Generate');
+        assert.equal(owner.fieldAccounting, undefined);
+        owner.fields.num_inference_steps.value += 1;
+        const replacement = Buffer.from(JSON.stringify(altered));
+        const descriptor = structuredClone(evidence);
+        descriptor.outputPackage = {
+          ...evidence.outputPackage,
+          bytes: replacement.length,
+          sha256: digest(replacement),
+        };
+        const runPath = join(temp, evidence.runDetail.path);
+        const originalRun = readFileSync(runPath);
+        const run = JSON.parse(originalRun);
+        run.outputs[0].resolvedExecutionInputs = altered.latestOutput.resolvedExecutionInputs;
+        const changedRun = Buffer.from(JSON.stringify(run));
+        descriptor.runDetail = { ...evidence.runDetail, bytes: changedRun.length, sha256: digest(changedRun) };
+        writeFileSync(packagePath, replacement);
+        writeFileSync(runPath, changedRun);
+        writeFileSync(changedPath, JSON.stringify(descriptor));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Retained adapter control differs: num_inference_steps/u,
+        );
+        writeFileSync(packagePath, originalPackage);
+        writeFileSync(runPath, originalRun);
+      }
       if (['SanaPipeline:text_to_image', 'ChromaPipeline:text_to_image'].includes(workflowId)) {
         const runPath = join(temp, evidence.runDetail.path);
         const originalRun = readFileSync(runPath);
@@ -514,6 +549,9 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
     'LatentConsistencyModelPipeline:text_to_image',
     'SanaPipeline:text_to_image',
     'ChromaPipeline:text_to_image',
+    'Lumina2Pipeline:text_to_image',
+    'HunyuanDiTPipeline:text_to_image',
+    'OmniGenPipeline:text_to_image',
     'SanaSprintPipeline:text_to_image',
     'StableDiffusionXLPAGPipeline:text_to_image',
   ];

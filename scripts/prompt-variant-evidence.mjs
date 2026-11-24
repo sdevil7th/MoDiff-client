@@ -795,13 +795,19 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   }
   const { task, output, hints } = validatedRun;
   same(hints.workflowSnapshot.studioForm, output.formSnapshot, 'Run snapshot form differs from persisted form.');
+  const source = backendSourceEvidence({
+    before: json(evidence.backendSourceBefore).identity,
+    after: json(evidence.backendSourceAfter).identity,
+    runtimeFingerprint: task.runtimeFingerprint,
+  });
+  same(source.blockers, [], 'Backend source differs from the running process.');
   const accounting = imageRoute
     ? directImagePromptAccountingExecutionPlan({
         expectedApiGraph: bound.expected,
         apiGraph: submitted,
         consumed: output.resolvedExecutionInputs,
         target,
-        runtimeEvidence: { run: accountingRun, output, graphCompleted },
+        runtimeEvidence: { run: accountingRun, output, graphCompleted, sourceFingerprint: source.identity.fingerprint },
       })
     : null;
   const inputBinding = accounting ? undefined : validateConsumedPromptVariant(profile, bound, output, suppliedImage);
@@ -839,12 +845,6 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       role === 'source' && profile.bindsImage ? ['file'] : [],
     );
   }
-  const source = backendSourceEvidence({
-    before: json(evidence.backendSourceBefore).identity,
-    after: json(evidence.backendSourceAfter).identity,
-    runtimeFingerprint: task.runtimeFingerprint,
-  });
-  same(source.blockers, [], 'Backend source differs from the running process.');
   const { runtime, measurement } = validateNativePromptRuntime(
     profile,
     bound,
@@ -934,7 +934,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     ...(accounting ? { seedBinding: { nodeId: bound.generator.id, field: 'seed', value: bound.seed } } : {}),
     decodedOutput,
     observationLimits: {
-      fullConsumedFieldAccounting: Boolean(accounting),
+      fullConsumedFieldAccounting: Boolean(accounting && !accounting.retainedGenerator),
       physicalPlatformQualification: false,
       ...(sampledCpuMemory ? { memoryMeasurement: 'sampled_worker_rss' } : {}),
     },
