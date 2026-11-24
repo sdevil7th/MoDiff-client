@@ -503,6 +503,14 @@ authored prompt in their respective workflows. Native producer evidence and the
 original text or video are required. These receipts cover the populated prompt
 variants and record the limits of their native control accounting.
 
+The native image prompt-variant recorder also accepts the reviewed Linux ROCm
+Sana Sprint text-to-image and SDXL PAG recipes with model CPU offload. It
+verifies their immutable checkpoints and separate control contracts. Sana Sprint
+records the sequence length and treats the saved negative prompt as inactive.
+SDXL PAG verifies both PAG scales through typed accounting and treats the saved
+sequence length as inactive. These receipts bind the saved prompt, seed and
+exact output only for the matching source graph and runtime.
+
 Run evidence always uses the direct exporter for the original archived graph.
 Opening an editable workflow tab separately applies the legacy attention
 default repair to matching DDPM and Consistency presets. A workflow-local

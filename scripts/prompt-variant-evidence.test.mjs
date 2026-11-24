@@ -290,6 +290,8 @@ for (const [workflowId, variable, kind] of [
   ['SanaPAGPipeline:text_to_image', 'MODIFF_SANA_PAG_PROMPT_EVIDENCE', 'image'],
   ['AuraFlowPipeline:text_to_image', 'MODIFF_AURAFLOW_PROMPT_EVIDENCE', 'image'],
   ['LatentConsistencyModelPipeline:text_to_image', 'MODIFF_LCM_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
 ]) {
   const saved = process.env[variable];
   test(`${workflowId} retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {
@@ -343,6 +345,8 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
     'SanaPAGPipeline:text_to_image',
     'AuraFlowPipeline:text_to_image',
     'LatentConsistencyModelPipeline:text_to_image',
+    'SanaSprintPipeline:text_to_image',
+    'StableDiffusionXLPAGPipeline:text_to_image',
   ];
   const fixtures = workflowIds.map((id) =>
     JSON.parse(readFileSync(join(graphs, manifest.workflows.find((entry) => entry.id === id).graphPath), 'utf8')),

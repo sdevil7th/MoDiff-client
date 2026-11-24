@@ -504,7 +504,11 @@ test('saved SD1.5 stage owners still require the original native completion evid
     /exact saved stage owners/u,
   );
   assert.throws(() => verify('PRXPipeline', [preview, setup, generate]), /exact saved stage owners/u);
-  assert.throws(() => verify('SanaSprintPipeline', [preview, setup, generate]), /outside reviewed scope/u);
+  assert.throws(() => verify('SanaSprintPipeline', [preview, setup, generate]), /exact saved stage owners/u);
+  assert.throws(
+    () => verify('StableDiffusionXLControlNetPipeline', [preview, setup, generate]),
+    /outside reviewed scope/u,
+  );
 });
 
 test('SD1.5 PAG prompt variant requires both locked PAG values in typed consumption evidence', () => {
