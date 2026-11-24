@@ -26,6 +26,7 @@ let outputContractsModule;
 let nodesStoreModule;
 let studioStoreModule;
 let templateQualityModule;
+let approvedRetainedPromptById;
 let templateAssetsModule;
 let modelCacheModule;
 let templateExactnessModule;
@@ -105,6 +106,13 @@ before(async () => {
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   templateQualityModule = await server.ssrLoadModule('/src/studio/templateQuality.ts');
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  approvedRetainedPromptById = new Map(
+    APPROVED_RETAINED_BATCH.map(({ template }) => [
+      template.id,
+      { prompt: template.prompt, negativePrompt: template.negativePrompt },
+    ]),
+  );
   templateAssetsModule = await server.ssrLoadModule('/src/studio/templateAssets.ts');
   modelCacheModule = await server.ssrLoadModule('/src/studio/modelCache.ts');
   templateExactnessModule = await server.ssrLoadModule('/src/studio/templateExactness.ts');
@@ -2939,6 +2947,13 @@ test('template prompt recipes are distinct, detailed, and not generic placeholde
     assert.ok(template.intentGroup, `${template.id} has an intent group`);
     assert.ok(template.recipeSummary, `${template.id} has a recipe summary`);
     assert.ok(template.mediaSlots?.length > 0, `${template.id} has media placeholders`);
+    const retained = approvedRetainedPromptById.get(template.id);
+    if (retained) {
+      // Authoring guidance must not rewrite conditioning from an approved execution.
+      assert.deepEqual({ prompt: template.prompt, negativePrompt: template.negativePrompt }, retained);
+      assert.ok(template.prompt.trim(), `${template.id} retains the recorded prompt`);
+      continue;
+    }
     const backendDefaultPrompt =
       !template.prompt && template.executionSelection?.backendDefaultInputs?.includes('prompt');
     if (backendDefaultPrompt) {

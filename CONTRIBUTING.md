@@ -290,6 +290,13 @@ When adding or changing a template:
 5. Add/update template and quality tests.
 6. Update Gallery coverage and evidence only when the publication contract is met.
 
+For a template registered from an approved saved run, preserve the recorded
+conditioning and locked settings. Test its evidence bindings against the
+retained graph, original output and exact approved files. The authored prompt
+lint still applies to new recipes. Keep display metadata separate from the
+execution settings when refreshing a retained catalog entry, and verify the
+current Gallery association after changing its catalog revision.
+
 When adding a model or mode, follow the checklist in [Auto mode design](docs/auto-mode-design.md). Do not mark a profile Auto-ready from schema or mocked UI evidence alone.
 
 Public Gallery changes must keep manifest paths, media types, reviews, and redacted provenance consistent. Run:

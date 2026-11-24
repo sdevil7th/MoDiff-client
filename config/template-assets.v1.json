@@ -154,6 +154,39 @@
       ]
     },
     {
+      "path": "template-gallery/alpine_lake_in_oils.webp",
+      "size": 565124,
+      "sha256": "sha256:bytes:734b381cd8bb514a1a3aa4e057aa5675e3cd437381d7e081b7577267fb0222bf",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/bookshop_at_blue_hour.webp",
+      "size": 569776,
+      "sha256": "sha256:bytes:ff045be510a0e88cbab69bbe8c3794dd26bd19036bdec26a63a5b6ea5a11bc66",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/canal_lantern_in_warm_light.webp",
+      "size": 315492,
+      "sha256": "sha256:bytes:245deed3f2a8ac213c630ac7a8517c625c1eaa60971778d816a55220310ed8c3",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/character_edit.webp",
       "size": 242746,
       "sha256": "sha256:bytes:c7da13667186b8303eab34103e3e2394e590166cc14a0f5c2c769af8942f035d",
@@ -163,6 +196,28 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/cobalt_jug_and_lemons.webp",
+      "size": 116500,
+      "sha256": "sha256:bytes:a8f9d05f34a6bbf631bccbb3eadf1d18824a772f5f1e038248db7bfdc8c0dbba",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/copper_hour_dunes.webp",
+      "size": 135298,
+      "sha256": "sha256:bytes:45eabeca35fe5982441c80158faa69bca6da1d7f2efb3002a81a8b5c03ae4ef2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
     },
     {
       "path": "template-gallery/fast_lora.card-poster.webp",
@@ -179,6 +234,17 @@
       "path": "template-gallery/fast_lora.webp",
       "size": 141440,
       "sha256": "sha256:bytes:4dd22715673f988b2b8191cc7c2417b4c1c147f1572b16f76f947155bbaf8a3d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flowers_after_rain.webp",
+      "size": 253846,
+      "sha256": "sha256:bytes:ffebbed5e41a1aadbffe64573e522c4ef1b1131844503200f535d1198df1fe83",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -631,6 +697,28 @@
       "path": "template-gallery/flux_schnell_text_to_image.webp",
       "size": 471890,
       "sha256": "sha256:bytes:a8d5a32a0eb8638bb9a4fdd4d4c7fbfc6dbdafb8462e4ea4eb45018d0f03b970",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/forest_ferns.webp",
+      "size": 295506,
+      "sha256": "sha256:bytes:714152e1bc5bbfba9201877fa572f7537204806c5b0ad24f71eda95b09f89f26",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/glasshouse_rain.webp",
+      "size": 555700,
+      "sha256": "sha256:bytes:56968828743bb61caae1be50d0fe07499cea57eade5d9e6586749cd9da99003b",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1316,6 +1404,17 @@
       ]
     },
     {
+      "path": "template-gallery/inputs/alpine_lake_in_oils.before.png",
+      "size": 1509971,
+      "sha256": "sha256:bytes:88290a96bc8d52f11f2d1e3c0c0e04c2027661816e54b57d7d4739d731ca1e75",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/character_edit.before.webp",
       "size": 329508,
       "sha256": "sha256:bytes:b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab",
@@ -1782,6 +1881,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/restoring_the_studio_backdrop.before.png",
+      "size": 271303,
+      "sha256": "sha256:bytes:d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/restoring_the_studio_backdrop.mask.png",
+      "size": 568,
+      "sha256": "sha256:bytes:71817f4823a73712c8e76e7d832ec382c29ec0a0bf5a472e09639448c082da01",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/inputs/sana_sprint_monochrome_tiger.before.webp",
       "size": 256118,
       "sha256": "sha256:bytes:a99616590d7d8586a51a25bbe9e36b309f705bc80f2abaab04ac84f1e0d948e4",
@@ -1835,6 +1956,35 @@
       "size": 1164611,
       "sha256": "sha256:bytes:1f5cd051f787fc878bed50d3c26cce840abe00c942d32e49492e544ac2f88cff",
       "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/janus_red_enamel_teapot.webp",
+      "size": 33688,
+      "sha256": "sha256:bytes:c2cc1b06535dae0816a255e5a08bb20372a4cbd2c4b895f51273140dba4615eb",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 384,
+      "height": 384
+    },
+    {
+      "path": "template-gallery/janus_red_triangle_caption.json",
+      "size": 1791,
+      "sha256": "sha256:bytes:1fec185a203f16541cf13a02afff3c4333b83ff6c593a88fc59fa108801e6d44",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/janus_reykjavik_travel_note.json",
+      "size": 1834,
+      "sha256": "sha256:bytes:c7fb7a09d2480a8cffde6212e6686a5be04ccb01ec7811c7109281634d7c4daa",
+      "contentType": "application/json",
       "purposes": [
         "runtime"
       ]
@@ -2157,9 +2307,20 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/lumina_opal_pendant_in_limestone.webp",
+      "size": 279270,
+      "sha256": "sha256:bytes:3ff57e957b7db5ad20c9c37789a0536437846cdc8eb4737482cb7f026f25fb8e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/manifest.json",
-      "size": 242731,
-      "sha256": "sha256:bytes:a13452fd3e4a7e389f4bf5ef0e79fcd5e029bc12ce8fc329ba29319cd044ae30",
+      "size": 290556,
+      "sha256": "sha256:bytes:0237fc54abc42f620ffc5d6f0b39e6918f19250078c5abfa29f6aa151830927d",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -2185,6 +2346,72 @@
       "purposes": [
         "runtime"
       ]
+    },
+    {
+      "path": "template-gallery/ochre_paper_pavilion.webp",
+      "size": 150332,
+      "sha256": "sha256:bytes:6fd64eda0cd96aca0f5c9d860fec6fed090426ff1c5cd5c9434a639755c06c1e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/persimmon_glaze.webp",
+      "size": 67650,
+      "sha256": "sha256:bytes:0a8f757232720068dbf3ad94fa81e525c7e9d7260853680328019c43ded30279",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/pomegranate_on_blue_linen.webp",
+      "size": 142146,
+      "sha256": "sha256:bytes:ec62b729d1e4b37f37bd7fd8838b831ab10bd82662adc3a359a371cc7e756861",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/porcelain_on_slate_linen.webp",
+      "size": 65926,
+      "sha256": "sha256:bytes:78a0954f82ae30dcc721d9087a54f62063d8b9ded7204838864b1d981a1e763d",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/quiet_current.webp",
+      "size": 109696,
+      "sha256": "sha256:bytes:c4db3876adb54a5f2bb9449ab4865601a24c2b486440f5c04d939a42a7f299a4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/quiet_kiln_at_daybreak.webp",
+      "size": 202092,
+      "sha256": "sha256:bytes:3cbbe1b912086f3d97cbfd3e8ba4c077166d355b6ba0cf25a07441f2826aa6ab",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/qwen_character_angles.webp",
@@ -2631,6 +2858,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/restoring_the_studio_backdrop.webp",
+      "size": 45142,
+      "sha256": "sha256:bytes:c17be5dd41fc9ee16e58d287503e5daf9507ee1536f9ba9db63182af1e74f693",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/reviews/ace_step_audio_continuation.quality-review.json",
       "size": 2439,
       "sha256": "sha256:bytes:71d0e561ba26674f54c4ee09894578414a39ab55596afa74b847c915bbb09cfb",
@@ -2721,6 +2959,114 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/alpine_lake_in_oils.original-provenance.json",
+      "size": 3315,
+      "sha256": "sha256:bytes:9c9ff8e4bae92b7e4564fdc203a36a2cb625489c7b0ca9474ce9979f7bd2d519",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/alpine_lake_in_oils.original-review.json",
+      "size": 677,
+      "sha256": "sha256:bytes:9535ffb383b57c57805ca9ad24a1df06ec87fe005d821448727de9c04709a2bd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/alpine_lake_in_oils.quality-review.json",
+      "size": 2525,
+      "sha256": "sha256:bytes:ca7c2fd6b10e3f100c7aff867aceb300f4fc93c5d4c3c93919fdf810fdf077b3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/alpine_lake_in_oils.retained-template-provenance.json",
+      "size": 3564,
+      "sha256": "sha256:bytes:c268ddbea9ba90fcf556ac9afdcc6b290e103883c5c7e9b5b91a1312f0c4eacb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/bookshop_at_blue_hour.original-provenance.json",
+      "size": 2922,
+      "sha256": "sha256:bytes:3f3e4056350e5a1ee59d46aea727b87563ae6fc5fe11a491257e2af7d412f0bf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/bookshop_at_blue_hour.original-review.json",
+      "size": 598,
+      "sha256": "sha256:bytes:26882cd197ba823799f50be6ea1c01098038ad3cee926a71edf7aa47038d7226",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/bookshop_at_blue_hour.quality-review.json",
+      "size": 2270,
+      "sha256": "sha256:bytes:345c8dfefaa685385a016fcf545a50bf4d7554b07cee8c04f76efa270d830e4d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/bookshop_at_blue_hour.retained-template-provenance.json",
+      "size": 3302,
+      "sha256": "sha256:bytes:47f8649c5c8bdf345ef71157478da39f55cccda4ef5e6a726bb4738c560de7d7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/canal_lantern_in_warm_light.original-provenance.json",
+      "size": 2421,
+      "sha256": "sha256:bytes:3a802a1d1961ab209994af944eb3889cc6d675e3f9a409414c0504d344b38d7b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/canal_lantern_in_warm_light.original-review.json",
+      "size": 604,
+      "sha256": "sha256:bytes:fdfac320256dd1dd7bcaa77ef449fe39a537e871db6ea579500579148bffea23",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/canal_lantern_in_warm_light.quality-review.json",
+      "size": 2308,
+      "sha256": "sha256:bytes:721e6e325451df2320c2813bedce2b5c4b37d92d30ac974ca95b4f3edba6b316",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/canal_lantern_in_warm_light.retained-template-provenance.json",
+      "size": 3356,
+      "sha256": "sha256:bytes:5027304dcbef05cecb1baff1771c2f7f96671fee8d3fac34f9fece5f730c3885",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/character_edit.quality-review.json",
       "size": 3905,
       "sha256": "sha256:bytes:89cca4e7b8e466c614d973925b4775e18cec8c39e14e639a9d48b89918e7ae7f",
@@ -2739,6 +3085,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/cobalt_jug_and_lemons.original-provenance.json",
+      "size": 2633,
+      "sha256": "sha256:bytes:c9b80942080368a5e13eef6d01a31691034655d618c40ef89ab9bd1b0ade0c7e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cobalt_jug_and_lemons.original-review.json",
+      "size": 853,
+      "sha256": "sha256:bytes:f55b66df26013db2e002b925f1aceececec95ebd311a306bb082258f292751f1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cobalt_jug_and_lemons.quality-review.json",
+      "size": 2680,
+      "sha256": "sha256:bytes:da64a4e035bbe030a037ddfaf23a16946114d0e680c842f37976cc50ff8d6970",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cobalt_jug_and_lemons.retained-template-provenance.json",
+      "size": 3318,
+      "sha256": "sha256:bytes:066fee762cae8b5f92625cc71f4002422828b06115024c3ce11affd68f34544e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/copper_hour_dunes.original-provenance.json",
+      "size": 3659,
+      "sha256": "sha256:bytes:6223329bd7a1a962703aefba1379c33dae7f57daa40a09aa8e77c1cdd05b099c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/copper_hour_dunes.original-review.json",
+      "size": 839,
+      "sha256": "sha256:bytes:1da7406a3792d864c6aa0e010203a15d608a2f85372e530aabdeabfd7dc7e529",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/copper_hour_dunes.quality-review.json",
+      "size": 2722,
+      "sha256": "sha256:bytes:bc0ce5cb8d1e26c9b3491f5d1653365ca11b5305b25cd32647b08398bf889e8f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/copper_hour_dunes.retained-template-provenance.json",
+      "size": 3274,
+      "sha256": "sha256:bytes:b1d27bc198b128e1085d6b920a62dff73ed1684735c0d9b7eefbd28ab52d7e5b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/fast_lora.quality-review.json",
       "size": 2589,
       "sha256": "sha256:bytes:96079ed2226e86a0a0686283402a8c4f567809c73d67138afb4d58fc46936a15",
@@ -2751,6 +3169,42 @@
       "path": "template-gallery/reviews/fast_lora.reviewed-provenance.json",
       "size": 106511,
       "sha256": "sha256:bytes:7a3e3ac94845ad37f5f374c1e808a5ff449b0e5776be72a1891bb2c106fdd722",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flowers_after_rain.original-provenance.json",
+      "size": 3371,
+      "sha256": "sha256:bytes:4368cd0ed92243d2cc6b5b628ffabba5e64339eeec153282832b253d68efaa87",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flowers_after_rain.original-review.json",
+      "size": 702,
+      "sha256": "sha256:bytes:0dadd907604fdde95baa31bcc981dd87cab836c1b167fc852542982163bbc455",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flowers_after_rain.quality-review.json",
+      "size": 2590,
+      "sha256": "sha256:bytes:4dc4ac8e4aa12dc1a9f0d685a3416d1039866c8b52d8d2560a8d3b0364cd5121",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flowers_after_rain.retained-template-provenance.json",
+      "size": 3284,
+      "sha256": "sha256:bytes:5251193aa4454f936e7677ee44b91d30938885e46645007effb8b1de8ea61f4a",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3335,6 +3789,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/forest_ferns.original-provenance.json",
+      "size": 3364,
+      "sha256": "sha256:bytes:9f3dbdc8c7c6c2bbd65792b2d1b958cc21e1aeb44489af772f6e1d8e14b1932b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/forest_ferns.original-review.json",
+      "size": 695,
+      "sha256": "sha256:bytes:c736e68088c4a94fcec6574242c08e840dea34559d3802d63de6f2114f514f1c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/forest_ferns.quality-review.json",
+      "size": 2579,
+      "sha256": "sha256:bytes:8d789319fd8de535f0e638a1fecdc2e65db93e1ff95104c7c63939437994529b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/forest_ferns.retained-template-provenance.json",
+      "size": 3248,
+      "sha256": "sha256:bytes:8776590ac1201f5606eab7521d2ef8283f85cc48038acafdb3cbe60a11f91a82",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/glasshouse_rain.original-provenance.json",
+      "size": 3275,
+      "sha256": "sha256:bytes:0dad28d294233db5c72915ddb9559f8eb2e4fba77cd8ebd8510a254ae0434083",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/glasshouse_rain.original-review.json",
+      "size": 852,
+      "sha256": "sha256:bytes:41b3e9a683bb5af2655b9e2874464a97a79eecdf987b93672f1ea3d142bed370",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/glasshouse_rain.quality-review.json",
+      "size": 2632,
+      "sha256": "sha256:bytes:da3cb94631be949ba21fcdf842135099dbc6992bfbf37cc9b30710d1fb997ca4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/glasshouse_rain.retained-template-provenance.json",
+      "size": 3292,
+      "sha256": "sha256:bytes:fdd2f0c10865bfc619852978699d6ab58346d8a4d435b6ad24b706bf2aad4b88",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/high_quality.quality-review.json",
       "size": 3663,
       "sha256": "sha256:bytes:859a90999ac580d2dfbf45a39d26c475e2af362a6e5a95d72c6ff05626fca54c",
@@ -3347,6 +3873,114 @@
       "path": "template-gallery/reviews/high_quality.reviewed-provenance.json",
       "size": 102347,
       "sha256": "sha256:bytes:082cd7fc2b3345ff6bf881df607e19dc9e175081e2f029cf01f2abdafcbc17d4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_enamel_teapot.original-provenance.json",
+      "size": 1699,
+      "sha256": "sha256:bytes:170501bd8a025aa58341bc17322a6c9f8448be401b7263fdc9c5e9b449d1cb87",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_enamel_teapot.original-review.json",
+      "size": 567,
+      "sha256": "sha256:bytes:05d63ee8fe6f5ef33cb0ea16988861ffbbd99e0f7317b039b01c41a67eb4f5f8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_enamel_teapot.quality-review.json",
+      "size": 2364,
+      "sha256": "sha256:bytes:b9d911046c3faff978d22cb397ee2a95d23608240d18674dc68fb5b957783f90",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_enamel_teapot.retained-template-provenance.json",
+      "size": 3317,
+      "sha256": "sha256:bytes:7fc41c79f10344c5621f2184f7086b4b33daf929d83e37e099e9c0e3fc16aa2d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_triangle_caption.original-provenance.json",
+      "size": 2343,
+      "sha256": "sha256:bytes:3f6648332a0351e6904385e3d670550b1072c8539055ea6d827d3c7d3ee39510",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_triangle_caption.original-review.json",
+      "size": 545,
+      "sha256": "sha256:bytes:f7b4652f53f7840da5338cc9e77215884c500ae59aa26e66fb83c84bb6e1ede8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_triangle_caption.quality-review.json",
+      "size": 2288,
+      "sha256": "sha256:bytes:03dd22b437f3d94f8789eed26ccf9c0de4fd24a2162e1bab3d1e164441077ef5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_red_triangle_caption.retained-template-provenance.json",
+      "size": 3538,
+      "sha256": "sha256:bytes:0e5cecab2d1a8c81c1b36c4e3b2fcd0799b327f94a61d9f4c55fac0ce1f16a9b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_reykjavik_travel_note.original-provenance.json",
+      "size": 2277,
+      "sha256": "sha256:bytes:e691c32bc7b7eb4bd1bf7feae5773671d7e083d79e5bc9426ed5e768bc78d899",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_reykjavik_travel_note.original-review.json",
+      "size": 517,
+      "sha256": "sha256:bytes:85c17c8b45a8df155a69a5de0e983b32ef5d9cc917cade0115bae566c861b088",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_reykjavik_travel_note.quality-review.json",
+      "size": 2193,
+      "sha256": "sha256:bytes:08b83eb62ffdf911938d868f1be875cc895f472e9e48936acfaa93bbed96c709",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/janus_reykjavik_travel_note.retained-template-provenance.json",
+      "size": 3451,
+      "sha256": "sha256:bytes:70da97c6adaef6d92f70d91e3aa549503dacb307ea94dd3115047cb3de17945b",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3497,6 +4131,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/lumina_opal_pendant_in_limestone.original-provenance.json",
+      "size": 2146,
+      "sha256": "sha256:bytes:1759ed2ceb7e564e568eced6f47a017c647dd549c2ebdf6e414310d8445a4fd4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/lumina_opal_pendant_in_limestone.original-review.json",
+      "size": 569,
+      "sha256": "sha256:bytes:11b0b3259e607f479a30ccb2c6f530ff41cb6367245961c43f56ccad21babfb7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/lumina_opal_pendant_in_limestone.quality-review.json",
+      "size": 2396,
+      "sha256": "sha256:bytes:4566c14128c7a9a7b32d92d927cff0c2ca12bb392328bd692272130e0c5fe387",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/lumina_opal_pendant_in_limestone.retained-template-provenance.json",
+      "size": 3347,
+      "sha256": "sha256:bytes:a4e3e7b9be7fdd489f3876e63e7d0e9ed65508e84eabb0a673719251d3d46e0e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/marigold_depth_synthetic_ramp.quality-review.json",
       "size": 2882,
       "sha256": "sha256:bytes:17c3bbb2da127558c468e58ccc2bb08a9b78d4f07f901d483cfe8092732ebb42",
@@ -3545,6 +4215,222 @@
       "path": "template-gallery/reviews/minimax_music3_chamber_pop.reviewed-provenance.json",
       "size": 96233,
       "sha256": "sha256:bytes:1b2c91a45c40a7d6621bee54083d3e02d9b843d1034c06e3284ff8f1a2e44270",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ochre_paper_pavilion.original-provenance.json",
+      "size": 3254,
+      "sha256": "sha256:bytes:5fab665db87b17f2c4cea8e3903ac6df84232912fc2abaabee3bf3107542dc96",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ochre_paper_pavilion.original-review.json",
+      "size": 664,
+      "sha256": "sha256:bytes:6e31d3ec89e61e8b5722fb93db8f7bb7ea8328bf1c055028ba44c18affacf058",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ochre_paper_pavilion.quality-review.json",
+      "size": 2465,
+      "sha256": "sha256:bytes:a635772ae5b26758629581843258dea266c7e85934eb222d4884b9a2522a93c1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ochre_paper_pavilion.retained-template-provenance.json",
+      "size": 3298,
+      "sha256": "sha256:bytes:9bd899fe903bcc05057c1ae452c641700d9c36b5001b499dadba6a6a07e36e80",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/persimmon_glaze.original-provenance.json",
+      "size": 2814,
+      "sha256": "sha256:bytes:dece98191d7fdcae395409a4ca8fb0f7eb215bc095660a8251d668f1dabd0054",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/persimmon_glaze.original-review.json",
+      "size": 571,
+      "sha256": "sha256:bytes:3c97652cd91cc4af5660429652241efbe6675b20ec59c7abc73c3f1c185b491a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/persimmon_glaze.quality-review.json",
+      "size": 2235,
+      "sha256": "sha256:bytes:9c9afc7223597ea8ee65889581c40f1e9f6a63a2bab6d7827b6af207353909ad",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/persimmon_glaze.retained-template-provenance.json",
+      "size": 3294,
+      "sha256": "sha256:bytes:4813f96f9332d04d4b8b0fc8d30d51e110ab8d157a1aef7c6172474f09bb490f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pomegranate_on_blue_linen.original-provenance.json",
+      "size": 2497,
+      "sha256": "sha256:bytes:b9cecf2139bc5a0e5d6a3db462caf017c4d54482267592bf220f5015f7ae690b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pomegranate_on_blue_linen.original-review.json",
+      "size": 654,
+      "sha256": "sha256:bytes:752b7cc115a3794d1066785e887b73e3eed5f3bb6735ef5ec89c45035b20d7e4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pomegranate_on_blue_linen.quality-review.json",
+      "size": 2426,
+      "sha256": "sha256:bytes:412a9940d2e86768a91a54c8d1282d46ff638f86d94d6582e81738f32c2749ab",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pomegranate_on_blue_linen.retained-template-provenance.json",
+      "size": 3335,
+      "sha256": "sha256:bytes:15ad50f1686ae7dca486dba01974ad9155dbfc694b97b824314c257e316c185e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/porcelain_on_slate_linen.original-provenance.json",
+      "size": 2629,
+      "sha256": "sha256:bytes:a20717be541cf1ac1dc84a8b7fdfd82f0dfedd5ec322ec1e257654a978ab1842",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/porcelain_on_slate_linen.original-review.json",
+      "size": 607,
+      "sha256": "sha256:bytes:8f6972bd24388616958f18d53ba39b7a9626fd23ef2470a96e888d01599ee303",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/porcelain_on_slate_linen.quality-review.json",
+      "size": 2260,
+      "sha256": "sha256:bytes:aa85f397af28e1ca7da538dae08a96d1ff3452c5542f72419447fa5635a2aab3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/porcelain_on_slate_linen.retained-template-provenance.json",
+      "size": 3329,
+      "sha256": "sha256:bytes:e1d8fb3b54f1fc0c1d4e3560d9a7d829aaf81d22f3cd543809051b38b598a396",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_current.original-provenance.json",
+      "size": 2802,
+      "sha256": "sha256:bytes:6831c3577cf90fa0a6606497bd13844a9b25d4371f1b402efe9b099e8a58d42c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_current.original-review.json",
+      "size": 637,
+      "sha256": "sha256:bytes:c1596743b2612f0bfcda8cf8d21b3e6bec1c570710c73e19e82d7d6aaea9b61c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_current.quality-review.json",
+      "size": 2405,
+      "sha256": "sha256:bytes:2387a8febca71a20ea416bb6db610de9c442c584f64bd913eb66cf3688d84773",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_current.retained-template-provenance.json",
+      "size": 3257,
+      "sha256": "sha256:bytes:888aecdcb91637d93c268a9ad7b615ca545e7b73e2f1caf064c12bf4a0681655",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_kiln_at_daybreak.original-provenance.json",
+      "size": 3958,
+      "sha256": "sha256:bytes:a4b6c9950b2f2f6d185eb574ad4acddec21e2015fcf8d50bd14195ed24dcee97",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_kiln_at_daybreak.original-review.json",
+      "size": 740,
+      "sha256": "sha256:bytes:b76ab6d15da10b9d6fb9ddfd83af0abf2f56ca962aac6ab65c78ae231a74d2bd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_kiln_at_daybreak.quality-review.json",
+      "size": 2679,
+      "sha256": "sha256:bytes:b0118affa79b69e333c6a7977aa8c47328d570dd374aa212f0a371ec5a4a353b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/quiet_kiln_at_daybreak.retained-template-provenance.json",
+      "size": 3306,
+      "sha256": "sha256:bytes:ae5db3f69f0a3ae1ad178ca986819e1b8cb1ccdf50c9b3850d5ec2e7d745ba8d",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3965,6 +4851,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/restoring_the_studio_backdrop.original-provenance.json",
+      "size": 2263,
+      "sha256": "sha256:bytes:a8d0febc08556ad204bef84d5c8d35bfab9bf69fe8d28b21f10ad315f962b897",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/restoring_the_studio_backdrop.original-review.json",
+      "size": 403,
+      "sha256": "sha256:bytes:633f93991afc1d361ac19a79c101f868f5954814f09dc349bcb61f967b821cf6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/restoring_the_studio_backdrop.quality-review.json",
+      "size": 2397,
+      "sha256": "sha256:bytes:1e0613d7b8b08333cca474aea32b92bd3d6ac680a776e639b93c554a3011b311",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/restoring_the_studio_backdrop.retained-template-provenance.json",
+      "size": 3994,
+      "sha256": "sha256:bytes:6a6538a8278e1f94de68eb9b2928131809e5b3163a7157ff7db17d053635fa46",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/salt_marsh_from_above.original-provenance.json",
+      "size": 3298,
+      "sha256": "sha256:bytes:a126541afded7807e2f7c48f7695571cd00edb4c237e257829dea8025548fdc4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/salt_marsh_from_above.original-review.json",
+      "size": 720,
+      "sha256": "sha256:bytes:890b1c2f2a76d781d9c1062a1e4ec1e637a5d7de161e8ec21fb4860bfba68365",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/salt_marsh_from_above.quality-review.json",
+      "size": 2636,
+      "sha256": "sha256:bytes:deb996a0c76f064ba87fcbde7750b4297dedd4f470a70246be5ce550f88b52d3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/salt_marsh_from_above.retained-template-provenance.json",
+      "size": 3289,
+      "sha256": "sha256:bytes:9a904012bac7d429111212a1e17e1b5b08a754a6354230233a6c81b8f1a2cfe2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sana_sprint_monochrome_tiger.quality-review.json",
       "size": 3320,
       "sha256": "sha256:bytes:daad196fff80a6e8d2543deeb911b5cd94a027a746e8d7cc0a011dc687f8c50e",
@@ -4013,6 +4971,42 @@
       "path": "template-gallery/reviews/spandrel_x2_synthetic_gradient.retained-template-provenance.json",
       "size": 3397,
       "sha256": "sha256:bytes:43789929c6d5eab5bf18f99df491e30a71f0ebd0a74b8162af30893303e282c0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/the_glasshouse_seed_tray.original-provenance.json",
+      "size": 2794,
+      "sha256": "sha256:bytes:267ab964ea3749739c8f58b86f7b94aa2c2cfe506a12c4f33c615c8415a97230",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/the_glasshouse_seed_tray.original-review.json",
+      "size": 685,
+      "sha256": "sha256:bytes:49410d9deaf87256d1f77a2ee3839b8ae49ddd9ba4a33b6bc740347c4ce12744",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/the_glasshouse_seed_tray.quality-review.json",
+      "size": 2512,
+      "sha256": "sha256:bytes:ddc92db2d2f6ce8da152019e33a20b66ffd61a780d72b76ce550fd2d00d63a33",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/the_glasshouse_seed_tray.retained-template-provenance.json",
+      "size": 3330,
+      "sha256": "sha256:bytes:c719553a51b1b44737b448ad981e6e14d2e71ad4a63deb0a865453e94e7c78c8",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -4917,6 +5911,17 @@
       ]
     },
     {
+      "path": "template-gallery/salt_marsh_from_above.webp",
+      "size": 542348,
+      "sha256": "sha256:bytes:6447268a9bef5f8a4503d73760f91e8d930e9ce620880e958f461d7d6539f27c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1536,
+      "height": 768
+    },
+    {
       "path": "template-gallery/sana_sprint_monochrome_tiger.webp",
       "size": 365662,
       "sha256": "sha256:bytes:f22b1d5a1d2944949698b47eec10e7f8d04b23bc0746f4e089b41d78e9d94ff7",
@@ -5275,6 +6280,17 @@
       ],
       "width": 128,
       "height": 96
+    },
+    {
+      "path": "template-gallery/the_glasshouse_seed_tray.webp",
+      "size": 406498,
+      "sha256": "sha256:bytes:21fc2abc9656ec805dfa5836064beb5c53e920fd8d75a658b7cfefdcff83a35f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/wan_21_t2v_13b_seed_vault.card-poster.png",
@@ -5691,9 +6707,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:4434e38c233eb32820d8903661684c0d91b77edf6fae07035a8ea7edd8760651",
+  "assetSetId": "sha256:canonical-json:caa900140d82653b84f9c71dda792dda20616498078938bc687b8dfc977b9f72",
   "status": "ready",
-  "assetCount": 575,
-  "totalBytes": 1037691708,
+  "assetCount": 683,
+  "totalBytes": 1044572748,
   "missingAssets": []
 }

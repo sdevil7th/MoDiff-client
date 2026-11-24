@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import retainedBatchPins from '../config/retained-gallery-approved-batch.v1.json' with { type: 'json' };
 import { canonicalJsonHash } from './canonical-json.mjs';
 
 export const RETAINED_GALLERY_PROVENANCE_FORMAT = 'modiff.gallery.retained-template-provenance.v1';
@@ -88,6 +89,7 @@ const pinsByTemplate = new Map(
       beforeExtension: 'webp',
       outputExtension: 'webp',
     },
+    ...retainedBatchPins,
   }),
 );
 
@@ -119,6 +121,15 @@ export function buildRetainedGalleryProvenance(association) {
 
 function encodedHash(bytes) {
   return Buffer.isBuffer(bytes) ? 'sha256:bytes:' + createHash('sha256').update(bytes).digest('hex') : null;
+}
+
+export function verifyRetainedApprovedFiles(approvedFiles, readAsset) {
+  for (const { path, bytes, sha256 } of Object.values(approvedFiles)) {
+    const stored = readAsset(path);
+    if (stored?.length !== bytes || encodedHash(stored) !== 'sha256:bytes:' + sha256) {
+      throw new Error('A retained Gallery file differs from the exact approved bytes.');
+    }
+  }
 }
 
 // The normal Gallery verifier still checks the decoded output, full sidecar
@@ -169,6 +180,7 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
     beforeMediaHash: output.inputEncodedSha256,
     width: pins.outputSize?.width,
     height: pins.outputSize?.height,
+    ...Object.fromEntries(Object.entries(association.approvedFiles ?? {}).map(([field, ref]) => [field, ref.path])),
   };
   const errors = Object.entries(expected)
     .filter(([field, value]) => entry[field] !== value)

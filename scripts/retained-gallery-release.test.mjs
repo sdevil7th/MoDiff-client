@@ -6,10 +6,38 @@ import { test } from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalWorkflowContract } from './release-contract-core.mjs';
 import { createRetainedGalleryReleaseReader, verifiedRetainedGalleryAssetIndex } from './retained-gallery-release.mjs';
-import { validateRetainedGalleryProvenance } from './retained-gallery-provenance.mjs';
+import { createHash } from 'node:crypto';
+import { validateRetainedGalleryProvenance, verifyRetainedApprovedFiles } from './retained-gallery-provenance.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const hash = (value) => `sha256:canonical-json:${canonicalJsonHash(value)}`;
+
+test('retained registration binds the exact approved review, provenance and mask files', () => {
+  const archive = new Map([
+    ['/template-gallery/reviews/example.original-review.json', Buffer.from('{"review":"accepted"}\n')],
+    ['/template-gallery/reviews/example.original-provenance.json', Buffer.from('{"source":"saved run"}\n')],
+    ['/template-gallery/inputs/example.mask.png', Buffer.from('original mask bytes')],
+  ]);
+  const approved = Object.fromEntries(
+    [...archive].map(([path, bytes], index) => [
+      index,
+      { path, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') },
+    ]),
+  );
+  assert.doesNotThrow(() => verifyRetainedApprovedFiles(approved, (path) => archive.get(path)));
+  for (const [path, bytes] of archive) {
+    const changed = Buffer.from(bytes);
+    changed[0] ^= 1;
+    assert.throws(
+      () => verifyRetainedApprovedFiles(approved, (key) => (key === path ? changed : archive.get(key))),
+      /exact approved bytes/u,
+    );
+    assert.throws(
+      () => verifyRetainedApprovedFiles(approved, (key) => (key === path ? undefined : archive.get(key))),
+      /exact approved bytes/u,
+    );
+  }
+});
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'retained-gallery-release-'));

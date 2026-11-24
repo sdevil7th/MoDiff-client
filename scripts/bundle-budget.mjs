@@ -1,3 +1,6 @@
+// The 21 approved retained recipes add 11568/11563 startup gzip bytes.
+// The measured largest chunk is 540863 bytes and startup totals 719345.
+// Keep existing headroom, startup membership, and both deferred ceilings.
 // Saved workflow compatibility measures 514731/693216 startup gzip bytes.
 // Account for the measured 1204/1206-byte additions over 513527/692010.
 // Existing startup headroom, deferred caps, and loading boundaries stay fixed.
@@ -697,7 +700,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
   192 +
   288 +
   288 +
-  114;
+  114 +
+  11568;
 // Shared icons initialize in graph-vendor, avoiding an entry/lazy-panel cycle
 // that captured undefined tab icons and crashed cold production startup. The
 // Earlier startup measured 589.1 KiB. Shared Block crossing, explicit movement,
@@ -958,7 +962,8 @@ const MAX_STARTUP_GZIP_BYTES =
   192 +
   288 +
   288 +
-  115;
+  115 +
+  11563;
 // Deferred surfaces are measured separately so code splitting cannot hide an
 // unbounded feature bundle. These ceilings leave room for the reviewed dialogs
 // and catalog tools while preventing either one oversized deferred chunk or

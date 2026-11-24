@@ -13,7 +13,7 @@ import { selectCanonicalWorkflowSources } from './workflow-library-manifest-stat
 const client = resolve(import.meta.dirname, '..');
 const backend = resolve(process.env.MODIFF_BACKEND_DIR || join(client, '../MoDiff'));
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
-let server, recipes, fixture, studio, flow, nodeStore, graphBridge, published, exactness;
+let server, recipes, fixture, studio, flow, nodeStore, graphBridge, published, exactness, approvedBatchIds;
 
 before(async () => {
   const storage = new Map();
@@ -38,6 +38,8 @@ before(async () => {
     appType: 'custom',
   });
   ({ RETAINED_GALLERY_TEMPLATES: recipes } = await server.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts'));
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  approvedBatchIds = new Set(APPROVED_RETAINED_BATCH.map(({ template }) => template.id));
   ({ STUDIO_TEMPLATES: published } = await server.ssrLoadModule('/src/studio/templates.ts'));
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
   ({ useStudioStore: studio } = await server.ssrLoadModule('/src/stores/useStudioStore.ts'));
@@ -146,7 +148,33 @@ test('retained Gallery recipes preserve the native graph identities and standalo
       ...skeletons.find(({ id }) => id === recipe.sourceTaskTemplateId),
       taskContract: true,
     });
-    if (recipe.inputLocatorSha256) {
+    if (approvedBatchIds.has(template.id)) {
+      const evidenceRoot = join(
+        backend,
+        'data/qualification/release/canonical-workflow-evidence',
+        recipe.originalReceiptSha256,
+      );
+      const evidenceFile = join(evidenceRoot, 'evidence.json');
+      assert.equal(sha256(template.prompt), recipe.promptSha256);
+      if (existsSync(evidenceFile)) {
+        const bytes = readFileSync(evidenceFile);
+        assert.equal(sha256(bytes), recipe.originalReceiptSha256);
+        const descriptor = JSON.parse(bytes);
+        const capture = descriptor.capture
+          ? JSON.parse(readCanonicalEvidenceFile(evidenceRoot, descriptor.capture).bytes)
+          : descriptor;
+        const saved = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, capture.creatorPackage).bytes);
+        const api = flow.getState().exportGraph('retained-batch-check', undefined, {
+          sourceGraph: saved.graph,
+          randomizeSeeds: false,
+        });
+        assert.equal(canonicalGraphIdentity(api).hash, recipe.retainedGraphHash, template.id);
+        assert.deepEqual(
+          capture.inputs.map(({ file }) => file.sha256),
+          [recipe.inputSha256, recipe.maskSha256].filter(Boolean),
+        );
+      }
+    } else if (recipe.inputLocatorSha256) {
       const evidenceRoot = join(
         backend,
         'data/qualification/release/canonical-workflow-evidence',
@@ -199,7 +227,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: contract }, 'signal');
       } else {
         assert.equal(payload.fn, 'update_image_contract');
-        assert.ok(['PredictMap', 'Edit'].includes(payload.action));
+        assert.ok(['PredictMap', 'Edit', 'Generate', 'Inpaint'].includes(payload.action));
         assert.deepEqual(payload.values.image_contract, contract);
       }
       return Response.json({ error: false, nodes: [] });
@@ -216,9 +244,17 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       contract = imageContract;
       const inputBinding = template.inputBindings?.[0];
       const audio = inputBinding?.mediaType === 'audio';
-      const input = recipe.inputSha256 ? [recipe.inputFileName ?? authorsAudioFixture] : [];
+      const input = recipe.inputSha256
+        ? [recipe.inputFileName ?? (audio ? authorsAudioFixture : 'review-source-image.png')]
+        : [];
+      const mask = recipe.maskSha256 ? 'review-mask-image.png' : undefined;
       const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
-      studio.getState().applyTemplate(template, audio ? { sourceAudio: input[0] } : { referenceImages: input });
+      studio
+        .getState()
+        .applyTemplate(
+          template,
+          audio ? { sourceAudio: input[0] } : { referenceImages: input, ...(mask && { maskImage: mask }) },
+        );
       const form = studio.getState().form;
       assert.equal(form.device, 'cuda:0');
       assert.equal(form.resourceMode, 'expert');
@@ -262,6 +298,31 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.equal(loader.params.revision.value, template.modelArtifact.revision);
       assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');
       assert.equal(loader.params.device.value, 'cuda:0');
+      if (approvedBatchIds.has(template.id)) {
+        const actions = Object.values(api.nodes);
+        const generation = actions.find(({ action }) =>
+          ['Generate', 'Edit', 'Inpaint', 'GenerateAnyToAny'].includes(action),
+        );
+        assert.equal(generation.params.prompt.value, template.prompt);
+        const locked = template.example.lockedSettings;
+        if (generation.action !== 'GenerateAnyToAny') {
+          for (const [field, control] of [
+            ['width', 'width'],
+            ['height', 'height'],
+            ['num_inference_steps', 'steps'],
+            ['guidance_scale', 'guidanceScale'],
+          ]) {
+            assert.equal(generation.params[field].value, locked[control], `${template.id} ${control}`);
+          }
+          assert.equal(Number(generation.params.seed.value), template.example.lockedSeed);
+          assert.equal(loader.params.quantization_mode.value, 'none');
+        }
+        const sources = actions.filter(({ module, action }) => module === 'modules.Image' && action === 'Load');
+        assert.equal(sources.length, input.length + Number(Boolean(mask)));
+        if (input.length) assert.ok(sources.some(({ params }) => params.file.value?.includes(input[0])));
+        if (mask) assert.ok(sources.some(({ params }) => params.file.value?.includes(mask)));
+        continue;
+      }
       if (audio) {
         const source = api.nodes[binding.nodes.loadAudio];
         // The interactive file picker supplies a local locator. The retained

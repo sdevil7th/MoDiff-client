@@ -39,6 +39,7 @@ let server, publicTemplates, candidates, builder, exactness, groups, operations,
 let defaults, fixture, backendCaption, backendCaptionBytes;
 let readiness, usagePolicies, quality;
 let historicalImageIds;
+let approvedRetainedImageIds;
 const backend = path.resolve('../MoDiff');
 
 before(async () => {
@@ -62,6 +63,10 @@ before(async () => {
   });
   const module = await server.ssrLoadModule('/src/studio/templates.ts');
   publicTemplates = module.STUDIO_TEMPLATES;
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  approvedRetainedImageIds = APPROVED_RETAINED_BATCH.filter(
+    ({ template }) => template.example.mediaType === 'image',
+  ).map(({ template }) => template.id);
   const baseline = JSON.parse(await readFile('tests/fixtures/image-template-creator-contracts.v1.json', 'utf8'));
   historicalImageIds = new Set(baseline.templates.map((row) => row.templateId));
   candidates = candidateIds.map((id) => module.STUDIO_TEMPLATES.find((item) => item.id === id));
@@ -153,7 +158,15 @@ test('two experimental Custom recipes extend image coverage while preserving the
     assert.equal(template?.example.status, 'unverified');
     assert.equal(template.readinessPolicy, 'requires_input');
   }
-  assert.equal(imageTemplates.filter(({ id }) => !retainedEdits.includes(id)).length, 69);
+  assert.equal(
+    imageTemplates.filter(({ id }) => !retainedEdits.includes(id) && !approvedRetainedImageIds.includes(id)).length,
+    69,
+  );
+  for (const id of approvedRetainedImageIds)
+    assert.ok(
+      imageTemplates.some((template) => template.id === id),
+      id,
+    );
   for (const template of candidates) {
     assert.equal(
       publicTemplates.some((item) => item.id === template.id),

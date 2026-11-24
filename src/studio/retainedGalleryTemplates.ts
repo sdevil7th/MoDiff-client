@@ -1,12 +1,14 @@
 import type { StudioTemplate } from './types';
+import { APPROVED_RETAINED_BATCH } from './retainedGalleryApprovedBatch';
 
-type RetainedGalleryRecipe = {
+export type RetainedGalleryRecipe = {
   readonly workflowId: string;
   readonly sourceTaskTemplateId: string;
   readonly template: StudioTemplate;
   readonly retainedGraphHash: string;
   readonly originalReceiptSha256: string;
   readonly reviewedTemplateSha256: string;
+  readonly maskSha256?: string;
   readonly reviewedCatalogLock: {
     readonly templateLockHash: string;
     readonly galleryTemplateLockHash: string;
@@ -28,6 +30,7 @@ const spandrelRevision = '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094';
  * continues to seed their task contracts with the standalone defaults.
  */
 export const RETAINED_GALLERY_TEMPLATES = [
+  ...APPROVED_RETAINED_BATCH,
   {
     workflowId: 'MarigoldDepthPipeline:depth_estimation',
     sourceTaskTemplateId: 'task-template:marigold-depth-lcm-v1-0:depth-estimation:v1',

@@ -6,7 +6,7 @@ import {
   galleryVerificationScope,
   validateQualityReview,
 } from './template-gallery-harness.mjs';
-import { validateRetainedGalleryProvenance } from './retained-gallery-provenance.mjs';
+import { validateRetainedGalleryProvenance, verifyRetainedApprovedFiles } from './retained-gallery-provenance.mjs';
 
 const same = (actual, expected, label) => assert.deepEqual(actual, expected, label);
 
@@ -15,7 +15,7 @@ function assertRetainedNativeIdentity(association, entry, nativeReceipt, label) 
   const expected = {
     sourceTemplateId: association.nativeSourceTaskContractId,
     workflowId: association.workflowId,
-    proofKind: 'real_backend_input_bound_model_variant',
+    proofKind: association.nativeProofKind ?? 'real_backend_input_bound_model_variant',
     capturedAt: entry.verificationTimestamp,
     backendSourceFingerprint: entry.backendSourceFingerprint,
     canonicalWorkflowHash: association.originalCanonicalWorkflowHash,
@@ -31,6 +31,41 @@ function assertRetainedNativeIdentity(association, entry, nativeReceipt, label) 
   };
   const actual = Object.fromEntries(Object.keys(expected).map((key) => [key, nativeReceipt[key]]));
   same(actual, expected, label);
+}
+
+function assertRetainedBatchEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt }) {
+  assert.equal(association.originalCanonicalWorkflowHash, sourceWorkflow.contract.graphHash);
+  assert.equal(association.originalEvidenceSha256, recipe.originalReceiptSha256);
+  assert.equal(association.originalGraphHash, recipe.retainedGraphHash);
+  assert.equal(association.originalResourceCandidateId, null);
+  assert.equal(association.originalTemplateLockHash, null);
+  assert.equal(association.observedExecution.backendContractFingerprint, entry.backendContractFingerprint);
+  assert.equal(association.observedExecution.observationLimits.physicalPlatformQualification, false);
+  assert.equal(association.review.redistributionConfirmed, true);
+  assert.equal(association.approvedFiles.approvedOriginalReviewPath.sha256, association.review.draftReviewSha256);
+  assert.equal(
+    association.approvedFiles.approvedOriginalProvenancePath.sha256,
+    association.review.draftProvenanceSha256,
+  );
+  const inputHash =
+    association.output.inputEncodedSha256?.replace(/^sha256:bytes:/u, '') ?? association.privateSourceSha256;
+  assert.equal(inputHash, recipe.inputSha256);
+  assert.equal(association.approvedFiles.approvedMaskPath?.sha256, recipe.maskSha256);
+  assert.equal(
+    association.output.maskEncodedSha256,
+    recipe.maskSha256 ? 'sha256:bytes:' + recipe.maskSha256 : undefined,
+  );
+  if (!nativeReceipt) return;
+  const label = 'Published Gallery batch proof differs from the verified native receipt.';
+  assertRetainedNativeIdentity(association, entry, nativeReceipt, label);
+  assert.equal(nativeReceipt.canonicalDefaultsExecuted, false, label);
+  assert.equal(nativeReceipt.backendContractFingerprint, entry.backendContractFingerprint, label);
+  assert.equal(nativeReceipt.promptBinding.sha256, recipe.promptSha256, label);
+  assert.equal(nativeReceipt.inputBinding?.sha256, recipe.inputSha256, label);
+  assert.equal(nativeReceipt.maskBinding?.sha256, recipe.maskSha256, label);
+  if (association.output.mediaType === 'image') {
+    assert.equal(nativeReceipt.decodedOutput.hash, association.output.decodedMediaHash, label);
+  }
 }
 
 function assertRetainedSpandrelEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt }) {
@@ -159,6 +194,10 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
     if (spandrel) assertRetainedSpandrelEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt });
     if (association.recipeObservation) {
       assertRetainedTechnicalRecipe({ recipe, sourceWorkflow, association, entry, nativeReceipt });
+    }
+    if (association.approvedFiles) {
+      assertRetainedBatchEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt });
+      verifyRetainedApprovedFiles(association.approvedFiles, open);
     }
     if (localAssociation) {
       const { originalTaskId, ...redacted } = localAssociation;

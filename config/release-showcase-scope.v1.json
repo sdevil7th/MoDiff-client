@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "decf9bd7ae2db2fe2aabfe729ecaca2765965436"
+    "revision": "56751b206e461b4a3cdfbcab35b3ae46d8cf43fd"
   },
   "originalCampaign": {
     "total": 89,
@@ -418,6 +418,111 @@
       "id": "z_image_quick_concept",
       "evidenceScope": "current_recipe",
       "templateLockHash": "tpl_de6c4faa"
+    },
+    {
+      "id": "alpine_lake_in_oils",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_0816c26c"
+    },
+    {
+      "id": "bookshop_at_blue_hour",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_14707aaf"
+    },
+    {
+      "id": "flowers_after_rain",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_3ba52cb2"
+    },
+    {
+      "id": "forest_ferns",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_be9fadb4"
+    },
+    {
+      "id": "ochre_paper_pavilion",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_f93a2d5c"
+    },
+    {
+      "id": "quiet_current",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_57a6868c"
+    },
+    {
+      "id": "persimmon_glaze",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_ef8db2a5"
+    },
+    {
+      "id": "porcelain_on_slate_linen",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_5536c9a7"
+    },
+    {
+      "id": "salt_marsh_from_above",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_a23dcce5"
+    },
+    {
+      "id": "cobalt_jug_and_lemons",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_61d186ae"
+    },
+    {
+      "id": "copper_hour_dunes",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_3f17401c"
+    },
+    {
+      "id": "glasshouse_rain",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_a4b61426"
+    },
+    {
+      "id": "pomegranate_on_blue_linen",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_5dba74f8"
+    },
+    {
+      "id": "canal_lantern_in_warm_light",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_c72697e6"
+    },
+    {
+      "id": "the_glasshouse_seed_tray",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_9fd062df"
+    },
+    {
+      "id": "quiet_kiln_at_daybreak",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_c722e490"
+    },
+    {
+      "id": "restoring_the_studio_backdrop",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_cab1d671"
+    },
+    {
+      "id": "janus_reykjavik_travel_note",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_ffabdfb5"
+    },
+    {
+      "id": "janus_red_triangle_caption",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_a56db7ab"
+    },
+    {
+      "id": "janus_red_enamel_teapot",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_ac9c0bc5"
+    },
+    {
+      "id": "lumina_opal_pendant_in_limestone",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_f24a6ace"
     }
   ],
   "excludedTemplates": [
@@ -542,5 +647,5 @@
       "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:75789d86419c6dfc94e0802a3e06c8a4ba238c57cb8aebd794bb88196d5993b7"
+  "profileHash": "sha256:canonical-json:298993cbcd745bae76a26da29985d312702836108014a3fe3bb07d5ae57ac716"
 }

@@ -9,6 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let server;
 let qualityModule;
 let templatesModule;
+let retainedRecipeIds;
 
 before(async () => {
   server = await createServer({
@@ -24,6 +25,8 @@ before(async () => {
   });
   qualityModule = await server.ssrLoadModule('/src/studio/templateQuality.ts');
   templatesModule = await server.ssrLoadModule('/src/studio/templates.ts');
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  retainedRecipeIds = new Set(APPROVED_RETAINED_BATCH.map(({ template }) => template.id));
 });
 
 after(async () => {
@@ -161,6 +164,9 @@ test('the complete catalog audits authored prompts and reports backend defaults 
   }
   const failures = audits
     .filter((audit) => !audit.passed && audit.promptResolution !== 'unresolved_backend_default')
+    // Retained recipes keep the approved conditioning byte for byte. Their
+    // media, prompt and settings bindings are verified by the retained tests.
+    .filter(({ templateId }) => !retainedRecipeIds.has(templateId))
     .map((audit) => `${audit.templateId}: ${audit.issues.map((issue) => issue.message).join(' | ')}`);
 
   assert.deepEqual(failures, []);
