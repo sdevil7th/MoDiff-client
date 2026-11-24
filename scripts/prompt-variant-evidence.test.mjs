@@ -283,6 +283,7 @@ test('the video variant needs independently decoded and moving geometry at the n
 });
 
 for (const [workflowId, variable, kind] of [
+  ['LuminaPipeline:text_to_image', 'MODIFF_LUMINA_PROMPT_EVIDENCE', 'image'],
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
@@ -335,6 +336,7 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
   const graphs = join(backendRoot, 'data/graphs');
   const manifest = JSON.parse(readFileSync(join(backendRoot, 'data/workflow-library-manifest.json'), 'utf8'));
   const workflowIds = [
+    'LuminaPipeline:text_to_image',
     'GlmImagePipeline:text_to_image',
     'NucleusMoEImagePipeline:text_to_image',
     'ErnieImagePipeline:text_to_image',

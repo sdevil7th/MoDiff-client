@@ -2214,6 +2214,30 @@ const plainImageLegacyNull = ['control_guidance_start', 'conditioning_scale', 's
 const pagScalars = ['pag_scale', 'pag_adaptive_scale'];
 export const directImagePromptRoutes = [
   {
+    format: 'modiff.private.lumina-prompt-variant.v1',
+    workflowId: 'LuminaPipeline:text_to_image',
+    modelType: 'LuminaPipeline',
+    modelRepo: 'Alpha-VLLM/Lumina-Next-SFT-diffusers',
+    modelRevision: '0ee5ec90043acf5cb41fe96274af36eb7fad8d95',
+    active: [...plainImageActive, 'negative_prompt', 'max_sequence_length'],
+    inactive: plainImageInactive,
+    legacyNull: plainImageLegacyNull,
+    platform: /^Windows-/u,
+    backend: 'cuda',
+    dtype: 'bfloat16',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 30,
+      guidance_scale: 4,
+      max_sequence_length: 256,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
+  {
     format: 'modiff.private.sana-sprint-text-to-image-prompt-variant.v1',
     workflowId: 'SanaSprintPipeline:text_to_image',
     modelType: 'SanaSprintPipeline',
