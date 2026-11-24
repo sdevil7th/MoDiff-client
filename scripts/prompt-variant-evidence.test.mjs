@@ -21,7 +21,7 @@ import {
 } from './release-contract-core.mjs';
 
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
-const backendRoot = resolve(clientRoot, '../MoDiff');
+const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 
 test('a CPU capture measures sampled worker memory within its exact original task interval', () => {
@@ -384,6 +384,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['Kandinsky3Pipeline:text_to_image', 'MODIFF_KANDINSKY3_CPU_PROMPT_EVIDENCE', 'image'],
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
+  ['LongCatAudioDiTPipeline:text_to_audio', 'MODIFF_LONGCAT_AUDIO_PROMPT_EVIDENCE', 'audio'],
   ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLTurboPipeline:text_to_image', 'MODIFF_SDXL_TURBO_PROMPT_EVIDENCE', 'image'],
   ['SanaPAGPipeline:text_to_image', 'MODIFF_SANA_PAG_PROMPT_EVIDENCE', 'image'],

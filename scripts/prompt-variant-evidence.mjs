@@ -142,6 +142,37 @@ const videoRoute = {
   ],
 };
 
+const audioRoute = {
+  format: 'modiff.private.longcat-audio-prompt-variant.v1',
+  workflowId: 'LongCatAudioDiTPipeline:text_to_audio',
+  outputKind: 'audio',
+  displayType: 'audio',
+  contentType: 'audio/wav',
+  platform: /^Windows-/u,
+  backend: 'cuda',
+  modelRepo: 'ruixiangma/LongCat-AudioDiT-1B-Diffusers',
+  modelRevision: 'f4c063ea37f262ba5e6129ebd80095a6d6a9de4d',
+  loaderContract: ['modules.DiffusersAudio.LoadPipeline'],
+  bindSeed: true,
+  chain: [
+    ['quantization', 'modules.DiffusersRuntime', 'PipelineQuantizationConfigV2', 'dtype'],
+    [
+      'recipe',
+      'modules.DiffusersRuntime',
+      'DiffusersExecutionRecipe',
+      'attention_backend device offload_mode vae_slicing vae_tiling',
+    ],
+    [
+      'loader',
+      'modules.DiffusersAudio',
+      'LoadPipeline',
+      'auto_offload device dtype enable_vae_tiling model_id offload_mode pipeline_class revision',
+    ],
+    ['generator', 'modules.DiffusersAudio', 'Generate', 'prompt seed audio_duration sample_rate'],
+    ['preview', 'modules.Audio', 'Export', 'sample_rate'],
+  ],
+};
+
 const imagePromptRoute = {
   outputKind: 'image',
   displayType: 'image',
@@ -265,7 +296,18 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
   assert.equal(consumed.attemptIndex, 0);
   assert.equal(consumed.nodeId, bound.preview.id);
   assert.equal(consumed.truncated, false);
-  for (const key of ['ambiguousFields', 'unavailableFields', 'uncapturedNodeIds']) same(consumed[key], []);
+  for (const key of ['unavailableFields', 'uncapturedNodeIds']) same(consumed[key], []);
+  if (profile === audioRoute) {
+    same(bound.loader.node.params.execution_recipe, {
+      display: 'input',
+      sourceId: bound.recipe.id,
+      sourceKey: 'execution_recipe',
+    });
+    assert.equal(bound.recipe.node.params.vae_tiling.value, false);
+    // The connected execution recipe wins over this retained loader fallback.
+    assert.equal(bound.loader.node.params.enable_vae_tiling.value, true);
+    same(consumed.ambiguousFields, ['vaeTiling']);
+  } else same(consumed.ambiguousFields, []);
   const roles = profile.chain.map(([role]) => bound[role]);
   same(
     consumed.nodes.map(({ nodeId }) => nodeId).sort(),
@@ -296,6 +338,19 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
     );
     if (profile.executedTask && id === bound.generator.id) {
       expected.executed_task = { value: profile.executedTask, source: 'literal' };
+    }
+    if (profile === audioRoute && id === bound.generator.id) {
+      assert.equal(node.params.negative_prompt.value, '');
+      assert.equal(node.params.stable_audio_steps.value, 16);
+      assert.equal(node.params.stable_audio_guidance.value, 4);
+      assert.equal(node.params.audio_duration.value, 5);
+      for (const [name, value] of Object.entries({
+        negative_prompt: null,
+        num_inference_steps: node.params.stable_audio_steps.value,
+        guidance_scale: node.params.stable_audio_guidance.value,
+        output_type: 'pt',
+      }))
+        expected[name] = { value, source: 'literal' };
     }
     same(row.fields, expected, `Actual consumed fields differ for ${node.action}.`);
   }
@@ -618,7 +673,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
   const profile = imageRoute
     ? { ...imagePromptRoute, ...imageRoute }
-    : [textRoute, janusTextRoute, janusImageRoute, janusCaptionRoute, smolVlmCaptionRoute, videoRoute].find(
+    : [textRoute, janusTextRoute, janusImageRoute, janusCaptionRoute, smolVlmCaptionRoute, videoRoute, audioRoute].find(
         ({ workflowId }) => workflowId === target.workflowId,
       );
   assert.ok(profile, 'Prompt variant route is not reviewed.');
@@ -627,7 +682,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     profile === janusTextRoute ||
     profile === janusImageRoute ||
     profile === janusCaptionRoute ||
-    profile === smolVlmCaptionRoute;
+    profile === smolVlmCaptionRoute ||
+    profile === audioRoute;
   const sampledCpuMemory = profile.executionDevice === 'cpu:0';
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
@@ -718,7 +774,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     ...(imageRoute
       ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
       : {}),
-    ...(profile === videoRoute
+    ...(profile === videoRoute || profile === audioRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
       : {}),
   };
@@ -811,7 +867,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     contentType: profile.contentType,
   });
   assert.match(output.id, /^run-output-[a-f0-9]{24}$/u);
-  const extension = { image: 'webp', json: 'txt', video: 'mp4' }[profile.outputKind];
+  const extension = { image: 'webp', json: 'txt', video: 'mp4', audio: 'wav' }[profile.outputKind];
   assert.equal(item.backendPath, `@data/studio/outputs/${output.id}_item_00.${extension}`);
   assert.equal(output.mediaCollectionHash, `sha256:collection:${digest(JSON.stringify([item.mediaHash]))}`);
   let decodedOutput;
@@ -824,6 +880,23 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   } else if (profile === videoRoute) {
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
     decodedOutput = validatePromptVariantVideo(await decodedMediaHash(media.file, 'video'), item, bound);
+  } else if (profile === audioRoute) {
+    assert.equal(media.bytes.toString('ascii', 0, 4), 'RIFF');
+    assert.equal(media.bytes.toString('ascii', 8, 12), 'WAVE');
+    const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
+    const decoded = await decodedMediaHash(media.file, 'audio');
+    assert.equal(decoded.sourceSampleRate, 24000);
+    assert.equal(decoded.channels, 1);
+    assert.equal(decoded.clippedSampleRatio, 0);
+    assert.ok(decoded.durationSeconds >= 4.9 && decoded.durationSeconds <= 5);
+    assert.ok(decoded.peakAmplitude > 0.05 && decoded.silenceRatio < 0.75);
+    decodedOutput = {
+      kind: 'audio',
+      hash: decoded.hash,
+      durationSeconds: decoded.durationSeconds,
+      sampleRate: decoded.sourceSampleRate,
+      channels: decoded.channels,
+    };
   } else {
     const { decodedMediaHash, technicalMediaErrors } = await import('./template-gallery-harness.mjs');
     const decoded = await decodedMediaHash(media.file, 'image');
