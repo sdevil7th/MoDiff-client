@@ -116,6 +116,62 @@ test('an image prompt variant binds the authored seed with the prompt and accept
   assert.throws(() => bindPromptVariant(profile, baseline, creator, connectedSeed, baselineHash), /literal seed/u);
 });
 
+test('retained Janus text and captions preserve the output modality and source image binding', () => {
+  const model = {
+    source: {
+      repository: 'deepseek-community/Janus-Pro-1B',
+      revision: '1655280bb75959cc1cb85529a2a8b26e7016072e',
+    },
+  };
+  const modelReceiptDigest = `sha256:${canonicalJsonHash(model)}`;
+  const sourceImage = { decodedImage: { width: 640, height: 512 } };
+  for (const caption of [false, true]) {
+    const receipt = {
+      schemaVersion: 1,
+      format: 'modiff.canonical-workflow-run-receipt.v1',
+      proofKind: caption ? 'real_backend_input_bound_model_variant' : 'real_backend_prompt_bound_model_variant',
+      workflowId: `HuggingFaceAnyToAnyModel:${caption ? 'image_to_text' : 'text_generation'}`,
+      modelSet: [{ repoId: model.source.repository, revision: model.source.revision }],
+      decodedOutput: {
+        schemaVersion: 1,
+        kind: 'json',
+        finishReason: 'stop',
+        inputTokens: 7,
+        generatedTokens: 5,
+        modelReceiptDigest,
+      },
+      ...(caption && { inputBinding: sourceImage }),
+    };
+    const native = {
+      schemaVersion: 1,
+      task: 'any-to-any-generation',
+      outputModality: 'text',
+      text: caption ? 'A red triangle on white.' : 'Reykjavik is the capital of Iceland.',
+      finishReason: 'stop',
+      inputTokens: 7,
+      generatedTokens: 5,
+      inputImageCount: caption ? 1 : 0,
+      inputMediaPixels: caption ? 640 * 512 : 0,
+      modelReceipt: { ...model, receiptDigest: modelReceiptDigest },
+    };
+    function verify(result, receiptOverrides = {}) {
+      const transportBytes = Buffer.from(JSON.stringify([JSON.stringify(result)]));
+      const structuredBytes = Buffer.from(JSON.stringify(result));
+      return verifyRetainedStructuredText({
+        receipt: { ...receipt, outputHash: `sha256:bytes:${digest(transportBytes)}`, ...receiptOverrides },
+        transportBytes,
+        structuredBytes,
+        outputSha256: digest(structuredBytes),
+      });
+    }
+    assert.equal(verify(native).decodedMediaHash, `sha256:canonical-json:${canonicalJsonHash(native)}`);
+    assert.throws(() => verify(native, { inputBinding: caption ? undefined : sourceImage }), /source evidence/u);
+    assert.throws(() => verify({ ...native, outputModality: 'image' }));
+    assert.throws(() => verify({ ...native, inputImageCount: 2 }));
+    assert.throws(() => verify({ ...native, inputMediaPixels: 1 }));
+  }
+});
+
 test('the native text output binds exact durable JSON, prompt route and local model receipt', () => {
   const model = {
     schemaVersion: 1,

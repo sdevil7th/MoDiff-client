@@ -15,11 +15,17 @@ function parseJsonBytes(bytes, label) {
 // original source and captures. This binds its exact text output to a separate,
 // approved JSON file. Neither the native receipt nor its media hash changes.
 export function verifyRetainedStructuredText({ receipt, transportBytes, structuredBytes, outputSha256 }) {
+  const textRoutes = {
+    'HuggingFaceTextGenerationModel:text_generation': ['real_backend_prompt_bound_model_variant', 'text-generation'],
+    'HuggingFaceAnyToAnyModel:text_generation': ['real_backend_prompt_bound_model_variant', 'any-to-any-generation'],
+    'HuggingFaceAnyToAnyModel:image_to_text': ['real_backend_input_bound_model_variant', 'any-to-any-generation'],
+  };
+  const route = Object.hasOwn(textRoutes, receipt?.workflowId) ? textRoutes[receipt.workflowId] : null;
   assert.ok(
     receipt?.schemaVersion === 1 &&
       receipt.format === 'modiff.canonical-workflow-run-receipt.v1' &&
-      receipt.proofKind === 'real_backend_prompt_bound_model_variant' &&
-      receipt.workflowId === 'HuggingFaceTextGenerationModel:text_generation' &&
+      route &&
+      receipt.proofKind === route[0] &&
       receipt.decodedOutput?.schemaVersion === 1 &&
       receipt.decodedOutput.kind === 'json',
     'A verified receipt for the reviewed text workflow is required.',
@@ -44,7 +50,7 @@ export function verifyRetainedStructuredText({ receipt, transportBytes, structur
   const decoded = receipt.decodedOutput;
   assert.ok(
     native?.schemaVersion === 1 &&
-      native.task === 'text-generation' &&
+      native.task === route[1] &&
       typeof native.text === 'string' &&
       native.text.trim() &&
       native.finishReason === decoded.finishReason &&
@@ -54,6 +60,14 @@ export function verifyRetainedStructuredText({ receipt, transportBytes, structur
       /^sha256:[a-f0-9]{64}$/u.test(decoded.modelReceiptDigest),
     'Decoded result differs from the native text receipt.',
   );
+  if (native.task === 'any-to-any-generation') {
+    const source = receipt.inputBinding?.decodedImage;
+    const caption = receipt.workflowId === 'HuggingFaceAnyToAnyModel:image_to_text';
+    assert.equal(Boolean(source), caption, 'Janus result has the wrong source evidence.');
+    assert.equal(native.outputModality, 'text');
+    assert.equal(native.inputImageCount, caption ? 1 : 0);
+    assert.equal(native.inputMediaPixels, caption ? source.width * source.height : 0);
+  }
   const { receiptDigest, ...model } = native.modelReceipt;
   assert.equal(receiptDigest, `sha256:${canonicalJsonHash(model)}`, 'Native text model receipt digest differs.');
   assert.deepEqual(
