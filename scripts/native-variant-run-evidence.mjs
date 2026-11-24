@@ -24,7 +24,7 @@ const nativeOutputFields = [
   'mediaItems',
 ];
 
-export function validateUnmodifiedExpertPreparation(preparation, modelType) {
+export function validateUnmodifiedExpertPreparation(preparation, modelType, previousModelFamily = null) {
   const { availableRamBytes, availableVramBytes, ...status } = preparation;
   assert.ok(Number.isSafeInteger(availableRamBytes) && availableRamBytes > 0);
   assert.ok(Number.isSafeInteger(availableVramBytes) && availableVramBytes > 0);
@@ -34,11 +34,11 @@ export function validateUnmodifiedExpertPreparation(preparation, modelType) {
       cleanup: null,
       incomingModelFamily: modelType,
       performed: false,
-      previousModelFamily: null,
+      previousModelFamily,
       reasons: [],
       residentRecipeReusable: false,
       resourceMode: 'expert',
-      resourceRecipeChanged: false,
+      resourceRecipeChanged: previousModelFamily !== null,
     },
     'The captured resource preparation differed from the unmodified Expert recipe.',
   );

@@ -389,6 +389,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['SanaPAGPipeline:text_to_image', 'MODIFF_SANA_PAG_PROMPT_EVIDENCE', 'image'],
   ['AuraFlowPipeline:text_to_image', 'MODIFF_AURAFLOW_PROMPT_EVIDENCE', 'image'],
   ['LatentConsistencyModelPipeline:text_to_image', 'MODIFF_LCM_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['SanaPipeline:text_to_image', 'MODIFF_SANA_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
 ]) {
@@ -427,6 +428,22 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       }
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
+      if (workflowId === 'SanaPipeline:text_to_image') {
+        const runPath = join(temp, evidence.runDetail.path);
+        const originalRun = readFileSync(runPath);
+        const run = JSON.parse(originalRun);
+        run.task.runtimePreparation.previousModelFamily = 'UnreviewedPipeline';
+        const replacement = Buffer.from(JSON.stringify(run));
+        const substituted = structuredClone(evidence);
+        substituted.runDetail = { ...evidence.runDetail, bytes: replacement.length, sha256: digest(replacement) };
+        writeFileSync(runPath, replacement);
+        writeFileSync(changedPath, JSON.stringify(substituted));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Unreviewed previous Expert model family/u,
+        );
+        writeFileSync(runPath, originalRun);
+      }
       if (proofKind === 'real_backend_input_bound_model_variant') {
         const [input] = evidence.inputs;
         const path = join(temp, input.file.path);
@@ -478,6 +495,7 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
     'SanaPAGPipeline:text_to_image',
     'AuraFlowPipeline:text_to_image',
     'LatentConsistencyModelPipeline:text_to_image',
+    'SanaPipeline:text_to_image',
     'SanaSprintPipeline:text_to_image',
     'StableDiffusionXLPAGPipeline:text_to_image',
   ];

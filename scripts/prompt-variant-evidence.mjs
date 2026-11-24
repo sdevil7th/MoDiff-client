@@ -370,14 +370,22 @@ export function validateSampledCpuWorkerMemory(bytes, worker, source, task) {
   return peak;
 }
 
-function validateImagePromptPreparation(preparation, modelType) {
+function validateImagePromptPreparation(preparation, { modelType, previousExpertFamily }) {
+  const previous = preparation?.previousModelFamily ?? null;
+  assert.ok(previous === null || previous === previousExpertFamily, 'Unreviewed previous Expert model family.');
   if (preparation?.performed !== true) {
-    validateUnmodifiedExpertPreparation(preparation, modelType);
+    validateUnmodifiedExpertPreparation(preparation, modelType, previous);
     return;
   }
   const { cleanup, reasons, ...unchanged } = preparation;
-  validateUnmodifiedExpertPreparation({ ...unchanged, performed: false, cleanup: null, reasons: [] }, modelType);
-  same(reasons, ['cached model family is unknown'], 'Unreviewed direct image cache cleanup.');
+  validateUnmodifiedExpertPreparation(
+    { ...unchanged, performed: false, cleanup: null, reasons: [] },
+    modelType,
+    previous,
+  );
+  const reason =
+    previous === null ? 'cached model family is unknown' : `model family changed from ${previous} to ${modelType}`;
+  same(reasons, [reason], 'Unreviewed direct image cache cleanup.');
   keys(cleanup, ['released', 'allocatorTrimmed', 'errors']);
   same(cleanup.errors, [], 'Direct image cache cleanup failed.');
   assert.equal(typeof cleanup.allocatorTrimmed, 'boolean');
@@ -708,7 +716,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         }
       : {}),
     ...(imageRoute
-      ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, target.modelType) }
+      ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
       : {}),
     ...(profile === videoRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
