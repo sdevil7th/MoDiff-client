@@ -936,8 +936,8 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
     next[key] =
       !resolvedInputUnavailable(receipt, key) && typeof receipt.summary[key] === 'string' ? receipt.summary[key] : '';
   }
-  const builtin = capturedBuiltinProfile(receipt);
-  if (builtin) next.repo = STUDIO_MODEL_PROFILES[builtin].defaultRepo;
+  const profile = capturedMediaProfile(receipt);
+  if (profile?.startsWith('Builtin')) next.repo = STUDIO_MODEL_PROFILES[profile].defaultRepo;
   for (const key of ['seed', 'width', 'height', 'steps', 'guidanceScale'] as const) {
     const value = outputNumericInputValue(next, key);
     if (value !== undefined) next[key] = value;
@@ -947,24 +947,29 @@ export function applyResolvedExecutionInputs(output: StudioOutput, candidate: un
   return next;
 }
 
-// Versioned deterministic operation descriptors are not model classes. Resolve
-// their existing presentation profiles only from an exact captured owner and
-// summary; never strip arbitrary version suffixes or infer identity from a form.
-const builtinOutputOwners = {
+// Resolve versioned media operation descriptors from their captured owner and
+// summary. Preserve the original fields supplied by the backend.
+const mediaOutputOwners = {
   'modules.ImageOperations.ProcessImage': 'BuiltinImageOperation',
   'modules.Audio.ProcessAudio': 'BuiltinAudioOperation',
   'modules.Video.ProcessVideo': 'BuiltinVideoOperation',
+  'modules.Video.UpscaleVideo': 'SpandrelVideoUpscale',
   'modules.Text.ProcessText': 'BuiltinDataOperation',
 } as const;
-type BuiltinOutputProfile = (typeof builtinOutputOwners)[keyof typeof builtinOutputOwners];
+type MediaOutputProfile = (typeof mediaOutputOwners)[keyof typeof mediaOutputOwners];
 
-function capturedBuiltinProfile(receipt: ResolvedExecutionInputs): BuiltinOutputProfile | undefined {
+function capturedMediaProfile(receipt: ResolvedExecutionInputs): MediaOutputProfile | undefined {
   if (receipt.truncated) return undefined;
-  const profiles = new Set<BuiltinOutputProfile>();
+  const profiles = new Set<MediaOutputProfile>();
   for (const node of receipt.nodes) {
     const owner = `${node.module}.${node.action}`;
-    if (!hasOwn(builtinOutputOwners, owner)) continue;
-    const profile = builtinOutputOwners[owner as keyof typeof builtinOutputOwners];
+    if (!hasOwn(mediaOutputOwners, owner)) continue;
+    const profile = mediaOutputOwners[owner as keyof typeof mediaOutputOwners];
+    if (
+      profile === 'SpandrelVideoUpscale' &&
+      (node.mediaEvidence?.status !== 'complete' || node.mediaEvidence.controls.operation !== 'video_upscale')
+    )
+      return undefined;
     if (node.fields.pipeline_class?.value === `${profile}V1`) profiles.add(profile);
   }
   const profile = [...profiles][0];
@@ -984,13 +989,13 @@ export function outputTaskKey(output: StudioOutput): StudioMode | undefined {
       ? (task as StudioMode)
       : undefined;
   }
-  const profile = capturedBuiltinProfile(receipt);
+  const profile = capturedMediaProfile(receipt);
   if (!profile) return undefined;
   const tasks = new Set<StudioMode>();
   for (const node of receipt.nodes) {
     const owner = `${node.module}.${node.action}`;
-    if (!hasOwn(builtinOutputOwners, owner)) continue;
-    if (builtinOutputOwners[owner as keyof typeof builtinOutputOwners] !== profile) return undefined;
+    if (!hasOwn(mediaOutputOwners, owner)) continue;
+    if (mediaOutputOwners[owner as keyof typeof mediaOutputOwners] !== profile) return undefined;
     const evidence = node.mediaEvidence;
     if (evidence?.status !== 'complete' || evidence.controls.pipeline_class !== `${profile}V1`) return undefined;
     const task = evidence.controls.operation;
@@ -1008,8 +1013,8 @@ export function outputModelKey(output: StudioOutput): string {
     return output.legacyRecordedFields && !output.legacyRecordedFields.includes('modelType')
       ? 'uncaptured-model'
       : output.modelType;
-  const builtin = capturedBuiltinProfile(receipt);
-  if (builtin) return builtin;
+  const profile = capturedMediaProfile(receipt);
+  if (profile) return profile;
   const model = receipt.summary.modelType;
   return !resolvedInputUnavailable(receipt, 'modelType') && typeof model === 'string' && model.trim()
     ? model

@@ -60,6 +60,12 @@ export const BUILTIN_MEDIA_EVIDENCE_SCOPES: Record<
     outputs: ['images', 'video'],
     files: ['videos'],
   },
+  'Video.UpscaleVideo': {
+    controls: 'pipeline_class operation tile_size tile_overlap device fps',
+    inputs: ['video'],
+    outputs: ['video_out'],
+    files: ['video'],
+  },
   'Video.Export': { controls: 'filename quality fps', inputs: ['video'], outputs: ['file'], files: [] },
 };
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

@@ -168,6 +168,84 @@ function audioLoadReceipt(sourceValue) {
   };
 }
 
+test('video upscale model evidence requires the declared operation and exact native owner', () => {
+  const sourceFile = { sha256: '1'.repeat(64), byteSize: 1200 };
+  const outputFile = { sha256: '2'.repeat(64), byteSize: 1800 };
+  const witness = {
+    ...receipt(),
+    mediaEvidenceStatus: { schemaVersion: 1, truncated: false },
+    summary: { modelType: 'SpandrelVideoUpscaleV1' },
+    nodes: [
+      {
+        nodeId: 'preview',
+        module: 'modules.Video',
+        action: 'UpscaleVideo',
+        fields: { pipeline_class: { source: 'literal', value: 'SpandrelVideoUpscaleV1' } },
+        omittedFields: {},
+        mediaEvidence: {
+          schemaVersion: 1,
+          status: 'complete',
+          source: 'native-builtin-media-v1',
+          controls: {
+            pipeline_class: 'SpandrelVideoUpscaleV1',
+            operation: 'video_upscale',
+            tile_size: 256,
+            tile_overlap: 32,
+            device: 'cuda:0',
+            fps: 16,
+          },
+          inputs: { video: [{ kind: 'file', ...sourceFile }] },
+          outputs: { video_out: [{ kind: 'file', ...outputFile }] },
+          files: { video: [{ sourceValue: '@data/videos/source.mp4', ...sourceFile }] },
+        },
+      },
+    ],
+  };
+  Object.assign(witness, { ambiguousFields: [], unavailableFields: [], uncapturedNodeIds: [] });
+  const record = {
+    id: 'video-upscale-proof',
+    url: '/recorded.mp4',
+    modelType: 'SpandrelVideoUpscaleV1',
+    mode: 'video_upscale',
+    taskId: witness.taskId,
+    attemptIndex: witness.attemptIndex,
+    nodeId: witness.nodeId,
+    resolvedExecutionInputs: witness,
+  };
+  const output = contracts.coerceStudioOutput(record);
+  assert.deepEqual(output.resolvedExecutionInputs, witness);
+  assert.equal(inputs.outputModelKey(output), 'SpandrelVideoUpscale');
+  const changed = structuredClone(record);
+  changed.resolvedExecutionInputs.nodes[0].mediaEvidence.controls.operation = 'video_trim';
+  const unrelated = contracts.coerceStudioOutput(changed);
+  assert.notEqual(inputs.outputModelKey(unrelated), 'SpandrelVideoUpscale');
+});
+
+const retainedVideoUpscale = process.env.MODIFF_VIDEO_UPSCALE_OUTPUTS;
+test(
+  'native video upscale retains its model and verified file chain in exported output history',
+  { skip: !retainedVideoUpscale },
+  () => {
+    const raw = JSON.parse(readFileSync(retainedVideoUpscale, 'utf8'));
+    assert.equal(raw.outputs.length, 2);
+    for (const record of raw.outputs) {
+      const output = contracts.coerceStudioOutput(record);
+      assert.equal(output.modelType, 'SpandrelVideoUpscale');
+      assert.equal(output.mode, 'video_upscale');
+      assert.equal(output.repo, record.repo);
+      assert.deepEqual(output.resolvedExecutionInputs, record.resolvedExecutionInputs);
+      const exported = packages.buildOutputWorkflowPackage(output);
+      assert.equal(exported.metadata.studio.modelType, 'SpandrelVideoUpscale');
+      assert.deepEqual(exported.latestOutput.resolvedExecutionInputs, record.resolvedExecutionInputs);
+      const changed = structuredClone(record);
+      const owner = changed.resolvedExecutionInputs.nodes.find(({ action }) => action === 'UpscaleVideo');
+      owner.mediaEvidence.files.extra = owner.mediaEvidence.files.video;
+      const tampered = contracts.coerceStudioOutput(changed);
+      assert.equal(tampered.resolvedExecutionInputs, undefined);
+    }
+  },
+);
+
 test('Audio.Load scalar and legacy singleton filenames survive history and output export exactly', () => {
   for (const sourceValue of ['speech.wav', ['speech.wav']]) {
     const capture = audioLoadReceipt(sourceValue);
