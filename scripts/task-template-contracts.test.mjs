@@ -34,6 +34,16 @@ after(async () => {
   await server?.close();
 });
 
+test('LTX long video starts with the exact distilled sampling controls', () => {
+  const model = 'LTXI2VLongMultiPromptPipeline';
+  const defaults = modelProfilesModule.getFormDefaultsForRegisteredRoute('image_to_video', model);
+  assert.equal(defaults.modelType, model);
+  assert.equal(defaults.steps, 8);
+  assert.equal(defaults.guidanceScale, 1);
+  assert.equal(defaults.maxSequenceLength, 128);
+  assert.equal(modelProfilesModule.STUDIO_MODEL_PROFILES[model].lowVram.steps, 8);
+});
+
 test('required Diffusers providers are hash-covered and bound to the exact declared overlay profile', async () => {
   const runtime = await server.ssrLoadModule('/src/studio/optionalRuntimes.ts');
   const modelType = 'DDPMPipeline';

@@ -975,6 +975,7 @@ function planningVideoProfile(
   modeRequirements: StudioModelProfile['modeRequirements'] = {},
   supportFlags = 1,
   supportsVideoInput = false,
+  sampling?: { steps: number; guidance: number; maxSequenceLength: number },
 ): StudioModelProfileSource {
   return {
     family,
@@ -982,8 +983,9 @@ function planningVideoProfile(
     catalogVisibility: 'workflowOnly',
     defaultRepo,
     defaultSize: { width: 768, height: 512, aspectRatio: 'custom' },
-    recommendedSteps: 30,
-    recommendedGuidance: 3,
+    recommendedSteps: sampling?.steps ?? 30,
+    recommendedGuidance: sampling?.guidance ?? 3,
+    ...(sampling ? { recommendedMaxSequenceLength: sampling.maxSequenceLength } : {}),
     supportFlags,
     supportsVideoInput,
     outputKind: 'video',
@@ -993,7 +995,7 @@ function planningVideoProfile(
       dtype: 'bfloat16',
       autoOffload: true,
       offloadMode: DIRECT_OFFLOAD_SUPPORT.lowVram,
-      steps: 20,
+      steps: Math.min(20, sampling?.steps ?? 30),
       width: 768,
       height: 512,
       numFrames: 49,
@@ -2040,9 +2042,15 @@ const STUDIO_MODEL_PROFILE_SOURCES = {
       image_to_video: { requiredImages: ['referenceImages', 'lastImage'] },
     },
   ),
-  LTXI2VLongMultiPromptPipeline: planningVideoProfile('LTX Video', LTX_VIDEO_REPO, ['image_to_video'], {
-    image_to_video: { requiredImages: ['referenceImages'] },
-  }),
+  LTXI2VLongMultiPromptPipeline: planningVideoProfile(
+    'LTX Video',
+    LTX_VIDEO_REPO,
+    ['image_to_video'],
+    { image_to_video: { requiredImages: ['referenceImages'] } },
+    1,
+    false,
+    { steps: 8, guidance: 1, maxSequenceLength: 128 },
+  ),
   LTX2ConditionPipeline: planningVideoProfile(
     'LTX Video',
     LTX2_REPO,

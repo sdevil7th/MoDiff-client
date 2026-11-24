@@ -490,6 +490,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // LTX long distilled sampling defaults add 57 bytes (529223 -> 529280 gzip bytes).
+  57 +
   // Model-selected outpaint geometry adds 17 bytes (529206 -> 529223 gzip bytes).
   17 +
   // Preserve older whole-pipeline sockets across passive updates (529176 -> 529202 bytes).
@@ -774,6 +776,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same scoped profile defaults add 58 bytes across startup (707707 -> 707765).
+  58 +
   // The same change adds 12 startup bytes (707695 -> 707707 gzip bytes).
   12 +
   // The same scoped compatibility fix adds 25 bytes across startup (707663 -> 707688).

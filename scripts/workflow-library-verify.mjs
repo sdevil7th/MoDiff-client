@@ -451,6 +451,19 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           throw new Error(`${workflow.id} CogVideoX graph is missing its exact artifact or safe execution recipe.`);
         }
       }
+      if (pipelineClass === 'LTXI2VLongMultiPromptPipeline') {
+        const generate = (graph.nodes ?? []).find(
+          (node) => node?.data?.module === 'modules.DiffusersVideo' && node?.data?.action === 'Generate',
+        );
+        const settings = generate?.data?.params ?? {};
+        if (
+          settings.num_inference_steps?.value !== 8 ||
+          settings.guidance_scale?.value !== 1 ||
+          settings.max_sequence_length?.value !== 128
+        ) {
+          throw new Error(`${workflow.id} LTX long graph must use its pinned distilled sampler defaults.`);
+        }
+      }
       if (pipelineClass === 'AllegroPipeline') {
         const base = pipeline.data.params?.model_id?.value;
         const revision = pipeline.data.params?.revision?.value;
