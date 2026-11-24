@@ -161,13 +161,21 @@ export function validateSpandrelArtifact({
   submissionHints,
   observation,
 }) {
-  const model = bound.api.nodes[bound.upscaleId].params.model_id.value;
+  const { module, action, params } = bound.api.nodes[bound.upscaleId];
+  const model = params.model_id.value;
   same(modelArtifact, model, 'Declared checkpoint metadata differs from canonical graph.');
   const [org, repository, weightName] = model.value.split('/');
   assert.equal(model.source, 'hub');
   assert.equal(weightName, 'RealESRGAN_x2plus.pth');
   assert.equal(model.value, `${org}/${repository}/${weightName}`);
-  assert.equal(bound.api.nodes[bound.upscaleId].params.downscale.value, 1);
+  assert(
+    (module === 'modules.Spandrel' && action === 'Upscaler' && params.downscale.value === 1) ||
+      (module === 'modules.Video' &&
+        action === 'UpscaleVideo' &&
+        params.pipeline_class.value === 'SpandrelVideoUpscaleV1' &&
+        params.operation.value === 'video_upscale'),
+    'Unexpected controlled upscale action.',
+  );
   same(modelSet, [{ repoId: `${org}/${repository}`, revision: model.revision }]);
   const completionHints = graphCompleted.runtimeHints;
   recordKeys(
@@ -181,8 +189,8 @@ export function validateSpandrelArtifact({
   const receipt = {
     schemaVersion: 1,
     kind: 'spandrel_upscaler',
-    module: 'modules.Spandrel',
-    action: 'Upscaler',
+    module,
+    action,
     artifact: {
       source: 'hub',
       repository: `${org}/${repository}`,

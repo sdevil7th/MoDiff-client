@@ -847,6 +847,13 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     });
   }
   if (
+    evidence.format === 'modiff.private.video-upscale-native-files.v1' &&
+    workflowId === 'SpandrelVideoUpscale:video_upscale'
+  ) {
+    const { readVideoUpscaleEvidence } = await import('./video-upscale-evidence.mjs');
+    return readVideoUpscaleEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
+  }
+  if (
     [
       'modiff.private.smollm2-prompt-variant.v1',
       'modiff.private.janus-text-prompt-variant.v1',
