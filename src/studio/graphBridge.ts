@@ -403,8 +403,9 @@ function isAudioMode(mode: StudioMode) {
 }
 
 function usesDiffusersImageFacade(form: StudioFormState | Pick<StudioGraphBinding, 'mode' | 'modelType' | 'nodes'>) {
-  if ('nodes' in form && form.nodes.diffusersImagePipeline) return true;
-  return !('nodes' in form) && executionProfileForForm(form)?.execution_path === 'direct-diffusers-image';
+  if ('nodes' in form) return Boolean(form.nodes.diffusersImagePipeline);
+  const path = executionSpecForForm(form)?.executionPath ?? executionProfileForForm(form)?.execution_path;
+  return path === 'direct-diffusers-image';
 }
 
 function diffusersImageActionNode(binding: StudioGraphBinding) {

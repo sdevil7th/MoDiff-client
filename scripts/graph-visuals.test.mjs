@@ -3259,7 +3259,12 @@ test('backend execution specs materialize exact image, video, and audio recipes 
           ...capability(sdxlSpec),
           modes: ['text_to_image', 'edit_image', 'inpaint'],
           runnableModes: ['text_to_image', 'edit_image', 'inpaint'],
-          executionProfiles: [profile(sdxlSpec), profile(sdxlEditSpec), profile(sdxlInpaintSpec)],
+          executionProfiles: [
+            profile(sdxlSpec),
+            profile(sdxlEditSpec),
+            profile(sdxlInpaintSpec),
+            { ...profile(sdxlSpec), id: `${sdxlSpec.executionProfileId}:alternate` },
+          ],
           studioExecutionSpecModes: ['edit_image', 'inpaint', 'text_to_image'],
           studioExecutionSpecs: [sdxlSpec, sdxlEditSpec, sdxlInpaintSpec],
           revisionCandidates: [sdxlRevision],
