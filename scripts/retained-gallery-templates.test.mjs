@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
+import retainedGalleryAuthoringArchives from '../config/retained-gallery-authoring-archives.v1.json' with { type: 'json' };
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
 import { readCanonicalEvidenceFile } from './release-contract-core.mjs';
@@ -149,6 +150,10 @@ test('retained Gallery recipes preserve the native graph identities and standalo
       taskContract: true,
     });
     if (approvedBatchIds.has(template.id)) {
+      const authoringArchive = retainedGalleryAuthoringArchives[recipe.workflowId];
+      assert.equal(authoringArchive.descriptorSha256, recipe.originalReceiptSha256);
+      assert.ok(authoringArchive.bytes > 0);
+      assert.match(authoringArchive.sha256, /^[a-f0-9]{64}$/u);
       const evidenceRoot = join(
         backend,
         'data/qualification/release/canonical-workflow-evidence',
@@ -157,6 +162,12 @@ test('retained Gallery recipes preserve the native graph identities and standalo
       const evidenceFile = join(evidenceRoot, 'evidence.json');
       assert.equal(sha256(template.prompt), recipe.promptSha256);
       if (existsSync(evidenceFile)) {
+        const originalAuthoring = readCanonicalEvidenceFile(evidenceRoot, {
+          path: 'authoring-spec.original.json',
+          bytes: authoringArchive.bytes,
+          sha256: authoringArchive.sha256,
+        });
+        assert.equal(JSON.parse(originalAuthoring.bytes).canonicalWorkflowId, recipe.workflowId);
         const bytes = readFileSync(evidenceFile);
         assert.equal(sha256(bytes), recipe.originalReceiptSha256);
         const descriptor = JSON.parse(bytes);

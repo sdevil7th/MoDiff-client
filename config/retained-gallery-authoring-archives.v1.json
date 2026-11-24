@@ -1,0 +1,107 @@
+{
+  "AuraFlowPipeline:text_to_image": {
+    "descriptorSha256": "c4ce21c85cf0412cc1e69ff59009037bbdde9d1692cff19f307d589b84fb5b1f",
+    "bytes": 4108,
+    "sha256": "945515d6dee658ed3cf4503b674b33d73149a091f98ecb438a01970c5c08d820"
+  },
+  "CogView3PlusPipeline:text_to_image": {
+    "descriptorSha256": "19c1e125e259b8b0e22a5bf5c03ab7c105a8302fc69b7e63c61796d7b7496744",
+    "bytes": 4135,
+    "sha256": "8e7775f9f0213646dad474747622c3daab32ad6ffd7d15c9b30b88ade40344a6"
+  },
+  "CogView4Pipeline:text_to_image": {
+    "descriptorSha256": "7cb177ef1dac774f3cb76c3f58cf246fbdbf7673a78e379ff54e7fba5fa1a85f",
+    "bytes": 4067,
+    "sha256": "4a085738b6d9e818596480a5ed7a0bda9f663670d35cf49385be56d74b241ce2"
+  },
+  "ErnieImagePipeline:text_to_image": {
+    "descriptorSha256": "45f9a07cbd540055ad63000eb928be4a1b685c4b622bf46b84c98784e2c61139",
+    "bytes": 4122,
+    "sha256": "4072211fe61effe609b205e87cc599542446e73be2a9d108b27b87f52815064c"
+  },
+  "GlmImagePipeline:text_to_image": {
+    "descriptorSha256": "193b411fea187862b1af32edf24623f0cfd75a9f0d856a66b07fe99b1e562833",
+    "bytes": 4113,
+    "sha256": "538a6b30027a76e723ada2716c4c07f8dc17af247cfb71304b35bda43510c4aa"
+  },
+  "HuggingFaceAnyToAnyModel:image_to_text": {
+    "descriptorSha256": "13c313cdf72749eea9789f1cef22fa7e1106d1c46cf6d3a0fb0757c00677c45c",
+    "bytes": 3662,
+    "sha256": "6c21dca774c759b82adcef3a7a749146a6e46b5d885694a3c516eb75dbd0429e"
+  },
+  "HuggingFaceAnyToAnyModel:text_generation": {
+    "descriptorSha256": "5c9d37ae6894cd6aa04a9bfc4a91beaf7e9eb73bef40e2edc144ddce0215b3e7",
+    "bytes": 3139,
+    "sha256": "a7da7a73ed531ea097ef2044d88d156a17c0e9104862cf2c3d21cf48248c1416"
+  },
+  "HuggingFaceAnyToAnyModel:text_to_image": {
+    "descriptorSha256": "5820a7260e3f78175f684b39ee2a28c244bfb7cfaed6318c256c642dce306ecd",
+    "bytes": 3257,
+    "sha256": "983434b29fc3b2b54690bef0dcab7e7d765d66eac3a81534bbbf7debb5c9fc79"
+  },
+  "LatentConsistencyModelPipeline:text_to_image": {
+    "descriptorSha256": "b23f6c1d6ea11f928eab1c62422e49a288645e6f46ecf0c4f1b4994e95ad56ea",
+    "bytes": 4229,
+    "sha256": "a5cb8dddeaf3f82f84025ceeded8a59c186a33e20f8cff733cbd32624e9e3a59"
+  },
+  "LuminaPipeline:text_to_image": {
+    "descriptorSha256": "cbb5826ba9e44f9608ef88d6c52757cbd040c9bcb611f88e5892a2e93c79c8d3",
+    "bytes": 4167,
+    "sha256": "5767302415a0ada7fbef1fd186df344ea7204a2be2b22c2035f07e2b2088d564"
+  },
+  "NucleusMoEImagePipeline:text_to_image": {
+    "descriptorSha256": "adc6e23f1c2082c72ea9e0697cc87f4e7da5d8cc01540d06f0d6e08acea81a04",
+    "bytes": 4121,
+    "sha256": "9dc242dd86b1a286c5822328a3c0a05dd0f077fdefc17990a5cf086de9e53f3d"
+  },
+  "OvisImagePipeline:text_to_image": {
+    "descriptorSha256": "37580a349097d0a2e201a6daa48f3cc541c62260306e4153c4995e2d0615a72c",
+    "bytes": 4103,
+    "sha256": "fad8cc96b399b48f86738f9ad17cd8b2a468a351725997c5d668fb648480db06"
+  },
+  "PRXPipeline:text_to_image": {
+    "descriptorSha256": "77d2fb24693cf118ec83aea3c2a53a3c8558b13b78f0bae478458e53896dcabd",
+    "bytes": 4027,
+    "sha256": "912dc80ea1fbd712358db93e1b4808850bbe6659ea6adcd3f9c9205d5cf2f188"
+  },
+  "SanaPAGPipeline:text_to_image": {
+    "descriptorSha256": "2e80e952039cfbc7b42f7f1b5689f30fb8b8f83646e0f4c2f6cb8e3a68b8d784",
+    "bytes": 4223,
+    "sha256": "fcfb1ff59de112a555b88307312610465acd2e9ce5bfdd6f66c6eecc544745e1"
+  },
+  "SanaSprintPipeline:text_to_image": {
+    "descriptorSha256": "e6693f3cb5cc81bbac653e0f89c15e2871fdbb67ad37c4f3c63514bbf4e0aa43",
+    "bytes": 4134,
+    "sha256": "6c40aefc3fd65ed6bf87626873bb0377e7fba8ff4fbdbc5c0d3e4e0e3531968a"
+  },
+  "StableDiffusionPAGPipeline:text_to_image": {
+    "descriptorSha256": "ad23b58153c3301fd0125a0a66e9e110a61a16e0c8833563cd3ca51109fe5056",
+    "bytes": 4433,
+    "sha256": "419397857a211d1ba3812d32cc47678a00883b5d70114a80079d8415176d09ed"
+  },
+  "StableDiffusionPipeline:edit_image": {
+    "descriptorSha256": "ce72fd7e5d5f263f68f94ae15778a596a3161c38c0f4092531f0c719b78667d8",
+    "bytes": 4799,
+    "sha256": "24e9ff077725308d4e2c6b8be3bfa3cb7d01c17c70ad023aee9d69b8299da02e"
+  },
+  "StableDiffusionPipeline:inpaint": {
+    "descriptorSha256": "74c30496f6c07b0eceae986254a425b0b919b5e5d91fc668839d31a59783a4a6",
+    "bytes": 5254,
+    "sha256": "3e87dce95449f7eb25d1f271c7ba8748f05e82cf151a768e058a804c9a8789ee"
+  },
+  "StableDiffusionPipeline:text_to_image": {
+    "descriptorSha256": "235118ee94df6adef140079116b17158e2922bf861a5f6d7d23f4f3f988d3927",
+    "bytes": 4194,
+    "sha256": "642ccf45dd15946ead72c9666b394a9932d92d0dca64f13dfae0284edc55b9c5"
+  },
+  "StableDiffusionXLPAGPipeline:text_to_image": {
+    "descriptorSha256": "e5bcc2b64bfddcadc334c20f0c125fdcae68760cde1ff60ec10d1a22ce81a997",
+    "bytes": 4412,
+    "sha256": "2b526a0dec7fbee4a8553727a4c001e269b524551ad5169ea4928f8b4a76b633"
+  },
+  "StableDiffusionXLPipeline:text_to_image": {
+    "descriptorSha256": "944ff90f533867016d514d9cdd7a35648e711359c55f2ae06fc3bac8e88b63e8",
+    "bytes": 4267,
+    "sha256": "07305066b2f96232db5f26d62e1d9fbf9f3a21d84f97328208a7e066798234a1"
+  }
+}

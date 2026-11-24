@@ -410,7 +410,9 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         writeFileSync(changedPath, JSON.stringify(substituted));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-          /Caption source bytes differ from the native load/u,
+          workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
+            ? /Caption source bytes differ from the native load|Archived authoring requires the exact original capture/u
+            : /Caption source bytes differ from the native load/u,
         );
         writeFileSync(path, originalBytes);
       }

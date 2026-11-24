@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, sep } from 'node:path';
+import retainedGalleryAuthoringArchives from '../config/retained-gallery-authoring-archives.v1.json' with { type: 'json' };
 import {
   backendSourceEvidence,
   canonicalGraphIdentity,
@@ -732,6 +733,7 @@ const RETAINED_AUTHORING_ARCHIVES = new Map([
       sha256: '47a822a576ca20855d10311136e51651c5a2765bdd6c7fb3d79f8ab781bb0c0f',
     },
   ],
+  ...Object.entries(retainedGalleryAuthoringArchives),
 ]);
 
 function archivedCanonicalAuthoring(backendRoot, workflowId, evidencePath) {
