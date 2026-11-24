@@ -433,7 +433,7 @@ function verifyWorkflow(workflow, expectedTier, graphLayout, imageStageContracts
           throw new Error(`${workflow.id} AnimateDiff graph is missing its exact base, motion, or scheduler recipe.`);
         }
       }
-      if (pipelineClass === 'CogVideoXPipeline') {
+      if (['CogVideoXPipeline', 'CogVideoXVideoToVideoPipeline'].includes(pipelineClass)) {
         const base = pipeline.data.params?.model_id?.value;
         const revision = pipeline.data.params?.revision?.value;
         const quantizationParams = quantization.data.params ?? {};

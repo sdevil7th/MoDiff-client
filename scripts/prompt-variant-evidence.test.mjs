@@ -6,14 +6,18 @@ import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { canonicalJsonHash } from './canonical-json.mjs';
-import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
+import { canonicalGraphIdentity, directImagePromptRoutes } from './live-proof-provenance.mjs';
 import { verifyRetainedStructuredText } from './retained-structured-text-evidence.mjs';
 import {
   bindPromptVariant,
   validatePromptVariantText,
   validatePromptVariantVideo,
 } from './prompt-variant-evidence.mjs';
-import { readCanonicalEvidenceFile, readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
+import {
+  exportCanonicalWorkflowGraphs,
+  readCanonicalEvidenceFile,
+  readCanonicalWorkflowEvidence,
+} from './release-contract-core.mjs';
 
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const backendRoot = resolve(clientRoot, '../MoDiff');
@@ -319,3 +323,46 @@ for (const [workflowId, variable, kind] of [
     }
   });
 }
+
+test('GLM and Nucleus prompt receipts keep the exact portable artifact and graph', async () => {
+  const graphs = join(backendRoot, 'data/graphs');
+  const manifest = JSON.parse(readFileSync(join(backendRoot, 'data/workflow-library-manifest.json'), 'utf8'));
+  const workflowIds = ['GlmImagePipeline:text_to_image', 'NucleusMoEImagePipeline:text_to_image'];
+  const fixtures = workflowIds.map((id) =>
+    JSON.parse(readFileSync(join(graphs, manifest.workflows.find((entry) => entry.id === id).graphPath), 'utf8')),
+  );
+  const originals = await exportCanonicalWorkflowGraphs(clientRoot, fixtures);
+  for (const [index, workflowId] of workflowIds.entries()) {
+    const record = directImagePromptRoutes.find((route) => route.workflowId === workflowId);
+    const original = originals[index];
+    const identity = canonicalGraphIdentity(original);
+    const profile = {
+      ...record,
+      bindSeed: true,
+      chain: [
+        ['quantization', 'modules.DiffusersRuntime', 'PipelineQuantizationConfigV2', ''],
+        ['recipe', 'modules.DiffusersRuntime', 'DiffusersExecutionRecipe', ''],
+        ['loader', 'modules.DiffusersImage', 'LoadPipeline', ''],
+        ['generator', 'modules.DiffusersImage', 'Generate', ''],
+        ['preview', 'modules.Image', 'Preview', ''],
+      ],
+    };
+    const created = structuredClone(original);
+    const generation = Object.values(created.nodes).find((node) => node.action === 'Generate').params;
+    generation.prompt.value = 'A botanical print on ivory paper';
+    generation.seed.value = record.generation.seed;
+    const output = { ...structuredClone(created), runtimeHints: {} };
+    const witness = bindPromptVariant(profile, original, created, output, identity.hash);
+    assert.equal(witness.prompt, generation.prompt.value);
+    assert.equal(witness.loader.node.params.model_id.value.value, record.modelRepo);
+    assert.equal(witness.loader.node.params.revision.value, record.modelRevision);
+    assert.equal(witness.generator.node.params.max_sequence_length.value, record.generation.max_sequence_length);
+
+    const changed = structuredClone(output);
+    Object.values(changed.nodes).find((node) => node.action === 'Generate').params.width.value += 32;
+    assert.throws(
+      () => bindPromptVariant(profile, original, created, changed, identity.hash),
+      /outside the bound prompt and seed/u,
+    );
+  }
+});
