@@ -425,7 +425,10 @@ test('SDXL Base prompt variant accepts only its exact Linux pin and actual seque
   const turbo = structuredClone(syntheticSdxl);
   turbo.canonicalAccountingProof.target.workflowId = 'StableDiffusionXLTurboPipeline:text_to_image';
   turbo.canonicalAccountingProof.target.modelType = 'StableDiffusionXLTurboPipeline';
-  assert.throws(() => projection(turbo, directImagePromptAccountingExecutionPlan), /outside the reviewed scope/u);
+  assert.throws(
+    () => projection(turbo, directImagePromptAccountingExecutionPlan),
+    /Conditional image model is outside the reviewed accounting scope/u,
+  );
 });
 
 test('PRX prompt variant accepts the exact cached pin and complete scoped accounting', () => {

@@ -286,9 +286,13 @@ for (const [workflowId, variable, kind] of [
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
+  ['StableDiffusionXLTurboPipeline:text_to_image', 'MODIFF_SDXL_TURBO_PROMPT_EVIDENCE', 'image'],
+  ['SanaPAGPipeline:text_to_image', 'MODIFF_SANA_PAG_PROMPT_EVIDENCE', 'image'],
+  ['AuraFlowPipeline:text_to_image', 'MODIFF_AURAFLOW_PROMPT_EVIDENCE', 'image'],
+  ['LatentConsistencyModelPipeline:text_to_image', 'MODIFF_LCM_IMAGE_PROMPT_EVIDENCE', 'image'],
 ]) {
   const saved = process.env[variable];
-  test(`retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {
+  test(`${workflowId} retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {
     const evidencePath = resolve(saved);
     const args = { clientRoot, backendRoot, workflowId, evidencePath };
     const original = await readCanonicalWorkflowEvidence(args);
@@ -335,6 +339,10 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
     'OvisImagePipeline:text_to_image',
     'CogView3PlusPipeline:text_to_image',
     'CogView4Pipeline:text_to_image',
+    'StableDiffusionXLTurboPipeline:text_to_image',
+    'SanaPAGPipeline:text_to_image',
+    'AuraFlowPipeline:text_to_image',
+    'LatentConsistencyModelPipeline:text_to_image',
   ];
   const fixtures = workflowIds.map((id) =>
     JSON.parse(readFileSync(join(graphs, manifest.workflows.find((entry) => entry.id === id).graphPath), 'utf8')),
