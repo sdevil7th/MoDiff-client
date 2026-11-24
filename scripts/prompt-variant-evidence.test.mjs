@@ -285,6 +285,7 @@ test('the video variant needs independently decoded and moving geometry at the n
 for (const [workflowId, variable, kind] of [
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
+  ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
 ]) {
   const saved = process.env[variable];
   test(`retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {
@@ -332,6 +333,7 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
     'NucleusMoEImagePipeline:text_to_image',
     'ErnieImagePipeline:text_to_image',
     'OvisImagePipeline:text_to_image',
+    'CogView3PlusPipeline:text_to_image',
     'CogView4Pipeline:text_to_image',
   ];
   const fixtures = workflowIds.map((id) =>

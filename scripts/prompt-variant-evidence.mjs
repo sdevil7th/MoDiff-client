@@ -15,6 +15,7 @@ import {
   stableStringify,
 } from './live-proof-provenance.mjs';
 import {
+  validateLateNativeImageVariantRun,
   validateNativeVariantOutput,
   validateNativeVariantRun,
   validateUnmodifiedExpertPreparation,
@@ -360,6 +361,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     'inputs',
     'outputs',
     ...(imageRoute ? ['graphRequest', 'graphAcknowledgment'] : []),
+    ...(profile.lateNativeSnapshot ? ['persistedOutputs'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.format, profile.format);
@@ -397,7 +399,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       'Saved visual graph differs from the exact submitted prompt variant.',
     );
   }
-  const { task, output, hints } = validateNativeVariantRun({
+  const runOptions = {
     target,
     outputNodeId: bound.preview.id,
     displayType: profile.displayType,
@@ -415,7 +417,19 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     ...(profile === videoRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
       : {}),
-  });
+  };
+  let validatedRun;
+  let accountingRun = run;
+  if (profile.lateNativeSnapshot) {
+    const store = json(evidence.persistedOutputs);
+    assert.equal(store.outputs.length, 1);
+    const [persistedOutput] = store.outputs;
+    validatedRun = validateLateNativeImageVariantRun({ ...runOptions, persistedOutput });
+    accountingRun = { ...run, outputs: [persistedOutput] };
+  } else {
+    validatedRun = validateNativeVariantRun(runOptions);
+  }
+  const { task, output, hints } = validatedRun;
   same(hints.workflowSnapshot.studioForm, output.formSnapshot, 'Run snapshot form differs from persisted form.');
   const accounting = imageRoute
     ? directImagePromptAccountingExecutionPlan({
@@ -423,7 +437,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         apiGraph: submitted,
         consumed: output.resolvedExecutionInputs,
         target,
-        runtimeEvidence: { run, output, graphCompleted },
+        runtimeEvidence: { run: accountingRun, output, graphCompleted },
       })
     : null;
   if (!accounting) validateConsumedPromptVariant(profile, bound, output);
