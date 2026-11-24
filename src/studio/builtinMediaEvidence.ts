@@ -2,6 +2,7 @@ type Scalar = string | number | boolean | null;
 export type MediaIdentity =
   | { kind: 'file'; sha256: string; byteSize: number }
   | { kind: 'image'; sha256: string; byteSize: number; width: number; height: number; mode: string }
+  | { kind: 'video'; sha256: string; byteSize: number; width: number; height: number; frameCount: number; mode: string }
   | { kind: 'audio'; sha256: string; byteSize: number; shape: number[]; sampleRate: number; dtype: 'float32-le' };
 export type BuiltinMediaEvidence =
   | { schemaVersion: 1; status: 'unavailable' | 'truncated'; reason: string }
@@ -54,6 +55,7 @@ export const BUILTIN_MEDIA_EVIDENCE_SCOPES: Record<
     files: [],
     requiredSingleAudioInput: 'audio',
   },
+  'Video.Load': { controls: '', inputs: [], outputs: ['video'], files: ['file'] },
   'Video.ProcessVideo': {
     controls: videoControls,
     inputs: ['videos'],
@@ -67,6 +69,12 @@ export const BUILTIN_MEDIA_EVIDENCE_SCOPES: Record<
     files: ['video'],
   },
   'Video.Export': { controls: 'filename quality fps', inputs: ['video'], outputs: ['file'], files: [] },
+  'DiffusersVideo.Generate': {
+    controls: 'mode',
+    inputs: ['reference', 'pose_video', 'face_video', 'background_video', 'mask'],
+    outputs: [],
+    files: [],
+  },
 };
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const has = (v: object, key: string) => Object.prototype.hasOwnProperty.call(v, key);
@@ -89,6 +97,22 @@ function fileSource(value: unknown, legacyAudioSelection: boolean): value is str
 function identity(v: unknown): v is MediaIdentity {
   if (!record(v) || !digest(v.sha256) || !uint(v.byteSize) || v.byteSize > 256 * 1024 * 1024) return false;
   if (v.kind === 'file') return keys(v, ['kind', 'sha256', 'byteSize']);
+  if (v.kind === 'video') {
+    const bands = v.mode === 'RGB' ? 3 : v.mode === 'RGBA' ? 4 : v.mode === 'L' ? 1 : 0;
+    return (
+      keys(v, ['kind', 'sha256', 'byteSize', 'width', 'height', 'frameCount', 'mode']) &&
+      uint(v.width) &&
+      v.width > 0 &&
+      uint(v.height) &&
+      v.height > 0 &&
+      uint(v.frameCount) &&
+      v.frameCount > 0 &&
+      v.frameCount <= 1200 &&
+      bands > 0 &&
+      v.width * v.height * bands <= 64 * 1024 * 1024 &&
+      v.width * v.height * bands * v.frameCount === v.byteSize
+    );
+  }
   if (v.kind === 'image')
     return (
       keys(v, ['kind', 'sha256', 'byteSize', 'width', 'height', 'mode']) &&
@@ -131,6 +155,7 @@ export function parseBuiltinMediaEvidence(value: unknown, scope: string): Builti
   )
     return undefined;
   const declaration = BUILTIN_MEDIA_EVIDENCE_SCOPES[scope]!;
+  const frameEvidence = scope === 'Video.Load' || scope === 'DiffusersVideo.Generate';
   const controls = new Set(declaration.controls.split(/\s+/u).filter(Boolean));
   if (
     Object.entries(value.controls).some(
@@ -151,10 +176,28 @@ export function parseBuiltinMediaEvidence(value: unknown, scope: string): Builti
     if (
       Object.entries(ports).some(
         ([port, items]) =>
-          !declaration[section].includes(port) || !Array.isArray(items) || items.length > 16 || !items.every(identity),
+          !declaration[section].includes(port) ||
+          !Array.isArray(items) ||
+          items.length > 16 ||
+          !items.every((item) => identity(item) && (item.kind !== 'video' || frameEvidence)),
       )
     )
       return undefined;
+  }
+  if (scope === 'Video.Load') {
+    const { video } = value.outputs;
+    if (!Array.isArray(video) || video.length !== 1 || video[0]?.kind !== 'video') return undefined;
+    if (!Array.isArray(value.files.file) || value.files.file.length !== 1) return undefined;
+  }
+  if (scope === 'DiffusersVideo.Generate') {
+    if (value.controls.mode !== 'character_animate' && value.controls.mode !== 'character_replace') return undefined;
+    if (!keys(value.inputs, declaration.inputs)) return undefined;
+    for (const role of declaration.inputs) {
+      const items = value.inputs[role];
+      const optional = value.controls.mode === 'character_animate' && ['background_video', 'mask'].includes(role);
+      if (!Array.isArray(items) || items.length !== (optional ? 0 : 1)) return undefined;
+      if (!optional && items[0]?.kind !== (role === 'reference' ? 'image' : 'video')) return undefined;
+    }
   }
   if (declaration.requiredSingleAudioInput) {
     const audio = value.inputs[declaration.requiredSingleAudioInput];

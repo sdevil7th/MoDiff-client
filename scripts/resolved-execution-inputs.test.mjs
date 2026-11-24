@@ -297,6 +297,87 @@ test('Audio.Load legacy filenames stay bounded and scoped to its declared file p
   assert.equal(parseBuiltinMediaEvidence(otherScope, 'Video.ProcessVideo'), undefined);
 });
 
+test('Video.Load binds one encoded source and one bounded ordered set of decoded frames', async () => {
+  const { parseBuiltinMediaEvidence } = await server.ssrLoadModule('/src/studio/builtinMediaEvidence.ts');
+  const sha256 = 'a'.repeat(64);
+  const capture = {
+    schemaVersion: 1,
+    source: 'native-builtin-media-v1',
+    status: 'complete',
+    inputs: {},
+    controls: {},
+    files: { file: [{ sourceValue: '@data/guide.mp4', sha256, byteSize: 120 }] },
+    outputs: { video: [{ kind: 'video', sha256, byteSize: 360, width: 3, height: 2, mode: 'RGB', frameCount: 20 }] },
+  };
+  assert.deepEqual(parseBuiltinMediaEvidence(capture, 'Video.Load'), capture);
+  assert.equal(parseBuiltinMediaEvidence(capture, 'Video.ProcessVideo'), undefined);
+  for (const mutate of [
+    (row) => {
+      delete row.files.file;
+    },
+    (row) => {
+      row.outputs.video[0].frameCount = 21;
+    },
+    (row) => {
+      row.outputs.video[0].mode = 'P';
+    },
+    (row) => {
+      row.outputs.video.push(row.outputs.video[0]);
+    },
+  ]) {
+    const changed = structuredClone(capture);
+    mutate(changed);
+    assert.equal(parseBuiltinMediaEvidence(changed, 'Video.Load'), undefined);
+  }
+});
+
+test('Wan motion evidence distinguishes reference, motion, face, background, and mask roles', async () => {
+  const { parseBuiltinMediaEvidence } = await server.ssrLoadModule('/src/studio/builtinMediaEvidence.ts');
+  const sha256 = 'b'.repeat(64);
+  const clip = { kind: 'video', sha256, byteSize: 360, width: 3, height: 2, mode: 'RGB', frameCount: 20 };
+  const image = { kind: 'image', sha256, byteSize: 18, width: 3, height: 2, mode: 'RGB' };
+  for (const mode of ['character_replace', 'character_animate']) {
+    const supported = mode === 'character_replace' ? [clip] : [];
+    const record = {
+      schemaVersion: 1,
+      status: 'complete',
+      source: 'native-builtin-media-v1',
+      controls: { mode },
+      inputs: {
+        reference: [image],
+        pose_video: [clip],
+        face_video: [clip],
+        background_video: supported,
+        mask: supported,
+      },
+      files: {},
+      outputs: {},
+    };
+    assert.deepEqual(parseBuiltinMediaEvidence(record, 'DiffusersVideo.Generate'), record);
+    for (const mutate of [
+      (row) => {
+        row.inputs.reference = [clip];
+      },
+      (row) => {
+        row.inputs.pose_video = [image];
+      },
+      (row) => {
+        delete row.inputs.face_video;
+      },
+      (row) => {
+        row.inputs.mask = row.inputs.mask.length ? [] : [clip];
+      },
+      (row) => {
+        row.controls.mode = 'text_to_video';
+      },
+    ]) {
+      const changed = structuredClone(record);
+      mutate(changed);
+      assert.equal(parseBuiltinMediaEvidence(changed, 'DiffusersVideo.Generate'), undefined);
+    }
+  }
+});
+
 test('native builtin media metadata survives strict parsing without granting model evidence', async () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
   const python =

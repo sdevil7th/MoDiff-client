@@ -493,6 +493,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Native guide frame receipts add 300 gzip bytes (544036 to 544336).
+  300 +
   // Native video upscale history adds 79 gzip bytes to the existing startup chunk (543957 to 544036).
   79 +
   // Six retained recipes and their exact authoring bindings add 3094 gzip bytes (540863 -> 543957).
@@ -786,6 +788,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The guide receipt checks add 302 bytes across startup (722520 to 722822).
+  302 +
   // The same history contract adds 76 bytes across startup (722444 to 722520).
   76 +
   // The same additions add 3099 aggregate startup gzip bytes (719345 -> 722444).
