@@ -17,7 +17,7 @@ test(
     const args = { clientRoot, backendRoot, evidencePath, workflowId: 'SpandrelVideoUpscale:video_upscale' };
     const result = await readCanonicalWorkflowEvidence(args);
     assert.deepEqual(result.receipt.decodedOutput, {
-      hash: 'sha256:decoded-video-framemd5:ebf16340b2bf264a507cd39155aaa568519292a70b5c22cb00210230a2446124',
+      hash: 'sha256:decoded-video-framemd5:cb31cd0903f5e394e21f0ac8bd6373e0e67fb0a93a3191fef43e628bec0f17ed',
       width: 1024,
       height: 576,
       fps: 16,

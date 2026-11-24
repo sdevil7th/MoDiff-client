@@ -224,6 +224,8 @@ export async function readVideoUpscaleEvidence({ clientRoot, manifest, graph, au
   assert.equal(after.hasAudio, before.hasAudio);
   assert.ok(after.lumaStdDev >= 0.75 && after.severeNearBlackFrameRatio < 0.5);
   assert.notEqual(after.hash, before.hash);
+  const decodedIdentity = after.frameHashCompatibility.variants.find(({ muxer }) => muxer === 'Lavf61.1.100');
+  assert.ok(decodedIdentity, 'The frame checksums could not be normalized across reviewed FFmpeg versions.');
   for (const ref of retainedFiles) readCanonicalEvidenceFile(root, ref, 16 * 1024 * 1024);
   assert.ok(readFileSync(evidencePath).equals(descriptorBytes));
   return {
@@ -260,7 +262,7 @@ export async function readVideoUpscaleEvidence({ clientRoot, manifest, graph, au
       },
       modelArtifact,
       decodedOutput: {
-        hash: after.hash,
+        hash: decodedIdentity.hash,
         width: after.width,
         height: after.height,
         fps: after.fps,
