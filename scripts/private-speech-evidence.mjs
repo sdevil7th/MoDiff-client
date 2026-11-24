@@ -21,17 +21,31 @@ import {
 const whisperType = 'HuggingFaceSpeechRecognitionModel';
 const ctcType = 'HuggingFaceCTCSpeechRecognitionModel';
 const task = 'speech_to_text';
+const whisperTiny = { repoId: 'openai/whisper-tiny', revision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af' };
 const routes = new Map([
   [
     `${whisperType}:${task}`,
     {
       modelType: whisperType,
-      repo: 'openai/whisper-tiny',
-      revision: '169d4a4341b33bc18d8881c4b69c2e104e1cc0af',
+      repo: whisperTiny.repoId,
+      revision: whisperTiny.revision,
       pipeline: 'AutoModelForSpeechSeq2Seq',
       loader: 'LoadSpeechRecognitionModel',
       consumer: 'TranscribeAudio',
       timestamps: 'segment',
+    },
+  ],
+  [
+    `${whisperType}:speech_translation`,
+    {
+      modelType: whisperType,
+      repo: 'openai/whisper-small',
+      revision: '973afd24965f72e36ca33b3055d56a652f456b4d',
+      pipeline: 'AutoModelForSpeechSeq2Seq',
+      loader: 'LoadSpeechRecognitionModel',
+      consumer: 'TranscribeAudio',
+      timestamps: 'segment',
+      translation: { baselineModel: whisperTiny, language: 'es', sourceSampleRate: 22_050 },
     },
   ],
   [
@@ -81,19 +95,22 @@ export function speechRoute(workflowId) {
 
 function speechControls(route) {
   const controls = { timestamps: route.timestamps, chunk_length_seconds: 30, stride_length_seconds: 5 };
+  if (route.translation) return { ...controls, task: 'translate', language: route.translation.language };
   return route.modelType === whisperType ? { ...controls, task: 'transcribe', language: '' } : controls;
 }
 
-function assertSafeSourceName(name) {
+function assertSafeSourceName(name, { translation }) {
   assert.ok(
-    typeof name === 'string' && name.length <= 200 && /^[a-z0-9][a-z0-9_.-]*[.]wav$/iu.test(name),
-    'Expected a plain WAV file picker name.',
+    typeof name === 'string' &&
+      name.length <= 200 &&
+      (translation ? /^@data\/audio\/[a-z0-9][a-z0-9_.-]*[.]wav$/iu : /^[a-z0-9][a-z0-9_.-]*[.]wav$/iu).test(name),
+    translation ? 'Expected a managed WAV file picker name.' : 'Expected a plain WAV file picker name.',
   );
 }
 
 function boundSpeechGraph(workflowId, expectedApi, submitted, sourceName) {
   const route = speechRoute(workflowId);
-  assertSafeSourceName(sourceName);
+  assertSafeSourceName(sourceName, route);
   assertCanonicalAccountingGraphEnvelope(expectedApi);
   assertCanonicalAccountingGraphEnvelope(submitted);
   same(submitted.paths, [ids], 'The speech recipe must run the four reviewed nodes in order.');
@@ -113,7 +130,23 @@ function boundSpeechGraph(workflowId, expectedApi, submitted, sourceName) {
   same(expectedApi.nodes[source].params.file, { display: 'filebrowser', value: '' });
   const expected = structuredClone(expectedApi);
   expected.nodes[source].params.file.value = [sourceName];
-  sameWireJson(submitted.nodes, expected.nodes, 'Speech graph differs outside its single bound WAV.');
+  if (route.translation) {
+    const { baselineModel, language } = route.translation;
+    const { model_id: modelId, revision } = expected.nodes[loader].params;
+    same(modelId.value, { source: 'hub', value: baselineModel.repoId }, 'Original translation repository differs.');
+    assert.equal(revision.value, baselineModel.revision, 'Original translation revision differs.');
+    sameWireJson(expected.nodes[consumer].params.language, { value: '' });
+    modelId.value.value = route.repo;
+    revision.value = route.revision;
+    expected.nodes[consumer].params.language.value = language;
+  }
+  sameWireJson(
+    submitted.nodes,
+    expected.nodes,
+    route.translation
+      ? 'Speech graph differs outside its reviewed bindings.'
+      : 'Speech graph differs outside its single bound WAV.',
+  );
   same(submitted.paths, expected.paths, 'Speech graph paths differ.');
   const model = submitted.nodes[loader].params;
   same(model.model_id.value, { source: 'hub', value: route.repo }, 'Speech repository differs.');
@@ -133,7 +166,7 @@ function boundSpeechGraph(workflowId, expectedApi, submitted, sourceName) {
   return { route, model, controls, identity: canonicalGraphIdentity(submitted) };
 }
 
-function pcm16Wave(bytes) {
+function pcm16Wave(bytes, sampleRate) {
   assert.ok(Buffer.isBuffer(bytes) && bytes.length >= 44 && bytes.length <= MAX_SPEECH_WAV_BYTES);
   same(bytes.toString('ascii', 0, 4), 'RIFF');
   same(bytes.toString('ascii', 8, 12), 'WAVE');
@@ -165,18 +198,18 @@ function pcm16Wave(bytes) {
       format.readUInt16LE(12),
       format.readUInt16LE(14),
     ],
-    [1, 1, 16000, 32000, 2, 16],
-    'Expected mono 16 kHz PCM16 WAV.',
+    [1, 1, sampleRate, sampleRate * 2, 2, 16],
+    'Expected mono PCM16 WAV at the reviewed source sample rate.',
   );
   const floats = Buffer.alloc(pcm.length * 2);
   for (let i = 0; i < pcm.length; i += 2) floats.writeFloatLE(pcm.readInt16LE(i) / 32768, i * 2);
   const frames = pcm.length / 2;
   return {
-    duration: frames / 16000,
+    duration: frames / sampleRate,
     identity: {
       kind: 'audio',
       shape: [frames, 1],
-      sampleRate: 16000,
+      sampleRate,
       dtype: 'float32-le',
       byteSize: floats.length,
       sha256: digest(floats),
@@ -188,7 +221,7 @@ function expectedAccounting(controls) {
   const fields = Object.fromEntries(
     Object.entries(controls).map(([field, value]) => [
       field,
-      field === 'language'
+      field === 'language' && value === ''
         ? { disposition: 'inactive', inputValue: value, ...literal(value), reason: 'feature-disabled' }
         : { disposition: 'consumed', inputValue: value, ...literal(value === 'segment' ? true : value) },
     ]),
@@ -241,7 +274,7 @@ export function verifyPrivateSpeechConsumer({ workflowId, expectedApi, submitted
     },
     'Native speech loader or model pin differs.',
   );
-  const wave = pcm16Wave(wavBytes);
+  const wave = pcm16Wave(wavBytes, route.translation?.sourceSampleRate ?? 16000);
   const input = { sourceValue: sourceName, sha256: digest(wavBytes), byteSize: wavBytes.length, converted: false };
   same(
     observations[source].mediaEvidence,
@@ -266,7 +299,7 @@ function speechTranscript(bytes, item, bound) {
   keys(transcript, ['schemaVersion', 'task', 'text', 'timestampMode', 'durationSeconds', 'segments']);
   same(
     [transcript.schemaVersion, transcript.task, transcript.timestampMode, transcript.durationSeconds],
-    [1, 'transcribe', bound.route.timestamps, bound.wave.duration],
+    [1, bound.controls.task ?? 'transcribe', bound.route.timestamps, bound.wave.duration],
     'Delivered transcript settings differ.',
   );
   assert.ok(Array.isArray(transcript.segments) && transcript.segments.length > 0);
@@ -314,7 +347,7 @@ export function verifyPrivateSpeechRun({
     task: nativeTask,
     hints,
   } = validateNativeVariantRun({
-    target: { modelType: route.modelType, task },
+    target: { modelType: route.modelType, task: route.translation ? 'speech_translation' : task },
     outputNodeId: terminal,
     displayType: 'text',
     creator,
@@ -475,7 +508,12 @@ export async function readPrivateSpeechRun(args) {
 export async function readCanonicalSpeechEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {
   const route = speechRoute(manifest.id);
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
-  same(target.modelSet, [{ repoId: route.repo, revision: route.revision }], 'Canonical speech pin differs.');
+  const modelSet = [{ repoId: route.repo, revision: route.revision }];
+  same(
+    target.modelSet,
+    route.translation ? [route.translation.baselineModel] : modelSet,
+    'Canonical speech pin differs.',
+  );
   same(target.outputPlan.mediaKinds, ['json'], 'Canonical speech must deliver structured text.');
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   const stat = lstatSync(evidencePath);
@@ -510,6 +548,7 @@ export async function readCanonicalSpeechEvidence({ clientRoot, manifest, graph,
     format: 'modiff.canonical-workflow-run-receipt.v1',
     proofKind: 'real_backend_input_bound_model_variant',
     ...target,
+    modelSet,
     recipeTitle: authoring.title,
     runTitle: observation.runTitle,
     taskId: observation.taskId,

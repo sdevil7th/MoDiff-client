@@ -801,6 +801,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     evidence.format === 'modiff.private.speech-to-text-input-bound.v1' &&
     [
       'HuggingFaceSpeechRecognitionModel:speech_to_text',
+      'HuggingFaceSpeechRecognitionModel:speech_translation',
       'HuggingFaceCTCSpeechRecognitionModel:speech_to_text',
     ].includes(workflowId)
   ) {

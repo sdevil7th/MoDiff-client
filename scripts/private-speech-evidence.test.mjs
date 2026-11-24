@@ -133,6 +133,42 @@ test('uses bound audio and effective native controls for both supported speech-t
   }
 });
 
+test('binds the saved Spanish translation to the reviewed alternate model and source audio', () => {
+  const record = capture(whisper);
+  record.workflowId = whisper.type + ':speech_translation';
+  record.sourceName = '@data/audio/sample-source.wav';
+  record.wavBytes.writeUInt32LE(22050, 24);
+  record.wavBytes.writeUInt32LE(44100, 28);
+  const repo = 'openai/whisper-small';
+  const revision = '973afd24965f72e36ca33b3055d56a652f456b4d';
+  record.expectedApi.nodes['node-03'].params.task.value = 'translate';
+  const submitted = record.submitted.nodes;
+  submitted['node-01'].params.file.value = [record.sourceName];
+  submitted['node-02'].params.model_id.value.value = repo;
+  submitted['node-02'].params.revision.value = revision;
+  submitted['node-03'].params.task.value = 'translate';
+  submitted['node-03'].params.language.value = 'es';
+  const [loader, model, consumer] = record.output.resolvedExecutionInputs.nodes;
+  loader.mediaEvidence.files.file[0].sourceValue = record.sourceName;
+  loader.mediaEvidence.files.file[0].sha256 = sha256(record.wavBytes);
+  loader.mediaEvidence.outputs.audio[0].sampleRate = 22050;
+  consumer.mediaEvidence.inputs.audio[0].sampleRate = 22050;
+  model.fields.model_id.value = repo;
+  model.fields.revision.value = revision;
+  const fields = consumer.fieldAccounting.fields;
+  fields.task.inputValue = fields.task.value = 'translate';
+  fields.language = { disposition: 'consumed', inputValue: 'es', value: 'es', source: 'literal' };
+
+  const verified = verifyPrivateSpeechConsumer(record);
+  assert.equal(verified.route.repo, repo);
+  assert.equal(verified.wave.duration, 2 / 22050);
+  submitted['node-03'].params.language.value = 'fr';
+  assert.throws(() => verifyPrivateSpeechConsumer(record), /outside its reviewed bindings/u);
+  submitted['node-03'].params.language.value = 'es';
+  record.wavBytes.writeUInt32LE(16000, 24);
+  assert.throws(() => verifyPrivateSpeechConsumer(record), /Expected mono/u);
+});
+
 test('rejects legacy speech receipts and any incomplete native accounting', () => {
   for (const route of [whisper, ctc]) {
     const older = capture(route);
@@ -237,7 +273,7 @@ test('rejects changed audio, controls, graph wiring, model pin and output owners
     [
       'wrong route',
       (row) => {
-        row.workflowId = whisper.type + ':speech_translation';
+        row.workflowId = whisper.type + ':speaker_classification';
       },
       /Unsupported private speech/u,
     ],
