@@ -12,6 +12,7 @@ import {
   bindPromptVariant,
   validatePromptVariantText,
   validatePromptVariantVideo,
+  validateSampledCpuWorkerMemory,
 } from './prompt-variant-evidence.mjs';
 import {
   exportCanonicalWorkflowGraphs,
@@ -22,6 +23,32 @@ import {
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const backendRoot = resolve(clientRoot, '../MoDiff');
 const digest = (value) => createHash('sha256').update(value).digest('hex');
+
+test('a CPU capture measures sampled worker memory within its exact original task interval', () => {
+  const source = { fingerprint: 'original', gitCommit: null, files: [{}] };
+  const worker = {
+    origin: 'http://127.0.0.1:8088',
+    pid: 123,
+    source: { fingerprint: source.fingerprint, gitCommit: null, fileCount: 1 },
+  };
+  const task = { started_at: 9.5, completed_at: 11.5, runtimeMeasurement: { processRssBytes: 100 } };
+  const samples = [
+    { unixTime: 9, hostAvailable: 1000, workerRss: 999, accelerator: '{}' },
+    { unixTime: 10, hostAvailable: 1000, workerRss: 180, accelerator: '{}' },
+    { unixTime: 11, hostAvailable: 1000, workerRss: 120, accelerator: '{}' },
+    { unixTime: 12, hostAvailable: 1000, workerRss: 999, accelerator: '{}' },
+  ];
+  const capture = (entries) => Buffer.from(entries.map((entry) => JSON.stringify(entry)).join('\n'));
+  assert.equal(validateSampledCpuWorkerMemory(capture(samples), worker, source, task), 180);
+  assert.throws(() => validateSampledCpuWorkerMemory(capture(samples.slice(0, -1)), worker, source, task));
+  assert.throws(() =>
+    validateSampledCpuWorkerMemory(capture(samples), worker, { ...source, fingerprint: 'other' }, task),
+  );
+  const contradicted = { ...task, runtimeMeasurement: { processRssBytes: 300 } };
+  assert.throws(() => validateSampledCpuWorkerMemory(capture(samples), worker, source, contradicted));
+  const unordered = [samples[0], samples[2], samples[1], samples[3]];
+  assert.throws(() => validateSampledCpuWorkerMemory(capture(unordered), worker, source, task));
+});
 
 test('a prompt variant fills a single empty literal and keeps all other fields and connections', () => {
   const profile = {
@@ -354,6 +381,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
     'real_backend_input_bound_model_variant',
   ],
   ['LuminaPipeline:text_to_image', 'MODIFF_LUMINA_PROMPT_EVIDENCE', 'image'],
+  ['Kandinsky3Pipeline:text_to_image', 'MODIFF_KANDINSKY3_CPU_PROMPT_EVIDENCE', 'image'],
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],

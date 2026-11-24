@@ -2214,6 +2214,31 @@ const plainImageLegacyNull = ['control_guidance_start', 'conditioning_scale', 's
 const pagScalars = ['pag_scale', 'pag_adaptive_scale'];
 export const directImagePromptRoutes = [
   {
+    format: 'modiff.private.kandinsky3-cpu-prompt-variant.v1',
+    workflowId: 'Kandinsky3Pipeline:text_to_image',
+    modelType: 'Kandinsky3Pipeline',
+    modelRepo: 'kandinsky-community/kandinsky-3',
+    modelRevision: 'bf79e6c219da8a94abb50235fdc4567eb8fb4632',
+    active: [...plainImageActive, 'negative_prompt'],
+    inactive: [...plainImageInactive, 'max_sequence_length'],
+    legacyNull: [...plainImageLegacyNull, 'max_sequence_length'],
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    executionDevice: 'cpu:0',
+    dtype: 'float32',
+    offload: 'none',
+    deviceMap: 'none',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 25,
+      guidance_scale: 3,
+      max_sequence_length: 128,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
+  {
     format: 'modiff.private.lumina-prompt-variant.v1',
     workflowId: 'LuminaPipeline:text_to_image',
     modelType: 'LuminaPipeline',
@@ -3154,7 +3179,7 @@ function imageAccountingExecutionPlan(
       assert.equal(value(generate, key), expected, `Direct image ${key} is outside the reviewed accounting scope.`);
     assert.ok(Number.isSafeInteger(value(generate, 'seed')) && value(generate, 'seed') >= 0);
     assert.equal(value(owner, 'dtype'), promptVariant.dtype);
-    assert.equal(value(owner, 'device'), 'cuda:0');
+    assert.equal(value(owner, 'device'), promptVariant.executionDevice ?? 'cuda:0');
     assert.equal(value(owner, 'device_map'), promptVariant.deviceMap);
     assert.equal(recipeValues.attention_backend, 'auto');
     same(recipeValues.attention_components, [], 'Direct image attention component scope differs.');

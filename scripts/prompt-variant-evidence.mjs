@@ -194,10 +194,27 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   graphEnvelope(original);
   graphEnvelope(created);
   graphEnvelope(output, true);
-  const baseline = canonicalGraphIdentity(original);
-  assert.equal(baseline.hash, baselineHash, 'The current authored prompt recipe differs from the original baseline.');
   const expected = structuredClone(original);
   const expectedOwners = owners(profile, expected);
+  if (profile.executionDevice === 'cpu:0') {
+    const cpuChanges = [
+      [expectedOwners.loader, 'auto_offload', true, false],
+      [expectedOwners.loader, 'device', 'cuda:0', 'cpu:0'],
+      [expectedOwners.loader, 'dtype', 'float16', 'float32'],
+      [expectedOwners.loader, 'offload_mode', 'model_cpu', 'none'],
+      [expectedOwners.quantization, 'dtype', 'float16', 'float32'],
+      [expectedOwners.recipe, 'device', 'cuda:0', 'cpu:0'],
+      [expectedOwners.recipe, 'offload_mode', 'model_cpu', 'none'],
+    ];
+    for (const [owner, field, originalValue, cpuValue] of cpuChanges) {
+      const param = owner.node.params[field];
+      assert.equal(param.value, originalValue);
+      assert.ok(!param.sourceId && !param.sourceKey, 'A CPU variant requires literal resource controls.');
+      param.value = cpuValue;
+    }
+  }
+  const baseline = canonicalGraphIdentity(expected);
+  assert.equal(baseline.hash, baselineHash, 'The current authored prompt recipe differs from the original baseline.');
   const expectedInputs = expectedOwners.generator.node.params;
   if (profile.bindsImage) {
     assert.match(sourceValue, /^@data\/images\/[a-z0-9_-]{1,120}[.]png$/iu);
@@ -297,10 +314,12 @@ function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted
   assert.ok(runtime, 'Native runtime fingerprint is incomplete.');
   const { backend, device, peakMeasurementVersion, elapsedSeconds, peakAllocatedBytes } = task.runtimeMeasurement;
   assert.equal(backend, profile.backend);
-  assert.equal(device, bound.loader.node.params.device.value);
+  assert.equal(device, profile.executionDevice === 'cpu:0' ? 'cuda:0' : bound.loader.node.params.device.value);
   assert.equal(peakMeasurementVersion, 2);
   assert.ok(Number.isFinite(elapsedSeconds) && elapsedSeconds > 0 && elapsedSeconds <= 7200);
-  assert.ok(Number.isSafeInteger(peakAllocatedBytes) && peakAllocatedBytes > 0);
+  assert.ok(Number.isSafeInteger(peakAllocatedBytes));
+  if (profile.executionDevice === 'cpu:0') assert.equal(peakAllocatedBytes, 0);
+  else assert.ok(peakAllocatedBytes > 0);
   assert.equal(observation.error, false);
   assert.equal(observation.runtimeFingerprint, runtime.fingerprint);
   assert.equal(observation.models.length, 1);
@@ -313,6 +332,42 @@ function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted
   same(bound.loader.node.params.model_id.value, { source: 'hub', value: profile.modelRepo });
   assert.equal(bound.loader.node.params.revision.value, profile.modelRevision);
   return { runtime, measurement: task.runtimeMeasurement };
+}
+
+export function validateSampledCpuWorkerMemory(bytes, worker, source, task) {
+  keys(worker, ['origin', 'pid', 'source']);
+  assert.match(worker.origin, /^http:\/\/127[.]0[.]0[.]1:[1-9][0-9]{0,4}$/u);
+  assert.ok(Number.isSafeInteger(worker.pid) && worker.pid > 0);
+  assert.equal(worker.source.fingerprint, source.fingerprint);
+  assert.equal(worker.source.fileCount, source.files.length);
+  assert.equal(worker.source.gitCommit, source.gitCommit);
+  const samples = new TextDecoder('utf-8', { fatal: true })
+    .decode(bytes)
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => JSON.parse(line));
+  const { started_at: started, completed_at: completed } = task;
+  assert.ok(Number.isFinite(started) && Number.isFinite(completed) && completed > started);
+  assert.ok(samples.length >= 3 && samples.length <= 10000);
+  assert.ok(samples[0].unixTime <= started && started - samples[0].unixTime < 15);
+  assert.ok(samples.at(-1).unixTime >= completed && samples.at(-1).unixTime - completed < 15);
+  let previous = -Infinity;
+  let peak = 0;
+  for (const sample of samples) {
+    keys(sample, ['unixTime', 'hostAvailable', 'workerRss', 'accelerator']);
+    const { unixTime, workerRss, hostAvailable } = sample;
+    assert.ok(Number.isFinite(unixTime) && unixTime > previous);
+    if (Number.isFinite(previous)) assert.ok(unixTime - previous <= 3);
+    assert.ok(Number.isSafeInteger(workerRss) && workerRss > 0);
+    assert.ok(Number.isSafeInteger(hostAvailable) && hostAvailable > 0);
+    if (unixTime >= started && unixTime <= completed) peak = Math.max(peak, workerRss);
+    previous = unixTime;
+  }
+  assert.ok(
+    Number.isSafeInteger(task.runtimeMeasurement.processRssBytes) && task.runtimeMeasurement.processRssBytes > 0,
+  );
+  assert.ok(peak >= task.runtimeMeasurement.processRssBytes);
+  return peak;
 }
 
 function validateImagePromptPreparation(preparation, modelType) {
@@ -565,6 +620,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     profile === janusImageRoute ||
     profile === janusCaptionRoute ||
     profile === smolVlmCaptionRoute;
+  const sampledCpuMemory = profile.executionDevice === 'cpu:0';
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   assert.ok(target.outputPlan.mediaKinds.includes(profile.outputKind));
@@ -589,6 +645,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     'outputs',
     ...(requiresOriginalRequest ? ['graphRequest', 'graphAcknowledgment'] : []),
     ...(profile.lateNativeSnapshot ? ['persistedOutputs'] : []),
+    ...(sampledCpuMemory ? ['worker', 'resourceSamples'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.format, profile.format);
@@ -728,6 +785,14 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     graphCompleted,
     json(evidence.modelObservations[0]),
   );
+  const peakMemoryBytes = sampledCpuMemory
+    ? validateSampledCpuWorkerMemory(
+        read(evidence.resourceSamples, 1024 * 1024).bytes,
+        json(evidence.worker),
+        source.identity,
+        task,
+      )
+    : measurement.peakAllocatedBytes;
   const media = read(outputRef.file, 2 * 1024 * 1024);
   const item = validateNativeVariantOutput({
     output,
@@ -777,13 +842,17 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     resourceCandidateId: null,
     outputHash: item.mediaHash,
     executionDurationSeconds: measurement.elapsedSeconds,
-    peakMemoryBytes: measurement.peakAllocatedBytes,
+    peakMemoryBytes,
     canonicalDefaultsExecuted: false,
     promptBinding: { nodeId: bound.generator.id, field: 'prompt', sha256: digest(bound.prompt) },
     ...(inputBinding ? { inputBinding } : {}),
     ...(accounting ? { seedBinding: { nodeId: bound.generator.id, field: 'seed', value: bound.seed } } : {}),
     decodedOutput,
-    observationLimits: { fullConsumedFieldAccounting: Boolean(accounting), physicalPlatformQualification: false },
+    observationLimits: {
+      fullConsumedFieldAccounting: Boolean(accounting),
+      physicalPlatformQualification: false,
+      ...(sampledCpuMemory ? { memoryMeasurement: 'sampled_worker_rss' } : {}),
+    },
     qualificationClaims: {
       publicTemplate: false,
       qualityApproved: false,
