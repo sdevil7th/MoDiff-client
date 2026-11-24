@@ -14,6 +14,11 @@
     "bytes": 4067,
     "sha256": "4a085738b6d9e818596480a5ed7a0bda9f663670d35cf49385be56d74b241ce2"
   },
+  "DDIMPipeline:unconditional_image": {
+    "descriptorSha256": "ba8521d8043808cfb8880be8e8f46eadb81e266624aa6fb478c8b0d156bab079",
+    "bytes": 3418,
+    "sha256": "d36f4697ffb13bbf8b8c6f72db8f1c7db7f22dafafa358b298916b0f84a27963"
+  },
   "ErnieImagePipeline:text_to_image": {
     "descriptorSha256": "45f9a07cbd540055ad63000eb928be4a1b685c4b622bf46b84c98784e2c61139",
     "bytes": 4122,
@@ -38,6 +43,21 @@
     "descriptorSha256": "5820a7260e3f78175f684b39ee2a28c244bfb7cfaed6318c256c642dce306ecd",
     "bytes": 3257,
     "sha256": "983434b29fc3b2b54690bef0dcab7e7d765d66eac3a81534bbbf7debb5c9fc79"
+  },
+  "HuggingFaceImageTextToTextModel:image_to_text": {
+    "descriptorSha256": "daf5d3a9cb638e942a8f3f53df6cc86860e874943bc28fa01175ca2d30e56d5d",
+    "bytes": 3579,
+    "sha256": "90b53dde6fd677559cf4ddba7168802c4c834376e91c00f896977fa04aaf10bb"
+  },
+  "HuggingFaceSpeechRecognitionModel:speech_translation": {
+    "descriptorSha256": "9d7ed920f22989d90bddc05fb1976b69025132a87799d43d361f14d671539d1c",
+    "bytes": 3869,
+    "sha256": "9fa0b0086341bdb652c97b70521b5647977e1922b7bc0858c7b803e90ea8c4a7"
+  },
+  "Kandinsky3Pipeline:text_to_image": {
+    "descriptorSha256": "41b3b13c0f66711ffa3ac065f7a990bee824fc52db69940b8f75e0f7f79bdd38",
+    "bytes": 4089,
+    "sha256": "5ed088eae56863584fdb4a4a141dcae6fe10dae649fe735b39b3e4bf688a9ea6"
   },
   "LatentConsistencyModelPipeline:text_to_image": {
     "descriptorSha256": "b23f6c1d6ea11f928eab1c62422e49a288645e6f46ecf0c4f1b4994e95ad56ea",
@@ -99,9 +119,19 @@
     "bytes": 4412,
     "sha256": "2b526a0dec7fbee4a8553727a4c001e269b524551ad5169ea4928f8b4a76b633"
   },
+  "StableDiffusionXLPipeline:inpaint": {
+    "descriptorSha256": "04773f9c39ab30246fca3f87394f504a61772ccfa97630d4b46d1a9530450ee2",
+    "bytes": 5259,
+    "sha256": "1102d4d59e00388022892406c5cca60c33a7f22f21420f6e0e64c8dfba04b0d0"
+  },
   "StableDiffusionXLPipeline:text_to_image": {
     "descriptorSha256": "944ff90f533867016d514d9cdd7a35648e711359c55f2ae06fc3bac8e88b63e8",
     "bytes": 4267,
     "sha256": "07305066b2f96232db5f26d62e1d9fbf9f3a21d84f97328208a7e066798234a1"
+  },
+  "StableDiffusionXLTurboPipeline:text_to_image": {
+    "descriptorSha256": "c530e10728c8c3871c1f6d6e58589996b8e926729d7c57e43fa36d020660e3dd",
+    "bytes": 4169,
+    "sha256": "b5dfc591a73c4d04d8f540c4617c0f7820a4d8553a31ef9dd030837fb72325b2"
   }
 }

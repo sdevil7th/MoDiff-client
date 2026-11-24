@@ -384,7 +384,11 @@ if (existsSync(canonicalRegistryPath)) {
     if (JSON.stringify(stable(body)) !== JSON.stringify(stable(derived.receipt))) {
       throw new Error(`Canonical workflow receipt differs from original task evidence: ${stored.workflowId}`);
     }
-    if (derived.receipt.inputBinding || derived.receipt.promptBinding) {
+    if (
+      derived.receipt.inputBinding ||
+      derived.receipt.promptBinding ||
+      stored.workflowId === 'DDIMPipeline:unconditional_image'
+    ) {
       if (retainedNativeBySha.has(stored.evidenceSha256)) {
         throw new Error(`Original bound workflow evidence is duplicated: ${stored.workflowId}`);
       }
@@ -445,6 +449,7 @@ try {
           sourceWorkflow: workflow,
           templateRevisionHash: canonicalJsonHash({ template, settings: lockedSettings }),
           localAssociation: retainedTemplateAssociations.get(retainedRecipe.workflowId),
+          native: retainedNativeBySha.get(retainedRecipe.originalReceiptSha256),
           nativeReceipt: retainedNativeBySha.get(retainedRecipe.originalReceiptSha256)?.registeredReceipt,
         })
       : null;

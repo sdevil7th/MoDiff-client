@@ -416,6 +416,7 @@ function diffusersImageActionNode(binding: StudioGraphBinding) {
     binding.nodes.diffusersImageControl ??
     binding.nodes.diffusersImageLayerDecompose ??
     binding.nodes.diffusersImageEdit ??
+    binding.nodes.diffusersUnconditionalGenerate ??
     binding.nodes.diffusersImageGenerate
   );
 }
@@ -3413,13 +3414,24 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
   if (candidate && candidate.executionProfileId !== spec.executionProfileId) {
     throw new Error('The selected Auto candidate does not match the Studio execution specification.');
   }
+  const activeTemplateId = useStudioStore.getState().activeTemplateId;
+  const activeTemplate =
+    form.resourceMode === 'expert' &&
+    STUDIO_TEMPLATES.find(
+      ({ id, modelType, mode }) => id === activeTemplateId && modelType === spec.modelType && mode === spec.mode,
+    );
+  const artifact = activeTemplate ? activeTemplate.modelArtifact : undefined;
+  const pinnedTemplateArtifact =
+    artifact?.source === 'hub' && /^[a-f0-9]{40}$/u.test(artifact.revision ?? '') ? artifact : undefined;
   const audioTemplateBaseModel = binding.nodes.audioPipeline ? activeAudioTemplateBaseModel() : null;
   const capability = useNodesStore.getState().studioModelCapabilities.find((item) => item.modelType === spec.modelType);
   const values = resolveStudioExecutionSpecValues(form, spec, capability, {
     candidate,
     audioTemplateBaseModel,
     seed: seedValue(form),
+    defaultModelRevision: pinnedTemplateArtifact?.revision,
   });
+  if (pinnedTemplateArtifact) values.artifact = pinnedTemplateArtifact.value;
   const declaredFormat = assertFormWeightFormatSelection(
     form,
     spec,
@@ -4149,9 +4161,13 @@ async function finalizeDiffusersImageGraph(
 ) {
   const prediction = binding.nodes.diffusersPredictMap;
   const targetNode = prediction ?? diffusersImageActionNode(binding);
-  const targetFields = prediction
-    ? [['pipeline'], ['image'], ['preview_images']]
-    : [['pipeline'], ['prompt'], ['images']];
+  const targetFields = [['pipeline']];
+  if (prediction) {
+    targetFields.push(['image'], ['preview_images']);
+  } else {
+    if (!binding.nodes.diffusersUnconditionalGenerate) targetFields.push(['prompt']);
+    targetFields.push(['images']);
+  }
   await Promise.all([
     waitForFieldGroupsTracked(
       binding.nodes.diffusersImagePipeline,

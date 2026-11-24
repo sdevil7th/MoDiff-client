@@ -493,6 +493,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Six retained recipes and their exact authoring bindings add 3094 gzip bytes (540863 -> 543957).
+  3094 +
   // Direct image routing uses the exact Studio spec (529280 -> 529295 gzip bytes).
   15 +
   // LTX long distilled sampling defaults add 57 bytes (529223 -> 529280 gzip bytes).
@@ -782,6 +784,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same additions add 3099 aggregate startup gzip bytes (719345 -> 722444).
+  3099 +
   // The same route correction adds 16 startup bytes (707765 -> 707781 gzip bytes).
   16 +
   // The same scoped profile defaults add 58 bytes across startup (707707 -> 707765).

@@ -160,7 +160,7 @@ test('retained Gallery recipes preserve the native graph identities and standalo
         recipe.originalReceiptSha256,
       );
       const evidenceFile = join(evidenceRoot, 'evidence.json');
-      assert.equal(sha256(template.prompt), recipe.promptSha256);
+      if (recipe.promptSha256 !== undefined) assert.equal(sha256(template.prompt), recipe.promptSha256);
       if (existsSync(evidenceFile)) {
         const originalAuthoring = readCanonicalEvidenceFile(evidenceRoot, {
           path: 'authoring-spec.original.json',
@@ -238,7 +238,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: contract }, 'signal');
       } else {
         assert.equal(payload.fn, 'update_image_contract');
-        assert.ok(['PredictMap', 'Edit', 'Generate', 'Inpaint'].includes(payload.action));
+        assert.ok(['PredictMap', 'Edit', 'Generate', 'Inpaint', 'UnconditionalGenerate'].includes(payload.action));
         assert.deepEqual(payload.values.image_contract, contract);
       }
       return Response.json({ error: false, nodes: [] });
@@ -267,7 +267,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           audio ? { sourceAudio: input[0] } : { referenceImages: input, ...(mask && { maskImage: mask }) },
         );
       const form = studio.getState().form;
-      assert.equal(form.device, 'cuda:0');
+      assert.equal(form.device, template.example.lockedSettings.device ?? 'cuda:0');
       assert.equal(form.resourceMode, 'expert');
       assert.equal(form.randomSeed, false);
       await graphBridge.createOrUpdateStudioGraph(form, undefined, 3000).catch((error) => {
@@ -308,15 +308,28 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.deepEqual(loader.params.model_id.value, { source: 'hub', value: template.modelArtifact.value });
       assert.equal(loader.params.revision.value, template.modelArtifact.revision);
       assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');
-      assert.equal(loader.params.device.value, 'cuda:0');
-      if (approvedBatchIds.has(template.id)) {
+      assert.equal(loader.params.device.value, form.device);
+      if (approvedBatchIds.has(template.id) && !audio) {
         const actions = Object.values(api.nodes);
         const generation = actions.find(({ action }) =>
-          ['Generate', 'Edit', 'Inpaint', 'GenerateAnyToAny'].includes(action),
+          [
+            'Generate',
+            'Edit',
+            'Inpaint',
+            'GenerateAnyToAny',
+            'GenerateImageVideoText',
+            'UnconditionalGenerate',
+          ].includes(action),
         );
-        assert.equal(generation.params.prompt.value, template.prompt);
+        assert.equal(generation.params.prompt?.value ?? '', template.prompt);
         const locked = template.example.lockedSettings;
-        if (generation.action !== 'GenerateAnyToAny') {
+        if (generation.action === 'UnconditionalGenerate') {
+          assert.equal(generation.params.num_inference_steps.value, locked.steps);
+          assert.equal(Number(generation.params.seed.value), template.example.lockedSeed);
+          assert.equal(generation.params.pipeline.sourceId, binding.nodes.diffusersImagePipeline);
+          assert.equal(generation.params.pipeline.sourceKey, 'pipeline');
+          assert.equal(generation.params.prompt, undefined);
+        } else if (!['GenerateAnyToAny', 'GenerateImageVideoText'].includes(generation.action)) {
           for (const [field, control] of [
             ['width', 'width'],
             ['height', 'height'],
@@ -340,6 +353,13 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         // native file evidence records the same selected file as a one-item list.
         const file = source.params.file.value;
         assert.deepEqual(typeof file === 'string' ? [file] : file, input);
+        if (template.mode === 'speech_translation') {
+          const consumer = Object.values(api.nodes).find(({ action }) => action === 'TranscribeAudio');
+          assert.equal(consumer.params.task.value, 'translate');
+          assert.equal(consumer.params.language.value, template.example.lockedSettings.speechLanguage);
+          assert.equal(consumer.params.timestamps.value, 'segment');
+          continue;
+        }
         source.params.file.value = input;
         const withIndependentInputsOrdered = ({ canonicalGraph }) => {
           // The fresh form inserts the model before Audio Load. Both are

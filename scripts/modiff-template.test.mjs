@@ -2951,7 +2951,11 @@ test('template prompt recipes are distinct, detailed, and not generic placeholde
     if (retained) {
       // Authoring guidance must not rewrite conditioning from an approved execution.
       assert.deepEqual({ prompt: template.prompt, negativePrompt: template.negativePrompt }, retained);
-      assert.ok(template.prompt.trim(), `${template.id} retains the recorded prompt`);
+      if (template.mode === 'unconditional_image' || template.mode === 'speech_translation') {
+        assert.equal(template.prompt, '', `${template.id} keeps its prompt-free task contract`);
+      } else {
+        assert.ok(template.prompt.trim(), `${template.id} retains the recorded prompt`);
+      }
       continue;
     }
     const backendDefaultPrompt =

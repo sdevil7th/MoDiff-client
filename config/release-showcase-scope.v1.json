@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "56751b206e461b4a3cdfbcab35b3ae46d8cf43fd"
+    "revision": "7a5c7bd80df3c9179762bece6adc28dd62e1ab9e"
   },
   "originalCampaign": {
     "total": 89,
@@ -645,7 +645,43 @@
       "category": "supplementary-only",
       "reason": "Published and registered as a supplementary Gallery example outside the original campaign selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "ddim_cifar10_preview",
+      "category": "supplementary-only",
+      "reason": "Published and registered from the approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_clear_cobalt_backdrop",
+      "category": "supplementary-only",
+      "reason": "Published and registered from the approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_turbo_orange_caps",
+      "category": "supplementary-only",
+      "reason": "Published and registered from the approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "whisper_small_an_open_door",
+      "category": "supplementary-only",
+      "reason": "Published and registered from the approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "smolvlm_red_triangle",
+      "category": "supplementary-only",
+      "reason": "Published and registered from the approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "kandinsky3_ginkgo_on_slate",
+      "category": "supplementary-only",
+      "reason": "Published and registered from the approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:298993cbcd745bae76a26da29985d312702836108014a3fe3bb07d5ae57ac716"
+  "profileHash": "sha256:canonical-json:4a48c6b4502baaad0573b0bb0f1c1fb4030663fe72cf7aa1c5214c1a724eb778"
 }

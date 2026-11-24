@@ -9,6 +9,13 @@ const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 const retainedSpeechTemplates = new Map([
   [
+    'whisper_small_an_open_door',
+    {
+      workflowId: 'HuggingFaceSpeechRecognitionModel:speech_translation',
+      sourceTaskTemplateId: 'task-template:whisper-tiny:speech-translation:v1',
+    },
+  ],
+  [
     'whisper_tiny_blue_cup_transcription',
     {
       workflowId: 'HuggingFaceSpeechRecognitionModel:speech_to_text',
@@ -60,7 +67,8 @@ export function verifyRetainedSpeechGalleryEvidence({ recipe, native, galleryOut
   assert.equal(recipe.sourceTaskTemplateId, template.sourceTaskTemplateId);
   assert.equal(galleryInput, undefined, 'The retained speech audio source stays private.');
   const route = speechRoute(recipe.workflowId);
-  assert.equal(recipe.template.mode, 'speech_to_text');
+  const mode = route.translation ? 'speech_translation' : 'speech_to_text';
+  assert.equal(recipe.template.mode, mode);
   assert.equal(recipe.template.modelType, route.modelType);
   assert.deepEqual(
     recipe.template.modelArtifact,
@@ -75,7 +83,7 @@ export function verifyRetainedSpeechGalleryEvidence({ recipe, native, galleryOut
   assert.equal(receipt.proofKind, 'real_backend_input_bound_model_variant');
   assert.equal(receipt.workflowId, recipe.workflowId);
   assert.equal(receipt.sourceTemplateId, recipe.sourceTaskTemplateId);
-  assert.equal(receipt.task, 'speech_to_text');
+  assert.equal(receipt.task, mode);
   assert.equal(receipt.modelType, route.modelType);
   assert.deepEqual(
     receipt.modelSet,
@@ -123,7 +131,7 @@ export function verifyRetainedSpeechGalleryEvidence({ recipe, native, galleryOut
   assert.ok(Buffer.from(transport[0]).equals(structuredBytes), 'Gallery transcript must match the exact native JSON.');
   const transcript = JSON.parse(transport[0]);
   assert.equal(transcript.schemaVersion, 1);
-  assert.equal(transcript.task, 'transcribe');
+  assert.equal(transcript.task, route.translation ? 'translate' : 'transcribe');
   assert.equal(
     transcript.timestampMode,
     route.timestamps,

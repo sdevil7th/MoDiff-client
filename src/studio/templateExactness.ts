@@ -293,7 +293,9 @@ export function getTemplateInputContractHash(template: StudioTemplate) {
   return `tic_${hashString(stableStringify(defaults))}`;
 }
 
-export function getTemplateLockedSettings(template: StudioTemplate): StudioTemplateLockedSettings {
+export function getTemplateLockedSettings(
+  template: StudioTemplate,
+): StudioTemplateLockedSettings & Partial<Pick<StudioFormState, 'device' | 'speechLanguage'>> {
   const defaults = getFormDefaultsForMode(template.mode, template.modelType);
   const presetValues = getPreset(template.presetId)?.values ?? {};
   const lockedSettings = template.example?.lockedSettings ?? {};
@@ -319,7 +321,10 @@ export function getTemplateLockedSettings(template: StudioTemplate): StudioTempl
               : {}),
           }
         : { ...settings, [field]: merged[field] },
-    {} as StudioTemplateLockedSettings,
+    {
+      ...(lockedSettings.device !== undefined && { device: lockedSettings.device }),
+      ...(lockedSettings.speechLanguage !== undefined && { speechLanguage: lockedSettings.speechLanguage }),
+    } as StudioTemplateLockedSettings & Partial<Pick<StudioFormState, 'device' | 'speechLanguage'>>,
   );
 }
 

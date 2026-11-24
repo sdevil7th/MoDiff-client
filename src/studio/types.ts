@@ -253,6 +253,12 @@ export type StudioPresetId =
 
 export type StudioTemplateId =
   | 'alpine_lake_in_oils'
+  | 'ddim_cifar10_preview'
+  | 'sdxl_clear_cobalt_backdrop'
+  | 'sdxl_turbo_orange_caps'
+  | 'whisper_small_an_open_door'
+  | 'smolvlm_red_triangle'
+  | 'kandinsky3_ginkgo_on_slate'
   | 'bookshop_at_blue_hour'
   | 'flowers_after_rain'
   | 'forest_ferns'
@@ -1639,7 +1645,7 @@ export type StudioTemplateExample = {
   mediaType: TemplateMediaType;
   status: TemplateExactnessStatus;
   lockedSeed: number;
-  lockedSettings?: Partial<StudioTemplateLockedSettings>;
+  lockedSettings?: Partial<StudioTemplateLockedSettings & Pick<StudioFormState, 'device' | 'speechLanguage'>>;
   /** Contract for each primary runtime output emitted by the graph. */
   expectedOutput?: TemplateExpectedOutput;
   /** Optional derived gallery-media override, such as a review contact sheet. */

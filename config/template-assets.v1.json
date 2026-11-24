@@ -220,6 +220,17 @@
       "height": 512
     },
     {
+      "path": "template-gallery/ddim_cifar10_preview.webp",
+      "size": 962,
+      "sha256": "sha256:bytes:8da37d75c632e43b7131bcb634f76a9e83857a88bf511785fa8f55c746f0f0a4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
       "path": "template-gallery/fast_lora.card-poster.webp",
       "size": 211346,
       "sha256": "sha256:bytes:071786ad9b3120c3d5981e70c4617cbc9c1ab946bd6aafc7a0e055df02fc27ae",
@@ -1914,6 +1925,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/sdxl_clear_cobalt_backdrop.before.png",
+      "size": 623267,
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_clear_cobalt_backdrop.mask.png",
+      "size": 1571,
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/spandrel_x2_synthetic_gradient.before.png",
       "size": 177,
       "sha256": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
@@ -1988,6 +2021,17 @@
       "purposes": [
         "runtime"
       ]
+    },
+    {
+      "path": "template-gallery/kandinsky3_ginkgo_on_slate.webp",
+      "size": 578858,
+      "sha256": "sha256:bytes:4b33c6b278e6c9f036ee8f4a11fe6dd4dab58ad385407f844b1f0bb609557ab4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/layers/qwen_layered_portrait.native-layer-00.webp",
@@ -2319,8 +2363,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 290556,
-      "sha256": "sha256:bytes:0237fc54abc42f620ffc5d6f0b39e6918f19250078c5abfa29f6aa151830927d",
+      "size": 304414,
+      "sha256": "sha256:bytes:e754f588addecb7b9d0a35ea3310c591907ab34785115f1bf653f2d92d65c42d",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -3157,6 +3201,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/ddim_cifar10_preview.original-provenance.json",
+      "size": 873,
+      "sha256": "sha256:bytes:8fc838dd4bc701aa0c65e6b2630cc749d05736d23623591e3d1ac5af3d6b93d9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ddim_cifar10_preview.original-review.json",
+      "size": 474,
+      "sha256": "sha256:bytes:5a793d20a7b28f16f07648dce956a5cf5d2ecf8b50d85ca9005f965196102391",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ddim_cifar10_preview.quality-review.json",
+      "size": 2306,
+      "sha256": "sha256:bytes:24698d674171ad14c31fba20652e694b1e845214fe802d32cb7d0e42611cb7c2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ddim_cifar10_preview.retained-template-provenance.json",
+      "size": 3342,
+      "sha256": "sha256:bytes:8f2075aff72c4a31ca3e247ce7b1c1c6ebaa8b8f29d7ad7e124555543b7ddfbd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/fast_lora.quality-review.json",
       "size": 2589,
       "sha256": "sha256:bytes:96079ed2226e86a0a0686283402a8c4f567809c73d67138afb4d58fc46936a15",
@@ -3981,6 +4061,42 @@
       "path": "template-gallery/reviews/janus_reykjavik_travel_note.retained-template-provenance.json",
       "size": 3451,
       "sha256": "sha256:bytes:70da97c6adaef6d92f70d91e3aa549503dacb307ea94dd3115047cb3de17945b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kandinsky3_ginkgo_on_slate.original-provenance.json",
+      "size": 1302,
+      "sha256": "sha256:bytes:31189848b609ec308b9bd427975d0b09d502ff7583321e88a7ba813f5a968db8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kandinsky3_ginkgo_on_slate.original-review.json",
+      "size": 467,
+      "sha256": "sha256:bytes:3d23527148ae151f8b05b623d2739f79ab4bcd37202db7b331e391bdf7b6bedf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kandinsky3_ginkgo_on_slate.quality-review.json",
+      "size": 2699,
+      "sha256": "sha256:bytes:ce1d21e1a50c1861198590eda8f52dde82afccaceae93500fbaf612e1b1a2426",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kandinsky3_ginkgo_on_slate.retained-template-provenance.json",
+      "size": 3374,
+      "sha256": "sha256:bytes:5be139ba899439bf234dee3274572a5062dbfdbb0fbf6ba12f23b64ce47a2fc3",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -4941,6 +5057,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.original-provenance.json",
+      "size": 1214,
+      "sha256": "sha256:bytes:7361ac84e232f55f7f8e19fae39c5abff4e4df36ac1d1c754ca4d9716d60b1df",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.original-review.json",
+      "size": 473,
+      "sha256": "sha256:bytes:d7edf6240c066f9d48ab24fd45c77556b2afa52e145f530428c93620496ddf15",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.quality-review.json",
+      "size": 2291,
+      "sha256": "sha256:bytes:c5853176bee61c270f06f94714ff9e968eb466ab7198d26d78a1d9dc4482cb41",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.retained-template-provenance.json",
+      "size": 3981,
+      "sha256": "sha256:bytes:b680690954be3c7784aed2b97110d50706dc3ebb56df9e61611b203150a90b39",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_turbo_orange_caps.original-provenance.json",
+      "size": 997,
+      "sha256": "sha256:bytes:38ebec1786b4ca93369a6e08f61c7fa24ed755f1a11804d2f0378d0b5b4c0f74",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_turbo_orange_caps.original-review.json",
+      "size": 465,
+      "sha256": "sha256:bytes:45bccd884aec054b8054d8253ef61fe6a09716a97d2ca3331eae39fed60d675c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_turbo_orange_caps.quality-review.json",
+      "size": 2257,
+      "sha256": "sha256:bytes:b65f8f13cbb77853bc90c4015ce3432a353f22d1b4b8d3faeecb5ac1a00ba9e0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_turbo_orange_caps.retained-template-provenance.json",
+      "size": 3306,
+      "sha256": "sha256:bytes:485e9d39648d71e0c2d449418ed6124bb37ae1e7928a2bcbc1592040929f01bd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/smollm2_rain_gauge.quality-review.json",
       "size": 2378,
       "sha256": "sha256:bytes:a457e4143d17eecd1af499e61a28e7df0533b4a6a8f67712182ab8a829115e09",
@@ -4953,6 +5141,42 @@
       "path": "template-gallery/reviews/smollm2_rain_gauge.retained-template-provenance.json",
       "size": 2565,
       "sha256": "sha256:bytes:6b45536aab6905c02b1e937fb6c684765c30354ceff8e05c7ec6c1454500f168",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/smolvlm_red_triangle.original-provenance.json",
+      "size": 1393,
+      "sha256": "sha256:bytes:7ef65f47028ad3af96b1189b40a52d085c696475b0e9ee55ea1d780f286a3481",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/smolvlm_red_triangle.original-review.json",
+      "size": 549,
+      "sha256": "sha256:bytes:24aae45e0bf9ca8ec749e8521293a25beb56dc264276604e634699eed52f852e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/smolvlm_red_triangle.quality-review.json",
+      "size": 2273,
+      "sha256": "sha256:bytes:d7f5e471998c28cb0ba86532b0471c0a2a3ff1c9ea17e2e9169bcb91cf835bd1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/smolvlm_red_triangle.retained-template-provenance.json",
+      "size": 3535,
+      "sha256": "sha256:bytes:45f154d4661611e859e67593f38fef064e544c1806c03a1f67919120b169d4f1",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5153,6 +5377,42 @@
       "path": "template-gallery/reviews/wav2vec2_station_announcement.retained-template-provenance.json",
       "size": 3692,
       "sha256": "sha256:bytes:4eb550b72db5b3c48a5dc5a1807067dc92ca77d9c288cbcc6e66e8fe3d15e78c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/whisper_small_an_open_door.original-provenance.json",
+      "size": 856,
+      "sha256": "sha256:bytes:f8c6523ab16cc4c21dd7239dfb6d08930eb74dcf26109391f7eccdc1243ec1f8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/whisper_small_an_open_door.original-review.json",
+      "size": 470,
+      "sha256": "sha256:bytes:eaecd7b4ce1cfb2fcbbe8304f8700b1f46c29f5fea4befa7fff971aea95f2a7f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/whisper_small_an_open_door.quality-review.json",
+      "size": 2270,
+      "sha256": "sha256:bytes:86f1cf2540c9c980f232d3ee7e1927d38e32b5b5f613bb40801ec8d7f9945d33",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/whisper_small_an_open_door.retained-template-provenance.json",
+      "size": 3535,
+      "sha256": "sha256:bytes:07e2575fa2b29c75f4f4f5a4dcad63f6cd5c790386f16d6ccf277628fbfb5483",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5933,6 +6193,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/sdxl_clear_cobalt_backdrop.webp",
+      "size": 119828,
+      "sha256": "sha256:bytes:98b57164602d8cfd6b61c689fa26770421f9dce8a7b9c23bc879a49d4def1004",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/sdxl_turbo_orange_caps.webp",
+      "size": 75822,
+      "sha256": "sha256:bytes:e69bdc004989467e4e0df8d7d5b3d7e19f95158dff49e3ca649bb6da42f2cf59",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/showcases/flux3-kolkata-bride.v1.json",
       "size": 5475,
       "sha256": "sha256:bytes:64a51a70baec5b4a99937ac3952e458450c7d699669b6f31241106da33f70b55",
@@ -6265,6 +6547,15 @@
       "path": "template-gallery/smollm2_rain_gauge.json",
       "size": 1190,
       "sha256": "sha256:bytes:c92d19b1c39c5157b09f19d654c871f7453a9c794c733265fd89b7cc9521ea43",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/smolvlm_red_triangle.json",
+      "size": 1291,
+      "sha256": "sha256:bytes:ec3bb29dcf29943847d3c22f36369927a30eac1834541e25d8ae4ac7f7fd2fb3",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6631,6 +6922,15 @@
       ]
     },
     {
+      "path": "template-gallery/whisper_small_an_open_door.json",
+      "size": 352,
+      "sha256": "sha256:bytes:6f8a84cafae41e8903b7b60d97701dbf24b8f41fab860913b419deea1a84e263",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/whisper_tiny_blue_cup_transcription.json",
       "size": 305,
       "sha256": "sha256:bytes:19ad6ca1cda03c92aa6f86f590a69c052e8bded5c8340189a56c68193c2ed9ec",
@@ -6707,9 +7007,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:caa900140d82653b84f9c71dda792dda20616498078938bc687b8dfc977b9f72",
+  "assetSetId": "sha256:canonical-json:690ea1522e3b4ffd3d72bc5911f02763c842fa3d23428ef123db0dbe0dca3a91",
   "status": "ready",
-  "assetCount": 683,
-  "totalBytes": 1044572748,
+  "assetCount": 715,
+  "totalBytes": 1046033259,
   "missingAssets": []
 }

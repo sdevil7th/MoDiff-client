@@ -7,6 +7,7 @@ import {
   validateQualityReview,
 } from './template-gallery-harness.mjs';
 import { validateRetainedGalleryProvenance, verifyRetainedApprovedFiles } from './retained-gallery-provenance.mjs';
+import { verifyRetainedSpeechGalleryEvidence } from './retained-speech-gallery-evidence.mjs';
 
 const same = (actual, expected, label) => assert.deepEqual(actual, expected, label);
 
@@ -22,22 +23,37 @@ function assertRetainedNativeIdentity(association, entry, nativeReceipt, label) 
     graphHash: association.originalGraphHash,
     evidenceSha256: association.originalEvidenceSha256,
     modelSet: observedExecution.modelSet,
-    observationLimits: observedExecution.observationLimits,
+    ...(association.nativeProofKind !== 'real_backend_weights' && {
+      observationLimits: observedExecution.observationLimits,
+    }),
     outputHash: output.sourceOutputHash,
     runtimeFingerprint: observedExecution.runtimeFingerprint,
     executionDurationSeconds: observedExecution.executionDurationSeconds,
     peakMemoryBytes: observedExecution.peakMemoryBytes,
-    resourceCandidateId: null,
+    resourceCandidateId: association.originalResourceCandidateId,
   };
   const actual = Object.fromEntries(Object.keys(expected).map((key) => [key, nativeReceipt[key]]));
   same(actual, expected, label);
 }
 
-function assertRetainedBatchEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt }) {
+function assertRetainedBatchEvidence({
+  recipe,
+  sourceWorkflow,
+  association,
+  entry,
+  native,
+  nativeReceipt,
+  outputBytes,
+}) {
   assert.equal(association.originalCanonicalWorkflowHash, sourceWorkflow.contract.graphHash);
   assert.equal(association.originalEvidenceSha256, recipe.originalReceiptSha256);
   assert.equal(association.originalGraphHash, recipe.retainedGraphHash);
-  assert.equal(association.originalResourceCandidateId, null);
+  assert.equal(
+    association.originalResourceCandidateId,
+    recipe.workflowId === 'DDIMPipeline:unconditional_image'
+      ? 'manual-resource-v1:DDIMPipeline|float32|none|none'
+      : null,
+  );
   assert.equal(association.originalTemplateLockHash, null);
   assert.equal(association.observedExecution.backendContractFingerprint, entry.backendContractFingerprint);
   assert.equal(association.observedExecution.observationLimits.physicalPlatformQualification, false);
@@ -58,7 +74,34 @@ function assertRetainedBatchEvidence({ recipe, sourceWorkflow, association, entr
   if (!nativeReceipt) return;
   const label = 'Published Gallery batch proof differs from the verified native receipt.';
   assertRetainedNativeIdentity(association, entry, nativeReceipt, label);
+  if (recipe.workflowId === 'DDIMPipeline:unconditional_image') {
+    assert.equal(nativeReceipt.proofKind, 'real_backend_weights', label);
+    assert.equal(nativeReceipt.backendContractFingerprint, entry.backendContractFingerprint, label);
+    assert.equal(native.provenance.output.collectionHash, nativeReceipt.outputHash, label);
+    const [image] = native.provenance.output.items;
+    assert.equal(native.provenance.output.count, 1, label);
+    assert.equal(image.backendMediaHash, association.output.outputEncodedSha256, label);
+    assert.equal(image.decodedSha256, association.output.decodedMediaHash, label);
+    assert.deepEqual([image.width, image.height], [entry.width, entry.height], label);
+    return;
+  }
   assert.equal(nativeReceipt.canonicalDefaultsExecuted, false, label);
+  if (recipe.workflowId === 'HuggingFaceSpeechRecognitionModel:speech_translation') {
+    const verified = verifyRetainedSpeechGalleryEvidence({
+      recipe,
+      native,
+      galleryOutput: {
+        bytes: outputBytes,
+        ref: {
+          bytes: association.output.outputBytes,
+          sha256: association.output.outputEncodedSha256.slice('sha256:bytes:'.length),
+        },
+      },
+    });
+    assert.deepEqual(verified.output, association.output, label);
+    assert.equal(verified.backendContractFingerprint, entry.backendContractFingerprint, label);
+    return;
+  }
   assert.equal(nativeReceipt.backendContractFingerprint, entry.backendContractFingerprint, label);
   assert.equal(nativeReceipt.promptBinding.sha256, recipe.promptSha256, label);
   assert.equal(nativeReceipt.inputBinding?.sha256, recipe.inputSha256, label);
@@ -167,7 +210,7 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
     ).bytes;
   };
 
-  return ({ recipe, entry, sourceWorkflow, templateRevisionHash, localAssociation, nativeReceipt }) => {
+  return ({ recipe, entry, sourceWorkflow, templateRevisionHash, localAssociation, native, nativeReceipt }) => {
     if (!sourceWorkflow || !entry?.proofLockHash?.startsWith('sha256:retained-template-association-v1:')) return null;
     if (!approved) {
       approved = verifiedRetainedGalleryAssetIndex(clientRoot, source);
@@ -176,11 +219,12 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
     assert.equal(sourceWorkflow.manifest.id, recipe.workflowId);
     assert.equal(sourceWorkflow.manifest.sourceTemplateId, recipe.sourceTaskTemplateId);
     const bundle = JSON.parse(open(entry.provenancePath));
+    const outputBytes = open(entry.outputPath);
     assert.equal(galleryJsonHash(bundle), entry.provenanceHash);
     same(
       validateRetainedGalleryProvenance(bundle, entry, {
         templateRevisionHash,
-        outputBytes: open(entry.outputPath),
+        outputBytes,
         beforeBytes: entry.beforePath ? open(entry.beforePath) : undefined,
       }),
       [],
@@ -196,7 +240,7 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
       assertRetainedTechnicalRecipe({ recipe, sourceWorkflow, association, entry, nativeReceipt });
     }
     if (association.approvedFiles) {
-      assertRetainedBatchEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt });
+      assertRetainedBatchEvidence({ recipe, sourceWorkflow, association, entry, native, nativeReceipt, outputBytes });
       verifyRetainedApprovedFiles(association.approvedFiles, open);
     }
     if (localAssociation) {
@@ -263,7 +307,9 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
       ...(spandrel
         ? { modelArtifact: observedExecution.modelArtifact, observationLimits: observedExecution.observationLimits }
         : {}),
-      ...(association.recipeObservation ? { observationLimits: observedExecution.observationLimits } : {}),
+      ...(association.recipeObservation || observedExecution.observationLimits?.memoryMeasurement
+        ? { observationLimits: observedExecution.observationLimits }
+        : {}),
       evidenceMatch: 'current_reviewed_retained_recipe',
     };
   };
