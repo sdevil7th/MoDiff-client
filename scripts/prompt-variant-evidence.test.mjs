@@ -391,6 +391,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['AuraFlowPipeline:text_to_image', 'MODIFF_AURAFLOW_PROMPT_EVIDENCE', 'image'],
   ['LatentConsistencyModelPipeline:text_to_image', 'MODIFF_LCM_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['SanaPipeline:text_to_image', 'MODIFF_SANA_IMAGE_PROMPT_EVIDENCE', 'image'],
+  ['ChromaPipeline:text_to_image', 'MODIFF_CHROMA_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
 ]) {
@@ -429,10 +430,11 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       }
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
-      if (workflowId === 'SanaPipeline:text_to_image') {
+      if (['SanaPipeline:text_to_image', 'ChromaPipeline:text_to_image'].includes(workflowId)) {
         const runPath = join(temp, evidence.runDetail.path);
         const originalRun = readFileSync(runPath);
         const run = JSON.parse(originalRun);
+        const originalPreparation = structuredClone(run.task.runtimePreparation);
         run.task.runtimePreparation.previousModelFamily = 'UnreviewedPipeline';
         const replacement = Buffer.from(JSON.stringify(run));
         const substituted = structuredClone(evidence);
@@ -443,6 +445,20 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
           /Unreviewed previous Expert model family/u,
         );
+        if (workflowId === 'ChromaPipeline:text_to_image') {
+          run.task.runtimePreparation = {
+            ...originalPreparation,
+            reasons: ['model family changed from ChromaPipeline to ChromaPipeline'],
+          };
+          const changed = Buffer.from(JSON.stringify(run));
+          substituted.runDetail = { ...evidence.runDetail, bytes: changed.length, sha256: digest(changed) };
+          writeFileSync(runPath, changed);
+          writeFileSync(changedPath, JSON.stringify(substituted));
+          await assert.rejects(
+            () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+            /Unreviewed direct image cache cleanup/u,
+          );
+        }
         writeFileSync(runPath, originalRun);
       }
       if (proofKind === 'real_backend_input_bound_model_variant') {
@@ -497,6 +513,7 @@ test('Reviewed image prompt receipts keep the exact portable artifact and graph'
     'AuraFlowPipeline:text_to_image',
     'LatentConsistencyModelPipeline:text_to_image',
     'SanaPipeline:text_to_image',
+    'ChromaPipeline:text_to_image',
     'SanaSprintPipeline:text_to_image',
     'StableDiffusionXLPAGPipeline:text_to_image',
   ];

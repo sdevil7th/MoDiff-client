@@ -438,8 +438,12 @@ function validateImagePromptPreparation(preparation, { modelType, previousExpert
     modelType,
     previous,
   );
-  const reason =
-    previous === null ? 'cached model family is unknown' : `model family changed from ${previous} to ${modelType}`;
+  let reason = 'cached model family is unknown';
+  if (previous === modelType) {
+    reason = `resource recipe changed within ${modelType}`;
+  } else if (previous !== null) {
+    reason = `model family changed from ${previous} to ${modelType}`;
+  }
   same(reasons, [reason], 'Unreviewed direct image cache cleanup.');
   keys(cleanup, ['released', 'allocatorTrimmed', 'errors']);
   same(cleanup.errors, [], 'Direct image cache cleanup failed.');
