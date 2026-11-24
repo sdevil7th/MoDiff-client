@@ -324,10 +324,16 @@ for (const [workflowId, variable, kind] of [
   });
 }
 
-test('GLM and Nucleus prompt receipts keep the exact portable artifact and graph', async () => {
+test('Reviewed image prompt receipts keep the exact portable artifact and graph', async () => {
   const graphs = join(backendRoot, 'data/graphs');
   const manifest = JSON.parse(readFileSync(join(backendRoot, 'data/workflow-library-manifest.json'), 'utf8'));
-  const workflowIds = ['GlmImagePipeline:text_to_image', 'NucleusMoEImagePipeline:text_to_image'];
+  const workflowIds = [
+    'GlmImagePipeline:text_to_image',
+    'NucleusMoEImagePipeline:text_to_image',
+    'ErnieImagePipeline:text_to_image',
+    'OvisImagePipeline:text_to_image',
+    'CogView4Pipeline:text_to_image',
+  ];
   const fixtures = workflowIds.map((id) =>
     JSON.parse(readFileSync(join(graphs, manifest.workflows.find((entry) => entry.id === id).graphPath), 'utf8')),
   );
