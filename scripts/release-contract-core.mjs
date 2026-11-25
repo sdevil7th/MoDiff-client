@@ -798,12 +798,17 @@ function archivedCanonicalAuthoring(backendRoot, workflowId, evidencePath) {
   const stat = lstatSync(evidencePath);
   assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size <= 65536);
   const descriptorSha256 = createHash('sha256').update(readFileSync(evidencePath)).digest('hex');
-  assert.equal(descriptorSha256, lock.descriptorSha256, 'Archived authoring requires the exact original capture.');
+  // A published recipe can retire a candidate authoring record shared by
+  // multiple historical runs. Every such descriptor still needs its own pin.
+  assert.ok(
+    descriptorSha256 === lock.descriptorSha256 || lock.additionalDescriptorHashes?.includes(descriptorSha256),
+    'Archived authoring requires the exact original capture.',
+  );
   return JSON.parse(
     readCanonicalEvidenceFile(
       backendRoot,
       {
-        path: `data/qualification/release/canonical-workflow-evidence/${descriptorSha256}/authoring-spec.original.json`,
+        path: `data/qualification/release/canonical-workflow-evidence/${lock.descriptorSha256}/authoring-spec.original.json`,
         bytes: lock.bytes,
         sha256: lock.sha256,
       },

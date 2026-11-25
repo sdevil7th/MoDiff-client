@@ -31,6 +31,7 @@
   },
   "AnimateLCMPipeline:text_to_video": {
     "descriptorSha256": "42c865106617e74f0b4f283316e1712eecfb61e8a78b1d02dfaff346ba718e20",
+    "additionalDescriptorHashes": ["d3810107239e90cc8d4f3605504145a2c30ae0e3d7295888b010e9a485138cbd"],
     "bytes": 5060,
     "sha256": "3af27719dbc699a711ea79d0f38fd05301c280468e0c3454231e191861ca5d24"
   },
@@ -116,6 +117,7 @@
   },
   "FluxDevPipeline:edit_image": {
     "descriptorSha256": "c07e1306c0441d732e2cc24b652e2d9223ba77dd5597030b39bba3c6b271ab0c",
+    "additionalDescriptorHashes": ["0b6c09d15d13873d08ee91693361df555037595da8134dc0ffc23b3d13b95dbd"],
     "bytes": 4716,
     "sha256": "663044cc78ebcc99bee6508d7bf8a14a17e574d1ae02f3869e84a1d73f9aaf5f"
   },
@@ -126,6 +128,7 @@
   },
   "FluxKontextInpaintPipeline:inpaint": {
     "descriptorSha256": "393c69f7733fdfd3632682204dbf421cfff4578d0b86c911f4c15110c566ac90",
+    "additionalDescriptorHashes": ["1263b5089a7521abd31b7132ebb984295449965d2d09ccb241b796e2094d66f0"],
     "bytes": 5115,
     "sha256": "06176da1ff55e23460158734e24e043be4ae5230faf99918ea80929da35dbdea"
   },
@@ -461,6 +464,7 @@
   },
   "StableDiffusionXLPAGPipeline:control_edit_image": {
     "descriptorSha256": "3dfdce82491a893be86fe27d00f8a1b9e5a6e3caddb5d3fa7a688b376106fded",
+    "additionalDescriptorHashes": ["ca8b4653b881e21712a8a48c7a59d51ae34877fc535ad61616163069261e43a8"],
     "bytes": 6184,
     "sha256": "531a76345f5cefc31fe98d33ab73f8cef73a6a7f6f76e48309bc26399b4bcb39"
   },

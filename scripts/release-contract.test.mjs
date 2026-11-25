@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 
+import retainedGalleryAuthoringArchives from '../config/retained-gallery-authoring-archives.v1.json' with { type: 'json' };
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { builtinDataQualificationTarget, validateBuiltinDataExecution } from './builtin-data-qualification.mjs';
 import {
@@ -62,6 +63,56 @@ test('a batch compiler preserves exact graph exports and releases its offline sc
   assert.equal(globalThis.fetch, prior);
   assert.deepEqual(await exportCanonicalWorkflowGraphs(clientRoot, [graphs[0]]), [expected[0]]);
 });
+
+test(
+  'retired authoring validates each pinned historical capture and rejects descriptor edits',
+  { skip: process.env.MODIFF_VERIFY_ARCHIVED_CAPTURES !== '1' },
+  async () => {
+    const clientRoot = resolve('.');
+    const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? '../MoDiff');
+    const read = (name) => JSON.parse(readFileSync(join(backendRoot, 'data', name), 'utf8'));
+    const { receipts } = read('qualification/release/canonical-workflow-run-receipts.v1.json');
+    const current = new Set(
+      read('template-authoring-specs.v1.json').specifications.map((row) => row.canonicalWorkflowId),
+    );
+    const altered = mkdtempSync(join(tmpdir(), 'modiff-archived-authoring-'));
+    const tampered = join(altered, 'evidence.json');
+    try {
+      await withCanonicalWorkflowGraphExporter(clientRoot, async () => {
+        for (const [workflowId, lock] of Object.entries(retainedGalleryAuthoringArchives)) {
+          if (!lock.additionalDescriptorHashes?.length) continue;
+          assert.equal(current.has(workflowId), false, workflowId);
+          for (const hash of [lock.descriptorSha256, ...lock.additionalDescriptorHashes]) {
+            const stored = receipts.find(
+              (receipt) => receipt.workflowId === workflowId && receipt.evidenceSha256 === hash,
+            );
+            assert.ok(stored, workflowId);
+            const { evidencePath, evidenceSha256, evidenceBytes, ...expected } = stored;
+            const path = join(backendRoot, evidencePath);
+            const bytes = readFileSync(path);
+            assert.equal(bytes.length, evidenceBytes);
+            assert.equal(createHash('sha256').update(bytes).digest('hex'), evidenceSha256);
+            const { receipt } = await readCanonicalWorkflowEvidence({
+              clientRoot,
+              backendRoot,
+              workflowId,
+              evidencePath: path,
+            });
+            assert.deepEqual(receipt, expected);
+            writeFileSync(tampered, Buffer.concat([bytes, Buffer.from('\n')]));
+            await assert.rejects(
+              readCanonicalWorkflowEvidence({ clientRoot, backendRoot, workflowId, evidencePath: tampered }),
+              /Archived authoring requires the exact original capture/u,
+            );
+          }
+        }
+      });
+    } finally {
+      rmSync(tampered, { force: true });
+      rmdirSync(altered);
+    }
+  },
+);
 
 test('verified standalone model execution remains distinct from a reviewed exact template recipe', () => {
   const workflow = { modelType: 'ExamplePipeline', exactModelRevision: `example/base@${'a'.repeat(40)}` };
