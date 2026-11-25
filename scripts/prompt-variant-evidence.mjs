@@ -212,6 +212,17 @@ const wanA14BRoute = {
   ],
 };
 
+const cogVideoRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.cogvideox-video-prompt-variant.v1',
+  workflowId: 'CogVideoXPipeline:text_to_video',
+  modelType: 'CogVideoXPipeline',
+  previousExpertFamily: null,
+  modelRepo: 'zai-org/CogVideoX-2b',
+  modelRevision: '1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01',
+  retainedVaeTiling: true,
+};
+
 const imagePromptRoute = {
   outputKind: 'image',
   displayType: 'image',
@@ -266,6 +277,11 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   graphEnvelope(output, true);
   const expected = structuredClone(original);
   const expectedOwners = owners(profile, expected);
+  if (profile.retainedVaeTiling) {
+    const tiling = expectedOwners.recipe.node.params.vae_tiling;
+    same(tiling, { value: false }, 'CogVideoX tiling default changed.');
+    tiling.value = true;
+  }
   if (profile.executionDevice === 'cpu:0') {
     const cpuChanges = [
       [expectedOwners.loader, 'auto_offload', true, false],
@@ -687,7 +703,7 @@ export function validatePromptVariantVideo(decoded, item, bound) {
   return validateNativeVideoDelivery(decoded, item, { width: frameSize, height: frameSize, fps, frames: 20 });
 }
 
-function validateNativeVideoDelivery(decoded, item, { width, height, fps, frames }) {
+export function validateNativeVideoDelivery(decoded, item, { width, height, fps, frames }) {
   const native = item.mediaMetadata;
   assert.equal(native.source, 'encoded-file');
   assert.equal(native.width, width);
@@ -729,8 +745,10 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         videoRoute,
         audioRoute,
         wanA14BRoute,
+        cogVideoRoute,
       ].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
+  const generatedVideo = profile === wanA14BRoute || profile === cogVideoRoute;
   const requiresOriginalRequest =
     imageRoute !== undefined ||
     profile === janusTextRoute ||
@@ -738,7 +756,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     profile === janusCaptionRoute ||
     profile === smolVlmCaptionRoute ||
     profile === audioRoute ||
-    profile === wanA14BRoute;
+    generatedVideo;
   const sampledCpuMemory = profile.executionDevice === 'cpu:0';
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
   assert.equal(target.outputPlan.minimumAssetCount, 1);
@@ -826,7 +844,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
           graphAcknowledgment: json(evidence.graphAcknowledgment),
         }
       : {}),
-    ...(imageRoute || profile === wanA14BRoute
+    ...(imageRoute || generatedVideo
       ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
       : {}),
     ...(profile === videoRoute || profile === audioRoute
@@ -932,10 +950,10 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     decodedOutput = validateJanusPromptVariantText(media.bytes, item, bound, runtime, inputBinding?.decodedImage);
   } else if (profile === smolVlmCaptionRoute) {
     decodedOutput = validateSmolVlmCaption(media.bytes, item, bound, runtime, inputBinding.decodedImage);
-  } else if (profile === videoRoute || profile === wanA14BRoute) {
+  } else if (profile === videoRoute || generatedVideo) {
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
     const decoded = await decodedMediaHash(media.file, 'video');
-    if (profile === wanA14BRoute) {
+    if (generatedVideo) {
       const { width, height, num_frames } = bound.generator.node.params;
       decodedOutput = validateNativeVideoDelivery(decoded, item, {
         width: width.value,

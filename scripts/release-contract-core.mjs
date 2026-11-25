@@ -870,6 +870,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.shap-e-prompt-variant.v1',
       'modiff.private.longcat-audio-prompt-variant.v1',
       'modiff.private.wan-a14b-video-prompt-variant.v1',
+      'modiff.private.cogvideox-video-prompt-variant.v1',
     ].includes(evidence.format) ||
     directImagePromptRoutes.some(({ format }) => format === evidence.format)
   ) {
@@ -882,6 +883,14 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       artifact,
       evidencePath,
     });
+  }
+  if (evidence.format === 'modiff.private.native-control-inpaint.v1') {
+    const { readControlInpaintEvidence } = await import('./control-inpaint-evidence.mjs');
+    return readControlInpaintEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
+  }
+  if (evidence.format === 'modiff.private.wan-first-last-frame-variant.v1') {
+    const { readWanFirstLastEvidence } = await import('./wan-first-last-evidence.mjs');
+    return readWanFirstLastEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
   }
   const captureFormat = {
     'DDPMPipeline:unconditional_image': 'modiff.private.ddpm-attention-variant.v1',

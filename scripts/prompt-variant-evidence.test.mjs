@@ -385,6 +385,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['CogVideoXPipeline:text_to_video', 'MODIFF_COGVIDEOX_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['LongCatAudioDiTPipeline:text_to_audio', 'MODIFF_LONGCAT_AUDIO_PROMPT_EVIDENCE', 'audio'],
   ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLTurboPipeline:text_to_image', 'MODIFF_SDXL_TURBO_PROMPT_EVIDENCE', 'image'],
@@ -436,7 +437,8 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
       const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
-      if (route?.retainedObservationSource || workflowId === 'Wan22Pipeline:text_to_video') {
+      const cogVideo = workflowId === 'CogVideoXPipeline:text_to_video';
+      if (route?.retainedObservationSource || workflowId === 'Wan22Pipeline:text_to_video' || cogVideo) {
         assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
         if (route?.typedOnly) {
           assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, route.typedOnly);
@@ -453,6 +455,11 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
           assert.equal(sampler.fieldAccounting, undefined);
           sampler.fields.num_inference_steps.value += 1;
           expectedFailure = /Retained adapter control differs: num_inference_steps/u;
+        } else if (cogVideo) {
+          const { fields } = inputs.nodes.find((node) => node.action === 'DiffusersExecutionRecipe');
+          assert.equal(fields.vae_tiling.value, true);
+          fields.vae_tiling.value = false;
+          expectedFailure = /Actual consumed fields differ for DiffusersExecutionRecipe/u;
         } else {
           assert.equal(sampler.fields.secondary_guidance_scale.value, 3.5);
           sampler.fields.secondary_guidance_scale.value = 0;
