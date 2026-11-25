@@ -597,5 +597,58 @@
       "width": 960,
       "height": 710
     }
+  },
+  "cogvideox_mossy_mountain_stream": {
+    "associationSha256": "3f977ded1b8f4969d28fe1eaf21418c75d37b62dcfcc19c3b4c842433f25956e",
+    "backendSourceFingerprint": "sha256:backend-source-v1:70bc1ff7fe61307be52cfda86b38c6400f2156cbc8240a489b62ff19a93d58dc",
+    "backendContractFingerprint": "sha256:backend-contract-v1:40a4eb8d6275c83725f57c4d3499b8d12c00f8cf6caffc2d07006e74d24ab820",
+    "templateRevisionHash": "c77c843d9555524c9f9ce04c53af16c2ee6570d7ff9b72d90fba98fd1fc3d9cc",
+    "capturedAt": "2026-11-24T04:17:26.141Z",
+    "outputExtension": "mp4",
+    "outputSize": {
+      "width": 720,
+      "height": 480
+    }
+  },
+  "cogvideox_red_tram_model_railway": {
+    "associationSha256": "aa0c4b4cf84ee5f4b637092acd8a8e60db8360d4076a146d6388c97cb259a673",
+    "backendSourceFingerprint": "sha256:backend-source-v1:43f2ed10792fc6167b963166287cf7d5a0429afa26029e6455b0418e2123be86",
+    "backendContractFingerprint": "sha256:backend-contract-v1:33b2d430a6b544125220ee6627441eb2121c00e6cfb3aa7c2d54b08b7b2f1f09",
+    "templateRevisionHash": "d74131d9a94ae6422f0824a9948e9ee157fb765058f8d45e515fda25a93c25c6",
+    "capturedAt": "2026-11-24T02:42:22.051Z",
+    "outputExtension": "mp4",
+    "outputSize": {
+      "width": 720,
+      "height": 480
+    },
+    "inputSize": {
+      "width": 720,
+      "height": 480
+    },
+    "beforeExtension": "mp4"
+  },
+  "wan_a14b_cloudbreak_over_the_ridges": {
+    "associationSha256": "2fdbcaf34bd1e2a3d31edf4196c3cf67c590053f1ba99eb75a2e001bd73d6384",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:40a4eb8d6275c83725f57c4d3499b8d12c00f8cf6caffc2d07006e74d24ab820",
+    "templateRevisionHash": "2fe28c05a3adcb92031d2e5a369cf6be41990463644f08e5440bb998b32bc1fd",
+    "capturedAt": "2026-11-24T23:06:15.432Z",
+    "outputExtension": "mp4",
+    "outputSize": {
+      "width": 768,
+      "height": 512
+    }
+  },
+  "wan_flf_blue_hour_at_the_tram_shelter": {
+    "associationSha256": "386e6871df161c57a2ea8c632cb3d58873a0a450e8eac14d3fa27a2974aae9ab",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:288f2abd0b142ec1f2081bf6d3dbf71ba988833662040e7e81688c4524cf0516",
+    "templateRevisionHash": "719322718cef9254b24004759f2eac08a4302ea27c86cbe538782207d29389f6",
+    "capturedAt": "2026-11-24T21:03:04.380Z",
+    "outputExtension": "mp4",
+    "outputSize": {
+      "width": 768,
+      "height": 512
+    }
   }
 }

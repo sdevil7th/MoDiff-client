@@ -262,6 +262,10 @@ export type StudioTemplateId =
   | 'chroma_terracotta_and_blue'
   | 'longcat_last_tram_at_dusk'
   | 'qwen_layered_sunset_and_peaks'
+  | 'wan_a14b_cloudbreak_over_the_ridges'
+  | 'wan_flf_blue_hour_at_the_tram_shelter'
+  | 'cogvideox_mossy_mountain_stream'
+  | 'cogvideox_red_tram_model_railway'
   | 'lumina2_larch_on_glacial_pond'
   | 'hunyuan_dit_coastal_lighthouse'
   | 'omnigen_tulips_after_rain'
@@ -1673,6 +1677,8 @@ export type StudioTemplateExample = {
   expectedOutput?: TemplateExpectedOutput;
   /** Optional derived gallery-media override, such as a review contact sheet. */
   galleryExpectedOutput?: TemplateExpectedOutput;
+  /** The specific native video accepted for a retained technical preview. */
+  retainedVideoPreview?: import('./retainedVideoPreview').RetainedVideoPreview;
   modelRevision: string;
   runtimeEstimate: string;
   outputPath?: string;

@@ -70,6 +70,7 @@ function assertRetainedBatchEvidence({
   assert.equal(inputHash, recipe.inputSha256);
   assert.equal(association.approvedFiles.approvedMaskPath?.sha256, recipe.maskSha256);
   assert.equal(association.approvedFiles.approvedGuidePath?.sha256, recipe.guideSha256);
+  assert.equal(association.approvedFiles.approvedClosingFramePath?.sha256, recipe.lastFrameSha256);
   assert.equal(
     association.output.maskEncodedSha256,
     recipe.maskSha256 ? 'sha256:bytes:' + recipe.maskSha256 : undefined,
@@ -110,6 +111,7 @@ function assertRetainedBatchEvidence({
   assert.equal(nativeReceipt.inputBinding?.sha256, recipe.inputSha256, label);
   assert.equal(nativeReceipt.maskBinding?.sha256, recipe.maskSha256, label);
   assert.equal(nativeReceipt.guideBinding?.sha256, recipe.guideSha256, label);
+  assert.equal(nativeReceipt.lastFrameBinding?.sha256, recipe.lastFrameSha256, label);
   if (recipe.workflowId === 'QwenImageLayeredPipeline:layer_decomposition') {
     const { orderedLayerItems } = association.output;
     same(nativeReceipt.decodedOutput, { kind: 'image_collection', items: orderedLayerItems }, label);
@@ -131,6 +133,13 @@ function assertRetainedBatchEvidence({
       { kind: 'audio', hash: decodedMediaHash, durationSeconds, sampleRate, channels },
       label,
     );
+    assert.equal(outputEncodedSha256, nativeReceipt.outputHash, label);
+  }
+  if (association.output.mediaType === 'video') {
+    const { decodedMediaHash, outputEncodedSha256, video } = association.output;
+    const { hasAudio, ...videoMetadata } = video;
+    assert.equal(hasAudio, false, label);
+    same(nativeReceipt.decodedOutput, { kind: 'video', hash: decodedMediaHash, ...videoMetadata }, label);
     assert.equal(outputEncodedSha256, nativeReceipt.outputHash, label);
   }
 }

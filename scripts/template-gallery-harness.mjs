@@ -22,6 +22,7 @@ import {
 } from './retained-gallery-provenance.mjs';
 import { validateTemplateAssetRelease, validateTemplateAssetSource } from './template-asset-source-contract.ts';
 import { sourceVideoTimingMatches } from '../src/studio/sourceVideoTiming.ts';
+import { retainedVideoPreviewMatches } from '../src/studio/retainedVideoPreview.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_GALLERY_DIR = join(ROOT, 'public', 'template-gallery');
@@ -1340,6 +1341,7 @@ export async function loadTemplateRuntime(root = ROOT, { includePlanning = false
       },
       findManifestEntry: exactnessModule.findManifestEntry,
       findHistoricalTemplateRecipe: exactnessModule.findHistoricalTemplateRecipe,
+      isRetainedVideoPreview: exactnessModule.isRetainedVideoPreview,
     };
   } finally {
     await server.close();
@@ -1815,7 +1817,7 @@ export function beforePreviewContractErrors(decoded, contract = templateGalleryC
   return errors;
 }
 
-export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image') {
+export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image', retainedVideoPreview) {
   const errors = [];
   for (const field of ['width', 'height', 'frames', 'sampleRate']) {
     const measured =
@@ -1839,6 +1841,10 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
     if (Number(decoded.lumaStdDev ?? 0) < 0.75) errors.push('decoded media has near-zero visual variance');
   }
   if (mediaType === 'video') {
+    const retainedClip = retainedVideoPreviewMatches(retainedVideoPreview, {
+      ...decoded,
+      mediaHash: decodedMediaHashMatches(decoded, retainedVideoPreview?.mediaHash) ? retainedVideoPreview.mediaHash : decoded.hash,
+    });
     const requestedMotionProfile = expected.motionReviewProfile ?? DEFAULT_MOTION_REVIEW_PROFILE;
     const hasKnownMotionProfile = Object.hasOwn(MOTION_REVIEW_PROFILES, requestedMotionProfile);
     if (!hasKnownMotionProfile) {
@@ -1874,18 +1880,20 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
     }
     if (
       Number(decoded.durationSeconds ?? 0) < MINIMUM_TEMPLATE_VIDEO_SECONDS &&
+      !retainedClip &&
       !sourceVideoTimingMatches(expected.sourceTiming, decoded)
     ) {
       errors.push(`video duration must be at least ${MINIMUM_TEMPLATE_VIDEO_SECONDS} seconds`);
     }
     const shortEdge = Math.min(Number(decoded.width ?? 0), Number(decoded.height ?? 0));
     const longEdge = Math.max(Number(decoded.width ?? 0), Number(decoded.height ?? 0));
-    if (shortEdge < MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE || longEdge < MINIMUM_TEMPLATE_VIDEO_LONG_EDGE) {
+    if (!retainedClip && (shortEdge < MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE || longEdge < MINIMUM_TEMPLATE_VIDEO_LONG_EDGE)) {
       errors.push(
         `video delivery resolution must be at least ${MINIMUM_TEMPLATE_VIDEO_LONG_EDGE}x${MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE}`,
       );
     }
     if (Number(decoded.uniqueFrameRatio ?? 0) < 0.1) errors.push('video has fewer than 10% unique decoded frames');
+    if (retainedClip) errors.push(...beforePreviewContractErrors(decoded));
     if (Number(decoded.isolatedLumaFlashRatio ?? 0) > 0) {
       errors.push('video contains one or more isolated full-frame luminance flashes');
     }
@@ -2646,7 +2654,10 @@ export async function verifyGallery(
         entry.mediaType === 'video'
           ? runtime.findManifestEntry(template, { ...manifest, examples: [entry] }, { requireCardPreview: false })
           : undefined;
-      if (currentVideoEntry && (!entry.cardPreviewPath || !entry.cardPreviewSha256)) {
+      const retainedPreview = runtime.isRetainedVideoPreview?.(template, currentVideoEntry)
+        ? template.example.retainedVideoPreview
+        : undefined;
+      if (currentVideoEntry && !retainedPreview && (!entry.cardPreviewPath || !entry.cardPreviewSha256)) {
         errors.push(`${entry.templateId} current video entry requires cardPreviewPath and cardPreviewSha256`);
       }
       const currentPromptSettingsHash = runtime.promptSettingsHash(template);
@@ -2663,7 +2674,7 @@ export async function verifyGallery(
       }
       errors.push(
         ...(decoded
-          ? technicalMediaErrors(decoded, galleryExpectedOutput(template), entry.mediaType ?? 'image')
+          ? technicalMediaErrors(decoded, galleryExpectedOutput(template), entry.mediaType ?? 'image', retainedPreview)
           : []
         ).map((error) => `${entry.templateId} technical media gate: ${error}`),
       );

@@ -40,6 +40,36 @@ async function snapshot(page: Page) {
   }>;
 }
 
+test('retained first and last frame recipe opens with two independent image inputs', async ({ page }) => {
+  let requests = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/graph') requests++;
+  });
+  await page.evaluate(async () => {
+    await window.__MODIFF_E2E__!.applyTemplate('wan_flf_blue_hour_at_the_tram_shelter', {
+      referenceImages: ['@data/images/tram-shelter-first.png', '@data/images/tram-shelter-last.png'],
+      resourceMode: 'expert',
+    });
+  });
+  await expect
+    .poll(async () => {
+      const api = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
+      return Object.values(api?.nodes ?? {}).some(({ action }) => action === 'ImageEncode');
+    }, { timeout: 60_000 })
+    .toBe(true);
+  const api = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
+  const encoder = Object.values(api.nodes).find(({ action }) => action === 'ImageEncode')!;
+  const first = encoder.params.image.sourceId!;
+  const last = encoder.params.last_image.sourceId!;
+  expect(first).not.toEqual(last);
+  expect(api.nodes[first].params.file.value).toEqual(['@data/images/tram-shelter-first.png']);
+  expect(api.nodes[last].params.file.value).toEqual('@data/images/tram-shelter-last.png');
+  const denoise = Object.values(api.nodes).find(({ action }) => action === 'Denoise')!;
+  expect(denoise.params.guidance_scale.value).toBe(5.5);
+  expect(denoise.params.num_frames.value).toBe(81);
+  expect(requests).toBe(0);
+});
+
 async function openExamples(page: Page) {
   // A lazy library can be selected and open before its buttons mount. Its
   // temporary absence must not be mistaken for a collapsed panel and toggled shut.

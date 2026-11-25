@@ -4022,4 +4022,411 @@ export const APPROVED_RETAINED_BATCH: RetainedGalleryRecipe[] = [
     "runtimeReuseKey": "sha256:canonical-graph-v1:25bb2ac3d10b3d0f539204d2c4d3181764f192882a9c8442efb5ce54b7d8de43"
   }
 },
+{
+  "workflowId": "Wan22Pipeline:text_to_video",
+  "sourceTaskTemplateId": "task-template:wan-22-a14b:text-to-video:v1",
+  "retainedGraphHash": "sha256:canonical-graph-v1:6921f430025f6a760f54a790517b949fc5d03c880f3c9e61eac12ae547b23cf2",
+  "originalReceiptSha256": "05008ca915711e27396ac9216f34931f91c5444efa2751e9fb4a26c2761a89c2",
+  "reviewedTemplateSha256": "2fe28c05a3adcb92031d2e5a369cf6be41990463644f08e5440bb998b32bc1fd",
+  "reviewedCatalogLock": {
+    "templateLockHash": "tpl_6e4c3186",
+    "galleryTemplateLockHash": "tpl_80961b58",
+    "promptSettingsHash": "ps_ca81bdb8"
+  },
+  "promptSha256": "63b8db49c89bbe4efec541259382b051bce2632aa78fb16a8ef47a70bb130eb3",
+  "template": {
+    "id": "wan_a14b_cloudbreak_over_the_ridges",
+    "label": "Wan 2.2 T2V A14B — Text to video: Cloudbreak Over the Ridges",
+    "mode": "text_to_video",
+    "modelType": "Wan22Pipeline",
+    "intentGroup": "video",
+    "thumbnailVariant": "video",
+    "category": "video_generation",
+    "outputKinds": [
+      "video"
+    ],
+    "readinessPolicy": "runnable",
+    "modelArtifact": {
+      "source": "hub",
+      "value": "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+      "revision": "5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+    },
+    "description": "Reproduce the reviewed Cloudbreak Over the Ridges example with the saved prompt, settings and model revision.",
+    "prompt": "One continuous cinematic aerial shot over a real-looking highland valley just after sunrise. Dark pine-covered ridges stack into the distance above a river of low cloud. The camera glides slowly forward and slightly to the right at a constant height, with gentle parallax between the close ridge and far mountains. Starting in cool blue shadow, a narrow break in the clouds opens near the top of frame. A single warm shaft of sunlight gradually sweeps onto the middle ridge as the fog drifts left to right. Finish with the ridge crest lit, the distant summits still blue, and the same slow forward movement. Stable horizon and exposure, layered natural haze, uneven tree silhouettes, finely textured clouds, realistic scale. Landscape documentary cinematography, restrained color, no cuts.",
+    "negativePrompt": "",
+    "example": {
+      "mediaType": "video",
+      "status": "unverified",
+      "modelRevision": "5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "lockedSeed": 42,
+      "lockedSettings": {
+        "width": 768,
+        "height": 512,
+        "steps": 30,
+        "guidanceScale": 3,
+        "strength": 0.8,
+        "outputType": "pil",
+        "maxSequenceLength": 512,
+        "pagScale": 3,
+        "pagAdaptiveScale": 0,
+        "dtype": "bfloat16",
+        "resourceMode": "expert",
+        "quantizationMode": "none",
+        "autoOffload": true,
+        "offloadMode": "model_cpu",
+        "numFrames": 81,
+        "fps": 24,
+        "guidanceScale2": 0,
+        "shift": 3
+      },
+      "retainedVideoPreview": {
+        "frames": 81,
+        "fps": 24,
+        "width": 768,
+        "height": 512,
+        "mediaHash": "sha256:decoded-video-framemd5:d99f2ce3a2ec3fc41fd45765e04c93ca9b8c0263d5972a086693a782fa7a3d54"
+      },
+      "expectedOutput": {
+        "width": 768,
+        "height": 512,
+        "frames": 81,
+        "durationSeconds": 3.375
+      },
+      "runtimeEstimate": "337.42 seconds in the saved run"
+    },
+    "requiredBackendCapabilities": [
+      "modules.DiffusersRuntime.PipelineQuantizationConfigV2",
+      "modules.DiffusersRuntime.DiffusersExecutionRecipe",
+      "modules.Video.Export",
+      "modules.DiffusersVideo.Generate",
+      "modules.DiffusersVideo.LoadPipeline"
+    ],
+    "mediaSlots": [
+      {
+        "id": "result",
+        "label": "Generated image",
+        "kind": "video",
+        "role": "output",
+        "placeholder": "Result pending"
+      }
+    ],
+    "recipeSummary": "Reproduce the reviewed Cloudbreak Over the Ridges example with the saved prompt, settings and model revision.",
+    "runtimeReuseKey": "sha256:canonical-graph-v1:6921f430025f6a760f54a790517b949fc5d03c880f3c9e61eac12ae547b23cf2"
+  }
+},
+{
+  "workflowId": "CogVideoXPipeline:text_to_video",
+  "sourceTaskTemplateId": "task-template:cogvideox-2b:text-to-video:v1",
+  "retainedGraphHash": "sha256:canonical-graph-v1:798aaa4c7c2501de15aca025081efa81d009df7977fd0fe6fb71c17f5895c105",
+  "originalReceiptSha256": "3aab2d19bca49f839f8316f19ea75afbe4b0e401ff5a330c16f35484f43f611a",
+  "reviewedTemplateSha256": "c77c843d9555524c9f9ce04c53af16c2ee6570d7ff9b72d90fba98fd1fc3d9cc",
+  "reviewedCatalogLock": {
+    "templateLockHash": "tpl_12ff3dab",
+    "galleryTemplateLockHash": "tpl_089d3aae",
+    "promptSettingsHash": "ps_f986f95b"
+  },
+  "promptSha256": "08823b5d6cd6d0166e33c94e61aaccab515dece0668fcc9779c6cfb633462821",
+  "template": {
+    "id": "cogvideox_mossy_mountain_stream",
+    "label": "CogVideoX-2B — Text to video: Mossy Mountain Stream",
+    "mode": "text_to_video",
+    "modelType": "CogVideoXPipeline",
+    "intentGroup": "video",
+    "thumbnailVariant": "video",
+    "category": "video_generation",
+    "outputKinds": [
+      "video"
+    ],
+    "readinessPolicy": "runnable",
+    "modelArtifact": {
+      "source": "hub",
+      "value": "zai-org/CogVideoX-2b",
+      "revision": "1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+    },
+    "description": "Reproduce the reviewed Mossy Mountain Stream example with the saved prompt, settings and model revision.",
+    "prompt": "A continuous low-angle tracking shot along a mossy woodland stream as clear water rushes between two smooth gray stones. The camera moves steadily right, keeping the stones in frame. Green ferns and dappled overcast light. Natural water movement, no cuts.",
+    "negativePrompt": "",
+    "example": {
+      "mediaType": "video",
+      "status": "unverified",
+      "modelRevision": "1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "lockedSeed": 42,
+      "lockedSettings": {
+        "width": 720,
+        "height": 480,
+        "steps": 25,
+        "guidanceScale": 6,
+        "strength": 0.8,
+        "outputType": "pil",
+        "maxSequenceLength": 226,
+        "pagScale": 3,
+        "pagAdaptiveScale": 0,
+        "dtype": "float16",
+        "resourceMode": "expert",
+        "quantizationMode": "none",
+        "autoOffload": true,
+        "offloadMode": "model_cpu",
+        "numFrames": 25,
+        "fps": 8,
+        "guidanceScale2": 0,
+        "shift": 0
+      },
+      "retainedVideoPreview": {
+        "frames": 25,
+        "fps": 8,
+        "width": 720,
+        "height": 480,
+        "mediaHash": "sha256:decoded-video-framemd5:2f769ade82cbcd96481ecdc245befa8059b0f913dc215763efce775753322111"
+      },
+      "expectedOutput": {
+        "width": 720,
+        "height": 480,
+        "frames": 25,
+        "durationSeconds": 3.125
+      },
+      "runtimeEstimate": "184.98 seconds in the saved run"
+    },
+    "requiredBackendCapabilities": [
+      "modules.DiffusersRuntime.PipelineQuantizationConfigV2",
+      "modules.DiffusersRuntime.DiffusersExecutionRecipe",
+      "modules.Video.Export",
+      "modules.DiffusersVideo.Generate",
+      "modules.DiffusersVideo.LoadPipeline"
+    ],
+    "mediaSlots": [
+      {
+        "id": "result",
+        "label": "Generated image",
+        "kind": "video",
+        "role": "output",
+        "placeholder": "Result pending"
+      }
+    ],
+    "recipeSummary": "Reproduce the reviewed Mossy Mountain Stream example with the saved prompt, settings and model revision.",
+    "runtimeReuseKey": "sha256:canonical-graph-v1:798aaa4c7c2501de15aca025081efa81d009df7977fd0fe6fb71c17f5895c105"
+  }
+},
+{
+  "workflowId": "WanImage2VideoModularPipeline:image_to_video",
+  "sourceTaskTemplateId": "task-template:wan-flf:image-to-video:v1",
+  "retainedGraphHash": "sha256:canonical-graph-v1:f3e6600531ca93b1b326cbfa5e3b0b853b4015ccb5c163302c003b81bc4897a6",
+  "originalReceiptSha256": "63d626c3c97cd12016b58a9fba71739eeea0459ad300383d5b4f43aa0775740a",
+  "reviewedTemplateSha256": "719322718cef9254b24004759f2eac08a4302ea27c86cbe538782207d29389f6",
+  "reviewedCatalogLock": {
+    "templateLockHash": "tpl_b13aec66",
+    "galleryTemplateLockHash": "tpl_de5816ae",
+    "promptSettingsHash": "ps_b86813d0"
+  },
+  "promptSha256": "d9311581aed6eb088806830eb7dcf320b7d8650e06232f9794d9944acbb0fa1d",
+  "inputSha256": "6d2c561cf33919ae42e773d95a0232799da3f2b92a23a94dad80902cfb73527a",
+  "inputLocatorSha256": "160363900dea249d2053d49da2b8bb3c801a34ab264d49f7b16098c5a75938a5",
+  "lastFrameSha256": "191b023efb43a42288799877db722b9a2608d2970740246322ef38cc7c68c590",
+  "template": {
+    "id": "wan_flf_blue_hour_at_the_tram_shelter",
+    "label": "Wan First/Last Frame — Image to video: Blue Hour at the Tram Shelter",
+    "mode": "image_to_video",
+    "modelType": "WanImage2VideoModularPipeline",
+    "intentGroup": "video",
+    "thumbnailVariant": "video",
+    "category": "video_generation",
+    "inputBindings": [
+      {
+        "id": "ordered-frames",
+        "label": "First and last frames",
+        "mediaType": "image",
+        "field": "referenceImages",
+        "origin": "user",
+        "requiredAt": "workflow_start",
+        "count": 2
+      }
+    ],
+    "outputKinds": [
+      "video"
+    ],
+    "readinessPolicy": "requires_input",
+    "modelArtifact": {
+      "source": "hub",
+      "value": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers",
+      "revision": "17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+    },
+    "description": "Reproduce the reviewed Blue Hour at the Tram Shelter example with the saved prompt, settings and model revision.",
+    "prompt": "At blue hour, a seated traveler holds a single red umbrella beneath an amber-lit tram shelter. The camera makes a small smooth forward dolly toward the bench, keeping the umbrella and whole traveler in view. The rails recede to the left and the shelter posts remain upright. Fine drizzle passes through the light, and water glistens on the platform. The traveler keeps a relaxed seated pose and the red umbrella trembles slightly. The shot settles gently on a closer view of the same bench and umbrella.",
+    "negativePrompt": "letterbox bars, black borders, camera shake, motion blur, jump cuts, abrupt zoom, viewpoint changes, deforming shelter, distorted umbrella, warped hands, extra limbs",
+    "example": {
+      "mediaType": "video",
+      "status": "unverified",
+      "modelRevision": "17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "lockedSeed": 42,
+      "lockedSettings": {
+        "width": 768,
+        "height": 512,
+        "steps": 30,
+        "guidanceScale": 5.5,
+        "strength": 0.8,
+        "outputType": "pil",
+        "maxSequenceLength": 512,
+        "pagScale": 0,
+        "pagAdaptiveScale": 0,
+        "dtype": "bfloat16",
+        "resourceMode": "expert",
+        "quantizationMode": "none",
+        "autoOffload": true,
+        "offloadMode": "model_cpu",
+        "numFrames": 81,
+        "fps": 24,
+        "guidanceScale2": 0,
+        "shift": 3
+      },
+      "retainedVideoPreview": {
+        "frames": 81,
+        "fps": 24,
+        "width": 768,
+        "height": 512,
+        "mediaHash": "sha256:decoded-video-framemd5:17db687780a14782084a7d32b484d87c00074ebe1043de65fd6ce046b4f23918"
+      },
+      "expectedOutput": {
+        "width": 768,
+        "height": 512,
+        "frames": 81,
+        "durationSeconds": 3.375
+      },
+      "runtimeEstimate": "299.82 seconds in the saved run"
+    },
+    "requiredBackendCapabilities": [
+      "modules.ModularDiffusers.DecodeLatents",
+      "modules.ModularDiffusers.Denoise",
+      "modules.ModularDiffusers.ImageEmbeddings",
+      "modules.ModularDiffusers.ImageEncode",
+      "modules.Image.Load",
+      "modules.ModularDiffusers.ModelsLoader",
+      "modules.ModularDiffusers.EncodePrompt",
+      "modules.Video.Export"
+    ],
+    "mediaSlots": [
+      {
+        "id": "result",
+        "label": "Generated image",
+        "kind": "video",
+        "role": "output",
+        "placeholder": "Result pending"
+      }
+    ],
+    "recipeSummary": "Reproduce the reviewed Blue Hour at the Tram Shelter example with the saved prompt, settings and model revision.",
+    "runtimeReuseKey": "sha256:canonical-graph-v1:f3e6600531ca93b1b326cbfa5e3b0b853b4015ccb5c163302c003b81bc4897a6"
+  }
+},
+{
+  "workflowId": "CogVideoXVideoToVideoPipeline:video_to_video",
+  "sourceTaskTemplateId": "task-template:cogvideox-2b-video-to-video:video-to-video:v1",
+  "retainedGraphHash": "sha256:canonical-graph-v1:9536733d2657f50f2530e066706a283d282c5dbd7989f70e563942b748489f2d",
+  "originalReceiptSha256": "c4396b6f2b6b01fcdbcb5d7f370b6284be78d1979e4665a243c1e08193776e08",
+  "reviewedTemplateSha256": "d74131d9a94ae6422f0824a9948e9ee157fb765058f8d45e515fda25a93c25c6",
+  "reviewedCatalogLock": {
+    "templateLockHash": "tpl_305c9ad7",
+    "galleryTemplateLockHash": "tpl_aca915d8",
+    "promptSettingsHash": "ps_44a08b73"
+  },
+  "promptSha256": "d6dffbc00ab43ae375ebadab9cb8e7c7da98805ae41099301b26774022d22597",
+  "inputSha256": "0737fe1e6b127fd4f5f66043b8911e5c7e380e60d50eab7e6bc9ba62e830b9dd",
+  "inputLocatorSha256": "24cb984db9137c26395f2255fba7bf647016637744b7e301d4e8fe7d8d63bff3",
+  "template": {
+    "id": "cogvideox_red_tram_model_railway",
+    "label": "CogVideoX-2B Video-to-Video — Video to video: Red Tram on the Model Railway",
+    "mode": "video_to_video",
+    "modelType": "CogVideoXVideoToVideoPipeline",
+    "intentGroup": "video",
+    "thumbnailVariant": "video",
+    "category": "video_generation",
+    "inputBindings": [
+      {
+        "id": "source-video",
+        "label": "Source video",
+        "mediaType": "video",
+        "field": "sourceVideo",
+        "origin": "user",
+        "requiredAt": "workflow_start",
+        "count": 1
+      }
+    ],
+    "outputKinds": [
+      "video"
+    ],
+    "readinessPolicy": "requires_input",
+    "modelArtifact": {
+      "source": "hub",
+      "value": "zai-org/CogVideoX-2b",
+      "revision": "1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+    },
+    "description": "Reproduce the reviewed Red Tram on the Model Railway example with the saved prompt, settings and model revision.",
+    "prompt": "Side tracking shot of a red hand-painted porcelain tram traveling left to right along the same route as the source clip. Keep one tram, its silhouette, window placement, framing, direction, and even speed. Give the tram a fine glazed ceramic finish with tiny soft reflections. Miniature snow-covered houses and an ivory station platform pass steadily behind it. Long soft late-afternoon light comes from screen left. Consistent color and lighting throughout a single continuous take.",
+    "negativePrompt": "",
+    "example": {
+      "mediaType": "video",
+      "status": "unverified",
+      "modelRevision": "1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "lockedSeed": 42,
+      "lockedSettings": {
+        "width": 720,
+        "height": 480,
+        "steps": 25,
+        "guidanceScale": 6,
+        "strength": 0.8,
+        "outputType": "pil",
+        "maxSequenceLength": 226,
+        "pagScale": 3,
+        "pagAdaptiveScale": 0,
+        "dtype": "float16",
+        "resourceMode": "expert",
+        "quantizationMode": "none",
+        "autoOffload": true,
+        "offloadMode": "model_cpu",
+        "numFrames": 25,
+        "fps": 8,
+        "guidanceScale2": 0,
+        "shift": 0
+      },
+      "retainedVideoPreview": {
+        "frames": 25,
+        "fps": 8,
+        "width": 720,
+        "height": 480,
+        "mediaHash": "sha256:decoded-video-framemd5:a7b338af1009ea404ed9dfac3c907b8e04e25d78fb69c1ceb602ef0ab646b7cd"
+      },
+      "expectedOutput": {
+        "width": 720,
+        "height": 480,
+        "frames": 25,
+        "durationSeconds": 3.125
+      },
+      "runtimeEstimate": "388.11 seconds in the saved run"
+    },
+    "requiredBackendCapabilities": [
+      "modules.DiffusersRuntime.PipelineQuantizationConfigV2",
+      "modules.DiffusersRuntime.DiffusersExecutionRecipe",
+      "modules.Video.Load",
+      "modules.VideoConditioning.Normalize",
+      "modules.Video.Export",
+      "modules.DiffusersVideo.Generate",
+      "modules.DiffusersVideo.LoadPipeline"
+    ],
+    "mediaSlots": [
+      {
+        "id": "before",
+        "label": "Source video",
+        "kind": "comparison_before",
+        "role": "before",
+        "placeholder": "Source pending"
+      },
+      {
+        "id": "after",
+        "label": "Generated video",
+        "kind": "comparison_after",
+        "role": "after",
+        "placeholder": "Preview pending"
+      }
+    ],
+    "recipeSummary": "Reproduce the reviewed Red Tram on the Model Railway example with the saved prompt, settings and model revision.",
+    "runtimeReuseKey": "sha256:canonical-graph-v1:9536733d2657f50f2530e066706a283d282c5dbd7989f70e563942b748489f2d"
+  }
+},
 ];

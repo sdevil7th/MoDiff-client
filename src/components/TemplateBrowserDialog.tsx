@@ -40,6 +40,7 @@ import {
   findHistoricalTemplateManifestEntry,
   getTemplateCardMedia,
   getTemplateLockedSettings,
+  isRetainedVideoPreview,
   parseTemplateGalleryManifest,
   templateManifestPath,
   type TemplateGalleryManifest,
@@ -245,8 +246,7 @@ function templateHasPublishedMedia(template: StudioTemplate, manifest: TemplateG
   if (getTemplateShowcase(template.id)) return true;
   if (manifest) {
     const entry = findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
-    if (!entry) return false;
-    return entry.mediaType !== 'video' || Boolean(entry.cardPreviewPath && entry.cardPreviewSha256);
+    return Boolean(entry);
   }
   const status = template.verificationStatus ?? template.example?.status;
   if (template.example?.mediaType === 'video' || template.outputKinds?.includes('video')) return false;
@@ -1308,13 +1308,17 @@ function TemplateRecipeDetail({
   // exactness gate for the result, but resolve the published source separately
   // so a template detail never drops its valid included example.
   const sourceEntry = detailManifestEntry ?? templatePublishedSourceEntry(template, manifest);
+  const retainedPreview = isRetainedVideoPreview(template, detailManifestEntry);
+  const manifestPoster = retainedPreview
+    ? detailManifestEntry?.posterPath
+    : detailManifestEntry?.thumbnailPath ?? detailManifestEntry?.posterPath;
   const bundledSourcePreview = template.inputBindings
     ?.filter((binding) => binding.origin === 'template')
     .flatMap((binding) => binding.defaultAssets)
     .find((asset) => asset.previewPath)?.previewPath;
   const thumbnailPath =
     showcase?.mediaPath ??
-    templateManifestPath(detailManifestEntry?.thumbnailPath ?? detailManifestEntry?.posterPath) ??
+    templateManifestPath(manifestPoster) ??
     templateExampleThumbnailPath(template);
   const beforePath = showcase ? undefined : templateManifestPath(sourceEntry?.beforePath ?? bundledSourcePreview);
   const afterPath =

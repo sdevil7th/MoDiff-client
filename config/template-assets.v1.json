@@ -231,6 +231,24 @@
       "height": 512
     },
     {
+      "path": "template-gallery/cogvideox_mossy_mountain_stream.mp4",
+      "size": 579374,
+      "sha256": "sha256:bytes:3b5e40ac2bf76236d1f901a7a2522addd7c4a1b2701bd89a33c1506b1523bc38",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/cogvideox_red_tram_model_railway.mp4",
+      "size": 105659,
+      "sha256": "sha256:bytes:483437ccec5394217346dcd88e3bc42a003cba69a6056b1153de4cb5868d7825",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/copper_hour_dunes.webp",
       "size": 135298,
       "sha256": "sha256:bytes:45eabeca35fe5982441c80158faa69bca6da1d7f2efb3002a81a8b5c03ae4ef2",
@@ -1514,6 +1532,15 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/cogvideox_red_tram_model_railway.before.mp4",
+      "size": 78771,
+      "sha256": "sha256:bytes:0737fe1e6b127fd4f5f66043b8911e5c7e380e60d50eab7e6bc9ba62e830b9dd",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/inputs/flux2_klein_edit.before.png",
       "size": 266188,
       "sha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
@@ -2189,6 +2216,28 @@
       "height": 48
     },
     {
+      "path": "template-gallery/inputs/wan_flf_blue_hour_at_the_tram_shelter.first.png",
+      "size": 695609,
+      "sha256": "sha256:bytes:6d2c561cf33919ae42e773d95a0232799da3f2b92a23a94dad80902cfb73527a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/wan_flf_blue_hour_at_the_tram_shelter.last.png",
+      "size": 659773,
+      "sha256": "sha256:bytes:191b023efb43a42288799877db722b9a2608d2970740246322ef38cc7c68c590",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 512
+    },
+    {
       "path": "template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
       "size": 289576,
       "sha256": "sha256:bytes:748b164fd91bc2eed97f7c1d1125a04496a056f29cc016d7cc0da3734c2303b7",
@@ -2669,8 +2718,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 352519,
-      "sha256": "sha256:bytes:828e7ee86bee6fae816fae7a00da1a7da8544b3429d44769fa888fd8732614c9",
+      "size": 362791,
+      "sha256": "sha256:bytes:5b8154a4401935520d771e9186a75b29f282369c4cbb6a86d07f333bd4c44490",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -2750,6 +2799,17 @@
         "runtime"
       ],
       "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/posters/wan_a14b_cloudbreak_over_the_ridges.png",
+      "size": 377021,
+      "sha256": "sha256:bytes:c824b505dc5145519de68ecdd4eb3618f214bc8e3aa6a8fd8fada7433b1f509e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
       "height": 512
     },
     {
@@ -3570,6 +3630,78 @@
       "path": "template-gallery/reviews/cobalt_jug_and_lemons.retained-template-provenance.json",
       "size": 3318,
       "sha256": "sha256:bytes:066fee762cae8b5f92625cc71f4002422828b06115024c3ce11affd68f34544e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.original-provenance.json",
+      "size": 1330,
+      "sha256": "sha256:bytes:33e7bae227d98d35af005ca13238e9adfb288160165643330621b871c48ac32c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.original-review.json",
+      "size": 583,
+      "sha256": "sha256:bytes:3678c4a805bb1d6b4205c0d3d97df2f559b65740a7519ba19674456c26d54d13",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.quality-review.json",
+      "size": 2694,
+      "sha256": "sha256:bytes:43fcf40d6bec403f203be3b2386ef27e345752c5dc53882ab2df45537dcbfcd1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.retained-template-provenance.json",
+      "size": 3514,
+      "sha256": "sha256:bytes:2e96867659142d6f562c4607f0db301aa2f003bfb9c4f29f333751365a5d7b66",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.original-provenance.json",
+      "size": 1239,
+      "sha256": "sha256:bytes:b63d433a2ae3627d260abf77dca4bca8ded0798a3449e9fb5b460628c5a2fa08",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.original-review.json",
+      "size": 741,
+      "sha256": "sha256:bytes:0b2030e77910993ce5e1947c5378e06ab488e1243b79e67cc6edd44c3cd8d462",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.quality-review.json",
+      "size": 2488,
+      "sha256": "sha256:bytes:56466f759c750421f135ebf3069202ae9eb0374a9f2ee4327b95b0490ec3a583",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.retained-template-provenance.json",
+      "size": 3774,
+      "sha256": "sha256:bytes:71ff0983139861b9a21d9b2882974bb5e96d11903563df161578818d795a1290",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6244,6 +6376,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.original-provenance.json",
+      "size": 2280,
+      "sha256": "sha256:bytes:865acf7a0ce08eb184068a1dea15a3f7327c627d39056a104856e226f845e312",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.original-review.json",
+      "size": 478,
+      "sha256": "sha256:bytes:f34e7a0de89fb4c48b70237f53f6db6f4de06d26ad7c6f582c6f7a6513f780ba",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.quality-review.json",
+      "size": 2389,
+      "sha256": "sha256:bytes:f6b307987e3779cdf108f2c9832d960e3a3d53087267a6e38446aeb43a05c5b6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.retained-template-provenance.json",
+      "size": 3763,
+      "sha256": "sha256:bytes:179c61ab54e5174a0c8504960903d5abf55bb04033116946d8a0fd5c994a7c70",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.original-provenance.json",
+      "size": 1322,
+      "sha256": "sha256:bytes:556edbb96784d97900a95f4c3cdf618102ae2f492b2791a67ef5cd9e258f3dfb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.original-review.json",
+      "size": 652,
+      "sha256": "sha256:bytes:70b7a63ed50e5c3ccd8c706fd07917afec3ac8ef088d33b28b8d22d57f800548",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.quality-review.json",
+      "size": 2433,
+      "sha256": "sha256:bytes:a549ff13492e46da3c707f861fb33fd71411034ffb96a81550d7a16fcd79cf12",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.retained-template-provenance.json",
+      "size": 4102,
+      "sha256": "sha256:bytes:e4deed2284f9ae122cbb97a82049d7407fdec05f34d332f8225b40fd40b13820",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/wan_vace_cinematic_text_to_video.quality-review.json",
       "size": 6183,
       "sha256": "sha256:bytes:3d564d7a20781eb6a2020f9713270acb01e067a47d7570b8532b252d92b33be1",
@@ -7760,6 +7964,24 @@
       "height": 704
     },
     {
+      "path": "template-gallery/wan_a14b_cloudbreak_over_the_ridges.mp4",
+      "size": 126623,
+      "sha256": "sha256:bytes:fb2da087759066d72082f0b3e9894204f9e8cc448153b43730c06522483c254f",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_flf_blue_hour_at_the_tram_shelter.mp4",
+      "size": 398821,
+      "sha256": "sha256:bytes:a356ce3baa0be0556829715ccc72f1a9ccbe99625315cca04e3ee33a4e83f550",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/wan_vace_cinematic_text_to_video.card-poster.png",
       "size": 2220363,
       "sha256": "sha256:bytes:50ddf968f99584f43293e02746d3629fc3dd315a238a6aabc29bb680f3609f6e",
@@ -8129,9 +8351,9 @@
       "height": 640
     }
   ],
-  "assetSetId": "sha256:canonical-json:d03def6ad163d7c88ee848138c806e5182df1f9d05589569aa0c504aca63960f",
+  "assetSetId": "sha256:canonical-json:415c599a910952e3eb8b060e3b04f91e6a85028a6e8dc1d180d5ad5fd11e73f4",
   "status": "ready",
-  "assetCount": 831,
-  "totalBytes": 1056530805,
+  "assetCount": 855,
+  "totalBytes": 1059596510,
   "missingAssets": []
 }

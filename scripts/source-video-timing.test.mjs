@@ -53,6 +53,29 @@ test('audio delivery rate comes from the source stream, independently of normali
   assert.deepEqual(technicalMediaErrors({ ...audio, sourceSampleRate: undefined }, { sampleRate: 48000 }, 'audio'), []);
 });
 
+test('a reviewed native preview preserves its exact short clip and browser-safe playback', () => {
+  const hash = 'sha256:decoded-video-framemd5:' + 'b'.repeat(64);
+  const preview = { mediaHash: hash, frames: 25, fps: 8, width: 720, height: 480 };
+  const decoded = {
+    ...preview,
+    hash,
+    durationSeconds: 3.13,
+    codecName: 'h264',
+    pixelFormat: 'yuv420p',
+    hasAudio: false,
+    nearBlackRatio: 0,
+    lumaStdDev: 20,
+    uniqueFrameRatio: 1,
+  };
+  assert.deepEqual(technicalMediaErrors(decoded, {}, 'video', preview), []);
+  for (const change of [{ frames: 24 }, { width: 700 }, { fps: 7 }, { hash: 'different' }]) {
+    assert(technicalMediaErrors({ ...decoded, ...change }, {}, 'video', preview).some((x) => x.includes('at least 5 seconds')));
+  }
+  assert(technicalMediaErrors(decoded, {}, 'video').some((x) => x.includes('at least 5 seconds')));
+  assert(technicalMediaErrors({ ...decoded, hasAudio: true }, {}, 'video', preview).some((x) => x.includes('audio stream')));
+  assert(technicalMediaErrors({ ...decoded, codecName: 'vp9' }, {}, 'video', preview).some((x) => x.includes('codec')));
+});
+
 test('qualitative acceptance keeps absent scores absent and requires an exact maintainer binding', () => {
   const expected = {
     templateId: 'ace_step_audio_variation',

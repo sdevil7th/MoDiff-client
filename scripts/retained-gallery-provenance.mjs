@@ -180,8 +180,11 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
     beforePath: pins.inputSize ? base + 'inputs/' + stem + '.before.' + (pins.beforeExtension ?? 'png') : undefined,
     afterPath: pins.inputSize ? outputPath : undefined,
     beforeMediaHash: output.inputEncodedSha256,
+    beforeSourceMediaHash: pins.beforeExtension === 'mp4' ? output.inputEncodedSha256 : undefined,
     width: pins.outputSize?.width,
     height: pins.outputSize?.height,
+    frames: output.video?.frames,
+    durationSeconds: output.video && output.video.frames / output.video.fps,
     ...Object.fromEntries(Object.entries(association.approvedFiles ?? {}).map(([field, ref]) => [field, ref.path])),
   };
   const errors = Object.entries(expected)
@@ -201,17 +204,16 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
       'modelSetHash',
       'inputArtifactsHash',
       'templateInputContractHash',
-      'beforeSourceMediaHash',
       'cardPreviewPath',
       'cardPreviewSha256',
-      'posterPath',
       'decodedAudioHash',
       'audiovisualMediaHash',
-      'durationSeconds',
-      'frames',
     ].some((field) => entry[field] !== undefined)
   ) {
     errors.push('retained Gallery entry has unreviewed asset or capture fields');
+  }
+  if (entry.posterPath !== association.approvedFiles?.posterPath?.path) {
+    errors.push('retained Gallery poster differs from the approved artifact');
   }
   return errors;
 }

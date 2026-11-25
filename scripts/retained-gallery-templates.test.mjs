@@ -184,7 +184,9 @@ test('retained Gallery recipes preserve the native graph identities and standalo
           Object.values(capture.inputs ?? [capture.input])
             .map(({ file }) => file.sha256)
             .sort(),
-          [recipe.inputSha256, recipe.maskSha256, recipe.guideSha256].filter(Boolean).sort(),
+          [recipe.inputSha256, recipe.maskSha256, recipe.guideSha256, recipe.lastFrameSha256]
+            .filter(Boolean)
+            .sort(),
         );
       }
     } else if (recipe.inputLocatorSha256) {
@@ -222,6 +224,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
   const previousNodes = nodeStore.getState();
   let contract;
   let audioContract;
+  let videoContract;
   const fieldActions = [];
   try {
     globalThis.WebSocket = undefined;
@@ -249,6 +252,19 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           if (payload.values.audio_contract !== audioContract.pipelineClass) {
             assert.deepEqual(payload.values.audio_contract, audioContract);
           }
+        }
+        return Response.json({ error: false, nodes: [] });
+      }
+      if (payload.module === 'modules.DiffusersVideo') {
+        assert.ok(videoContract);
+        if (payload.action === 'LoadPipeline') {
+          assert.equal(payload.fn, 'select_adapter');
+          assert.equal(payload.values.pipeline_class, videoContract.pipelineClass);
+          flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: videoContract }, 'signal');
+        } else {
+          assert.equal(payload.action, 'Generate');
+          assert.equal(payload.fn, 'update_adapter_modes');
+          assert.deepEqual(payload.values.video_contract, videoContract);
         }
         return Response.json({ error: false, nodes: [] });
       }
@@ -285,15 +301,21 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
     });
     for (const recipe of recipes) {
       const { template } = recipe;
+      // FLF metadata changes the runtime ports. Exercise that transition with
+      // the real backend in the retained first/last-frame browser test.
+      if (recipe.lastFrameSha256) continue;
       const {
         spec,
         imageContract,
         audioContract: nextAudioContract,
+        videoContract: nextVideoContract,
       } = fixture.recipes.find((item) => item.id === template.id);
       contract = imageContract;
       audioContract = nextAudioContract;
+      videoContract = nextVideoContract;
       const inputBinding = template.inputBindings?.[0];
       const audio = inputBinding?.mediaType === 'audio';
+      const sourceVideo = inputBinding?.mediaType === 'video';
       const guide = template.inputBindings?.some(({ field }) => field === 'controlImage')
         ? 'review-control-image.png'
         : undefined;
@@ -309,7 +331,13 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           template,
           audio
             ? { sourceAudio: input[0] }
-            : { referenceImages: input, ...(mask && { maskImage: mask }), ...(guide && { controlImage: guide }) },
+            : sourceVideo
+              ? { sourceVideo: 'review-source-video.mp4' }
+              : {
+                  referenceImages: input,
+                  ...(mask && { maskImage: mask }),
+                  ...(guide && { controlImage: guide }),
+                },
         );
       const form = studio.getState().form;
       assert.equal(form.device, template.example.lockedSettings.device ?? 'cuda:0');
@@ -350,6 +378,28 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         continue;
       }
       const loader = api.nodes[binding.nodes[spec.roles.find(([, key]) => key.endsWith('.' + spec.loaderAction))[0]]];
+      if (template.example.retainedVideoPreview) {
+        const { lockedSettings, lockedSeed } = template.example;
+        const generation = api.nodes[binding.nodes.wanGenerate];
+        assert.equal(generation.params.num_inference_steps.value, lockedSettings.steps);
+        assert.equal(generation.params.guidance_scale.value, lockedSettings.guidanceScale);
+        assert.equal(Number(generation.params.seed.value), lockedSeed);
+        assert.equal(generation.params.num_frames?.value, lockedSettings.numFrames);
+        assert.equal(generation.params.prompt.value, template.prompt);
+        assert.equal(loader.params.model_id.value.value, template.modelArtifact.value);
+        assert.equal(loader.params.revision.value, template.modelArtifact.revision);
+        if (sourceVideo) {
+          const source = api.nodes[binding.nodes.loadVideo];
+          assert.equal(source.params.file.value, 'review-source-video.mp4');
+          assert.equal(generation.params.video.sourceId, binding.nodes.normalizeVideo);
+          const normalized = api.nodes[binding.nodes.normalizeVideo];
+          assert.equal(normalized.module, 'modules.VideoConditioning');
+          assert.equal(normalized.action, 'Normalize');
+          assert.equal(normalized.params.video.sourceId, binding.nodes.loadVideo);
+          assert.equal(normalized.params.video.sourceKey, 'video');
+        }
+        continue;
+      }
       assert.deepEqual(loader.params.model_id.value, { source: 'hub', value: template.modelArtifact.value });
       assert.equal(loader.params.revision.value, template.modelArtifact.revision);
       assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');

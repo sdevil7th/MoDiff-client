@@ -228,5 +228,25 @@
     "descriptorSha256": "826d487fed6b6f0ae2679d2eb842ad65208a9b5929b66722ad1d8e1c0242079e",
     "bytes": 4857,
     "sha256": "49728a179b50f3b708d1baacdaa3863a1e9c6c3ef281e4a4d9efdc0a3fffd44d"
+  },
+  "CogVideoXPipeline:text_to_video": {
+    "descriptorSha256": "3aab2d19bca49f839f8316f19ea75afbe4b0e401ff5a330c16f35484f43f611a",
+    "bytes": 4732,
+    "sha256": "4c24104fd8ecabb12b19fa1b978df2e5308f18fd86eb5e3388e9a39a4e1b36b4"
+  },
+  "CogVideoXVideoToVideoPipeline:video_to_video": {
+    "descriptorSha256": "c4396b6f2b6b01fcdbcb5d7f370b6284be78d1979e4665a243c1e08193776e08",
+    "bytes": 5498,
+    "sha256": "0ea9626727160078f7717560d4e67272e29f5adc544cffcc5e4edde91eff93dc"
+  },
+  "Wan22Pipeline:text_to_video": {
+    "descriptorSha256": "05008ca915711e27396ac9216f34931f91c5444efa2751e9fb4a26c2761a89c2",
+    "bytes": 4827,
+    "sha256": "bd8a43e99fcf4ea3fdebbdd52f0e6fc7c7775ec4b6d0f1707de1be3a354bb79a"
+  },
+  "WanImage2VideoModularPipeline:image_to_video": {
+    "descriptorSha256": "63d626c3c97cd12016b58a9fba71739eeea0459ad300383d5b4f43aa0775740a",
+    "bytes": 5726,
+    "sha256": "37898b78c1e8df5ab9940aa2dbe7e467cd16e582c10e2156eca29ad967b6c8ba"
   }
 }

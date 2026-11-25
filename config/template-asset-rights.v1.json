@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:d03def6ad163d7c88ee848138c806e5182df1f9d05589569aa0c504aca63960f",
+  "assetSetId": "sha256:canonical-json:415c599a910952e3eb8b060e3b04f91e6a85028a6e8dc1d180d5ad5fd11e73f4",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -562,6 +562,60 @@
       "humanApprovalPacketSHA256": "35e15ee46e08574b15020847ccf826c5c6856165e43538d40f69820ea48ad25f",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped 21 saved cases with model terms retained.",
       "provenanceTemplateId": "cobalt_jug_and_lemons"
+    },
+    {
+      "path": "template-gallery/cogvideox_mossy_mountain_stream.mp4",
+      "sha256": "sha256:bytes:3b5e40ac2bf76236d1f901a7a2522addd7c4a1b2701bd89a33c1506b1523bc38",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_mossy_mountain_stream"
+    },
+    {
+      "path": "template-gallery/cogvideox_red_tram_model_railway.mp4",
+      "sha256": "sha256:bytes:483437ccec5394217346dcd88e3bc42a003cba69a6056b1153de4cb5868d7825",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_red_tram_model_railway"
     },
     {
       "path": "template-gallery/copper_hour_dunes.webp",
@@ -3868,6 +3922,33 @@
       "provenanceTemplateId": "chroma_restored_cobalt_backdrop"
     },
     {
+      "path": "template-gallery/inputs/cogvideox_red_tram_model_railway.before.mp4",
+      "sha256": "sha256:bytes:0737fe1e6b127fd4f5f66043b8911e5c7e380e60d50eab7e6bc9ba62e830b9dd",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_red_tram_model_railway"
+    },
+    {
       "path": "template-gallery/inputs/flux2_klein_edit.before.png",
       "sha256": "sha256:bytes:d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24",
       "publishDecision": "approved",
@@ -5484,6 +5565,60 @@
       "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
     },
     {
+      "path": "template-gallery/inputs/wan_flf_blue_hour_at_the_tram_shelter.first.png",
+      "sha256": "sha256:bytes:6d2c561cf33919ae42e773d95a0232799da3f2b92a23a94dad80902cfb73527a",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceRevision": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7 https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_flf_blue_hour_at_the_tram_shelter"
+    },
+    {
+      "path": "template-gallery/inputs/wan_flf_blue_hour_at_the_tram_shelter.last.png",
+      "sha256": "sha256:bytes:191b023efb43a42288799877db722b9a2608d2970740246322ef38cc7c68c590",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceRevision": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7 https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_flf_blue_hour_at_the_tram_shelter"
+    },
+    {
       "path": "template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
       "sha256": "sha256:bytes:748b164fd91bc2eed97f7c1d1125a04496a056f29cc016d7cc0da3734c2303b7",
       "publishDecision": "approved",
@@ -6725,7 +6860,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:828e7ee86bee6fae816fae7a00da1a7da8544b3429d44769fa888fd8732614c9",
+      "sha256": "sha256:bytes:5b8154a4401935520d771e9186a75b29f282369c4cbb6a86d07f333bd4c44490",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -6742,7 +6877,7 @@
       "reviewedBy": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-25",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained."
     },
     {
@@ -6934,6 +7069,33 @@
       "humanApprovalPacketSHA256": "35e15ee46e08574b15020847ccf826c5c6856165e43538d40f69820ea48ad25f",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped 21 saved cases with model terms retained.",
       "provenanceTemplateId": "porcelain_on_slate_linen"
+    },
+    {
+      "path": "template-gallery/posters/wan_a14b_cloudbreak_over_the_ridges.png",
+      "sha256": "sha256:bytes:c824b505dc5145519de68ecdd4eb3618f214bc8e3aa6a8fd8fada7433b1f509e",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceRevision": "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7 https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_a14b_cloudbreak_over_the_ridges"
     },
     {
       "path": "template-gallery/quiet_current.webp",
@@ -9071,6 +9233,222 @@
       "humanApprovalPacketSHA256": "35e15ee46e08574b15020847ccf826c5c6856165e43538d40f69820ea48ad25f",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped 21 saved cases with model terms retained.",
       "provenanceTemplateId": "cobalt_jug_and_lemons"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.original-provenance.json",
+      "sha256": "sha256:bytes:33e7bae227d98d35af005ca13238e9adfb288160165643330621b871c48ac32c",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_mossy_mountain_stream"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.original-review.json",
+      "sha256": "sha256:bytes:3678c4a805bb1d6b4205c0d3d97df2f559b65740a7519ba19674456c26d54d13",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_mossy_mountain_stream"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.quality-review.json",
+      "sha256": "sha256:bytes:43fcf40d6bec403f203be3b2386ef27e345752c5dc53882ab2df45537dcbfcd1",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_mossy_mountain_stream"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_mossy_mountain_stream.retained-template-provenance.json",
+      "sha256": "sha256:bytes:2e96867659142d6f562c4607f0db301aa2f003bfb9c4f29f333751365a5d7b66",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_mossy_mountain_stream"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.original-provenance.json",
+      "sha256": "sha256:bytes:b63d433a2ae3627d260abf77dca4bca8ded0798a3449e9fb5b460628c5a2fa08",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_red_tram_model_railway"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.original-review.json",
+      "sha256": "sha256:bytes:0b2030e77910993ce5e1947c5378e06ab488e1243b79e67cc6edd44c3cd8d462",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_red_tram_model_railway"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.quality-review.json",
+      "sha256": "sha256:bytes:56466f759c750421f135ebf3069202ae9eb0374a9f2ee4327b95b0490ec3a583",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_red_tram_model_railway"
+    },
+    {
+      "path": "template-gallery/reviews/cogvideox_red_tram_model_railway.retained-template-provenance.json",
+      "sha256": "sha256:bytes:71ff0983139861b9a21d9b2882974bb5e96d11903563df161578818d795a1290",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceRevision": "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "zai-org/CogVideoX-2b@1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01 https://huggingface.co/zai-org/CogVideoX-2b/tree/1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "cogvideox_red_tram_model_railway"
     },
     {
       "path": "template-gallery/reviews/copper_hour_dunes.original-provenance.json",
@@ -16399,6 +16777,222 @@
       "provenanceTemplateId": "wan_22_ti2v_5b_seed_vault"
     },
     {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.original-provenance.json",
+      "sha256": "sha256:bytes:865acf7a0ce08eb184068a1dea15a3f7327c627d39056a104856e226f845e312",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceRevision": "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7 https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_a14b_cloudbreak_over_the_ridges"
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.original-review.json",
+      "sha256": "sha256:bytes:f34e7a0de89fb4c48b70237f53f6db6f4de06d26ad7c6f582c6f7a6513f780ba",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceRevision": "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7 https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_a14b_cloudbreak_over_the_ridges"
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.quality-review.json",
+      "sha256": "sha256:bytes:f6b307987e3779cdf108f2c9832d960e3a3d53087267a6e38446aeb43a05c5b6",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceRevision": "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7 https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_a14b_cloudbreak_over_the_ridges"
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_cloudbreak_over_the_ridges.retained-template-provenance.json",
+      "sha256": "sha256:bytes:179c61ab54e5174a0c8504960903d5abf55bb04033116946d8a0fd5c994a7c70",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceRevision": "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7 https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_a14b_cloudbreak_over_the_ridges"
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.original-provenance.json",
+      "sha256": "sha256:bytes:556edbb96784d97900a95f4c3cdf618102ae2f492b2791a67ef5cd9e258f3dfb",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceRevision": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7 https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_flf_blue_hour_at_the_tram_shelter"
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.original-review.json",
+      "sha256": "sha256:bytes:70b7a63ed50e5c3ccd8c706fd07917afec3ac8ef088d33b28b8d22d57f800548",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceRevision": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7 https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_flf_blue_hour_at_the_tram_shelter"
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.quality-review.json",
+      "sha256": "sha256:bytes:a549ff13492e46da3c707f861fb33fd71411034ffb96a81550d7a16fcd79cf12",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceRevision": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7 https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_flf_blue_hour_at_the_tram_shelter"
+    },
+    {
+      "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.retained-template-provenance.json",
+      "sha256": "sha256:bytes:e4deed2284f9ae122cbb97a82049d7407fdec05f34d332f8225b40fd40b13820",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceRevision": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7 https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_flf_blue_hour_at_the_tram_shelter"
+    },
+    {
       "creatorOrRightsholder": "MoDiff project maintainers",
       "creationMethod": "Project-authored redacted technical/review records or versioned declarations for seven maintainer-accepted native video replacements",
       "sourceUrl": null,
@@ -20075,6 +20669,60 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "wan_22_ti2v_5b_seed_vault"
+    },
+    {
+      "path": "template-gallery/wan_a14b_cloudbreak_over_the_ridges.mp4",
+      "sha256": "sha256:bytes:fb2da087759066d72082f0b3e9894204f9e8cc448153b43730c06522483c254f",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceRevision": "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers@5be7df9619b54f4e2667b2755bc6a756675b5cd7 https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/tree/5be7df9619b54f4e2667b2755bc6a756675b5cd7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_a14b_cloudbreak_over_the_ridges"
+    },
+    {
+      "path": "template-gallery/wan_flf_blue_hour_at_the_tram_shelter.mp4",
+      "sha256": "sha256:bytes:a356ce3baa0be0556829715ccc72f1a9ccbe99625315cca04e3ee33a4e83f550",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceRevision": "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers@17c30769b1e0b5dcaa1799b117bf20a9c31f59d7 https://huggingface.co/Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers/tree/17c30769b1e0b5dcaa1799b117bf20a9c31f59d7"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "ffeaa41a5c94b59135d2cdb15a5c7f79f073c15fd78792ce00a157398ab15d59",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_flf_blue_hour_at_the_tram_shelter"
     },
     {
       "path": "template-gallery/wan_vace_cinematic_text_to_video.card-poster.png",

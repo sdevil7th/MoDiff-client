@@ -1,5 +1,6 @@
 import { getFormDefaultsForMode } from './modelProfiles';
 import { sourceVideoTimingMatches } from './sourceVideoTiming';
+import { retainedVideoPreviewMatches } from './retainedVideoPreview';
 import { coerceStudioTemplateId } from './outputContracts';
 import templateGalleryContract from './templateGalleryContract.json';
 import { resolveTemplateAssetUrl } from './templateAssets';
@@ -382,6 +383,19 @@ export function isTemplateExactEligible(template: StudioTemplate, form: StudioFo
   return getTemplateModifiedFields(template, form).length === 0;
 }
 
+export function isRetainedVideoPreview(template: StudioTemplate, entry: TemplateGalleryManifestEntry | undefined) {
+  return (
+    entry?.mediaType === 'video' &&
+    entry.verificationStatus === 'reviewed' &&
+    entry.qualityReviewStatus === 'approved_reviewed' &&
+    /^sha256:retained-template-association-v1:[a-f0-9]{64}$/u.test(entry.proofLockHash) &&
+    entry.outputPath.endsWith('.mp4') &&
+    !entry.decodedAudioHash &&
+    !entry.audiovisualMediaHash &&
+    retainedVideoPreviewMatches(template.example?.retainedVideoPreview, entry)
+  );
+}
+
 function matchesTemplateMediaContract(template: StudioTemplate, entry: TemplateGalleryManifestEntry) {
   if (entry.mediaType !== 'video') return true;
 
@@ -400,11 +414,11 @@ function matchesTemplateMediaContract(template: StudioTemplate, entry: TemplateG
     template.mode === 'video_to_video' &&
     sourceVideoTimingMatches(expected.sourceTiming, { frames, durationSeconds }) &&
     (entry.beforeSourceMediaHash ?? entry.beforeMediaHash) === expected.sourceTiming?.sourceMediaHash;
+  const retainedPreview = isRetainedVideoPreview(template, entry);
   if (
-    (!sourceTimingPreserved && durationSeconds < contract.minimumDurationSeconds) ||
-    (!sourceTimingPreserved && frames < contract.minimumFrames) ||
-    shortEdge < contract.minimumShortEdge ||
-    longEdge < contract.minimumLongEdge
+    (!sourceTimingPreserved && !retainedPreview && durationSeconds < contract.minimumDurationSeconds) ||
+    (!sourceTimingPreserved && !retainedPreview && frames < contract.minimumFrames) ||
+    (!retainedPreview && (shortEdge < contract.minimumShortEdge || longEdge < contract.minimumLongEdge))
   ) {
     return false;
   }
@@ -455,6 +469,7 @@ export function findManifestEntry(
       matchesTemplateMediaContract(template, entry) &&
       (entry.mediaType !== 'video' ||
         !requireCardPreview ||
+        isRetainedVideoPreview(template, entry) ||
         (Boolean(entry.cardPreviewPath) && Boolean(entry.cardPreviewSha256))),
   );
 }
@@ -619,6 +634,7 @@ export function getTemplateCardMedia(
 ): TemplateCardMedia {
   const manifestEntry =
     findManifestEntry(template, manifest) ?? findHistoricalTemplateManifestEntry(template, manifest);
+  const retainedPreview = isRetainedVideoPreview(template, manifestEntry);
   const bundledSourcePreview =
     template.outputKinds?.[0] === 'audio'
       ? template.inputBindings
@@ -626,8 +642,9 @@ export function getTemplateCardMedia(
           .flatMap((binding) => binding.defaultAssets)
           .find((asset) => asset.previewPath)?.previewPath
       : undefined;
+  const manifestPoster = retainedPreview ? manifestEntry?.posterPath : manifestEntry?.thumbnailPath ?? manifestEntry?.posterPath;
   const thumbnailPath =
-    templateManifestPath(manifestEntry?.thumbnailPath ?? manifestEntry?.posterPath) ??
+    templateManifestPath(manifestPoster) ??
     templateManifestPath(template.example?.thumbnailPath ?? template.example?.outputPath);
   const selectedAudioExample =
     template.outputKinds?.[0] === 'audio' ? templateManifestPath(template.example?.outputPath) : undefined;
@@ -637,7 +654,9 @@ export function getTemplateCardMedia(
 
   return {
     beforePath: templateManifestPath(manifestEntry?.beforePath ?? bundledSourcePreview),
-    mediaPath: isVideo ? templateManifestPath(manifestEntry?.cardPreviewPath) : generatedOutputPath,
+    mediaPath: isVideo
+      ? templateManifestPath(manifestEntry?.cardPreviewPath ?? (retainedPreview ? manifestEntry?.outputPath : undefined))
+      : generatedOutputPath,
     thumbnailPath,
   };
 }
