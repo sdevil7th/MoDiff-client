@@ -70,6 +70,26 @@ test(
   },
 );
 
+const framepackEvidence = process.env.MODIFF_FRAMEPACK_LANTERN_EVIDENCE;
+test(
+  'FramePack binds the three installed snapshots and reports its window-rounded delivery',
+  { skip: !framepackEvidence },
+  async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId: 'HunyuanVideoFramepackPipeline:image_to_video',
+      evidencePath: framepackEvidence,
+    });
+    assert.equal(receipt.taskId, 'BvrI_dBb3QPQ');
+    assert.equal(receipt.modelSet.length, 3);
+    assert.equal(receipt.observationLimits.requestedFrames, 81);
+    assert.equal(receipt.observationLimits.nativeDeliveredFrames, 109);
+    assert.equal(receipt.decodedOutput.frames, 109);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+  },
+);
+
 for (const [workflowId, environment, proofKind, output] of [
   [
     'StableAudioPipeline:text_to_audio',

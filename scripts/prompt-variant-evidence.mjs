@@ -273,6 +273,34 @@ const wanA14BDefaultOpeningRoute = {
   openingWebpSha256: '0afd006835683f29a96f60652958fe696713da2ac15bf75170e0e87b96860e15',
 };
 
+const framepackLanternRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.framepack-lantern-opening.v1',
+  workflowId: 'HunyuanVideoFramepackPipeline:image_to_video',
+  modelType: 'HunyuanVideoFramepackPipeline',
+  modelRepo: 'lllyasviel/FramePackI2V_HY',
+  modelRevision: '86cef4396041b6002c957852daac4c91aaa47c79',
+  auxiliaryModels: [
+    { repoId: 'hunyuanvideo-community/HunyuanVideo', revision: 'e8c2aaa66fe3742a32c11a6766aecbf07c56e773' },
+    { repoId: 'lllyasviel/flux_redux_bfl', revision: '45b801affc54ff2af4e5daf1b282e0921901db87' },
+  ],
+  sourceFingerprint: 'sha256:backend-source-v1:166b29e5c349734b73cf1012c791ce5fa5545c189bee7c5eb696258a8cb1c920',
+  retainedRegistryHash: 'cd72915788eec3784f2baf6753b624e8be958d872357df644d9261b296fa6c99',
+  previousExpertFamily: null,
+  executedTask: 'image_to_video',
+  bindsImage: true,
+  imageInputPort: 'reference_images',
+  bindSeed: false,
+  retainedImageLoadFields: true,
+  openingWebpSha256: '245deed3f2a8ac213c630ac7a8517c625c1eaa60971778d816a55220310ed8c3',
+  reviewedSettings: [
+    ['generator', 'width', 768, 640],
+    ['generator', 'height', 512, 640],
+  ],
+  deliveredFrameCount: 109,
+  chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
+};
+
 const ltx2AudioVideoRoutes = [
   ['LTX2Pipeline', 'text_to_video'],
   ['LTX2ConditionPipeline', 'text_to_video'],
@@ -722,6 +750,7 @@ const promptModelSet = (profile) =>
     ...(profile.motionAdapter ? [profile.motionAdapter] : []),
     ...(profile.controlAdapter ? [profile.controlAdapter] : []),
     ...(profile.soundtrack ? [{ repoId: profile.soundtrack.repoId, revision: profile.soundtrack.revision }] : []),
+    ...(profile.auxiliaryModels ?? []),
     { repoId: profile.modelRepo, revision: profile.modelRevision },
     ...(profile.videoUpscaler
       ? [{ repoId: profile.videoUpscaler.file.value, revision: profile.videoUpscaler.file.revision }]
@@ -1479,6 +1508,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         stableAudioRoute,
         wanA14BRoute,
         evidence.format === wanA14BDefaultOpeningRoute.format ? wanA14BDefaultOpeningRoute : wanA14BOpeningRoute,
+        framepackLanternRoute,
         evidence.format === wanSubwayDefaultRoute.format ? wanSubwayDefaultRoute : wanSubwayRoute,
         ...ltx2AudioVideoRoutes,
         ltxScheduledRoute,
@@ -1845,7 +1875,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       decodedOutput = validateNativeVideoDelivery(decoded, item, {
         width: width.value * scale,
         height: height.value * scale,
-        frames: num_frames.value,
+        frames: profile.deliveredFrameCount ?? num_frames.value,
         fps: bound.preview.node.params.fps.value,
         soundtrack: Boolean(profile.soundtrack),
         nativeJointAudio: Boolean(profile.nativeJointAudio),
@@ -1944,6 +1974,12 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       ...(profile.retainedOffloadFallback ? { retainedLoaderOffloadFallback: profile.retainedOffloadFallback } : {}),
       ...(profile.retainedImageLoadFields
         ? { openingImageLoadFieldsObserved: true, samplerInputPixelsObserved: false }
+        : {}),
+      ...(profile.deliveredFrameCount !== undefined
+        ? {
+            requestedFrames: bound.generator.node.params.num_frames.value,
+            nativeDeliveredFrames: profile.deliveredFrameCount,
+          }
         : {}),
       ...(boundVideos.length
         ? { motionVideoBytesWitnessed: 'original-uploads-and-typed-wires', consumedMotionFramesObserved: false }
