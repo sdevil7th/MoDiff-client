@@ -386,6 +386,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['AllegroPipeline:text_to_video', 'MODIFF_ALLEGRO_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['MochiPipeline:text_to_video', 'MODIFF_MOCHI_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['SanaVideoPipeline:text_to_video', 'MODIFF_SANA_VIDEO_PROMPT_EVIDENCE', 'video'],
   [
     'SanaImageToVideoPipeline:image_to_video',
@@ -398,6 +399,18 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   [
     'AnimateDiffVideoToVideoPipeline:video_to_video',
     'MODIFF_ANIMATEDIFF_EDIT_VIDEO_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'AnimateDiffControlNetPipeline:control_to_video',
+    'MODIFF_ANIMATEDIFF_GUIDE_VIDEO_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'AnimateDiffVideoToVideoControlNetPipeline:control_video_to_video',
+    'MODIFF_ANIMATEDIFF_DUAL_VIDEO_EVIDENCE',
     'video',
     'real_backend_input_bound_model_variant',
   ],
@@ -464,6 +477,12 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
         assert.match(original.receipt.negativePromptBinding.sha256, /^[a-f0-9]{64}$/u);
       }
+      if (workflowId === 'MochiPipeline:text_to_video') {
+        assert.equal(original.receipt.decodedOutput.frames, 31);
+        assert.equal(original.receipt.decodedOutput.fps, 30);
+        assert.equal(original.receipt.decodedOutput.width, 848);
+        assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
+      }
       const sanaOpeningImage = workflowId === 'SanaImageToVideoPipeline:image_to_video';
       if (sanaOpeningImage) {
         assert.equal(original.receipt.decodedOutput.frames, 81);
@@ -472,17 +491,33 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         assert.equal(original.receipt.observationLimits.samplerInputPixelsObserved, false);
       }
       if (workflowId.startsWith('AnimateDiff')) {
-        assert.equal(original.receipt.modelSet.length, 2);
+        const guide = original.receipt.guideBinding;
+        assert.equal(original.receipt.modelSet.length, guide ? 3 : 2);
         assert.equal(original.receipt.observationLimits.motionAdapterBoundByGraph, true);
-        const [first, second] = evidence.modelObservations;
-        const incomplete = { ...evidence, modelObservations: [first, first] };
+        const [first, second, ...rest] = evidence.modelObservations;
+        const incomplete = { ...evidence, modelObservations: [first, first, ...rest] };
         assert.notEqual(first.sha256, second.sha256);
         writeFileSync(changedPath, JSON.stringify(incomplete));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
           /Expected a single installed identity/u,
         );
-        if (workflowId === 'AnimateDiffPAGPipeline:text_to_video') {
+        if (guide) {
+          assert.equal(original.receipt.observationLimits.normalizedGuideFramesObserved, false);
+          assert.equal(original.receipt.observationLimits.controlAdapterAppliedObserved, false);
+          assert.equal(guide.decodedVideo.frames, 16);
+          if (evidence.inputs.length === 2) {
+            assert.notEqual(guide.sha256, original.receipt.inputBinding.sha256);
+            const swapped = { ...evidence, inputs: [...evidence.inputs].reverse() };
+            writeFileSync(changedPath, JSON.stringify(swapped));
+            await assert.rejects(
+              () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+              /outside the bound prompt and seed/u,
+            );
+          } else {
+            assert.deepEqual(original.receipt.inputBinding, guide);
+          }
+        } else if (workflowId === 'AnimateDiffPAGPipeline:text_to_video') {
           assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, [
             'pag_scale',
             'pag_adaptive_scale',

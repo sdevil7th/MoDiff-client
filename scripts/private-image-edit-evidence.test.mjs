@@ -449,6 +449,7 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['QwenImageEditPipeline:edit_image', 'MODIFF_SAVED_QWEN_SLATE_EVIDENCE', false, []],
   ['QwenImageModularPipeline:inpaint', 'MODIFF_SAVED_QWEN_SCRATCH_EVIDENCE', true, []],
   ['FluxDevPipeline:inpaint', 'MODIFF_SAVED_FLUX_DEV_REPAIR_EVIDENCE', true, []],
+  ['LongCatImageEditPipeline:edit_image', 'MODIFF_SAVED_LONGCAT_EDIT_EVIDENCE', false, []],
 ]) {
   const saved = process.env[variable];
   test(
@@ -487,6 +488,43 @@ for (const [workflowId, variable, hasMask, unobserved] of [
     },
   );
 }
+
+const retainedCpuEdit = process.env.MODIFF_SAVED_KANDINSKY_CPU_EDIT_EVIDENCE;
+test('Kandinsky CPU edit joins archived pixels and sampled worker memory', { skip: !retainedCpuEdit }, async () => {
+  const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+  const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '..', 'MoDiff'));
+  const args = {
+    clientRoot,
+    backendRoot,
+    workflowId: 'Kandinsky3Pipeline:edit_image',
+    evidencePath: resolve(retainedCpuEdit),
+  };
+  const original = await readCanonicalWorkflowEvidence(args);
+  assert.equal(original.receipt.observationLimits.executionDevice, 'cpu:0');
+  assert.equal(original.receipt.observationLimits.peakMemorySource, 'sampled-worker-rss');
+  assert.equal(original.receipt.peakMemoryBytes, 62254313472);
+  assert.equal(original.receipt.qualificationClaims.hardwareQualified, false);
+  const root = mkdtempSync(join(tmpdir(), 'modiff-retained-cpu-edit-'));
+  try {
+    for (const file of original.retainedFiles) {
+      assert.equal(basename(file.path), file.path);
+      copyFileSync(file.absolutePath, join(root, file.path));
+    }
+    const descriptor = JSON.parse(original.descriptorBytes);
+    const ref = descriptor.resourceSamples;
+    const samples = readFileSync(join(root, ref.path), 'utf8').trim().split(/\r?\n/u);
+    const reduced = samples.map((line) => JSON.stringify({ ...JSON.parse(line), workerRss: 1 }));
+    const bytes = Buffer.from(reduced.join('\n') + '\n');
+    Object.assign(ref, { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+    writeFileSync(join(root, ref.path), bytes);
+    const changed = join(root, 'evidence.json');
+    writeFileSync(changed, JSON.stringify(descriptor));
+    await assert.rejects(readCanonicalWorkflowEvidence({ ...args, evidencePath: changed }), /peak >=/u);
+  } finally {
+    assert.equal(dirname(root), resolve(tmpdir()));
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('retained native PNG upload binds an exact safe path, file bytes and decoded dimensions', () => {
   const bytes = Buffer.from(

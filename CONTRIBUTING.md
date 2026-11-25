@@ -570,6 +570,17 @@ and native decode to the typed Edit connection. The archived two-reference
 run carries an older Image Edit label in its form. The executable graph and
 observed sampler identify the two-reference task.
 
+Older AnimateDiff guided runs retain the exact original guide clip and its
+path through normalization and edge preparation. A guided edit also binds
+its independently uploaded source video. The original recorder identifies
+the installed ControlNet checkpoint and the executed task. The processed
+frames and applied-weight evidence remain unavailable.
+
+Retained edits use their exact source encoding. The LongCat example binds
+its native WebP upload. The Kandinsky example preserves its FP32 CPU
+recipe and measures memory from samples of the original worker during
+the task. Mochi's short video retains its explicit Auto attention choice.
+
 The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge, Spandrel
 Real-ESRGAN 2×, Whisper Tiny transcription and LCM dawn edit use declarations in
 `src/studio/retainedGalleryTemplates.ts`. They share

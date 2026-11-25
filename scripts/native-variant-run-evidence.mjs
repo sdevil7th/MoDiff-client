@@ -1,4 +1,21 @@
 import assert from 'node:assert/strict';
+
+export function bindRetainedCpuFloat32Recipe({ quantization, recipe, loader }) {
+  for (const [owner, field, baseline, observed] of [
+    [loader, 'auto_offload', true, false],
+    [loader, 'device', 'cuda:0', 'cpu:0'],
+    [loader, 'dtype', 'float16', 'float32'],
+    [loader, 'offload_mode', 'model_cpu', 'none'],
+    [quantization, 'dtype', 'float16', 'float32'],
+    [recipe, 'device', 'cuda:0', 'cpu:0'],
+    [recipe, 'offload_mode', 'model_cpu', 'none'],
+  ]) {
+    const param = owner.node.params[field];
+    assert.equal(param.value, baseline);
+    assert.ok(!param.sourceId && !param.sourceKey, 'A CPU variant requires literal resource controls.');
+    param.value = observed;
+  }
+}
 import { stableStringify } from './live-proof-provenance.mjs';
 
 const same = (a, b, message) => assert.equal(stableStringify(a), stableStringify(b), message);
