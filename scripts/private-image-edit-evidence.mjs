@@ -15,7 +15,7 @@ import {
 } from './live-proof-provenance.mjs';
 import {
   bindRetainedCpuFloat32Recipe,
-  validateLateNativeImageVariantRun,
+  validateLateNativeSingleAssetRun,
   validateNativeVariantOutput,
   validateNativeVariantRun,
   validateUnmodifiedExpertPreparation,
@@ -1305,7 +1305,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     same(run.outputs[0], persistedOutput, 'Saved native output differs from the at-close output store.');
   }
   const validateRun =
-    hasNativeSnapshot || route.serverRetainedOutput ? validateNativeVariantRun : validateLateNativeImageVariantRun;
+    hasNativeSnapshot || route.serverRetainedOutput ? validateNativeVariantRun : validateLateNativeSingleAssetRun;
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
   const alternate =

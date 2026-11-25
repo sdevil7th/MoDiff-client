@@ -6,7 +6,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { canonicalJsonHash } from './canonical-json.mjs';
-import { validateLateNativeImageVariantRun, validateNativeVariantRun } from './native-variant-run-evidence.mjs';
+import { validateLateNativeSingleAssetRun, validateNativeVariantRun } from './native-variant-run-evidence.mjs';
 import { readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
 import {
   bindPrivateImageEditGraph,
@@ -126,7 +126,7 @@ test('strict output verification accepts a separately joined late native image s
   const options = archivedImage();
   const before = structuredClone(options);
   assert.throws(() => validateNativeVariantRun(options), /native output apiGraphSnapshot differs/u);
-  const { task, output } = validateLateNativeImageVariantRun(options);
+  const { task, output } = validateLateNativeSingleAssetRun(options);
   assert.equal(task.task_id, 'native-task');
   assert.equal(output.apiGraphSnapshot.sid, 'native-session');
   assert.deepEqual(options, before);
@@ -201,7 +201,7 @@ test('the late native image join rejects a changed task, capture, graph or outpu
   for (const [mutate, error] of scenarios) {
     const options = archivedImage();
     mutate(options);
-    assert.throws(() => validateLateNativeImageVariantRun(options), error);
+    assert.throws(() => validateLateNativeSingleAssetRun(options), error);
   }
 });
 

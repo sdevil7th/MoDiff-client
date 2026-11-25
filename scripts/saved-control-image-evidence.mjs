@@ -17,7 +17,7 @@ import {
   verifyRetainedHostImageFiles,
 } from './native-image-load-evidence.mjs';
 import {
-  validateLateNativeImageVariantRun,
+  validateLateNativeSingleAssetRun,
   validateNativeVariantOutput,
   validateNativeVariantRun,
   validateUnmodifiedExpertPreparation,
@@ -456,7 +456,7 @@ export async function readSavedControlImageEvidence({
   const nativeStore = route.integratedControl ? read(evidence.persistedOutput) : undefined;
   const stored = nativeStore ? JSON.parse(nativeStore.bytes).outputs : undefined;
   if (stored) assert.equal(stored.length, 1);
-  const validate = route.lateOutput ? validateLateNativeImageVariantRun : validateNativeVariantRun;
+  const validate = route.lateOutput ? validateLateNativeSingleAssetRun : validateNativeVariantRun;
   const { task, output, hints } = validate({
     target,
     outputNodeId: actual.preview,

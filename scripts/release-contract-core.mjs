@@ -936,6 +936,8 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.shap-e-prompt-variant.v1',
       'modiff.private.longcat-audio-prompt-variant.v1',
       'modiff.private.audioldm2-prompt-variant.v1',
+      'modiff.private.stable-audio-prompt-variant.v1',
+      'modiff.private.stable-video-opening-image-variant.v1',
       'modiff.private.wan-a14b-video-prompt-variant.v1',
       'modiff.private.wan-a14b-opening-image-variant.v1',
       'modiff.private.wan-subway-soundtrack-variant.v1',

@@ -164,11 +164,11 @@ export function validateNativeVariantRun({
   return { task, output, hints };
 }
 
-// Some image output stores attach the API snapshot after the completed task
+// The output store can attach its API snapshot after the completed task
 // GET returns. Compare that original response and the late native record
 // before applying the ordinary complete-output validation to the late record.
-export function validateLateNativeImageVariantRun({ run, persistedOutput, ...options }) {
-  assert.equal(options.displayType, 'image');
+export function validateLateNativeSingleAssetRun({ run, persistedOutput, ...options }) {
+  assert.ok(['audio', 'image'].includes(options.displayType));
   assert.equal(run.outputs.length, 1);
   const [early] = run.outputs;
   assert.equal(early.apiGraphSnapshot, undefined, 'Unexpected already captured early API snapshot.');
@@ -188,7 +188,14 @@ export function validateLateNativeImageVariantRun({ run, persistedOutput, ...opt
   assert.equal(lateDuration, undefined);
   assert.equal(earlyLabel, undefined);
   assert.equal(lateLabel, 'Item 1');
-  same(earlyItem, lateItem, 'Native image identity changed during persistence.');
+  if (options.displayType === 'audio') {
+    const { height, width, ...audioItem } = earlyItem;
+    assert.equal(height, null);
+    assert.equal(width, null);
+    same(audioItem, lateItem, 'Native audio identity changed during persistence.');
+  } else {
+    same(earlyItem, lateItem, 'Native image identity changed during persistence.');
+  }
   const provenanceAt = (row, media) => {
     const { capturedAt, exactTemplateCompatible, promptSettingsHash, mediaItems, ...identity } = row.backendProvenance;
     assert.ok(Number.isSafeInteger(capturedAt) && capturedAt > 0);

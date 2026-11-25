@@ -25,6 +25,30 @@ const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 
+for (const [workflowId, environment, proofKind, output] of [
+  [
+    'StableAudioPipeline:text_to_audio',
+    'MODIFF_STABLE_AUDIO_EVIDENCE',
+    'real_backend_prompt_bound_model_variant',
+    { kind: 'audio', durationSeconds: 30, sampleRate: 48000, channels: 2 },
+  ],
+  [
+    'StableVideoDiffusionPipeline:image_to_video',
+    'MODIFF_STABLE_VIDEO_EVIDENCE',
+    'real_backend_input_bound_model_variant',
+    { kind: 'video', width: 1024, height: 576, fps: 7, frames: 25 },
+  ],
+]) {
+  const evidencePath = process.env[environment];
+  test(`original ${workflowId} capture binds the native output`, { skip: !evidencePath }, async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({ clientRoot, backendRoot, workflowId, evidencePath });
+    assert.equal(receipt.proofKind, proofKind);
+    for (const [key, value] of Object.entries(output)) assert.equal(receipt.decodedOutput[key], value);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+    if (output.kind === 'video') assert.match(receipt.inputBinding.sha256, /^[a-f0-9]{64}$/u);
+  });
+}
+
 test('joint audio-video evidence keeps native LTX audio separate from the fitted soundtrack contract', () => {
   const shape = { width: 768, height: 512, frames: 81, fps: 24 };
   const item = {

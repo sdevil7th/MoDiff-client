@@ -14,7 +14,7 @@ export function retainedGalleryFileLimit(path) {
   // used by the recorded run. The registered size and hash are still checked.
   if (/^\/?template-gallery\/inputs\/[a-z0-9_-]+\.before\.mp4$/u.test(path)) return 128 * 1024 * 1024;
   if (path.endsWith('.mp4')) return 64 * 1024 * 1024;
-  if (/\.(png|webp)$/u.test(path)) return 8 * 1024 * 1024;
+  if (/\.(png|webp|wav)$/u.test(path)) return 8 * 1024 * 1024;
   return 2 * 1024 * 1024;
 }
 

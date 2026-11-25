@@ -17,7 +17,7 @@ import {
 } from './live-proof-provenance.mjs';
 import {
   bindRetainedCpuFloat32Recipe,
-  validateLateNativeImageVariantRun,
+  validateLateNativeSingleAssetRun,
   validateNativeVariantOutput,
   validateNativeVariantRun,
   validateUnmodifiedExpertPreparation,
@@ -187,6 +187,21 @@ const audioLdmRoute = {
       ? ['generator', 'modules.DiffusersAudio', 'Generate', 'prompt seed audio_duration sample_rate']
       : stage,
   ),
+};
+
+const stableAudioRoute = {
+  ...audioLdmRoute,
+  format: 'modiff.private.stable-audio-prompt-variant.v1',
+  workflowId: 'StableAudioPipeline:text_to_audio',
+  modelType: 'StableAudioPipeline',
+  previousExpertFamily: null,
+  platform: /^Linux-/u,
+  backend: 'rocm',
+  contentType: 'audio/x-wav',
+  modelRepo: 'stabilityai/stable-audio-open-1.0',
+  modelRevision: 'f21265c1e2710b3bd2386596943f0007f55f802e',
+  sourceFingerprint: 'sha256:backend-source-v1:bf8ee3b3df08410b5f041279f84ca3b9e0bbb7248f0e73fbe4c0ecb718727b6c',
+  lateNativeSnapshot: true,
 };
 
 const wanA14BRoute = {
@@ -593,6 +608,20 @@ const sanaOpeningImageRoute = {
   chain: [['source', 'modules.Image', 'Load', ''], ...sanaVideoRoute.chain],
 };
 
+const stableVideoRoute = {
+  ...sanaOpeningImageRoute,
+  format: 'modiff.private.stable-video-opening-image-variant.v1',
+  workflowId: 'StableVideoDiffusionPipeline:image_to_video',
+  modelType: 'StableVideoDiffusionPipeline',
+  previousExpertFamily: 'StableVideoDiffusionPipeline',
+  modelRepo: 'stabilityai/stable-video-diffusion-img2vid-xt-1-1',
+  modelRevision: '043843887ccd51926e3efed36270444a838e7861',
+  sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+  imageOnly: true,
+  bindNegativePrompt: false,
+  retainedImageLoadFields: false,
+};
+
 const mochiVideoRoute = {
   ...wanA14BRoute,
   format: 'modiff.private.mochi-video-prompt-variant.v1',
@@ -823,7 +852,9 @@ export function bindPromptVariant(
   assert.ok(!promptSlot.sourceId, 'The authored prompt must be an unconnected literal.');
   const submittedOwners = owners(profile, output);
   const prompt = submittedOwners.generator.node.params.prompt.value;
-  assert.ok(typeof prompt === 'string' && prompt.length <= 4096 && prompt.trim() === prompt && prompt.length > 0);
+  assert.ok(typeof prompt === 'string' && prompt.length <= 4096 && prompt.trim() === prompt);
+  if (profile.imageOnly) assert.equal(prompt, promptSlot.value);
+  else assert.ok(prompt.length > 0);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt), 'Prompt exercise contains an unsupported control character.');
   promptSlot.value = prompt;
   let negativePrompt;
@@ -976,7 +1007,7 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
       }))
         expected[name] = { value, source: 'literal' };
     }
-    if (profile === audioLdmRoute && id === bound.generator.id) {
+    if ([audioLdmRoute, stableAudioRoute].includes(profile) && id === bound.generator.id) {
       assert.equal(node.params.negative_prompt.value, '');
       expected.negative_prompt = { value: null, source: 'literal' };
       expected.output_type = { value: 'pt', source: 'literal' };
@@ -1410,6 +1441,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         videoRoute,
         audioRoute,
         audioLdmRoute,
+        stableAudioRoute,
         wanA14BRoute,
         wanA14BOpeningRoute,
         wanSubwayRoute,
@@ -1426,6 +1458,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         allegroRoute,
         sanaVideoRoute,
         sanaOpeningImageRoute,
+        stableVideoRoute,
         mochiVideoRoute,
         animateDiffVideoRoute,
         animateLcmVideoRoute,
@@ -1439,7 +1472,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       profile.nativeJointAudio ||
       profile.bindsVideoGuide ||
       Boolean(profile.videoConditioners));
-  const generatedAudio = profile === audioRoute || profile === audioLdmRoute;
+  const generatedAudio = [audioRoute, audioLdmRoute, stableAudioRoute].includes(profile);
   const requiresOriginalRequest =
     imageRoute !== undefined ||
     profile === janusTextRoute ||
@@ -1569,7 +1602,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
           },
         }
       : {}),
-    ...(profile === videoRoute || profile === audioRoute
+    ...(profile === videoRoute || profile === audioRoute || profile === stableAudioRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
       : {}),
     ...(profile.nativeJointAudio && {
@@ -1595,7 +1628,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     const store = json(evidence.persistedOutputs);
     assert.equal(store.outputs.length, 1);
     const [persistedOutput] = store.outputs;
-    validatedRun = validateLateNativeImageVariantRun({ ...runOptions, persistedOutput });
+    validatedRun = validateLateNativeSingleAssetRun({ ...runOptions, persistedOutput });
     accountingRun = { ...run, outputs: [persistedOutput] };
   } else {
     validatedRun = validateNativeVariantRun(runOptions);
@@ -1744,7 +1777,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         task,
       )
     : measurement.peakAllocatedBytes;
-  const mediaLimit = (profile.soundtrack || profile.nativeJointAudio ? 64 : 2) * 1024 * 1024;
+  const mediaLimit =
+    (profile.soundtrack || profile.nativeJointAudio ? 64 : profile === stableAudioRoute ? 8 : 2) * 1024 * 1024;
   const media = read(outputRef.file, mediaLimit);
   const item = validateNativeVariantOutput({
     output,
@@ -1787,10 +1821,10 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     const decoded = await decodedMediaHash(media.file, 'audio');
     const rate = bound.generator.node.params.sample_rate.value;
     const duration = bound.generator.node.params.audio_duration.value;
-    assert.equal(rate, profile === audioRoute ? 24000 : 16000);
-    assert.equal(duration, profile === audioRoute ? 5 : 10);
+    assert.equal(rate, profile === stableAudioRoute ? 48000 : profile === audioRoute ? 24000 : 16000);
+    assert.equal(duration, profile === stableAudioRoute ? 30 : profile === audioRoute ? 5 : 10);
     assert.equal(decoded.sourceSampleRate, rate);
-    assert.equal(decoded.channels, 1);
+    assert.equal(decoded.channels, profile === stableAudioRoute ? 2 : 1);
     assert.equal(decoded.clippedSampleRatio, 0);
     assert.ok(decoded.durationSeconds >= duration - 0.1 && decoded.durationSeconds <= duration);
     assert.ok(decoded.peakAmplitude > 0.05 && decoded.silenceRatio < 0.75);
