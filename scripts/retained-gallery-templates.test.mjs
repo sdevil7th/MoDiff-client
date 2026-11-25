@@ -181,8 +181,10 @@ test('retained Gallery recipes preserve the native graph identities and standalo
         });
         assert.equal(canonicalGraphIdentity(api).hash, recipe.retainedGraphHash, template.id);
         assert.deepEqual(
-          capture.inputs.map(({ file }) => file.sha256),
-          [recipe.inputSha256, recipe.maskSha256].filter(Boolean),
+          Object.values(capture.inputs)
+            .map(({ file }) => file.sha256)
+            .sort(),
+          [recipe.inputSha256, recipe.maskSha256, recipe.guideSha256].filter(Boolean).sort(),
         );
       }
     } else if (recipe.inputLocatorSha256) {
@@ -238,7 +240,17 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: contract }, 'signal');
       } else {
         assert.equal(payload.fn, 'update_image_contract');
-        assert.ok(['PredictMap', 'Edit', 'Generate', 'Inpaint', 'UnconditionalGenerate'].includes(payload.action));
+        assert.ok(
+          [
+            'PredictMap',
+            'Edit',
+            'Generate',
+            'Inpaint',
+            'ControlGenerate',
+            'ControlInpaint',
+            'UnconditionalGenerate',
+          ].includes(payload.action),
+        );
         assert.deepEqual(payload.values.image_contract, contract);
       }
       return Response.json({ error: false, nodes: [] });
@@ -255,16 +267,22 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       contract = imageContract;
       const inputBinding = template.inputBindings?.[0];
       const audio = inputBinding?.mediaType === 'audio';
-      const input = recipe.inputSha256
-        ? [recipe.inputFileName ?? (audio ? authorsAudioFixture : 'review-source-image.png')]
-        : [];
+      const guide = template.inputBindings?.some(({ field }) => field === 'controlImage')
+        ? 'review-control-image.png'
+        : undefined;
+      const input =
+        recipe.inputSha256 && inputBinding?.field !== 'controlImage'
+          ? [recipe.inputFileName ?? (audio ? authorsAudioFixture : 'review-source-image.png')]
+          : [];
       const mask = recipe.maskSha256 ? 'review-mask-image.png' : undefined;
       const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
       studio
         .getState()
         .applyTemplate(
           template,
-          audio ? { sourceAudio: input[0] } : { referenceImages: input, ...(mask && { maskImage: mask }) },
+          audio
+            ? { sourceAudio: input[0] }
+            : { referenceImages: input, ...(mask && { maskImage: mask }), ...(guide && { controlImage: guide }) },
         );
       const form = studio.getState().form;
       assert.equal(form.device, template.example.lockedSettings.device ?? 'cuda:0');
@@ -316,6 +334,8 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
             'Generate',
             'Edit',
             'Inpaint',
+            'ControlGenerate',
+            'ControlInpaint',
             'GenerateAnyToAny',
             'GenerateImageVideoText',
             'UnconditionalGenerate',
@@ -342,9 +362,13 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           assert.equal(loader.params.quantization_mode.value, 'none');
         }
         const sources = actions.filter(({ module, action }) => module === 'modules.Image' && action === 'Load');
-        assert.equal(sources.length, input.length + Number(Boolean(mask)));
+        assert.equal(sources.length, input.length + Number(Boolean(mask)) + Number(Boolean(guide)));
         if (input.length) assert.ok(sources.some(({ params }) => params.file.value?.includes(input[0])));
         if (mask) assert.ok(sources.some(({ params }) => params.file.value?.includes(mask)));
+        if (guide) {
+          assert.ok(sources.some(({ params }) => params.file.value?.includes(guide)));
+          assert.equal(generation.params.conditioning_scale.value, locked.conditioningScale);
+        }
         continue;
       }
       if (audio) {

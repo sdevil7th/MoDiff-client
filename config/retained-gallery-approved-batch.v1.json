@@ -458,5 +458,124 @@
       "width": 768,
       "height": 768
     }
+  },
+  "sdxl_control_inpaint_warm_plaster": {
+    "associationSha256": "a164aa1acb01ff7bb77ec43565bd17ed7c822f8331eeb24516fa58095cd3ecbd",
+    "backendSourceFingerprint": "sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290",
+    "backendContractFingerprint": "sha256:backend-contract-v1:7271d6dfcd46a677217edf40c568c3f5e9ae300200f76976e0cf18fd9b9f2508",
+    "templateRevisionHash": "7d840698c480d52e5a864d50fcdbe6528680a9d0453e5dc501d76ac89c0991ef",
+    "primaryModelRepo": "stabilityai/stable-diffusion-xl-base-1.0",
+    "capturedAt": "2026-11-25T00:04:32.014Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sd15_canny_guided_green_glass": {
+    "associationSha256": "37b256588e8ffe492a2ac09c77eff98cf0b7adedafb95d434346b94c74a5e728",
+    "backendSourceFingerprint": "sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:ad16452bc59ad56fa75df0e9f2f3b913f28233c906d4e37c4518fbc978d47953",
+    "templateRevisionHash": "783d03619e47df52cf8b17262e42d07bdaacf9165314c26bce9dc3fc9478e55d",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "capturedAt": "2026-11-23T16:04:58.708Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "hunyuan_dit_green_glass_study": {
+    "associationSha256": "a4c37eed14bb2859393511f0c539ea5a4255852cec45141a470abbcfa6bfdaac",
+    "backendSourceFingerprint": "sha256:backend-source-v1:1aae04a8ad2e66aeb3eaacc065f2e111280bd8a64e7e6cb95cc927fed95d6b39",
+    "backendContractFingerprint": "sha256:backend-contract-v1:ad16452bc59ad56fa75df0e9f2f3b913f28233c906d4e37c4518fbc978d47953",
+    "templateRevisionHash": "a132dd6cd433bd0595f962173926edd930ea38cbf44d175d5499234f600d21f2",
+    "primaryModelRepo": "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled",
+    "capturedAt": "2026-11-23T17:50:53.075Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "qwen_control_winter_cabin_blue_hour": {
+    "associationSha256": "49e4dd97a963a91ec488a6e53586bc55bd0bcac93e2591d9d51f759cdcfb6ce6",
+    "backendSourceFingerprint": "sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:311f615e2b52ae3247c353b495df7708d560006e6909191e1e104b1e24b04587",
+    "templateRevisionHash": "eb65cb98a365c056f3a2a7bd5d44515bb16f518f7ec00797a496fe90a25ce07d",
+    "primaryModelRepo": "Qwen/Qwen-Image-2512",
+    "capturedAt": "2026-11-23T22:16:34.633Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sd15_pag_canny_guided_glass": {
+    "associationSha256": "5f2c1f81107eec8d214f6f9fa7bb517d0298a6fdfd1d31ed0c4c440ed19e359d",
+    "backendSourceFingerprint": "sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:ad16452bc59ad56fa75df0e9f2f3b913f28233c906d4e37c4518fbc978d47953",
+    "templateRevisionHash": "23fc8dfe4150096c38d946116a9839a314a7581d52c9397e9d8e1ad42716624c",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "capturedAt": "2026-11-23T16:06:50.173Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "sdxl_controlnet_glass_study_on_slate": {
+    "associationSha256": "290aae18b88e53f187a4818898017c3e685032471209ea970ee9f9e675f198bb",
+    "backendSourceFingerprint": "sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3",
+    "backendContractFingerprint": "sha256:backend-contract-v1:ad16452bc59ad56fa75df0e9f2f3b913f28233c906d4e37c4518fbc978d47953",
+    "templateRevisionHash": "3075b68d97eea65616a9a8fe2519154041e24ced2cd916b395c4849d26c31b71",
+    "primaryModelRepo": "stabilityai/stable-diffusion-xl-base-1.0",
+    "capturedAt": "2026-11-23T15:20:10.146Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sdxl_canny_adapter_glass_study": {
+    "associationSha256": "f05c0bb40aaad59d8bafc8f3efe1de4be8e3ebc1cec9b0607dde8902a78c4123",
+    "backendSourceFingerprint": "sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3",
+    "backendContractFingerprint": "sha256:backend-contract-v1:ad16452bc59ad56fa75df0e9f2f3b913f28233c906d4e37c4518fbc978d47953",
+    "templateRevisionHash": "eef6570d0a2241aa0a9ff68b200c59591fc6497f43885fba151138ae56517968",
+    "primaryModelRepo": "stabilityai/stable-diffusion-xl-base-1.0",
+    "capturedAt": "2026-11-23T14:45:54.554Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
   }
 }

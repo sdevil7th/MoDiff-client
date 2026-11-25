@@ -150,7 +150,9 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
   }
   const association = bundle.association;
   const { output, observedExecution } = association;
-  const [model] = observedExecution.modelSet;
+  const models = observedExecution.modelSet;
+  const model = pins.primaryModelRepo ? models.find(({ repoId }) => repoId === pins.primaryModelRepo) : models[0];
+  if (!model) return ['retained Gallery primary model is missing from the approved execution'];
   const base = '/template-gallery/';
   const stem = entry.templateId;
   const outputPath = base + stem + '.' + pins.outputExtension;

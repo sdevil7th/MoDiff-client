@@ -64,6 +64,11 @@
     "bytes": 3869,
     "sha256": "9fa0b0086341bdb652c97b70521b5647977e1922b7bc0858c7b803e90ea8c4a7"
   },
+  "HunyuanDiTControlNetPipeline:control_image": {
+    "descriptorSha256": "88ca5ccb6b4500e438bd84d42321a2cb61d0f7322e5c3bdaa8343735b8f08648",
+    "bytes": 5246,
+    "sha256": "7426bf3a8120bb575184e3b93c8fb0b5d294dfbcef9f8e4d3119c1e9b65b66f6"
+  },
   "HunyuanDiTPAGPipeline:text_to_image": {
     "descriptorSha256": "aa6b64f4a942adbb11c83cbaba89940fd03ed7dbf83175e8e1d17d32291454d3",
     "bytes": 4127,
@@ -114,6 +119,11 @@
     "bytes": 4027,
     "sha256": "912dc80ea1fbd712358db93e1b4808850bbe6659ea6adcd3f9c9205d5cf2f188"
   },
+  "QwenImageControlNetPipeline:control_image": {
+    "descriptorSha256": "e9d03118cfe3e55fb78b42dec749d367bf72d6676aae59e70fd1b3be19ade4c0",
+    "bytes": 5155,
+    "sha256": "53558f2a325dab64cfe573ea363e3d0fd8c74a1aeae8b1019dc7112f7aaa8464"
+  },
   "SanaPAGPipeline:text_to_image": {
     "descriptorSha256": "2e80e952039cfbc7b42f7f1b5689f30fb8b8f83646e0f4c2f6cb8e3a68b8d784",
     "bytes": 4223,
@@ -123,6 +133,11 @@
     "descriptorSha256": "e6693f3cb5cc81bbac653e0f89c15e2871fdbb67ad37c4f3c63514bbf4e0aa43",
     "bytes": 4134,
     "sha256": "6c40aefc3fd65ed6bf87626873bb0377e7fba8ff4fbdbc5c0d3e4e0e3531968a"
+  },
+  "StableDiffusionPAGPipeline:control_image": {
+    "descriptorSha256": "9bb9602d6c79fd442b5f197809ed32dd1651524f4f5d730c28e1971c7325fc1d",
+    "bytes": 5428,
+    "sha256": "062b9b7343d9a8f8a3ebeb218b7f580295ee991e6ae436114ad3fdbe5305b75f"
   },
   "StableDiffusionPAGPipeline:edit_image": {
     "descriptorSha256": "b4929658c32ef7bad47e50f647abec0e6159c54374a1baea1e05d3f93b66effb",
@@ -139,6 +154,11 @@
     "bytes": 4433,
     "sha256": "419397857a211d1ba3812d32cc47678a00883b5d70114a80079d8415176d09ed"
   },
+  "StableDiffusionPipeline:control_image": {
+    "descriptorSha256": "4947a5a7b0a87481e1795185f91486717d6950c0f0f3ae79fc979c46c55ad443",
+    "bytes": 5181,
+    "sha256": "955cd49c1120a171b81a6445b75af50e0b180ff2e962053eaf556d28b5942b06"
+  },
   "StableDiffusionPipeline:edit_image": {
     "descriptorSha256": "ce72fd7e5d5f263f68f94ae15778a596a3161c38c0f4092531f0c719b78667d8",
     "bytes": 4799,
@@ -153,6 +173,21 @@
     "descriptorSha256": "235118ee94df6adef140079116b17158e2922bf861a5f6d7d23f4f3f988d3927",
     "bytes": 4194,
     "sha256": "642ccf45dd15946ead72c9666b394a9932d92d0dca64f13dfae0284edc55b9c5"
+  },
+  "StableDiffusionXLAdapterPipeline:control_image": {
+    "descriptorSha256": "5a911626f9d33032fb2dcdc80cede5ffad9506abc0fb0077dc4ba39947b33a36",
+    "bytes": 5234,
+    "sha256": "1a82490dad0b9ed6b3867c70d1640e80d30f8bd8958545c0fa014a6d500961d0"
+  },
+  "StableDiffusionXLControlNetPipeline:control_image": {
+    "descriptorSha256": "f57b41443261612d95d3e80df2d638617f62526970313989ca69e0652bb4c390",
+    "bytes": 5241,
+    "sha256": "bb299311c58976cfd79bcf10eadc42f676d3dcf696eec4e7f42e46086e7b1720"
+  },
+  "StableDiffusionXLControlNetPipeline:control_inpaint": {
+    "descriptorSha256": "ccf8f19d4018fd24d47fa5001209e36f9cec3a36a56e539f87759a99a7ac5fab",
+    "bytes": 6485,
+    "sha256": "b35a7bc3ceb494992fbad720db28faa4b242a34d109fd4b6c635cf127aca21c3"
   },
   "StableDiffusionXLInstructPix2PixPipeline:edit_image": {
     "descriptorSha256": "4655ea8f1f9b86921f07658644599ebe08034ffbe93e081eb19fd08faa214b61",

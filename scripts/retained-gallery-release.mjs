@@ -67,6 +67,7 @@ function assertRetainedBatchEvidence({
     association.output.inputEncodedSha256?.replace(/^sha256:bytes:/u, '') ?? association.privateSourceSha256;
   assert.equal(inputHash, recipe.inputSha256);
   assert.equal(association.approvedFiles.approvedMaskPath?.sha256, recipe.maskSha256);
+  assert.equal(association.approvedFiles.approvedGuidePath?.sha256, recipe.guideSha256);
   assert.equal(
     association.output.maskEncodedSha256,
     recipe.maskSha256 ? 'sha256:bytes:' + recipe.maskSha256 : undefined,
@@ -106,6 +107,7 @@ function assertRetainedBatchEvidence({
   assert.equal(nativeReceipt.promptBinding.sha256, recipe.promptSha256, label);
   assert.equal(nativeReceipt.inputBinding?.sha256, recipe.inputSha256, label);
   assert.equal(nativeReceipt.maskBinding?.sha256, recipe.maskSha256, label);
+  assert.equal(nativeReceipt.guideBinding?.sha256, recipe.guideSha256, label);
   if (association.output.mediaType === 'image') {
     assert.equal(nativeReceipt.decodedOutput.hash, association.output.decodedMediaHash, label);
   }

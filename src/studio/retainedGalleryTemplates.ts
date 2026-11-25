@@ -9,6 +9,7 @@ export type RetainedGalleryRecipe = {
   readonly originalReceiptSha256: string;
   readonly reviewedTemplateSha256: string;
   readonly maskSha256?: string;
+  readonly guideSha256?: string;
   readonly reviewedCatalogLock: {
     readonly templateLockHash: string;
     readonly galleryTemplateLockHash: string;

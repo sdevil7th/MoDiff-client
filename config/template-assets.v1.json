@@ -1439,6 +1439,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/hunyuan_dit_green_glass_study.webp",
+      "size": 428092,
+      "sha256": "sha256:bytes:a8e7cfbff764d792497daf6a8239591e7f1963008946a8593721b931f2cfb41e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/hunyuan_pag_burgundy_knight.webp",
       "size": 274754,
       "sha256": "sha256:bytes:9f1c23651fccd748c6caa912c81e5e3983d311374ba2781ee2d27d2b3cf7ae0c",
@@ -1682,6 +1693,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/hunyuan_dit_green_glass_study.before.png",
+      "size": 7281,
+      "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/lcm_dawn_alpine_lake.before.webp",
       "size": 164148,
       "sha256": "sha256:bytes:25fe06d8e93645bc6ff29928556a0cd654aa6d70178d435268b3d17e9188feaa",
@@ -1784,6 +1806,17 @@
       "path": "template-gallery/inputs/qwen_control_image_layout.before.png",
       "size": 11137,
       "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_control_winter_cabin_blue_hour.before.png",
+      "size": 8404,
+      "sha256": "sha256:bytes:ca250462efc77625134ebe305b2ee67281a1dcf8919e45299c648f0fdacf919a",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -1991,6 +2024,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/sd15_canny_guided_green_glass.before.png",
+      "size": 9470,
+      "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_pag_canny_guided_glass.before.png",
+      "size": 9470,
+      "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/inputs/sd15_pag_cobalt_studio_repair.before.png",
       "size": 271303,
       "sha256": "sha256:bytes:d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
@@ -2024,6 +2079,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/sdxl_canny_adapter_glass_study.before.png",
+      "size": 7281,
+      "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/sdxl_clear_cobalt_backdrop.before.png",
       "size": 623267,
       "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
@@ -2038,6 +2104,50 @@
       "path": "template-gallery/inputs/sdxl_clear_cobalt_backdrop.mask.png",
       "size": 1571,
       "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_inpaint_warm_plaster.before.png",
+      "size": 623267,
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_inpaint_warm_plaster.guide.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_inpaint_warm_plaster.mask.png",
+      "size": 1571,
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_controlnet_glass_study_on_slate.before.png",
+      "size": 7281,
+      "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -2495,8 +2605,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 329020,
-      "sha256": "sha256:bytes:ffa3e887c65d7eb2fe860611ac5eb042cd0645bcb2999b48552d6dd1d5a1eafa",
+      "size": 347462,
+      "sha256": "sha256:bytes:5270a2956e09da1470a48cad222156db9ed6951b21e14178a111fbaede1bb75f",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -2621,6 +2731,17 @@
       ],
       "width": 768,
       "height": 768
+    },
+    {
+      "path": "template-gallery/qwen_control_winter_cabin_blue_hour.webp",
+      "size": 398200,
+      "sha256": "sha256:bytes:d54f6087af42a8af4f676f49b7c25cfa93df29343ab5cb151d2dc95e5ecd2039",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/qwen_edit_plus_single_image.webp",
@@ -4210,6 +4331,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.original-provenance.json",
+      "size": 1236,
+      "sha256": "sha256:bytes:293d3b5128a5dec99d0371bc1402731b1264231127d73a9c85759048daee7bdb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.original-review.json",
+      "size": 652,
+      "sha256": "sha256:bytes:40f0a76223a6da7fd9be445ca991c684ca1efdd45ef86e695b1f27d493b3a1f0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.quality-review.json",
+      "size": 2476,
+      "sha256": "sha256:bytes:c0da5754ab4ed0b3106fc0ac394cc83d47ae24431669a6e50014dbe5ac2dbdc3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.retained-template-provenance.json",
+      "size": 3712,
+      "sha256": "sha256:bytes:db66437531e3bdeb92c4d409db6dcea15a834b1c2e5a05a4d93b5442db6568cc",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/hunyuan_pag_burgundy_knight.original-provenance.json",
       "size": 1758,
       "sha256": "sha256:bytes:c2c30ee01a229dc1a2eafbc42f8e22d19626533c158ebeb4211ddc64f1ac9a9c",
@@ -4948,6 +5105,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.original-provenance.json",
+      "size": 1192,
+      "sha256": "sha256:bytes:a58317e01fd2bffeb6a261279a595539d058304a8c5965c89e43ef6680273fc4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.original-review.json",
+      "size": 704,
+      "sha256": "sha256:bytes:b01f4a91833a2f141f512cb5caee5eeff76481a829590260f823b500824bab24",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.quality-review.json",
+      "size": 2586,
+      "sha256": "sha256:bytes:b83d8bef8d87dbd5e4587904a947f82d9a2353224781b1581dae0684b86eab65",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.retained-template-provenance.json",
+      "size": 3679,
+      "sha256": "sha256:bytes:6c21a60f83581753a9e54647ce49a82c877f23a30ea2161be13e675e26eeb0db",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/qwen_edit_plus_single_image.quality-review.json",
       "size": 3415,
       "sha256": "sha256:bytes:bd2066932a1749ee87c340450d232ed2d8f919648ae9e1e64b9ea30f531d73d7",
@@ -5416,6 +5609,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.original-provenance.json",
+      "size": 1208,
+      "sha256": "sha256:bytes:4819d64b35e84d822483b4edf58c0d2a82ca612989a5f283763eff90e1c3dcc4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.original-review.json",
+      "size": 607,
+      "sha256": "sha256:bytes:702ca8e77651aeb71cddfb6daa67ca584309cc1639d3ad81cbe783e65c14ac14",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.quality-review.json",
+      "size": 2327,
+      "sha256": "sha256:bytes:6b4eb4c2e53322bd651c6da7802034a81a968a063f4d68099d18a47b798b6a2a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.retained-template-provenance.json",
+      "size": 3662,
+      "sha256": "sha256:bytes:402d8a04c798edda4ccf43f0b2716520eb7b4e3e268b111ac029ce1ef95865bc",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.original-provenance.json",
+      "size": 1257,
+      "sha256": "sha256:bytes:9c932db7355340ac4e8adf44b0d465192ee66096c6e811fd917ab7d0d6858881",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.original-review.json",
+      "size": 663,
+      "sha256": "sha256:bytes:71b3e8d9324b3a359982cc2544d97acaa55ad8fd919bba1c9638e337c2029b64",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.quality-review.json",
+      "size": 2346,
+      "sha256": "sha256:bytes:17e907b2f792b6f5d3a67cdb23e21cd610731baec7b7bd3914170fb801f4c807",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.retained-template-provenance.json",
+      "size": 3708,
+      "sha256": "sha256:bytes:7f00b5906e8f7b8b9f25ab10145851637e469edfb455660c72f08be72bee8b7b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sd15_pag_cobalt_studio_repair.original-provenance.json",
       "size": 1518,
       "sha256": "sha256:bytes:b3a227ef5f8f0ea481c446854ce4be387bfe434ff252d9a5d34887ddb2b69b55",
@@ -5488,6 +5753,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.original-provenance.json",
+      "size": 1220,
+      "sha256": "sha256:bytes:daf26190a849032e45d97c519a2d0a943ea9cab99937916d7f2f9b88b29a69a0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.original-review.json",
+      "size": 684,
+      "sha256": "sha256:bytes:305618170534dc7808c62234e6bc2a428e49d6eb5ed766aabb4aad4cc48f6e07",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.quality-review.json",
+      "size": 2526,
+      "sha256": "sha256:bytes:f4766cc262cf8d06f5e643b7e4b11bf31ddb550de66b2274727948738550ab7b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.retained-template-provenance.json",
+      "size": 3678,
+      "sha256": "sha256:bytes:3a6c1a9a6ce7a31c19275f7049b062f62739c7517e13e2ad5c512c805a5a68ef",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.original-provenance.json",
       "size": 1214,
       "sha256": "sha256:bytes:7361ac84e232f55f7f8e19fae39c5abff4e4df36ac1d1c754ca4d9716d60b1df",
@@ -5518,6 +5819,78 @@
       "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.retained-template-provenance.json",
       "size": 3981,
       "sha256": "sha256:bytes:b680690954be3c7784aed2b97110d50706dc3ebb56df9e61611b203150a90b39",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.original-provenance.json",
+      "size": 1498,
+      "sha256": "sha256:bytes:661ddabb9dd317859660c6d6c56737672f0969c2637153b2aa3a14b1422cac0b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.original-review.json",
+      "size": 570,
+      "sha256": "sha256:bytes:9ec0f8ff6cc645c9c9c9c9102965753af931061398629edb65727f99d2cb7faa",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.quality-review.json",
+      "size": 2463,
+      "sha256": "sha256:bytes:4e3e6d321e3c4b7b17ba5ff675c610bd6c0a86779bda8e1c2fa0b3c25754d15e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.retained-template-provenance.json",
+      "size": 4261,
+      "sha256": "sha256:bytes:b55fbe6ba9d7b2243d12fe0227026b502eb8674412f4da62cc0ef72b57a91370",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.original-provenance.json",
+      "size": 1214,
+      "sha256": "sha256:bytes:5eff28279014893ed1b626866eef574cb72798d376da8faef83766c89e3e8223",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.original-review.json",
+      "size": 595,
+      "sha256": "sha256:bytes:42676c7dd7b9bd9c2062dd771f1d63f7507670609ba6ef543b066877c6f86de1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.quality-review.json",
+      "size": 2271,
+      "sha256": "sha256:bytes:3ad7e229aa4536d60a0337200d22d47e753f7770edbce0528a7dd89f3f7f0895",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.retained-template-provenance.json",
+      "size": 3701,
+      "sha256": "sha256:bytes:564bd43c3c23f41f40e46ee762ad2a3c61e63ca7a5600f8af0fdf92b263856fe",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6696,6 +7069,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/sd15_canny_guided_green_glass.webp",
+      "size": 53292,
+      "sha256": "sha256:bytes:d564a03d8e7b1a96083bd314b3700e828da2575b2b355cc574ebbcb17dd7a2d5",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/sd15_pag_canny_guided_glass.webp",
+      "size": 80516,
+      "sha256": "sha256:bytes:3458a6d0acea5261f8f829121eabb8d1dc77a2f057e62d18485e34f097f1da6b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/sd15_pag_cobalt_studio_repair.webp",
       "size": 45174,
       "sha256": "sha256:bytes:eb511fda2b5d227685893fac25fd214c4b4a25ac7c1f61e0205983ac657f82de",
@@ -6718,9 +7113,42 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/sdxl_canny_adapter_glass_study.webp",
+      "size": 140860,
+      "sha256": "sha256:bytes:a3cc3458190184277baebd012898e3eef8504570f6ce52a64228a78f68400eef",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/sdxl_clear_cobalt_backdrop.webp",
       "size": 119828,
       "sha256": "sha256:bytes:98b57164602d8cfd6b61c689fa26770421f9dce8a7b9c23bc879a49d4def1004",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/sdxl_control_inpaint_warm_plaster.webp",
+      "size": 119380,
+      "sha256": "sha256:bytes:843d44d49afe20f03301931466a5578f2924c089bf33a8e6121f4346c33780f4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/sdxl_controlnet_glass_study_on_slate.webp",
+      "size": 171678,
+      "sha256": "sha256:bytes:a900fb44cec09e91eb4d6237dc5a81aa9dfa0a92deea9ccfa3c5f84b2c7dc4e5",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -7554,9 +7982,9 @@
       "height": 640
     }
   ],
-  "assetSetId": "sha256:canonical-json:a5449a1ff8625c700e811308f7c16caf8888d379889895381ee4934d485c2cd6",
+  "assetSetId": "sha256:canonical-json:42a99213cc747732b46d350cf1e908d2388ae363fdb0d6fb1200d084ca3971f2",
   "status": "ready",
-  "assetCount": 772,
-  "totalBytes": 1052427796,
+  "assetCount": 816,
+  "totalBytes": 1055193864,
   "missingAssets": []
 }

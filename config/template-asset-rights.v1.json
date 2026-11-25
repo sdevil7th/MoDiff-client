@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:a5449a1ff8625c700e811308f7c16caf8888d379889895381ee4934d485c2cd6",
+  "assetSetId": "sha256:canonical-json:42a99213cc747732b46d350cf1e908d2388ae363fdb0d6fb1200d084ca3971f2",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -3677,6 +3677,33 @@
       "provenanceTemplateId": "hunyuan_dit_coastal_lighthouse"
     },
     {
+      "path": "template-gallery/hunyuan_dit_green_glass_study.webp",
+      "sha256": "sha256:bytes:a8e7cfbff764d792497daf6a8239591e7f1963008946a8593721b931f2cfb41e",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceRevision": "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1 https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "hunyuan_dit_green_glass_study"
+    },
+    {
       "path": "template-gallery/hunyuan_pag_burgundy_knight.webp",
       "sha256": "sha256:bytes:9f1c23651fccd748c6caa912c81e5e3983d311374ba2781ee2d27d2b3cf7ae0c",
       "publishDecision": "approved",
@@ -4267,6 +4294,33 @@
       ]
     },
     {
+      "path": "template-gallery/inputs/hunyuan_dit_green_glass_study.before.png",
+      "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceRevision": "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1 https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "hunyuan_dit_green_glass_study"
+    },
+    {
       "path": "template-gallery/inputs/lcm_dawn_alpine_lake.before.webp",
       "sha256": "sha256:bytes:25fe06d8e93645bc6ff29928556a0cd654aa6d70178d435268b3d17e9188feaa",
       "publishDecision": "approved",
@@ -4522,6 +4576,33 @@
         "flux3_klein_fp8r512_multi_reference_edit",
         "qwen_control_image_layout"
       ]
+    },
+    {
+      "path": "template-gallery/inputs/qwen_control_winter_cabin_blue_hour.before.png",
+      "sha256": "sha256:bytes:ca250462efc77625134ebe305b2ee67281a1dcf8919e45299c648f0fdacf919a",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceRevision": "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26 https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_control_winter_cabin_blue_hour"
     },
     {
       "path": "template-gallery/inputs/qwen_edit_plus_single_image.before.webp",
@@ -5002,6 +5083,60 @@
       "provenanceTemplateId": "sana_sprint_monochrome_tiger"
     },
     {
+      "path": "template-gallery/inputs/sd15_canny_guided_green_glass.before.png",
+      "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_canny_guided_green_glass"
+    },
+    {
+      "path": "template-gallery/inputs/sd15_pag_canny_guided_glass.before.png",
+      "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_pag_canny_guided_glass"
+    },
+    {
       "path": "template-gallery/inputs/sd15_pag_cobalt_studio_repair.before.png",
       "sha256": "sha256:bytes:d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
       "publishDecision": "approved",
@@ -5083,6 +5218,33 @@
       "provenanceTemplateId": "sd15_pag_mountain_lake_watercolor"
     },
     {
+      "path": "template-gallery/inputs/sdxl_canny_adapter_glass_study.before.png",
+      "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_canny_adapter_glass_study"
+    },
+    {
       "path": "template-gallery/inputs/sdxl_clear_cobalt_backdrop.before.png",
       "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
       "publishDecision": "approved",
@@ -5135,6 +5297,114 @@
       "humanApprovalPacketSHA256": "d216f065bdc316366c6183592f657bcfbbd7cb05acd0e510c6b3877fe56bcec2",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped six saved cases with model terms retained.",
       "provenanceTemplateId": "sdxl_clear_cobalt_backdrop"
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_inpaint_warm_plaster.before.png",
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_inpaint_warm_plaster.guide.png",
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_inpaint_warm_plaster.mask.png",
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_controlnet_glass_study_on_slate.before.png",
+      "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_controlnet_glass_study_on_slate"
     },
     {
       "path": "template-gallery/inputs/sdxl_pix2pix_pale_amber_glass.before.png",
@@ -6293,7 +6563,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:ffa3e887c65d7eb2fe860611ac5eb042cd0645bcb2999b48552d6dd1d5a1eafa",
+      "sha256": "sha256:bytes:5270a2956e09da1470a48cad222156db9ed6951b21e14178a111fbaede1bb75f",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -6310,7 +6580,7 @@
       "reviewedBy": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-25",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "c2df9edb92f8ff905b6c9a138a285e67c621f3d2dfa3232f859aaf963b725aca",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained."
     },
     {
@@ -6608,6 +6878,33 @@
       "sourceRightsAttestation": "The maintainer accepted the exact review-gallery asset and expressly requested its registration.",
       "acceptedOutputSHA256": "8aea21cd03849912745c7bbc1a2ceabad27cf3649947c6fb08fd86a7eec16c17",
       "humanApprovalPacketSHA256": "73ddf9ea7fc27eccc6b93817809421a008ce0fd2fb3080ffbdc5831a09205304"
+    },
+    {
+      "path": "template-gallery/qwen_control_winter_cabin_blue_hour.webp",
+      "sha256": "sha256:bytes:d54f6087af42a8af4f676f49b7c25cfa93df29343ab5cb151d2dc95e5ecd2039",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceRevision": "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26 https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_control_winter_cabin_blue_hour"
     },
     {
       "path": "template-gallery/qwen_edit_plus_single_image.webp",
@@ -10758,6 +11055,114 @@
       "provenanceTemplateId": "hunyuan_dit_coastal_lighthouse"
     },
     {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.original-provenance.json",
+      "sha256": "sha256:bytes:293d3b5128a5dec99d0371bc1402731b1264231127d73a9c85759048daee7bdb",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceRevision": "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1 https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "hunyuan_dit_green_glass_study"
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.original-review.json",
+      "sha256": "sha256:bytes:40f0a76223a6da7fd9be445ca991c684ca1efdd45ef86e695b1f27d493b3a1f0",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceRevision": "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1 https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "hunyuan_dit_green_glass_study"
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.quality-review.json",
+      "sha256": "sha256:bytes:c0da5754ab4ed0b3106fc0ac394cc83d47ae24431669a6e50014dbe5ac2dbdc3",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceRevision": "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1 https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "hunyuan_dit_green_glass_study"
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_green_glass_study.retained-template-provenance.json",
+      "sha256": "sha256:bytes:db66437531e3bdeb92c4d409db6dcea15a834b1c2e5a05a4d93b5442db6568cc",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceRevision": "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled@ba991d1546d8c50936c4c16398ed0a87b9b99fb1 https://huggingface.co/Tencent-Hunyuan/HunyuanDiT-v1.2-Diffusers-Distilled/tree/ba991d1546d8c50936c4c16398ed0a87b9b99fb1"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "hunyuan_dit_green_glass_study"
+    },
+    {
       "path": "template-gallery/reviews/hunyuan_pag_burgundy_knight.original-provenance.json",
       "sha256": "sha256:bytes:c2c30ee01a229dc1a2eafbc42f8e22d19626533c158ebeb4211ddc64f1ac9a9c",
       "publishDecision": "approved",
@@ -12859,6 +13264,114 @@
       "provenanceTemplateId": "qwen_control_image_layout"
     },
     {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.original-provenance.json",
+      "sha256": "sha256:bytes:a58317e01fd2bffeb6a261279a595539d058304a8c5965c89e43ef6680273fc4",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceRevision": "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26 https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_control_winter_cabin_blue_hour"
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.original-review.json",
+      "sha256": "sha256:bytes:b01f4a91833a2f141f512cb5caee5eeff76481a829590260f823b500824bab24",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceRevision": "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26 https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_control_winter_cabin_blue_hour"
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.quality-review.json",
+      "sha256": "sha256:bytes:b83d8bef8d87dbd5e4587904a947f82d9a2353224781b1581dae0684b86eab65",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceRevision": "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26 https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_control_winter_cabin_blue_hour"
+    },
+    {
+      "path": "template-gallery/reviews/qwen_control_winter_cabin_blue_hour.retained-template-provenance.json",
+      "sha256": "sha256:bytes:6c21a60f83581753a9e54647ce49a82c877f23a30ea2161be13e675e26eeb0db",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceRevision": "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-2512@25468b98e3276ca6700de15c6628e51b7de54a26 https://huggingface.co/Qwen/Qwen-Image-2512/tree/25468b98e3276ca6700de15c6628e51b7de54a26"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_control_winter_cabin_blue_hour"
+    },
+    {
       "path": "template-gallery/reviews/qwen_edit_plus_single_image.quality-review.json",
       "sha256": "sha256:bytes:bd2066932a1749ee87c340450d232ed2d8f919648ae9e1e64b9ea30f531d73d7",
       "publishDecision": "approved",
@@ -14051,6 +14564,222 @@
       "provenanceTemplateId": "sana_sprint_monochrome_tiger"
     },
     {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.original-provenance.json",
+      "sha256": "sha256:bytes:4819d64b35e84d822483b4edf58c0d2a82ca612989a5f283763eff90e1c3dcc4",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_canny_guided_green_glass"
+    },
+    {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.original-review.json",
+      "sha256": "sha256:bytes:702ca8e77651aeb71cddfb6daa67ca584309cc1639d3ad81cbe783e65c14ac14",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_canny_guided_green_glass"
+    },
+    {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.quality-review.json",
+      "sha256": "sha256:bytes:6b4eb4c2e53322bd651c6da7802034a81a968a063f4d68099d18a47b798b6a2a",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_canny_guided_green_glass"
+    },
+    {
+      "path": "template-gallery/reviews/sd15_canny_guided_green_glass.retained-template-provenance.json",
+      "sha256": "sha256:bytes:402d8a04c798edda4ccf43f0b2716520eb7b4e3e268b111ac029ce1ef95865bc",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_canny_guided_green_glass"
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.original-provenance.json",
+      "sha256": "sha256:bytes:9c932db7355340ac4e8adf44b0d465192ee66096c6e811fd917ab7d0d6858881",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_pag_canny_guided_glass"
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.original-review.json",
+      "sha256": "sha256:bytes:71b3e8d9324b3a359982cc2544d97acaa55ad8fd919bba1c9638e337c2029b64",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_pag_canny_guided_glass"
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.quality-review.json",
+      "sha256": "sha256:bytes:17e907b2f792b6f5d3a67cdb23e21cd610731baec7b7bd3914170fb801f4c807",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_pag_canny_guided_glass"
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.retained-template-provenance.json",
+      "sha256": "sha256:bytes:7f00b5906e8f7b8b9f25ab10145851637e469edfb455660c72f08be72bee8b7b",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_pag_canny_guided_glass"
+    },
+    {
       "path": "template-gallery/reviews/sd15_pag_cobalt_studio_repair.original-provenance.json",
       "sha256": "sha256:bytes:b3a227ef5f8f0ea481c446854ce4be387bfe434ff252d9a5d34887ddb2b69b55",
       "publishDecision": "approved",
@@ -14267,6 +14996,114 @@
       "provenanceTemplateId": "sd15_pag_mountain_lake_watercolor"
     },
     {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.original-provenance.json",
+      "sha256": "sha256:bytes:daf26190a849032e45d97c519a2d0a943ea9cab99937916d7f2f9b88b29a69a0",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_canny_adapter_glass_study"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.original-review.json",
+      "sha256": "sha256:bytes:305618170534dc7808c62234e6bc2a428e49d6eb5ed766aabb4aad4cc48f6e07",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_canny_adapter_glass_study"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.quality-review.json",
+      "sha256": "sha256:bytes:f4766cc262cf8d06f5e643b7e4b11bf31ddb550de66b2274727948738550ab7b",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_canny_adapter_glass_study"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.retained-template-provenance.json",
+      "sha256": "sha256:bytes:3a6c1a9a6ce7a31c19275f7049b062f62739c7517e13e2ad5c512c805a5a68ef",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_canny_adapter_glass_study"
+    },
+    {
       "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.original-provenance.json",
       "sha256": "sha256:bytes:7361ac84e232f55f7f8e19fae39c5abff4e4df36ac1d1c754ca4d9716d60b1df",
       "publishDecision": "approved",
@@ -14373,6 +15210,222 @@
       "humanApprovalPacketSHA256": "d216f065bdc316366c6183592f657bcfbbd7cb05acd0e510c6b3877fe56bcec2",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped six saved cases with model terms retained.",
       "provenanceTemplateId": "sdxl_clear_cobalt_backdrop"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.original-provenance.json",
+      "sha256": "sha256:bytes:661ddabb9dd317859660c6d6c56737672f0969c2637153b2aa3a14b1422cac0b",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.original-review.json",
+      "sha256": "sha256:bytes:9ec0f8ff6cc645c9c9c9c9102965753af931061398629edb65727f99d2cb7faa",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.quality-review.json",
+      "sha256": "sha256:bytes:4e3e6d321e3c4b7b17ba5ff675c610bd6c0a86779bda8e1c2fa0b3c25754d15e",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.retained-template-provenance.json",
+      "sha256": "sha256:bytes:b55fbe6ba9d7b2243d12fe0227026b502eb8674412f4da62cc0ef72b57a91370",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.original-provenance.json",
+      "sha256": "sha256:bytes:5eff28279014893ed1b626866eef574cb72798d376da8faef83766c89e3e8223",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_controlnet_glass_study_on_slate"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.original-review.json",
+      "sha256": "sha256:bytes:42676c7dd7b9bd9c2062dd771f1d63f7507670609ba6ef543b066877c6f86de1",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_controlnet_glass_study_on_slate"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.quality-review.json",
+      "sha256": "sha256:bytes:3ad7e229aa4536d60a0337200d22d47e753f7770edbce0528a7dd89f3f7f0895",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_controlnet_glass_study_on_slate"
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.retained-template-provenance.json",
+      "sha256": "sha256:bytes:564bd43c3c23f41f40e46ee762ad2a3c61e63ca7a5600f8af0fdf92b263856fe",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_controlnet_glass_study_on_slate"
     },
     {
       "path": "template-gallery/reviews/sdxl_pix2pix_pale_amber_glass.original-provenance.json",
@@ -17320,6 +18373,60 @@
       "provenanceTemplateId": "sana_sprint_monochrome_tiger"
     },
     {
+      "path": "template-gallery/sd15_canny_guided_green_glass.webp",
+      "sha256": "sha256:bytes:d564a03d8e7b1a96083bd314b3700e828da2575b2b355cc574ebbcb17dd7a2d5",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_canny_guided_green_glass"
+    },
+    {
+      "path": "template-gallery/sd15_pag_canny_guided_glass.webp",
+      "sha256": "sha256:bytes:3458a6d0acea5261f8f829121eabb8d1dc77a2f057e62d18485e34f097f1da6b",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14 https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sd15_pag_canny_guided_glass"
+    },
+    {
       "path": "template-gallery/sd15_pag_cobalt_studio_repair.webp",
       "sha256": "sha256:bytes:eb511fda2b5d227685893fac25fd214c4b4a25ac7c1f61e0205983ac657f82de",
       "publishDecision": "approved",
@@ -17374,6 +18481,33 @@
       "provenanceTemplateId": "sd15_pag_mountain_lake_watercolor"
     },
     {
+      "path": "template-gallery/sdxl_canny_adapter_glass_study.webp",
+      "sha256": "sha256:bytes:a3cc3458190184277baebd012898e3eef8504570f6ce52a64228a78f68400eef",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_canny_adapter_glass_study"
+    },
+    {
       "path": "template-gallery/sdxl_clear_cobalt_backdrop.webp",
       "sha256": "sha256:bytes:98b57164602d8cfd6b61c689fa26770421f9dce8a7b9c23bc879a49d4def1004",
       "publishDecision": "approved",
@@ -17399,6 +18533,60 @@
       "humanApprovalPacketSHA256": "d216f065bdc316366c6183592f657bcfbbd7cb05acd0e510c6b3877fe56bcec2",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped six saved cases with model terms retained.",
       "provenanceTemplateId": "sdxl_clear_cobalt_backdrop"
+    },
+    {
+      "path": "template-gallery/sdxl_control_inpaint_warm_plaster.webp",
+      "sha256": "sha256:bytes:843d44d49afe20f03301931466a5578f2924c089bf33a8e6121f4346c33780f4",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_control_inpaint_warm_plaster"
+    },
+    {
+      "path": "template-gallery/sdxl_controlnet_glass_study_on_slate.webp",
+      "sha256": "sha256:bytes:a900fb44cec09e91eb4d6237dc5a81aa9dfa0a92deea9ccfa3c5f84b2c7dc4e5",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceRevision": "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-diffusion-xl-base-1.0@462165984030d82259a11f4367a4eed129e94a7b https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/tree/462165984030d82259a11f4367a4eed129e94a7b"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "3968c7cbe37a94789a9f839d8e83a9e0f102629b797d5f7baacf0304a8d18153",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "sdxl_controlnet_glass_study_on_slate"
     },
     {
       "path": "template-gallery/sdxl_pix2pix_pale_amber_glass.webp",
