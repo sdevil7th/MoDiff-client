@@ -626,7 +626,7 @@ async function readReviewBatch({ approvalRoot, vite, nativeBySha, scopes, approv
   const indexedFiles = new Map(reviewedScope.value.files.map((item) => [item.path, item]));
   assert.equal(indexedFiles.size, reviewedScope.value.files.length, 'Review inventory contains duplicate files.');
 
-  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts');
+  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   const { getTemplateLockHash, getPromptSettingsHash, getTemplateLockedSettings } = await vite.ssrLoadModule(
     '/src/studio/templateExactness.ts',
   );
@@ -762,7 +762,7 @@ export async function readApprovedSanaReview({ approvalRoot, vite, nativeBySha }
   assert.equal(scopeHash, SANA_REVIEW_SCOPE_SHA256);
   assert.equal(scope.status, 'pending_review_and_redistribution_rights');
   assert.deepEqual(candidate.files, scope.files);
-  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts');
+  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   const { getTemplateLockHash, getPromptSettingsHash, getTemplateLockedSettings } = await vite.ssrLoadModule(
     '/src/studio/templateExactness.ts',
   );

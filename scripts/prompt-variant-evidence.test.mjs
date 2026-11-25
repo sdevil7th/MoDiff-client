@@ -10,6 +10,7 @@ import { canonicalGraphIdentity, directImagePromptRoutes } from './live-proof-pr
 import { verifyRetainedStructuredText } from './retained-structured-text-evidence.mjs';
 import {
   bindPromptVariant,
+  validateNativeVideoDelivery,
   validatePromptVariantText,
   validatePromptVariantVideo,
   validateSampledCpuWorkerMemory,
@@ -23,6 +24,41 @@ import {
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
+
+test('joint audio-video evidence keeps native LTX audio separate from the fitted soundtrack contract', () => {
+  const shape = { width: 768, height: 512, frames: 81, fps: 24 };
+  const item = {
+    mediaMetadata: {
+      source: 'encoded-file',
+      width: 768,
+      height: 512,
+      frame_count: 81,
+      fps: 24,
+      duration_seconds: 3.38,
+    },
+  };
+  const decoded = {
+    ...shape,
+    durationSeconds: 3.38,
+    uniqueFrameRatio: 1,
+    codecName: 'h264',
+    hasAudio: true,
+    embeddedAudio: {
+      sourceSampleRate: 24000,
+      channels: 2,
+      clippedSampleRatio: 0,
+      peakAmplitude: 0.01,
+      silenceRatio: 0.95,
+      hash: 'sha256:decoded-audio-pcm-s16le-48000-stereo:' + 'a'.repeat(64),
+    },
+  };
+  const joint = { ...shape, nativeJointAudio: true };
+  assert.deepEqual(validateNativeVideoDelivery(decoded, item, joint).audio, decoded.embeddedAudio);
+  assert.throws(() => validateNativeVideoDelivery({ ...decoded, hasAudio: false }, item, joint));
+  const wrongRate = { ...decoded, embeddedAudio: { ...decoded.embeddedAudio, sourceSampleRate: 48000 } };
+  assert.throws(() => validateNativeVideoDelivery(wrongRate, item, joint));
+  assert.throws(() => validateNativeVideoDelivery(wrongRate, item, { ...shape, soundtrack: true }));
+});
 
 test('a CPU capture measures sampled worker memory within its exact original task interval', () => {
   const source = { fingerprint: 'original', gitCommit: null, files: [{}] };

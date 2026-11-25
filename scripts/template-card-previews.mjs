@@ -74,6 +74,10 @@ for (const entry of manifest.examples ?? []) {
     });
     continue;
   }
+  if (runtime.isRetainedVideoPreview(template, currentEntry)) {
+    skipped.push({ templateId: entry.templateId, reason: 'The approved native clip serves as its own preview.' });
+    continue;
+  }
   const sourcePath = resolvePublicPath(entry.outputPath);
   if (!sourcePath) {
     skipped.push({ templateId: entry.templateId, reason: `Output is missing: ${entry.outputPath}` });

@@ -1,0 +1,101 @@
+{
+  "marigold_depth_synthetic_ramp": {
+    "workflowId": "MarigoldDepthPipeline:depth_estimation",
+    "sourceTaskTemplateId": "task-template:marigold-depth-lcm-v1-0:depth-estimation:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:ee35e710ecaf34a8a57d93fbefeea28b6a3795027ea8a3a872178501e852e06a",
+    "originalReceiptSha256": "1c358ef18df00556b704f826c706674d5ddbd89d8ad091478da862b8ad87c6ea",
+    "reviewedTemplateSha256": "4e43813ae0e4b664e4982545884644ec097eb0cc25e8f13ff549ac24c2f49ce1",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_bf1d929b",
+      "galleryTemplateLockHash": "tpl_611e9ad6",
+      "promptSettingsHash": "ps_d0a17851"
+    },
+    "inputSha256": "626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
+    "inputFileName": "marigold-depth-source.png"
+  },
+  "spandrel_x2_synthetic_gradient": {
+    "workflowId": "SpandrelImageUpscale:image_upscale",
+    "sourceTaskTemplateId": "task-template:real-esrgan-x2-image-upscale:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:700b85c678b691dee3c8ad1e2ea6d4cc0017d1b12d47704e45e913e17f929451",
+    "originalReceiptSha256": "49336b0f76e158b3be514275763e8b2c50f00c048852a34cff43167687503f15",
+    "reviewedTemplateSha256": "8de95b8b13a0636a37a7db672fbced2199e00e6719517c282f68f685bc5fd482",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_5d99038b",
+      "galleryTemplateLockHash": "tpl_43c3b587",
+      "promptSettingsHash": "ps_e7556958"
+    },
+    "inputSha256": "626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
+    "inputFileName": "real-esrgan-x2-smoke-source.png"
+  },
+  "smollm2_rain_gauge": {
+    "workflowId": "HuggingFaceTextGenerationModel:text_generation",
+    "sourceTaskTemplateId": "task-template:smollm2-135m-instruct:text-generation:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:285625f017e8de78e065d8fc32c9ce71ed9561b008cd5fa0e23ce9cda3dabefe",
+    "originalReceiptSha256": "4d0e3ad2819d02cc04c3f264145ddd384b17b9dfa39e83f4af6e923bce34f3d8",
+    "reviewedTemplateSha256": "aab7cfcf15db94d4e3d1415e963cabc0cf7e6a4baafd243d4095539b1004545b",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_84d96f79",
+      "galleryTemplateLockHash": "tpl_a845a534",
+      "promptSettingsHash": "ps_fe288802"
+    },
+    "promptSha256": "47eb5ebb2dbce8f755621e569deba76f6f61f251763aeac5fafd5d09be3869b4"
+  },
+  "whisper_tiny_blue_cup_transcription": {
+    "workflowId": "HuggingFaceSpeechRecognitionModel:speech_to_text",
+    "sourceTaskTemplateId": "task-template:whisper-tiny:speech-to-text:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:b377ff0dee17374428c2deb83531bdee0b21eac105ea6e81fe705a41c4f98adb",
+    "originalReceiptSha256": "7ef2a7611856f6a0c111d5e4ffa248201f88718756aed16f5a6a30487e571faa",
+    "reviewedTemplateSha256": "f9e6bd0b708cc08d7068555be9f4094f68cc9aa6115639792339f50b38c2e35c",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_feef81de",
+      "galleryTemplateLockHash": "tpl_e533ed76",
+      "promptSettingsHash": "ps_254ff664"
+    },
+    "inputSha256": "d5a4aebb4bd603192b70b0744e6ac158ed10c4c845d423b7fb7b1ef7de0ed41f",
+    "inputLocatorSha256": "50e837ad6f7de4f94901d12dd299c89410ff225f23a4bd5eb4ccf5621e0aea26"
+  },
+  "lcm_dawn_alpine_lake": {
+    "workflowId": "LatentConsistencyModelPipeline:edit_image",
+    "sourceTaskTemplateId": "task-template:lcm-dreamshaper-v7:edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:80fc803df0e8e4fe9a90c302a88cadda57fb613ac3e67857f88fcb24ee7f0a8b",
+    "originalReceiptSha256": "d29515dfafdcde29ecff2332276275247a6feeae5afd36639da87efc552af4f6",
+    "reviewedTemplateSha256": "79ee258770b00a581d8e006b743cacd78ad992739353bcfcd724a920eb41fc8e",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_606d8d50",
+      "galleryTemplateLockHash": "tpl_03de02cb",
+      "promptSettingsHash": "ps_614c9651"
+    },
+    "inputFileName": "prx-linux-bf16-native-efficient-alpine-lake.webp",
+    "inputSha256": "25fe06d8e93645bc6ff29928556a0cd654aa6d70178d435268b3d17e9188feaa",
+    "promptSha256": "ec2943b08ef8225e661ab5c3f712a6e555eabd481e4bf2e8ba68b34963367e33"
+  },
+  "sana_sprint_monochrome_tiger": {
+    "workflowId": "SanaSprintPipeline:edit_image",
+    "sourceTaskTemplateId": "task-template:sana-sprint-600m:edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:e69d5c8fa5e75c1387b8dae436e44c580d3b1eb31267946c26b98049e2f7132c",
+    "originalReceiptSha256": "ec340d225ca8eae07996fc5f93e3561cd25c82e80d1229a3adca1f648ea8d20e",
+    "reviewedTemplateSha256": "7f1ac6b38c8f3fcc701921fe7f500b4717c4f1bfdf5cc2f059e934972923296b",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_b6bc5c52",
+      "galleryTemplateLockHash": "tpl_8be9c59d",
+      "promptSettingsHash": "ps_6cb5dccc"
+    },
+    "inputFileName": "retained-tiger-source.webp",
+    "inputSha256": "a99616590d7d8586a51a25bbe9e36b309f705bc80f2abaab04ac84f1e0d948e4",
+    "promptSha256": "db2c046f8d489387110e3de23a28dfd52f981d796958433e819988b94c8ed853"
+  },
+  "wav2vec2_station_announcement": {
+    "workflowId": "HuggingFaceCTCSpeechRecognitionModel:speech_to_text",
+    "sourceTaskTemplateId": "task-template:wav2vec2-base-960h:speech-to-text:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:36c5afc09d6f5f3be0cf44ba472bc514313464e2c61616a1c934a254f137c1c1",
+    "originalReceiptSha256": "226c35aaf3a811a8077e0caae4b4652daaf332d3c7718a095f238afde982f7ee",
+    "reviewedTemplateSha256": "fc0cb2cf3751967eb0ab2910d5b17fd0796bdf047cfc48871e5266346d925e37",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_a1f95a4a",
+      "galleryTemplateLockHash": "tpl_51e4cb19",
+      "promptSettingsHash": "ps_583a0762"
+    },
+    "inputSha256": "534bf47b7a715e5637443eaf7175e0b2e5288504beb8d8a09d25ee6c66c8d4f8",
+    "inputLocatorSha256": "b5a6579a0125be7bd9aec165e3f22c0c054f598e4aaaf00b9bf53decbd4f6e18"
+  }
+}

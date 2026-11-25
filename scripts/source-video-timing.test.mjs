@@ -69,10 +69,16 @@ test('a reviewed native preview preserves its exact short clip and browser-safe 
   };
   assert.deepEqual(technicalMediaErrors(decoded, {}, 'video', preview), []);
   for (const change of [{ frames: 24 }, { width: 700 }, { fps: 7 }, { hash: 'different' }]) {
-    assert(technicalMediaErrors({ ...decoded, ...change }, {}, 'video', preview).some((x) => x.includes('at least 5 seconds')));
+    assert(
+      technicalMediaErrors({ ...decoded, ...change }, {}, 'video', preview).some((x) =>
+        x.includes('at least 5 seconds'),
+      ),
+    );
   }
   assert(technicalMediaErrors(decoded, {}, 'video').some((x) => x.includes('at least 5 seconds')));
-  assert(technicalMediaErrors({ ...decoded, hasAudio: true }, {}, 'video', preview).some((x) => x.includes('audio stream')));
+  assert(
+    technicalMediaErrors({ ...decoded, hasAudio: true }, {}, 'video', preview).some((x) => x.includes('audio stream')),
+  );
   assert(technicalMediaErrors({ ...decoded, codecName: 'vp9' }, {}, 'video', preview).some((x) => x.includes('codec')));
 });
 

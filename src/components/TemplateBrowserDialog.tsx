@@ -1311,15 +1311,13 @@ function TemplateRecipeDetail({
   const retainedPreview = isRetainedVideoPreview(template, detailManifestEntry);
   const manifestPoster = retainedPreview
     ? detailManifestEntry?.posterPath
-    : detailManifestEntry?.thumbnailPath ?? detailManifestEntry?.posterPath;
+    : (detailManifestEntry?.thumbnailPath ?? detailManifestEntry?.posterPath);
   const bundledSourcePreview = template.inputBindings
     ?.filter((binding) => binding.origin === 'template')
     .flatMap((binding) => binding.defaultAssets)
     .find((asset) => asset.previewPath)?.previewPath;
   const thumbnailPath =
-    showcase?.mediaPath ??
-    templateManifestPath(manifestPoster) ??
-    templateExampleThumbnailPath(template);
+    showcase?.mediaPath ?? templateManifestPath(manifestPoster) ?? templateExampleThumbnailPath(template);
   const beforePath = showcase ? undefined : templateManifestPath(sourceEntry?.beforePath ?? bundledSourcePreview);
   const afterPath =
     showcase?.mediaPath ?? templateManifestPath(detailManifestEntry?.afterPath ?? detailManifestEntry?.outputPath);

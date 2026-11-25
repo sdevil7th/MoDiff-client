@@ -650,5 +650,41 @@
       "width": 768,
       "height": 512
     }
+  },
+  "joyimage_herbarium_rainy_porthole": {
+    "associationSha256": "f0254138cc571fad786388d675b3a686bf1f7cc221aaa157c4ed3e300d7e46b2",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "5e0a8441e6f6998745a1b9c9a8244aa5d8e4e8591be5277396f519f41adf7ad4",
+    "capturedAt": "2026-11-25T04:23:00.358Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "longcat_florist_end_of_lane": {
+    "associationSha256": "bbd822df29e973cd3db526d60c6cc1fa76e5a88fcb6eb78712f0ee1a2851ff26",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "b90a1a05613457abec04653497adf621e361d94bfc399db6cbd94f093a69421f",
+    "capturedAt": "2026-11-25T04:36:30.280Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sana_tidal_pool_on_black_basalt": {
+    "associationSha256": "7d892caa8cb7984f4c5abad893b76175dc4bd16600ae563c2fc4b91119e53b38",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "31c6fda19fe62a7282c50fe665069354989947ef1454ac63a1384637792d09c6",
+    "capturedAt": "2026-11-24T21:35:49.709Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
   }
 }

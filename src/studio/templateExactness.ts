@@ -642,7 +642,9 @@ export function getTemplateCardMedia(
           .flatMap((binding) => binding.defaultAssets)
           .find((asset) => asset.previewPath)?.previewPath
       : undefined;
-  const manifestPoster = retainedPreview ? manifestEntry?.posterPath : manifestEntry?.thumbnailPath ?? manifestEntry?.posterPath;
+  const manifestPoster = retainedPreview
+    ? manifestEntry?.posterPath
+    : (manifestEntry?.thumbnailPath ?? manifestEntry?.posterPath);
   const thumbnailPath =
     templateManifestPath(manifestPoster) ??
     templateManifestPath(template.example?.thumbnailPath ?? template.example?.outputPath);
@@ -655,7 +657,9 @@ export function getTemplateCardMedia(
   return {
     beforePath: templateManifestPath(manifestEntry?.beforePath ?? bundledSourcePreview),
     mediaPath: isVideo
-      ? templateManifestPath(manifestEntry?.cardPreviewPath ?? (retainedPreview ? manifestEntry?.outputPath : undefined))
+      ? templateManifestPath(
+          manifestEntry?.cardPreviewPath ?? (retainedPreview ? manifestEntry?.outputPath : undefined),
+        )
       : generatedOutputPath,
     thumbnailPath,
   };

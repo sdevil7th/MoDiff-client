@@ -38,8 +38,8 @@ before(async () => {
     server: { middlewareMode: true, hmr: false, watch: null },
     appType: 'custom',
   });
-  ({ RETAINED_GALLERY_TEMPLATES: recipes } = await server.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts'));
-  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  ({ RETAINED_GALLERY_TEMPLATES: recipes } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts'));
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   approvedBatchIds = new Set(APPROVED_RETAINED_BATCH.map(({ template }) => template.id));
   ({ STUDIO_TEMPLATES: published } = await server.ssrLoadModule('/src/studio/templates.ts'));
   exactness = await server.ssrLoadModule('/src/studio/templateExactness.ts');
@@ -184,9 +184,7 @@ test('retained Gallery recipes preserve the native graph identities and standalo
           Object.values(capture.inputs ?? [capture.input])
             .map(({ file }) => file.sha256)
             .sort(),
-          [recipe.inputSha256, recipe.maskSha256, recipe.guideSha256, recipe.lastFrameSha256]
-            .filter(Boolean)
-            .sort(),
+          [recipe.inputSha256, recipe.maskSha256, recipe.guideSha256, recipe.lastFrameSha256].filter(Boolean).sort(),
         );
       }
     } else if (recipe.inputLocatorSha256) {
@@ -241,12 +239,14 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         if (payload.action === 'LoadPipeline') {
           assert.equal(payload.values.pipeline_class, audioContract.pipelineClass);
           assert.equal(payload.values.mode, audioContract.mode);
-          flow.getState().setParam(
-            payload.node,
-            'pipeline',
-            { direction: 'output', origin: 'audio_contract', value: audioContract },
-            'signal',
-          );
+          flow
+            .getState()
+            .setParam(
+              payload.node,
+              'pipeline',
+              { direction: 'output', origin: 'audio_contract', value: audioContract },
+              'signal',
+            );
         } else {
           assert.equal(payload.action, 'Generate');
           if (payload.values.audio_contract !== audioContract.pipelineClass) {
@@ -325,20 +325,18 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           : [];
       const mask = recipe.maskSha256 ? 'review-mask-image.png' : undefined;
       const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
-      studio
-        .getState()
-        .applyTemplate(
-          template,
-          audio
-            ? { sourceAudio: input[0] }
-            : sourceVideo
-              ? { sourceVideo: 'review-source-video.mp4' }
-              : {
-                  referenceImages: input,
-                  ...(mask && { maskImage: mask }),
-                  ...(guide && { controlImage: guide }),
-                },
-        );
+      studio.getState().applyTemplate(
+        template,
+        audio
+          ? { sourceAudio: input[0] }
+          : sourceVideo
+            ? { sourceVideo: 'review-source-video.mp4' }
+            : {
+                referenceImages: input,
+                ...(mask && { maskImage: mask }),
+                ...(guide && { controlImage: guide }),
+              },
+      );
       const form = studio.getState().form;
       assert.equal(form.device, template.example.lockedSettings.device ?? 'cuda:0');
       assert.equal(form.resourceMode, 'expert');

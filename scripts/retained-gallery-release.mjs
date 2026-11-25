@@ -117,11 +117,7 @@ function assertRetainedBatchEvidence({
     same(nativeReceipt.decodedOutput, { kind: 'image_collection', items: orderedLayerItems }, label);
     assert.equal(orderedLayerItems.length, recipe.template.example.lockedSettings.layers, label);
     for (const [index, layer] of orderedLayerItems.entries()) {
-      assert.equal(
-        association.approvedFiles[`approvedLayer${index + 1}Path`]?.sha256,
-        layer.encodedSha256,
-        label,
-      );
+      assert.equal(association.approvedFiles[`approvedLayer${index + 1}Path`]?.sha256, layer.encodedSha256, label);
     }
   } else if (association.output.mediaType === 'image') {
     assert.equal(nativeReceipt.decodedOutput.hash, association.output.decodedMediaHash, label);

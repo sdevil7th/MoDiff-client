@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "7a5c7bd80df3c9179762bece6adc28dd62e1ab9e"
+    "revision": "c1313d4630a08fa4735e1b7295b8a45364886cc8"
   },
   "originalCampaign": {
     "total": 89,
@@ -681,7 +681,163 @@
       "category": "supplementary-only",
       "reason": "Published and registered from the approved saved run outside the original campaign selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "chroma_restored_cobalt_backdrop",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "chroma_terracotta_and_blue",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "cogvideox_mossy_mountain_stream",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "cogvideox_red_tram_model_railway",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "hunyuan_dit_coastal_lighthouse",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "hunyuan_dit_green_glass_study",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "hunyuan_pag_burgundy_knight",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "longcat_last_tram_at_dusk",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "lumina2_larch_on_glacial_pond",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "omnigen_tulips_after_rain",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "qwen_control_winter_cabin_blue_hour",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "qwen_layered_sunset_and_peaks",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sd15_canny_guided_green_glass",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sd15_pag_canny_guided_glass",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sd15_pag_cobalt_studio_repair",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sd15_pag_mountain_lake_watercolor",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_canny_adapter_glass_study",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_control_inpaint_warm_plaster",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_controlnet_glass_study_on_slate",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_pix2pix_pale_amber_glass",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "wan_a14b_cloudbreak_over_the_ridges",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "wan_flf_blue_hour_at_the_tram_shelter",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "zimage_golden_amber_glass",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "joyimage_herbarium_rainy_porthole",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "longcat_florist_end_of_lane",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sana_tidal_pool_on_black_basalt",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:4a48c6b4502baaad0573b0bb0f1c1fb4030663fe72cf7aa1c5214c1a724eb778"
+  "profileHash": "sha256:canonical-json:ef8bad58798dd4bc110738b59ac622482771ebad7d23870625edce6a955e67e5"
 }

@@ -1843,7 +1843,9 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
   if (mediaType === 'video') {
     const retainedClip = retainedVideoPreviewMatches(retainedVideoPreview, {
       ...decoded,
-      mediaHash: decodedMediaHashMatches(decoded, retainedVideoPreview?.mediaHash) ? retainedVideoPreview.mediaHash : decoded.hash,
+      mediaHash: decodedMediaHashMatches(decoded, retainedVideoPreview?.mediaHash)
+        ? retainedVideoPreview.mediaHash
+        : decoded.hash,
     });
     const requestedMotionProfile = expected.motionReviewProfile ?? DEFAULT_MOTION_REVIEW_PROFILE;
     const hasKnownMotionProfile = Object.hasOwn(MOTION_REVIEW_PROFILES, requestedMotionProfile);
@@ -1887,7 +1889,10 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
     }
     const shortEdge = Math.min(Number(decoded.width ?? 0), Number(decoded.height ?? 0));
     const longEdge = Math.max(Number(decoded.width ?? 0), Number(decoded.height ?? 0));
-    if (!retainedClip && (shortEdge < MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE || longEdge < MINIMUM_TEMPLATE_VIDEO_LONG_EDGE)) {
+    if (
+      !retainedClip &&
+      (shortEdge < MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE || longEdge < MINIMUM_TEMPLATE_VIDEO_LONG_EDGE)
+    ) {
       errors.push(
         `video delivery resolution must be at least ${MINIMUM_TEMPLATE_VIDEO_LONG_EDGE}x${MINIMUM_TEMPLATE_VIDEO_SHORT_EDGE}`,
       );

@@ -248,5 +248,20 @@
     "descriptorSha256": "63d626c3c97cd12016b58a9fba71739eeea0459ad300383d5b4f43aa0775740a",
     "bytes": 5726,
     "sha256": "37898b78c1e8df5ab9940aa2dbe7e467cd16e582c10e2156eca29ad967b6c8ba"
+  },
+  "JoyImageEditPipeline:text_to_image": {
+    "descriptorSha256": "655abc48262ac72c9e7cee61c90f7f72430660b5b5102716b97d4ee9730e31fa",
+    "bytes": 4150,
+    "sha256": "91f48149a549804d83375b9c26bf0cb8890091e6f8af135b2a225fae3033df75"
+  },
+  "LongCatImagePipeline:text_to_image": {
+    "descriptorSha256": "8020bb532f9bc0fc6222c2083e81579b3c8dac7c9dd934e8d2534db7b3ae5fe1",
+    "bytes": 4155,
+    "sha256": "f2f0a9bdde30f96caf2c200be4ecbae6c3a6eef6c657707a923d13ee2dfaf2c8"
+  },
+  "SanaPipeline:text_to_image": {
+    "descriptorSha256": "8b9112a10ce799d31f77d03e5f3d757d2510a7019f6bdc9e88d3de208f2bfa72",
+    "bytes": 4107,
+    "sha256": "cde74a47d58aa76951872729bedd01dcdc996dc4fd2130adab403fe8fa670835"
   }
 }

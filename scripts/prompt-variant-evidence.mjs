@@ -247,6 +247,50 @@ const wanA14BOpeningRoute = {
   chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
 };
 
+const ltx2AudioVideoRoutes = [
+  ['LTX2Pipeline', 'text_to_video'],
+  ['LTX2ConditionPipeline', 'text_to_video'],
+  ['LTX2ConditionPipeline', 'image_to_video'],
+  ['LTX2ConditionPipeline', 'reference_to_video'],
+  ['LTX2ConditionPipeline', 'video_to_video'],
+].map(([modelType, task]) => {
+  const bindsImage = ['image_to_video', 'reference_to_video'].includes(task);
+  const bindsVideoUpload = task === 'video_to_video';
+  return {
+    ...wanA14BRoute,
+    format: 'modiff.private.ltx2-native-av-variant.v1',
+    workflowId: modelType + ':' + task,
+    modelType,
+    modelRepo: 'Lightricks/LTX-2',
+    modelRevision: '47da56e2ad66ce4125a9922b4a8826bf407f9d0a',
+    sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+    nativeJointAudio: true,
+    bindsImage,
+    imageInputPort: 'reference_images',
+    bindsVideoUpload,
+    originalVideoFrames: bindsVideoUpload ? 25 : undefined,
+    executedTask: task,
+    previousExpertFamily: undefined,
+    chain: [
+      ...(bindsImage ? [['source', 'modules.Image', 'Load', '']] : []),
+      ...(bindsVideoUpload
+        ? [
+            ['source', 'modules.Video', 'Load', ''],
+            ['normalize', 'modules.VideoConditioning', 'Normalize', 'height num_frames width'],
+          ]
+        : []),
+      ...wanA14BRoute.chain.slice(0, 3),
+      [
+        'generator',
+        'modules.DiffusersVideo',
+        'GenerateVideoAudio',
+        'conditioning_scale frame_rate guidance_scale height max_sequence_length negative_prompt num_frames num_inference_steps output_type prompt seed strength true_cfg_scale width',
+      ],
+      ['preview', 'modules.Video', 'ExportWithAudio', 'fps'],
+    ],
+  };
+});
+
 const subwaySoundtrack = {
   repoId: 'ACE-Step/acestep-v15-xl-turbo-diffusers',
   revision: '200ba991ae448051e14b0183157e35c2d27c9fb0',
@@ -1247,7 +1291,11 @@ export function validatePromptVariantVideo(decoded, item, bound) {
   return validateNativeVideoDelivery(decoded, item, { width: frameSize, height: frameSize, fps, frames: 20 });
 }
 
-export function validateNativeVideoDelivery(decoded, item, { width, height, fps, frames, soundtrack = false }) {
+export function validateNativeVideoDelivery(
+  decoded,
+  item,
+  { width, height, fps, frames, soundtrack = false, nativeJointAudio = false },
+) {
   const native = item.mediaMetadata;
   assert.equal(native.source, 'encoded-file');
   assert.equal(native.width, width);
@@ -1262,14 +1310,15 @@ export function validateNativeVideoDelivery(decoded, item, { width, height, fps,
   );
   assert.ok(Math.abs(decoded.durationSeconds - native.duration_seconds) <= 0.02);
   assert.equal(decoded.codecName, 'h264');
-  assert.equal(decoded.hasAudio, soundtrack);
+  assert.equal(decoded.hasAudio, soundtrack || nativeJointAudio);
   assert.equal(decoded.uniqueFrameRatio, 1);
   const audio = decoded.embeddedAudio;
-  if (soundtrack) {
-    assert.equal(audio?.sourceSampleRate, 48000);
+  if (soundtrack || nativeJointAudio) {
+    assert.equal(audio?.sourceSampleRate, nativeJointAudio ? 24000 : 48000);
     assert.equal(audio.channels, 2);
     assert.equal(audio.clippedSampleRatio, 0);
-    assert.ok(audio.peakAmplitude > 0.05 && audio.silenceRatio < 0.75);
+    if (soundtrack) assert.ok(audio.peakAmplitude > 0.05 && audio.silenceRatio < 0.75);
+    else assert.ok(audio.peakAmplitude > 0.001, 'The model did not emit measurable audio.');
     assert.match(audio.hash, /^sha256:decoded-audio-pcm-s16le-48000-stereo:[a-f0-9]{64}$/u);
   }
   return {
@@ -1280,7 +1329,7 @@ export function validateNativeVideoDelivery(decoded, item, { width, height, fps,
     frames: decoded.frames,
     durationSeconds: decoded.durationSeconds,
     hash: decoded.hash,
-    ...(soundtrack ? { audio } : {}),
+    ...(soundtrack || nativeJointAudio ? { audio } : {}),
   };
 }
 
@@ -1301,6 +1350,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         wanA14BRoute,
         wanA14BOpeningRoute,
         wanSubwayRoute,
+        ...ltx2AudioVideoRoutes,
         ltxScheduledRoute,
         wanAnimateRoute,
         wanReplaceRoute,
@@ -1323,6 +1373,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   const generatedVideo =
     profile.outputKind === 'video' &&
     (['text_to_video', 'image_to_video', 'video_to_video'].includes(profile.executedTask) ||
+      profile.nativeJointAudio ||
       profile.bindsVideoGuide ||
       Boolean(profile.videoConditioners));
   const generatedAudio = profile === audioRoute || profile === audioLdmRoute;
@@ -1440,12 +1491,19 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
           graphAcknowledgment: json(evidence.graphAcknowledgment),
         }
       : {}),
-    ...(imageRoute || (generatedVideo && !profile.soundtrack) || profile === audioLdmRoute
+    ...(imageRoute || (generatedVideo && !profile.soundtrack && !profile.nativeJointAudio) || profile === audioLdmRoute
       ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
       : {}),
     ...(profile === videoRoute || profile === audioRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
       : {}),
+    ...(profile.nativeJointAudio && {
+      validatePreparation: (preparation) => {
+        const previous = preparation.previousModelFamily;
+        assert.ok([null, 'LTX2Pipeline', 'LTX2ConditionPipeline'].includes(previous));
+        validateUnmodifiedExpertPreparation(preparation, profile.modelType, previous);
+      },
+    }),
   };
   let validatedRun;
   let accountingRun = run;
@@ -1480,7 +1538,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     : null;
   let inputBinding = accounting ? undefined : validateConsumedPromptVariant(profile, bound, output, suppliedInput);
   if (profile.bindsImage) {
-    const source = read(suppliedInput.file, 2 * 1024 * 1024);
+    const source = read(suppliedInput.file, (profile.nativeJointAudio ? 8 : 2) * 1024 * 1024);
     const upload = json(suppliedInput.upload);
     const { width, height } = inputBinding.decodedImage;
     assert.equal(upload.error, false);
@@ -1544,7 +1602,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     };
   };
   if (profile.bindsVideoUpload) {
-    inputBinding = await bindRetainedVideo(suppliedInput, bound.source, bound.normalize.node.params.num_frames.value);
+    const originalFrames = profile.originalVideoFrames ?? bound.normalize.node.params.num_frames.value;
+    inputBinding = await bindRetainedVideo(suppliedInput, bound.source, originalFrames);
   }
   const guideBinding = profile.bindsVideoGuide
     ? await bindRetainedVideo(suppliedGuide, bound.guide, bound.normalizeGuide.node.params.num_frames.value)
@@ -1601,7 +1660,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         task,
       )
     : measurement.peakAllocatedBytes;
-  const mediaLimit = (profile.soundtrack ? 64 : 2) * 1024 * 1024;
+  const mediaLimit = (profile.soundtrack || profile.nativeJointAudio ? 64 : 2) * 1024 * 1024;
   const media = read(outputRef.file, mediaLimit);
   const item = validateNativeVariantOutput({
     output,
@@ -1634,6 +1693,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         frames: num_frames.value,
         fps: bound.preview.node.params.fps.value,
         soundtrack: Boolean(profile.soundtrack),
+        nativeJointAudio: Boolean(profile.nativeJointAudio),
       });
     } else decodedOutput = validatePromptVariantVideo(decoded, item, bound);
   } else if (generatedAudio) {
@@ -1706,6 +1766,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       fullConsumedFieldAccounting: Boolean(accounting && !accounting.retainedGenerator),
       physicalPlatformQualification: false,
       ...(profile.soundtrack ? { configuredAudioFitObserved: false, audiovisualSynchronizationReviewed: false } : {}),
+      ...(profile.nativeJointAudio ? { audiovisualSynchronizationReviewed: false } : {}),
       ...(accounting?.retainedGenerator && imageRoute.typedOnly?.length
         ? { configuredUnobservedControls: [...imageRoute.typedOnly] }
         : {}),

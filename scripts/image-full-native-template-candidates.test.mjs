@@ -63,7 +63,7 @@ before(async () => {
   });
   const module = await server.ssrLoadModule('/src/studio/templates.ts');
   publicTemplates = module.STUDIO_TEMPLATES;
-  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   approvedRetainedImageIds = APPROVED_RETAINED_BATCH.filter(
     ({ template }) => template.example.mediaType === 'image',
   ).map(({ template }) => template.id);

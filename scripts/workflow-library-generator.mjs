@@ -321,7 +321,7 @@ async function main() {
   });
   let auxiliarySources, remapOperationAuthoring, expandCanonicalBlocks, retainedTemplateIds;
   try {
-    const { RETAINED_GALLERY_TEMPLATES } = await parserServer.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts');
+    const { RETAINED_GALLERY_TEMPLATES } = await parserServer.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
     retainedTemplateIds = new Set(RETAINED_GALLERY_TEMPLATES.map(({ template }) => template.id));
     const templates = requestedTemplateId
       ? (await parserServer.ssrLoadModule('/src/studio/templates.ts')).STUDIO_TEMPLATES

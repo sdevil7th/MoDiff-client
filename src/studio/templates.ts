@@ -5260,7 +5260,7 @@ export const PLANNING_STUDIO_TEMPLATES: StudioTemplate[] = NORMALIZED_STUDIO_TEM
 
 export const STUDIO_TEMPLATES: StudioTemplate[] = [
   ...NORMALIZED_STUDIO_TEMPLATES.filter((template) => template.example?.status !== 'blocked'),
-  ...RETAINED_GALLERY_TEMPLATES.map(({ template }) => template),
+  ...RETAINED_GALLERY_TEMPLATES,
 ];
 
 export function getStudioTemplateLoraBaseModel(templateId: StudioTemplateId | null | undefined) {

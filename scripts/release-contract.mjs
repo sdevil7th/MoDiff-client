@@ -414,7 +414,7 @@ const vite = await createServer({
 
 try {
   const { STUDIO_TEMPLATES } = await vite.ssrLoadModule('/src/studio/templates.ts');
-  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts');
+  const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   const retainedRecipesByTemplate = new Map(RETAINED_GALLERY_TEMPLATES.map((recipe) => [recipe.template.id, recipe]));
   const retainedRecipesByWorkflow = new Map(RETAINED_GALLERY_TEMPLATES.map((recipe) => [recipe.workflowId, recipe]));
   const readRetainedGalleryRelease = createRetainedGalleryReleaseReader({

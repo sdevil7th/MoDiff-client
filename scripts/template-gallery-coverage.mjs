@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   decodedMediaHash,
+  decodedMediaHashMatches,
   galleryExpectedOutput,
   loadTemplateRuntime,
   technicalMediaErrors,
@@ -50,13 +51,22 @@ for (const template of runtime.templates) {
   const currentEvidence = evidence
     ? runtime.findManifestEntry(template, { ...manifest, examples: [evidence] })
     : undefined;
+  const nativePreview = runtime.isRetainedVideoPreview(template, currentEvidence);
   let technicalErrors = [];
   if (template.example?.mediaType === 'video' && currentEvidence?.outputPath) {
     const outputPath = publicMediaPath(currentEvidence.outputPath);
     if (outputPath) {
       try {
         const decoded = await decodedMediaHash(outputPath, 'video');
-        technicalErrors = technicalMediaErrors(decoded, galleryExpectedOutput(template), 'video');
+        technicalErrors = technicalMediaErrors(
+          decoded,
+          galleryExpectedOutput(template),
+          'video',
+          nativePreview ? template.example.retainedVideoPreview : undefined,
+        );
+        if (nativePreview && !decodedMediaHashMatches(decoded, currentEvidence.mediaHash)) {
+          technicalErrors.push('The retained preview differs from the approved decoded video.');
+        }
       } catch (error) {
         technicalErrors = [String(error)];
       }
@@ -65,9 +75,11 @@ for (const template of runtime.templates) {
   const motionPreview =
     template.example?.mediaType !== 'video' ||
     Boolean(
-      currentEvidence?.cardPreviewPath &&
-      publicMediaExists(currentEvidence.cardPreviewPath) &&
-      currentEvidence.cardPreviewSha256 === publicMediaSha256(currentEvidence.cardPreviewPath),
+      nativePreview
+        ? publicMediaExists(currentEvidence.outputPath)
+        : currentEvidence?.cardPreviewPath &&
+            publicMediaExists(currentEvidence.cardPreviewPath) &&
+            currentEvidence.cardPreviewSha256 === publicMediaSha256(currentEvidence.cardPreviewPath),
     );
   const evidenceChecks = {
     manifest: Boolean(currentEvidence),

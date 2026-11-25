@@ -52,10 +52,13 @@ test('retained first and last frame recipe opens with two independent image inpu
     });
   });
   await expect
-    .poll(async () => {
-      const api = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
-      return Object.values(api?.nodes ?? {}).some(({ action }) => action === 'ImageEncode');
-    }, { timeout: 60_000 })
+    .poll(
+      async () => {
+        const api = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
+        return Object.values(api?.nodes ?? {}).some(({ action }) => action === 'ImageEncode');
+      },
+      { timeout: 60_000 },
+    )
     .toBe(true);
   const api = await page.evaluate(() => window.__MODIFF_E2E__!.exportAuthorizedApiGraph());
   const encoder = Object.values(api.nodes).find(({ action }) => action === 'ImageEncode')!;

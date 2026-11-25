@@ -1,0 +1,739 @@
+{
+  "alpine_lake_in_oils": {
+    "workflowId": "StableDiffusionPipeline:edit_image",
+    "sourceTaskTemplateId": "task-template:sd15-base:edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:e5a47286938233b67cc7bec938b43449fdbf4dd46a028f200cce4471158267e2",
+    "originalReceiptSha256": "ce72fd7e5d5f263f68f94ae15778a596a3161c38c0f4092531f0c719b78667d8",
+    "reviewedTemplateSha256": "81ebe61010abc66045694e149989c24310c3a181d46fab2b644ac0a0bafffcae",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_8c19d0a7",
+      "galleryTemplateLockHash": "tpl_0816c26c",
+      "promptSettingsHash": "ps_9f1fefe2"
+    },
+    "promptSha256": "8aeb1e7983a533609ac97ac6366f042be91fc806047b8e0cfe251abef9accaf1",
+    "inputSha256": "88290a96bc8d52f11f2d1e3c0c0e04c2027661816e54b57d7d4739d731ca1e75",
+    "inputLocatorSha256": "b7e9b68e47a60f438c82f778b960f66d58d319de50749d453a9aa0c30c4df45a"
+  },
+  "bookshop_at_blue_hour": {
+    "workflowId": "ErnieImagePipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:ernie-image-turbo:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:f12eab7de9d1be025dee6d2466013865b35a67d145813a1faf68c1e4d0ff034c",
+    "originalReceiptSha256": "45f9a07cbd540055ad63000eb928be4a1b685c4b622bf46b84c98784e2c61139",
+    "reviewedTemplateSha256": "160e77d5c28132522b0cbf5f3102b812a4e8be9eff09f321db0c5853905cab5e",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_502a4ae7",
+      "galleryTemplateLockHash": "tpl_14707aaf",
+      "promptSettingsHash": "ps_cf9a00e5"
+    },
+    "promptSha256": "767ac6934d73853bdb2b07521107727f936eec375361a0eba6dd64dfc5a1b63d"
+  },
+  "flowers_after_rain": {
+    "workflowId": "OvisImagePipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:ovis-image-7b:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:12380dcafddc7153ecd5f02ced0b95c58031228dc7825e3914f22dae90489999",
+    "originalReceiptSha256": "37580a349097d0a2e201a6daa48f3cc541c62260306e4153c4995e2d0615a72c",
+    "reviewedTemplateSha256": "a113786c4f56e30b9f8c024d9e71abd7e84419b59bafe097bee8cd40b7074687",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_3f0f58ac",
+      "galleryTemplateLockHash": "tpl_3ba52cb2",
+      "promptSettingsHash": "ps_1e317563"
+    },
+    "promptSha256": "0250d3ccd73f7db3eabae81abe1590befc673f4bc9e68506c134c84a6a3ff1a8"
+  },
+  "forest_ferns": {
+    "workflowId": "GlmImagePipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:glm-image:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:ff052e8de129d2eef0f849f457336a1dfce83bd0b7443e1dc5802d0608e0781e",
+    "originalReceiptSha256": "193b411fea187862b1af32edf24623f0cfd75a9f0d856a66b07fe99b1e562833",
+    "reviewedTemplateSha256": "6a6e34ea5e9b0dec925e0ce13a0422fc00c65754f867c44e3105bfdb9d03c305",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_8cbb3432",
+      "galleryTemplateLockHash": "tpl_be9fadb4",
+      "promptSettingsHash": "ps_975f83ff"
+    },
+    "promptSha256": "e4e5455d0f55ea6ae1f3061bdb8462de4ddffa2a230462a2010ebd3d443b1f50"
+  },
+  "ochre_paper_pavilion": {
+    "workflowId": "CogView3PlusPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:cogview3-plus-3b:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:063bf00e554a6d90e9fab896c09f23b976d423fc4c82da89c7471ac21a81eb57",
+    "originalReceiptSha256": "19c1e125e259b8b0e22a5bf5c03ab7c105a8302fc69b7e63c61796d7b7496744",
+    "reviewedTemplateSha256": "b5e4c8446f01030c05a206290d9ed0c1e5035cd3110f0fb6a9e6e3c416ad5177",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_791ad974",
+      "galleryTemplateLockHash": "tpl_f93a2d5c",
+      "promptSettingsHash": "ps_f36e5dd5"
+    },
+    "promptSha256": "2483828af4f90e3e8b07e47b32c754c7970b1f30c4e8cfbd0c4a0e66f6b987f3"
+  },
+  "quiet_current": {
+    "workflowId": "CogView4Pipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:cogview4-6b:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:0870e1b5d6c05b496e120e383bc7c13c4fe1705efc5d918466900b9e906288d8",
+    "originalReceiptSha256": "7cb177ef1dac774f3cb76c3f58cf246fbdbf7673a78e379ff54e7fba5fa1a85f",
+    "reviewedTemplateSha256": "c3c7aada8d0fc7bec8c4067c9c88fbb03d5210ee9f6412d1d5984b21879ab886",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_13cc85b1",
+      "galleryTemplateLockHash": "tpl_57a6868c",
+      "promptSettingsHash": "ps_5d56d1da"
+    },
+    "promptSha256": "18d76f8a51049a51ea77cf436170824bf445ae8fa572893ee930ae11924d49d6"
+  },
+  "persimmon_glaze": {
+    "workflowId": "SanaPAGPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sana-600m-pag:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:52c3114e98debe02d6e7a297276e67887d782628952ddb20ae88c499d7c6a356",
+    "originalReceiptSha256": "2e80e952039cfbc7b42f7f1b5689f30fb8b8f83646e0f4c2f6cb8e3a68b8d784",
+    "reviewedTemplateSha256": "ddf39e419212cba10df50f7b27b3fae22d57a0cbfc574164bcad08975fa2545b",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_fc97bb6a",
+      "galleryTemplateLockHash": "tpl_ef8db2a5",
+      "promptSettingsHash": "ps_8a0e2f0d"
+    },
+    "promptSha256": "fb940b41391388f6221f47154824aac67e9c0f828de5581e1afd855ce2ec528d"
+  },
+  "porcelain_on_slate_linen": {
+    "workflowId": "LatentConsistencyModelPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:lcm-dreamshaper-v7:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:a27f2318675f32fa007ed44f64cc42f78c58f05c896bdba16bcf71cec4383ea5",
+    "originalReceiptSha256": "b23f6c1d6ea11f928eab1c62422e49a288645e6f46ecf0c4f1b4994e95ad56ea",
+    "reviewedTemplateSha256": "fe33d74a4694ab6b3d34f483d56575c0c66a5948d424a62c04538c0dd608253a",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_64460ff2",
+      "galleryTemplateLockHash": "tpl_5536c9a7",
+      "promptSettingsHash": "ps_38a31bbe"
+    },
+    "promptSha256": "1ad3ea7692a0f8ae0bbd025e78774b790e4fee6066ddd349390e80bcff3c0fa9"
+  },
+  "salt_marsh_from_above": {
+    "workflowId": "AuraFlowPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:auraflow-v0.3:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:956816a0ebe49ffead5c8c8759c3db2becf2d5a46196fba7696e978d0d55b15b",
+    "originalReceiptSha256": "c4ce21c85cf0412cc1e69ff59009037bbdde9d1692cff19f307d589b84fb5b1f",
+    "reviewedTemplateSha256": "b09d5bf8c1d2efa3ae62881840125aa474500d658ba7538031dedeaeb79d52d4",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_b2dab5aa",
+      "galleryTemplateLockHash": "tpl_a23dcce5",
+      "promptSettingsHash": "ps_97c53e0a"
+    },
+    "promptSha256": "1689b205b531ff682a01a0cac00b798a7dc1ec291b1cc72f47cafd7c11c188aa"
+  },
+  "cobalt_jug_and_lemons": {
+    "workflowId": "StableDiffusionPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sd15-base:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:27fe077b35b48bbd8edc6589655a5ed7a3788139a0a0ab82b14cf3f0ae839b19",
+    "originalReceiptSha256": "235118ee94df6adef140079116b17158e2922bf861a5f6d7d23f4f3f988d3927",
+    "reviewedTemplateSha256": "1c4b2351129fdb61f6ea79abfb8c699ff4db82db0c97e1dc92e9eeeb36a34d12",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_514a5205",
+      "galleryTemplateLockHash": "tpl_61d186ae",
+      "promptSettingsHash": "ps_82f89ed0"
+    },
+    "promptSha256": "516be575fb3191eafa8dd83a38a09c7e85cb36a6484abb71ea32b7080b21c7b8"
+  },
+  "copper_hour_dunes": {
+    "workflowId": "PRXPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:prx-512-sft:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:3d2853278333f4c6760e366ae0347794b14b3937ac62422b5f84d6effcd10495",
+    "originalReceiptSha256": "77d2fb24693cf118ec83aea3c2a53a3c8558b13b78f0bae478458e53896dcabd",
+    "reviewedTemplateSha256": "4a188876a65d35df1c87da93c5fcae162f3bc8b20934a61fe70e4580b5090249",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_b747cf95",
+      "galleryTemplateLockHash": "tpl_3f17401c",
+      "promptSettingsHash": "ps_6998df3e"
+    },
+    "promptSha256": "04cb0ceff2138f0fe17267a6c1e68698a7ccb1b2e9075641957b6b7dd59ea8f5"
+  },
+  "glasshouse_rain": {
+    "workflowId": "StableDiffusionXLPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sdxl-base:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:8cca9a4269d1339b835a8fba2a380913be348c06c3a628b212a3a17ef2377bb1",
+    "originalReceiptSha256": "944ff90f533867016d514d9cdd7a35648e711359c55f2ae06fc3bac8e88b63e8",
+    "reviewedTemplateSha256": "4d32a1778d7cad756e05f14f09de559b9b065f3675b2aef6a289c5299cbd2c24",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_b24bef60",
+      "galleryTemplateLockHash": "tpl_a4b61426",
+      "promptSettingsHash": "ps_fc327a42"
+    },
+    "promptSha256": "eb5d22de03c2688152fd9f6674b018dcb8770f099e44706affd68deda70e65b2"
+  },
+  "pomegranate_on_blue_linen": {
+    "workflowId": "StableDiffusionPAGPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sd15-pag:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:f471ecd5a18b997bf9dc6b61a72cf7e98e0988f9309ef3432ec635838f97c409",
+    "originalReceiptSha256": "ad23b58153c3301fd0125a0a66e9e110a61a16e0c8833563cd3ca51109fe5056",
+    "reviewedTemplateSha256": "6642ac1831a788b83981383c33b7ce019692d58fd2b23f3bff9d95e3a59ec27b",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_98174f0f",
+      "galleryTemplateLockHash": "tpl_5dba74f8",
+      "promptSettingsHash": "ps_2f4c6afa"
+    },
+    "promptSha256": "f0657889fb99878c51b1e31b08806daf0714539faf351abf6efcde2a39024db3"
+  },
+  "canal_lantern_in_warm_light": {
+    "workflowId": "SanaSprintPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sana-sprint-600m:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:374726f7f4d26de27f216171d570f84ef9365397555d083767b89eacc2415338",
+    "originalReceiptSha256": "e6693f3cb5cc81bbac653e0f89c15e2871fdbb67ad37c4f3c63514bbf4e0aa43",
+    "reviewedTemplateSha256": "0724f395ee3219d2cf878ea1ef914692d9808e83236c4d972322e062dd15b380",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_193e94c3",
+      "galleryTemplateLockHash": "tpl_c72697e6",
+      "promptSettingsHash": "ps_d411e860"
+    },
+    "promptSha256": "315c32ce4bc4c7352d7eaf6bd8598fdfb67fa3479c4b3a9a14beb33e562a2605"
+  },
+  "the_glasshouse_seed_tray": {
+    "workflowId": "StableDiffusionXLPAGPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sdxl-pag:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:084cbe824fed25ab44a940b2319aa37299f80d3fc2e06efb5848d701162902d9",
+    "originalReceiptSha256": "e5bcc2b64bfddcadc334c20f0c125fdcae68760cde1ff60ec10d1a22ce81a997",
+    "reviewedTemplateSha256": "f30bccf14d658fa6222cec9c7458ec74fec76940dc1dac07ed87e19d93b3738c",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_7e4877bb",
+      "galleryTemplateLockHash": "tpl_9fd062df",
+      "promptSettingsHash": "ps_c51df98f"
+    },
+    "promptSha256": "635581fcdcd104401ed65f1733f0cd4c7c700f35455f499f509dad161e799cb3"
+  },
+  "quiet_kiln_at_daybreak": {
+    "workflowId": "NucleusMoEImagePipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:nucleus-image:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:ee3d46849aebf382a67208a5f3c2ee4461deb6bfdab6af3506dfbb5abb6dfec1",
+    "originalReceiptSha256": "adc6e23f1c2082c72ea9e0697cc87f4e7da5d8cc01540d06f0d6e08acea81a04",
+    "reviewedTemplateSha256": "82918f24aaddf420da3c1213ac69779af2bf962cd2af50b33814f1eefdf14a3b",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_4c4f64e3",
+      "galleryTemplateLockHash": "tpl_c722e490",
+      "promptSettingsHash": "ps_b971c379"
+    },
+    "promptSha256": "e1a2c655bd0bf0edee77abe9e13b3e9f1fe06114b20e01047491a379d96b6f6f"
+  },
+  "restoring_the_studio_backdrop": {
+    "workflowId": "StableDiffusionPipeline:inpaint",
+    "sourceTaskTemplateId": "task-template:sd15-base:inpaint:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:d46308269e83807cfb33229dc47a0720e765872ff093ae7006857bb9fe382051",
+    "originalReceiptSha256": "74c30496f6c07b0eceae986254a425b0b919b5e5d91fc668839d31a59783a4a6",
+    "reviewedTemplateSha256": "26d6762e118bc9217762cc4abeec7817586ee58fb80ef09bc3c98e32a2789472",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_46535382",
+      "galleryTemplateLockHash": "tpl_cab1d671",
+      "promptSettingsHash": "ps_b010f09b"
+    },
+    "promptSha256": "17cd8e35f8e283ec08936955f6848154024d1a15ca2518e5e91c535e18996924",
+    "inputSha256": "d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
+    "inputLocatorSha256": "efcb2b3b9ced784bb620763301bb33ea3b2f6ac2561624a4a60c7a735049cfb1",
+    "maskSha256": "71817f4823a73712c8e76e7d832ec382c29ec0a0bf5a472e09639448c082da01"
+  },
+  "janus_reykjavik_travel_note": {
+    "workflowId": "HuggingFaceAnyToAnyModel:text_generation",
+    "sourceTaskTemplateId": "task-template:janus-pro-1b:text-generation:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:eb58163449468a297887a396fb270e73104cbf0a537b7a4c30a17561087d94eb",
+    "originalReceiptSha256": "5c9d37ae6894cd6aa04a9bfc4a91beaf7e9eb73bef40e2edc144ddce0215b3e7",
+    "reviewedTemplateSha256": "cd73585863835d186d076de2bc4f37c36c11138376bdd2939af45290ff2c37af",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_f85e0e6f",
+      "galleryTemplateLockHash": "tpl_ffabdfb5",
+      "promptSettingsHash": "ps_2eede069"
+    },
+    "promptSha256": "ec9c470f211df567cf09face1047675387ac0bd0191e7962f42eaede605b45b7"
+  },
+  "janus_red_triangle_caption": {
+    "workflowId": "HuggingFaceAnyToAnyModel:image_to_text",
+    "sourceTaskTemplateId": "task-template:janus-pro-1b:image-to-text:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:92d1160e0d3e06871c8b32b01497360e199c3a0c5bb1e69d68f81a6c651f795f",
+    "originalReceiptSha256": "13c313cdf72749eea9789f1cef22fa7e1106d1c46cf6d3a0fb0757c00677c45c",
+    "reviewedTemplateSha256": "44e68d77baa00812c4b9888835013887d523bfe990c11caec96ac426c8ca87b3",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_124461a5",
+      "galleryTemplateLockHash": "tpl_a56db7ab",
+      "promptSettingsHash": "ps_28ae7860"
+    },
+    "promptSha256": "cd46be79ad59a1ca92ca16e6910d11f0272c0fdadf1688b1cbf05040e08606d2",
+    "inputSha256": "42d903217dc0d8addf5bb6b4a91c2fd83f6fec7fbbf165d780308b5efcba8c6f",
+    "inputLocatorSha256": "ce6e7bdfc88e0f8e6c01d9db3078a2990182e21ac8169460c399a757c1f0c294"
+  },
+  "janus_red_enamel_teapot": {
+    "workflowId": "HuggingFaceAnyToAnyModel:text_to_image",
+    "sourceTaskTemplateId": "task-template:janus-pro-1b:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:fc935fef4353febb86244c65ae189e7da6bee8ad266dc6ca0d8f88b7497c4eb1",
+    "originalReceiptSha256": "5820a7260e3f78175f684b39ee2a28c244bfb7cfaed6318c256c642dce306ecd",
+    "reviewedTemplateSha256": "335f3fbf1907201be05d98148bff1fb7dc68d540750b71f33812769ddfa55879",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_26cd8cd7",
+      "galleryTemplateLockHash": "tpl_ac9c0bc5",
+      "promptSettingsHash": "ps_4a949eaa"
+    },
+    "promptSha256": "07b559ce738871099c5f9a2f9a5c61fb9ca71a8bfca500c109449f50a46eb456"
+  },
+  "lumina_opal_pendant_in_limestone": {
+    "workflowId": "LuminaPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:lumina-next:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:029c04a5a3e933bb710937287da6cab94ef80b85a2b57c93e3002a3b6334d62f",
+    "originalReceiptSha256": "cbb5826ba9e44f9608ef88d6c52757cbd040c9bcb611f88e5892a2e93c79c8d3",
+    "reviewedTemplateSha256": "4545f92379bc42dd213572033b19a7d37bfd24a3cf8c5eb90fb510c2e2c4c1e7",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_9b863ddd",
+      "galleryTemplateLockHash": "tpl_f24a6ace",
+      "promptSettingsHash": "ps_a3742a3f"
+    },
+    "promptSha256": "429f531790d0fb684f2bae38fd64c0519e34a091da09ed608b3f69ac0590bb68"
+  },
+  "ddim_cifar10_preview": {
+    "workflowId": "DDIMPipeline:unconditional_image",
+    "sourceTaskTemplateId": "task-template:ddim-cifar10:unconditional-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:ef9521d37a186e6b6539068596033f2b921370e3cf3ca8a031f3feaae8716434",
+    "originalReceiptSha256": "ba8521d8043808cfb8880be8e8f46eadb81e266624aa6fb478c8b0d156bab079",
+    "reviewedTemplateSha256": "1f41b7d2d7bccb216f46b9ce174a9d4246f0348584e208baeeaa4af92c172c9f",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_13b8b56b",
+      "galleryTemplateLockHash": "tpl_48bbabb3",
+      "promptSettingsHash": "ps_b456b1ed"
+    },
+    "promptSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "sdxl_clear_cobalt_backdrop": {
+    "workflowId": "StableDiffusionXLPipeline:inpaint",
+    "sourceTaskTemplateId": "task-template:sdxl-base:inpaint:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:46f00547faa02a687a12eafda44d9c94802a76505143f4a95124b6bd44eabfda",
+    "originalReceiptSha256": "04773f9c39ab30246fca3f87394f504a61772ccfa97630d4b46d1a9530450ee2",
+    "reviewedTemplateSha256": "5ac53251bbc44c8b3eb62ab06fba702e275ebc7340348f36fb20a055d36b3573",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_15f3348b",
+      "galleryTemplateLockHash": "tpl_72c55f1d",
+      "promptSettingsHash": "ps_fdf2b4ba"
+    },
+    "promptSha256": "159253308aba23cc8f6955da96e48e550533d368ca286ad70b6caa601d1291e4",
+    "inputSha256": "e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+    "inputLocatorSha256": "69ba088466bbd714eba0a70d1dc24984230ca1ac74b00ac0ff1bbcb29675799d",
+    "maskSha256": "1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d"
+  },
+  "sdxl_turbo_orange_caps": {
+    "workflowId": "StableDiffusionXLTurboPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sdxl-turbo:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:40e7ee74d823ffc46f9e096c7cba50ec7f825e36627159674e1e621c33bbe0d3",
+    "originalReceiptSha256": "c530e10728c8c3871c1f6d6e58589996b8e926729d7c57e43fa36d020660e3dd",
+    "reviewedTemplateSha256": "a8bae14e8dc50c3969cba99c45be96d5ffbbca1fa12824640f5c3360bcc4427c",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_117d90f4",
+      "galleryTemplateLockHash": "tpl_53f34630",
+      "promptSettingsHash": "ps_4787eff9"
+    },
+    "promptSha256": "370292f42dec86505ba60a4386671fcf130c10ce047b910063ffbbb0a511e0eb"
+  },
+  "whisper_small_an_open_door": {
+    "workflowId": "HuggingFaceSpeechRecognitionModel:speech_translation",
+    "sourceTaskTemplateId": "task-template:whisper-tiny:speech-translation:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:69e261c29aa777da002dada801f01091436e8f116780f1ac7271ce23a3da425c",
+    "originalReceiptSha256": "9d7ed920f22989d90bddc05fb1976b69025132a87799d43d361f14d671539d1c",
+    "reviewedTemplateSha256": "cfc95f86cf49288a5b851e7e042558b50bcd091f1a69cfabdf961cb204fde1ac",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_d016a22c",
+      "galleryTemplateLockHash": "tpl_169ef95b",
+      "promptSettingsHash": "ps_c6fb7372"
+    },
+    "inputSha256": "cbf33b144644e786767fec1d5db416d50533d9846f8347e157ac8c3f54f26f11",
+    "inputLocatorSha256": "49fcd9605ca47c396030ec76144518411fdbfb9a953cf7ca27717017b010b13b"
+  },
+  "smolvlm_red_triangle": {
+    "workflowId": "HuggingFaceImageTextToTextModel:image_to_text",
+    "sourceTaskTemplateId": "task-template:smolvlm-256m-instruct:image-to-text:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:619f187da77a6fda72f90354dcb1768036d2f46b8418f51d674ceac1942c31a6",
+    "originalReceiptSha256": "daf5d3a9cb638e942a8f3f53df6cc86860e874943bc28fa01175ca2d30e56d5d",
+    "reviewedTemplateSha256": "7c5cc75ca115a437ec6a7ebab59030ef5c5ea14c74735bae5ca78dff427fb0e2",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_7d29caa4",
+      "galleryTemplateLockHash": "tpl_0912c789",
+      "promptSettingsHash": "ps_b91c5c35"
+    },
+    "promptSha256": "31d08ea568d869e6cf7c0742d85a54617ba38744b60123dfe25f3c81f9e111aa",
+    "inputSha256": "42d903217dc0d8addf5bb6b4a91c2fd83f6fec7fbbf165d780308b5efcba8c6f",
+    "inputLocatorSha256": "ce6e7bdfc88e0f8e6c01d9db3078a2990182e21ac8169460c399a757c1f0c294"
+  },
+  "kandinsky3_ginkgo_on_slate": {
+    "workflowId": "Kandinsky3Pipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:kandinsky3:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:2d805bf9c48d49b9e4c2778136f8c528d8ff82a7f7753ba7a99021cc439b5b3c",
+    "originalReceiptSha256": "41b3b13c0f66711ffa3ac065f7a990bee824fc52db69940b8f75e0f7f79bdd38",
+    "reviewedTemplateSha256": "5870090e6b4d12c32d72566b6038e9bcc8bf8d063492a28ecbeb65275d77c8e9",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_23ed569e",
+      "galleryTemplateLockHash": "tpl_44580a03",
+      "promptSettingsHash": "ps_bf341b46"
+    },
+    "promptSha256": "349928bf9ad6755eb4abb5af47199b1152e32323eb855dca5a9dbcfeb3475730"
+  },
+  "chroma_terracotta_and_blue": {
+    "workflowId": "ChromaPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:chroma1-hd:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:bf170489052eadc150ad0e4149344312741328c5e4e859fb1473be81c3fe63ea",
+    "originalReceiptSha256": "bad53850d48ffdaffa0896ec019e295c349577ee86d169e1ea1da8752324a215",
+    "reviewedTemplateSha256": "5221fc5d744cbdcf1aa29d1fa9b27cddc0fcbd75983c24061e6218d41621617d",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_db9b22c3",
+      "galleryTemplateLockHash": "tpl_9dbc94cc",
+      "promptSettingsHash": "ps_aaaac429"
+    },
+    "promptSha256": "fc24a34ab87b06b7b32949cbe2c78454bad6f08e19f227023d17def472dfbc6a"
+  },
+  "lumina2_larch_on_glacial_pond": {
+    "workflowId": "Lumina2Pipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:lumina2:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:b58ba817732e34d2c40f61f7bb7dbdebf32c6f2a2bbb21dcdbb237004edc4cc3",
+    "originalReceiptSha256": "68ec9070dfda6f4bcf5990d404e3032b9c9d0add8965753e0a162bfdd67c09f7",
+    "reviewedTemplateSha256": "c1fecc495b278628b9539fb84079b73b70db420165a7e151def065731920853e",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_a75e5588",
+      "galleryTemplateLockHash": "tpl_0c2048ce",
+      "promptSettingsHash": "ps_e264186c"
+    },
+    "promptSha256": "5210322404f5ed727bc5dfa782f3da51ed652c32b33f46000ece286969b103bd"
+  },
+  "hunyuan_dit_coastal_lighthouse": {
+    "workflowId": "HunyuanDiTPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:hunyuan-dit-v1-2-distilled:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:4d26fca7d33aec5e119da74520c47fd96fa41f9de0b92a3afca76505fb5722aa",
+    "originalReceiptSha256": "9e8d30a1d20d721f8aeab6b9172f7f50403b1e8e855d83af17e6430fe97d9650",
+    "reviewedTemplateSha256": "59e80838a60338b27351f10a7cc8478dbe1ae81e04d5d7718ee37aa556585788",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_9f125174",
+      "galleryTemplateLockHash": "tpl_ad3b4f77",
+      "promptSettingsHash": "ps_f38e8fdc"
+    },
+    "promptSha256": "c54d404876a0c92e240aaa5cdd2e2fd448b934d2050e459047d23b82c2a65e7b"
+  },
+  "omnigen_tulips_after_rain": {
+    "workflowId": "OmniGenPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:omnigen-v1:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:38376f1ad21e5c153fb96860a4e566847ff916716637ffd2061dfae350577c93",
+    "originalReceiptSha256": "c78e90591a491385de1f96d89b6aed18dee1367eae36bfcb0b27ee3cecaf8deb",
+    "reviewedTemplateSha256": "e3ceb2dc096775601a6e65b7ab61f5ccc64658d2a69586f3c6a13f2efe1a973c",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_39e7a513",
+      "galleryTemplateLockHash": "tpl_0c5c4bcd",
+      "promptSettingsHash": "ps_4e4eb7da"
+    },
+    "promptSha256": "a95f8ab9a463c7c571c8667695bb3162234828a00547f8b20db0826612e5a71d"
+  },
+  "hunyuan_pag_burgundy_knight": {
+    "workflowId": "HunyuanDiTPAGPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:hunyuan-dit-v1-2-distilled-pag:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:9ff7bd0050b5c50405728a76530205fcdc54531b7b017cc66e3b821b52413dcd",
+    "originalReceiptSha256": "aa6b64f4a942adbb11c83cbaba89940fd03ed7dbf83175e8e1d17d32291454d3",
+    "reviewedTemplateSha256": "ff4d1b75e172f8fdb8a45199626ed40a07fe634669e03d1591091a10c176edfe",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_e2834f89",
+      "galleryTemplateLockHash": "tpl_00d848b4",
+      "promptSettingsHash": "ps_60e8ca60"
+    },
+    "promptSha256": "1a5dd12ea5c33b33c8e1a2621a4c6543a2d2a8f2ac82fe458eaecc7d9b4d71c0"
+  },
+  "chroma_restored_cobalt_backdrop": {
+    "workflowId": "ChromaInpaintPipeline:inpaint",
+    "sourceTaskTemplateId": "task-template:chroma1-hd-inpaint:inpaint:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:d3bfd6322b7b1bd0f34b9faa9f444ebefae32fc43c368d37169f6ebfbc6c53cf",
+    "originalReceiptSha256": "a85451bc142a3f5ef44cc5e8cdb1fcc0f000872241efe5bda751638d36215919",
+    "reviewedTemplateSha256": "d3c99f24317aaf93b0f25f2681bdc56f456d69554e47a522c0c04487602149f2",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_0ca22a3e",
+      "galleryTemplateLockHash": "tpl_8c282bf7",
+      "promptSettingsHash": "ps_747e9429"
+    },
+    "promptSha256": "cdcd113dd8102aba0f1838ecc02a170532e8b79ab574afc47d30bbdf7aa95d4d",
+    "inputSha256": "e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+    "inputLocatorSha256": "69ba088466bbd714eba0a70d1dc24984230ca1ac74b00ac0ff1bbcb29675799d",
+    "maskSha256": "1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d"
+  },
+  "sdxl_pix2pix_pale_amber_glass": {
+    "workflowId": "StableDiffusionXLInstructPix2PixPipeline:edit_image",
+    "sourceTaskTemplateId": "task-template:sdxl-instruct-pix2pix:edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:be363defe20343a8ad3dda9b464344a590c931b6908d5f2eb8ee4d1ba4974f95",
+    "originalReceiptSha256": "4655ea8f1f9b86921f07658644599ebe08034ffbe93e081eb19fd08faa214b61",
+    "reviewedTemplateSha256": "897fb59d568ceba3ef8d85cf1141f79002522b111dbc6ffa67ad51a9acf88495",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_e055e288",
+      "galleryTemplateLockHash": "tpl_5a852750",
+      "promptSettingsHash": "ps_de1bb4fa"
+    },
+    "promptSha256": "609bfd6392cbca4e4c80a5835e0f013349d84c017387ff69445c9168939b4b1b",
+    "inputSha256": "ebaca95f96d1573e4292ffc65c78eb0dcf8ff9cc8b5a7e11ec81face61b160fb",
+    "inputLocatorSha256": "349b8845e5d606d1439af02fa63b2edc09c504d15bf71f58954791ed6d983232"
+  },
+  "sd15_pag_mountain_lake_watercolor": {
+    "workflowId": "StableDiffusionPAGPipeline:edit_image",
+    "sourceTaskTemplateId": "task-template:sd15-pag:edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:48cd547df20763361808da8567bee1e81d2f5656cf700b06ca1d7032e05c9a12",
+    "originalReceiptSha256": "b4929658c32ef7bad47e50f647abec0e6159c54374a1baea1e05d3f93b66effb",
+    "reviewedTemplateSha256": "6de709bbcfb3ed6e061541584be28f5b7ed05e1170dcdaa69e2deb4fee822154",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_de24cda0",
+      "galleryTemplateLockHash": "tpl_055d66e3",
+      "promptSettingsHash": "ps_70c72f9b"
+    },
+    "promptSha256": "d05178536094430b2076eb9bbbc38b76f6590185f85ee128b9aad0c910e214d3",
+    "inputSha256": "88290a96bc8d52f11f2d1e3c0c0e04c2027661816e54b57d7d4739d731ca1e75",
+    "inputLocatorSha256": "b7e9b68e47a60f438c82f778b960f66d58d319de50749d453a9aa0c30c4df45a"
+  },
+  "sd15_pag_cobalt_studio_repair": {
+    "workflowId": "StableDiffusionPAGPipeline:inpaint",
+    "sourceTaskTemplateId": "task-template:sd15-pag:inpaint:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:0236cd78852886d49d629776dae568ae589c27dfc4f499868ba2f40d4fd4867c",
+    "originalReceiptSha256": "101e965b702766dd0949054f6189d20ca2895fdd05559626eb270f8e12e65069",
+    "reviewedTemplateSha256": "8373d87ab42e130142a163e3c60733f3f2511b7a77ffad1d9129607bcfba2562",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_ab9c14d4",
+      "galleryTemplateLockHash": "tpl_7552fcab",
+      "promptSettingsHash": "ps_fbb3534b"
+    },
+    "promptSha256": "92548914e5a66fd80ffeeeae3ee1c86bfd46bd9a53d17bd73f35c0f651615ad3",
+    "inputSha256": "d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
+    "inputLocatorSha256": "efcb2b3b9ced784bb620763301bb33ea3b2f6ac2561624a4a60c7a735049cfb1",
+    "maskSha256": "71817f4823a73712c8e76e7d832ec382c29ec0a0bf5a472e09639448c082da01"
+  },
+  "zimage_golden_amber_glass": {
+    "workflowId": "ZImageModularPipeline:edit_image",
+    "sourceTaskTemplateId": "task-template:z-image:edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:09397eba135ea69f8c88d29c6eb65297ece35dc10e039c9c5573165503f8488f",
+    "originalReceiptSha256": "449bc094096e644f4070a681e382650d133c0854ec6770cfbb736f0299e04179",
+    "reviewedTemplateSha256": "303a0b1b64a2e1234aeca85941a07eea2157707c8436442a5cf00aedd68c6d97",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_50ad3c10",
+      "galleryTemplateLockHash": "tpl_279a009e",
+      "promptSettingsHash": "ps_41cfc342"
+    },
+    "promptSha256": "cc55ff0b6d87c11924010d873152025e9ddb936b56140d2f23d291696a65f7ea",
+    "inputSha256": "ebaca95f96d1573e4292ffc65c78eb0dcf8ff9cc8b5a7e11ec81face61b160fb",
+    "inputLocatorSha256": "349b8845e5d606d1439af02fa63b2edc09c504d15bf71f58954791ed6d983232"
+  },
+  "sdxl_control_inpaint_warm_plaster": {
+    "workflowId": "StableDiffusionXLControlNetPipeline:control_inpaint",
+    "sourceTaskTemplateId": "task-template:sdxl-controlnet-canny:control-inpaint:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:188e60e1e4b295563d9e227a6a5f4b6e856781519579dbe9bc830d6ded6b0807",
+    "originalReceiptSha256": "ccf8f19d4018fd24d47fa5001209e36f9cec3a36a56e539f87759a99a7ac5fab",
+    "reviewedTemplateSha256": "7d840698c480d52e5a864d50fcdbe6528680a9d0453e5dc501d76ac89c0991ef",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_0ee86d25",
+      "galleryTemplateLockHash": "tpl_ad048189",
+      "promptSettingsHash": "ps_a9571e3b"
+    },
+    "promptSha256": "b12a7fc59f32e9bbc795791ac45875649f91220fa32b3f3b74953e5ccc92d30d",
+    "inputSha256": "e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+    "inputLocatorSha256": "69ba088466bbd714eba0a70d1dc24984230ca1ac74b00ac0ff1bbcb29675799d",
+    "maskSha256": "1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+    "guideSha256": "0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a"
+  },
+  "sd15_canny_guided_green_glass": {
+    "workflowId": "StableDiffusionPipeline:control_image",
+    "sourceTaskTemplateId": "task-template:sd15-controlnet-canny:control-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:b0e98f0bb1e20a8d46f1ac67a426e6b0a55fcd817c51b6f60a79d97ab92d6514",
+    "originalReceiptSha256": "4947a5a7b0a87481e1795185f91486717d6950c0f0f3ae79fc979c46c55ad443",
+    "reviewedTemplateSha256": "783d03619e47df52cf8b17262e42d07bdaacf9165314c26bce9dc3fc9478e55d",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_f24bec27",
+      "galleryTemplateLockHash": "tpl_1ec33e6c",
+      "promptSettingsHash": "ps_2fb986e2"
+    },
+    "promptSha256": "26d98191ed235643dc50604bcc3065c35b47e26601b929c86bd3383cab884e69",
+    "inputSha256": "6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+    "inputLocatorSha256": "36f9c290c26da075d212f483d4abbc2aba1520b60c5d135f823768f4966c286c"
+  },
+  "hunyuan_dit_green_glass_study": {
+    "workflowId": "HunyuanDiTControlNetPipeline:control_image",
+    "sourceTaskTemplateId": "task-template:hunyuan-dit-v1-2-controlnet-canny:control-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:20f676957f2cca0389d876c1b462e6b947e7d366154f125dd19c262027b9cbbb",
+    "originalReceiptSha256": "88ca5ccb6b4500e438bd84d42321a2cb61d0f7322e5c3bdaa8343735b8f08648",
+    "reviewedTemplateSha256": "a132dd6cd433bd0595f962173926edd930ea38cbf44d175d5499234f600d21f2",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_ce472b92",
+      "galleryTemplateLockHash": "tpl_ad56a37f",
+      "promptSettingsHash": "ps_6990e9b6"
+    },
+    "promptSha256": "15c242632d932ffb74e7c107f2610ce42d94aa7480ee711aa26ef66ff4610dc0",
+    "inputSha256": "6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+    "inputLocatorSha256": "59660f6454720ae76fa64a1baf2fad2e551e349070cea802c6614fc9864c86dc"
+  },
+  "qwen_control_winter_cabin_blue_hour": {
+    "workflowId": "QwenImageControlNetPipeline:control_image",
+    "sourceTaskTemplateId": "task-template:qwen-image-controlnet-direct:control-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:9f21216fd545a1b8d30b5bec044f217749bedecfc1f7377237b944abf9a7bb7d",
+    "originalReceiptSha256": "e9d03118cfe3e55fb78b42dec749d367bf72d6676aae59e70fd1b3be19ade4c0",
+    "reviewedTemplateSha256": "eb65cb98a365c056f3a2a7bd5d44515bb16f518f7ec00797a496fe90a25ce07d",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_301009d7",
+      "galleryTemplateLockHash": "tpl_c38a2571",
+      "promptSettingsHash": "ps_508a465e"
+    },
+    "promptSha256": "5728c894889366a9648c6b78109b8ebaa608fdd22f0bb7a470849b7353a9bcc6",
+    "inputSha256": "ca250462efc77625134ebe305b2ee67281a1dcf8919e45299c648f0fdacf919a",
+    "inputLocatorSha256": "5c41a25a1747974eb20ae701984d2e13c2979cd0069944f7ef21429677d4c046"
+  },
+  "sd15_pag_canny_guided_glass": {
+    "workflowId": "StableDiffusionPAGPipeline:control_image",
+    "sourceTaskTemplateId": "task-template:sd15-pag-controlnet-canny:control-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:cc03628ea649924bfeca24fd9e93c8aa47c28b4805a0b308fb4adeb9fbb5c0b2",
+    "originalReceiptSha256": "9bb9602d6c79fd442b5f197809ed32dd1651524f4f5d730c28e1971c7325fc1d",
+    "reviewedTemplateSha256": "23fc8dfe4150096c38d946116a9839a314a7581d52c9397e9d8e1ad42716624c",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_0a0b30c1",
+      "galleryTemplateLockHash": "tpl_dff4bb5e",
+      "promptSettingsHash": "ps_d149242b"
+    },
+    "promptSha256": "3195f7028bc2fc48271a962d96f24cfd11cd9d8dc44032a2163ea62a511f8140",
+    "inputSha256": "6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+    "inputLocatorSha256": "36f9c290c26da075d212f483d4abbc2aba1520b60c5d135f823768f4966c286c"
+  },
+  "sdxl_controlnet_glass_study_on_slate": {
+    "workflowId": "StableDiffusionXLControlNetPipeline:control_image",
+    "sourceTaskTemplateId": "task-template:sdxl-controlnet-canny:control-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:cd4d26987f6eb195f91493d431e659db42ef4a531b29e26d7eedb08799769c16",
+    "originalReceiptSha256": "f57b41443261612d95d3e80df2d638617f62526970313989ca69e0652bb4c390",
+    "reviewedTemplateSha256": "3075b68d97eea65616a9a8fe2519154041e24ced2cd916b395c4849d26c31b71",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_380083cc",
+      "galleryTemplateLockHash": "tpl_45e1f06a",
+      "promptSettingsHash": "ps_e42996a8"
+    },
+    "promptSha256": "d20a107a17c31f20a4e9d409be51c0e55ca8e58747bb5dfbd6169500a4da21d6",
+    "inputSha256": "6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+    "inputLocatorSha256": "59660f6454720ae76fa64a1baf2fad2e551e349070cea802c6614fc9864c86dc"
+  },
+  "sdxl_canny_adapter_glass_study": {
+    "workflowId": "StableDiffusionXLAdapterPipeline:control_image",
+    "sourceTaskTemplateId": "task-template:sdxl-t2i-adapter-canny:control-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:9012c51eebe966a595a2fc5b93f9645e23a2fd6cc194e28ae0218f87b2495565",
+    "originalReceiptSha256": "5a911626f9d33032fb2dcdc80cede5ffad9506abc0fb0077dc4ba39947b33a36",
+    "reviewedTemplateSha256": "eef6570d0a2241aa0a9ff68b200c59591fc6497f43885fba151138ae56517968",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_76024be8",
+      "galleryTemplateLockHash": "tpl_768c7bb4",
+      "promptSettingsHash": "ps_63d6342f"
+    },
+    "promptSha256": "ec5b7d8ce937a4f50bde17dfddda9d217733d09cf02ca1b7bc944f1bcf231577",
+    "inputSha256": "6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+    "inputLocatorSha256": "59660f6454720ae76fa64a1baf2fad2e551e349070cea802c6614fc9864c86dc"
+  },
+  "longcat_last_tram_at_dusk": {
+    "workflowId": "LongCatAudioDiTPipeline:text_to_audio",
+    "sourceTaskTemplateId": "task-template:longcat-audio-dit-1b:text-to-audio:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:2d149a078f6469b473a083b6116ef47452ae4ccc8a1ca0fc7b0ea416f5257515",
+    "originalReceiptSha256": "8019b9dbf5af0e8ba5c8eeed7132ec5578968ee0607309dd65327d69599a5c5d",
+    "reviewedTemplateSha256": "9d0f7b50afd87f366ecf6c0d66352d87dd2bdf0b4ae9a50f818619d6254d6b92",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_0738853e",
+      "galleryTemplateLockHash": "tpl_e6bfed44",
+      "promptSettingsHash": "ps_11aa3e00"
+    },
+    "promptSha256": "47545a310a3cffc0c8a458241c77dca330e10fe92fbc796239efb689bfb40949"
+  },
+  "qwen_layered_sunset_and_peaks": {
+    "workflowId": "QwenImageLayeredPipeline:layer_decomposition",
+    "sourceTaskTemplateId": "task-template:qwen-image-layered-direct:layer-decomposition:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:25bb2ac3d10b3d0f539204d2c4d3181764f192882a9c8442efb5ce54b7d8de43",
+    "originalReceiptSha256": "826d487fed6b6f0ae2679d2eb842ad65208a9b5929b66722ad1d8e1c0242079e",
+    "reviewedTemplateSha256": "4ee3847d935f7b245f5c9d9e156da8fe5d97dcb382ad890c59163e573a6c73c9",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_54972ded",
+      "galleryTemplateLockHash": "tpl_831d4207",
+      "promptSettingsHash": "ps_9236bec4"
+    },
+    "promptSha256": "10e30e8fbc0bcc8c1748851145c9b32a4d27da19cecd06da4d044f565cd2d745",
+    "inputSha256": "67835db7f30072a35b1650c0a84e7f241c0b01fcf2c324964ddcd5f8424008b3",
+    "inputLocatorSha256": "1584ce002870000a86ce56d7b6132b4e4920237e6b1c35f2269af9bbcc716aaf"
+  },
+  "wan_a14b_cloudbreak_over_the_ridges": {
+    "workflowId": "Wan22Pipeline:text_to_video",
+    "sourceTaskTemplateId": "task-template:wan-22-a14b:text-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:6921f430025f6a760f54a790517b949fc5d03c880f3c9e61eac12ae547b23cf2",
+    "originalReceiptSha256": "05008ca915711e27396ac9216f34931f91c5444efa2751e9fb4a26c2761a89c2",
+    "reviewedTemplateSha256": "2fe28c05a3adcb92031d2e5a369cf6be41990463644f08e5440bb998b32bc1fd",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_6e4c3186",
+      "galleryTemplateLockHash": "tpl_80961b58",
+      "promptSettingsHash": "ps_ca81bdb8"
+    },
+    "promptSha256": "63b8db49c89bbe4efec541259382b051bce2632aa78fb16a8ef47a70bb130eb3"
+  },
+  "cogvideox_mossy_mountain_stream": {
+    "workflowId": "CogVideoXPipeline:text_to_video",
+    "sourceTaskTemplateId": "task-template:cogvideox-2b:text-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:798aaa4c7c2501de15aca025081efa81d009df7977fd0fe6fb71c17f5895c105",
+    "originalReceiptSha256": "3aab2d19bca49f839f8316f19ea75afbe4b0e401ff5a330c16f35484f43f611a",
+    "reviewedTemplateSha256": "c77c843d9555524c9f9ce04c53af16c2ee6570d7ff9b72d90fba98fd1fc3d9cc",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_12ff3dab",
+      "galleryTemplateLockHash": "tpl_089d3aae",
+      "promptSettingsHash": "ps_f986f95b"
+    },
+    "promptSha256": "08823b5d6cd6d0166e33c94e61aaccab515dece0668fcc9779c6cfb633462821"
+  },
+  "wan_flf_blue_hour_at_the_tram_shelter": {
+    "workflowId": "WanImage2VideoModularPipeline:image_to_video",
+    "sourceTaskTemplateId": "task-template:wan-flf:image-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:f3e6600531ca93b1b326cbfa5e3b0b853b4015ccb5c163302c003b81bc4897a6",
+    "originalReceiptSha256": "63d626c3c97cd12016b58a9fba71739eeea0459ad300383d5b4f43aa0775740a",
+    "reviewedTemplateSha256": "719322718cef9254b24004759f2eac08a4302ea27c86cbe538782207d29389f6",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_b13aec66",
+      "galleryTemplateLockHash": "tpl_de5816ae",
+      "promptSettingsHash": "ps_b86813d0"
+    },
+    "promptSha256": "d9311581aed6eb088806830eb7dcf320b7d8650e06232f9794d9944acbb0fa1d",
+    "inputSha256": "6d2c561cf33919ae42e773d95a0232799da3f2b92a23a94dad80902cfb73527a",
+    "inputLocatorSha256": "160363900dea249d2053d49da2b8bb3c801a34ab264d49f7b16098c5a75938a5",
+    "lastFrameSha256": "191b023efb43a42288799877db722b9a2608d2970740246322ef38cc7c68c590"
+  },
+  "cogvideox_red_tram_model_railway": {
+    "workflowId": "CogVideoXVideoToVideoPipeline:video_to_video",
+    "sourceTaskTemplateId": "task-template:cogvideox-2b-video-to-video:video-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:9536733d2657f50f2530e066706a283d282c5dbd7989f70e563942b748489f2d",
+    "originalReceiptSha256": "c4396b6f2b6b01fcdbcb5d7f370b6284be78d1979e4665a243c1e08193776e08",
+    "reviewedTemplateSha256": "d74131d9a94ae6422f0824a9948e9ee157fb765058f8d45e515fda25a93c25c6",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_305c9ad7",
+      "galleryTemplateLockHash": "tpl_aca915d8",
+      "promptSettingsHash": "ps_44a08b73"
+    },
+    "promptSha256": "d6dffbc00ab43ae375ebadab9cb8e7c7da98805ae41099301b26774022d22597",
+    "inputSha256": "0737fe1e6b127fd4f5f66043b8911e5c7e380e60d50eab7e6bc9ba62e830b9dd",
+    "inputLocatorSha256": "24cb984db9137c26395f2255fba7bf647016637744b7e301d4e8fe7d8d63bff3"
+  },
+  "sana_tidal_pool_on_black_basalt": {
+    "workflowId": "SanaPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:sana-600m:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:4c0dd2f1d20300d93bac5d00a84eb057a7ffc5c64cafe9d4727a38d6852b7aab",
+    "originalReceiptSha256": "8b9112a10ce799d31f77d03e5f3d757d2510a7019f6bdc9e88d3de208f2bfa72",
+    "reviewedTemplateSha256": "31c6fda19fe62a7282c50fe665069354989947ef1454ac63a1384637792d09c6",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_a4797982",
+      "galleryTemplateLockHash": "tpl_2e1869d7",
+      "promptSettingsHash": "ps_91375aee"
+    },
+    "promptSha256": "c737a35b3c72ee9af940329b310301855bb8ae6e6f2c3e36cd86a250a0d2d4ac"
+  },
+  "joyimage_herbarium_rainy_porthole": {
+    "workflowId": "JoyImageEditPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:joyimage-edit:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:764bcfbc5d06837477b63647a4723da8dfce96675828d2f038909bed22b155fd",
+    "originalReceiptSha256": "655abc48262ac72c9e7cee61c90f7f72430660b5b5102716b97d4ee9730e31fa",
+    "reviewedTemplateSha256": "5e0a8441e6f6998745a1b9c9a8244aa5d8e4e8591be5277396f519f41adf7ad4",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_19b0c1a0",
+      "galleryTemplateLockHash": "tpl_9e12c4ef",
+      "promptSettingsHash": "ps_83f27e49"
+    },
+    "promptSha256": "f61ca504d1f282a071ece1bc43cd64b579826005903479fa48b191e4b84112de"
+  },
+  "longcat_florist_end_of_lane": {
+    "workflowId": "LongCatImagePipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:longcat-image:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:b412040d8f6595ffa0093fa82dce6f4993cf6d8db99730610e859ae8badab868",
+    "originalReceiptSha256": "8020bb532f9bc0fc6222c2083e81579b3c8dac7c9dd934e8d2534db7b3ae5fe1",
+    "reviewedTemplateSha256": "b90a1a05613457abec04653497adf621e361d94bfc399db6cbd94f093a69421f",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_129e0498",
+      "galleryTemplateLockHash": "tpl_22334457",
+      "promptSettingsHash": "ps_cbbee99d"
+    },
+    "promptSha256": "301b56ba87f685d46fe7ae0526aab3321afb3b49cef6c8996829e181b574983e"
+  }
+}

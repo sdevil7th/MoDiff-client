@@ -23,7 +23,7 @@ before(async () => {
     appType: 'custom',
   });
   ({ STUDIO_TEMPLATES: templates } = await server.ssrLoadModule('/src/studio/templates.ts'));
-  ({ RETAINED_GALLERY_TEMPLATES: retained } = await server.ssrLoadModule('/src/studio/retainedGalleryTemplates.ts'));
+  ({ RETAINED_GALLERY_TEMPLATES: retained } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts'));
   selections = await server.ssrLoadModule('/src/studio/templateOperationSelections.ts');
 });
 after(async () => server?.close());

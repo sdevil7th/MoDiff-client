@@ -25,7 +25,7 @@ before(async () => {
   });
   qualityModule = await server.ssrLoadModule('/src/studio/templateQuality.ts');
   templatesModule = await server.ssrLoadModule('/src/studio/templates.ts');
-  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   retainedRecipeIds = new Set(APPROVED_RETAINED_BATCH.map(({ template }) => template.id));
 });
 

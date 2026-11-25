@@ -106,7 +106,7 @@ before(async () => {
   nodesStoreModule = await server.ssrLoadModule('/src/stores/useNodeStore.ts');
   studioStoreModule = await server.ssrLoadModule('/src/stores/useStudioStore.ts');
   templateQualityModule = await server.ssrLoadModule('/src/studio/templateQuality.ts');
-  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/src/studio/retainedGalleryApprovedBatch.ts');
+  const { APPROVED_RETAINED_BATCH } = await server.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   approvedRetainedPromptById = new Map(
     APPROVED_RETAINED_BATCH.map(({ template }) => [
       template.id,
@@ -3526,6 +3526,12 @@ test('Wan VACE execution pins the app-installed immutable model revision', () =>
 test('qualified Wan gallery proofs use native five-second shots without reducing recommended steps', () => {
   for (const template of [...templatesModule.STUDIO_TEMPLATES, ...templatesModule.PLANNING_STUDIO_TEMPLATES]) {
     if (!template.id.startsWith('wan_')) continue;
+    if (template.example?.retainedVideoPreview) {
+      // The Gallery can replay a reviewed native run with its original prompt.
+      // All default Wan showcases still use the common negative prompt guard.
+      assert.match(template.example.retainedVideoPreview.mediaHash, /^sha256:decoded-video-framemd5:[a-f0-9]{64}$/u);
+      continue;
+    }
     assert.match(template.negativePrompt, /deformity/i, `${template.id} includes the shared deformity guard`);
   }
 
