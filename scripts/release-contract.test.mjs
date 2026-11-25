@@ -16,6 +16,7 @@ import {
   withCanonicalWorkflowGraphExporter,
   readCanonicalWorkflowEvidence,
   findCanonicalWorkflowRecord,
+  isReviewedReplacementSource,
   templateResourceExecutionModelType,
   qualificationModelArtifacts,
   assessGalleryReleaseApproval,
@@ -84,6 +85,26 @@ test('verified standalone model execution remains distinct from a reviewed exact
       { releaseEligible: false, missingReleaseEvidence: ['eligible_source_template', 'reviewed_bound_recipe'] },
     );
   }
+});
+
+test('the reviewed opening-video replacement exposes its receipt without qualifying its historical template', () => {
+  const id = 'WanImageToVideoPipeline:image_to_video';
+  const sourceTemplateId = 'wan_22_i2v_seed_vault';
+  const manifest = { id, sourceTemplateId };
+  const authoring = { canonicalWorkflowId: id, replacementSourceTemplateId: sourceTemplateId };
+  assert.equal(isReviewedReplacementSource(manifest, authoring), true);
+  assert.equal(isReviewedReplacementSource(manifest, null), false);
+  assert.equal(isReviewedReplacementSource(manifest, { ...authoring, replacementSourceTemplateId: 'other' }), false);
+  assert.equal(isReviewedReplacementSource({ ...manifest, id: 'OtherPipeline:image_to_video' }, authoring), false);
+  assert.deepEqual(
+    assessWorkflowReleaseEvidence({
+      modelType: 'WanImageToVideoPipeline',
+      exactModelRevision: 'exact-model',
+      sourceTemplate: { releaseEligible: false, missingReleaseEvidence: ['approved_gallery_example'] },
+      canonicalReceipt: { proofKind: 'real_backend_input_bound_model_variant', canonicalDefaultsExecuted: false },
+    }),
+    { releaseEligible: false, missingReleaseEvidence: ['approved_gallery_example'] },
+  );
 });
 
 test('template-backed workflows inherit their exact template release gaps and require a revision', () => {

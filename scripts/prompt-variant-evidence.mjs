@@ -228,6 +228,25 @@ const wanA14BRoute = {
   ],
 };
 
+const wanA14BOpeningRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.wan-a14b-opening-image-variant.v1',
+  workflowId: 'WanImageToVideoPipeline:image_to_video',
+  modelType: 'WanImageToVideoPipeline',
+  previousExpertFamily: 'QwenImageLayeredPipeline',
+  modelRepo: 'Wan-AI/Wan2.2-I2V-A14B-Diffusers',
+  modelRevision: '596658fd9ca6b7b71d5057529bbf319ecbc61d74',
+  sourceFingerprint: 'sha256:backend-source-v1:ce7ac712b4620d0e8efb35022a558a551e2d4ae6ef20b844744c4d674527b0b3',
+  executedTask: 'image_to_video',
+  bindsImage: true,
+  imageInputPort: 'reference_images',
+  bindSeed: false,
+  bindNegativePrompt: true,
+  baselinePromptHash: '9d8fe468ce8939dd73a197fa8ee97d01363a709cf34df18397fe589a4064d6b7',
+  baselineNegativePromptHash: '7a8923279a40a635424ada051ad177b63dab90cf78a7d60f9b9b9d5bf1cd2134',
+  chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
+};
+
 const cogVideoRoute = {
   ...wanA14BRoute,
   format: 'modiff.private.cogvideox-video-prompt-variant.v1',
@@ -601,7 +620,7 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   }
   const identity = canonicalGraphIdentity(expected);
   const mismatch = profile.bindsImage
-    ? 'Caption variant changed the canonical graph outside its bound source and prompt.'
+    ? 'Image-bound variant changed the canonical graph outside its reviewed input and controls.'
     : profile.bindSeed
       ? 'Prompt variant changed a field or wire outside the bound prompt and seed.'
       : 'Prompt variant changed a field or wire outside the empty prompt.';
@@ -676,7 +695,7 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
         assert.equal(
           native.sourceFile.sha256,
           suppliedImage.file.sha256,
-          'Caption source bytes differ from the native load.',
+          'Source bytes differ from the native image load.',
         );
         assert.equal(native.sourceFile.byteSize, suppliedImage.file.bytes);
         decodedImage = native.decodedImage;
@@ -1090,6 +1109,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         audioRoute,
         audioLdmRoute,
         wanA14BRoute,
+        wanA14BOpeningRoute,
         cogVideoRoute,
         cogVideoEditRoute,
         animateDiffPagRoute,
@@ -1483,6 +1503,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       ...(profile.retainedOffloadFallback ? { retainedLoaderOffloadFallback: profile.retainedOffloadFallback } : {}),
       ...(profile.retainedImageLoadFields
         ? { openingImageLoadFieldsObserved: true, samplerInputPixelsObserved: false }
+        : {}),
+      ...(profile === wanA14BOpeningRoute
+        ? { openingImageByteWitness: 'native-load-and-upload-with-typed-wire', samplerInputPixelsObserved: false }
         : {}),
     },
     qualificationClaims: {

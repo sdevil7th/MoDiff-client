@@ -471,7 +471,27 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['QwenImageModularPipeline:inpaint', 'MODIFF_SAVED_QWEN_SCRATCH_EVIDENCE', true, []],
   ['FluxDevPipeline:inpaint', 'MODIFF_SAVED_FLUX_DEV_REPAIR_EVIDENCE', true, []],
   ['LongCatImageEditPipeline:edit_image', 'MODIFF_SAVED_LONGCAT_EDIT_EVIDENCE', false, []],
+  ['QwenImageModularPipeline:edit_image', 'MODIFF_QWEN_BOOKSHOP_EDIT_EVIDENCE', false, []],
   ['ZImageInpaintPipeline:inpaint', 'MODIFF_SAVED_ZIMAGE_REPAIR_EVIDENCE', true, []],
+  ['Flux2KleinInpaintPipeline:inpaint', 'MODIFF_SAVED_FLUX_KLEIN_REPAIR_EVIDENCE', true, []],
+  [
+    'Flux2KleinInpaintPipeline:outpaint',
+    'MODIFF_SAVED_FLUX_KLEIN_OUTPAINT_EVIDENCE',
+    false,
+    ['left', 'right', 'top', 'bottom', 'overlap', 'feather', 'fill_color'],
+  ],
+  [
+    'ZImageInpaintPipeline:outpaint',
+    'MODIFF_SAVED_ZIMAGE_OUTPAINT_EVIDENCE',
+    false,
+    ['left', 'right', 'top', 'bottom', 'overlap', 'feather', 'fill_color'],
+  ],
+  [
+    'StableDiffusionXLPAGPipeline:inpaint',
+    'MODIFF_SAVED_SDXL_PAG_REPAIR_EVIDENCE',
+    true,
+    ['pag_scale', 'pag_adaptive_scale'],
+  ],
 ]) {
   const saved = process.env[variable];
   test(
@@ -495,15 +515,44 @@ for (const [workflowId, variable, hasMask, unobserved] of [
           copyFileSync(file.absolutePath, join(root, file.path));
         }
         const descriptor = JSON.parse(original.descriptorBytes);
-        const ref = descriptor.registryReplay;
+        const changedPath = join(root, 'evidence.json');
+        if (workflowId.endsWith(':outpaint')) {
+          assert.equal(receipt.observationLimits.canvasSizeObserved, true);
+          assert.equal(receipt.observationLimits.canvasPixelsObserved, false);
+          assert.equal(receipt.observationLimits.derivedMaskPixelsObserved, false);
+          assert.deepEqual([receipt.decodedOutput.width, receipt.decodedOutput.height], [1344, 768]);
+          const altered = structuredClone(descriptor);
+          const path = join(root, altered.graphRequest.path);
+          const originalRequest = readFileSync(path);
+          const graph = JSON.parse(originalRequest);
+          const inpaint = Object.values(graph.nodes).find(({ action }) => action === 'Inpaint');
+          inpaint.params.mask_image.sourceKey = 'canvas';
+          const bytes = Buffer.from(JSON.stringify(graph));
+          Object.assign(altered.graphRequest, {
+            bytes: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+          });
+          writeFileSync(path, bytes);
+          writeFileSync(changedPath, JSON.stringify(altered));
+          await assert.rejects(readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }), /declared file/u);
+          writeFileSync(path, originalRequest);
+        }
+        const ref = descriptor.registryReplay ?? descriptor.persistedOutputs;
         const proof = JSON.parse(readFileSync(join(root, ref.path)));
-        proof.nodeHash = 'a'.repeat(64);
+        if (descriptor.registryReplay) {
+          proof.nodeHash = 'a'.repeat(64);
+        } else {
+          assert.ok(proof.outputs.some(({ taskId }) => taskId !== receipt.taskId));
+          proof.outputs.push(proof.outputs.find(({ taskId }) => taskId === receipt.taskId));
+        }
         const bytes = Buffer.from(JSON.stringify(proof));
         Object.assign(ref, { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
         writeFileSync(join(root, ref.path), bytes);
-        const changedPath = join(root, 'evidence.json');
         writeFileSync(changedPath, JSON.stringify(descriptor));
-        await assert.rejects(readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }), /strictly equal/u);
+        await assert.rejects(
+          readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          descriptor.registryReplay ? /strictly equal/u : /exactly one result for the task/u,
+        );
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

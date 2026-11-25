@@ -573,6 +573,12 @@ completion event, and backend-retained output and run record. The receipt
 records the missing client API snapshot and unobserved image guidance. This
 path requires the exact native records and original image bytes.
 
+The Wan A14B opening-video replacement records its own exact opening frame,
+prompt, model, and video. The older kitchen template keeps its own review
+and release status. Saved FLUX Klein and Z-Image panoramas bind the original
+source through canvas preparation and the typed image and mask wires. Their
+records verify expanded geometry and disclose the missing derived pixels.
+
 Saved JoyImage Plus edits retain reference files in Load order, including
 the source image before the material reference. The proof binds each upload
 and native decode to the typed Edit connection. The archived two-reference

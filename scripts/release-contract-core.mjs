@@ -216,6 +216,15 @@ const immutableRevision = (value) => typeof value === 'string' && /^[a-f0-9]{40,
 
 export { canonicalAccountingExecutionPlan } from './live-proof-provenance.mjs';
 
+export function isReviewedReplacementSource(manifest, authoring) {
+  return (
+    manifest.id === 'WanImageToVideoPipeline:image_to_video' &&
+    manifest.sourceTemplateId === 'wan_22_i2v_seed_vault' &&
+    authoring?.canonicalWorkflowId === manifest.id &&
+    authoring.replacementSourceTemplateId === manifest.sourceTemplateId
+  );
+}
+
 // This describes a real non-public authoring record. It is never a Studio
 // template, a model entitlement, or permission to change canonical defaults.
 export function canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact = null) {
@@ -223,8 +232,10 @@ export function canonicalWorkflowAuthoringContract(manifest, graph, authoring, a
   const reviewedVaceSource =
     manifest.id === 'WanVACEPipeline:text_to_video' && manifest.sourceTemplateId === 'wan_vace_direct_text_to_video';
   assert.ok(
-    manifest.sourceTemplateId?.startsWith('task-template:') || reviewedVaceSource,
-    'Only standalone canonical workflows use this recorder.',
+    manifest.sourceTemplateId?.startsWith('task-template:') ||
+      reviewedVaceSource ||
+      isReviewedReplacementSource(manifest, authoring),
+    'Only standalone canonical workflows and reviewed recipe replacements use this recorder.',
   );
   assert.ok(authoring && authoring.canonicalWorkflowId === manifest.id, 'Exact canonical authoring record is missing.');
   assert.equal(authoring.modelType, manifest.modelType, 'Authoring model identity differs.');
@@ -911,6 +922,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.longcat-audio-prompt-variant.v1',
       'modiff.private.audioldm2-prompt-variant.v1',
       'modiff.private.wan-a14b-video-prompt-variant.v1',
+      'modiff.private.wan-a14b-opening-image-variant.v1',
       'modiff.private.cogvideox-video-prompt-variant.v1',
       'modiff.private.cogvideox-source-video-variant.v1',
       'modiff.private.animatediff-pag-video-prompt-variant.v1',

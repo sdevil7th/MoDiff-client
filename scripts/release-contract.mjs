@@ -11,6 +11,7 @@ import {
   canonicalWorkflowContract,
   canonicalWorkflowDeclaredModelRevision,
   findCanonicalWorkflowRecord,
+  isReviewedReplacementSource,
   templateResourceExecutionModelType,
   qualificationModelArtifacts,
   assessGalleryReleaseApproval,
@@ -582,19 +583,25 @@ try {
     .map(({ manifest, graph }) => {
       const artifact = artifactByModel.get(manifest.modelType);
       const retainedRecipe = retainedRecipesByWorkflow.get(manifest.id);
-      const sourceTemplate = templates.find(
+      const authoring = canonicalAuthoring.find((row) => row.canonicalWorkflowId === manifest.id);
+      const namedTemplate = templates.find((template) => template.id === manifest.sourceTemplateId);
+      const retainedSource = templates.find(
         (template) =>
-          template.id === manifest.sourceTemplateId ||
-          (retainedRecipe &&
-            template.id === retainedRecipe.template.id &&
-            template.canonicalWorkflowId === manifest.id &&
-            retainedRecipe.sourceTaskTemplateId === manifest.sourceTemplateId),
+          retainedRecipe &&
+          template.id === retainedRecipe.template.id &&
+          template.canonicalWorkflowId === manifest.id &&
+          retainedRecipe.sourceTaskTemplateId === manifest.sourceTemplateId,
       );
-      const canonicalReceipt = !sourceTemplate || retainedRecipe ? canonicalReceiptsByWorkflow.get(manifest.id) : null;
+      const sourceTemplate =
+        retainedSource?.releaseEligible || !namedTemplate?.releaseEligible
+          ? (retainedSource ?? namedTemplate)
+          : namedTemplate;
+      const showCanonicalEvidence =
+        !sourceTemplate || retainedRecipe || isReviewedReplacementSource(manifest, authoring);
+      const canonicalReceipt = showCanonicalEvidence ? canonicalReceiptsByWorkflow.get(manifest.id) : null;
       const reviewedRetainedTemplate = retainedTemplateAssociations.get(manifest.id);
       const catalogRevision =
         artifact?.baseRepo && artifact?.baseRevision ? `${artifact.baseRepo}@${artifact.baseRevision}` : null;
-      const authoring = canonicalAuthoring.find((row) => row.canonicalWorkflowId === manifest.id);
       const authoredRevision =
         !sourceTemplate && !catalogRevision && authoring && !manifest.modelType.startsWith('Builtin')
           ? canonicalWorkflowDeclaredModelRevision(manifest, graph, authoring, artifact)
@@ -639,7 +646,7 @@ try {
         resourceRecipes: sourceTemplate?.resourceRecipes ?? null,
         outputContract: sourceTemplate?.outputContract ?? { mediaKinds: [manifest.mediaKind] },
         lastSuccessfulRealRun: sourceTemplate?.lastSuccessfulRealRun ?? canonicalReceipt ?? null,
-        ...(!sourceTemplate || retainedRecipe
+        ...(showCanonicalEvidence
           ? {
               canonicalExecutionEvidence: {
                 status: canonicalReceipt
