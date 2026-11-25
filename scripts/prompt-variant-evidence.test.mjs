@@ -505,6 +505,12 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
     'real_backend_input_bound_model_variant',
   ],
   [
+    'LTXI2VLongMultiPromptPipeline:image_to_video',
+    'MODIFF_LTX_SCHEDULED_HEADLAND_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
     'LTX2ConditionPipeline:video_to_video',
     'MODIFF_LTX2_STREAM_EVIDENCE',
     'video',
@@ -564,10 +570,15 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       }
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
-      if (variable === 'MODIFF_LTX2_STREAM_EVIDENCE') {
-        assert.equal(original.receipt.decodedOutput.frames, 81);
-        assert.equal(original.receipt.inputBinding.decodedVideo.frames, 25);
-        assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
+      if (['MODIFF_LTX_SCHEDULED_HEADLAND_EVIDENCE', 'MODIFF_LTX2_STREAM_EVIDENCE'].includes(variable)) {
+        if (variable === 'MODIFF_LTX2_STREAM_EVIDENCE') {
+          assert.equal(original.receipt.decodedOutput.frames, 81);
+          assert.equal(original.receipt.inputBinding.decodedVideo.frames, 25);
+          assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
+        } else {
+          assert.equal(original.receipt.inputBinding.decodedImage.width, 768);
+          assert.equal(original.receipt.inputBinding.decodedImage.height, 512);
+        }
         const changedPreparation = structuredClone(evidence);
         const runPath = join(temp, evidence.runDetail.path);
         const savedRun = readFileSync(runPath);
@@ -803,13 +814,15 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
           variable === 'MODIFF_LTX2_STREAM_EVIDENCE'
             ? /outside the bound prompt and seed/u
-            : original.receipt.observationLimits.openingImageLoadFieldsObserved
-              ? /Opening image differs from the retained Load fields/u
-              : input.sourceValue.startsWith('@data/videos/')
-                ? /Archived video upload differs/u
-                : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
-                  ? /Source bytes differ from the native image load|Archived authoring requires the exact original capture/u
-                  : /Source bytes differ from the native image load/u,
+            : variable === 'MODIFF_LTX_SCHEDULED_HEADLAND_EVIDENCE'
+              ? /current authored prompt recipe differs from the original baseline/u
+              : original.receipt.observationLimits.openingImageLoadFieldsObserved
+                ? /Opening image differs from the retained Load fields/u
+                : input.sourceValue.startsWith('@data/videos/')
+                  ? /Archived video upload differs/u
+                  : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
+                    ? /Source bytes differ from the native image load|Archived authoring requires the exact original capture/u
+                    : /Source bytes differ from the native image load/u,
         );
         writeFileSync(path, originalBytes);
       }

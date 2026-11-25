@@ -381,6 +381,38 @@ const ltxScheduledRoute = {
     'temporal_overlap',
     'temporal_overlap_condition_strength',
   ],
+  reviewedOpeningImages: new Map([
+    [
+      '51624f59295a77119bf336a63bfc7731d33d6612bc44b15495bddabdfae3ef51',
+      {
+        sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+        retainedRegistryHash: '648c09b0af74fd0705adebb1b1e5c45d0a3ed41d0a5565fdd535f365664c3dc0',
+        previousExpertFamily: 'LTX2ConditionPipeline',
+        retainedBaselineSettings: [],
+        reviewedSettings: [
+          ['generator', 'num_frames', 81, 129],
+          ['generator', 'strength', 0.8, 0.58],
+          [
+            'generator',
+            'prompt_segments_json',
+            '',
+            JSON.stringify([
+              {
+                start_window: 0,
+                end_window: 0,
+                text: 'At the same coastal lighthouse, start on the supplied frame. A strong gust runs through the tawny grass in the foreground, bending it right in clear waves. White sea foam swirls around the black rocks on the left. The camera slides right at walking speed, revealing parallax between foreground grass and the stable distant lighthouse. Natural gray dawn, one continuous shot.',
+              },
+              {
+                start_window: 1,
+                end_window: 1,
+                text: 'Continue the unbroken rightward track along the same lighthouse headland. A broad incoming wave breaks bright white over the dark rocks on the left and rolls back as the camera passes the foreground grass. Keep the camera level and the tall white lighthouse steady on the skyline. Camera movement eases toward the end. Coherent coastline, real-time rolling surf.',
+              },
+            ]),
+          ],
+        ],
+      },
+    ],
+  ]),
 };
 
 const wanAnimateFiles = [
@@ -1348,7 +1380,7 @@ export function validateNativeVideoDelivery(
 export async function readPromptVariantEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
   const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
-  const profile = imageRoute
+  let profile = imageRoute
     ? { ...imagePromptRoute, ...imageRoute }
     : [
         textRoute,
@@ -1436,6 +1468,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     Number(Boolean(hasSourceInput)) + Number(Boolean(profile.bindsVideoGuide)) + videoConditioners.length,
   );
   const suppliedInput = hasSourceInput ? evidence.inputs[0] : undefined;
+  const reviewedOpeningImage = profile.reviewedOpeningImages?.get(suppliedInput?.file?.sha256);
+  if (reviewedOpeningImage) profile = { ...profile, ...reviewedOpeningImage };
   const reviewedVideoSource = profile.reviewedVideoSources?.get(suppliedInput?.file?.sha256);
   const suppliedGuide = profile.bindsVideoGuide ? evidence.inputs.at(-1) : undefined;
   const suppliedVideos = videoConditioners.length ? evidence.inputs.slice(1) : [];
@@ -1505,7 +1539,16 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         }
       : {}),
     ...(imageRoute || (generatedVideo && !profile.soundtrack && !profile.nativeJointAudio) || profile === audioLdmRoute
-      ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
+      ? {
+          validatePreparation: (preparation) => {
+            if (reviewedOpeningImage) {
+              assert.equal(preparation.previousModelFamily, profile.previousExpertFamily);
+              assert.equal(preparation.performed, true);
+              assert.ok(preparation.cleanup?.released?.models > 0, 'Expected the previous LTX model release.');
+            }
+            validateImagePromptPreparation(preparation, profile);
+          },
+        }
       : {}),
     ...(profile === videoRoute || profile === audioRoute
       ? { validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, target.modelType) }
