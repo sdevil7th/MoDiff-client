@@ -512,6 +512,12 @@ for (const [workflowId, variable, hasMask, unobserved] of [
     false,
     ['pag_scale', 'pag_adaptive_scale'],
   ],
+  [
+    'StableDiffusionXLPAGPipeline:edit_image',
+    'MODIFF_SAVED_SDXL_PAG_GRAPHITE_EDIT_EVIDENCE',
+    false,
+    ['pag_scale', 'pag_adaptive_scale'],
+  ],
   ['ZImageInpaintPipeline:inpaint', 'MODIFF_SAVED_ZIMAGE_REPAIR_EVIDENCE', true, []],
   ['Flux2KleinInpaintPipeline:inpaint', 'MODIFF_SAVED_FLUX_KLEIN_REPAIR_EVIDENCE', true, []],
   [
@@ -566,6 +572,27 @@ for (const [workflowId, variable, hasMask, unobserved] of [
         }
         const descriptor = JSON.parse(original.descriptorBytes);
         const changedPath = join(root, 'evidence.json');
+        if (variable === 'MODIFF_SAVED_SDXL_PAG_GRAPHITE_EDIT_EVIDENCE') {
+          const altered = structuredClone(descriptor);
+          const path = join(root, altered.graphRequest.path);
+          const originalRequest = readFileSync(path);
+          const graph = JSON.parse(originalRequest);
+          const edit = Object.values(graph.nodes).find(({ action }) => action === 'Edit');
+          assert.equal(edit.params.strength.value, 0.85);
+          edit.params.strength.value = 0.8;
+          const bytes = Buffer.from(JSON.stringify(graph));
+          Object.assign(altered.graphRequest, {
+            bytes: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+          });
+          writeFileSync(path, bytes);
+          writeFileSync(changedPath, JSON.stringify(altered));
+          await assert.rejects(
+            readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+            /outside its declared file, prompt and reviewed control variant/u,
+          );
+          writeFileSync(path, originalRequest);
+        }
         if (receipt.observationLimits.fullSourceDecodeRecordObserved === false) {
           const changed = structuredClone(descriptor);
           const capturePath = join(root, changed.capture.path);

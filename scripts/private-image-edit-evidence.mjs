@@ -207,6 +207,12 @@ const editRoutes = new Map([
       windowsCudaRuntime: true,
       previousUnmodifiedModelFamily: 'StableDiffusionXLPAGInpaintPipeline',
       unobservedControls: ['pag_scale', 'pag_adaptive_scale'],
+      reviewedSourceRecipes: new Map([
+        [
+          '4cbc984b44c398b6e92b4350513d3543139e9dffe01a38857845c8a7698272c8',
+          { strengthVariant: { original: 0.8, retained: 0.85 }, previousExpertFamily: 'AnimateLCMPipeline' },
+        ],
+      ]),
     },
   ],
   [
@@ -1187,6 +1193,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.equal(capture.outputs.length, 1);
   assert.equal(capture.modelObservations.length, 1);
   const [input, ...otherInputs] = capture.inputs;
+  const reviewedSourceRecipe = route.reviewedSourceRecipes?.get(input.file?.sha256);
   const maskInput = masked ? otherInputs[0] : undefined;
   const references = masked ? [] : otherInputs;
   if (referenceCount) {
@@ -1226,7 +1233,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     input,
     maskInput,
     references,
-    strengthVariant: route.strengthVariant,
+    strengthVariant: reviewedSourceRecipe?.strengthVariant ?? route.strengthVariant,
     canvasVariant: route.canvasVariant,
     inputPathPrefix: route.inputPathPrefix,
     nativePngEvidence: nativeUpload && route.format !== SAVED_WEBP_EDIT_FORMAT,
@@ -1237,6 +1244,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     directOwners(api, false, masked, Boolean(route.canvasVariant));
     same(canonicalGraphIdentity(api), bound.identity, 'A saved visual owner graph differs from the original Run.');
   }
+  const previousExpertFamily = reviewedSourceRecipe?.previousExpertFamily ?? route.previousExpertFamily;
   const runOptions = {
     target,
     expectedFormMode: route.retainedFormMode,
@@ -1250,13 +1258,16 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     graphRequest,
     graphAcknowledgment,
     persistedOutput,
-    validatePreparation: (preparation) =>
-      route.previousExpertFamily
-        ? validateImagePromptPreparation(preparation, {
-            modelType: loaderClass,
-            previousExpertFamily: route.previousExpertFamily,
-          })
-        : validateUnmodifiedExpertPreparation(preparation, loaderClass, route.previousUnmodifiedModelFamily),
+    validatePreparation: (preparation) => {
+      if (reviewedSourceRecipe) {
+        assert.equal(preparation.previousModelFamily, previousExpertFamily);
+        assert.equal(preparation.performed, true);
+        assert.ok(preparation.cleanup?.released?.models > 0, 'Expected the previous model release for the saved edit.');
+      }
+      return previousExpertFamily
+        ? validateImagePromptPreparation(preparation, { modelType: loaderClass, previousExpertFamily })
+        : validateUnmodifiedExpertPreparation(preparation, loaderClass, route.previousUnmodifiedModelFamily);
+    },
   };
   const hasNativeSnapshot =
     route.fullNativeSnapshot || (route.fullOrLateNativeSnapshot && run.outputs[0]?.apiGraphSnapshot !== undefined);
