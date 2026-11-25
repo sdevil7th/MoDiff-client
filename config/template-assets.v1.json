@@ -469,6 +469,17 @@
       "height": 512
     },
     {
+      "path": "template-gallery/flux_canny_clean_backdrop.webp",
+      "size": 119146,
+      "sha256": "sha256:bytes:7261f62b7730f9bd0ceebf9beb3c768cf81640afaeb6285ba6f7f2cdb1406df2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/flux_control_canny.webp",
       "size": 191202,
       "sha256": "sha256:bytes:13ed32399453783f830246f92653bc93ea31ff58170cf928c9f5bc523cdd85de",
@@ -483,6 +494,17 @@
       "path": "template-gallery/flux_depth_control.webp",
       "size": 548974,
       "sha256": "sha256:bytes:c3d52c29b6a8cae80d2feffb8a978cded8b34509abd09216f665ab3af13f189e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_depth_marine_bow_repair.webp",
+      "size": 535562,
+      "sha256": "sha256:bytes:05697db755f8deae61615744c651ee81af79c0dded87323841d01e980d87c9cf",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1695,6 +1717,39 @@
       "height": 512
     },
     {
+      "path": "template-gallery/inputs/flux_canny_clean_backdrop.before.png",
+      "size": 623267,
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_canny_clean_backdrop.guide.png",
+      "size": 7281,
+      "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_canny_clean_backdrop.mask.png",
+      "size": 1571,
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/flux_control_canny.before.png",
       "size": 22013,
       "sha256": "sha256:bytes:3d03ee22a3d29068f30f18afcb31e86ea455fbfbe1ca5aa172cf633a26f21339",
@@ -1713,6 +1768,39 @@
       "purposes": [
         "runtime",
         "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_depth_marine_bow_repair.before.webp",
+      "size": 548974,
+      "sha256": "sha256:bytes:c3d52c29b6a8cae80d2feffb8a978cded8b34509abd09216f665ab3af13f189e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_depth_marine_bow_repair.guide.png",
+      "size": 157468,
+      "sha256": "sha256:bytes:2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_depth_marine_bow_repair.mask.png",
+      "size": 2006,
+      "sha256": "sha256:bytes:765f215aa6f8c0087a67af872a26149223373d5ab4a8afba6331caad5bc45d4c",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
       ],
       "width": 1024,
       "height": 1024
@@ -1852,6 +1940,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/joy_plus_terracotta_on_limestone.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/joy_plus_terracotta_on_limestone.reference-2.png",
+      "size": 103533,
+      "sha256": "sha256:bytes:056615dd7833d38cfed12d45b30bb0c6e439bf1585f4964da4796ca5b43f20ea",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/joyimage_base_cobalt_paper_band.before.png",
       "size": 624887,
       "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
@@ -1983,6 +2093,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/omnigen_red_enamel_folded_linen.before.png",
+      "size": 173437,
+      "sha256": "sha256:bytes:4077a18ad81b7fb6a1e7285777cac6241f6c0109a680945487b81e8561f30d8c",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 384,
+      "height": 384
+    },
+    {
+      "path": "template-gallery/inputs/omnigen_red_enamel_folded_linen.reference-2.png",
+      "size": 81944,
+      "sha256": "sha256:bytes:a0b713856d9a2d7956605fe85b26eef641bdede49400583f9c87c25fd3e324ec",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 128
+    },
+    {
       "path": "template-gallery/inputs/qwen-carton-layout-control.png",
       "size": 11137,
       "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
@@ -1997,6 +2129,28 @@
       "path": "template-gallery/inputs/qwen_2511_pale_amber_on_limestone.before.png",
       "size": 624887,
       "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_2511_terracotta_material_transfer.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_2511_terracotta_material_transfer.reference-2.png",
+      "size": 103533,
+      "sha256": "sha256:bytes:056615dd7833d38cfed12d45b30bb0c6e439bf1585f4964da4796ca5b43f20ea",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -2304,6 +2458,61 @@
       "height": 512
     },
     {
+      "path": "template-gallery/inputs/sd15_control_cobalt_handmade_paper.before.png",
+      "size": 271303,
+      "sha256": "sha256:bytes:d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_control_cobalt_handmade_paper.guide.png",
+      "size": 9470,
+      "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_control_cobalt_studio_wall_repair.before.png",
+      "size": 271303,
+      "sha256": "sha256:bytes:d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_control_cobalt_studio_wall_repair.guide.png",
+      "size": 9470,
+      "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_control_cobalt_studio_wall_repair.mask.png",
+      "size": 568,
+      "sha256": "sha256:bytes:71817f4823a73712c8e76e7d832ec382c29ec0a0bf5a472e09639448c082da01",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/inputs/sd15_pag_canny_guided_glass.before.png",
       "size": 9470,
       "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
@@ -2327,6 +2536,39 @@
     },
     {
       "path": "template-gallery/inputs/sd15_pag_cobalt_studio_repair.mask.png",
+      "size": 568,
+      "sha256": "sha256:bytes:71817f4823a73712c8e76e7d832ec382c29ec0a0bf5a472e09639448c082da01",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_pag_control_wall_repair.before.png",
+      "size": 271303,
+      "sha256": "sha256:bytes:d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_pag_control_wall_repair.guide.png",
+      "size": 9470,
+      "sha256": "sha256:bytes:6d47a2f07006b98f9e5cfc8ee925914c4dbfa39fd38b0b61770be56d12ed04e8",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_pag_control_wall_repair.mask.png",
       "size": 568,
       "sha256": "sha256:bytes:71817f4823a73712c8e76e7d832ec382c29ec0a0bf5a472e09639448c082da01",
       "contentType": "image/png",
@@ -2384,6 +2626,28 @@
       "path": "template-gallery/inputs/sdxl_clear_cobalt_backdrop.mask.png",
       "size": 1571,
       "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_golden_boathouse.before.png",
+      "size": 2140271,
+      "sha256": "sha256:bytes:e1d9736125cad717896f0c7d5274a6373676559f250d76cedcc8f8aae9379ec6",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_control_golden_boathouse.guide.png",
+      "size": 1030761,
+      "sha256": "sha256:bytes:322a9aa511a7d21524758724b1666fc220abf563def5e5d1294630e7e58a3b96",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -2450,6 +2714,17 @@
       "path": "template-gallery/inputs/sdxl_pag_cobalt_wall.mask.png",
       "size": 1571,
       "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_pag_snow_cabin.before.png",
+      "size": 8404,
+      "sha256": "sha256:bytes:ca250462efc77625134ebe305b2ee67281a1dcf8919e45299c648f0fdacf919a",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -2614,6 +2889,17 @@
       "path": "template-gallery/joy_plus_lavender_on_limestone.webp",
       "size": 115464,
       "sha256": "sha256:bytes:6c1f36ca4b6eb78cc6ce314e60534f4496fae9a972b3f03ce2254257aa9737a3",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/joy_plus_terracotta_on_limestone.webp",
+      "size": 126430,
+      "sha256": "sha256:bytes:d5aedb8394ef70b3281ca66760e5f6e693fa4275508010a9fe4d16776ca3baeb",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -3092,8 +3378,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 416784,
-      "sha256": "sha256:bytes:f560bf35f17e3c3f5f117c90f84d4bcedbc53e7eb536f462cbdbac96069b67f5",
+      "size": 444039,
+      "sha256": "sha256:bytes:858aa2f3d3d4340a820e48603cc1f82cd7a6d8f508b3ec2fb04c663218b42ca9",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -3135,6 +3421,17 @@
       "path": "template-gallery/omnigen_cobalt_against_soft_apricot.webp",
       "size": 66642,
       "sha256": "sha256:bytes:305c3d2b35bc57b3151a332bc6084cbdf962337572c5e15ae3d7d546a07a1ead",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/omnigen_red_enamel_folded_linen.webp",
+      "size": 143918,
+      "sha256": "sha256:bytes:443062a26e22e3542e284f50d0274b7c70b881b3cce76568eb8eb22ce4c396d6",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -3223,6 +3520,17 @@
       "path": "template-gallery/qwen_2511_pale_amber_on_limestone.webp",
       "size": 133998,
       "sha256": "sha256:bytes:126660eff58b75eed79a942adc24e76f731decd65f83db098e72298141531772",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_2511_terracotta_material_transfer.webp",
+      "size": 159564,
+      "sha256": "sha256:bytes:5bd01cc1777cf575cc9824f801059f5426960920dc8a2b0da03c0b8f0cbca51d",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -4569,6 +4877,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/flux_canny_clean_backdrop.original-provenance.json",
+      "size": 1732,
+      "sha256": "sha256:bytes:7936bae847ef1c4e92911b3bede96023c8f2e13a67a43775eea3de2b73715f1d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_clean_backdrop.original-review.json",
+      "size": 697,
+      "sha256": "sha256:bytes:d45aba0a147f85b027af25e241062e1ff06bb4036eb8d89d5b2b276c4d1368cd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_clean_backdrop.quality-review.json",
+      "size": 2257,
+      "sha256": "sha256:bytes:f14973c5ea5b0c681d9b268c6af7cf6e99b703e3496bea6396217366a2834fe9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_clean_backdrop.retained-template-provenance.json",
+      "size": 4136,
+      "sha256": "sha256:bytes:9ddd33a59bfbaa565d73d420d0bb94178a94d1ca498018146307ee223e899a0e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/flux_control_canny.quality-review.json",
       "size": 4766,
       "sha256": "sha256:bytes:18fe010ceca23f0e99deb1d854905d52d805c45931b4ab523c364ac36ae594ab",
@@ -4599,6 +4943,42 @@
       "path": "template-gallery/reviews/flux_depth_control.reviewed-provenance.json",
       "size": 162839,
       "sha256": "sha256:bytes:845284bdb0898bb02ddd178e1de0c4b24e2281ae8f84c15eb09de2798abfcf79",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_bow_repair.original-provenance.json",
+      "size": 1726,
+      "sha256": "sha256:bytes:6f4297f6c64a1fad1390983a37e4015f055f1c9b57b3027b7a5d8f5f21548d21",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_bow_repair.original-review.json",
+      "size": 777,
+      "sha256": "sha256:bytes:2bc453fab2b78d2814c146229b2983eb25f462f0aa7f0c887a69be55d36d0849",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_bow_repair.quality-review.json",
+      "size": 2533,
+      "sha256": "sha256:bytes:191b266ccc8742d66c753b8cae2dfefd06dd007aad43591dc5fc544711be9a3e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_bow_repair.retained-template-provenance.json",
+      "size": 4156,
+      "sha256": "sha256:bytes:93addd088b5f77d730cd7791c03326143216fe0f59ab07b81f5a5ec8b4ca7799",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5327,6 +5707,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/joy_plus_terracotta_on_limestone.original-provenance.json",
+      "size": 1666,
+      "sha256": "sha256:bytes:fde745107f8dd3d8e87fa149b23617f104a566ee59af33713ca1b3d91b3a3749",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joy_plus_terracotta_on_limestone.original-review.json",
+      "size": 966,
+      "sha256": "sha256:bytes:719b8565f2c6e58a4bbd2cdf1298ef95a7a0d08edec6f90c566e87eb6b6353ba",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joy_plus_terracotta_on_limestone.quality-review.json",
+      "size": 2691,
+      "sha256": "sha256:bytes:2bd0293bdf6802fbcb983cf655f09e8a9b452a5ad1438f1269db06c494558347",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joy_plus_terracotta_on_limestone.retained-template-provenance.json",
+      "size": 4278,
+      "sha256": "sha256:bytes:646ee4503fc48d2bc5f22df726a697f82799b9152978f5cf6715d94e7c3036cb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/joyimage_base_cobalt_paper_band.original-provenance.json",
       "size": 1429,
       "sha256": "sha256:bytes:e8cbdf5d79e8c91cc1f85575b2a5a29fcd3a1b2b470bd08137514d71b4e157ef",
@@ -5957,6 +6373,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/omnigen_red_enamel_folded_linen.original-provenance.json",
+      "size": 1782,
+      "sha256": "sha256:bytes:01821146c4f81aa3eef581cd4bfedfa892d75176804ecf4cc7b3ed859779e087",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_red_enamel_folded_linen.original-review.json",
+      "size": 951,
+      "sha256": "sha256:bytes:9e64209e76a4bbdcefe54ffae53c9d71d6e2166d84fb605a891c9600c0d85ec3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_red_enamel_folded_linen.quality-review.json",
+      "size": 2406,
+      "sha256": "sha256:bytes:01c77e3b3474145e708ee18122f5c81ed3364019c260e9888624c7e9a6ab784a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_red_enamel_folded_linen.retained-template-provenance.json",
+      "size": 4319,
+      "sha256": "sha256:bytes:b066ad2d0e03b2eb348d588e3177a782062d463d50caa7c38bf1801449517e6e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/omnigen_tulips_after_rain.original-provenance.json",
       "size": 1602,
       "sha256": "sha256:bytes:cd37ada4ad60fccb5fece5fe6ef03dd62ba7a8a66eb141579f8fa424b6265d71",
@@ -6203,6 +6655,42 @@
       "path": "template-gallery/reviews/qwen_2511_pale_amber_on_limestone.retained-template-provenance.json",
       "size": 3718,
       "sha256": "sha256:bytes:0d91cc6e5417f0defc5ef7615cc85f19de32bf6732e01e75d6051b94be8df0d8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2511_terracotta_material_transfer.original-provenance.json",
+      "size": 1622,
+      "sha256": "sha256:bytes:accd52fe0dc925cda9f3ad31546498422faf762eaae9d5efc1d1c7ab8b2bceb1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2511_terracotta_material_transfer.original-review.json",
+      "size": 1044,
+      "sha256": "sha256:bytes:6fa09481a5e8937cf2afa452c0f6b0da53124a5ff556756d3c970235d22eeb8f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2511_terracotta_material_transfer.quality-review.json",
+      "size": 2894,
+      "sha256": "sha256:bytes:c069a461b67cb90ade5f906200db6359e17ecda252d305bc8e6bc7fe9df15786",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2511_terracotta_material_transfer.retained-template-provenance.json",
+      "size": 4296,
+      "sha256": "sha256:bytes:d4b364f299fcce02bee7cdacad3d915d2c8a916b1b97fb9d77f8fa88146c899f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6965,6 +7453,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sd15_control_cobalt_handmade_paper.original-provenance.json",
+      "size": 1400,
+      "sha256": "sha256:bytes:da7eebeec6ee06c919bd2a1b06634fdc12a0656ba046561fb0540c165ebdee19",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_control_cobalt_handmade_paper.original-review.json",
+      "size": 716,
+      "sha256": "sha256:bytes:5323b4eaa717d668add0b374d57be2cc16458d2dba6a7dab91cef3054e6783e6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_control_cobalt_handmade_paper.quality-review.json",
+      "size": 2629,
+      "sha256": "sha256:bytes:8d1bd3e6ea993d171004dc6960a2384635596ebb4a212694128b4c0596085a38",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_control_cobalt_handmade_paper.retained-template-provenance.json",
+      "size": 3927,
+      "sha256": "sha256:bytes:9ab42723e81c7cad64ab3e8d5ffedeb21ab76c17a4aaf7e3d6f5e84e82f2133a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_control_cobalt_studio_wall_repair.original-provenance.json",
+      "size": 1552,
+      "sha256": "sha256:bytes:19bf85731e13ea963aab7adba6556b86bbcded7d0030b29342738bb6ef165418",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_control_cobalt_studio_wall_repair.original-review.json",
+      "size": 644,
+      "sha256": "sha256:bytes:972cd4b45f317e79624ad0f9d14361ad56ff661b9e8b5bebf049553317cb5af5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_control_cobalt_studio_wall_repair.quality-review.json",
+      "size": 2438,
+      "sha256": "sha256:bytes:ed1f8ea25aa626c59572eb6c03d8e6c55eae588e1e6378afef6adc536f1983d7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_control_cobalt_studio_wall_repair.retained-template-provenance.json",
+      "size": 4285,
+      "sha256": "sha256:bytes:fb2f08438b84f324cd9c37aaff2e4106e02c2302cc21a20e57d2a3ce456d4d12",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sd15_pag_canny_guided_glass.original-provenance.json",
       "size": 1257,
       "sha256": "sha256:bytes:9c932db7355340ac4e8adf44b0d465192ee66096c6e811fd917ab7d0d6858881",
@@ -7031,6 +7591,42 @@
       "path": "template-gallery/reviews/sd15_pag_cobalt_studio_repair.retained-template-provenance.json",
       "size": 4162,
       "sha256": "sha256:bytes:e2aade8abc03d27c9f342023c60f27dcbb77f28a94d7605522ae0e862672eeed",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_control_wall_repair.original-provenance.json",
+      "size": 1600,
+      "sha256": "sha256:bytes:aa19ad771615c138e20115977179f7a966ea7b8cdb2d08e358ee505d2954c623",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_control_wall_repair.original-review.json",
+      "size": 692,
+      "sha256": "sha256:bytes:68dd29ac4fc908290c864d1e0d913aec7dd9773e642e226a83fa75425db275d9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_control_wall_repair.quality-review.json",
+      "size": 2428,
+      "sha256": "sha256:bytes:2ebf376b23db382ffeeb0e2297864e4ad5ef7fac59db5a3e96e50c13c91d06e5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_control_wall_repair.retained-template-provenance.json",
+      "size": 4279,
+      "sha256": "sha256:bytes:c362aab4aae99eddcf68dab637479045ec7c4cc703bf3fb84a90b54293acec01",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -7181,6 +7777,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sdxl_control_golden_boathouse.original-provenance.json",
+      "size": 1796,
+      "sha256": "sha256:bytes:ecfe216b3884fc1471abf2305a3f4e0216b4b7f2eb05324720e081cbcf945eb1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_golden_boathouse.original-review.json",
+      "size": 769,
+      "sha256": "sha256:bytes:c552f8bfe66a6983be2ab31844c4a468a6132e0e43a8a4553e67a497ec70a8ef",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_golden_boathouse.quality-review.json",
+      "size": 2609,
+      "sha256": "sha256:bytes:3fdc382b76e87f894d2a03a5666ce990b33da15e348abf47e7176aaf82fb8f97",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_control_golden_boathouse.retained-template-provenance.json",
+      "size": 3955,
+      "sha256": "sha256:bytes:5d442e9e2219d92d7360b927357bc34f1d8948776601d716369786fcd2a153b9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sdxl_control_inpaint_warm_plaster.original-provenance.json",
       "size": 1498,
       "sha256": "sha256:bytes:661ddabb9dd317859660c6d6c56737672f0969c2637153b2aa3a14b1422cac0b",
@@ -7283,6 +7915,42 @@
       "path": "template-gallery/reviews/sdxl_pag_cobalt_wall.retained-template-provenance.json",
       "size": 4118,
       "sha256": "sha256:bytes:69442605e67b4da6af5ab3971559219066b7c569139088412a65945487509612",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_snow_cabin.original-provenance.json",
+      "size": 1325,
+      "sha256": "sha256:bytes:9f8fc8e1ec02ce87e641958fdbded7f199cee15cde9e077cbb40b12e0e8d7d93",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_snow_cabin.original-review.json",
+      "size": 733,
+      "sha256": "sha256:bytes:5b23c67819bad2bb24ccdbd2058df59a33a560077c260097e5711ef9a74746ba",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_snow_cabin.quality-review.json",
+      "size": 2536,
+      "sha256": "sha256:bytes:d29b39aeafcf213fbcfff098372b9aad723d5a08c8fd63970f98162ed64e8ad3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_snow_cabin.retained-template-provenance.json",
+      "size": 3678,
+      "sha256": "sha256:bytes:d82c38326bd8b615ed7a934890b979e34f2870f8b0c7aa6f919f0b541d828905",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -8627,6 +9295,28 @@
       "height": 512
     },
     {
+      "path": "template-gallery/sd15_control_cobalt_handmade_paper.webp",
+      "size": 78398,
+      "sha256": "sha256:bytes:bb215a263ec6f735c37ee9a4c1692c77681492dca527b149d3aa98aff5c3a2ed",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/sd15_control_cobalt_studio_wall_repair.webp",
+      "size": 45192,
+      "sha256": "sha256:bytes:249492d460424c36cd16c3785213eb22da9d18b355075e423a11fe5e0d79e16f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
       "path": "template-gallery/sd15_pag_canny_guided_glass.webp",
       "size": 80516,
       "sha256": "sha256:bytes:3458a6d0acea5261f8f829121eabb8d1dc77a2f057e62d18485e34f097f1da6b",
@@ -8641,6 +9331,17 @@
       "path": "template-gallery/sd15_pag_cobalt_studio_repair.webp",
       "size": 45174,
       "sha256": "sha256:bytes:eb511fda2b5d227685893fac25fd214c4b4a25ac7c1f61e0205983ac657f82de",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/sd15_pag_control_wall_repair.webp",
+      "size": 45136,
+      "sha256": "sha256:bytes:3e1ed497d90cdb3a9aac8adf5828edb265706430b9482426b5a5cd1531e2594e",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -8693,6 +9394,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/sdxl_control_golden_boathouse.webp",
+      "size": 433038,
+      "sha256": "sha256:bytes:73d25ad408e3db3308743a876e4b6e8b272496ba44ab4f51b7e1a89dba723f8f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/sdxl_control_inpaint_warm_plaster.webp",
       "size": 119380,
       "sha256": "sha256:bytes:843d44d49afe20f03301931466a5578f2924c089bf33a8e6121f4346c33780f4",
@@ -8718,6 +9430,17 @@
       "path": "template-gallery/sdxl_pag_cobalt_wall.webp",
       "size": 119358,
       "sha256": "sha256:bytes:dc976b97d1919d526a84c397596fbb4b440edf3cf53fad156f07fba46810e8de",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/sdxl_pag_snow_cabin.webp",
+      "size": 329912,
+      "sha256": "sha256:bytes:22b8ba630d466d07025f3d272878330192f5f0fec9bcea03cb13a38ce171d541",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -9591,9 +10314,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:649f3cf808a22d61c582c6c78e4f62b70fd4854f19d78a8d0fd442d7986fdb30",
+  "assetSetId": "sha256:canonical-json:48da62e1f9fb4bb7ed02c8536ff3e4c37dfedccdb91dca7e24fd2654eb38bdf2",
   "status": "ready",
-  "assetCount": 983,
-  "totalBytes": 1080562802,
+  "assetCount": 1056,
+  "totalBytes": 1089772952,
   "missingAssets": []
 }

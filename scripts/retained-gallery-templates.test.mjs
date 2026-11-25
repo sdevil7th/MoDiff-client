@@ -184,7 +184,15 @@ test('retained Gallery recipes preserve the native graph identities and standalo
           Object.values(capture.inputs ?? [capture.input])
             .map(({ file }) => file.sha256)
             .sort(),
-          [recipe.inputSha256, recipe.maskSha256, recipe.guideSha256, recipe.lastFrameSha256].filter(Boolean).sort(),
+          [
+            recipe.inputSha256,
+            recipe.maskSha256,
+            recipe.guideSha256,
+            recipe.lastFrameSha256,
+            recipe.secondaryReferenceSha256,
+          ]
+            .filter(Boolean)
+            .sort(),
         );
       }
     } else if (recipe.inputLocatorSha256) {
@@ -284,6 +292,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
             'Generate',
             'Inpaint',
             'ControlGenerate',
+            'ControlEdit',
             'ControlInpaint',
             'LayerDecompose',
             'UnconditionalGenerate',
@@ -321,7 +330,10 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         : undefined;
       const input =
         recipe.inputSha256 && inputBinding?.field !== 'controlImage'
-          ? [recipe.inputFileName ?? (audio ? authorsAudioFixture : 'review-source-image.png')]
+          ? [
+              recipe.inputFileName ?? (audio ? authorsAudioFixture : 'review-source-image.png'),
+              ...(recipe.secondaryReferenceSha256 ? ['review-second-reference.png'] : []),
+            ]
           : [];
       const mask = recipe.maskSha256 ? 'review-mask-image.png' : undefined;
       const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
@@ -399,7 +411,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         continue;
       }
       assert.deepEqual(loader.params.model_id.value, { source: 'hub', value: template.modelArtifact.value });
-      assert.equal(loader.params.revision.value, template.modelArtifact.revision);
+      assert.equal(loader.params.revision.value, template.modelArtifact.revision, template.id);
       assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');
       assert.equal(loader.params.device.value, form.device);
       if (template.id === 'longcat_last_tram_at_dusk') {
@@ -423,6 +435,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
             'Edit',
             'Inpaint',
             'ControlGenerate',
+            'ControlEdit',
             'ControlInpaint',
             'LayerDecompose',
             'GenerateAnyToAny',
@@ -456,8 +469,16 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           assert.equal(loader.params.quantization_mode.value, 'none');
         }
         const sources = actions.filter(({ module, action }) => module === 'modules.Image' && action === 'Load');
-        assert.equal(sources.length, input.length + Number(Boolean(mask)) + Number(Boolean(guide)));
-        if (input.length) assert.ok(sources.some(({ params }) => params.file.value?.includes(input[0])));
+        assert.equal(sources.length, Number(input.length > 0) + Number(Boolean(mask)) + Number(Boolean(guide)));
+        if (input.length) {
+          assert.ok(
+            sources.some(({ params }) => {
+              const files = [params.file.value].flat();
+              return files.length === input.length && files.every((file, index) => file === input[index]);
+            }),
+            `${template.id} source inputs`,
+          );
+        }
         if (mask) assert.ok(sources.some(({ params }) => params.file.value?.includes(mask)));
         if (guide) {
           assert.ok(sources.some(({ params }) => params.file.value?.includes(guide)));

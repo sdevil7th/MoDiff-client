@@ -976,5 +976,173 @@
       "width": 1024,
       "height": 1024
     }
+  },
+  "flux_canny_clean_backdrop": {
+    "associationSha256": "9f9e09e1d0032216f1b497f611226193b6a567b03e139d3f86ff019c089d3e0e",
+    "backendSourceFingerprint": "sha256:backend-source-v1:585997dc1146ec6effb20c260272babc01713ecdea4f78a0872c12ef2568ef83",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d6613341ff1a983e0a3c6d3c8f0efef39c5c1ec3e109197f6466cfd72a3f6f6e",
+    "templateRevisionHash": "ddec004faf0dea8ab0683f015a22350f6086d28d6b41ecc57f2c0abf81ca1755",
+    "primaryModelRepo": "black-forest-labs/FLUX.1-Canny-dev",
+    "capturedAt": "2026-11-24T14:06:06.057Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "flux_depth_marine_bow_repair": {
+    "associationSha256": "7dd77337f388b8353d6186bc76e39affbe954d4cef4f563285ec0d1a95c606f5",
+    "backendSourceFingerprint": "sha256:backend-source-v1:585997dc1146ec6effb20c260272babc01713ecdea4f78a0872c12ef2568ef83",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d6613341ff1a983e0a3c6d3c8f0efef39c5c1ec3e109197f6466cfd72a3f6f6e",
+    "templateRevisionHash": "c36171bcdbd3076f271fb33743708207b8aeb0f4bfb68be30f7ee7a0239b0869",
+    "primaryModelRepo": "black-forest-labs/FLUX.1-Depth-dev",
+    "capturedAt": "2026-11-24T14:25:47.349Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "beforeExtension": "webp"
+  },
+  "joy_plus_terracotta_on_limestone": {
+    "associationSha256": "c965dba84f8d3714ea44c11469455a5fbcdf11bbae44717a0e5a20b322ed67d9",
+    "backendSourceFingerprint": "sha256:backend-source-v1:585997dc1146ec6effb20c260272babc01713ecdea4f78a0872c12ef2568ef83",
+    "backendContractFingerprint": "sha256:backend-contract-v1:315617df789a8a5f57426692318e197c13786098718305edd1927471b5b9c194",
+    "templateRevisionHash": "2250434e38d29a0c2d27808d6f713bf75965dc3f5ade4a033a11d194ecd687b9",
+    "capturedAt": "2026-11-24T05:23:27.411Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "omnigen_red_enamel_folded_linen": {
+    "associationSha256": "f707f2507cbcc624334064fa63248f6a8b730e72778ca9faa5736dd52f1f52d5",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:315617df789a8a5f57426692318e197c13786098718305edd1927471b5b9c194",
+    "templateRevisionHash": "595a3209f4bfb41d4930f0368e75bab6a19602ad0eae4d44dc535efd0a059652",
+    "capturedAt": "2026-11-25T05:12:08.254Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 384,
+      "height": 384
+    }
+  },
+  "qwen_2511_terracotta_material_transfer": {
+    "associationSha256": "b55dc0109b93fcc6b1af82016d5e61d0de0c968c9aead54e3699e9b6d3d2e275",
+    "backendSourceFingerprint": "sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:315617df789a8a5f57426692318e197c13786098718305edd1927471b5b9c194",
+    "templateRevisionHash": "46a74671317b1b01f4ee5c7531e4d9fa32b8ba386bc9ba3321632f0168515b13",
+    "capturedAt": "2026-11-23T20:47:31.989Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sd15_control_cobalt_handmade_paper": {
+    "associationSha256": "f08c694ec651b0c38518cf435ce5140627d14b39074551df6ab190fd8e576961",
+    "backendSourceFingerprint": "sha256:backend-source-v1:3227569ff822090d00a80a3a88213d76d5ca43092d2918cec2494962457865a5",
+    "backendContractFingerprint": "sha256:backend-contract-v1:b5b17d569852e051bdac1d2b3e08b4753392cadd39a1277f893bdf34f19490c5",
+    "templateRevisionHash": "fee63ff957b7394a6472d76a9f662abd1d86193d12ee6c0ab2cf6c77cf1e2b50",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "capturedAt": "2026-11-23T18:36:20.247Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "sd15_control_cobalt_studio_wall_repair": {
+    "associationSha256": "a25d434141bad5cc3deda9b08cb19a5954e772c32cf5f3a87517cd8142c61e89",
+    "backendSourceFingerprint": "sha256:backend-source-v1:fe1a57b8e352eb66a1a26ebbff5865aaafcf5d55326c4bbcbaf2132ec75f54a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:7271d6dfcd46a677217edf40c568c3f5e9ae300200f76976e0cf18fd9b9f2508",
+    "templateRevisionHash": "871cffe6c8b434f4d3afa1f65009582862b565313d180b56d5a61eedd5fd1aa8",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "capturedAt": "2026-11-23T15:27:55.645Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "sd15_pag_control_wall_repair": {
+    "associationSha256": "c685ec23f4be771c0746d40831f6b768525d7f12f3805282bb8e6d1fe32a3ba3",
+    "backendSourceFingerprint": "sha256:backend-source-v1:fe1a57b8e352eb66a1a26ebbff5865aaafcf5d55326c4bbcbaf2132ec75f54a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:7271d6dfcd46a677217edf40c568c3f5e9ae300200f76976e0cf18fd9b9f2508",
+    "templateRevisionHash": "155adb3c21e9aacbf62ac042d0e2d3b5ba9987331edd79dcff446b6053438a98",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "capturedAt": "2026-11-23T15:28:49.418Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "sdxl_control_golden_boathouse": {
+    "associationSha256": "3eb5289566ee4910568ed91a92fa2aced83d4a2eeef6089225287e1c8a97d672",
+    "backendSourceFingerprint": "sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290",
+    "backendContractFingerprint": "sha256:backend-contract-v1:b5b17d569852e051bdac1d2b3e08b4753392cadd39a1277f893bdf34f19490c5",
+    "templateRevisionHash": "94724166ff9512b26bca310deb3e9d2a16f88116cc157e42694d1a459bfc06cd",
+    "primaryModelRepo": "stabilityai/stable-diffusion-xl-base-1.0",
+    "capturedAt": "2026-11-25T04:34:53.900Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sdxl_pag_snow_cabin": {
+    "associationSha256": "fff0a575997fa3709d36a1f008b335d9f0c716a99dcdaeebd0831b8e1ef7d37f",
+    "backendSourceFingerprint": "sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:ad16452bc59ad56fa75df0e9f2f3b913f28233c906d4e37c4518fbc978d47953",
+    "templateRevisionHash": "1c302242a6a0e304537b15c53c8cb94dcffae8955039b0cbf3759331122864e1",
+    "primaryModelRepo": "stabilityai/stable-diffusion-xl-base-1.0",
+    "capturedAt": "2026-11-23T20:11:04.963Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
   }
 }

@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "3bdae2719d62ea6747de119308ac2b2c3e5c39a8"
+    "revision": "ac106fa66b2d32fdfa7e6fb0212c2cde30f59c80"
   },
   "originalCampaign": {
     "total": 89,
@@ -945,7 +945,67 @@
       "category": "supplementary-only",
       "reason": "Published and registered from an approved saved run outside the original campaign selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "flux_canny_clean_backdrop",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "flux_depth_marine_bow_repair",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "joy_plus_terracotta_on_limestone",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "omnigen_red_enamel_folded_linen",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "qwen_2511_terracotta_material_transfer",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sd15_control_cobalt_handmade_paper",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sd15_control_cobalt_studio_wall_repair",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sd15_pag_control_wall_repair",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_control_golden_boathouse",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_pag_snow_cabin",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:76c4067e6c1b5f113362403963a9ffdaac7843f4899cbdbbac88babc026752c6"
+  "profileHash": "sha256:canonical-json:f86733a3e445ac54f4950625dd1c689c1f3c6b833d3215f03df6e4be310d0965"
 }

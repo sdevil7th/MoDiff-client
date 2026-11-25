@@ -493,6 +493,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Guided and ordered-reference recipes with loader revision binding measure 555146 bytes.
+  3298 +
   // Eighteen saved edit, inpaint and outpaint recipes measure 551848 bytes.
   6227 +
   // Retained Gallery expansion moves approval-only hashes to build-time metadata.
@@ -797,6 +799,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // Those ten recipes measure 733631 total startup bytes.
+  3294 +
   // The same source-bound recipes measure 730337 total startup bytes.
   6228 +
   // The same approved recipes measure 724109 total startup bytes.

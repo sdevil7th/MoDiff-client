@@ -3471,6 +3471,14 @@ function applyExecutionSpecValues(binding: StudioGraphBinding, form: StudioFormS
     if (source === 'artifact') setModelRepo(nodeId, String(values[source]));
     else setParamIfPresent(nodeId, [param], values[source]);
   }
+  if (pinnedTemplateArtifact && !spec.bindings.some(([, , source]) => source === 'defaultRevision')) {
+    // Some loaders declare the repository binding without a default revision.
+    // A reviewed Expert template can still pin that same loader's revision.
+    const artifactRole = spec.bindings.find(([, , source]) => source === 'artifact')?.[0];
+    if (artifactRole) {
+      setParamIfPresent(binding.nodes[artifactRole], ['revision'], pinnedTemplateArtifact.revision);
+    }
+  }
   if (binding.nodes.qwenQuantization) applyExpertQuantizationConfig(binding, form);
 }
 

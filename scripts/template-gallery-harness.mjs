@@ -18,6 +18,7 @@ import templateGalleryContract from '../src/studio/templateGalleryContract.json'
 import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
 import {
   RETAINED_GALLERY_PROVENANCE_FORMAT,
+  retainedGalleryFileLimit,
   validateRetainedGalleryProvenance,
 } from './retained-gallery-provenance.mjs';
 import { validateTemplateAssetRelease, validateTemplateAssetSource } from './template-asset-source-contract.ts';
@@ -2784,10 +2785,13 @@ export async function verifyGallery(
         const { runtimeFingerprint: _redactedRuntimeFingerprint, ...publiclyRecomputableBindings } = expectedBindings;
         if (retainedProvenance) {
           const retainedBefore = entry.beforePath && join(publicRoot, entry.beforePath.slice(1));
-          const readAvailable = (filename, assetPath) =>
-            filename && !isWithheld(assetPath) && existsSync(filename) && lstatSync(filename).size <= 2 * 1024 * 1024
+          const readAvailable = (filename, assetPath) => {
+            if (!filename || isWithheld(assetPath) || !existsSync(filename)) return undefined;
+            const stat = lstatSync(filename);
+            return stat.isFile() && stat.size <= retainedGalleryFileLimit(assetPath)
               ? readFileSync(filename)
               : undefined;
+          };
           const provenanceErrors = validateRetainedGalleryProvenance(bundle, entry, {
             templateRevisionHash:
               template &&

@@ -11,6 +11,7 @@ export type RetainedGalleryRecipe = {
   readonly maskSha256?: string;
   readonly guideSha256?: string;
   readonly lastFrameSha256?: string;
+  readonly secondaryReferenceSha256?: string;
   readonly reviewedCatalogLock: {
     readonly templateLockHash: string;
     readonly galleryTemplateLockHash: string;

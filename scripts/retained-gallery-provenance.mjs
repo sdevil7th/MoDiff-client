@@ -4,6 +4,12 @@ import { canonicalJsonHash } from './canonical-json.mjs';
 
 export const RETAINED_GALLERY_PROVENANCE_FORMAT = 'modiff.gallery.retained-template-provenance.v1';
 
+export function retainedGalleryFileLimit(path) {
+  if (path.endsWith('.mp4')) return 64 * 1024 * 1024;
+  if (/\.(png|webp)$/u.test(path)) return 8 * 1024 * 1024;
+  return 2 * 1024 * 1024;
+}
+
 // The public copy omits the original task ID and all underlying capture files.
 // Pin the exact redacted associations that the maintainer reviewed against the
 // original runs, so a rewritten association cannot approve itself.

@@ -6,7 +6,11 @@ import {
   galleryVerificationScope,
   validateQualityReview,
 } from './template-gallery-harness.mjs';
-import { validateRetainedGalleryProvenance, verifyRetainedApprovedFiles } from './retained-gallery-provenance.mjs';
+import {
+  retainedGalleryFileLimit,
+  validateRetainedGalleryProvenance,
+  verifyRetainedApprovedFiles,
+} from './retained-gallery-provenance.mjs';
 import { verifyRetainedSpeechGalleryEvidence } from './retained-speech-gallery-evidence.mjs';
 
 const same = (actual, expected, label) => assert.deepEqual(actual, expected, label);
@@ -71,6 +75,15 @@ function assertRetainedBatchEvidence({
   assert.equal(association.approvedFiles.approvedMaskPath?.sha256, recipe.maskSha256);
   assert.equal(association.approvedFiles.approvedGuidePath?.sha256, recipe.guideSha256);
   assert.equal(association.approvedFiles.approvedClosingFramePath?.sha256, recipe.lastFrameSha256);
+  assert.equal(association.approvedFiles.approvedSecondaryReferencePath?.sha256, recipe.secondaryReferenceSha256);
+  if (recipe.secondaryReferenceSha256) {
+    assert.equal(recipe.template.mode, 'multi_image_reference_edit');
+    same(
+      association.output.orderedReferenceHashes,
+      [recipe.inputSha256, recipe.secondaryReferenceSha256].map((hash) => 'sha256:bytes:' + hash),
+      'Retained Gallery reference order differs from the template.',
+    );
+  }
   assert.equal(
     association.output.maskEncodedSha256,
     recipe.maskSha256 ? 'sha256:bytes:' + recipe.maskSha256 : undefined,
@@ -112,6 +125,14 @@ function assertRetainedBatchEvidence({
   assert.equal(nativeReceipt.maskBinding?.sha256, recipe.maskSha256, label);
   assert.equal(nativeReceipt.guideBinding?.sha256, recipe.guideSha256, label);
   assert.equal(nativeReceipt.lastFrameBinding?.sha256, recipe.lastFrameSha256, label);
+  if (recipe.secondaryReferenceSha256) {
+    same(
+      nativeReceipt.referenceBindings?.map(({ inputIndex, sha256 }) => ({ inputIndex, sha256 })),
+      [{ inputIndex: 1, sha256: recipe.secondaryReferenceSha256 }],
+      label,
+    );
+    assert.equal(nativeReceipt.inputBinding?.nodeId, nativeReceipt.referenceBindings[0].nodeId, label);
+  }
   if (recipe.workflowId === 'QwenImageLayeredPipeline:layer_decomposition') {
     const { orderedLayerItems } = association.output;
     same(nativeReceipt.decodedOutput, { kind: 'image_collection', items: orderedLayerItems }, label);
@@ -235,7 +256,7 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
         bytes: asset.size,
         sha256: asset.sha256.slice('sha256:bytes:'.length),
       },
-      2 * 1024 * 1024,
+      retainedGalleryFileLimit(asset.path),
     ).bytes;
   };
 
