@@ -588,7 +588,7 @@ const latteVideoRoute = {
   modelType: 'LattePipeline',
   modelRepo: 'maxin-cn/Latte-1',
   modelRevision: '0653024365272f061fc44d1078134df22842b687',
-  previousExpertFamily: null,
+  previousExpertFamily: 'WanAnimatePipeline',
   sourceFingerprint: mochiVideoRoute.sourceFingerprint,
   bindNegativePrompt: true,
 };

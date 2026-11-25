@@ -219,6 +219,7 @@ export { canonicalAccountingExecutionPlan } from './live-proof-provenance.mjs';
 const reviewedReplacementSources = new Map([
   ['WanImageToVideoPipeline:image_to_video', 'wan_22_i2v_seed_vault'],
   ['WanTI2VPipeline:text_to_video', 'wan_22_ti2v_5b_seed_vault'],
+  ['WanVACEPipeline:video_inpaint', 'wan_vace_masked_object_replace'],
 ]);
 
 export function isReviewedReplacementSource(manifest, authoring) {
@@ -854,6 +855,10 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
   const evidence = JSON.parse(descriptorBytes.toString('utf8'));
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.workflowId, workflowId);
+  if (workflowId === 'WanVACEPipeline:video_inpaint' && evidence.format === 'modiff.private.saved-vace-composite.v1') {
+    const { readSavedVaceCompositeEvidence } = await import('./saved-vace-composite-evidence.mjs');
+    return readSavedVaceCompositeEvidence({ manifest, graph, authoring, artifact, evidencePath });
+  }
   if (
     workflowId === 'QwenImageLayeredPipeline:layer_decomposition' &&
     evidence.format === 'modiff.private.native-layer-decomposition.v1'
