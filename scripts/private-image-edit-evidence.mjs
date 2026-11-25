@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { stableJsonValue } from './canonical-json.mjs';
+import { verifyNativeLoadedImage } from './native-image-load-evidence.mjs';
 import {
   backendContractIdentity,
   backendSourceEvidence,
@@ -152,6 +153,62 @@ const editRoutes = new Map([
       windowsCudaRuntime: true,
       residentRecipe: true,
       unobservedControls: ['image_guidance_scale'],
+    },
+  ],
+  [
+    'StableDiffusionPAGPipeline:edit_image',
+    {
+      modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      loaderClass: 'StableDiffusionPAGImg2ImgPipeline',
+      format: SAVED_PNG_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-edit-observation.v1',
+      consumed: stableDiffusionEditConsumed,
+      inactiveRecorded: ['width', 'height', 'max_sequence_length'],
+      sourceFingerprint: 'sha256:backend-source-v1:3b073e3f6f5e9489e06116f277ee4a9e878b8f0c6258efc93c60be9a04513cb5',
+      runtimeContractDigest: 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c',
+      windowsCudaRuntime: true,
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      unobservedControls: ['pag_scale', 'pag_adaptive_scale'],
+      nativeSourceMedia: true,
+    },
+  ],
+  [
+    'StableDiffusionPAGPipeline:inpaint',
+    {
+      modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+      modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+      loaderClass: 'StableDiffusionPAGInpaintPipeline',
+      format: SAVED_PNG_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-inpaint-observation.v1',
+      consumed: [...stableDiffusionEditConsumed, 'width', 'height'],
+      inactiveRecorded: ['max_sequence_length'],
+      sourceFingerprint: 'sha256:backend-source-v1:1f2f7e00ce4a500ba52d5b729f43d4321af6f931125a3f266f307cf80038c12e',
+      runtimeContractDigest: 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c',
+      windowsCudaRuntime: true,
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      unobservedControls: ['pag_scale', 'pag_adaptive_scale'],
+      nativeSourceMedia: true,
+      masked: true,
+    },
+  ],
+  [
+    'ZImageModularPipeline:edit_image',
+    {
+      modelRepo: 'Tongyi-MAI/Z-Image-Turbo',
+      modelRevision: 'f332072aa78be7aecdf3ee76d5c247082da564a6',
+      loaderClass: 'ZImageImg2ImgPipeline',
+      format: SAVED_PNG_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-edit-observation.v1',
+      consumed: [...stableDiffusionEditConsumed, ...imageGeometry],
+      sourceFingerprint: 'sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8',
+      runtimeContractDigest: '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5',
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      nativeSourceMedia: true,
+      outputGeometryFromSettings: true,
     },
   ],
 ]);
@@ -393,10 +450,8 @@ function verifySavedEditControls(bound, output, route) {
   assert.equal(receipt.truncated, false);
   same(receipt.unavailableFields, []);
   same(receipt.uncapturedNodeIds, []);
-  same(
-    receipt.ambiguousFields,
-    route.residentRecipe ? ['offloadMode'] : ['device', 'imageAlphaChannel', 'imageSourceHashes', 'imageSourceModes'],
-  );
+  const ambiguous = bound.mask ? ['device', 'imageAlphaChannel', 'imageSourceHashes', 'imageSourceModes'] : ['device'];
+  same(receipt.ambiguousFields, route.residentRecipe ? ['offloadMode'] : ambiguous);
   const owners = (bound.mask ? inpaintOwners : ownerOrder).map(([role]) => bound[role]);
   same(receipt.nodes.map(({ nodeId }) => nodeId).sort(), owners.map(({ id }) => id).sort());
   const record = ({ id, node }) => {
@@ -429,8 +484,8 @@ function verifySavedEditControls(bound, output, route) {
     mode: controls.executed_task.value,
   }))
     same(loader.fields[field], literal(value));
-  const offload = route.residentRecipe ? 'none' : 'model_cpu';
   const recipe = record(bound.recipe);
+  const offload = bound.recipe.node.params.offload_mode.value;
   const connected = bound.loader.node.params.execution_recipe;
   same(connected, { display: 'input', sourceId: bound.recipe.id, sourceKey: 'execution_recipe' });
   same(recipe.fields.offload_mode, literal(offload));
@@ -462,7 +517,15 @@ async function verifySavedPngSource(bound, output, input, maskInput, route, read
     );
     same(bound.edit.node.params[port], { display: 'input', sourceId: owner.id, sourceKey: 'image' });
     verifyRetainedPngUpload(json(upload), rootImage, decodedImage, bytes);
-    return decodedImage;
+    if (!route.nativeSourceMedia) return decodedImage;
+    const native = verifyNativeLoadedImage(owner.node, row, mode);
+    same(native.sourceFile, {
+      sourceValue: rootImage.sourceValue,
+      sha256: rootImage.file.sha256,
+      byteSize: rootImage.file.bytes,
+    });
+    same([native.decodedImage.width, native.decodedImage.height], [width, height]);
+    return native.decodedImage;
   };
   const decodedInput = await verify('source', input, evidence.inputUpload, 'image', 'RGB');
   if (!maskInput) return { decodedInput };
@@ -692,7 +755,10 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.equal(output.mediaCollectionHash, `sha256:collection:${sha256(JSON.stringify([item.mediaHash]))}`);
   const { decodedMediaHash, technicalMediaErrors } = await import('./template-gallery-harness.mjs');
   const decoded = await decodedMediaHash(media.file, 'image');
-  same(technicalMediaErrors(decoded, { width: decodedInput.width, height: decodedInput.height }), []);
+  const expectedGeometry = route.outputGeometryFromSettings
+    ? { width: bound.edit.node.params.width.value, height: bound.edit.node.params.height.value }
+    : { width: decodedInput.width, height: decodedInput.height };
+  same(technicalMediaErrors(decoded, expectedGeometry), []);
   assert.equal(item.width, decoded.width);
   assert.equal(item.height, decoded.height);
   const nodes = read(capture.nodes);

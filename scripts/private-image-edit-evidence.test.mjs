@@ -424,9 +424,27 @@ test(
   },
 );
 
-for (const [workflowId, variable, hasMask] of [
-  ['ChromaInpaintPipeline:inpaint', 'MODIFF_SAVED_CHROMA_INPAINT_EVIDENCE', true],
-  ['StableDiffusionXLInstructPix2PixPipeline:edit_image', 'MODIFF_SAVED_PIX2PIX_EVIDENCE', false],
+for (const [workflowId, variable, hasMask, unobserved] of [
+  ['ChromaInpaintPipeline:inpaint', 'MODIFF_SAVED_CHROMA_INPAINT_EVIDENCE', true, []],
+  [
+    'StableDiffusionXLInstructPix2PixPipeline:edit_image',
+    'MODIFF_SAVED_PIX2PIX_EVIDENCE',
+    false,
+    ['image_guidance_scale'],
+  ],
+  [
+    'StableDiffusionPAGPipeline:edit_image',
+    'MODIFF_SAVED_PAG_EDIT_EVIDENCE',
+    false,
+    ['pag_scale', 'pag_adaptive_scale'],
+  ],
+  [
+    'StableDiffusionPAGPipeline:inpaint',
+    'MODIFF_SAVED_PAG_INPAINT_EVIDENCE',
+    true,
+    ['pag_scale', 'pag_adaptive_scale'],
+  ],
+  ['ZImageModularPipeline:edit_image', 'MODIFF_SAVED_ZIMAGE_EDIT_EVIDENCE', false, []],
 ]) {
   const saved = process.env[variable];
   test(
@@ -441,7 +459,7 @@ for (const [workflowId, variable, hasMask] of [
       const { receipt } = original;
       assert.equal(receipt.observationLimits.independentConsumerPixels, false);
       assert.equal(receipt.observationLimits.sourceByteWitness, 'native-load-and-upload-with-typed-wire');
-      assert.deepEqual(receipt.observationLimits.configuredUnobservedControls, hasMask ? [] : ['image_guidance_scale']);
+      assert.deepEqual(receipt.observationLimits.configuredUnobservedControls, unobserved);
       assert.equal(Boolean(receipt.maskBinding), hasMask);
       const root = mkdtempSync(join(tmpdir(), 'modiff-retained-edit-'));
       try {
