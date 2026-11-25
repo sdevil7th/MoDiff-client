@@ -391,6 +391,18 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
     'video',
     'real_backend_input_bound_model_variant',
   ],
+  [
+    'WanAnimatePipeline:character_animate',
+    'MODIFF_WAN_CHARACTER_ANIMATE_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'WanAnimatePipeline:character_replace',
+    'MODIFF_WAN_CHARACTER_REPLACE_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
   ['AllegroPipeline:text_to_video', 'MODIFF_ALLEGRO_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['MochiPipeline:text_to_video', 'MODIFF_MOCHI_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['LattePipeline:text_to_video', 'MODIFF_LATTE_VIDEO_PROMPT_EVIDENCE', 'video'],
@@ -500,6 +512,23 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
         assert.equal(original.receipt.decodedOutput.frames, 81);
         assert.equal(original.receipt.decodedOutput.fps, 16);
+      }
+      if (workflowId.startsWith('WanAnimatePipeline:')) {
+        const expected = ['face', 'pose', ...(workflowId.endsWith(':character_replace') ? ['background', 'mask'] : [])];
+        assert.deepEqual(
+          original.receipt.videoConditionBindings.map(({ role, sha256 }) => [role, sha256]),
+          expected.map((role, index) => [role, evidence.inputs[index + 1].file.sha256]),
+        );
+        assert.equal(original.receipt.observationLimits.consumedMotionFramesObserved, false);
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.decodedOutput.fps, 24);
+        const swapped = structuredClone(evidence);
+        [swapped.inputs[1], swapped.inputs[2]] = [swapped.inputs[2], swapped.inputs[1]];
+        writeFileSync(changedPath, JSON.stringify(swapped));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /motion input roles differ/u,
+        );
       }
       if (workflowId === 'WanVACEPipeline:text_to_video') {
         assert.equal(original.receipt.sourceTemplateId, 'wan_vace_direct_text_to_video');
@@ -670,7 +699,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         writeFileSync(changedPath, JSON.stringify(substituted));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-          sanaOpeningImage
+          original.receipt.observationLimits.openingImageLoadFieldsObserved
             ? /Opening image differs from the retained Load fields/u
             : input.sourceValue.startsWith('@data/videos/')
               ? /Archived video upload differs/u

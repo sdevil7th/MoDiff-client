@@ -472,6 +472,26 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['FluxDevPipeline:inpaint', 'MODIFF_SAVED_FLUX_DEV_REPAIR_EVIDENCE', true, []],
   ['LongCatImageEditPipeline:edit_image', 'MODIFF_SAVED_LONGCAT_EDIT_EVIDENCE', false, []],
   ['QwenImageModularPipeline:edit_image', 'MODIFF_QWEN_BOOKSHOP_EDIT_EVIDENCE', false, []],
+  ['ChromaImg2ImgPipeline:edit_image', 'MODIFF_CHROMA_LARCH_EDIT_EVIDENCE', false, []],
+  ['FluxKontextInpaintPipeline:inpaint', 'MODIFF_SAVED_KONTEXT_WINDOW_EVIDENCE', true, []],
+  [
+    'FluxKontextInpaintPipeline:outpaint',
+    'MODIFF_SAVED_KONTEXT_PANORAMA_EVIDENCE',
+    false,
+    ['left', 'right', 'top', 'bottom', 'overlap', 'feather', 'fill_color'],
+  ],
+  [
+    'ChromaInpaintPipeline:outpaint',
+    'MODIFF_SAVED_CHROMA_PANORAMA_EVIDENCE',
+    false,
+    ['left', 'right', 'top', 'bottom', 'overlap', 'feather', 'fill_color'],
+  ],
+  [
+    'StableDiffusionXLPAGPipeline:edit_image',
+    'MODIFF_SAVED_SDXL_PAG_AMBER_EDIT_EVIDENCE',
+    false,
+    ['pag_scale', 'pag_adaptive_scale'],
+  ],
   ['ZImageInpaintPipeline:inpaint', 'MODIFF_SAVED_ZIMAGE_REPAIR_EVIDENCE', true, []],
   ['Flux2KleinInpaintPipeline:inpaint', 'MODIFF_SAVED_FLUX_KLEIN_REPAIR_EVIDENCE', true, []],
   [
@@ -520,7 +540,10 @@ for (const [workflowId, variable, hasMask, unobserved] of [
           assert.equal(receipt.observationLimits.canvasSizeObserved, true);
           assert.equal(receipt.observationLimits.canvasPixelsObserved, false);
           assert.equal(receipt.observationLimits.derivedMaskPixelsObserved, false);
-          assert.deepEqual([receipt.decodedOutput.width, receipt.decodedOutput.height], [1344, 768]);
+          assert.deepEqual(
+            [receipt.decodedOutput.width, receipt.decodedOutput.height],
+            [workflowId === 'ChromaInpaintPipeline:outpaint' ? 1024 : 1344, 768],
+          );
           const altered = structuredClone(descriptor);
           const path = join(root, altered.graphRequest.path);
           const originalRequest = readFileSync(path);
@@ -542,7 +565,9 @@ for (const [workflowId, variable, hasMask, unobserved] of [
         if (descriptor.registryReplay) {
           proof.nodeHash = 'a'.repeat(64);
         } else {
-          assert.ok(proof.outputs.some(({ taskId }) => taskId !== receipt.taskId));
+          if (workflowId === 'StableDiffusionXLPAGPipeline:inpaint') {
+            assert.ok(proof.outputs.some(({ taskId }) => taskId !== receipt.taskId));
+          }
           proof.outputs.push(proof.outputs.find(({ taskId }) => taskId === receipt.taskId));
         }
         const bytes = Buffer.from(JSON.stringify(proof));

@@ -88,6 +88,80 @@ const retainedOutpaint = {
 };
 const editRoutes = new Map([
   [
+    'ChromaImg2ImgPipeline:edit_image',
+    {
+      ...retainedImageEdit,
+      modelRepo: 'lodestones/Chroma1-HD',
+      modelRevision: '0e0c60ece1e82b17cb7f77342d765ba5024c40c0',
+      loaderClass: 'ChromaImg2ImgPipeline',
+      consumed: [...retainedImageEdit.consumed, 'strength'],
+      inactiveRecorded: [],
+      sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+      originalRegistryHash: 'c4e99d780fef75bce44f4c5e7414d99840a794999355308f69f03176bd573193',
+      fullNativeSnapshot: true,
+      previousExpertFamily: 'QwenImageImg2ImgPipeline',
+    },
+  ],
+  [
+    'FluxKontextInpaintPipeline:outpaint',
+    {
+      ...retainedOutpaint,
+      modelRepo: 'black-forest-labs/FLUX.1-Kontext-dev',
+      modelRevision: '24e9dedc4ef646698dc8eb4e18ae2cec3c9fea0d',
+      loaderClass: 'FluxKontextInpaintPipeline',
+      sourceFingerprint: 'sha256:backend-source-v1:272116bf77447dfb20b0899666ae417b68401993dd97ca438db63d91ff79cab6',
+      originalRegistryHash: '33be3a472703c43591f907916a3c4b8901af522c24d1930eb88f75c8033f4cec',
+      fullNativeSnapshot: false,
+      guidanceObservedAsTrueCfg: true,
+      canvasVariant: [
+        ['overlap', 24, 72],
+        ['feather', 8, 28],
+      ],
+      strengthVariant: { original: 0.85, retained: 1 },
+    },
+  ],
+  [
+    'FluxKontextInpaintPipeline:inpaint',
+    {
+      ...retainedCfgInpaint,
+      format: SAVED_WEBP_EDIT_FORMAT,
+      modelRepo: 'black-forest-labs/FLUX.1-Kontext-dev',
+      modelRevision: '24e9dedc4ef646698dc8eb4e18ae2cec3c9fea0d',
+      loaderClass: 'FluxKontextInpaintPipeline',
+      originalRegistryHash: '4a6a3ee6a0ba2f07d6e2f66daf085d4d43b70e0180a4b277b44b0b25f7a4c06c',
+      fullNativeSnapshot: false,
+    },
+  ],
+  [
+    'ChromaInpaintPipeline:outpaint',
+    {
+      ...retainedOutpaint,
+      modelRepo: 'lodestones/Chroma1-HD',
+      modelRevision: '0e0c60ece1e82b17cb7f77342d765ba5024c40c0',
+      loaderClass: 'ChromaInpaintPipeline',
+      sourceFingerprint: 'sha256:backend-source-v1:70bc1ff7fe61307be52cfda86b38c6400f2156cbc8240a489b62ff19a93d58dc',
+      originalRegistryHash: '67979c2308c670f70d5d4fd38672be0a3ccd3cae7f083d1c7e7ae2e2169f90e8',
+      canvasVariant: [],
+    },
+  ],
+  [
+    'StableDiffusionXLPAGPipeline:edit_image',
+    {
+      ...retainedImageEdit,
+      modelRepo: 'stabilityai/stable-diffusion-xl-base-1.0',
+      modelRevision: '462165984030d82259a11f4367a4eed129e94a7b',
+      loaderClass: 'StableDiffusionXLPAGImg2ImgPipeline',
+      consumed: stableDiffusionEditConsumed,
+      inactiveRecorded: ['width', 'height', 'max_sequence_length'],
+      sourceFingerprint: 'sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290',
+      originalRegistryHash: 'fd66c8907b4a7969c1a87757f4d9e629d62395c55b8b74f730432cf1ce47d13e',
+      fullNativeSnapshot: true,
+      windowsCudaRuntime: true,
+      previousUnmodifiedModelFamily: 'StableDiffusionXLPAGInpaintPipeline',
+      unobservedControls: ['pag_scale', 'pag_adaptive_scale'],
+    },
+  ],
+  [
     'QwenImageModularPipeline:edit_image',
     {
       ...retainedImageEdit,
@@ -542,7 +616,10 @@ export function bindPrivateImageEditGraph({
       assert.equal(reference.nodeId, observed[role].id);
       assert.equal(reference.field, 'file');
       assert.ok(typeof reference.sourceValue === 'string' && reference.sourceValue.startsWith(inputPathPrefix));
-      assert.match(reference.sourceValue.slice(inputPathPrefix.length), safeBasename);
+      assert.match(
+        reference.sourceValue.slice(inputPathPrefix.length),
+        role === 'mask' ? /^[a-zA-Z0-9_-][\w.-]{0,200}\.png$/u : safeBasename,
+      );
       return reference.sourceValue;
     });
   };
@@ -780,7 +857,7 @@ async function verifySavedImageSource(bound, output, { input, maskInput, referen
           entry,
           decodedImage,
           bytes,
-          route.format === SAVED_WEBP_EDIT_FORMAT ? 'webp' : 'png',
+          role !== 'mask' && route.format === SAVED_WEBP_EDIT_FORMAT ? 'webp' : 'png',
         );
         return decodedImage;
       }),
@@ -1059,7 +1136,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
             modelType: loaderClass,
             previousExpertFamily: route.previousExpertFamily,
           })
-        : validateUnmodifiedExpertPreparation(preparation, loaderClass),
+        : validateUnmodifiedExpertPreparation(preparation, loaderClass, route.previousUnmodifiedModelFamily),
   };
   const hasNativeSnapshot =
     route.fullNativeSnapshot || (route.fullOrLateNativeSnapshot && run.outputs[0]?.apiGraphSnapshot !== undefined);

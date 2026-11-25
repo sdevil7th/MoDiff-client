@@ -579,6 +579,11 @@ and release status. Saved FLUX Klein and Z-Image panoramas bind the original
 source through canvas preparation and the typed image and mask wires. Their
 records verify expanded geometry and disclose the missing derived pixels.
 
+Wan Animate receipts bind the original reference image and each original
+video to its specific role. Character replacement also checks the background
+and mask as distinct uploads. The saved receipts disclose that the frames
+consumed after preprocessing were unavailable.
+
 Saved JoyImage Plus edits retain reference files in Load order, including
 the source image before the material reference. The proof binds each upload
 and native decode to the typed Edit connection. The archived two-reference

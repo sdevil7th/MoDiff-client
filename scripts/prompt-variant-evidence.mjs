@@ -247,6 +247,47 @@ const wanA14BOpeningRoute = {
   chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
 };
 
+const wanAnimateFiles = [
+  ['face', 'face_video', 256, 256],
+  ['pose', 'pose_video', 768, 512],
+];
+const wanAnimateRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.wan-character-animate-inputs.v1',
+  workflowId: 'WanAnimatePipeline:character_animate',
+  modelType: 'WanAnimatePipeline',
+  previousExpertFamily: 'LattePipeline',
+  modelRepo: 'Wan-AI/Wan2.2-Animate-14B-Diffusers',
+  modelRevision: '6f4df10861c758af86ac3c979aacc1bf5c03eff0',
+  sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+  executedTask: 'character_animate',
+  bindsImage: true,
+  imageInputPort: 'reference_images',
+  retainedImageLoadFields: true,
+  bindSeed: false,
+  videoConditioners: wanAnimateFiles,
+  chain: [
+    ['face', 'modules.Video', 'Load', ''],
+    ['source', 'modules.Image', 'Load', ''],
+    ['pose', 'modules.Video', 'Load', ''],
+    ...wanA14BRoute.chain,
+  ],
+};
+const wanReplaceRoute = {
+  ...wanAnimateRoute,
+  format: 'modiff.private.wan-character-replace-inputs.v1',
+  workflowId: 'WanAnimatePipeline:character_replace',
+  previousExpertFamily: 'WanAnimatePipeline',
+  executedTask: 'character_replace',
+  videoConditioners: [...wanAnimateFiles, ['background', 'background_video', 768, 512], ['mask', 'mask', 768, 512]],
+  chain: [
+    ['background', 'modules.Video', 'Load', ''],
+    ...wanAnimateRoute.chain.slice(0, 2),
+    ['mask', 'modules.Video', 'Load', ''],
+    ...wanAnimateRoute.chain.slice(2),
+  ],
+};
+
 const cogVideoRoute = {
   ...wanA14BRoute,
   format: 'modiff.private.cogvideox-video-prompt-variant.v1',
@@ -496,7 +537,8 @@ const graphEnvelope = (graph, hinted = false) =>
 
 const hasFileInput = (profile, role) =>
   (role === 'source' && (profile.bindsImage || profile.bindsVideoUpload)) ||
-  (role === 'guide' && profile.bindsVideoGuide);
+  (role === 'guide' && profile.bindsVideoGuide) ||
+  profile.videoConditioners?.some(([name]) => name === role);
 
 function owners(profile, api) {
   const [path] = api.paths;
@@ -521,7 +563,16 @@ function owners(profile, api) {
   );
 }
 
-export function bindPromptVariant(profile, original, created, output, baselineHash, sourceValue, guideValue) {
+export function bindPromptVariant(
+  profile,
+  original,
+  created,
+  output,
+  baselineHash,
+  sourceValue,
+  guideValue,
+  videos = [],
+) {
   graphEnvelope(original);
   graphEnvelope(created);
   graphEnvelope(output, true);
@@ -579,6 +630,14 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
     same(edges.node.params.video, { display: 'input', sourceId: normalizeGuide.id, sourceKey: 'output' });
     same(expectedInputs.control_video, { display: 'input', sourceId: edges.id, sourceKey: 'output' });
     guide.node.params.file.value = [guideValue];
+  }
+  for (const [role, port] of profile.videoConditioners ?? []) {
+    const { sourceValue } = videos.find((input) => input.role === role);
+    assert.match(sourceValue, /^@data\/videos\/[a-z0-9_-]{1,120}[.]mp4$/iu);
+    const owner = expectedOwners[role];
+    same(owner.node.params.file, { display: 'filebrowser', value: '' });
+    same(expectedInputs[port], { display: 'input', sourceId: owner.id, sourceKey: 'video' });
+    owner.node.params.file.value = [sourceValue];
   }
   const promptSlot = expectedInputs.prompt;
   assert.equal(
@@ -1110,6 +1169,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         audioLdmRoute,
         wanA14BRoute,
         wanA14BOpeningRoute,
+        wanAnimateRoute,
+        wanReplaceRoute,
         cogVideoRoute,
         cogVideoEditRoute,
         animateDiffPagRoute,
@@ -1128,7 +1189,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   assert.ok(profile, 'Prompt variant route is not reviewed.');
   const generatedVideo =
     profile.outputKind === 'video' &&
-    (['text_to_video', 'image_to_video', 'video_to_video'].includes(profile.executedTask) || profile.bindsVideoGuide);
+    (['text_to_video', 'image_to_video', 'video_to_video'].includes(profile.executedTask) ||
+      profile.bindsVideoGuide ||
+      Boolean(profile.videoConditioners));
   const generatedAudio = profile === audioRoute || profile === audioLdmRoute;
   const requiresOriginalRequest =
     imageRoute !== undefined ||
@@ -1171,10 +1234,23 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   assert.equal(evidence.workflowId, profile.workflowId);
   assert.ok(Array.isArray(evidence.inputs));
   const hasSourceInput = profile.bindsImage || profile.bindsVideoUpload;
-  assert.equal(evidence.inputs.length, Number(Boolean(hasSourceInput)) + Number(Boolean(profile.bindsVideoGuide)));
+  const videoConditioners = profile.videoConditioners ?? [];
+  assert.equal(
+    evidence.inputs.length,
+    Number(Boolean(hasSourceInput)) + Number(Boolean(profile.bindsVideoGuide)) + videoConditioners.length,
+  );
   const suppliedInput = hasSourceInput ? evidence.inputs[0] : undefined;
   const suppliedGuide = profile.bindsVideoGuide ? evidence.inputs.at(-1) : undefined;
-  for (const input of evidence.inputs) keys(input, ['sourceValue', 'file', 'upload']);
+  const suppliedVideos = videoConditioners.length ? evidence.inputs.slice(1) : [];
+  for (const input of evidence.inputs) {
+    keys(input, ['sourceValue', 'file', 'upload', ...(suppliedVideos.includes(input) ? ['role'] : [])]);
+  }
+  same(
+    suppliedVideos.map(({ role }) => role),
+    videoConditioners.map(([role]) => role),
+    'The motion input roles differ from the exact recipe.',
+  );
+  assert.equal(new Set(evidence.inputs.map(({ file }) => file.sha256)).size, evidence.inputs.length);
   if (suppliedInput && suppliedGuide) assert.notEqual(suppliedInput.file.sha256, suppliedGuide.file.sha256);
   assert.equal(evidence.modelObservations.length, target.modelSet.length);
   assert.equal(evidence.outputs.length, 1);
@@ -1207,6 +1283,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     evidence.originalGraphHash,
     suppliedInput?.sourceValue,
     suppliedGuide?.sourceValue,
+    suppliedVideos,
   );
   for (const api of [creatorApi, outputApi, runApi]) {
     graphEnvelope(api);
@@ -1296,7 +1373,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       same([decoded.width, decoded.height], [width, height], 'Opening image dimensions differ from the original file.');
     }
   }
-  const bindRetainedVideo = async (input, load, normalize) => {
+  const bindRetainedVideo = async (input, load, frames) => {
     const { bytes, file } = read(input.file);
     const upload = json(input.upload);
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
@@ -1318,7 +1395,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       },
       'Archived video upload differs from the retained bytes.',
     );
-    assert.equal(decoded.frames, normalize.node.params.num_frames.value);
+    assert.equal(decoded.frames, frames);
     assert.equal(decoded.hasAudio, false);
     return {
       nodeId: load.id,
@@ -1334,11 +1411,19 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     };
   };
   if (profile.bindsVideoUpload) {
-    inputBinding = await bindRetainedVideo(suppliedInput, bound.source, bound.normalize);
+    inputBinding = await bindRetainedVideo(suppliedInput, bound.source, bound.normalize.node.params.num_frames.value);
   }
   const guideBinding = profile.bindsVideoGuide
-    ? await bindRetainedVideo(suppliedGuide, bound.guide, bound.normalizeGuide)
+    ? await bindRetainedVideo(suppliedGuide, bound.guide, bound.normalizeGuide.node.params.num_frames.value)
     : undefined;
+  const boundVideos = [];
+  for (const [index, [role, consumerPort, width, height]] of videoConditioners.entries()) {
+    const frames = bound.generator.node.params.num_frames.value;
+    const binding = await bindRetainedVideo(suppliedVideos[index], bound[role], frames);
+    same([binding.decodedVideo.width, binding.decodedVideo.height], [width, height]);
+    assert.equal(binding.decodedVideo.fps, bound.preview.node.params.fps.value);
+    boundVideos.push({ role, consumerPort, ...binding });
+  }
   if (!inputBinding) inputBinding = guideBinding;
   const nodeBytes = read(evidence.nodes).bytes;
   const nodes = JSON.parse(nodeBytes);
@@ -1476,6 +1561,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       : {}),
     ...(inputBinding ? { inputBinding } : {}),
     ...(guideBinding ? { guideBinding } : {}),
+    ...(boundVideos.length ? { videoConditionBindings: boundVideos } : {}),
     ...(accounting ? { seedBinding: { nodeId: bound.generator.id, field: 'seed', value: bound.seed } } : {}),
     decodedOutput,
     observationLimits: {
@@ -1503,6 +1589,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       ...(profile.retainedOffloadFallback ? { retainedLoaderOffloadFallback: profile.retainedOffloadFallback } : {}),
       ...(profile.retainedImageLoadFields
         ? { openingImageLoadFieldsObserved: true, samplerInputPixelsObserved: false }
+        : {}),
+      ...(boundVideos.length
+        ? { motionVideoBytesWitnessed: 'original-uploads-and-typed-wires', consumedMotionFramesObserved: false }
         : {}),
       ...(profile === wanA14BOpeningRoute
         ? { openingImageByteWitness: 'native-load-and-upload-with-typed-wire', samplerInputPixelsObserved: false }
