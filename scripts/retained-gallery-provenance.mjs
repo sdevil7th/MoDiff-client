@@ -4,6 +4,11 @@ import { canonicalJsonHash } from './canonical-json.mjs';
 
 export const RETAINED_GALLERY_PROVENANCE_FORMAT = 'modiff.gallery.retained-template-provenance.v1';
 
+export function decodedAudiovisualMediaHash(decodedMediaHash, decodedAudioHash) {
+  if (!decodedMediaHash || !decodedAudioHash) return null;
+  return 'sha256:decoded-av-v1:' + canonicalJsonHash({ decodedAudioHash, decodedMediaHash });
+}
+
 export function retainedGalleryFileLimit(path) {
   if (path.endsWith('.mp4')) return 64 * 1024 * 1024;
   if (/\.(png|webp)$/u.test(path)) return 8 * 1024 * 1024;
@@ -175,6 +180,8 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
     modelCommit: model.revision,
     mediaType: output.mediaType,
     mediaHash: output.decodedMediaHash,
+    decodedAudioHash: output.video?.audio?.hash,
+    audiovisualMediaHash: decodedAudiovisualMediaHash(output.decodedMediaHash, output.video?.audio?.hash) ?? undefined,
     outputPath,
     thumbnailPath: outputPath,
     provenancePath: base + 'reviews/' + stem + '.retained-template-provenance.json',
@@ -206,15 +213,9 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
     errors.push('retained Gallery source bytes differ from the approved artifact');
   }
   if (
-    [
-      'modelSetHash',
-      'inputArtifactsHash',
-      'templateInputContractHash',
-      'cardPreviewPath',
-      'cardPreviewSha256',
-      'decodedAudioHash',
-      'audiovisualMediaHash',
-    ].some((field) => entry[field] !== undefined)
+    ['modelSetHash', 'inputArtifactsHash', 'templateInputContractHash', 'cardPreviewPath', 'cardPreviewSha256'].some(
+      (field) => entry[field] !== undefined,
+    )
   ) {
     errors.push('retained Gallery entry has unreviewed asset or capture fields');
   }

@@ -154,6 +154,15 @@
       ]
     },
     {
+      "path": "template-gallery/allegro_basalt_shore_at_dawn.mp4",
+      "size": 1170894,
+      "sha256": "sha256:bytes:339a491d6a2cf77eca00db90989738b55f1d5641321ba0bd95f7ff4439ca15e1",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/alpine_lake_in_oils.webp",
       "size": 565124,
       "sha256": "sha256:bytes:734b381cd8bb514a1a3aa4e057aa5675e3cd437381d7e081b7577267fb0222bf",
@@ -163,6 +172,42 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/animatediff_candlelight_behind_amber_glass.mp4",
+      "size": 393798,
+      "sha256": "sha256:bytes:c309175cb9252e11bba17697d8fe18a6e9e27e61b76710ed8fa58b967cbf8539",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/animatediff_ivory_balloon_blue_mountains.mp4",
+      "size": 280090,
+      "sha256": "sha256:bytes:741ea097f00b994dc9b26b2bd7cb2095ddb87d9bd3a7d492bf147fd2bd7be99c",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/animatediff_red_tram_in_watercolor.mp4",
+      "size": 70088,
+      "sha256": "sha256:bytes:88ddfb68b18872e653bcc7c9c05299f7e84186e3d54ac6f31c33ea9390c1e3be",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/animatediff_red_tram_through_snow.mp4",
+      "size": 110415,
+      "sha256": "sha256:bytes:3082836cafeb4561f57b53b62da63e83602ad4b61c7af02fe2fc75ff83375cb6",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
     },
     {
       "path": "template-gallery/bookshop_at_blue_hour.webp",
@@ -1565,6 +1610,42 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/animatediff_ivory_balloon_blue_mountains.guide.mp4",
+      "size": 11404,
+      "sha256": "sha256:bytes:fb000903f199391388d25d869aedacaedfe3ffbca67800e3113e1173f56e8108",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/animatediff_red_tram_in_watercolor.before.mp4",
+      "size": 23393,
+      "sha256": "sha256:bytes:88b69acee9f0c3572a98e49b23ad0e853dc86e1d15074fca99b47f690dde900f",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/animatediff_red_tram_through_snow.before.mp4",
+      "size": 23393,
+      "sha256": "sha256:bytes:88b69acee9f0c3572a98e49b23ad0e853dc86e1d15074fca99b47f690dde900f",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/animatediff_red_tram_through_snow.guide.mp4",
+      "size": 61066,
+      "sha256": "sha256:bytes:5911e85b2d5ef93e44ba5d76f73ddf77f9d49d6cf3e4e829c30f0e386a0b8d80",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/inputs/character_edit.before.webp",
       "size": 329508,
       "sha256": "sha256:bytes:b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab",
@@ -2436,6 +2517,17 @@
       "height": 512
     },
     {
+      "path": "template-gallery/inputs/sana_i2v_blue_hour_above_rice_terraces.first.png",
+      "size": 741863,
+      "sha256": "sha256:bytes:0644be42f8f1f2a8f9eed3df2cb14a8709d8b681c23749cc4bb69e41d4d0618e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 832,
+      "height": 480
+    },
+    {
       "path": "template-gallery/inputs/sana_sprint_monochrome_tiger.before.webp",
       "size": 256118,
       "sha256": "sha256:bytes:a99616590d7d8586a51a25bbe9e36b309f705bc80f2abaab04ac84f1e0d948e4",
@@ -2744,6 +2836,15 @@
       "height": 768
     },
     {
+      "path": "template-gallery/inputs/spandrel_tram_shelter_video_2x.before.mp4",
+      "size": 373918,
+      "sha256": "sha256:bytes:5c24b2b67f893f48e4dbf0d893e0aa4308852592f30f8179b44298cca4ce197e",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/inputs/spandrel_x2_synthetic_gradient.before.png",
       "size": 177,
       "sha256": "sha256:bytes:626815c78eaad46cad849732d1598b45b91700ce046c1ee3f4e2444db80aa32a",
@@ -2753,6 +2854,17 @@
       ],
       "width": 64,
       "height": 48
+    },
+    {
+      "path": "template-gallery/inputs/wan_a14b_wind_across_pond.first.png",
+      "size": 669116,
+      "sha256": "sha256:bytes:cd29e54e208f6040d3f4cbbf8c9f096d537f8c71dffb50d5abae3298cc49deaf",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 512
     },
     {
       "path": "template-gallery/inputs/wan_flf_blue_hour_at_the_tram_shelter.first.png",
@@ -3378,8 +3490,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 444039,
-      "sha256": "sha256:bytes:858aa2f3d3d4340a820e48603cc1f82cd7a6d8f508b3ec2fb04c663218b42ca9",
+      "size": 474815,
+      "sha256": "sha256:bytes:76650b43470a6406be046086c8c987b12b24257866783ce4581bf72d5a67970b",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -3402,6 +3514,15 @@
       "size": 10596396,
       "sha256": "sha256:bytes:f98a748584966f463bbac263c2b3a00769c70e074e26b2f91567e76381b7fd6b",
       "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/mochi_surf_over_dark_pebbles.mp4",
+      "size": 184158,
+      "sha256": "sha256:bytes:2462a31378c7108fa7c46143a89630798d8450f2d75f6e7ea4aa24f1621f2ce1",
+      "contentType": "video/mp4",
       "purposes": [
         "runtime"
       ]
@@ -3484,6 +3605,17 @@
       "height": 512
     },
     {
+      "path": "template-gallery/posters/spandrel_tram_shelter_video_2x.webp",
+      "size": 323458,
+      "sha256": "sha256:bytes:6ab0a30271cb628a0a9c50c6544c45ef82c9e2e84f436a8f68bd34e9da1c560e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1800,
+      "height": 1100
+    },
+    {
       "path": "template-gallery/posters/wan_a14b_cloudbreak_over_the_ridges.png",
       "size": 377021,
       "sha256": "sha256:bytes:c824b505dc5145519de68ecdd4eb3618f214bc8e3aa6a8fd8fada7433b1f509e",
@@ -3493,6 +3625,17 @@
       ],
       "width": 768,
       "height": 512
+    },
+    {
+      "path": "template-gallery/posters/wan_ti2v_subway_musician.webp",
+      "size": 68512,
+      "sha256": "sha256:bytes:b035c7d59c603ff5c02ec1f1ea641241cf9e04698231f980903478957bcab40f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 960,
+      "height": 528
     },
     {
       "path": "template-gallery/quiet_current.webp",
@@ -4139,6 +4282,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/allegro_basalt_shore_at_dawn.original-provenance.json",
+      "size": 1061,
+      "sha256": "sha256:bytes:a2996998d545c63c8b494e783fe57caa254f36dc961a70e708b28e03550bccac",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/allegro_basalt_shore_at_dawn.original-review.json",
+      "size": 683,
+      "sha256": "sha256:bytes:0b000fdf57c52d56adac605a0f840128da2c78e62aafc58fc3c441800196c747",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/allegro_basalt_shore_at_dawn.quality-review.json",
+      "size": 2544,
+      "sha256": "sha256:bytes:e5da20def6cd0d5058ff1088fa23538fc24d20f454aaf8e426550e07ebe1b0fa",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/allegro_basalt_shore_at_dawn.retained-template-provenance.json",
+      "size": 3549,
+      "sha256": "sha256:bytes:6057e4c649904336d8f2062637440260e4cadffe99e84d251d9e72427957f0f5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/alpine_lake_in_oils.original-provenance.json",
       "size": 3315,
       "sha256": "sha256:bytes:9c9ff8e4bae92b7e4564fdc203a36a2cb625489c7b0ca9474ce9979f7bd2d519",
@@ -4169,6 +4348,150 @@
       "path": "template-gallery/reviews/alpine_lake_in_oils.retained-template-provenance.json",
       "size": 3564,
       "sha256": "sha256:bytes:c268ddbea9ba90fcf556ac9afdcc6b290e103883c5c7e9b5b91a1312f0c4eacb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_candlelight_behind_amber_glass.original-provenance.json",
+      "size": 1429,
+      "sha256": "sha256:bytes:79862c74ca64222731ff6a86973283b578d12ebc72b6fa1e271177e9dcb814aa",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_candlelight_behind_amber_glass.original-review.json",
+      "size": 681,
+      "sha256": "sha256:bytes:2cb4965c1c1a39eb2a1dcfc0609065b4db61c0b2360663744d4d0e600c9d087f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_candlelight_behind_amber_glass.quality-review.json",
+      "size": 2584,
+      "sha256": "sha256:bytes:38711644268110700dffed84439a0ab8e5f35003b9823fc4b34dd1751291d4a1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_candlelight_behind_amber_glass.retained-template-provenance.json",
+      "size": 3770,
+      "sha256": "sha256:bytes:2ddc8e7e5616f8a222d9bebe0fab488e4fce11c1e2be03e9ba40d6153050763b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_ivory_balloon_blue_mountains.original-provenance.json",
+      "size": 2036,
+      "sha256": "sha256:bytes:714874a82ef9979fbe7ec94fda08ba641db4264fcdfacd4008ec385bfcf30452",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_ivory_balloon_blue_mountains.original-review.json",
+      "size": 959,
+      "sha256": "sha256:bytes:68c41e118c91f05d7d44d2f89d17bbe08e4f0081d7b03d4c7c56cb1f61bd117a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_ivory_balloon_blue_mountains.quality-review.json",
+      "size": 2747,
+      "sha256": "sha256:bytes:1b02ea17ec15c71c00c0092566a6eca31887f1f0064f59e58041f008a48ed7a4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_ivory_balloon_blue_mountains.retained-template-provenance.json",
+      "size": 4397,
+      "sha256": "sha256:bytes:298df24429b6a944e33aa796bf1214547b6ce84f454b4b844c5d0a06492aa042",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_in_watercolor.original-provenance.json",
+      "size": 1424,
+      "sha256": "sha256:bytes:e7a460bbb4657cda566f0c90b57d820aa0000785df2737e2ad7777296897f8a4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_in_watercolor.original-review.json",
+      "size": 913,
+      "sha256": "sha256:bytes:5cc5387ab876b37c77b2f5885b7c2fc8948c048faee40d0a3748d670c7d46d9d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_in_watercolor.quality-review.json",
+      "size": 2924,
+      "sha256": "sha256:bytes:3828845174e5702fe4a393a86bc6e7b5847f1c8639b23800d61c6e3633183261",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_in_watercolor.retained-template-provenance.json",
+      "size": 3993,
+      "sha256": "sha256:bytes:137902583abc832020f92f256050bc44104f0762360f470138e654746d278b59",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_through_snow.original-provenance.json",
+      "size": 2314,
+      "sha256": "sha256:bytes:b5198902e667bfa48b915027b301a3150ec994c44b132213c3c855b24e3f08f8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_through_snow.original-review.json",
+      "size": 1064,
+      "sha256": "sha256:bytes:eef73b832d4acfb53ca4d5ededbd580821d8d91ffb372fcdcfb55f5f469f33cc",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_through_snow.quality-review.json",
+      "size": 2692,
+      "sha256": "sha256:bytes:c5c55e2d2ac7cbb65ef5ed89611da7b51b57ed5ed52d110fb324fe772eae6a0d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_red_tram_through_snow.retained-template-provenance.json",
+      "size": 4630,
+      "sha256": "sha256:bytes:aa34be488b31fd42a12a1db6ff4c0b0ba2ec653439f4a62011698aeb46b71baa",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6301,6 +6624,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/mochi_surf_over_dark_pebbles.original-provenance.json",
+      "size": 1097,
+      "sha256": "sha256:bytes:74b784153cf2626a77aee1e9f6ec452261b07350b643e152f23e864e7ef6259f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/mochi_surf_over_dark_pebbles.original-review.json",
+      "size": 613,
+      "sha256": "sha256:bytes:9b8bf5f3fe30fad3bb2bb970e6749a3f7f89ce7946eef3484c840167af3f86f9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/mochi_surf_over_dark_pebbles.quality-review.json",
+      "size": 2503,
+      "sha256": "sha256:bytes:124e335657f246c8f498b5ebc7d259522bba555c763c9a51fda3596c143690b2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/mochi_surf_over_dark_pebbles.retained-template-provenance.json",
+      "size": 3492,
+      "sha256": "sha256:bytes:284c2a0297b7e9f83f84b23ce94062462611273672b580b1f65311455803b45f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/ochre_paper_pavilion.original-provenance.json",
       "size": 3254,
       "sha256": "sha256:bytes:5fab665db87b17f2c4cea8e3903ac6df84232912fc2abaabee3bf3107542dc96",
@@ -7363,6 +7722,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sana_i2v_blue_hour_above_rice_terraces.original-provenance.json",
+      "size": 1517,
+      "sha256": "sha256:bytes:7bc9085e6b972b876e8e26e109ce89e2771e2b8b6dab904313f2806be2afc93b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_i2v_blue_hour_above_rice_terraces.original-review.json",
+      "size": 761,
+      "sha256": "sha256:bytes:e04a83a228783f9b7b8d9ad023dfc8af480e3b61254957280aea6b5513caaadf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_i2v_blue_hour_above_rice_terraces.quality-review.json",
+      "size": 2662,
+      "sha256": "sha256:bytes:b588f00fbc3c68bfe70f263a8b4c36cceeaa5691590fdfcc22b0b51537e89e1a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_i2v_blue_hour_above_rice_terraces.retained-template-provenance.json",
+      "size": 3917,
+      "sha256": "sha256:bytes:e27e84a5fcdb01e1c410dfa311e43a13912853b1e20272979f078e04c74d5c6e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sana_sprint_monochrome_tiger.quality-review.json",
       "size": 3320,
       "sha256": "sha256:bytes:daad196fff80a6e8d2543deeb911b5cd94a027a746e8d7cc0a011dc687f8c50e",
@@ -7411,6 +7806,42 @@
       "path": "template-gallery/reviews/sana_tidal_pool_on_black_basalt.retained-template-provenance.json",
       "size": 3352,
       "sha256": "sha256:bytes:66af6aa83b431b3f41da146254ebc0cc75190e50fe626ce635fc20a12f2c7502",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_video_water_terraces_before_sunrise.original-provenance.json",
+      "size": 1165,
+      "sha256": "sha256:bytes:250635b2ca6018d644f10604fd886da1c4d0b478dee0b119789bcceabbf1494e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_video_water_terraces_before_sunrise.original-review.json",
+      "size": 640,
+      "sha256": "sha256:bytes:3b96a247980147b258ed402c1614046d15d02e458fcea8a11f5dbb58585a1f7e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_video_water_terraces_before_sunrise.quality-review.json",
+      "size": 2592,
+      "sha256": "sha256:bytes:0bf7cc281ab478b7719c384b06b83a15b8e21745ffd6247e20b5f3ddf33194a3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sana_video_water_terraces_before_sunrise.retained-template-provenance.json",
+      "size": 3583,
+      "sha256": "sha256:bytes:f0cc994e00a2bc07c096ec6f718af2dc4e279c47654d9b19d09fb6342a536442",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -8083,6 +8514,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/spandrel_tram_shelter_video_2x.original-provenance.json",
+      "size": 1321,
+      "sha256": "sha256:bytes:93548255b2f66162d1dae4838547a8144eb5b0bba7885db5914d54702f98efe5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/spandrel_tram_shelter_video_2x.original-review.json",
+      "size": 868,
+      "sha256": "sha256:bytes:ebc2cc444a1f0e83614e35d41b598ab8a78c57768313b6bc45f5ca4dff1b72e9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/spandrel_tram_shelter_video_2x.quality-review.json",
+      "size": 3061,
+      "sha256": "sha256:bytes:584a2e4480f23b8489a3dd11930f64fdd7956619e25c24b7489e859f665b70e8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/spandrel_tram_shelter_video_2x.retained-template-provenance.json",
+      "size": 4433,
+      "sha256": "sha256:bytes:2ad672e15b395ae0437eae8380083ed4ee76bf6a1efafa683570226080a212c1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/spandrel_x2_synthetic_gradient.quality-review.json",
       "size": 2674,
       "sha256": "sha256:bytes:75cd20b7aa48a0e129f10d09801f4ee7183c8a3bda5cf8a16bf372d9459c97f1",
@@ -8193,6 +8660,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/wan_a14b_wind_across_pond.original-provenance.json",
+      "size": 1278,
+      "sha256": "sha256:bytes:c8288cada585d18cd7a71b7094fd19125131e3753171d94f3c79ebf12c59c64a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_wind_across_pond.original-review.json",
+      "size": 744,
+      "sha256": "sha256:bytes:abce3c693a5c298d0cf580e200540b6bcb16b3f461acc27e4bf750d829f4cafe",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_wind_across_pond.quality-review.json",
+      "size": 2511,
+      "sha256": "sha256:bytes:5f9946d7d69874e43eb07b24732b57e4aae4fddc6e281b5afa84803638d1298b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_a14b_wind_across_pond.retained-template-provenance.json",
+      "size": 3839,
+      "sha256": "sha256:bytes:d9b781b0ff4349d361c02cd395e3340c7ffe622cbcf311b805231c86ec4cf9c1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.original-provenance.json",
       "size": 1322,
       "sha256": "sha256:bytes:556edbb96784d97900a95f4c3cdf618102ae2f492b2791a67ef5cd9e258f3dfb",
@@ -8223,6 +8726,78 @@
       "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.retained-template-provenance.json",
       "size": 4102,
       "sha256": "sha256:bytes:e4deed2284f9ae122cbb97a82049d7407fdec05f34d332f8225b40fd40b13820",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_ti2v_subway_musician.original-provenance.json",
+      "size": 3839,
+      "sha256": "sha256:bytes:2b4a47b2aa7e904f2541a51b150497e420d1970fa202e44a99bb04956f3fa703",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_ti2v_subway_musician.original-review.json",
+      "size": 547,
+      "sha256": "sha256:bytes:e0c162c7130f640bcd9375d070f0d5eff1ef4c4ec26b829c18733dd8d644dd8c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_ti2v_subway_musician.quality-review.json",
+      "size": 3058,
+      "sha256": "sha256:bytes:e0fff184772e4c8465c986c3c9bb2f5024ed19cc809330bbcfa7705ee452bdfc",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_ti2v_subway_musician.retained-template-provenance.json",
+      "size": 4290,
+      "sha256": "sha256:bytes:5aef1cb2eff8bd92f71e8d9be5fa04a6df49e01f0800f5fb76076681f7e1bb14",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_amber_rings_after_rain.original-provenance.json",
+      "size": 1478,
+      "sha256": "sha256:bytes:4596d993891c34f721ac085d6d9377e63af8610998160c4d582fc2761b1efdff",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_amber_rings_after_rain.original-review.json",
+      "size": 616,
+      "sha256": "sha256:bytes:7ed3a6bacaf029f014c5f7540c50ba7da542903367a6bfbe39eca6c3c15a5196",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_amber_rings_after_rain.quality-review.json",
+      "size": 2521,
+      "sha256": "sha256:bytes:82fa4f72865bc998461d725a6454112962566b14586b42ead517d8f446ac0599",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_amber_rings_after_rain.retained-template-provenance.json",
+      "size": 3663,
+      "sha256": "sha256:bytes:c416efe725b4ba3e2dd7ea08c16b574205d292c3c3e2198d707b602a0fcb0bac",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -9262,6 +9837,15 @@
       "height": 768
     },
     {
+      "path": "template-gallery/sana_i2v_blue_hour_above_rice_terraces.mp4",
+      "size": 528391,
+      "sha256": "sha256:bytes:3b948924eeb984126741dc465d78482ae9a01704010ae59e9ffec3ed9973351a",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/sana_sprint_monochrome_tiger.webp",
       "size": 365662,
       "sha256": "sha256:bytes:f22b1d5a1d2944949698b47eec10e7f8d04b23bc0746f4e089b41d78e9d94ff7",
@@ -9282,6 +9866,15 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/sana_video_water_terraces_before_sunrise.mp4",
+      "size": 716974,
+      "sha256": "sha256:bytes:532ab779797e91108d78d646478cf5e997b35b74acab8f2011d79bd421846301",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
     },
     {
       "path": "template-gallery/sd15_canny_guided_green_glass.webp",
@@ -9818,6 +10411,15 @@
       ]
     },
     {
+      "path": "template-gallery/spandrel_tram_shelter_video_2x.mp4",
+      "size": 574204,
+      "sha256": "sha256:bytes:60fae4330a462a468fe68e62c692f22f713a9f908cf286942206260e8aa42fc0",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/spandrel_x2_synthetic_gradient.webp",
       "size": 3094,
       "sha256": "sha256:bytes:5b1ea25aacbedb50055ac010b38da45dbb3dab5477be1b2b1d99781a299e8729",
@@ -9914,9 +10516,36 @@
       ]
     },
     {
+      "path": "template-gallery/wan_a14b_wind_across_pond.mp4",
+      "size": 1155250,
+      "sha256": "sha256:bytes:5d6b75cd3c7925c53f4f4fb12adc62170594bb4c56275d38fb0278d2f803bb69",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/wan_flf_blue_hour_at_the_tram_shelter.mp4",
       "size": 398821,
       "sha256": "sha256:bytes:a356ce3baa0be0556829715ccc72f1a9ccbe99625315cca04e3ee33a4e83f550",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_ti2v_subway_musician.mp4",
+      "size": 34981157,
+      "sha256": "sha256:bytes:287344e1179d07788f3e9714324d15fe98a025855dbbe8d1f5b600288952ce68",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/wan_vace_amber_rings_after_rain.mp4",
+      "size": 706351,
+      "sha256": "sha256:bytes:e89cb86ed3bd34040b7fc6c699f99e21c4dc827ac943258c7d9daad9d58b752c",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -10314,9 +10943,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:48da62e1f9fb4bb7ed02c8536ff3e4c37dfedccdb91dca7e24fd2654eb38bdf2",
+  "assetSetId": "sha256:canonical-json:1d5ae5e7fa702186eb134bfa4d86f7e4f517faf88720885ddd6960980505fd6b",
   "status": "ready",
-  "assetCount": 1056,
-  "totalBytes": 1089772952,
+  "assetCount": 1125,
+  "totalBytes": 1133080624,
   "missingAssets": []
 }

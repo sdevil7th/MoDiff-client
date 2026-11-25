@@ -403,5 +403,65 @@
     "descriptorSha256": "038d2fc8fa5c8079d7d7abed56804816e29ac8032e5a7cdff2c62036060e9349",
     "bytes": 5433,
     "sha256": "17caaef1e18c850a32489b11a4eeae8e1b3ae349e7b037423a6e54aa7820a055"
+  },
+  "AllegroPipeline:text_to_video": {
+    "descriptorSha256": "abbadb877960f2cab04d6555a9a95475ae7db80e22d6120439456c69b098b10f",
+    "bytes": 4708,
+    "sha256": "e5a7db6c7945460600eb1f5611952369656e3be62a4f083205f0ce2cd5070aa9"
+  },
+  "AnimateDiffControlNetPipeline:control_to_video": {
+    "descriptorSha256": "26cefb76bc3b60ebd26d76ccda2ce9aa79a4d2e760023662cf3d1fe868dad7bf",
+    "bytes": 6389,
+    "sha256": "2a921703f9444e937b355c4f08116029607143dd2332eb3aedaaa08ff0c5603f"
+  },
+  "AnimateDiffPipeline:text_to_video": {
+    "descriptorSha256": "8493c1cd300b662ead386632610603cee2531eeff86668b454b314c66e175f0b",
+    "bytes": 5074,
+    "sha256": "e101fe940b9ffdf5a7f72e57a00739a687c5c9cb4ac5862d5ef5a68a7c409a5c"
+  },
+  "AnimateDiffVideoToVideoControlNetPipeline:control_video_to_video": {
+    "descriptorSha256": "4f47a4a1a0244ed4b550c9e8ef4f3cfd8c2076d3f87f5ecbb583d6a8c8987b05",
+    "bytes": 7237,
+    "sha256": "b720c1515832c4984d8c8eec6a7e83f525ef9383e2d73708bc311a4619aa8456"
+  },
+  "AnimateDiffVideoToVideoPipeline:video_to_video": {
+    "descriptorSha256": "b88aa5f2d7c8e012280b1d13cb812b1890dbc93ad7d14953504a7ca2bac45917",
+    "bytes": 5864,
+    "sha256": "da693cb57abb7c792b81aa90147ced2e2d127d052c20d4424dce4f9697c08293"
+  },
+  "MochiPipeline:text_to_video": {
+    "descriptorSha256": "852641887c47d6707131d5cb71780bd5a93bdd5cf8ea32e5c728cafaeb12baa7",
+    "bytes": 4759,
+    "sha256": "5cd6acaec354fbff376d802de87d5bce7ac74679790e1449922259c3d29ec8c8"
+  },
+  "SanaImageToVideoPipeline:image_to_video": {
+    "descriptorSha256": "2aaa21269bbdb611ed68b550a13409221aa56b7d888f379919dc29e147edd0e0",
+    "bytes": 5330,
+    "sha256": "79ea7d4bb500b4c112f7d26ee2789628b1a7572c9342f6a392cd02988a8ab94a"
+  },
+  "SanaVideoPipeline:text_to_video": {
+    "descriptorSha256": "aaea24f57507173bcfce6f0dc24af5af7eb0f0c5da0dbdee1a81b08b17d2fae7",
+    "bytes": 4822,
+    "sha256": "bfcb00d1f859d78b6952e5eb8a0b0c064a8697a5381cf289028e61cb4692bcb4"
+  },
+  "SpandrelVideoUpscale:video_upscale": {
+    "descriptorSha256": "7bfd8efa47be68666198cbec16db4d26b427297f0deeb8299cbcd63b1a1df46c",
+    "bytes": 3448,
+    "sha256": "e22a74b87a2de55c55d502fa6c25aa00e1200ddcb7b973c9656d4fbd1c6e129c"
+  },
+  "WanImageToVideoPipeline:image_to_video": {
+    "descriptorSha256": "ad4a68c5d4cd18b02cbcf57d5eb84a8e6ca48512c8b2405cf0e658942c260de2",
+    "bytes": 5369,
+    "sha256": "62b454db54899d8cd87d1a7248731bc0ec14cd937812aac4f902cf6807a0c729"
+  },
+  "WanTI2VPipeline:text_to_video": {
+    "descriptorSha256": "150e3aea2961acbed6a5fc0ffd8625a0284d64f66c545169b645fdc44927928f",
+    "bytes": 5943,
+    "sha256": "39ead775c6c04345908e8aed758ebf2ec1f1266e1e009d8f5c321208c7975d1d"
+  },
+  "WanVACEPipeline:text_to_video": {
+    "descriptorSha256": "111a1e8352784824dc9d3cb094113e0547b19cd50416b072cff31356c95a0124",
+    "bytes": 4991,
+    "sha256": "c91ec7e55964e72702d69979edf84e8714c8e5acb3adda5a6c6bccfce14db5db"
   }
 }

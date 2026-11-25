@@ -1,6 +1,7 @@
-/** A complete, reviewed, silent clip reproduced from a saved native run. */
+/** A complete, reviewed clip from a saved native run. */
 export type RetainedVideoPreview = {
   mediaHash: string;
+  decodedAudioHash?: string;
   width: number;
   height: number;
   frames: number;
@@ -11,6 +12,7 @@ export function retainedVideoPreviewMatches(
   preview: RetainedVideoPreview | undefined,
   media: {
     mediaHash?: string;
+    decodedAudioHash?: string;
     width?: number;
     height?: number;
     frames?: number;
@@ -22,6 +24,9 @@ export function retainedVideoPreviewMatches(
   return (
     /^sha256:decoded-video-(framemd5|rgba):[a-f0-9]{64}$/u.test(preview.mediaHash) &&
     preview.mediaHash === media.mediaHash &&
+    (preview.decodedAudioHash === undefined ||
+      /^sha256:decoded-audio-pcm-s16le-48000-stereo:[a-f0-9]{64}$/u.test(preview.decodedAudioHash)) &&
+    preview.decodedAudioHash === media.decodedAudioHash &&
     preview.width === media.width &&
     preview.height === media.height &&
     Number.isSafeInteger(preview.width) &&

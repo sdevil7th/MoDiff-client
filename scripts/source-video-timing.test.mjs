@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { sourceVideoTimingMatches } from '../src/studio/sourceVideoTiming.ts';
 import {
   canonicalJsonHash,
+  decodedAudiovisualMediaHash,
   loadTemplateRuntime,
   technicalMediaErrors,
   validateQualityReview,
@@ -51,6 +52,34 @@ test('audio delivery rate comes from the source stream, independently of normali
   assert.deepEqual(technicalMediaErrors(audio, { sampleRate: 44100 }, 'audio'), []);
   assert(technicalMediaErrors(audio, { sampleRate: 48000 }, 'audio').some((x) => x.includes('got 44100')));
   assert.deepEqual(technicalMediaErrors({ ...audio, sourceSampleRate: undefined }, { sampleRate: 48000 }, 'audio'), []);
+});
+
+test('a retained audiovisual preview binds its original soundtrack and rejects a changed stream', () => {
+  const mediaHash = 'sha256:decoded-video-framemd5:' + 'b'.repeat(64);
+  const decodedAudioHash = 'sha256:decoded-audio-pcm-s16le-48000-stereo:' + 'c'.repeat(64);
+  const preview = { mediaHash, decodedAudioHash, frames: 121, fps: 24, width: 1280, height: 704 };
+  const decoded = {
+    ...preview,
+    hash: mediaHash,
+    durationSeconds: 121 / 24,
+    codecName: 'h264',
+    pixelFormat: 'yuv420p',
+    hasAudio: true,
+    embeddedAudio: { hash: decodedAudioHash, peakAmplitude: 0.8, silenceRatio: 0.05, clippedSampleRatio: 0 },
+    audiovisualMediaHash: decodedAudiovisualMediaHash(mediaHash, decodedAudioHash),
+    nearBlackRatio: 0,
+    lumaStdDev: 20,
+    uniqueFrameRatio: 1,
+  };
+  const check = (result) => technicalMediaErrors(result, { requiresAudio: true }, 'video', preview);
+  assert.deepEqual(check(decoded), []);
+  assert.ok(
+    check({ ...decoded, embeddedAudio: { ...decoded.embeddedAudio, hash: 'changed' } }).some((e) =>
+      e.includes('retained preview'),
+    ),
+  );
+  assert.ok(check({ ...decoded, hasAudio: false, embeddedAudio: undefined }).some((e) => e.includes('embedded audio')));
+  assert.ok(check({ ...decoded, isolatedLumaFlashRatio: 1 / 14 }).some((e) => e.includes('luminance flashes')));
 });
 
 test('a reviewed native preview preserves its exact short clip and browser-safe playback', () => {

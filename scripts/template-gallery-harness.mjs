@@ -18,6 +18,7 @@ import templateGalleryContract from '../src/studio/templateGalleryContract.json'
 import { canonicalJsonHash as storageJsonHash } from './canonical-json.mjs';
 import {
   RETAINED_GALLERY_PROVENANCE_FORMAT,
+  decodedAudiovisualMediaHash,
   retainedGalleryFileLimit,
   validateRetainedGalleryProvenance,
 } from './retained-gallery-provenance.mjs';
@@ -307,17 +308,7 @@ export function canonicalJsonHash(value) {
   return `sha256:canonical-json:${sha256(Buffer.from(stableStringify(value)))}`;
 }
 
-export function decodedAudiovisualMediaHash(decodedMediaHash, decodedAudioHash) {
-  if (!decodedMediaHash || !decodedAudioHash) return null;
-  return `sha256:decoded-av-v1:${sha256(
-    Buffer.from(
-      stableStringify({
-        decodedAudioHash,
-        decodedMediaHash,
-      }),
-    ),
-  )}`;
-}
+export { decodedAudiovisualMediaHash };
 
 // Published v1 frame hashes include the muxer's software comment. These two
 // reviewed producers emit identical frame records but different banner bytes.
@@ -1844,6 +1835,7 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
   if (mediaType === 'video') {
     const retainedClip = retainedVideoPreviewMatches(retainedVideoPreview, {
       ...decoded,
+      decodedAudioHash: decoded.embeddedAudio?.hash,
       mediaHash: decodedMediaHashMatches(decoded, retainedVideoPreview?.mediaHash)
         ? retainedVideoPreview.mediaHash
         : decoded.hash,
@@ -1899,7 +1891,15 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
       );
     }
     if (Number(decoded.uniqueFrameRatio ?? 0) < 0.1) errors.push('video has fewer than 10% unique decoded frames');
-    if (retainedClip) errors.push(...beforePreviewContractErrors(decoded));
+    if (retainedVideoPreview && !retainedClip) errors.push('video differs from the reviewed retained preview');
+    if (retainedClip) {
+      errors.push(
+        ...beforePreviewContractErrors(decoded, {
+          ...templateGalleryContract.video.beforePreview,
+          muted: !retainedVideoPreview.decodedAudioHash,
+        }),
+      );
+    }
     if (Number(decoded.isolatedLumaFlashRatio ?? 0) > 0) {
       errors.push('video contains one or more isolated full-frame luminance flashes');
     }

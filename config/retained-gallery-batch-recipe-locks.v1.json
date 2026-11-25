@@ -1173,5 +1173,174 @@
     "inputSha256": "4077a18ad81b7fb6a1e7285777cac6241f6c0109a680945487b81e8561f30d8c",
     "inputLocatorSha256": "5a46183214a436513e67baea1b25bb4a8452caf67f66c11c03d3ef404d7459ee",
     "secondaryReferenceSha256": "a0b713856d9a2d7956605fe85b26eef641bdede49400583f9c87c25fd3e324ec"
+  },
+  "mochi_surf_over_dark_pebbles": {
+    "workflowId": "MochiPipeline:text_to_video",
+    "sourceTaskTemplateId": "task-template:mochi:text-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:bf2b044a50f9b1e7b1813fa51ec77f1e6c1fa910e6aa6236ae7b783eaed6832e",
+    "originalReceiptSha256": "852641887c47d6707131d5cb71780bd5a93bdd5cf8ea32e5c728cafaeb12baa7",
+    "reviewedTemplateSha256": "c0a8a85ce8101d4ffcf0a8ab34a46b49b41d38e667a896e8b51f5016bb536b62",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_97d94805",
+      "galleryTemplateLockHash": "tpl_851777f5",
+      "promptSettingsHash": "ps_0a0165a8"
+    },
+    "promptSha256": "4cd01097ed4ede25efc7d8cb5a340246d78b28e2cc9e7cc560cf34cbd3d4ba3f"
+  },
+  "animatediff_ivory_balloon_blue_mountains": {
+    "workflowId": "AnimateDiffControlNetPipeline:control_to_video",
+    "sourceTaskTemplateId": "task-template:animatediff-controlnet:control-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:c3a0bd75af7f0ef791bda2a2658df375640199d9d8d1be6f589f94900e923bf1",
+    "originalReceiptSha256": "26cefb76bc3b60ebd26d76ccda2ce9aa79a4d2e760023662cf3d1fe868dad7bf",
+    "reviewedTemplateSha256": "4b4d081ecba0edc45452b914be1e511106c370500951c08bac57264a08abf8c8",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_1fe92e51",
+      "galleryTemplateLockHash": "tpl_bef14c2c",
+      "promptSettingsHash": "ps_ecae0ab9"
+    },
+    "promptSha256": "c242a0c1ccca509c6ff59916864c9bb16897539cd6770d540ab1b04f9d42a4c9",
+    "inputSha256": "fb000903f199391388d25d869aedacaedfe3ffbca67800e3113e1173f56e8108",
+    "inputLocatorSha256": "c7ca64c85bdfd840a9e3c4ebe9796e07e0e79ec012413142bf2e82754cd37ae3",
+    "guideSha256": "fb000903f199391388d25d869aedacaedfe3ffbca67800e3113e1173f56e8108"
+  },
+  "animatediff_red_tram_through_snow": {
+    "workflowId": "AnimateDiffVideoToVideoControlNetPipeline:control_video_to_video",
+    "sourceTaskTemplateId": "task-template:animatediff-controlnet-video-to-video:control-video-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:def788f2dd1441b8d6f37e453ce30da5f5fe0f35711fadbb4d3240d2db95f177",
+    "originalReceiptSha256": "4f47a4a1a0244ed4b550c9e8ef4f3cfd8c2076d3f87f5ecbb583d6a8c8987b05",
+    "reviewedTemplateSha256": "95bf2ea59940c6b96e479bc726ca727255822c37d0dc4ed19b4d3b37622520e7",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_76ad76e0",
+      "galleryTemplateLockHash": "tpl_713b29bb",
+      "promptSettingsHash": "ps_3c45e0a7"
+    },
+    "promptSha256": "d2229096be4447b2e06cc2f4d8f7be783f64b35e9262b8891ca384f69685dddd",
+    "inputSha256": "88b69acee9f0c3572a98e49b23ad0e853dc86e1d15074fca99b47f690dde900f",
+    "inputLocatorSha256": "32cc3fb9e01e1375293cf66a00f3dc56229e375aeba0094fdd6a0107e682e549",
+    "guideSha256": "5911e85b2d5ef93e44ba5d76f73ddf77f9d49d6cf3e4e829c30f0e386a0b8d80"
+  },
+  "sana_i2v_blue_hour_above_rice_terraces": {
+    "workflowId": "SanaImageToVideoPipeline:image_to_video",
+    "sourceTaskTemplateId": "task-template:sana-video-480p:image-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:c807f3241ff651858fcd5bd5b6cd96e798c6a65332c1e59fbdb05d4fa588421b",
+    "originalReceiptSha256": "2aaa21269bbdb611ed68b550a13409221aa56b7d888f379919dc29e147edd0e0",
+    "reviewedTemplateSha256": "e6ce9b989e565a3504ccb21781d8522fd3bd3d17715c008ae315b068f7773b1c",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_8d90e3f3",
+      "galleryTemplateLockHash": "tpl_d3be4bd4",
+      "promptSettingsHash": "ps_8dea3f0f"
+    },
+    "promptSha256": "aa62133485f529242a0859631a4859484afed45e2c357e622f52ffad56a79ea1",
+    "inputSha256": "0644be42f8f1f2a8f9eed3df2cb14a8709d8b681c23749cc4bb69e41d4d0618e",
+    "inputLocatorSha256": "3ea07eb59e8127a02b6593b0d072a7592ef1a5f44b182c8963ebd545f578f12b"
+  },
+  "sana_video_water_terraces_before_sunrise": {
+    "workflowId": "SanaVideoPipeline:text_to_video",
+    "sourceTaskTemplateId": "task-template:sana-video-480p:text-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:266ff690c34b346935cb27b4e1d26771657ca26bab6094c2b061ba634801bb65",
+    "originalReceiptSha256": "aaea24f57507173bcfce6f0dc24af5af7eb0f0c5da0dbdee1a81b08b17d2fae7",
+    "reviewedTemplateSha256": "e5d7bb4cd5fa1b68f4840fc0746bea2aa963c1d8183be0985a66b0789be9f1d1",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_1d86546b",
+      "galleryTemplateLockHash": "tpl_77d9ebc0",
+      "promptSettingsHash": "ps_85fe160f"
+    },
+    "promptSha256": "867b5dcd7d4c498b66e6151e3ec4ffb29db9cb8928d535f9a3ccaffaaa728547"
+  },
+  "animatediff_red_tram_in_watercolor": {
+    "workflowId": "AnimateDiffVideoToVideoPipeline:video_to_video",
+    "sourceTaskTemplateId": "task-template:animatediff-video-to-video:video-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:9d80fa0a57f924fae58e094e400e4309f79e3050b6e90de2c5c177c0d2d1358f",
+    "originalReceiptSha256": "b88aa5f2d7c8e012280b1d13cb812b1890dbc93ad7d14953504a7ca2bac45917",
+    "reviewedTemplateSha256": "79480aa4c678fa413f77fa4c1c063f243438f1e6bd4573f90fc7f45c01e6af45",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_0fe18d94",
+      "galleryTemplateLockHash": "tpl_37c948d9",
+      "promptSettingsHash": "ps_c4dd153c"
+    },
+    "promptSha256": "5e4114aa6979ee5d8612552887db858fa9a4d883f340b61ce5f02b6b33624af1",
+    "inputSha256": "88b69acee9f0c3572a98e49b23ad0e853dc86e1d15074fca99b47f690dde900f",
+    "inputLocatorSha256": "32cc3fb9e01e1375293cf66a00f3dc56229e375aeba0094fdd6a0107e682e549"
+  },
+  "allegro_basalt_shore_at_dawn": {
+    "workflowId": "AllegroPipeline:text_to_video",
+    "sourceTaskTemplateId": "task-template:allegro:text-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:0e0211e72f2b7ecea3abd2ac10ad362852db2995d4a975bc4d064ea6d89dadb6",
+    "originalReceiptSha256": "abbadb877960f2cab04d6555a9a95475ae7db80e22d6120439456c69b098b10f",
+    "reviewedTemplateSha256": "5e7fa20679a68bf73600bf9fcb2bb07fffed7e65d5b01c2cd6276b3d98e8a86d",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_8138bbc4",
+      "galleryTemplateLockHash": "tpl_c1f652c2",
+      "promptSettingsHash": "ps_96a78038"
+    },
+    "promptSha256": "ccfe56e3e636637a793980764510560071ce6d6e88733853861664ca727166c7"
+  },
+  "animatediff_candlelight_behind_amber_glass": {
+    "workflowId": "AnimateDiffPipeline:text_to_video",
+    "sourceTaskTemplateId": "task-template:animatediff:text-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:9387c155d24de33e4d9a5a8115a6baa2818a35613f828908c0d46be3c0ab5c44",
+    "originalReceiptSha256": "8493c1cd300b662ead386632610603cee2531eeff86668b454b314c66e175f0b",
+    "reviewedTemplateSha256": "fc3355bbe64d94141436cda1cb7c173be5490cfeeeebacd8609ceee18d5e2109",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_64219bac",
+      "galleryTemplateLockHash": "tpl_6605d595",
+      "promptSettingsHash": "ps_67c4ef8e"
+    },
+    "promptSha256": "ed5ce7da9120ec8d1bc3c141faa7e191f86bd5417d5e1aab00f6beec22cc5af7"
+  },
+  "wan_vace_amber_rings_after_rain": {
+    "workflowId": "WanVACEPipeline:text_to_video",
+    "sourceTaskTemplateId": "wan_vace_direct_text_to_video",
+    "retainedGraphHash": "sha256:canonical-graph-v1:3eb2a114a3997bf20ad212143012e33fcc59e35c7aebb7a78ad5c04793c5de09",
+    "originalReceiptSha256": "111a1e8352784824dc9d3cb094113e0547b19cd50416b072cff31356c95a0124",
+    "reviewedTemplateSha256": "520b484950dcf0432791f4a00d6ad8c5de4c785849563aefa07d467f36d679d9",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_33970a36",
+      "galleryTemplateLockHash": "tpl_f7056e34",
+      "promptSettingsHash": "ps_2a047df0"
+    },
+    "promptSha256": "b8ed1027e4c9b4278d3959aa5941dd46331765d1ef2a731d4557c605218f9bc3"
+  },
+  "wan_a14b_wind_across_pond": {
+    "workflowId": "WanImageToVideoPipeline:image_to_video",
+    "sourceTaskTemplateId": "wan_22_i2v_seed_vault",
+    "retainedGraphHash": "sha256:canonical-graph-v1:0fe1766aff910661f5d55d4bc72abc0a25bd85157b4b9f29e347c67fcb679140",
+    "originalReceiptSha256": "ad4a68c5d4cd18b02cbcf57d5eb84a8e6ca48512c8b2405cf0e658942c260de2",
+    "reviewedTemplateSha256": "fd7249fa8e87be9636e616bb278c88abbabc8920e4b093fc896f58b8a8d5dadd",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_ed73d76a",
+      "galleryTemplateLockHash": "tpl_642b4403",
+      "promptSettingsHash": "ps_f883a531"
+    },
+    "promptSha256": "58437bcca048bffb472a931e6b353e2a6ce31fa67f9817dfffaaa1339d306d46",
+    "inputSha256": "cd29e54e208f6040d3f4cbbf8c9f096d537f8c71dffb50d5abae3298cc49deaf",
+    "inputLocatorSha256": "73a3653bae115630375520f4d33bee113745a109e22b1bee94d06aa695747be7"
+  },
+  "wan_ti2v_subway_musician": {
+    "workflowId": "WanTI2VPipeline:text_to_video",
+    "sourceTaskTemplateId": "wan_22_ti2v_5b_seed_vault",
+    "retainedGraphHash": "sha256:canonical-graph-v1:dc5a3915f6767104be7c308fc55384b2abc349a8881e585d48df140b68ee2591",
+    "originalReceiptSha256": "150e3aea2961acbed6a5fc0ffd8625a0284d64f66c545169b645fdc44927928f",
+    "reviewedTemplateSha256": "3d639a689fee74a2857de70668d5d6e7939ee25a62025fb84d4435c2b149b183",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_f960f001",
+      "galleryTemplateLockHash": "tpl_97316ddd",
+      "promptSettingsHash": "ps_007b6d08"
+    },
+    "promptSha256": "43e2a416e56047bdf5e4db4e725c73caab12d75a40064b2497805d4dd8f697ae"
+  },
+  "spandrel_tram_shelter_video_2x": {
+    "workflowId": "SpandrelVideoUpscale:video_upscale",
+    "sourceTaskTemplateId": "task-template:real-esrgan-x2-video-upscale:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:ee3276b1993ebb2ab0d6228468f6b3233d73daf72c758a7f2f93d48f3513837e",
+    "originalReceiptSha256": "7bfd8efa47be68666198cbec16db4d26b427297f0deeb8299cbcd63b1a1df46c",
+    "reviewedTemplateSha256": "7bbb69fe91f85685502578e96bbcdc6c6bfe1bcf44210a0bcb1315e003605ce6",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_eaa3b6d1",
+      "galleryTemplateLockHash": "tpl_d84cebd5",
+      "promptSettingsHash": "ps_a113ad7a"
+    },
+    "inputSha256": "5c24b2b67f893f48e4dbf0d893e0aa4308852592f30f8179b44298cca4ce197e",
+    "inputLocatorSha256": "f0c6bcf6e2ac02da300d9ea08fff96a335c47e436244ab9b36a3bdd47690cf3b"
   }
 }

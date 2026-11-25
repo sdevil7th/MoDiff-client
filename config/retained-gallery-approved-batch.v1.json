@@ -1144,5 +1144,176 @@
       "width": 1024,
       "height": 1024
     }
+  },
+  "allegro_basalt_shore_at_dawn": {
+    "associationSha256": "5e5cda590b1d1145aff88977cb259229935570bdc8f7cbf795897b78dbb67497",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:40a4eb8d6275c83725f57c4d3499b8d12c00f8cf6caffc2d07006e74d24ab820",
+    "templateRevisionHash": "5e7fa20679a68bf73600bf9fcb2bb07fffed7e65d5b01c2cd6276b3d98e8a86d",
+    "capturedAt": "2026-11-25T01:26:09.329Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "rhymes-ai/Allegro",
+    "outputSize": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "animatediff_candlelight_behind_amber_glass": {
+    "associationSha256": "12d558aee02588ef4df40667de428235453ed0c94dbf4b215d2d5e2de219be1d",
+    "backendSourceFingerprint": "sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290",
+    "backendContractFingerprint": "sha256:backend-contract-v1:32e6e74ce3a29d61ae997904d9d4a77259db5c3bd819dbfc15d312482a356f92",
+    "templateRevisionHash": "fc3355bbe64d94141436cda1cb7c173be5490cfeeeebacd8609ceee18d5e2109",
+    "capturedAt": "2026-11-25T02:54:46.523Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "animatediff_ivory_balloon_blue_mountains": {
+    "associationSha256": "4e75c68e43272d1fed65a290aca6b577fbb1fb94d6b04506fc516e550ff710e8",
+    "backendSourceFingerprint": "sha256:backend-source-v1:a107f0838ce3b1be98034123eb3bf3393928a09c5ad7e3c133687d5a7c58be57",
+    "backendContractFingerprint": "sha256:backend-contract-v1:03dea74157ff4e06596b9bd35e605c820dfee2fa4b4bac1772cbd948108d8ffd",
+    "templateRevisionHash": "4b4d081ecba0edc45452b914be1e511106c370500951c08bac57264a08abf8c8",
+    "capturedAt": "2026-11-24T07:09:23.646Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "animatediff_red_tram_in_watercolor": {
+    "associationSha256": "2bf3ec1e879a42b0619c5b67b57c237c3f3646b8615eae16b71ea16a4db83f9a",
+    "backendSourceFingerprint": "sha256:backend-source-v1:2beaa95aae8558e64cf99f056b011d00c0653dc7d03987cd67c8ed7e774c770e",
+    "backendContractFingerprint": "sha256:backend-contract-v1:e1bf29e107307b73ad8153eff36b54b42bdf5622243915dbdd7c94e069726538",
+    "templateRevisionHash": "79480aa4c678fa413f77fa4c1c063f243438f1e6bd4573f90fc7f45c01e6af45",
+    "capturedAt": "2026-11-23T23:28:15.943Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "beforeExtension": "mp4"
+  },
+  "animatediff_red_tram_through_snow": {
+    "associationSha256": "641ef31c766deed113729f1e3d0fcd589e44986230fa3fe633a461c44a3bddce",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b4a707d462a5f13dae1660c1665ed5195f45ed4ffbfcd7d80de879cd881aea86",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d12f2497d460e249e197c1eb12b40f2cfd70311a95e91a943f37a1ffffbcd157",
+    "templateRevisionHash": "95bf2ea59940c6b96e479bc726ca727255822c37d0dc4ed19b4d3b37622520e7",
+    "capturedAt": "2026-11-23T21:59:42.414Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "beforeExtension": "mp4"
+  },
+  "mochi_surf_over_dark_pebbles": {
+    "associationSha256": "3c227772597bc28d6eb90f63726ecbe3be317f7cb99e85742dc73ce0fc6918fd",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:40a4eb8d6275c83725f57c4d3499b8d12c00f8cf6caffc2d07006e74d24ab820",
+    "templateRevisionHash": "c0a8a85ce8101d4ffcf0a8ab34a46b49b41d38e667a896e8b51f5016bb536b62",
+    "capturedAt": "2026-11-25T02:21:21.989Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "genmo/mochi-1-preview",
+    "outputSize": {
+      "width": 848,
+      "height": 480
+    }
+  },
+  "sana_i2v_blue_hour_above_rice_terraces": {
+    "associationSha256": "9adb3ab26d3d8f41cf24b8e1b77dc837fcceff46b1b7a63524717cabc0131901",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d68ff3c7d7b2d190e68d6f148834ae971638c23a9d31086a3848874658f37da2",
+    "templateRevisionHash": "e6ce9b989e565a3504ccb21781d8522fd3bd3d17715c008ae315b068f7773b1c",
+    "capturedAt": "2026-11-25T01:58:17.904Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Efficient-Large-Model/SANA-Video_2B_480p_diffusers",
+    "outputSize": {
+      "width": 832,
+      "height": 480
+    }
+  },
+  "sana_video_water_terraces_before_sunrise": {
+    "associationSha256": "5b12ebe17da6302823c567e4f35e5dfb93aa2f913099f7bf4bda745b28c5d2de",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:40a4eb8d6275c83725f57c4d3499b8d12c00f8cf6caffc2d07006e74d24ab820",
+    "templateRevisionHash": "e5d7bb4cd5fa1b68f4840fc0746bea2aa963c1d8183be0985a66b0789be9f1d1",
+    "capturedAt": "2026-11-25T01:39:27.365Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Efficient-Large-Model/SANA-Video_2B_480p_diffusers",
+    "outputSize": {
+      "width": 832,
+      "height": 480
+    }
+  },
+  "spandrel_tram_shelter_video_2x": {
+    "associationSha256": "5f057274d8352aa72658f9cd1b3de89f72f11501b132d9f9b608a756b72f6efa",
+    "backendSourceFingerprint": "sha256:backend-source-v1:8dbad61815340f9a36c0966f227c6aaf8149350329cad36c73928ecb2df4698c",
+    "backendContractFingerprint": "sha256:backend-contract-v1:7e5cfc2be4665b078b5cda7e27b3c34bd3805652ca16146e86692677ab089da7",
+    "templateRevisionHash": "7bbb69fe91f85685502578e96bbcdc6c6bfe1bcf44210a0bcb1315e003605ce6",
+    "capturedAt": "2026-11-24T21:49:57.417Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "nateraw/real-esrgan",
+    "outputSize": {
+      "width": 1024,
+      "height": 576
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 288
+    },
+    "beforeExtension": "mp4"
+  },
+  "wan_a14b_wind_across_pond": {
+    "associationSha256": "d355616574bee93602a920b565517d7d0170cd8112eebc6cbd573d7e9ea4db37",
+    "backendSourceFingerprint": "sha256:backend-source-v1:ce7ac712b4620d0e8efb35022a558a551e2d4ae6ef20b844744c4d674527b0b3",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d68ff3c7d7b2d190e68d6f148834ae971638c23a9d31086a3848874658f37da2",
+    "templateRevisionHash": "fd7249fa8e87be9636e616bb278c88abbabc8920e4b093fc896f58b8a8d5dadd",
+    "capturedAt": "2026-11-24T23:54:28.989Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+    "outputSize": {
+      "width": 768,
+      "height": 512
+    }
+  },
+  "wan_ti2v_subway_musician": {
+    "associationSha256": "cba050638b1e9245403a8bc6731b84afa6b38c3d734b9f17572d8835319d1501",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:5d062bef6bee536bcebcfc45356a33037785e3101631cffd94461b2f2de4a91b",
+    "templateRevisionHash": "3d639a689fee74a2857de70668d5d6e7939ee25a62025fb84d4435c2b149b183",
+    "capturedAt": "2026-11-25T05:16:20.887Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+    "outputSize": {
+      "width": 1280,
+      "height": 704
+    }
+  },
+  "wan_vace_amber_rings_after_rain": {
+    "associationSha256": "0c54ef3a1f646bad294799d587cb2f1e0dcd9d0bcba7be1aeab4794bf9373b3d",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:bf402b162817edb94494bd54801f5b411be4220f43a3e56c4715b1c9128e023b",
+    "templateRevisionHash": "520b484950dcf0432791f4a00d6ad8c5de4c785849563aefa07d467f36d679d9",
+    "capturedAt": "2026-11-25T02:44:38.768Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
+    "outputSize": {
+      "width": 1664,
+      "height": 960
+    }
   }
 }

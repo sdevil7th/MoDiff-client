@@ -145,10 +145,11 @@ test('retained Gallery recipes preserve the native graph identities and standalo
     );
     assert.equal(exactness.getPromptSettingsHash(settings), reviewedCatalogLock.promptSettingsHash);
     if (recipe.inputSha256) assert.equal(exactness.getTemplateInputContractHash(template), undefined);
-    assert.deepEqual(sources.get(`${template.modelType}|${template.mode}`), {
-      ...skeletons.find(({ id }) => id === recipe.sourceTaskTemplateId),
-      taskContract: true,
-    });
+    const source = sources.get(`${template.modelType}|${template.mode}`);
+    const authored = published.find(({ id }) => id === recipe.sourceTaskTemplateId);
+    const task = skeletons.find(({ id }) => id === recipe.sourceTaskTemplateId);
+    assert.equal(source.id, recipe.sourceTaskTemplateId, recipe.workflowId);
+    assert.deepEqual(source, authored ?? { ...task, taskContract: true });
     if (approvedBatchIds.has(template.id)) {
       const authoringArchive = retainedGalleryAuthoringArchives[recipe.workflowId];
       assert.equal(authoringArchive.descriptorSha256, recipe.originalReceiptSha256);
@@ -174,22 +175,26 @@ test('retained Gallery recipes preserve the native graph identities and standalo
         const capture = descriptor.capture
           ? JSON.parse(readCanonicalEvidenceFile(evidenceRoot, descriptor.capture).bytes)
           : descriptor;
-        const saved = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, capture.creatorPackage).bytes);
+        const saved = JSON.parse(
+          readCanonicalEvidenceFile(evidenceRoot, capture.creatorPackage ?? capture.creator).bytes,
+        );
         const api = flow.getState().exportGraph('retained-batch-check', undefined, {
           sourceGraph: saved.graph,
           randomizeSeeds: false,
         });
         assert.equal(canonicalGraphIdentity(api).hash, recipe.retainedGraphHash, template.id);
         assert.deepEqual(
-          Object.values(capture.inputs ?? [capture.input])
+          Object.values(capture.inputs ?? [capture.input ?? { file: capture.source }])
             .map(({ file }) => file.sha256)
             .sort(),
           [
-            recipe.inputSha256,
-            recipe.maskSha256,
-            recipe.guideSha256,
-            recipe.lastFrameSha256,
-            recipe.secondaryReferenceSha256,
+            ...new Set([
+              recipe.inputSha256,
+              recipe.maskSha256,
+              recipe.guideSha256,
+              recipe.lastFrameSha256,
+              recipe.secondaryReferenceSha256,
+            ]),
           ]
             .filter(Boolean)
             .sort(),
@@ -324,12 +329,13 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       videoContract = nextVideoContract;
       const inputBinding = template.inputBindings?.[0];
       const audio = inputBinding?.mediaType === 'audio';
-      const sourceVideo = inputBinding?.mediaType === 'video';
+      const sourceVideo = template.inputBindings?.some(({ field }) => field === 'sourceVideo');
+      const controlVideo = template.inputBindings?.some(({ field }) => field === 'controlVideo');
       const guide = template.inputBindings?.some(({ field }) => field === 'controlImage')
         ? 'review-control-image.png'
         : undefined;
       const input =
-        recipe.inputSha256 && inputBinding?.field !== 'controlImage'
+        recipe.inputSha256 && ['referenceImages', 'sourceAudio'].includes(inputBinding?.field)
           ? [
               recipe.inputFileName ?? (audio ? authorsAudioFixture : 'review-source-image.png'),
               ...(recipe.secondaryReferenceSha256 ? ['review-second-reference.png'] : []),
@@ -341,13 +347,13 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         template,
         audio
           ? { sourceAudio: input[0] }
-          : sourceVideo
-            ? { sourceVideo: 'review-source-video.mp4' }
-            : {
-                referenceImages: input,
-                ...(mask && { maskImage: mask }),
-                ...(guide && { controlImage: guide }),
-              },
+          : {
+              referenceImages: input,
+              ...(mask && { maskImage: mask }),
+              ...(guide && { controlImage: guide }),
+              ...(sourceVideo && { sourceVideo: 'review-source-video.mp4' }),
+              ...(controlVideo && { controlVideo: 'review-control-video.mp4' }),
+            },
       );
       const form = studio.getState().form;
       assert.equal(form.device, template.example.lockedSettings.device ?? 'cuda:0');
@@ -387,6 +393,16 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         assert.deepEqual(canonicalGraphIdentity(comparable), retainedTemplateGraph(recipe));
         continue;
       }
+      if (template.modelType === 'SpandrelVideoUpscale') {
+        const upscaler = api.nodes[binding.nodes.videoUpscaler].params;
+        const { value, ...artifact } = template.modelArtifact;
+        assert.deepEqual(upscaler.model_id.value, { ...artifact, value: `${value}/RealESRGAN_x2plus.pth` });
+        assert.deepEqual([upscaler.video.value].flat(), ['review-source-video.mp4']);
+        assert.equal(upscaler.fps.value, template.example.lockedSettings.fps);
+        assert.equal(upscaler.tile_size.value, 256);
+        assert.equal(upscaler.tile_overlap.value, 32);
+        continue;
+      }
       const loader = api.nodes[binding.nodes[spec.roles.find(([, key]) => key.endsWith('.' + spec.loaderAction))[0]]];
       if (template.example.retainedVideoPreview) {
         const { lockedSettings, lockedSeed } = template.example;
@@ -407,6 +423,17 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           assert.equal(normalized.action, 'Normalize');
           assert.equal(normalized.params.video.sourceId, binding.nodes.loadVideo);
           assert.equal(normalized.params.video.sourceKey, 'video');
+        }
+        if (controlVideo) {
+          const source = api.nodes[binding.nodes.loadControlVideo];
+          assert.equal(source.params.file.value, 'review-control-video.mp4');
+          const guide = api.nodes[generation.params.control_video.sourceId];
+          assert.equal(guide.module, 'modules.VideoConditioning');
+        }
+        if (input.length) {
+          const source = api.nodes[binding.nodes.loadImage];
+          assert.deepEqual([source.params.file.value].flat(), input);
+          assert.equal(generation.params.reference_images.sourceId, binding.nodes.loadImage);
         }
         continue;
       }

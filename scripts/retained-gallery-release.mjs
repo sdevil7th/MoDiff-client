@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { readCanonicalEvidenceFile } from './release-contract-core.mjs';
 import {
   canonicalJsonHash as galleryJsonHash,
+  decodedAudiovisualMediaHash,
   galleryVerificationScope,
   validateQualityReview,
 } from './template-gallery-harness.mjs';
@@ -70,6 +71,7 @@ function assertRetainedBatchEvidence({
   const inputHash =
     association.output.inputEncodedSha256?.replace(/^sha256:bytes:/u, '') ??
     association.approvedFiles.approvedSourcePath?.sha256 ??
+    (recipe.inputSha256 === recipe.guideSha256 ? association.approvedFiles.approvedGuidePath?.sha256 : undefined) ??
     association.privateSourceSha256;
   assert.equal(inputHash, recipe.inputSha256);
   assert.equal(association.approvedFiles.approvedMaskPath?.sha256, recipe.maskSha256);
@@ -119,8 +121,10 @@ function assertRetainedBatchEvidence({
     assert.equal(verified.backendContractFingerprint, entry.backendContractFingerprint, label);
     return;
   }
-  assert.equal(nativeReceipt.backendContractFingerprint, entry.backendContractFingerprint, label);
-  assert.equal(nativeReceipt.promptBinding.sha256, recipe.promptSha256, label);
+  if (recipe.workflowId !== 'SpandrelVideoUpscale:video_upscale') {
+    assert.equal(nativeReceipt.backendContractFingerprint, entry.backendContractFingerprint, label);
+  }
+  assert.equal(nativeReceipt.promptBinding?.sha256, recipe.promptSha256, label);
   assert.equal(nativeReceipt.inputBinding?.sha256, recipe.inputSha256, label);
   assert.equal(nativeReceipt.maskBinding?.sha256, recipe.maskSha256, label);
   assert.equal(nativeReceipt.guideBinding?.sha256, recipe.guideSha256, label);
@@ -155,8 +159,21 @@ function assertRetainedBatchEvidence({
   if (association.output.mediaType === 'video') {
     const { decodedMediaHash, outputEncodedSha256, video } = association.output;
     const { hasAudio, ...videoMetadata } = video;
-    assert.equal(hasAudio, false, label);
-    same(nativeReceipt.decodedOutput, { kind: 'video', hash: decodedMediaHash, ...videoMetadata }, label);
+    assert.equal(hasAudio, Boolean(videoMetadata.audio), label);
+    assert.equal(entry.decodedAudioHash, videoMetadata.audio?.hash, label);
+    assert.equal(
+      entry.audiovisualMediaHash,
+      decodedAudiovisualMediaHash(decodedMediaHash, entry.decodedAudioHash) ?? undefined,
+      label,
+    );
+    if (recipe.workflowId === 'SpandrelVideoUpscale:video_upscale') {
+      const { width, height, frames, fps } = videoMetadata;
+      same(nativeReceipt.decodedOutput, { hash: decodedMediaHash, width, height, frameCount: frames, fps }, label);
+      assert.equal(width, 2 * nativeReceipt.inputBinding.width, label);
+      assert.equal(height, 2 * nativeReceipt.inputBinding.height, label);
+    } else {
+      same(nativeReceipt.decodedOutput, { kind: 'video', hash: decodedMediaHash, ...videoMetadata }, label);
+    }
     assert.equal(outputEncodedSha256, nativeReceipt.outputHash, label);
   }
 }
@@ -284,7 +301,9 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
     const { association } = bundle;
     assert.equal(association.workflowId, recipe.workflowId);
     assert.equal(association.nativeSourceTaskContractId, sourceWorkflow.manifest.sourceTemplateId);
-    const spandrel = recipe.workflowId === 'SpandrelImageUpscale:image_upscale';
+    const spandrel = ['SpandrelImageUpscale:image_upscale', 'SpandrelVideoUpscale:video_upscale'].includes(
+      recipe.workflowId,
+    );
     if (spandrel) assertRetainedSpandrelEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt });
     if (association.recipeObservation) {
       assertRetainedTechnicalRecipe({ recipe, sourceWorkflow, association, entry, nativeReceipt });
@@ -319,6 +338,10 @@ export function createRetainedGalleryReleaseReader({ clientRoot, source, registr
         {
           ...reviewBindings,
           decodedMediaHash: entry.mediaHash,
+          ...(entry.decodedAudioHash && {
+            decodedAudioHash: entry.decodedAudioHash,
+            audiovisualMediaHash: entry.audiovisualMediaHash,
+          }),
         },
         'approved_reviewed',
       ),

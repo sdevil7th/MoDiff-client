@@ -390,8 +390,7 @@ export function isRetainedVideoPreview(template: StudioTemplate, entry: Template
     entry.qualityReviewStatus === 'approved_reviewed' &&
     /^sha256:retained-template-association-v1:[a-f0-9]{64}$/u.test(entry.proofLockHash) &&
     entry.outputPath.endsWith('.mp4') &&
-    !entry.decodedAudioHash &&
-    !entry.audiovisualMediaHash &&
+    Boolean(entry.decodedAudioHash) === Boolean(entry.audiovisualMediaHash) &&
     retainedVideoPreviewMatches(template.example?.retainedVideoPreview, entry)
   );
 }
