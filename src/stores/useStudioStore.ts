@@ -1802,9 +1802,7 @@ export const useStudioStore = create<StudioState & StudioVolatileState & StudioA
               ...defaults,
               ...presetValues,
               ...lockedValues,
-              ...(template.example?.lockedSettings?.attentionBackend !== undefined && {
-                attentionBackend: template.example.lockedSettings.attentionBackend,
-              }),
+              attentionBackend: template.example?.lockedSettings?.attentionBackend,
               // Missing legacy template storage means native, not the prior tab selection.
               weightFormat: lockedValues.weightFormat,
               ...inputDefaults,

@@ -19,8 +19,9 @@ export function resolveStudioExecutionSpecValues(
   const weightFormat = executionStudioWeightFormat(form);
   if (weightFormat !== 'native' && !spec.bindings.some(([, , source]) => source === 'weightFormat'))
     throw new Error('The selected execution specification does not declare a weight-format control.');
-  const attentionBackend =
-    typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : 'auto';
+  const explicitAttention =
+    typeof form.attentionBackend === 'string' && form.attentionBackend.trim() ? form.attentionBackend : undefined;
+  const attentionBackend = explicitAttention ?? 'auto';
   const audioTemplateBaseModel = options.audioTemplateBaseModel ?? null;
   const quantizationMode = form.resourceMode === 'expert' ? form.quantizationMode : 'none';
   const bindsDefaultRevision = spec.bindings.some(([, , source]) => source === 'defaultRevision');
@@ -71,7 +72,7 @@ export function resolveStudioExecutionSpecValues(
     deviceMapNone: 'none',
     weightFormat,
     attentionBackend,
-    nativeMath: '_native_math',
+    nativeMath: form.resourceMode === 'expert' ? (explicitAttention ?? '_native_math') : '_native_math',
     empty: '',
     fp16: 'fp16',
     ordinary: 'ordinary',

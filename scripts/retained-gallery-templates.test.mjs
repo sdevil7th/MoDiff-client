@@ -448,8 +448,8 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.equal(studio.getState().activeWorkflowTabId, tabId);
       const api = flow.getState().exportGraph('retained-template-check', undefined, { randomizeSeeds: false });
       const attentionBackend = template.example.lockedSettings.attentionBackend;
+      assert.equal(form.attentionBackend, attentionBackend, template.id);
       if (attentionBackend !== undefined) {
-        assert.equal(form.attentionBackend, attentionBackend, template.id);
         const recipe = Object.values(api.nodes).find(({ action }) => action === 'DiffusersExecutionRecipe');
         assert.equal(recipe?.params.attention_backend.value, attentionBackend, template.id);
       }
