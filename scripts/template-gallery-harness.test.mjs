@@ -23,6 +23,7 @@ import {
   canonicalJsonHash,
   cardPreviewContractErrors,
   decodedAudiovisualMediaHash,
+  decodedMediaHash,
   decodedMediaHashMatches,
   decodedVideoFrameHashCompatibility,
   galleryExpectedOutput,
@@ -47,6 +48,35 @@ import {
 } from './retained-gallery-provenance.mjs';
 
 let runtime;
+
+test('decoded image media reports the actual frame count for a still-image release check', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'modiff-image-frames-'));
+  try {
+    const still = join(directory, 'still.webp');
+    const animated = join(directory, 'animated.webp');
+    writeFileSync(still, Buffer.from('UklGRhwAAABXRUJQVlA4TA8AAAAvA8AAAAcQ/Y/+ByKi/wEA', 'base64'));
+    writeFileSync(
+      animated,
+      Buffer.from(
+        'UklGRoQAAABXRUJQVlA4WAoAAAACAAAAAwAAAwAAQU5JTQYAAAAAAAAAAABBTk1GKAAAAAAAAAAAAAMAAAMAAMgAAAJWUDhMDwAAAC8DwAAABxD9j/4HIqL/AQBBTk1GKAAAAAAAAAAAAAMAAAMAAMgAAABWUDhMDwAAAC8DwAAABxDR//4HIqL/AQA=',
+        'base64',
+      ),
+    );
+    const options = { measureImageFrames: true };
+    const [single, multiple, historical] = await Promise.all([
+      decodedMediaHash(still, 'image', options),
+      decodedMediaHash(animated, 'image', options),
+      decodedMediaHash(still, 'image'),
+    ]);
+    assert.deepEqual([single.frames, multiple.frames], [1, 2]);
+    assert.equal(historical.frames, undefined);
+    assert.equal(historical.hash, single.hash);
+    assert.ok(!technicalMediaErrors(single, { frames: 1 }, 'image').some((error) => error.includes('frames')));
+    assert.ok(technicalMediaErrors(multiple, { frames: 1 }, 'image').some((error) => error.includes('frames')));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test('retained Gallery provenance cannot grant approval to another workflow or a replacement association', async () => {
   const fixture = subsetVerificationFixture();

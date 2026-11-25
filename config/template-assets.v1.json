@@ -316,6 +316,17 @@
       "height": 512
     },
     {
+      "path": "template-gallery/cosmos3_super_text_to_image.webp",
+      "size": 228568,
+      "sha256": "sha256:bytes:90e6a18d8d085a653dd3f74168f93a30d99f8b0b7b74decb4f95f8a60bf4e7ad",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/ddim_cifar10_preview.webp",
       "size": 962,
       "sha256": "sha256:bytes:8da37d75c632e43b7131bcb634f76a9e83857a88bf511785fa8f55c746f0f0a4",
@@ -363,6 +374,17 @@
       "path": "template-gallery/flux1_dev_limestone_studio_scratch_repair.webp",
       "size": 119092,
       "sha256": "sha256:bytes:b5fe5ad2e6acf82a7fb6cc2730cac9fb9c588a8e0263736e4a16dc2e77442f49",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux2_dev_text_to_image.webp",
+      "size": 297422,
+      "sha256": "sha256:bytes:6105156764537dd15a17c7fd2fbf73882a0c4991b1f7fb90700e9bbbf51de670",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -3537,8 +3559,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 477685,
-      "sha256": "sha256:bytes:dbfe7fcfa87e5e03df973310c7905fde71c6d74dc10a23ddb8929ecc19521c0d",
+      "size": 483020,
+      "sha256": "sha256:bytes:100626a0d35d6d31c18d319b76965055e00968228edfb926c0469dfda09c6561",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -4887,6 +4909,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/cosmos3_super_text_to_image.original-provenance.json",
+      "size": 1821,
+      "sha256": "sha256:bytes:a7aeac67324bb549099efc0baf5dce1f4ee14108a2e41412a2ad6e8be6317e5b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cosmos3_super_text_to_image.original-review.json",
+      "size": 693,
+      "sha256": "sha256:bytes:fdddc90b1953e7e304f263d219941667b756f3cf07e33ef25c1e371e88f849f4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cosmos3_super_text_to_image.quality-review.json",
+      "size": 2638,
+      "sha256": "sha256:bytes:a5f08e5fa500a0c3f2cecfa572cb8d9c666e6680d0eff5bb8fac9b392cc61fab",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/cosmos3_super_text_to_image.reviewed-provenance.json",
+      "size": 3192,
+      "sha256": "sha256:bytes:73996ca96a80f8244ecb17c4455ae9ea851b09c01c2af1ec8eb62ea0d67aea60",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/ddim_cifar10_preview.original-provenance.json",
       "size": 873,
       "sha256": "sha256:bytes:8fc838dd4bc701aa0c65e6b2630cc749d05736d23623591e3d1ac5af3d6b93d9",
@@ -5007,6 +5065,42 @@
       "path": "template-gallery/reviews/flux1_dev_limestone_studio_scratch_repair.retained-template-provenance.json",
       "size": 4137,
       "sha256": "sha256:bytes:61e8601aaefcc918f03d5f110d57e8f26cb2149d6034c22fb9c13915ddb70324",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_dev_text_to_image.original-provenance.json",
+      "size": 1726,
+      "sha256": "sha256:bytes:fa7804bfeda1cf96922fb74621ad8ac9d6efa8dc468e8154af27165d05d77038",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_dev_text_to_image.original-review.json",
+      "size": 720,
+      "sha256": "sha256:bytes:3d199d7d906fe2003fcc021c072409ce659821bbe5d40ee7fd1eabe1372e8700",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_dev_text_to_image.quality-review.json",
+      "size": 2530,
+      "sha256": "sha256:bytes:cf719c3bb27135496b83bca79ff124c9ae8aefa53a79016685bb1c91cddbab7b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux2_dev_text_to_image.reviewed-provenance.json",
+      "size": 2728,
+      "sha256": "sha256:bytes:045e16b448a74a7235a6919aabef1fde27de88b05d7fc59661665f1988e79aea",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -11035,9 +11129,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:6dae2febe2da4a2154a550b5eb6530843803c6fe838fd2a3220dda5337b45c1e",
+  "assetSetId": "sha256:canonical-json:e0bc710e59c6913a8e011a9bf904a4ea0dbe484a5b1ba87b0d5b2eddf5e73fed",
   "status": "ready",
-  "assetCount": 1135,
-  "totalBytes": 1135884729,
+  "assetCount": 1145,
+  "totalBytes": 1136432102,
   "missingAssets": []
 }

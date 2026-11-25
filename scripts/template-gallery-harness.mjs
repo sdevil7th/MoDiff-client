@@ -1427,57 +1427,81 @@ export function selectPrimaryRunFile(files, templateId, runIndex, extensions = M
   });
 }
 
-async function decodedImageHash(imagePath) {
+async function decodedImageHash(imagePath, { measureImageFrames = false } = {}) {
   const { chromium } = await import('playwright');
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
+    // ImageDecoder needs a secure context. Serve the decoding page wholly in Chromium.
+    if (measureImageFrames) {
+      const decoderPage = 'https://modiff-gallery.invalid/';
+      await page.route(decoderPage, (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Gallery image decoding</title>' }),
+      );
+      await page.goto(decoderPage);
+    }
     const bytes = readFileSync(imagePath);
     const extension = extname(imagePath).toLowerCase().replace('.', '');
     const mime =
       extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : extension === 'webp' ? 'image/webp' : 'image/png';
     const dataUrl = `data:${mime};base64,${bytes.toString('base64')}`;
-    const result = await page.evaluate(async (src) => {
-      const image = new Image();
-      image.decoding = 'sync';
-      image.src = src;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      if (!context) throw new Error('Could not create canvas context for decoded image hash.');
-      context.drawImage(image, 0, 0);
-      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-      let lumaSum = 0;
-      let lumaSquaredSum = 0;
-      let nearBlackPixels = 0;
-      const pixelCount = imageData.data.length / 4;
-      for (let offset = 0; offset < imageData.data.length; offset += 4) {
-        const luma =
-          0.2126 * imageData.data[offset] + 0.7152 * imageData.data[offset + 1] + 0.0722 * imageData.data[offset + 2];
-        lumaSum += luma;
-        lumaSquaredSum += luma * luma;
-        if (luma < 4) nearBlackPixels += 1;
-      }
-      const meanLuma = pixelCount > 0 ? lumaSum / pixelCount : 0;
-      let binary = '';
-      const chunkSize = 32768;
-      for (let offset = 0; offset < imageData.data.length; offset += chunkSize) {
-        binary += String.fromCharCode(...imageData.data.slice(offset, offset + chunkSize));
-      }
-      return {
-        width: canvas.width,
-        height: canvas.height,
-        meanLuma,
-        lumaStdDev: Math.sqrt(Math.max(0, lumaSquaredSum / pixelCount - meanLuma * meanLuma)),
-        nearBlackRatio: pixelCount > 0 ? nearBlackPixels / pixelCount : 1,
-        rgbaBase64: btoa(binary),
-      };
-    }, dataUrl);
+    const result = await page.evaluate(
+      async ({ src, type, measureImageFrames }) => {
+        const image = new Image();
+        image.decoding = 'sync';
+        image.src = src;
+        await image.decode();
+        let frames;
+        if (measureImageFrames) {
+          const data = await (await fetch(src)).arrayBuffer();
+          const decoder = new globalThis.ImageDecoder({ data, type, preferAnimation: true });
+          try {
+            await decoder.tracks.ready;
+            frames = decoder.tracks.selectedTrack.frameCount;
+          } finally {
+            decoder.close();
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) throw new Error('Could not create canvas context for decoded image hash.');
+        context.drawImage(image, 0, 0);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        let lumaSum = 0;
+        let lumaSquaredSum = 0;
+        let nearBlackPixels = 0;
+        const pixelCount = imageData.data.length / 4;
+        for (let offset = 0; offset < imageData.data.length; offset += 4) {
+          const luma =
+            0.2126 * imageData.data[offset] + 0.7152 * imageData.data[offset + 1] + 0.0722 * imageData.data[offset + 2];
+          lumaSum += luma;
+          lumaSquaredSum += luma * luma;
+          if (luma < 4) nearBlackPixels += 1;
+        }
+        const meanLuma = pixelCount > 0 ? lumaSum / pixelCount : 0;
+        let binary = '';
+        const chunkSize = 32768;
+        for (let offset = 0; offset < imageData.data.length; offset += chunkSize) {
+          binary += String.fromCharCode(...imageData.data.slice(offset, offset + chunkSize));
+        }
+        return {
+          width: canvas.width,
+          height: canvas.height,
+          frames,
+          meanLuma,
+          lumaStdDev: Math.sqrt(Math.max(0, lumaSquaredSum / pixelCount - meanLuma * meanLuma)),
+          nearBlackRatio: pixelCount > 0 ? nearBlackPixels / pixelCount : 1,
+          rgbaBase64: btoa(binary),
+        };
+      },
+      { src: dataUrl, type: mime, measureImageFrames },
+    );
     return {
       width: result.width,
       height: result.height,
+      ...(measureImageFrames && { frames: result.frames }),
       meanLuma: result.meanLuma,
       lumaStdDev: result.lumaStdDev,
       nearBlackRatio: result.nearBlackRatio,
@@ -1755,7 +1779,7 @@ export async function decodedMediaHash(mediaPath, mediaType, args = {}) {
   if (mediaType === 'video') return decodedVideoHash(mediaPath, args);
   if (mediaType === 'audio') return decodedAudioHash(mediaPath, args);
   if (mediaType === 'json') return decodedJsonHash(mediaPath);
-  return decodedImageHash(mediaPath);
+  return decodedImageHash(mediaPath, args);
 }
 
 export async function finalizeReviewedDerivative(recordPath, mediaPath, mediaType = 'image', args = {}) {
@@ -2125,9 +2149,10 @@ async function generate(args, artifactDir) {
       });
       continue;
     }
-    const left = await decodedMediaHash(media.run1, mediaType, args);
-    const right = exactPublication ? await decodedMediaHash(media.run2, mediaType, args) : left;
     const expectedOutput = galleryExpectedOutput(template);
+    const decodeOptions = expectedOutput.frames === undefined ? args : { ...args, measureImageFrames: true };
+    const left = await decodedMediaHash(media.run1, mediaType, decodeOptions);
+    const right = exactPublication ? await decodedMediaHash(media.run2, mediaType, decodeOptions) : left;
     const technicalErrors = technicalMediaErrors(left, expectedOutput, mediaType);
     if (exactPublication) technicalErrors.push(...technicalMediaErrors(right, expectedOutput, mediaType));
     if (technicalErrors.length > 0) {
@@ -2615,9 +2640,12 @@ export async function verifyGallery(
     if (!isWithheld(entry.thumbnailPath) && !existsSync(thumbnailPath)) {
       errors.push(`${entry.templateId} thumbnail file missing: ${entry.thumbnailPath}`);
     }
+    const template = historicalById.get(entry.templateId) ?? templatesById.get(entry.templateId);
+    const decodeOptions =
+      galleryExpectedOutput(template).frames === undefined ? args : { ...args, measureImageFrames: true };
     const decoded = isWithheld(entry.outputPath)
       ? null
-      : await decodeMedia(outputPath, entry.mediaType ?? 'image', args);
+      : await decodeMedia(outputPath, entry.mediaType ?? 'image', decodeOptions);
     const decodedIdentityMatches = decodedMediaHashMatches(decoded, entry.mediaHash);
     if (decoded && !decodedIdentityMatches) {
       errors.push(`${entry.templateId} decoded hash mismatch: expected ${entry.mediaHash}, got ${decoded.hash}`);
@@ -2646,7 +2674,6 @@ export async function verifyGallery(
         `${entry.templateId} audiovisual hash mismatch: expected ${entry.audiovisualMediaHash}, got ${audiovisualMediaHash ?? 'missing'}`,
       );
     }
-    const template = historicalById.get(entry.templateId) ?? templatesById.get(entry.templateId);
     if (!template) {
       errors.push(`${entry.templateId} is not present in the current template runtime`);
     } else {
