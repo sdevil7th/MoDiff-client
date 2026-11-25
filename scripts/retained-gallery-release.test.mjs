@@ -1,20 +1,62 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
-import { canonicalWorkflowContract } from './release-contract-core.mjs';
+import { canonicalWorkflowContract, readCanonicalEvidenceFile } from './release-contract-core.mjs';
 import {
   assertRetainedVideoAdjustment,
   createRetainedGalleryReleaseReader,
   verifiedRetainedGalleryAssetIndex,
 } from './retained-gallery-release.mjs';
 import { createHash } from 'node:crypto';
-import { validateRetainedGalleryProvenance, verifyRetainedApprovedFiles } from './retained-gallery-provenance.mjs';
+import {
+  retainedGalleryFileLimit,
+  validateRetainedGalleryProvenance,
+  verifyRetainedApprovedFiles,
+} from './retained-gallery-provenance.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const hash = (value) => `sha256:canonical-json:${canonicalJsonHash(value)}`;
+
+test('only retained Gallery before videos accept the larger encoded source size', () => {
+  for (const prefix of ['', '/']) {
+    assert.equal(
+      retainedGalleryFileLimit(prefix + 'template-gallery/inputs/amber-glass.before.mp4'),
+      128 * 1024 * 1024,
+    );
+  }
+  for (const path of [
+    '/template-gallery/amber-glass.mp4',
+    '/template-gallery/inputs/amber-glass.mask.mp4',
+    '/template-gallery/inputs/amber-glass.guide.mp4',
+    '/template-gallery/reviews/amber-glass.before.mp4',
+    '/template-gallery/inputs/../amber-glass.before.mp4',
+  ]) {
+    assert.equal(retainedGalleryFileLimit(path), 64 * 1024 * 1024, path);
+  }
+});
+
+const savedLargeSource = process.env.MODIFF_RETAINED_LARGE_BEFORE_VIDEO;
+test('the saved Amber source stays byte-bound at its original size', { skip: !savedLargeSource }, () => {
+  const source = resolve(savedLargeSource);
+  const ref = {
+    path: basename(source),
+    bytes: 88384819,
+    sha256: 'da6a0abe90bfc8c4efcb4a63201a6db839c944416cef49d452b629fbb86c3ec0',
+  };
+  assert.throws(
+    () => readCanonicalEvidenceFile(dirname(source), ref, retainedGalleryFileLimit('template-gallery/amber-glass.mp4')),
+    /Evidence file size\/type differs/u,
+  );
+  const beforeLimit = retainedGalleryFileLimit('template-gallery/inputs/amber-glass.before.mp4');
+  assert.equal(readCanonicalEvidenceFile(dirname(source), ref, beforeLimit).bytes.length, ref.bytes);
+  assert.throws(
+    () => readCanonicalEvidenceFile(dirname(source), { ...ref, sha256: '0'.repeat(64) }, beforeLimit),
+    /Evidence file hash differs/u,
+  );
+});
 
 test('an exposure-corrected retained video stays bound to its silent source and frame cadence', () => {
   const video = { width: 512, height: 512, frames: 16, fps: 8, durationSeconds: 2 };
