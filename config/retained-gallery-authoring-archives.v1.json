@@ -223,5 +223,10 @@
     "descriptorSha256": "8019b9dbf5af0e8ba5c8eeed7132ec5578968ee0607309dd65327d69599a5c5d",
     "bytes": 3894,
     "sha256": "7512d2ef931525302161e9662c172403df5b608a374214a4a39b5bd71e014562"
+  },
+  "QwenImageLayeredPipeline:layer_decomposition": {
+    "descriptorSha256": "826d487fed6b6f0ae2679d2eb842ad65208a9b5929b66722ad1d8e1c0242079e",
+    "bytes": 4857,
+    "sha256": "49728a179b50f3b708d1baacdaa3863a1e9c6c3ef281e4a4d9efdc0a3fffd44d"
   }
 }

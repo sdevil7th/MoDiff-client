@@ -585,5 +585,17 @@
     "templateRevisionHash": "9d0f7b50afd87f366ecf6c0d66352d87dd2bdf0b4ae9a50f818619d6254d6b92",
     "capturedAt": "2026-11-24T22:39:17.259Z",
     "outputExtension": "wav"
+  },
+  "qwen_layered_sunset_and_peaks": {
+    "associationSha256": "6f803d49ff9c2e4add5ec1bdd552de9e92b4d887b988c27f298d532c6cf2b2d3",
+    "backendSourceFingerprint": "sha256:backend-source-v1:ce7ac712b4620d0e8efb35022a558a551e2d4ae6ef20b844744c4d674527b0b3",
+    "backendContractFingerprint": "sha256:backend-contract-v1:7661a86f3aebb5f170346fc6078e665e006b56b7ff5bc4810db8692adf607dac",
+    "templateRevisionHash": "4ee3847d935f7b245f5c9d9e156da8fe5d97dcb382ad890c59163e573a6c73c9",
+    "capturedAt": "2026-11-24T23:35:50.453Z",
+    "outputExtension": "png",
+    "outputSize": {
+      "width": 960,
+      "height": 710
+    }
   }
 }

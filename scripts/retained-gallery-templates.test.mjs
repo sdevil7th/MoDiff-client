@@ -181,7 +181,7 @@ test('retained Gallery recipes preserve the native graph identities and standalo
         });
         assert.equal(canonicalGraphIdentity(api).hash, recipe.retainedGraphHash, template.id);
         assert.deepEqual(
-          Object.values(capture.inputs)
+          Object.values(capture.inputs ?? [capture.input])
             .map(({ file }) => file.sha256)
             .sort(),
           [recipe.inputSha256, recipe.maskSha256, recipe.guideSha256].filter(Boolean).sort(),
@@ -269,6 +269,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
             'Inpaint',
             'ControlGenerate',
             'ControlInpaint',
+            'LayerDecompose',
             'UnconditionalGenerate',
           ].includes(payload.action),
         );
@@ -375,6 +376,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
             'Inpaint',
             'ControlGenerate',
             'ControlInpaint',
+            'LayerDecompose',
             'GenerateAnyToAny',
             'GenerateImageVideoText',
             'UnconditionalGenerate',
@@ -382,6 +384,11 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         );
         assert.equal(generation.params.prompt?.value ?? '', template.prompt);
         const locked = template.example.lockedSettings;
+        if (generation.action === 'LayerDecompose') {
+          assert.equal(generation.params.layers.value, locked.layers);
+          assert.equal(generation.params.cfg_normalize.value, false);
+          assert.equal(generation.params.use_en_prompt.value, false);
+        }
         if (generation.action === 'UnconditionalGenerate') {
           assert.equal(generation.params.num_inference_steps.value, locked.steps);
           assert.equal(Number(generation.params.seed.value), template.example.lockedSeed);

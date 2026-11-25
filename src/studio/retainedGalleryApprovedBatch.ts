@@ -3923,4 +3923,103 @@ export const APPROVED_RETAINED_BATCH: RetainedGalleryRecipe[] = [
     "runtimeReuseKey": "sha256:canonical-graph-v1:2d149a078f6469b473a083b6116ef47452ae4ccc8a1ca0fc7b0ea416f5257515"
   }
 },
+{
+  "workflowId": "QwenImageLayeredPipeline:layer_decomposition",
+  "sourceTaskTemplateId": "task-template:qwen-image-layered-direct:layer-decomposition:v1",
+  "retainedGraphHash": "sha256:canonical-graph-v1:25bb2ac3d10b3d0f539204d2c4d3181764f192882a9c8442efb5ce54b7d8de43",
+  "originalReceiptSha256": "826d487fed6b6f0ae2679d2eb842ad65208a9b5929b66722ad1d8e1c0242079e",
+  "reviewedTemplateSha256": "4ee3847d935f7b245f5c9d9e156da8fe5d97dcb382ad890c59163e573a6c73c9",
+  "reviewedCatalogLock": {
+    "templateLockHash": "tpl_54972ded",
+    "galleryTemplateLockHash": "tpl_831d4207",
+    "promptSettingsHash": "ps_9236bec4"
+  },
+  "promptSha256": "10e30e8fbc0bcc8c1748851145c9b32a4d27da19cecd06da4d044f565cd2d745",
+  "inputSha256": "67835db7f30072a35b1650c0a84e7f241c0b01fcf2c324964ddcd5f8424008b3",
+  "inputLocatorSha256": "1584ce002870000a86ce56d7b6132b4e4920237e6b1c35f2269af9bbcc716aaf",
+  "template": {
+    "id": "qwen_layered_sunset_and_peaks",
+    "label": "Qwen Image Layered (Standard Diffusers) — Layer decomposition: Sunset and Peaks",
+    "mode": "layer_decomposition",
+    "modelType": "QwenImageLayeredPipeline",
+    "intentGroup": "reference_control",
+    "thumbnailVariant": "contactSheet",
+    "category": "layers",
+    "inputBindings": [
+      {
+        "id": "source-image",
+        "label": "Source image",
+        "mediaType": "image",
+        "field": "referenceImages",
+        "origin": "user",
+        "requiredAt": "workflow_start",
+        "count": 1
+      }
+    ],
+    "outputKinds": [
+      "image",
+      "json"
+    ],
+    "readinessPolicy": "requires_input",
+    "modelArtifact": {
+      "source": "hub",
+      "value": "Qwen/Qwen-Image-Layered",
+      "revision": "8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+    },
+    "description": "Reproduce the reviewed Sunset and Peaks example with the saved prompt, settings and model revision.",
+    "prompt": "A bold vintage screen print with a burnt orange sun behind teal mountain silhouettes, a deep blue lake, and two dark foreground rocks. Crisp overlapping vector shapes, flat paper colors, square composition.",
+    "negativePrompt": "",
+    "example": {
+      "mediaType": "image",
+      "status": "unverified",
+      "modelRevision": "8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "lockedSeed": 42,
+      "lockedSettings": {
+        "width": 1024,
+        "height": 1024,
+        "steps": 50,
+        "guidanceScale": 4,
+        "strength": 0.8,
+        "outputType": "pil",
+        "maxSequenceLength": 512,
+        "pagScale": 3,
+        "pagAdaptiveScale": 0,
+        "dtype": "bfloat16",
+        "resourceMode": "expert",
+        "quantizationMode": "none",
+        "autoOffload": true,
+        "offloadMode": "model_cpu",
+        "layers": 4
+      },
+      "expectedOutput": {
+        "width": 1024,
+        "height": 1024
+      },
+      "galleryExpectedOutput": {
+        "width": 960,
+        "height": 710
+      },
+      "runtimeEstimate": "300.12 seconds in the saved run"
+    },
+    "requiredBackendCapabilities": [
+      "modules.DiffusersImage.LayerDecompose",
+      "modules.DiffusersImage.LoadPipeline",
+      "modules.DiffusersRuntime.PipelineQuantizationConfigV2",
+      "modules.DiffusersRuntime.DiffusersExecutionRecipe",
+      "modules.Image.Load",
+      "modules.Image.Preview"
+    ],
+    "mediaSlots": [
+      {
+        "id": "result",
+        "label": "Source and four ordered layers",
+        "kind": "image",
+        "role": "output",
+        "placeholder": "Result pending"
+      }
+    ],
+    "recipeSummary": "Reproduce the reviewed Sunset and Peaks example with the saved prompt, settings and model revision.",
+    "runtimeReuseKey": "sha256:canonical-graph-v1:25bb2ac3d10b3d0f539204d2c4d3181764f192882a9c8442efb5ce54b7d8de43"
+  }
+},
 ];

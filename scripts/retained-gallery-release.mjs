@@ -64,7 +64,9 @@ function assertRetainedBatchEvidence({
     association.review.draftProvenanceSha256,
   );
   const inputHash =
-    association.output.inputEncodedSha256?.replace(/^sha256:bytes:/u, '') ?? association.privateSourceSha256;
+    association.output.inputEncodedSha256?.replace(/^sha256:bytes:/u, '') ??
+    association.approvedFiles.approvedSourcePath?.sha256 ??
+    association.privateSourceSha256;
   assert.equal(inputHash, recipe.inputSha256);
   assert.equal(association.approvedFiles.approvedMaskPath?.sha256, recipe.maskSha256);
   assert.equal(association.approvedFiles.approvedGuidePath?.sha256, recipe.guideSha256);
@@ -108,7 +110,18 @@ function assertRetainedBatchEvidence({
   assert.equal(nativeReceipt.inputBinding?.sha256, recipe.inputSha256, label);
   assert.equal(nativeReceipt.maskBinding?.sha256, recipe.maskSha256, label);
   assert.equal(nativeReceipt.guideBinding?.sha256, recipe.guideSha256, label);
-  if (association.output.mediaType === 'image') {
+  if (recipe.workflowId === 'QwenImageLayeredPipeline:layer_decomposition') {
+    const { orderedLayerItems } = association.output;
+    same(nativeReceipt.decodedOutput, { kind: 'image_collection', items: orderedLayerItems }, label);
+    assert.equal(orderedLayerItems.length, recipe.template.example.lockedSettings.layers, label);
+    for (const [index, layer] of orderedLayerItems.entries()) {
+      assert.equal(
+        association.approvedFiles[`approvedLayer${index + 1}Path`]?.sha256,
+        layer.encodedSha256,
+        label,
+      );
+    }
+  } else if (association.output.mediaType === 'image') {
     assert.equal(nativeReceipt.decodedOutput.hash, association.output.decodedMediaHash, label);
   }
   if (association.output.mediaType === 'audio') {

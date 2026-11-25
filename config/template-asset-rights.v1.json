@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:590bbae6d7144864057e6c8e48842d8f113fca303aaebedbb685222da06f3ece",
+  "assetSetId": "sha256:canonical-json:d03def6ad163d7c88ee848138c806e5182df1f9d05589569aa0c504aca63960f",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -4734,6 +4734,33 @@
       "provenanceTemplateId": "qwen_layered_portrait"
     },
     {
+      "path": "template-gallery/inputs/qwen_layered_sunset_and_peaks.source.png",
+      "sha256": "sha256:bytes:67835db7f30072a35b1650c0a84e7f241c0b01fcf2c324964ddcd5f8424008b3",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
       "path": "template-gallery/inputs/qwen_logo_texture.before.webp",
       "sha256": "sha256:bytes:124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c",
       "publishDecision": "approved",
@@ -5850,6 +5877,114 @@
       "provenanceTemplateId": "qwen_layered_portrait"
     },
     {
+      "path": "template-gallery/layers/qwen_layered_sunset_and_peaks.layer-1.webp",
+      "sha256": "sha256:bytes:16ffd9f4a965c95164e51c9ee9d72295bc618972d3c67fb837c2df259187682c",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_sunset_and_peaks.layer-2.webp",
+      "sha256": "sha256:bytes:866609c2307a1f016cac7eefc56401491f58a2e2d57abf0c20b6bdb0f9da057f",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_sunset_and_peaks.layer-3.webp",
+      "sha256": "sha256:bytes:01b27cacca10c2ed53a8b9368d42697c2b13239113790d8291e20ccdb939a896",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
+      "path": "template-gallery/layers/qwen_layered_sunset_and_peaks.layer-4.webp",
+      "sha256": "sha256:bytes:186040c0eb257ec0de53821e6f3b03a7720ab2fe03b54a1d0b71290c2e0eda5c",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
       "path": "template-gallery/lcm_dawn_alpine_lake.webp",
       "sha256": "sha256:bytes:6da406d5e24cb7b9e62c1ee617ff8bca851b0f5da3cc7aef2b2e88ac73bfc8d0",
       "publishDecision": "approved",
@@ -6590,7 +6725,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:2f8c5d5a64412ebbd688cc81deb6d6d89fc9a5a1d8dccfcd6813b82a9e49740e",
+      "sha256": "sha256:bytes:828e7ee86bee6fae816fae7a00da1a7da8544b3429d44769fa888fd8732614c9",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -6607,7 +6742,7 @@
       "reviewedBy": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-25",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "15c604ae5df3abed63c95046a78859adb870f415f45c06a99f58ad652fc0dea2",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained."
     },
     {
@@ -7061,6 +7196,33 @@
       "reviewClass": "per-file-maintainer-accepted-native-three-registration",
       "humanApprovalPacketSHA256": "69c6b3d9b0ea2fcca16ee538f6e75b414b7141658b74f10578758e61360f63fd",
       "provenanceTemplateId": "qwen_layered_portrait"
+    },
+    {
+      "path": "template-gallery/qwen_layered_sunset_and_peaks.png",
+      "sha256": "sha256:bytes:5ccb86b18bc5f8a1c18376c72a0236ba9235a4904fef1a9e4f459ac31e2ede2d",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
     },
     {
       "path": "template-gallery/qwen_logo_texture.webp",
@@ -13726,6 +13888,114 @@
       "reviewClass": "per-file-maintainer-accepted-native-three-registration",
       "provenanceTemplateId": "qwen_layered_portrait",
       "humanApprovalPacketSHA256": "69c6b3d9b0ea2fcca16ee538f6e75b414b7141658b74f10578758e61360f63fd"
+    },
+    {
+      "path": "template-gallery/reviews/qwen_layered_sunset_and_peaks.original-provenance.json",
+      "sha256": "sha256:bytes:9a4c058f2ba7bd3dace465219c32bd818493431063688b00741a9a9c4fb01794",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
+      "path": "template-gallery/reviews/qwen_layered_sunset_and_peaks.original-review.json",
+      "sha256": "sha256:bytes:faf0adb0a9c40691caf3ef8f96765406b3b5058aa9618cca5431ae83529a1bcb",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
+      "path": "template-gallery/reviews/qwen_layered_sunset_and_peaks.quality-review.json",
+      "sha256": "sha256:bytes:326553aed7aab67e3eed777d7919e21fe02ff9ab837edd7f39bd7a2abece77f0",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
+    },
+    {
+      "path": "template-gallery/reviews/qwen_layered_sunset_and_peaks.retained-template-provenance.json",
+      "sha256": "sha256:bytes:d6aaa0a0d9b84d10864e8a783ac82ac167b487f71d185bacd99cc035f8e22105",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceRevision": "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Qwen/Qwen-Image-Layered/blob/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf/README.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Qwen/Qwen-Image-Layered@8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf https://huggingface.co/Qwen/Qwen-Image-Layered/tree/8f0ca708dfff6ba1dd5f2d85d78f8c108a040bcf"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "b16dfc2b7c1c32272b8f79bc1bffbb60376e63f8cf1ab9d0bdf9aea07cccf5cd",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "qwen_layered_sunset_and_peaks"
     },
     {
       "path": "template-gallery/reviews/qwen_logo_texture.quality-review.json",
