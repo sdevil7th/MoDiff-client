@@ -885,6 +885,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.direct-image-inpaint-native-png.v1',
       'modiff.private.saved-image-edit-native-png.v1',
       'modiff.private.saved-image-edit-native-webp.v1',
+      'modiff.private.flux-enamel-edit-native-webp.v1',
       'modiff.private.saved-image-edit-native-host-file.v1',
       'modiff.private.server-retained-image-edit-native-png.v1',
     ].includes(evidence.format)

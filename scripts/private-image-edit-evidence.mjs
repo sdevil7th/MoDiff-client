@@ -33,6 +33,7 @@ export const NATIVE_PNG_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-p
 export const NATIVE_PNG_INPAINT_FORMAT = 'modiff.private.direct-image-inpaint-native-png.v1';
 export const SAVED_PNG_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-png.v1';
 const SAVED_WEBP_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-webp.v1';
+const FLUX_ENAMEL_EDIT_FORMAT = 'modiff.private.flux-enamel-edit-native-webp.v1';
 const SAVED_HOST_FILE_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-host-file.v1';
 const RETAINED_SERVER_EDIT_FORMAT = 'modiff.private.server-retained-image-edit-native-png.v1';
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
@@ -127,6 +128,14 @@ const editRoutes = new Map([
       runtimeContractDigest: retainedCfgInpaint.runtimeContractDigest,
       fullNativeSnapshot: true,
       guidanceObservedAsTrueCfg: true,
+      savedNativeRecipe: {
+        format: FLUX_ENAMEL_EDIT_FORMAT,
+        sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+        originalRegistryHash: '194fdfe25573ca708535e0913337cfee8c1137a2b3860f5c5c5a7c5419951d46',
+        strengthVariant: { original: 0.8, retained: 0.92 },
+        guidanceVariant: { original: 3.5, retained: 4 },
+        nativeSourceMedia: false,
+      },
     },
   ],
   [
@@ -694,6 +703,7 @@ export function bindPrivateImageEditGraph({
   maskInput,
   references = [],
   strengthVariant,
+  guidanceVariant,
   canvasVariant,
   inputPathPrefix = '',
   nativePngEvidence = false,
@@ -731,6 +741,10 @@ export function bindPrivateImageEditGraph({
   if (strengthVariant) {
     assert.equal(canonical.edit.node.params.strength.value, strengthVariant.original);
     canonical.edit.node.params.strength.value = strengthVariant.retained;
+  }
+  if (guidanceVariant) {
+    assert.equal(canonical.edit.node.params.guidance_scale.value, guidanceVariant.original);
+    canonical.edit.node.params.guidance_scale.value = guidanceVariant.retained;
   }
   for (const [field, original, retained] of canvasVariant ?? []) {
     const setting = canonical.canvas.node.params[field];
@@ -965,7 +979,7 @@ async function verifySavedImageSource(bound, output, { input, maskInput, referen
             entry,
             decodedImage,
             bytes,
-            role !== 'mask' && route.format === SAVED_WEBP_EDIT_FORMAT ? 'webp' : 'png',
+            role !== 'mask' && isNativeWebpEdit(route.format) ? 'webp' : 'png',
           );
         }
         return decodedImage;
@@ -1117,6 +1131,10 @@ function verifyRetainedImageUpload(upload, input, decoded, bytes, encoding) {
   }
 }
 
+function isNativeWebpEdit(format) {
+  return format === SAVED_WEBP_EDIT_FORMAT || format === FLUX_ENAMEL_EDIT_FORMAT;
+}
+
 export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {
   const workflowId = manifest.id;
   const { modelRepo, modelRevision, loaderClass } = reviewedEditRoute(workflowId);
@@ -1133,7 +1151,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const hostFileWitness = evidence.format === SAVED_HOST_FILE_EDIT_FORMAT && evidence.format === route.format;
   const savedImage =
     hostFileWitness ||
-    ([SAVED_PNG_EDIT_FORMAT, SAVED_WEBP_EDIT_FORMAT, RETAINED_SERVER_EDIT_FORMAT].includes(route.format) &&
+    ((isNativeWebpEdit(route.format) || [SAVED_PNG_EDIT_FORMAT, RETAINED_SERVER_EDIT_FORMAT].includes(route.format)) &&
       evidence.format === route.format);
   const replayedRegistry = savedImage && !route.originalRegistryHash;
   const referenceCount = route.orderedReferences ?? 0;
@@ -1234,9 +1252,10 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     maskInput,
     references,
     strengthVariant: reviewedSourceRecipe?.strengthVariant ?? route.strengthVariant,
+    guidanceVariant: route.guidanceVariant,
     canvasVariant: route.canvasVariant,
     inputPathPrefix: route.inputPathPrefix,
-    nativePngEvidence: nativeUpload && route.format !== SAVED_WEBP_EDIT_FORMAT,
+    nativePngEvidence: nativeUpload && !isNativeWebpEdit(route.format),
     residentRecipe: route.residentRecipe,
     cpuExecution: route.cpuExecution,
   });
@@ -1440,7 +1459,9 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       ...(bound.canvas
         ? { canvasSizeObserved: true, canvasPixelsObserved: false, derivedMaskPixelsObserved: false }
         : {}),
-      ...(alternate?.nativeSourceMedia === false ? { fullSourceDecodeRecordObserved: false } : {}),
+      ...((alternate?.nativeSourceMedia ?? route.nativeSourceMedia) === false
+        ? { fullSourceDecodeRecordObserved: false }
+        : {}),
       ...(masked
         ? { maskByteWitness: savedImage ? 'native-load-and-upload-with-typed-wire' : 'native-load-consumer-and-upload' }
         : {}),

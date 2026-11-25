@@ -219,6 +219,7 @@ test('private direct image edit graph binds exactly one empty file and one empty
         params: {
           prompt: { value: '' },
           strength: { value: 0.8 },
+          guidance_scale: { value: 3.5 },
           image: { display: 'input', sourceId: 'source', sourceKey: 'image' },
         },
       },
@@ -243,6 +244,15 @@ test('private direct image edit graph binds exactly one empty file and one empty
   assert.throws(() => bindVariant({ ...strengthVariant, original: 0.5 }));
   submitted.nodes.edit.params.strength.value = 0.8;
   assert.throws(() => bindVariant(), /differs outside/u);
+  submitted.nodes.edit.params.guidance_scale.value = 4;
+  assert.throws(invoke, /differs outside/u);
+  const guidanceVariant = { original: 3.5, retained: 4 };
+  const bindGuidance = () => bindPrivateImageEditGraph({ expected, submitted, input, guidanceVariant });
+  assert.equal(bindGuidance().edit.node.params.guidance_scale.value, 4);
+  assert.equal(expected.nodes.edit.params.guidance_scale.value, 3.5);
+  submitted.nodes.edit.params.guidance_scale.value = 5;
+  assert.throws(bindGuidance, /differs outside/u);
+  submitted.nodes.edit.params.guidance_scale.value = 3.5;
   const scoped = { ...input, sourceValue: '@data/images/source.webp' };
   submitted.nodes.source.params.file.value = [scoped.sourceValue];
   assert.equal(
@@ -493,6 +503,7 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['JoyImageEditPipeline:edit_image', 'MODIFF_SAVED_JOY_BASE_EDIT_EVIDENCE', false, []],
   ['StableDiffusionXLPipeline:edit_image', 'MODIFF_SDXL_LINEN_EDIT_EVIDENCE', false, []],
   ['FluxDevPipeline:edit_image', 'MODIFF_SAVED_FLUX_DEV_TEAPOT_EVIDENCE', false, []],
+  ['FluxDevPipeline:edit_image', 'MODIFF_FLUX_ENAMEL_EDIT_EVIDENCE', false, []],
   ['FluxKontextInpaintPipeline:inpaint', 'MODIFF_SAVED_KONTEXT_WINDOW_EVIDENCE', true, []],
   [
     'FluxKontextInpaintPipeline:outpaint',
