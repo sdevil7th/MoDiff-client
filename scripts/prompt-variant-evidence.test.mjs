@@ -504,6 +504,18 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
     'video',
     'real_backend_input_bound_model_variant',
   ],
+  [
+    'LTX2ConditionPipeline:video_to_video',
+    'MODIFF_LTX2_STREAM_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
+  [
+    'LTX2ConditionPipeline:video_to_video',
+    'MODIFF_LTX2_TRAM_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
 ]) {
   const saved = process.env[variable];
   test(`${workflowId} retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {
@@ -552,6 +564,25 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       }
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
+      if (variable === 'MODIFF_LTX2_STREAM_EVIDENCE') {
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.inputBinding.decodedVideo.frames, 25);
+        assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
+        const changedPreparation = structuredClone(evidence);
+        const runPath = join(temp, evidence.runDetail.path);
+        const savedRun = readFileSync(runPath);
+        const run = JSON.parse(savedRun);
+        run.task.runtimePreparation.cleanup.released.models = 0;
+        const changedRun = Buffer.from(JSON.stringify(run));
+        writeFileSync(runPath, changedRun);
+        Object.assign(changedPreparation.runDetail, { bytes: changedRun.length, sha256: digest(changedRun) });
+        writeFileSync(changedPath, JSON.stringify(changedPreparation));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Expected the previous LTX model release/u,
+        );
+        writeFileSync(runPath, savedRun);
+      }
       if (workflowId === 'AllegroPipeline:text_to_video') {
         assert.equal(original.receipt.observationLimits.retainedLoaderOffloadFallback, 'sequential_cpu');
         assert.equal(original.receipt.decodedOutput.frames, 88);
@@ -770,13 +801,15 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         writeFileSync(changedPath, JSON.stringify(substituted));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-          original.receipt.observationLimits.openingImageLoadFieldsObserved
-            ? /Opening image differs from the retained Load fields/u
-            : input.sourceValue.startsWith('@data/videos/')
-              ? /Archived video upload differs/u
-              : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
-                ? /Source bytes differ from the native image load|Archived authoring requires the exact original capture/u
-                : /Source bytes differ from the native image load/u,
+          variable === 'MODIFF_LTX2_STREAM_EVIDENCE'
+            ? /outside the bound prompt and seed/u
+            : original.receipt.observationLimits.openingImageLoadFieldsObserved
+              ? /Opening image differs from the retained Load fields/u
+              : input.sourceValue.startsWith('@data/videos/')
+                ? /Archived video upload differs/u
+                : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
+                  ? /Source bytes differ from the native image load|Archived authoring requires the exact original capture/u
+                  : /Source bytes differ from the native image load/u,
         );
         writeFileSync(path, originalBytes);
       }

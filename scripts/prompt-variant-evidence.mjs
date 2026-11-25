@@ -269,6 +269,18 @@ const ltx2AudioVideoRoutes = [
     imageInputPort: 'reference_images',
     bindsVideoUpload,
     originalVideoFrames: bindsVideoUpload ? 25 : undefined,
+    ...(bindsVideoUpload && {
+      reviewedVideoSources: new Map([
+        // The retained stream recipe conditions at 0.60 to preserve the moving creek.
+        [
+          '3b5e40ac2bf76236d1f901a7a2522addd7c4a1b2701bd89a33c1506b1523bc38',
+          {
+            settings: [['generator', 'strength', 0.8, 0.6]],
+            previousExpertFamily: 'LTXI2VLongMultiPromptPipeline',
+          },
+        ],
+      ]),
+    }),
     executedTask: task,
     previousExpertFamily: undefined,
     chain: [
@@ -1424,6 +1436,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     Number(Boolean(hasSourceInput)) + Number(Boolean(profile.bindsVideoGuide)) + videoConditioners.length,
   );
   const suppliedInput = hasSourceInput ? evidence.inputs[0] : undefined;
+  const reviewedVideoSource = profile.reviewedVideoSources?.get(suppliedInput?.file?.sha256);
   const suppliedGuide = profile.bindsVideoGuide ? evidence.inputs.at(-1) : undefined;
   const suppliedVideos = videoConditioners.length ? evidence.inputs.slice(1) : [];
   for (const input of evidence.inputs) {
@@ -1460,7 +1473,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     run.workflow_snapshot,
   ]);
   const bound = bindPromptVariant(
-    profile,
+    reviewedVideoSource ? { ...profile, reviewedSettings: reviewedVideoSource.settings } : profile,
     expectedApi,
     creator.apiGraph,
     submitted,
@@ -1500,6 +1513,15 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     ...(profile.nativeJointAudio && {
       validatePreparation: (preparation) => {
         const previous = preparation.previousModelFamily;
+        if (reviewedVideoSource && previous === reviewedVideoSource.previousExpertFamily) {
+          assert.equal(preparation.performed, true);
+          assert.ok(preparation.cleanup?.released?.models > 0, 'Expected the previous LTX model release.');
+          validateImagePromptPreparation(preparation, {
+            modelType: profile.modelType,
+            previousExpertFamily: reviewedVideoSource.previousExpertFamily,
+          });
+          return;
+        }
         assert.ok([null, 'LTX2Pipeline', 'LTX2ConditionPipeline'].includes(previous));
         validateUnmodifiedExpertPreparation(preparation, profile.modelType, previous);
       },
