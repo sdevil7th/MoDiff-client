@@ -42,6 +42,59 @@ const chain = [
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const literal = (value) => ({ value, source: 'literal' });
 
+export function verifyConditioningModels({
+  loader,
+  target,
+  pipelineClass,
+  componentClass,
+  conditioningKind = 'controlnet',
+  componentParameter = 'controlnet',
+  completed,
+  hints,
+  runtime,
+  observations,
+}) {
+  const base = { repoId: loader.model_id.value.value, revision: loader.revision.value };
+  const control = { repoId: loader.conditioning_model_id.value.value, revision: loader.conditioning_revision.value };
+  assert.equal(loader.pipeline_class.value, pipelineClass);
+  assert.equal(loader.conditioning_kind.value, conditioningKind);
+  assert.equal(loader.model_id.value.source, 'hub');
+  assert.equal(loader.conditioning_model_id.value.source, 'hub');
+  assert.equal(target.modelSet.length, 2);
+  assert.ok(target.modelSet.some(({ repoId, revision }) => repoId === base.repoId && revision === base.revision));
+  assert.ok(target.modelSet.some(({ repoId, revision }) => repoId === control.repoId && revision === control.revision));
+  assert.notEqual(base.repoId, control.repoId);
+  const { controlledArtifacts, loaderContract, ...completionHints } = completed.runtimeHints;
+  assert.deepEqual(completionHints, hints);
+  assert.deepEqual(loaderContract, ['modules.DiffusersImage.LoadPipeline']);
+  assert.equal(controlledArtifacts.length, 1);
+  const [conditioning] = controlledArtifacts;
+  assert.equal(conditioning.schemaVersion, 1);
+  assert.equal(conditioning.kind, 'diffusers_conditioning_component');
+  assert.equal(conditioning.module, 'modules.DiffusersImage');
+  assert.equal(conditioning.action, 'LoadPipeline');
+  assert.deepEqual(conditioning.artifact, { source: 'hub', repository: control.repoId, revision: control.revision });
+  assert.equal(conditioning.conditioningKind, conditioningKind);
+  assert.equal(conditioning.componentClass, componentClass);
+  assert.equal(conditioning.componentParameter, componentParameter);
+  assert.equal(conditioning.pipelineClass, pipelineClass);
+  assert.equal(conditioning.safeSerializationRequired, true);
+  assert.match(conditioning.descriptorSha256, /^[a-f0-9]{64}$/u);
+  assert.equal(observations.length, 2);
+  for (const model of [base, control]) {
+    const matching = observations.filter((observation) => selectInstalledModelIdentity(observation, model.repoId));
+    assert.equal(matching.length, 1);
+    const [observation] = matching;
+    assert.equal(observation.error, false);
+    assert.equal(observation.runtimeFingerprint, runtime.fingerprint);
+    assert.equal(observation.models.length, 1);
+    assert.equal(observation.models[0].complete, true);
+    assert.equal(observation.models[0].repairRequired, false);
+    assert.equal(selectInstalledModelIdentity(observation, model.repoId).selectedRevision, model.revision);
+  }
+  return control;
+}
+
 function owners(api) {
   assert.equal(api.paths.length, 1);
   const [path] = api.paths;
@@ -216,35 +269,17 @@ export async function readControlInpaintEvidence({ clientRoot, manifest, graph, 
     verifyRetainedPngUpload(json(input.upload), input, decodedInputs[role], read(input.file).bytes);
   }
 
-  const loader = graphRequest.nodes[actual.loader].params;
-  const base = { repoId: loader.model_id.value.value, revision: loader.revision.value };
-  const control = { repoId: loader.conditioning_model_id.value.value, revision: loader.conditioning_revision.value };
-  assert.equal(loader.pipeline_class.value, pipelineClass);
-  assert.deepEqual(target.modelSet, [control, base]);
-  const { controlledArtifacts, loaderContract, ...completionHints } = completed.runtimeHints;
-  assert.deepEqual(completionHints, hints);
-  assert.deepEqual(loaderContract, ['modules.DiffusersImage.LoadPipeline']);
-  assert.equal(controlledArtifacts.length, 1);
-  const [conditioning] = controlledArtifacts;
-  assert.deepEqual(conditioning.artifact, { source: 'hub', repository: control.repoId, revision: control.revision });
-  assert.equal(conditioning.componentClass, 'ControlNetModel');
-  assert.equal(conditioning.pipelineClass, pipelineClass);
-  assert.equal(conditioning.safeSerializationRequired, true);
   const runtime = selectBackendRuntimeFingerprintEvidence([task.runtimeFingerprint]);
-  assert.equal(evidence.modelObservations.length, 2);
-  for (const [expectedModel, reference] of [
-    [base, evidence.modelObservations[0]],
-    [control, evidence.modelObservations[1]],
-  ]) {
-    const observation = json(reference);
-    assert.equal(observation.error, false);
-    assert.equal(observation.runtimeFingerprint, runtime.fingerprint);
-    assert.equal(observation.models.length, 1);
-    assert.equal(observation.models[0].complete, true);
-    assert.equal(observation.models[0].repairRequired, false);
-    const verified = selectInstalledModelIdentity(observation, expectedModel.repoId);
-    assert.equal(verified?.selectedRevision, expectedModel.revision);
-  }
+  const control = verifyConditioningModels({
+    loader: graphRequest.nodes[actual.loader].params,
+    target,
+    pipelineClass,
+    componentClass: 'ControlNetModel',
+    completed,
+    hints,
+    runtime,
+    observations: evidence.modelObservations.map(json),
+  });
   const source = backendSourceEvidence({
     before: json(evidence.backendSourceBefore).identity,
     after: json(evidence.backendSourceAfter).identity,

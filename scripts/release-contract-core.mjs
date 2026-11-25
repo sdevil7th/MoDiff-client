@@ -891,6 +891,10 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     const { readControlInpaintEvidence } = await import('./control-inpaint-evidence.mjs');
     return readControlInpaintEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
   }
+  if (evidence.format === 'modiff.private.saved-control-image-native-png.v1') {
+    const { readSavedControlImageEvidence } = await import('./saved-control-image-evidence.mjs');
+    return readSavedControlImageEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
+  }
   if (evidence.format === 'modiff.private.wan-first-last-frame-variant.v1') {
     const { readWanFirstLastEvidence } = await import('./wan-first-last-evidence.mjs');
     return readWanFirstLastEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
