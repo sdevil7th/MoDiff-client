@@ -259,6 +259,16 @@ export type StudioTemplateId =
   | 'whisper_small_an_open_door'
   | 'smolvlm_red_triangle'
   | 'kandinsky3_ginkgo_on_slate'
+  | 'chroma_terracotta_and_blue'
+  | 'lumina2_larch_on_glacial_pond'
+  | 'hunyuan_dit_coastal_lighthouse'
+  | 'omnigen_tulips_after_rain'
+  | 'hunyuan_pag_burgundy_knight'
+  | 'chroma_restored_cobalt_backdrop'
+  | 'sdxl_pix2pix_pale_amber_glass'
+  | 'sd15_pag_mountain_lake_watercolor'
+  | 'sd15_pag_cobalt_studio_repair'
+  | 'zimage_golden_amber_glass'
   | 'bookshop_at_blue_hour'
   | 'flowers_after_rain'
   | 'forest_ferns'
@@ -1645,7 +1655,11 @@ export type StudioTemplateExample = {
   mediaType: TemplateMediaType;
   status: TemplateExactnessStatus;
   lockedSeed: number;
-  lockedSettings?: Partial<StudioTemplateLockedSettings & Pick<StudioFormState, 'device' | 'speechLanguage'>>;
+  // Retained catalog records may preserve PAG form values alongside their
+  // verified executable settings. Their recipes use the model's PAG defaults.
+  lockedSettings?: Partial<
+    StudioTemplateLockedSettings & Pick<StudioFormState, 'device' | 'speechLanguage' | 'pagScale' | 'pagAdaptiveScale'>
+  >;
   /** Contract for each primary runtime output emitted by the graph. */
   expectedOutput?: TemplateExpectedOutput;
   /** Optional derived gallery-media override, such as a review contact sheet. */

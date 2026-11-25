@@ -198,6 +198,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/chroma_restored_cobalt_backdrop.webp",
+      "size": 119420,
+      "sha256": "sha256:bytes:66e00fa95a61ab9d0f77bce099476dd8ffc569697fe59fb509e8c589402dad9b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/chroma_terracotta_and_blue.webp",
+      "size": 520308,
+      "sha256": "sha256:bytes:e8dc514cf845631e498cbcb1ed841d25fe5e62ede712e2e216faba3ec9155df3",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/cobalt_jug_and_lemons.webp",
       "size": 116500,
       "sha256": "sha256:bytes:a8f9d05f34a6bbf631bccbb3eadf1d18824a772f5f1e038248db7bfdc8c0dbba",
@@ -1406,6 +1428,28 @@
       "height": 960
     },
     {
+      "path": "template-gallery/hunyuan_dit_coastal_lighthouse.webp",
+      "size": 514518,
+      "sha256": "sha256:bytes:849fc3d47db9a23dcea0ec788e336d75e1a5a802e50795e76da3aeb11f8188ef",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/hunyuan_pag_burgundy_knight.webp",
+      "size": 274754,
+      "sha256": "sha256:bytes:9f1c23651fccd748c6caa912c81e5e3983d311374ba2781ee2d27d2b3cf7ae0c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/ace_step_audio_variation.before.wav",
       "size": 5760044,
       "sha256": "sha256:bytes:e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7",
@@ -1430,6 +1474,28 @@
       "size": 329508,
       "sha256": "sha256:bytes:b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab",
       "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/chroma_restored_cobalt_backdrop.before.png",
+      "size": 623267,
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/chroma_restored_cobalt_backdrop.mask.png",
+      "size": 1571,
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
       "purposes": [
         "runtime"
       ],
@@ -1925,6 +1991,39 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/sd15_pag_cobalt_studio_repair.before.png",
+      "size": 271303,
+      "sha256": "sha256:bytes:d143c4922ad498b9bd436d06df424bbff50baf023b93735b53ee401e19e4cbf1",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_pag_cobalt_studio_repair.mask.png",
+      "size": 568,
+      "sha256": "sha256:bytes:71817f4823a73712c8e76e7d832ec382c29ec0a0bf5a472e09639448c082da01",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/sd15_pag_mountain_lake_watercolor.before.png",
+      "size": 1509971,
+      "sha256": "sha256:bytes:88290a96bc8d52f11f2d1e3c0c0e04c2027661816e54b57d7d4739d731ca1e75",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/sdxl_clear_cobalt_backdrop.before.png",
       "size": 623267,
       "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
@@ -1945,6 +2044,17 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_pix2pix_pale_amber_glass.before.png",
+      "size": 494048,
+      "sha256": "sha256:bytes:ebaca95f96d1573e4292ffc65c78eb0dcf8ff9cc8b5a7e11ec81face61b160fb",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 768
     },
     {
       "path": "template-gallery/inputs/spandrel_x2_synthetic_gradient.before.png",
@@ -1992,6 +2102,17 @@
       "purposes": [
         "runtime"
       ]
+    },
+    {
+      "path": "template-gallery/inputs/zimage_golden_amber_glass.before.png",
+      "size": 494048,
+      "sha256": "sha256:bytes:ebaca95f96d1573e4292ffc65c78eb0dcf8ff9cc8b5a7e11ec81face61b160fb",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 768
     },
     {
       "path": "template-gallery/janus_red_enamel_teapot.webp",
@@ -2351,6 +2472,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/lumina2_larch_on_glacial_pond.webp",
+      "size": 457128,
+      "sha256": "sha256:bytes:06491642cdf97ed7676ad237353957a42aa121a11d3f2423c1a4ac4dd6a53ee5",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/lumina_opal_pendant_in_limestone.webp",
       "size": 279270,
       "sha256": "sha256:bytes:3ff57e957b7db5ad20c9c37789a0536437846cdc8eb4737482cb7f026f25fb8e",
@@ -2363,8 +2495,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 304414,
-      "sha256": "sha256:bytes:e754f588addecb7b9d0a35ea3310c591907ab34785115f1bf653f2d92d65c42d",
+      "size": 329020,
+      "sha256": "sha256:bytes:ffa3e887c65d7eb2fe860611ac5eb042cd0645bcb2999b48552d6dd1d5a1eafa",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -2395,6 +2527,17 @@
       "path": "template-gallery/ochre_paper_pavilion.webp",
       "size": 150332,
       "sha256": "sha256:bytes:6fd64eda0cd96aca0f5c9d860fec6fed090426ff1c5cd5c9434a639755c06c1e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/omnigen_tulips_after_rain.webp",
+      "size": 293564,
+      "sha256": "sha256:bytes:57d5f196f4abad78099482deeb23f37810075e6d708e289ca8eb4617acdbdde7",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -3123,6 +3266,78 @@
       "path": "template-gallery/reviews/character_edit.reviewed-provenance.json",
       "size": 106076,
       "sha256": "sha256:bytes:fee8045c51a38c8c73f668af5e3f513d7f0cbbf6978122fe73d2487ab746e110",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_restored_cobalt_backdrop.original-provenance.json",
+      "size": 1422,
+      "sha256": "sha256:bytes:f87d18b81ff559f1298f0c780db0f5eb89e9f8219b4f4aff80c224bc3ef47ce4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_restored_cobalt_backdrop.original-review.json",
+      "size": 851,
+      "sha256": "sha256:bytes:88d1fbfadc2e1d3456f492214f7e51da6bdfd253eb00343fb93990e16c9ba2b9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_restored_cobalt_backdrop.quality-review.json",
+      "size": 2325,
+      "sha256": "sha256:bytes:803c31f4eb055884cbe955856e99f9846f9259ae58ad6c883d686de581c0dd09",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_restored_cobalt_backdrop.retained-template-provenance.json",
+      "size": 4094,
+      "sha256": "sha256:bytes:5232b12615a38293b0d86378fdde3003a61a8f5834de95f395a9364e12dd8fd4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_terracotta_and_blue.original-provenance.json",
+      "size": 1746,
+      "sha256": "sha256:bytes:92a7762ec200afa64405b665dbd19d630b846f55bdb170fc08bfb5c588b1d258",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_terracotta_and_blue.original-review.json",
+      "size": 428,
+      "sha256": "sha256:bytes:d935f45b897cc717315684e2b180097b2e3892d275b4c38e96f2a9ec930ae24f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_terracotta_and_blue.quality-review.json",
+      "size": 2389,
+      "sha256": "sha256:bytes:2435a255e05519ab5b750b4728217d7f938631213ffeeb6da882dcb184e9fa7b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_terracotta_and_blue.retained-template-provenance.json",
+      "size": 3309,
+      "sha256": "sha256:bytes:95d0a67308f0dd2b8024a39cacca3fcfd82611a03d01f76a38a429dd1c4c2077",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -3959,6 +4174,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/hunyuan_dit_coastal_lighthouse.original-provenance.json",
+      "size": 1640,
+      "sha256": "sha256:bytes:cc5c37061625ef1e2bebb027601e368286272e22d4c68cbe63ea690cfe5871ae",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_coastal_lighthouse.original-review.json",
+      "size": 383,
+      "sha256": "sha256:bytes:ce4389778a7088b592491f31f36d88e5ea83a438d937a9b4c4cb61facc98c0ee",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_coastal_lighthouse.quality-review.json",
+      "size": 2318,
+      "sha256": "sha256:bytes:1954559ecbd9de2986fffc2134ea20628a05ada4a85bf2db8a40137a02bedee6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_dit_coastal_lighthouse.retained-template-provenance.json",
+      "size": 3374,
+      "sha256": "sha256:bytes:abcd8ff508cca890cb7be179f5e85d5d0f6eed116e47ec2faad168a174d0d9e0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_pag_burgundy_knight.original-provenance.json",
+      "size": 1758,
+      "sha256": "sha256:bytes:c2c30ee01a229dc1a2eafbc42f8e22d19626533c158ebeb4211ddc64f1ac9a9c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_pag_burgundy_knight.original-review.json",
+      "size": 470,
+      "sha256": "sha256:bytes:b472ba6d082486f25d5c17cf3da66d6d376e9add58924f6d0acbee2e21552588",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_pag_burgundy_knight.quality-review.json",
+      "size": 2609,
+      "sha256": "sha256:bytes:f771127b2e2c8e93148f34e1ab5901488a5c7129f3e8608dcf5a9951f3e12645",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/hunyuan_pag_burgundy_knight.retained-template-provenance.json",
+      "size": 3476,
+      "sha256": "sha256:bytes:dbbb8bbab6db6dd38ae97f532ed1a4c865d0a706c64ea02c4dbafa18b4ce1fea",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/janus_red_enamel_teapot.original-provenance.json",
       "size": 1699,
       "sha256": "sha256:bytes:170501bd8a025aa58341bc17322a6c9f8448be401b7263fdc9c5e9b449d1cb87",
@@ -4247,6 +4534,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/lumina2_larch_on_glacial_pond.original-provenance.json",
+      "size": 1634,
+      "sha256": "sha256:bytes:16e6a8baf35baec6d9e1be13523eaa5606174123b3a61274a257d5fbd14977f3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/lumina2_larch_on_glacial_pond.original-review.json",
+      "size": 410,
+      "sha256": "sha256:bytes:3fa1cbf6c53ed5ce65f8d116779ff9dea32a9c52c8a0877fbb87f77f17237695",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/lumina2_larch_on_glacial_pond.quality-review.json",
+      "size": 2377,
+      "sha256": "sha256:bytes:527cf3a6d6a7820e09450d4a6d533e5d875a914bd2c8771c2060a513f712544e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/lumina2_larch_on_glacial_pond.retained-template-provenance.json",
+      "size": 3324,
+      "sha256": "sha256:bytes:d62e4d0a6e3739b95089003b3095611e419f62bcdc39befbb67aeba846aec0c8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/lumina_opal_pendant_in_limestone.original-provenance.json",
       "size": 2146,
       "sha256": "sha256:bytes:1759ed2ceb7e564e568eced6f47a017c647dd549c2ebdf6e414310d8445a4fd4",
@@ -4367,6 +4690,42 @@
       "path": "template-gallery/reviews/ochre_paper_pavilion.retained-template-provenance.json",
       "size": 3298,
       "sha256": "sha256:bytes:9bd899fe903bcc05057c1ae452c641700d9c36b5001b499dadba6a6a07e36e80",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_tulips_after_rain.original-provenance.json",
+      "size": 1602,
+      "sha256": "sha256:bytes:cd37ada4ad60fccb5fece5fe6ef03dd62ba7a8a66eb141579f8fa424b6265d71",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_tulips_after_rain.original-review.json",
+      "size": 381,
+      "sha256": "sha256:bytes:3353e7fabebfddfc0b47f2ebdd668c0ae01f426d9280d1e4ac03d307582b8cc3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_tulips_after_rain.quality-review.json",
+      "size": 2298,
+      "sha256": "sha256:bytes:333fbf9b662ef072cf2621b37b814052af11c4e219a6640376ba53a2ee4c154f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_tulips_after_rain.retained-template-provenance.json",
+      "size": 3311,
+      "sha256": "sha256:bytes:143b1e03664e187b0815b81948843d05bf9bf2bc664f9c92b7cd78c3b7755245",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5057,6 +5416,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sd15_pag_cobalt_studio_repair.original-provenance.json",
+      "size": 1518,
+      "sha256": "sha256:bytes:b3a227ef5f8f0ea481c446854ce4be387bfe434ff252d9a5d34887ddb2b69b55",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_cobalt_studio_repair.original-review.json",
+      "size": 961,
+      "sha256": "sha256:bytes:dcbaa8d96f77097c5e763de7dd3602e62e4dc4d1302b2d4e7a426ae606b94de3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_cobalt_studio_repair.quality-review.json",
+      "size": 2492,
+      "sha256": "sha256:bytes:ddfa89f8e656c4790a14c0e9dcfffa24a1a034cab5c1bb62390307bfa70bc9fc",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_cobalt_studio_repair.retained-template-provenance.json",
+      "size": 4162,
+      "sha256": "sha256:bytes:e2aade8abc03d27c9f342023c60f27dcbb77f28a94d7605522ae0e862672eeed",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_mountain_lake_watercolor.original-provenance.json",
+      "size": 1302,
+      "sha256": "sha256:bytes:53be917cea31e259033fb99bb4ff99b1b975abc7cad671b8eb2511794545082e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_mountain_lake_watercolor.original-review.json",
+      "size": 886,
+      "sha256": "sha256:bytes:e7226c4664a027c20670f6aa367d4c2751efbe4fc0569afe6cb137349a8f5406",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_mountain_lake_watercolor.quality-review.json",
+      "size": 2463,
+      "sha256": "sha256:bytes:a76c9a2fbcb169ecc2498d87ebc3f17f640cd49c4ca906ffc117a281f885d2af",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sd15_pag_mountain_lake_watercolor.retained-template-provenance.json",
+      "size": 3780,
+      "sha256": "sha256:bytes:f2e571509ee047bbf0f2b7381ba505ec3204898db1f9d4bcf567ad1d661c1c75",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.original-provenance.json",
       "size": 1214,
       "sha256": "sha256:bytes:7361ac84e232f55f7f8e19fae39c5abff4e4df36ac1d1c754ca4d9716d60b1df",
@@ -5087,6 +5518,42 @@
       "path": "template-gallery/reviews/sdxl_clear_cobalt_backdrop.retained-template-provenance.json",
       "size": 3981,
       "sha256": "sha256:bytes:b680690954be3c7784aed2b97110d50706dc3ebb56df9e61611b203150a90b39",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pix2pix_pale_amber_glass.original-provenance.json",
+      "size": 1287,
+      "sha256": "sha256:bytes:173457c9a8b1562e8268041daa277812a04739145a537765cdcb49278cabce33",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pix2pix_pale_amber_glass.original-review.json",
+      "size": 834,
+      "sha256": "sha256:bytes:8f6ce6ee6887bc2d878b762faa054f5a26d6853c11fadc6ca32b0f71fb4ad080",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pix2pix_pale_amber_glass.quality-review.json",
+      "size": 2321,
+      "sha256": "sha256:bytes:214f457d0759bb55820c36572a44b2cf144ac11d6b87180326a1dd72ec903e12",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pix2pix_pale_amber_glass.retained-template-provenance.json",
+      "size": 3750,
+      "sha256": "sha256:bytes:571dbef32e64cbea069c54c9a71408eb47cbf6854dbbb10e9060dfe04758cf99",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5521,6 +5988,42 @@
       "path": "template-gallery/reviews/z_image_quick_concept.reviewed-provenance.json",
       "size": 101145,
       "sha256": "sha256:bytes:c31016b24e0b3935d7963b97d0fca05e9e8d208d2c9ae872ee5602d40173e8ec",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_golden_amber_glass.original-provenance.json",
+      "size": 1214,
+      "sha256": "sha256:bytes:38001f1b676cbc30bb15e344e3dcb30102e11f204aa09a81002f6eb9d973b8a3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_golden_amber_glass.original-review.json",
+      "size": 795,
+      "sha256": "sha256:bytes:1ada33599f214a4d4a2cb3076823b66328fd5d17f1bb816259dcf37b6c474dd1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_golden_amber_glass.quality-review.json",
+      "size": 2343,
+      "sha256": "sha256:bytes:9eccd9055e341b7ef305b74e6103d70458bece7336d79ce64f2dd3f1bf7cdb1d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_golden_amber_glass.retained-template-provenance.json",
+      "size": 3660,
+      "sha256": "sha256:bytes:b7b4cc1441995324830d2c34d883b4bcb86b62faf445afbc15ea77b7855d024a",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6193,6 +6696,28 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/sd15_pag_cobalt_studio_repair.webp",
+      "size": 45174,
+      "sha256": "sha256:bytes:eb511fda2b5d227685893fac25fd214c4b4a25ac7c1f61e0205983ac657f82de",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 512,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/sd15_pag_mountain_lake_watercolor.webp",
+      "size": 449078,
+      "sha256": "sha256:bytes:d3956b48ecf149f19ce45b003a6216ab7e0ca1771ba0aaec1fa420cac710158f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/sdxl_clear_cobalt_backdrop.webp",
       "size": 119828,
       "sha256": "sha256:bytes:98b57164602d8cfd6b61c689fa26770421f9dce8a7b9c23bc879a49d4def1004",
@@ -6202,6 +6727,17 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/sdxl_pix2pix_pale_amber_glass.webp",
+      "size": 135420,
+      "sha256": "sha256:bytes:a56a057711364a3b747c202652999f5fcde7ee1b91c0c7a2a92e6ca26c6c3dff",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 768
     },
     {
       "path": "template-gallery/sdxl_turbo_orange_caps.webp",
@@ -7005,11 +7541,22 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/zimage_golden_amber_glass.webp",
+      "size": 84094,
+      "sha256": "sha256:bytes:b4894bf9bead0f509fa4e7ef27eccd341b3d855dfe74fe70be3117d184eef990",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 640,
+      "height": 640
     }
   ],
-  "assetSetId": "sha256:canonical-json:690ea1522e3b4ffd3d72bc5911f02763c842fa3d23428ef123db0dbe0dca3a91",
+  "assetSetId": "sha256:canonical-json:a5449a1ff8625c700e811308f7c16caf8888d379889895381ee4934d485c2cd6",
   "status": "ready",
-  "assetCount": 715,
-  "totalBytes": 1046033259,
+  "assetCount": 772,
+  "totalBytes": 1052427796,
   "missingAssets": []
 }

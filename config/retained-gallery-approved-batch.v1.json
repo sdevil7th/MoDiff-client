@@ -318,5 +318,145 @@
       "width": 1024,
       "height": 1024
     }
+  },
+  "chroma_terracotta_and_blue": {
+    "associationSha256": "10fc52e4c1d91ff42b95bb15f906811b389358a1339a5f3dda2d5aac027ef623",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "5221fc5d744cbdcf1aa29d1fa9b27cddc0fcbd75983c24061e6218d41621617d",
+    "capturedAt": "2026-11-24T22:50:29.995Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "lumina2_larch_on_glacial_pond": {
+    "associationSha256": "044a0926d4d470bf68094ef94e300daae045c80682fd038cb355d53da8579a61",
+    "backendSourceFingerprint": "sha256:backend-source-v1:057b165c6ef6225461649a47077562dffad098a2d37d639a13bf0e73088d79ab",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "c1fecc495b278628b9539fb84079b73b70db420165a7e151def065731920853e",
+    "capturedAt": "2026-11-23T14:40:20.880Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "hunyuan_dit_coastal_lighthouse": {
+    "associationSha256": "0a517d585070188fbf5a3ddfb83e18bf1090b6724d5bcad57687925f5e365dc6",
+    "backendSourceFingerprint": "sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "59e80838a60338b27351f10a7cc8478dbe1ae81e04d5d7718ee37aa556585788",
+    "capturedAt": "2026-11-23T15:09:01.447Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "omnigen_tulips_after_rain": {
+    "associationSha256": "10f3e3764210089f2a3f43281d45fb24e965f8b035e8dc993d720ceceff9e9a6",
+    "backendSourceFingerprint": "sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "e3ceb2dc096775601a6e65b7ab61f5ccc64658d2a69586f3c6a13f2efe1a973c",
+    "capturedAt": "2026-11-23T15:17:38.630Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "hunyuan_pag_burgundy_knight": {
+    "associationSha256": "44e66b22cd75a7de53b8f673fc9c91020d54828113d6ccf926080e3ac0ca2309",
+    "backendSourceFingerprint": "sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "ff4d1b75e172f8fdb8a45199626ed40a07fe634669e03d1591091a10c176edfe",
+    "capturedAt": "2026-11-23T15:11:08.624Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "chroma_restored_cobalt_backdrop": {
+    "associationSha256": "c4f821d7b34dfea02133ac9f9239b52c403d3a03422c82b0b1795a4fe8e92b9d",
+    "backendSourceFingerprint": "sha256:backend-source-v1:43f2ed10792fc6167b963166287cf7d5a0429afa26029e6455b0418e2123be86",
+    "backendContractFingerprint": "sha256:backend-contract-v1:e7a7aa3acbdedd686fa7e7a9d4bcc39c1709ba1fec38f047d63ff83558a85c18",
+    "templateRevisionHash": "d3c99f24317aaf93b0f25f2681bdc56f456d69554e47a522c0c04487602149f2",
+    "capturedAt": "2026-11-23T22:32:10.177Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sdxl_pix2pix_pale_amber_glass": {
+    "associationSha256": "e0d2d7d05a9109a8ae527c819ebaffca93dec272c54efcfb0b05e41a144d7bfb",
+    "backendSourceFingerprint": "sha256:backend-source-v1:55da4a68212923ee8a67e70754f46193288e210bce08ab4ae8c06834a7a76995",
+    "backendContractFingerprint": "sha256:backend-contract-v1:bd364fcd29020d51bb61f5f9bf320cf0bf562e718c645c21ffac8ed5a47b740d",
+    "templateRevisionHash": "897fb59d568ceba3ef8d85cf1141f79002522b111dbc6ffa67ad51a9acf88495",
+    "capturedAt": "2026-11-23T16:05:26.964Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 768,
+      "height": 768
+    },
+    "inputSize": {
+      "width": 768,
+      "height": 768
+    }
+  },
+  "sd15_pag_mountain_lake_watercolor": {
+    "associationSha256": "fbe3707bb87008593c1bc4ec367915fa2d558aa9ba9581f94dca839dabe5117b",
+    "backendSourceFingerprint": "sha256:backend-source-v1:3b073e3f6f5e9489e06116f277ee4a9e878b8f0c6258efc93c60be9a04513cb5",
+    "backendContractFingerprint": "sha256:backend-contract-v1:bd364fcd29020d51bb61f5f9bf320cf0bf562e718c645c21ffac8ed5a47b740d",
+    "templateRevisionHash": "6de709bbcfb3ed6e061541584be28f5b7ed05e1170dcdaa69e2deb4fee822154",
+    "capturedAt": "2026-11-23T20:28:31.760Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "sd15_pag_cobalt_studio_repair": {
+    "associationSha256": "395e41a6da16e9f1a31323b91390e4578428f3d0ea12054b59378709d32a9c52",
+    "backendSourceFingerprint": "sha256:backend-source-v1:1f2f7e00ce4a500ba52d5b729f43d4321af6f931125a3f266f307cf80038c12e",
+    "backendContractFingerprint": "sha256:backend-contract-v1:61201b43ea68d3fd347fbc374e292b5839be28f908b473bcb69f5ec1f8b87736",
+    "templateRevisionHash": "8373d87ab42e130142a163e3c60733f3f2511b7a77ffad1d9129607bcfba2562",
+    "capturedAt": "2026-11-23T14:32:05.292Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 512,
+      "height": 512
+    },
+    "inputSize": {
+      "width": 512,
+      "height": 512
+    }
+  },
+  "zimage_golden_amber_glass": {
+    "associationSha256": "238b088d3b9aaad1955b07a3291cf8875a928136444b9642114527b3d803bc38",
+    "backendSourceFingerprint": "sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:315617df789a8a5f57426692318e197c13786098718305edd1927471b5b9c194",
+    "templateRevisionHash": "303a0b1b64a2e1234aeca85941a07eea2157707c8436442a5cf00aedd68c6d97",
+    "capturedAt": "2026-11-23T17:46:24.489Z",
+    "outputExtension": "webp",
+    "outputSize": {
+      "width": 640,
+      "height": 640
+    },
+    "inputSize": {
+      "width": 768,
+      "height": 768
+    }
   }
 }

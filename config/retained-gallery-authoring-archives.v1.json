@@ -4,6 +4,16 @@
     "bytes": 4108,
     "sha256": "945515d6dee658ed3cf4503b674b33d73149a091f98ecb438a01970c5c08d820"
   },
+  "ChromaInpaintPipeline:inpaint": {
+    "descriptorSha256": "a85451bc142a3f5ef44cc5e8cdb1fcc0f000872241efe5bda751638d36215919",
+    "bytes": 5060,
+    "sha256": "466c485a4ad317122c23b4da06c89566d8a4015fd8d6dad379eab318b98219f0"
+  },
+  "ChromaPipeline:text_to_image": {
+    "descriptorSha256": "bad53850d48ffdaffa0896ec019e295c349577ee86d169e1ea1da8752324a215",
+    "bytes": 4049,
+    "sha256": "7fd3187b78e4f1c730522dd5743e91503e17bd62e03bb133b76b4d636213ac3f"
+  },
   "CogView3PlusPipeline:text_to_image": {
     "descriptorSha256": "19c1e125e259b8b0e22a5bf5c03ab7c105a8302fc69b7e63c61796d7b7496744",
     "bytes": 4135,
@@ -54,6 +64,16 @@
     "bytes": 3869,
     "sha256": "9fa0b0086341bdb652c97b70521b5647977e1922b7bc0858c7b803e90ea8c4a7"
   },
+  "HunyuanDiTPAGPipeline:text_to_image": {
+    "descriptorSha256": "aa6b64f4a942adbb11c83cbaba89940fd03ed7dbf83175e8e1d17d32291454d3",
+    "bytes": 4127,
+    "sha256": "a16cf339667b330edaa3aa5931d9bbd1937971e0d2a1ca3de5f16ad942ed06ea"
+  },
+  "HunyuanDiTPipeline:text_to_image": {
+    "descriptorSha256": "9e8d30a1d20d721f8aeab6b9172f7f50403b1e8e855d83af17e6430fe97d9650",
+    "bytes": 4161,
+    "sha256": "5a9d07fe3092ac35356d661488b4169d98799f55c17a69753572480375557629"
+  },
   "Kandinsky3Pipeline:text_to_image": {
     "descriptorSha256": "41b3b13c0f66711ffa3ac065f7a990bee824fc52db69940b8f75e0f7f79bdd38",
     "bytes": 4089,
@@ -64,6 +84,11 @@
     "bytes": 4229,
     "sha256": "a5cb8dddeaf3f82f84025ceeded8a59c186a33e20f8cff733cbd32624e9e3a59"
   },
+  "Lumina2Pipeline:text_to_image": {
+    "descriptorSha256": "68ec9070dfda6f4bcf5990d404e3032b9c9d0add8965753e0a162bfdd67c09f7",
+    "bytes": 4071,
+    "sha256": "68fae68c75bf2615c9a76150f0c1a5869f021377de096191021f426948a67d4e"
+  },
   "LuminaPipeline:text_to_image": {
     "descriptorSha256": "cbb5826ba9e44f9608ef88d6c52757cbd040c9bcb611f88e5892a2e93c79c8d3",
     "bytes": 4167,
@@ -73,6 +98,11 @@
     "descriptorSha256": "adc6e23f1c2082c72ea9e0697cc87f4e7da5d8cc01540d06f0d6e08acea81a04",
     "bytes": 4121,
     "sha256": "9dc242dd86b1a286c5822328a3c0a05dd0f077fdefc17990a5cf086de9e53f3d"
+  },
+  "OmniGenPipeline:text_to_image": {
+    "descriptorSha256": "c78e90591a491385de1f96d89b6aed18dee1367eae36bfcb0b27ee3cecaf8deb",
+    "bytes": 3854,
+    "sha256": "4278dc11e860850b1c03d37c253c0d65e9be2bf71ba90c25e974fef1f63a9b4a"
   },
   "OvisImagePipeline:text_to_image": {
     "descriptorSha256": "37580a349097d0a2e201a6daa48f3cc541c62260306e4153c4995e2d0615a72c",
@@ -94,6 +124,16 @@
     "bytes": 4134,
     "sha256": "6c40aefc3fd65ed6bf87626873bb0377e7fba8ff4fbdbc5c0d3e4e0e3531968a"
   },
+  "StableDiffusionPAGPipeline:edit_image": {
+    "descriptorSha256": "b4929658c32ef7bad47e50f647abec0e6159c54374a1baea1e05d3f93b66effb",
+    "bytes": 4590,
+    "sha256": "4d640d981f4a674d4ca388956a7f89044148f071a8c65e4b280e4ccb0a45f73d"
+  },
+  "StableDiffusionPAGPipeline:inpaint": {
+    "descriptorSha256": "101e965b702766dd0949054f6189d20ca2895fdd05559626eb270f8e12e65069",
+    "bytes": 5258,
+    "sha256": "93cb60c1cc69b6e6632e771f39e01750f60637ba8eeaf3b6c710cde3384ab522"
+  },
   "StableDiffusionPAGPipeline:text_to_image": {
     "descriptorSha256": "ad23b58153c3301fd0125a0a66e9e110a61a16e0c8833563cd3ca51109fe5056",
     "bytes": 4433,
@@ -114,6 +154,11 @@
     "bytes": 4194,
     "sha256": "642ccf45dd15946ead72c9666b394a9932d92d0dca64f13dfae0284edc55b9c5"
   },
+  "StableDiffusionXLInstructPix2PixPipeline:edit_image": {
+    "descriptorSha256": "4655ea8f1f9b86921f07658644599ebe08034ffbe93e081eb19fd08faa214b61",
+    "bytes": 4878,
+    "sha256": "9ac80428595d712acd5eff6fac00c4958f5901ce54d067857616736e8cee29bd"
+  },
   "StableDiffusionXLPAGPipeline:text_to_image": {
     "descriptorSha256": "e5bcc2b64bfddcadc334c20f0c125fdcae68760cde1ff60ec10d1a22ce81a997",
     "bytes": 4412,
@@ -133,5 +178,10 @@
     "descriptorSha256": "c530e10728c8c3871c1f6d6e58589996b8e926729d7c57e43fa36d020660e3dd",
     "bytes": 4169,
     "sha256": "b5dfc591a73c4d04d8f540c4617c0f7820a4d8553a31ef9dd030837fb72325b2"
+  },
+  "ZImageModularPipeline:edit_image": {
+    "descriptorSha256": "449bc094096e644f4070a681e382650d133c0854ec6770cfbb736f0299e04179",
+    "bytes": 4729,
+    "sha256": "e523fa1d31a2bb0c2ccbd2525ac0cce68fe57adc77332446239ddf62683f8a05"
   }
 }
