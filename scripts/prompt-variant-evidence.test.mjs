@@ -386,7 +386,14 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['CogVideoXPipeline:text_to_video', 'MODIFF_COGVIDEOX_VIDEO_PROMPT_EVIDENCE', 'video'],
+  [
+    'CogVideoXVideoToVideoPipeline:video_to_video',
+    'MODIFF_COGVIDEOX_EDIT_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
   ['LongCatAudioDiTPipeline:text_to_audio', 'MODIFF_LONGCAT_AUDIO_PROMPT_EVIDENCE', 'audio'],
+  ['AudioLDM2Pipeline:text_to_audio', 'MODIFF_AUDIOLDM2_PROMPT_EVIDENCE', 'audio'],
   ['CogView3PlusPipeline:text_to_image', 'MODIFF_COGVIEW3_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLTurboPipeline:text_to_image', 'MODIFF_SDXL_TURBO_PROMPT_EVIDENCE', 'image'],
   ['SanaPAGPipeline:text_to_image', 'MODIFF_SANA_PAG_PROMPT_EVIDENCE', 'image'],
@@ -438,7 +445,8 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       const evidence = JSON.parse(original.descriptorBytes);
       const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
       const cogVideo = workflowId === 'CogVideoXPipeline:text_to_video';
-      if (route?.retainedObservationSource || workflowId === 'Wan22Pipeline:text_to_video' || cogVideo) {
+      const audioLdm = workflowId === 'AudioLDM2Pipeline:text_to_audio';
+      if (route?.retainedObservationSource || workflowId === 'Wan22Pipeline:text_to_video' || cogVideo || audioLdm) {
         assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
         if (route?.typedOnly) {
           assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, route.typedOnly);
@@ -460,6 +468,10 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
           assert.equal(fields.vae_tiling.value, true);
           fields.vae_tiling.value = false;
           expectedFailure = /Actual consumed fields differ for DiffusersExecutionRecipe/u;
+        } else if (audioLdm) {
+          assert.equal(sampler.fields.num_inference_steps.value, 200);
+          sampler.fields.num_inference_steps.value = 8;
+          expectedFailure = /Actual consumed fields differ for Generate/u;
         } else {
           assert.equal(sampler.fields.secondary_guidance_scale.value, 3.5);
           sampler.fields.secondary_guidance_scale.value = 0;
@@ -526,9 +538,11 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         writeFileSync(changedPath, JSON.stringify(substituted));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-          workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
-            ? /Caption source bytes differ from the native load|Archived authoring requires the exact original capture/u
-            : /Caption source bytes differ from the native load/u,
+          workflowId === 'CogVideoXVideoToVideoPipeline:video_to_video'
+            ? /Archived video upload differs/u
+            : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
+              ? /Caption source bytes differ from the native load|Archived authoring requires the exact original capture/u
+              : /Caption source bytes differ from the native load/u,
         );
         writeFileSync(path, originalBytes);
       }

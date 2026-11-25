@@ -173,6 +173,21 @@ const audioRoute = {
   ],
 };
 
+const audioLdmRoute = {
+  ...audioRoute,
+  format: 'modiff.private.audioldm2-prompt-variant.v1',
+  workflowId: 'AudioLDM2Pipeline:text_to_audio',
+  modelType: 'AudioLDM2Pipeline',
+  previousExpertFamily: 'StableDiffusionXLControlNetInpaintPipeline',
+  modelRepo: 'cvssp/audioldm2',
+  modelRevision: 'c8e7e189d324425c05c4c2f81214041ef4107983',
+  chain: audioRoute.chain.map((stage) =>
+    stage[0] === 'generator'
+      ? ['generator', 'modules.DiffusersAudio', 'Generate', 'prompt seed audio_duration sample_rate']
+      : stage,
+  ),
+};
+
 const wanA14BRoute = {
   format: 'modiff.private.wan-a14b-video-prompt-variant.v1',
   workflowId: 'Wan22Pipeline:text_to_video',
@@ -223,6 +238,22 @@ const cogVideoRoute = {
   retainedVaeTiling: true,
 };
 
+const cogVideoEditRoute = {
+  ...cogVideoRoute,
+  format: 'modiff.private.cogvideox-source-video-variant.v1',
+  workflowId: 'CogVideoXVideoToVideoPipeline:video_to_video',
+  modelType: 'CogVideoXVideoToVideoPipeline',
+  retainedVaeTiling: false,
+  executedTask: 'video_to_video',
+  bindsVideoUpload: true,
+  sourceFingerprint: 'sha256:backend-source-v1:43f2ed10792fc6167b963166287cf7d5a0429afa26029e6455b0418e2123be86',
+  chain: [
+    ['source', 'modules.Video', 'Load', ''],
+    ['normalize', 'modules.VideoConditioning', 'Normalize', 'height num_frames width'],
+    ...cogVideoRoute.chain,
+  ],
+};
+
 const imagePromptRoute = {
   outputKind: 'image',
   displayType: 'image',
@@ -265,7 +296,7 @@ function owners(profile, api) {
       assert.equal(node.module, module);
       assert.equal(node.action, action);
       const fileFields = Object.keys(node.params).filter((name) => node.params[name].display === 'filebrowser');
-      same(fileFields, role === 'source' && profile.bindsImage ? ['file'] : []);
+      same(fileFields, role === 'source' && (profile.bindsImage || profile.bindsVideoUpload) ? ['file'] : []);
       return [role, { id, node, capturedFields: capturedFields ? capturedFields.split(' ') : [] }];
     }),
   );
@@ -309,6 +340,14 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
     assert.equal(params.alpha_channel.value, 'ignore');
     same(expectedInputs.images, { display: 'input', sourceId: expectedOwners.source.id, sourceKey: 'image' });
     params.file.value = [sourceValue];
+  }
+  if (profile.bindsVideoUpload) {
+    assert.match(sourceValue, /^@data\/videos\/[a-z0-9_-]{1,120}[.]mp4$/iu);
+    const { source, normalize } = expectedOwners;
+    same(source.node.params.file, { display: 'filebrowser', value: '' });
+    same(normalize.node.params.video, { display: 'input', sourceId: source.id, sourceKey: 'video' });
+    same(expectedInputs.video, { display: 'input', sourceId: normalize.id, sourceKey: 'output' });
+    source.node.params.file.value = [sourceValue];
   }
   const promptSlot = expectedInputs.prompt;
   assert.equal(
@@ -406,6 +445,17 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
         output_type: 'pt',
       }))
         expected[name] = { value, source: 'literal' };
+    }
+    if (profile === audioLdmRoute && id === bound.generator.id) {
+      assert.equal(node.params.negative_prompt.value, '');
+      expected.negative_prompt = { value: null, source: 'literal' };
+      expected.output_type = { value: 'pt', source: 'literal' };
+      // The generic audio contract exposes these controls for AudioLDM2.
+      // The ACE-style fallback values in the same graph are inactive.
+      assert.equal(node.params.audio_contract.value.fieldParams.num_inference_steps.hidden, true);
+      assert.equal(node.params.audio_contract.value.fieldParams.guidance_scale.hidden, true);
+      expected.num_inference_steps = { value: node.params.stable_audio_steps.value, source: 'literal' };
+      expected.guidance_scale = { value: node.params.stable_audio_guidance.value, source: 'literal' };
     }
     same(row.fields, expected, `Actual consumed fields differ for ${node.action}.`);
   }
@@ -744,18 +794,21 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         smolVlmCaptionRoute,
         videoRoute,
         audioRoute,
+        audioLdmRoute,
         wanA14BRoute,
         cogVideoRoute,
+        cogVideoEditRoute,
       ].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
-  const generatedVideo = profile === wanA14BRoute || profile === cogVideoRoute;
+  const generatedVideo = profile === wanA14BRoute || profile === cogVideoRoute || profile === cogVideoEditRoute;
+  const generatedAudio = profile === audioRoute || profile === audioLdmRoute;
   const requiresOriginalRequest =
     imageRoute !== undefined ||
     profile === janusTextRoute ||
     profile === janusImageRoute ||
     profile === janusCaptionRoute ||
     profile === smolVlmCaptionRoute ||
-    profile === audioRoute ||
+    generatedAudio ||
     generatedVideo;
   const sampledCpuMemory = profile.executionDevice === 'cpu:0';
   same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
@@ -788,9 +841,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   assert.equal(evidence.format, profile.format);
   assert.equal(evidence.workflowId, profile.workflowId);
   assert.ok(Array.isArray(evidence.inputs));
-  assert.equal(evidence.inputs.length, profile.bindsImage ? 1 : 0);
-  const [suppliedImage] = evidence.inputs;
-  if (suppliedImage) keys(suppliedImage, ['sourceValue', 'file', 'upload']);
+  assert.equal(evidence.inputs.length, profile.bindsImage || profile.bindsVideoUpload ? 1 : 0);
+  const [suppliedInput] = evidence.inputs;
+  if (suppliedInput) keys(suppliedInput, ['sourceValue', 'file', 'upload']);
   assert.equal(evidence.modelObservations.length, 1);
   assert.equal(evidence.outputs.length, 1);
   const [outputRef] = evidence.outputs;
@@ -820,7 +873,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     creator.apiGraph,
     submitted,
     evidence.originalGraphHash,
-    suppliedImage?.sourceValue,
+    suppliedInput?.sourceValue,
   );
   for (const api of [creatorApi, outputApi, runApi]) {
     graphEnvelope(api);
@@ -844,7 +897,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
           graphAcknowledgment: json(evidence.graphAcknowledgment),
         }
       : {}),
-    ...(imageRoute || generatedVideo
+    ...(imageRoute || generatedVideo || profile === audioLdmRoute
       ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
       : {}),
     ...(profile === videoRoute || profile === audioRoute
@@ -870,6 +923,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     runtimeFingerprint: task.runtimeFingerprint,
   });
   same(source.blockers, [], 'Backend source differs from the running process.');
+  if (profile.sourceFingerprint) {
+    assert.equal(source.identity.fingerprint, profile.sourceFingerprint, 'The archived source fingerprint differs.');
+  }
   const accounting = imageRoute
     ? directImagePromptAccountingExecutionPlan({
         expectedApiGraph: bound.expected,
@@ -879,17 +935,17 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         runtimeEvidence: { run: accountingRun, output, graphCompleted, sourceFingerprint: source.identity.fingerprint },
       })
     : null;
-  const inputBinding = accounting ? undefined : validateConsumedPromptVariant(profile, bound, output, suppliedImage);
-  if (suppliedImage) {
-    const source = read(suppliedImage.file, 2 * 1024 * 1024);
-    const upload = json(suppliedImage.upload);
+  let inputBinding = accounting ? undefined : validateConsumedPromptVariant(profile, bound, output, suppliedInput);
+  if (profile.bindsImage) {
+    const source = read(suppliedInput.file, 2 * 1024 * 1024);
+    const upload = json(suppliedInput.upload);
     const { width, height } = inputBinding.decodedImage;
     assert.equal(upload.error, false);
-    assert.equal(upload.path, suppliedImage.sourceValue);
+    assert.equal(upload.path, suppliedInput.sourceValue);
     same(
       upload.media,
       {
-        filename: suppliedImage.sourceValue.split('/').at(-1),
+        filename: suppliedInput.sourceValue.split('/').at(-1),
         extension: '.png',
         sizeBytes: source.bytes.length,
         sha256: inputBinding.sha256,
@@ -902,6 +958,43 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       'Caption input differs from the original image upload.',
     );
   }
+  if (profile.bindsVideoUpload) {
+    const { bytes, file } = read(suppliedInput.file);
+    const upload = json(suppliedInput.upload);
+    const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
+    const decoded = await decodedMediaHash(file, 'video');
+    assert.equal(upload.error, false);
+    assert.equal(upload.path, suppliedInput.sourceValue);
+    same(
+      upload.media,
+      {
+        filename: suppliedInput.sourceValue.split('/').at(-1),
+        extension: '.mp4',
+        sizeBytes: bytes.length,
+        sha256: digest(bytes),
+        kind: 'video',
+        mimeType: 'video/mp4',
+        durationSeconds: decoded.durationSeconds,
+        width: decoded.width,
+        height: decoded.height,
+      },
+      'Archived video upload differs from the retained bytes.',
+    );
+    assert.equal(decoded.frames, bound.normalize.node.params.num_frames.value);
+    assert.equal(decoded.hasAudio, false);
+    inputBinding = {
+      nodeId: bound.source.id,
+      field: 'file',
+      sha256: digest(bytes),
+      decodedVideo: {
+        width: decoded.width,
+        height: decoded.height,
+        frames: decoded.frames,
+        fps: decoded.fps,
+        hash: decoded.hash,
+      },
+    };
+  }
   const nodes = json(evidence.nodes);
   const backendContract = backendContractIdentity(nodes, bound.identity.canonicalGraph);
   assert.ok(backendContract.fingerprint, 'Native backend contract fingerprint is missing.');
@@ -911,7 +1004,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     assert.equal(contract.action, action);
     same(
       Object.keys(contract.params).filter((name) => contract.params[name].display === 'filebrowser'),
-      role === 'source' && profile.bindsImage ? ['file'] : [],
+      role === 'source' && (profile.bindsImage || profile.bindsVideoUpload) ? ['file'] : [],
     );
   }
   const { runtime, measurement } = validateNativePromptRuntime(
@@ -962,15 +1055,19 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         fps: bound.preview.node.params.fps.value,
       });
     } else decodedOutput = validatePromptVariantVideo(decoded, item, bound);
-  } else if (profile === audioRoute) {
+  } else if (generatedAudio) {
     assert.equal(media.bytes.toString('ascii', 0, 4), 'RIFF');
     assert.equal(media.bytes.toString('ascii', 8, 12), 'WAVE');
     const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
     const decoded = await decodedMediaHash(media.file, 'audio');
-    assert.equal(decoded.sourceSampleRate, 24000);
+    const rate = bound.generator.node.params.sample_rate.value;
+    const duration = bound.generator.node.params.audio_duration.value;
+    assert.equal(rate, profile === audioRoute ? 24000 : 16000);
+    assert.equal(duration, profile === audioRoute ? 5 : 10);
+    assert.equal(decoded.sourceSampleRate, rate);
     assert.equal(decoded.channels, 1);
     assert.equal(decoded.clippedSampleRatio, 0);
-    assert.ok(decoded.durationSeconds >= 4.9 && decoded.durationSeconds <= 5);
+    assert.ok(decoded.durationSeconds >= duration - 0.1 && decoded.durationSeconds <= duration);
     assert.ok(decoded.peakAmplitude > 0.05 && decoded.silenceRatio < 0.75);
     decodedOutput = {
       kind: 'audio',
@@ -1018,6 +1115,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         ? { configuredUnobservedControls: [...imageRoute.typedOnly] }
         : {}),
       ...(sampledCpuMemory ? { memoryMeasurement: 'sampled_worker_rss' } : {}),
+      ...(profile.bindsVideoUpload
+        ? { sourceVideoByteWitness: 'original-upload-and-typed-wire', normalizedConsumerFramesObserved: false }
+        : {}),
     },
     qualificationClaims: {
       publicTemplate: false,

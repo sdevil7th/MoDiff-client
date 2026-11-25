@@ -28,6 +28,7 @@ export const PRIVATE_IMAGE_EDIT_FORMAT = 'modiff.private.lcm-source-bound-edit.v
 export const DIRECT_IMAGE_EDIT_FORMAT = 'modiff.private.direct-image-edit-source-bound.v1';
 export const NATIVE_PNG_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-png.v1';
 export const NATIVE_PNG_INPAINT_FORMAT = 'modiff.private.direct-image-inpaint-native-png.v1';
+export const SAVED_PNG_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-png.v1';
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
 const imageGeometry = ['height', 'max_sequence_length', 'width'];
 const stableDiffusionEditConsumed = [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'];
@@ -118,6 +119,41 @@ const editRoutes = new Map([
       strengthVariant: { original: 0.8, retained: 1 },
     },
   ],
+  [
+    'ChromaInpaintPipeline:inpaint',
+    {
+      modelRepo: 'lodestones/Chroma1-HD',
+      modelRevision: '0e0c60ece1e82b17cb7f77342d765ba5024c40c0',
+      loaderClass: 'ChromaInpaintPipeline',
+      format: SAVED_PNG_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-inpaint-observation.v1',
+      consumed: [...stableDiffusionEditConsumed, ...imageGeometry],
+      sourceFingerprint: 'sha256:backend-source-v1:43f2ed10792fc6167b963166287cf7d5a0429afa26029e6455b0418e2123be86',
+      runtimeContractDigest: '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5',
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      masked: true,
+    },
+  ],
+  [
+    'StableDiffusionXLInstructPix2PixPipeline:edit_image',
+    {
+      modelRepo: 'diffusers/sdxl-instructpix2pix-768',
+      modelRevision: '06653d47f8d22f2c2205a5884d6a24c5e76d2ca7',
+      loaderClass: 'StableDiffusionXLInstructPix2PixPipeline',
+      format: SAVED_PNG_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-edit-observation.v1',
+      consumed: [...baseConsumed, 'negative_prompt', 'guidance_scale', 'width', 'height'],
+      inactiveRecorded: ['strength', 'max_sequence_length'],
+      sourceFingerprint: 'sha256:backend-source-v1:55da4a68212923ee8a67e70754f46193288e210bce08ab4ae8c06834a7a76995',
+      runtimeContractDigest: 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c',
+      fullNativeSnapshot: true,
+      inputPathPrefix: '@data/images/',
+      windowsCudaRuntime: true,
+      residentRecipe: true,
+      unobservedControls: ['image_guidance_scale'],
+    },
+  ],
 ]);
 const lcmRoute = editRoutes.get('LatentConsistencyModelPipeline:edit_image');
 
@@ -154,6 +190,7 @@ const editableFields = [
   'use_en_prompt',
 ];
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const literal = (value) => ({ value, source: 'literal' });
 const same = (a, b, message) => assert.equal(stableStringify(a), stableStringify(b), message);
 const keys = (row, expected) =>
   same(Object.keys(row ?? {}).sort(), [...expected].sort(), 'Unexpected evidence fields.');
@@ -186,6 +223,7 @@ export function bindPrivateImageEditGraph({
   strengthVariant,
   inputPathPrefix = '',
   nativePngEvidence = false,
+  residentRecipe = false,
 }) {
   const bound = structuredClone(expected);
   const masked = maskInput !== undefined;
@@ -212,6 +250,11 @@ export function bindPrivateImageEditGraph({
   if (strengthVariant) {
     assert.equal(canonical.edit.node.params.strength.value, strengthVariant.original);
     canonical.edit.node.params.strength.value = strengthVariant.retained;
+  }
+  if (residentRecipe) {
+    const offload = canonical.recipe.node.params.offload_mode;
+    same(offload, { value: 'model_cpu' });
+    offload.value = 'none';
   }
   const identity = canonicalGraphIdentity(bound);
   same(
@@ -340,6 +383,95 @@ export function validatePrivateImageEditRuntimePlatform(workflowId, platform, ba
   }
 }
 
+function verifySavedEditControls(bound, output, route) {
+  const receipt = output.resolvedExecutionInputs;
+  assert.equal(receipt.schemaVersion, 1);
+  assert.equal(receipt.source, 'backend-execution');
+  assert.equal(receipt.taskId, output.taskId);
+  assert.equal(receipt.nodeId, bound.preview.id);
+  assert.equal(receipt.attemptIndex, 0);
+  assert.equal(receipt.truncated, false);
+  same(receipt.unavailableFields, []);
+  same(receipt.uncapturedNodeIds, []);
+  same(
+    receipt.ambiguousFields,
+    route.residentRecipe ? ['offloadMode'] : ['device', 'imageAlphaChannel', 'imageSourceHashes', 'imageSourceModes'],
+  );
+  const owners = (bound.mask ? inpaintOwners : ownerOrder).map(([role]) => bound[role]);
+  same(receipt.nodes.map(({ nodeId }) => nodeId).sort(), owners.map(({ id }) => id).sort());
+  const record = ({ id, node }) => {
+    const row = receipt.nodes.find(({ nodeId }) => nodeId === id);
+    assert.equal(row.module, node.module);
+    assert.equal(row.action, node.action);
+    same(row.omittedFields, {});
+    return row;
+  };
+  const sampler = record(bound.edit);
+  assert.equal(sampler.fieldAccounting, undefined);
+  const controls = Object.fromEntries(
+    route.consumed.map((name) => [name, literal(bound.edit.node.params[name].value)]),
+  );
+  for (const field of [
+    'conditioning_scale',
+    'control_guidance_start',
+    'control_guidance_end',
+    ...(route.inactiveRecorded ?? []),
+  ]) {
+    controls[field] = literal(null);
+  }
+  controls.executed_task = literal(bound.mask ? 'inpaint' : 'edit_image');
+  same(sampler.fields, controls, 'Saved sampler controls differ.');
+  const loader = record(bound.loader);
+  for (const [field, value] of Object.entries({
+    model_id: route.modelRepo,
+    revision: route.modelRevision,
+    pipeline_class: route.loaderClass,
+    mode: controls.executed_task.value,
+  }))
+    same(loader.fields[field], literal(value));
+  const offload = route.residentRecipe ? 'none' : 'model_cpu';
+  const recipe = record(bound.recipe);
+  const connected = bound.loader.node.params.execution_recipe;
+  same(connected, { display: 'input', sourceId: bound.recipe.id, sourceKey: 'execution_recipe' });
+  same(recipe.fields.offload_mode, literal(offload));
+  assert.equal(recipe.fieldAccounting.fields.offload_mode.disposition, 'consumed');
+  assert.equal(loader.fieldAccounting.fields.offload_mode.disposition, 'superseded');
+  assert.equal(loader.fieldAccounting.fields.offload_mode.reason, 'connected-recipe');
+  return record;
+}
+
+async function verifySavedPngSource(bound, output, input, maskInput, route, read, json, evidence) {
+  const record = verifySavedEditControls(bound, output, route);
+  const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
+  const verify = async (role, rootImage, upload, port, mode) => {
+    const owner = bound[role];
+    const { bytes, file } = read(rootImage.file);
+    const { width, height } = await decodedMediaHash(file, 'image');
+    const decodedImage = { width, height, mode };
+    const row = record(owner);
+    same(
+      row.fields,
+      {
+        alpha_channel: literal(owner.node.params.alpha_channel.value),
+        source_hashes: literal([rootImage.file.sha256]),
+        source_widths: literal([width]),
+        source_heights: literal([height]),
+        source_modes: literal([mode]),
+      },
+      `Original ${role} load differs.`,
+    );
+    same(bound.edit.node.params[port], { display: 'input', sourceId: owner.id, sourceKey: 'image' });
+    verifyRetainedPngUpload(json(upload), rootImage, decodedImage, bytes);
+    return decodedImage;
+  };
+  const decodedInput = await verify('source', input, evidence.inputUpload, 'image', 'RGB');
+  if (!maskInput) return { decodedInput };
+  assert.notEqual(input.file.sha256, maskInput.file.sha256);
+  const decodedMask = await verify('mask', maskInput, evidence.maskUpload, 'mask_image', 'L');
+  same([decodedInput.width, decodedInput.height], [decodedMask.width, decodedMask.height]);
+  return { decodedInput, mask: { decodedImage: decodedMask } };
+}
+
 function validateRuntime(
   task,
   hints,
@@ -419,8 +551,9 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes);
   const masked = route.masked === true;
+  const savedPng = route.format === SAVED_PNG_EDIT_FORMAT && evidence.format === SAVED_PNG_EDIT_FORMAT;
   const pngFormat = masked ? NATIVE_PNG_INPAINT_FORMAT : NATIVE_PNG_EDIT_FORMAT;
-  const nativePngEvidence = route.nativePngEvidence === true && evidence.format === pngFormat;
+  const nativePngEvidence = savedPng || (route.nativePngEvidence === true && evidence.format === pngFormat);
   keys(evidence, [
     'schemaVersion',
     'format',
@@ -431,9 +564,10 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     'persistedOutputs',
     ...(nativePngEvidence ? ['inputUpload'] : ['inputServerBefore', 'inputServerAfter']),
     ...(masked ? ['maskUpload'] : []),
+    ...(savedPng ? ['registryReplay'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
-  assert.equal(evidence.format, nativePngEvidence ? pngFormat : route.format);
+  assert.equal(evidence.format, nativePngEvidence && !savedPng ? pngFormat : route.format);
   assert.equal(evidence.workflowId, workflowId);
   const evidenceRoot = realpathSync(dirname(evidencePath));
   const retainedFiles = [];
@@ -494,6 +628,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     strengthVariant: route.strengthVariant,
     inputPathPrefix: route.inputPathPrefix,
     nativePngEvidence,
+    residentRecipe: route.residentRecipe,
   });
   for (const api of [creator.apiGraph, ...visualExports]) {
     directOwners(api, false, masked);
@@ -521,22 +656,28 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const validateRun = hasNativeSnapshot ? validateNativeVariantRun : validateLateNativeImageVariantRun;
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
-  validatePrivateImageEditFields(bound, output, route.consumed);
-  const { decodedInput, mask } = await verifySourceBinding(clientRoot, bound, output, input, route);
-  const inputMedia = read(input.file);
-  if (nativePngEvidence) {
-    verifyRetainedPngUpload(json(evidence.inputUpload), input, decodedInput, inputMedia.bytes);
+  let sourceBinding;
+  if (savedPng) {
+    sourceBinding = await verifySavedPngSource(bound, output, input, maskInput, route, read, json, evidence);
   } else {
-    for (const ref of [evidence.inputServerBefore, evidence.inputServerAfter]) {
-      assert.ok(read(ref).bytes.equals(inputMedia.bytes), 'The server-bound source bytes differ.');
+    validatePrivateImageEditFields(bound, output, route.consumed);
+    sourceBinding = await verifySourceBinding(clientRoot, bound, output, input, route);
+    const inputMedia = read(input.file);
+    if (nativePngEvidence) {
+      verifyRetainedPngUpload(json(evidence.inputUpload), input, sourceBinding.decodedInput, inputMedia.bytes);
+    } else {
+      for (const ref of [evidence.inputServerBefore, evidence.inputServerAfter]) {
+        assert.ok(read(ref).bytes.equals(inputMedia.bytes), 'The server-bound source bytes differ.');
+      }
+    }
+    if (masked) {
+      const maskMedia = read(maskInput.file);
+      assert.equal(sourceBinding.mask.sourceFile.sha256, maskInput.file.sha256);
+      assert.equal(sourceBinding.mask.sourceFile.byteSize, maskInput.file.bytes);
+      verifyRetainedPngUpload(json(evidence.maskUpload), maskInput, sourceBinding.mask.decodedImage, maskMedia.bytes);
     }
   }
-  if (masked) {
-    const maskMedia = read(maskInput.file);
-    assert.equal(mask.sourceFile.sha256, maskInput.file.sha256);
-    assert.equal(mask.sourceFile.byteSize, maskInput.file.bytes);
-    verifyRetainedPngUpload(json(evidence.maskUpload), maskInput, mask.decodedImage, maskMedia.bytes);
-  }
+  const { decodedInput, mask } = sourceBinding;
   const media = read(outputRef.file);
   const item = validateNativeVariantOutput({
     output,
@@ -554,7 +695,8 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   same(technicalMediaErrors(decoded, { width: decodedInput.width, height: decodedInput.height }), []);
   assert.equal(item.width, decoded.width);
   assert.equal(item.height, decoded.height);
-  const backendContract = backendContractIdentity(json(capture.nodes), bound.identity.canonicalGraph);
+  const nodes = read(capture.nodes);
+  const backendContract = backendContractIdentity(JSON.parse(nodes.bytes), bound.identity.canonicalGraph);
   assert.ok(backendContract.fingerprint);
   const source = backendSourceEvidence({
     before: json(capture.backendSourceBefore).identity,
@@ -562,6 +704,17 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     runtimeFingerprint: task.runtimeFingerprint,
   });
   same(source.blockers, []);
+  if (savedPng) {
+    assert.equal(source.identity.fingerprint, route.sourceFingerprint);
+    const replay = json(evidence.registryReplay);
+    assert.equal(replay.scope, 'Original nodes handler only, with exact source and runtime contract');
+    assert.equal(replay.modelRuns, 0);
+    assert.equal(replay.fileCount, source.identity.files.length);
+    assert.equal(replay.sourceFingerprint, route.sourceFingerprint);
+    assert.equal(replay.runtimeContract, route.runtimeContractDigest);
+    assert.equal(replay.nodeBytes, nodes.bytes.length);
+    assert.equal(replay.nodeHash, sha256(nodes.bytes));
+  }
   const { runtime, elapsedSeconds, peakAllocatedBytes } = validateRuntime(
     task,
     hints,
@@ -606,8 +759,15 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       fullConsumedFieldAccounting: false,
       editConsumerControlsObserved: true,
       sourceGeometryQualified: false,
-      ...(nativePngEvidence ? { sourceByteWitness: 'native-load-consumer-and-upload' } : {}),
-      ...(masked ? { maskByteWitness: 'native-load-consumer-and-upload' } : {}),
+      ...(nativePngEvidence
+        ? { sourceByteWitness: savedPng ? 'native-load-and-upload-with-typed-wire' : 'native-load-consumer-and-upload' }
+        : {}),
+      ...(masked
+        ? { maskByteWitness: savedPng ? 'native-load-and-upload-with-typed-wire' : 'native-load-consumer-and-upload' }
+        : {}),
+      ...(savedPng
+        ? { independentConsumerPixels: false, configuredUnobservedControls: route.unobservedControls ?? [] }
+        : {}),
       physicalPlatformQualification: false,
     },
     qualificationClaims: {

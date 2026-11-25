@@ -823,6 +823,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.direct-image-edit-source-bound.v1',
       'modiff.private.direct-image-edit-native-png.v1',
       'modiff.private.direct-image-inpaint-native-png.v1',
+      'modiff.private.saved-image-edit-native-png.v1',
     ].includes(evidence.format)
   ) {
     const { readPrivateImageEditEvidence } = await import('./private-image-edit-evidence.mjs');
@@ -869,8 +870,10 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.smolvlm-caption-variant.v1',
       'modiff.private.shap-e-prompt-variant.v1',
       'modiff.private.longcat-audio-prompt-variant.v1',
+      'modiff.private.audioldm2-prompt-variant.v1',
       'modiff.private.wan-a14b-video-prompt-variant.v1',
       'modiff.private.cogvideox-video-prompt-variant.v1',
+      'modiff.private.cogvideox-source-video-variant.v1',
     ].includes(evidence.format) ||
     directImagePromptRoutes.some(({ format }) => format === evidence.format)
   ) {

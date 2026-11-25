@@ -424,6 +424,48 @@ test(
   },
 );
 
+for (const [workflowId, variable, hasMask] of [
+  ['ChromaInpaintPipeline:inpaint', 'MODIFF_SAVED_CHROMA_INPAINT_EVIDENCE', true],
+  ['StableDiffusionXLInstructPix2PixPipeline:edit_image', 'MODIFF_SAVED_PIX2PIX_EVIDENCE', false],
+]) {
+  const saved = process.env[variable];
+  test(
+    `${workflowId} retains the original source identity with disclosed sampler limits`,
+    { skip: !saved },
+    async () => {
+      const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+      const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '..', 'MoDiff'));
+      const evidencePath = resolve(saved);
+      const args = { clientRoot, backendRoot, workflowId, evidencePath };
+      const original = await readCanonicalWorkflowEvidence(args);
+      const { receipt } = original;
+      assert.equal(receipt.observationLimits.independentConsumerPixels, false);
+      assert.equal(receipt.observationLimits.sourceByteWitness, 'native-load-and-upload-with-typed-wire');
+      assert.deepEqual(receipt.observationLimits.configuredUnobservedControls, hasMask ? [] : ['image_guidance_scale']);
+      assert.equal(Boolean(receipt.maskBinding), hasMask);
+      const root = mkdtempSync(join(tmpdir(), 'modiff-retained-edit-'));
+      try {
+        for (const file of original.retainedFiles) {
+          assert.equal(basename(file.path), file.path);
+          copyFileSync(file.absolutePath, join(root, file.path));
+        }
+        const descriptor = JSON.parse(original.descriptorBytes);
+        const ref = descriptor.registryReplay;
+        const proof = JSON.parse(readFileSync(join(root, ref.path)));
+        proof.nodeHash = 'a'.repeat(64);
+        const bytes = Buffer.from(JSON.stringify(proof));
+        Object.assign(ref, { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+        writeFileSync(join(root, ref.path), bytes);
+        const changedPath = join(root, 'evidence.json');
+        writeFileSync(changedPath, JSON.stringify(descriptor));
+        await assert.rejects(readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }), /strictly equal/u);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+}
+
 test('retained native PNG upload binds an exact safe path, file bytes and decoded dimensions', () => {
   const bytes = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0AMAAAAASUVORK5CYII=',
