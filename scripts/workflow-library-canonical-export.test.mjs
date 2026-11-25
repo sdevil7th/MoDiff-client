@@ -4,10 +4,39 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
-import { sanitizeCanonicalWorkflowGraph, canonicalizeGraphIds } from './workflow-library-generator.mjs';
+import {
+  applyPortableContracts,
+  sanitizeCanonicalWorkflowGraph,
+  canonicalizeGraphIds,
+} from './workflow-library-generator.mjs';
 import { retainExistingCanonicalDeviceDefaults } from './workflow-library-contract.mjs';
 import { canonicalGraphIdentity } from './live-proof-provenance.mjs';
 import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
+
+test('portable workflow export preserves the independent tasks of model stages', () => {
+  const stage = (module, action, value) => ({
+    data: { module, action, params: value ? { mode: { value } } : {} },
+  });
+  const graph = {
+    nodes: [
+      stage('modules.DiffusersAudio', 'LoadPipeline', 'text_to_audio'),
+      stage('modules.DiffusersVideo', 'Generate', 'text_to_video'),
+      stage('modules.DiffusersVideo', 'Generate', 'image_to_video'),
+      stage('modules.DiffusersVideo', 'GenerateVideoAudio'),
+    ],
+  };
+  const output = applyPortableContracts(graph, 'text_to_video');
+  assert.deepEqual(
+    output.nodes.map(({ data }) => data.params.mode.value),
+    ['text_to_audio', 'text_to_video', 'image_to_video', 'text_to_video'],
+  );
+  const soundtrack = stage('modules.DiffusersAudio', 'LoadPipeline');
+  soundtrack.data.params.mode = { default: 'text_to_audio', options: ['text_to_audio', 'audio_variation'] };
+  applyPortableContracts({ nodes: [soundtrack] }, 'text_to_video');
+  assert.equal(soundtrack.data.params.mode.value, 'text_to_audio');
+  soundtrack.data.params.mode.value = 'text_to_video';
+  assert.throws(() => applyPortableContracts({ nodes: [soundtrack] }, 'text_to_video'), /Invalid portable task/u);
+});
 
 test('repeated shot processors retain only unanimous fallback defaults with unchanged multiplicity', () => {
   const make = (id, fallback) => ({

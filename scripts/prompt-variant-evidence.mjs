@@ -247,6 +247,47 @@ const wanA14BOpeningRoute = {
   chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
 };
 
+const ltxScheduledRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.ltx-long-scheduled-image-variant.v1',
+  workflowId: 'LTXI2VLongMultiPromptPipeline:image_to_video',
+  modelType: 'LTXI2VLongMultiPromptPipeline',
+  modelRepo: 'Lightricks/LTX-Video-0.9.8-13B-distilled',
+  modelRevision: '7c64400e1861cc0d7b98d570a1926d5408ec60cd',
+  sourceFingerprint: 'sha256:backend-source-v1:70bc1ff7fe61307be52cfda86b38c6400f2156cbc8240a489b62ff19a93d58dc',
+  executedTask: 'image_to_video',
+  bindsImage: true,
+  imageInputPort: 'reference_images',
+  bindSeed: false,
+  chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
+  retainedBaselineSettings: [
+    ['generator', 'num_frames', 81, 129],
+    [
+      'generator',
+      'prompt_segments_json',
+      '',
+      JSON.stringify([
+        {
+          start_window: 0,
+          end_window: 0,
+          text: 'Wide eye-level shot from a fixed tripod at a rainy tram stop at blue hour. One red umbrella shelters a seated passenger. Fine rain falls and the warm shelter light reflects on the wet tracks and pavement.',
+        },
+        {
+          start_window: 1,
+          end_window: 1,
+          text: 'Continue the same uncut fixed view. A distant pair of warm tram headlights approaches along the left tracks. Their reflections lengthen across the wet rails. The seated passenger and red umbrella stay beneath the same shelter.',
+        },
+      ]),
+    ],
+  ],
+  configuredUnobservedControls: [
+    'prompt_segments_json',
+    'segment_frame_length',
+    'temporal_overlap',
+    'temporal_overlap_condition_strength',
+  ],
+};
+
 const wanAnimateFiles = [
   ['face', 'face_video', 256, 256],
   ['pose', 'pose_video', 768, 512],
@@ -563,6 +604,15 @@ function owners(profile, api) {
   );
 }
 
+function bindReviewedSettings(owners, settings = []) {
+  for (const [role, field, defaultValue, reviewedValue] of settings) {
+    const param = owners[role].node.params[field];
+    assert.equal(param.value, defaultValue);
+    assert.ok(!param.sourceId && !param.sourceKey, 'The reviewed setting must be literal.');
+    param.value = reviewedValue;
+  }
+}
+
 export function bindPromptVariant(
   profile,
   original,
@@ -592,14 +642,10 @@ export function bindPromptVariant(
     // the recorded selection that became the current canonical default.
     attention.value = '_native_math';
   }
+  bindReviewedSettings(expectedOwners, profile.retainedBaselineSettings);
   const baseline = canonicalGraphIdentity(expected);
   assert.equal(baseline.hash, baselineHash, 'The current authored prompt recipe differs from the original baseline.');
-  for (const [role, field, defaultValue, reviewedValue] of profile.reviewedSettings ?? []) {
-    const param = expectedOwners[role].node.params[field];
-    assert.equal(param.value, defaultValue);
-    assert.ok(!param.sourceId && !param.sourceKey, 'The reviewed setting must be literal.');
-    param.value = reviewedValue;
-  }
+  bindReviewedSettings(expectedOwners, profile.reviewedSettings);
   const expectedInputs = expectedOwners.generator.node.params;
   if (profile.bindsImage) {
     assert.match(sourceValue, /^@data\/images\/[a-z0-9_-]{1,120}[.]png$/iu);
@@ -1169,6 +1215,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         audioLdmRoute,
         wanA14BRoute,
         wanA14BOpeningRoute,
+        ltxScheduledRoute,
         wanAnimateRoute,
         wanReplaceRoute,
         cogVideoRoute,

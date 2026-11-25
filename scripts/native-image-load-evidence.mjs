@@ -63,3 +63,28 @@ export function verifyNativeLoadedImage(load, loaded, mode) {
   const [image] = verifyNativeLoadedImages(load, loaded, [mode]);
   return image;
 }
+
+export function verifyNativeCanny(settings, evidence, decodedGuide) {
+  assert.equal(evidence?.schemaVersion, 1);
+  assert.equal(evidence.source, 'native-builtin-media-v1');
+  assert.equal(evidence.status, 'complete');
+  const thresholds = [settings.low_threshold.value, settings.high_threshold.value];
+  const outputMode = settings.output_mode?.value ?? 'L';
+  assert.deepEqual(evidence.controls, {
+    low_threshold: Math.min(...thresholds),
+    high_threshold: Math.max(...thresholds),
+    output_mode: outputMode,
+    device: settings.device.value,
+  });
+  assert.deepEqual(evidence.inputs, { image: [{ kind: 'image', ...decodedGuide }] }, 'Canny guide bytes differ.');
+  assert.deepEqual(evidence.files, {});
+  assert.deepEqual(Object.keys(evidence.outputs), ['output']);
+  assert.equal(evidence.outputs.output.length, 1);
+  const [edgeImage] = evidence.outputs.output;
+  assert.equal(edgeImage.kind, 'image');
+  assert.equal(edgeImage.mode, outputMode);
+  assert.deepEqual([edgeImage.width, edgeImage.height], [decodedGuide.width, decodedGuide.height]);
+  assert.match(edgeImage.sha256, /^[a-f0-9]{64}$/u);
+  assert.ok(edgeImage.byteSize > 0);
+  return evidence.outputs.output;
+}

@@ -136,23 +136,23 @@ function sanitize(value, key = '', ancestors = []) {
 function applyPortableContracts(graph, mode) {
   for (const node of graph?.nodes ?? []) {
     normalizePortableWorkflowNodeOffload(node);
-    if (node?.data?.module === 'modules.DiffusersImage' && node?.data?.action === 'LoadPipeline') {
-      node.data.params = node.data.params ?? {};
-      node.data.params.mode = { ...(node.data.params.mode ?? {}), value: mode };
-    }
-    if (
-      ['modules.DiffusersAudio', 'modules.DiffusersThreeD'].includes(node?.data?.module) &&
-      node?.data?.action === 'LoadPipeline'
-    ) {
-      node.data.params = node.data.params ?? {};
-      node.data.params.mode = { ...(node.data.params.mode ?? {}), value: mode };
-    }
-    if (
-      node?.data?.module === 'modules.DiffusersVideo' &&
-      ['Generate', 'GenerateVideoAudio'].includes(node?.data?.action)
-    ) {
-      node.data.params = node.data.params ?? {};
-      node.data.params.mode = { ...(node.data.params.mode ?? {}), value: mode };
+    const { module, action } = node?.data ?? {};
+    const ownsMode =
+      (['modules.DiffusersImage', 'modules.DiffusersAudio', 'modules.DiffusersThreeD'].includes(module) &&
+        action === 'LoadPipeline') ||
+      (module === 'modules.DiffusersVideo' && ['Generate', 'GenerateVideoAudio'].includes(action));
+    if (ownsMode) {
+      const params = (node.data.params ??= {});
+      const field = params.mode ?? {};
+      const choices = Array.isArray(field.options) ? field.options.map((option) => option?.value ?? option) : [];
+      // A secondary stage, such as the soundtrack in a video workflow, owns
+      // its own task. The workflow task is a fallback for unset fields only.
+      const fallback = choices.length && !choices.includes(mode) ? field.default : mode;
+      const value = field.value || fallback;
+      if (typeof value !== 'string' || !value || (choices.length && !choices.includes(value))) {
+        throw new Error(`Invalid portable task ${String(value)} for ${module}.${action}.`);
+      }
+      params.mode = { ...field, value };
     }
     if (
       node?.data?.module === 'modules.DiffusersRuntime' &&
@@ -744,7 +744,7 @@ async function main() {
   }
 }
 
-export { sanitize as sanitizeCanonicalWorkflowGraph, canonicalizeGraphIds };
+export { applyPortableContracts, sanitize as sanitizeCanonicalWorkflowGraph, canonicalizeGraphIds };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv.includes('--help') || process.argv.includes('-h')) {

@@ -609,6 +609,13 @@ test('soundtrack secondary owner receives the same Model Setup grouping as stand
   ]);
   const flattened = groups.unpackVisualOperationGroups(graph).graph;
   assert.equal(flattened.nodes.filter((node) => node.data.action === 'LoadPipeline').length, 2);
+  const compiled = exporter.useFlowStore
+    .getState()
+    .exportGraph('video-stage-contract', undefined, { sourceGraph: graph, randomizeSeeds: false });
+  const soundtrackOwner = Object.values(compiled.nodes).find(
+    ({ module, action }) => module === 'modules.DiffusersAudio' && action === 'LoadPipeline',
+  );
+  assert.equal(soundtrackOwner?.params.mode.value, 'text_to_audio');
   assert.equal(flattened.nodes.filter((node) => node.data.action === 'FitDuration').length, 1);
   assert.equal(flattened.nodes.filter((node) => node.data.action === 'ExportWithAudio').length, 1);
 });

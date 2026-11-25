@@ -458,6 +458,15 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
   ['PixArtSigmaPipeline:text_to_image', 'MODIFF_SAVED_PIXART_SIGMA_PROMPT_EVIDENCE', 'image'],
+  ['DreamLitePipeline:text_to_image', 'MODIFF_DREAMLITE_BASE_PRIVATE_EVIDENCE', 'image'],
+  ['JoyImageEditPipeline:text_to_image', 'MODIFF_JOY_HERBARIUM_PROMPT_EVIDENCE', 'image'],
+  ['LongCatImagePipeline:text_to_image', 'MODIFF_LONGCAT_FLORIST_PROMPT_EVIDENCE', 'image'],
+  [
+    'LTXI2VLongMultiPromptPipeline:image_to_video',
+    'MODIFF_LTX_SCHEDULED_TRAM_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
 ]) {
   const saved = process.env[variable];
   test(`${workflowId} retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {
@@ -468,6 +477,14 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
     assert.equal(original.receipt.canonicalDefaultsExecuted, false);
     assert.equal(original.receipt.decodedOutput.kind, kind);
     assert.ok(Object.values(original.receipt.qualificationClaims).every((claim) => claim === false));
+    if (workflowId === 'LongCatImagePipeline:text_to_image') {
+      assert.equal(original.receipt.observationLimits.fullConsumedFieldAccounting, false);
+      assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, ['max_sequence_length']);
+    }
+    if (workflowId === 'LTXI2VLongMultiPromptPipeline:image_to_video') {
+      assert.equal(original.receipt.decodedOutput.frames, 129);
+      assert.ok(original.receipt.observationLimits.configuredUnobservedControls.includes('prompt_segments_json'));
+    }
     if (workflowId === 'HuggingFaceImageTextToTextModel:image_to_text') {
       const [{ file }] = original.evidence.outputs;
       const transportBytes = readCanonicalEvidenceFile(dirname(evidencePath), file).bytes;

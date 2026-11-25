@@ -410,6 +410,22 @@ test(
 );
 
 const retainedMaskEvidence = process.env.MODIFF_SD15_INPAINT_EVIDENCE;
+const retainedDreamLiteEdit = process.env.MODIFF_DREAMLITE_MOBILE_PRIVATE_EVIDENCE;
+
+test('DreamLite Mobile verifies its private saved edit and input bytes', { skip: !retainedDreamLiteEdit }, async () => {
+  const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+  const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '..', 'MoDiff'));
+  const { receipt } = await readCanonicalWorkflowEvidence({
+    clientRoot,
+    backendRoot,
+    workflowId: 'DreamLiteMobilePipeline:edit_image',
+    evidencePath: resolve(retainedDreamLiteEdit),
+  });
+  assert.equal(receipt.taskId, 'UkIOy4hkWvBa');
+  assert.equal(receipt.inputBinding.sha256, 'b0c9f07333c2fc9a5de03f2b8f28d07bfaff162e38920d2f3bc70806be4be309');
+  assert.ok(Object.values(receipt.qualificationClaims).every((value) => value === false));
+});
+
 test(
   'saved Inpaint evidence binds two original PNG uploads to their distinct consumed ports',
   {
@@ -474,6 +490,8 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['QwenImageModularPipeline:edit_image', 'MODIFF_QWEN_BOOKSHOP_EDIT_EVIDENCE', false, []],
   ['ChromaImg2ImgPipeline:edit_image', 'MODIFF_CHROMA_LARCH_EDIT_EVIDENCE', false, []],
   ['JoyImageEditPipeline:edit_image', 'MODIFF_SAVED_JOY_BASE_EDIT_EVIDENCE', false, []],
+  ['StableDiffusionXLPipeline:edit_image', 'MODIFF_SDXL_LINEN_EDIT_EVIDENCE', false, []],
+  ['FluxDevPipeline:edit_image', 'MODIFF_SAVED_FLUX_DEV_TEAPOT_EVIDENCE', false, []],
   ['FluxKontextInpaintPipeline:inpaint', 'MODIFF_SAVED_KONTEXT_WINDOW_EVIDENCE', true, []],
   [
     'FluxKontextInpaintPipeline:outpaint',
@@ -525,13 +543,16 @@ for (const [workflowId, variable, hasMask, unobserved] of [
       const args = { clientRoot, backendRoot, workflowId, evidencePath };
       const original = await readCanonicalWorkflowEvidence(args);
       const { receipt } = original;
-      assert.equal(receipt.observationLimits.independentConsumerPixels, false);
       const hostFileWitness = workflowId === 'JoyImageEditPipeline:edit_image';
+      const samplerSourceProjection = workflowId === 'StableDiffusionXLPipeline:edit_image';
+      assert.equal(receipt.observationLimits.independentConsumerPixels, samplerSourceProjection);
       assert.equal(
         receipt.observationLimits.sourceByteWitness,
         hostFileWitness
           ? 'retained-host-file-with-native-load-and-typed-wire'
-          : 'native-load-and-upload-with-typed-wire',
+          : samplerSourceProjection
+            ? 'native-load-consumer-and-upload'
+            : 'native-load-and-upload-with-typed-wire',
       );
       if (hostFileWitness) assert.equal(receipt.observationLimits.originalUploadResponseObserved, false);
       assert.deepEqual(receipt.observationLimits.configuredUnobservedControls, unobserved);

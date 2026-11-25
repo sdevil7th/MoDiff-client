@@ -10,7 +10,7 @@ import {
   selectBackendRuntimeFingerprintEvidence,
   selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
-import { verifyNativeLoadedImage } from './native-image-load-evidence.mjs';
+import { verifyNativeCanny, verifyNativeLoadedImage } from './native-image-load-evidence.mjs';
 import { verifyRetainedPngUpload } from './private-image-edit-evidence.mjs';
 import {
   validateNativeVariantOutput,
@@ -144,20 +144,7 @@ export function verifyControlInpaintMedia(api, output, inputs, owner = owners(ap
     }),
   );
   const image = (role) => [{ kind: 'image', ...decoded[role] }];
-  const canny = record(owner.canny).mediaEvidence;
-  const settings = api.nodes[owner.canny].params;
-  const thresholds = [settings.low_threshold.value, settings.high_threshold.value];
-  const outputMode = settings.output_mode?.value ?? 'L';
-  assert.deepEqual(canny.controls, {
-    low_threshold: Math.min(...thresholds),
-    high_threshold: Math.max(...thresholds),
-    output_mode: outputMode,
-    device: settings.device.value,
-  });
-  assert.deepEqual(canny.inputs, { image: image('guide') }, 'Canny did not consume the selected guide.');
-  assert.equal(canny.outputs.output.length, 1);
-  assert.equal(canny.outputs.output[0].kind, 'image');
-  assert.equal(canny.outputs.output[0].mode, outputMode);
+  const edgeMap = verifyNativeCanny(api.nodes[owner.canny].params, record(owner.canny).mediaEvidence, decoded.guide);
 
   const sampler = record(owner.sampler);
   const params = api.nodes[owner.sampler].params;
@@ -183,7 +170,7 @@ export function verifyControlInpaintMedia(api, output, inputs, owner = owners(ap
     {
       image: image('source'),
       mask_image: image('mask'),
-      control_image: canny.outputs.output,
+      control_image: edgeMap,
     },
     'Control Inpaint did not consume the selected source, mask and Canny output.',
   );

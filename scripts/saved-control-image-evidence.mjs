@@ -11,7 +11,11 @@ import {
   selectBackendRuntimeFingerprintEvidence,
   selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
-import { verifyNativeLoadedImage, verifyRetainedHostImageFiles } from './native-image-load-evidence.mjs';
+import {
+  verifyNativeCanny,
+  verifyNativeLoadedImage,
+  verifyRetainedHostImageFiles,
+} from './native-image-load-evidence.mjs';
 import {
   validateLateNativeImageVariantRun,
   validateNativeVariantOutput,
@@ -19,6 +23,7 @@ import {
   validateUnmodifiedExpertPreparation,
 } from './native-variant-run-evidence.mjs';
 import { verifyRetainedPngUpload } from './private-image-edit-evidence.mjs';
+import { validateImagePromptPreparation } from './prompt-variant-evidence.mjs';
 import {
   canonicalWorkflowAuthoringContract,
   exportCanonicalWorkflowGraphs,
@@ -53,6 +58,18 @@ const fluxControlInpaint = {
   action: 'ControlInpaint',
   pipelineClass: 'FluxControlInpaintPipeline',
   additionalInputs: ['source', 'mask'],
+};
+const sdxlWindowsControlEdit = {
+  action: 'ControlEdit',
+  pipelineClass: 'StableDiffusionXLControlNetImg2ImgPipeline',
+  componentClass: 'ControlNetModel',
+  source: '2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290',
+  originalRegistryHash: 'fd66c8907b4a7969c1a87757f4d9e629d62395c55b8b74f730432cf1ce47d13e',
+  canny: true,
+  cannyMediaWitness: true,
+  windows: true,
+  additionalInputs: ['source'],
+  previousExpertFamily: 'StableDiffusionXLImg2ImgPipeline',
 };
 const routes = {
   'FluxCannyPipeline:control_edit_image': { ...fluxControl, lateOutput: true },
@@ -93,6 +110,13 @@ const routes = {
     componentClass: 'ControlNetModel',
     source: sdxlSource,
     canny: true,
+  },
+  'StableDiffusionXLControlNetPipeline:control_edit_image': sdxlWindowsControlEdit,
+  'StableDiffusionXLPAGPipeline:control_edit_image': {
+    ...sdxlWindowsControlEdit,
+    pipelineClass: 'StableDiffusionXLControlNetPAGImg2ImgPipeline',
+    previousExpertFamily: 'StableDiffusionXLControlNetImg2ImgPipeline',
+    pagSettingsUnobserved: true,
   },
   'StableDiffusionXLPAGPipeline:control_image': {
     pipelineClass: 'StableDiffusionXLControlNetPAGPipeline',
@@ -211,7 +235,11 @@ export function verifySavedControlImageInputs(api, output, inputs, workflowId) {
   if (canny) {
     assert.deepEqual(api.nodes[canny].params.image, connected(inputOwners.guide, 'image'));
     assert.deepEqual(record(canny).fields, { device: literal(api.nodes[canny].params.device.value) });
-    assert.equal(record(canny).mediaEvidence, undefined);
+    if (route.cannyMediaWitness) {
+      verifyNativeCanny(api.nodes[canny].params, record(canny).mediaEvidence, decoded[0]);
+    } else {
+      assert.equal(record(canny).mediaEvidence, undefined);
+    }
   }
   const expected = Object.fromEntries(
     [
@@ -354,7 +382,13 @@ export async function readSavedControlImageEvidence({
     graphCompleted: completed,
     graphRequest,
     graphAcknowledgment: json(evidence.graphAcknowledgment),
-    validatePreparation: (value) => validateUnmodifiedExpertPreparation(value, route.pipelineClass),
+    validatePreparation: (value) =>
+      route.previousExpertFamily
+        ? validateImagePromptPreparation(value, {
+            modelType: route.pipelineClass,
+            previousExpertFamily: route.previousExpertFamily,
+          })
+        : validateUnmodifiedExpertPreparation(value, route.pipelineClass),
     ...(route.lateOutput && { persistedOutput: (stored ?? json(evidence.persistedOutput).outputs)[0] }),
   });
   if (stored) {
@@ -393,17 +427,21 @@ export async function readSavedControlImageEvidence({
   assert.deepEqual(source.blockers, []);
   const expectedSource = 'sha256:backend-source-v1:' + route.source;
   assert.equal(source.identity.fingerprint, expectedSource);
-  const replay = json(evidence.registryReplay);
   const { bytes: nodeBytes } = read(evidence.nodes);
-  assert.deepEqual(replay, {
-    scope: 'Original nodes handler only, with exact source and runtime contract',
-    modelRuns: 0,
-    fileCount: source.identity.files.length,
-    sourceFingerprint: expectedSource,
-    runtimeContract: route.windows ? windowsReplayRuntime : linuxReplayRuntime,
-    nodeHash: sha256(nodeBytes),
-    nodeBytes: nodeBytes.length,
-  });
+  if (route.originalRegistryHash) {
+    assert.equal(evidence.registryReplay, undefined);
+    assert.equal(sha256(nodeBytes), route.originalRegistryHash);
+  } else {
+    assert.deepEqual(json(evidence.registryReplay), {
+      scope: 'Original nodes handler only, with exact source and runtime contract',
+      modelRuns: 0,
+      fileCount: source.identity.files.length,
+      sourceFingerprint: expectedSource,
+      runtimeContract: route.windows ? windowsReplayRuntime : linuxReplayRuntime,
+      nodeHash: sha256(nodeBytes),
+      nodeBytes: nodeBytes.length,
+    });
+  }
   const backendContract = backendContractIdentity(JSON.parse(nodeBytes), identity.canonicalGraph);
   assert.ok(backendContract.fingerprint);
   const runtime = selectBackendRuntimeFingerprintEvidence([task.runtimeFingerprint]);
@@ -470,6 +508,7 @@ export async function readSavedControlImageEvidence({
     observationLimits: {
       fullConsumedFieldAccounting: false,
       processedControlPixelsObserved: false,
+      ...(route.cannyMediaWitness && { nativeEdgeMapObserved: true }),
       ...(route.integratedControl && {
         originalUploadResponsesObserved: false,
         hostFilesMatchedNativeLoads: true,

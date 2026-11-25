@@ -89,6 +89,34 @@ const retainedOutpaint = {
 };
 const editRoutes = new Map([
   [
+    'DreamLiteMobilePipeline:edit_image',
+    {
+      modelRepo: 'carlofkl/DreamLite-mobile',
+      modelRevision: '6695c3f4be230f0493fa5dbf78be3bc4d3bb2ab4',
+      loaderClass: 'DreamLiteMobilePipeline',
+      format: DIRECT_IMAGE_EDIT_FORMAT,
+      captureFormat: 'modiff.private.direct-image-edit-observation.v1',
+      consumed: [...baseConsumed, ...imageGeometry],
+      fullNativeSnapshot: true,
+    },
+  ],
+  [
+    'FluxDevPipeline:edit_image',
+    {
+      ...retainedImageEdit,
+      format: SAVED_WEBP_EDIT_FORMAT,
+      modelRepo: 'black-forest-labs/FLUX.1-dev',
+      modelRevision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
+      loaderClass: 'FluxImg2ImgPipeline',
+      consumed: [...retainedImageEdit.consumed, 'strength'],
+      inactiveRecorded: [],
+      sourceFingerprint: retainedCfgInpaint.sourceFingerprint,
+      runtimeContractDigest: retainedCfgInpaint.runtimeContractDigest,
+      fullNativeSnapshot: true,
+      guidanceObservedAsTrueCfg: true,
+    },
+  ],
+  [
     'ChromaImg2ImgPipeline:edit_image',
     {
       ...retainedImageEdit,
@@ -357,6 +385,17 @@ const editRoutes = new Map([
       fullOrLateNativeSnapshot: true,
       inputPathPrefix: '@data/images/',
       nativePngEvidence: true,
+      savedNativeRecipe: {
+        ...retainedImageEdit,
+        consumed: stableDiffusionEditConsumed,
+        outputGeometryFromSettings: false,
+        samplerSourceProjection: true,
+        sourceFingerprint: 'sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290',
+        originalRegistryHash: 'fd66c8907b4a7969c1a87757f4d9e629d62395c55b8b74f730432cf1ce47d13e',
+        windowsCudaRuntime: true,
+        fullNativeSnapshot: true,
+        previousExpertFamily: 'StableDiffusionXLPAGImg2ImgPipeline',
+      },
     },
   ],
   [
@@ -774,9 +813,15 @@ async function verifySourceBinding(clientRoot, bound, output, input, route) {
   }
 }
 
-export function validatePrivateImageEditRuntimePlatform(workflowId, platform, backend) {
+function reviewedEditRoute(workflowId, format) {
   const route = editRoutes.get(workflowId);
   assert.ok(route, 'Unknown private image-edit evidence route.');
+  const saved = route.savedNativeRecipe;
+  return saved && saved.format === format ? { ...route, ...saved } : route;
+}
+
+export function validatePrivateImageEditRuntimePlatform(workflowId, platform, backend, format) {
+  const route = reviewedEditRoute(workflowId, format);
   if (route.windowsCudaRuntime && /^Windows-/iu.test(platform)) {
     assert.equal(backend, 'cuda');
   } else {
@@ -948,7 +993,7 @@ function validateRuntime(
   observation,
   bound,
   workflowId,
-  { modelRepo, modelRevision, loaderClass, cpuExecution },
+  { modelRepo, modelRevision, loaderClass, cpuExecution, format },
 ) {
   same(
     completion.runtimeHints,
@@ -960,7 +1005,12 @@ function validateRuntime(
     'Native completion runtime envelope differs.',
   );
   const runtime = selectBackendRuntimeFingerprintEvidence([task.runtimeFingerprint]);
-  validatePrivateImageEditRuntimePlatform(workflowId, runtime.packages.platform, task.runtimeMeasurement.backend);
+  validatePrivateImageEditRuntimePlatform(
+    workflowId,
+    runtime.packages.platform,
+    task.runtimeMeasurement.backend,
+    format,
+  );
   assert.equal(runtime.torch.cuda_available, true);
   assert.equal(task.runtimeMeasurement.device, 'cuda:0');
   const { elapsedSeconds, peakAllocatedBytes, peakReservedBytes, peakMeasurementVersion } = task.runtimeMeasurement;
@@ -1024,9 +1074,7 @@ function verifyRetainedImageUpload(upload, input, decoded, bytes, encoding) {
 
 export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {
   const workflowId = manifest.id;
-  const route = editRoutes.get(workflowId);
-  assert.ok(route, 'Unknown private image-edit evidence route.');
-  const { modelRepo, modelRevision, loaderClass } = route;
+  const { modelRepo, modelRevision, loaderClass } = reviewedEditRoute(workflowId);
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
   same(target.modelSet, [{ repoId: modelRepo, revision: modelRevision }], 'Private edit model pin differs.');
   same(target.outputPlan.mediaKinds, ['image']);
@@ -1035,6 +1083,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= 65_536);
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes);
+  const route = reviewedEditRoute(workflowId, evidence.format);
   const masked = route.masked === true;
   const hostFileWitness = evidence.format === SAVED_HOST_FILE_EDIT_FORMAT && evidence.format === route.format;
   const savedImage =
@@ -1180,8 +1229,9 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     hasNativeSnapshot || route.serverRetainedOutput ? validateNativeVariantRun : validateLateNativeImageVariantRun;
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
+  const sourceProjection = !savedImage || route.samplerSourceProjection === true;
   let sourceBinding;
-  if (savedImage) {
+  if (!sourceProjection) {
     sourceBinding = await verifySavedImageSource(
       bound,
       output,
@@ -1322,7 +1372,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
         ? {
             sourceByteWitness: hostFileWitness
               ? 'retained-host-file-with-native-load-and-typed-wire'
-              : savedImage
+              : !sourceProjection
                 ? 'native-load-and-upload-with-typed-wire'
                 : 'native-load-consumer-and-upload',
           }
@@ -1335,7 +1385,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
         : {}),
       ...(route.retainedFormMode ? { retainedStudioFormMode: route.retainedFormMode } : {}),
       ...(savedImage
-        ? { independentConsumerPixels: false, configuredUnobservedControls: route.unobservedControls ?? [] }
+        ? { independentConsumerPixels: sourceProjection, configuredUnobservedControls: route.unobservedControls ?? [] }
         : {}),
       ...(hostFileWitness ? { originalUploadResponseObserved: false } : {}),
       ...(route.cpuExecution ? { executionDevice: 'cpu:0', peakMemorySource: 'sampled-worker-rss' } : {}),
