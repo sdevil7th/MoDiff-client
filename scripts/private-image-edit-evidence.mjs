@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { stableJsonValue } from './canonical-json.mjs';
-import { verifyNativeLoadedImages } from './native-image-load-evidence.mjs';
+import { verifyNativeLoadedImages, verifyRetainedHostImageFiles } from './native-image-load-evidence.mjs';
 import {
   backendContractIdentity,
   backendSourceEvidence,
@@ -33,6 +33,7 @@ export const NATIVE_PNG_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-p
 export const NATIVE_PNG_INPAINT_FORMAT = 'modiff.private.direct-image-inpaint-native-png.v1';
 export const SAVED_PNG_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-png.v1';
 const SAVED_WEBP_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-webp.v1';
+const SAVED_HOST_FILE_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-host-file.v1';
 const RETAINED_SERVER_EDIT_FORMAT = 'modiff.private.server-retained-image-edit-native-png.v1';
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
 const imageGeometry = ['height', 'max_sequence_length', 'width'];
@@ -486,6 +487,19 @@ const editRoutes = new Map([
       runtimeContractDigest: '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5',
     },
   ],
+  [
+    'JoyImageEditPipeline:edit_image',
+    {
+      ...retainedImageEdit,
+      format: SAVED_HOST_FILE_EDIT_FORMAT,
+      modelRepo: 'jdopensource/JoyAI-Image-Edit-Diffusers',
+      modelRevision: '4b41fb25d961f37668750178ccbb380da326201c',
+      loaderClass: 'JoyImageEditPipeline',
+      sourceFingerprint: 'sha256:backend-source-v1:585997dc1146ec6effb20c260272babc01713ecdea4f78a0872c12ef2568ef83',
+      runtimeContractDigest: qwenPlusEdit.runtimeContractDigest,
+      fullNativeSnapshot: true,
+    },
+  ],
   ['QwenImageEditPlusPipeline:edit_image', qwenPlusEdit],
   [
     'QwenImageEditPipeline:edit_image',
@@ -844,6 +858,7 @@ function verifySavedEditControls(bound, output, route) {
 async function verifySavedImageSource(bound, output, { input, maskInput, references }, route, read, json, evidence) {
   const record = verifySavedEditControls(bound, output, route);
   const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
+  const hostFileWitness = route.format === SAVED_HOST_FILE_EDIT_FORMAT;
   const verify = async (role, selected, uploads, port, mode) => {
     const owner = bound[role];
     assert.equal(uploads.length, selected.length);
@@ -852,13 +867,17 @@ async function verifySavedImageSource(bound, output, { input, maskInput, referen
         const { bytes, file } = read(entry.file);
         const { width, height } = await decodedMediaHash(file, 'image');
         const decodedImage = { width, height, mode };
-        verifyRetainedImageUpload(
-          json(uploads[index]),
-          entry,
-          decodedImage,
-          bytes,
-          role !== 'mask' && route.format === SAVED_WEBP_EDIT_FORMAT ? 'webp' : 'png',
-        );
+        if (hostFileWitness) {
+          assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'The saved host source is not PNG.');
+        } else {
+          verifyRetainedImageUpload(
+            json(uploads[index]),
+            entry,
+            decodedImage,
+            bytes,
+            role !== 'mask' && route.format === SAVED_WEBP_EDIT_FORMAT ? 'webp' : 'png',
+          );
+        }
         return decodedImage;
       }),
     );
@@ -1017,9 +1036,11 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes);
   const masked = route.masked === true;
+  const hostFileWitness = evidence.format === SAVED_HOST_FILE_EDIT_FORMAT && evidence.format === route.format;
   const savedImage =
-    [SAVED_PNG_EDIT_FORMAT, SAVED_WEBP_EDIT_FORMAT, RETAINED_SERVER_EDIT_FORMAT].includes(route.format) &&
-    evidence.format === route.format;
+    hostFileWitness ||
+    ([SAVED_PNG_EDIT_FORMAT, SAVED_WEBP_EDIT_FORMAT, RETAINED_SERVER_EDIT_FORMAT].includes(route.format) &&
+      evidence.format === route.format);
   const replayedRegistry = savedImage && !route.originalRegistryHash;
   const referenceCount = route.orderedReferences ?? 0;
   const pngFormat = masked ? NATIVE_PNG_INPAINT_FORMAT : NATIVE_PNG_EDIT_FORMAT;
@@ -1032,7 +1053,11 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     'graphRequest',
     'graphAcknowledgment',
     'persistedOutputs',
-    ...(nativeUpload ? ['inputUpload'] : ['inputServerBefore', 'inputServerAfter']),
+    ...(hostFileWitness
+      ? ['hostInputFiles']
+      : nativeUpload
+        ? ['inputUpload']
+        : ['inputServerBefore', 'inputServerAfter']),
     ...(masked ? ['maskUpload'] : []),
     ...(replayedRegistry ? ['registryReplay'] : []),
     ...(referenceCount ? ['referenceUploads'] : []),
@@ -1090,6 +1115,13 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const graphRequest = json(evidence.graphRequest);
   const graphAcknowledgment = json(evidence.graphAcknowledgment);
   const store = json(evidence.persistedOutputs);
+  if (hostFileWitness) {
+    verifyRetainedHostImageFiles(json(evidence.hostInputFiles), {
+      taskId: run.task.task_id,
+      persistedOutputSha256: evidence.persistedOutputs.sha256,
+      inputs: capture.inputs,
+    });
+  }
   const exactStoredOutputs = store.outputs.filter(({ taskId }) => taskId === run.task.task_id);
   assert.equal(exactStoredOutputs.length, 1, 'The saved output store must contain exactly one result for the task.');
   const [persistedOutput] = exactStoredOutputs;
@@ -1288,9 +1320,11 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       sourceGeometryQualified: false,
       ...(nativeUpload
         ? {
-            sourceByteWitness: savedImage
-              ? 'native-load-and-upload-with-typed-wire'
-              : 'native-load-consumer-and-upload',
+            sourceByteWitness: hostFileWitness
+              ? 'retained-host-file-with-native-load-and-typed-wire'
+              : savedImage
+                ? 'native-load-and-upload-with-typed-wire'
+                : 'native-load-consumer-and-upload',
           }
         : {}),
       ...(bound.canvas
@@ -1303,6 +1337,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       ...(savedImage
         ? { independentConsumerPixels: false, configuredUnobservedControls: route.unobservedControls ?? [] }
         : {}),
+      ...(hostFileWitness ? { originalUploadResponseObserved: false } : {}),
       ...(route.cpuExecution ? { executionDevice: 'cpu:0', peakMemorySource: 'sampled-worker-rss' } : {}),
       ...(route.serverRetainedOutput ? { clientApiSnapshotObserved: false, serverOutputStoreMatched: true } : {}),
       ...(route.inputImagePromptPrefix ? { nativeInputMarkerBound: true } : {}),

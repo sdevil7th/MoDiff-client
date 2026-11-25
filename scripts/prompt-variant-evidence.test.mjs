@@ -457,6 +457,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['OmniGenPipeline:text_to_image', 'MODIFF_OMNIGEN_SAVED_PROMPT_EVIDENCE', 'image'],
   ['SanaSprintPipeline:text_to_image', 'MODIFF_SANA_SPRINT_IMAGE_PROMPT_EVIDENCE', 'image'],
   ['StableDiffusionXLPAGPipeline:text_to_image', 'MODIFF_SDXL_PAG_PROMPT_EVIDENCE', 'image'],
+  ['PixArtSigmaPipeline:text_to_image', 'MODIFF_SAVED_PIXART_SIGMA_PROMPT_EVIDENCE', 'image'],
 ]) {
   const saved = process.env[variable];
   test(`${workflowId} retained ${kind} prompt variant verifies without new execution`, { skip: !saved }, async () => {

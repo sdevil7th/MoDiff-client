@@ -1,5 +1,17 @@
 import assert from 'node:assert/strict';
 
+export function verifyRetainedHostImageFiles(observation, { taskId, persistedOutputSha256, inputs }) {
+  assert.deepEqual(Object.keys(observation).sort(), ['files', 'persistedOutputSha256', 'taskId']);
+  assert.equal(observation.taskId, taskId);
+  assert.equal(observation.persistedOutputSha256, persistedOutputSha256);
+  const bySource = (items) => [...items].sort((left, right) => left.sourceValue.localeCompare(right.sourceValue));
+  assert.deepEqual(
+    bySource(observation.files),
+    bySource(inputs.map(({ sourceValue, file }) => ({ sourceValue, byteSize: file.bytes, sha256: file.sha256 }))),
+    'Original host inputs differ from the saved media.',
+  );
+}
+
 const literal = (value) => ({ value, source: 'literal' });
 
 export function verifyNativeLoadedImages(load, loaded, modes) {

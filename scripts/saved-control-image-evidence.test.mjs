@@ -4,12 +4,14 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { verifyConditioningModels } from './control-inpaint-evidence.mjs';
 import { selectBackendRuntimeFingerprintEvidence } from './live-proof-provenance.mjs';
+import { verifyRetainedHostImageFiles } from './native-image-load-evidence.mjs';
 import { readCanonicalEvidenceFile, readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
 import { verifySavedControlImageInputs } from './saved-control-image-evidence.mjs';
 
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
 const root = process.env.MODIFF_SAVED_CONTROL_EVIDENCE_DIR;
+const integratedRoot = process.env.MODIFF_SAVED_INTEGRATED_CONTROL_EVIDENCE_DIR;
 const cases = [
   ['linux-sd15-control-fixed', 'StableDiffusionPipeline:control_image', 'ControlNetModel', 'qa0wL-hE_WwQ'],
   [
@@ -37,6 +39,64 @@ const cases = [
     'Hujzhp32JY-C',
   ],
 ];
+
+test('the retained native host input witness is scoped to the task, output store and exact source files', () => {
+  const sourceValue = '@data/images/guide.png';
+  const sha256 = 'd'.repeat(64);
+  const inputs = [{ sourceValue, file: { bytes: 41, sha256 } }];
+  const task = { taskId: 'closed-task', persistedOutputSha256: '8'.repeat(64) };
+  const witness = { ...task, files: [{ sourceValue, byteSize: 41, sha256 }] };
+  verifyRetainedHostImageFiles(witness, { ...task, inputs });
+  assert.throws(
+    () => verifyRetainedHostImageFiles({ ...witness, taskId: 'wrong' }, { ...task, inputs }),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () => verifyRetainedHostImageFiles({ ...witness, persistedOutputSha256: '0'.repeat(64) }, { ...task, inputs }),
+    assert.AssertionError,
+  );
+  assert.throws(
+    () =>
+      verifyRetainedHostImageFiles({ ...witness, files: [{ ...witness.files[0], byteSize: 42 }] }, { ...task, inputs }),
+    /Original host inputs differ/u,
+  );
+});
+
+for (const [slug, workflowId, taskId] of [
+  ['linux-flux-canny-backdrop-mask-math', 'FluxCannyPipeline:control_inpaint', '6jBwgHT1CJzd'],
+  ['linux-flux-depth-boat-patch-math', 'FluxDepthPipeline:control_inpaint', 'fzHPC9ZCZoH-'],
+  ['linux-flux-canny-ink-cube-math', 'FluxCannyPipeline:control_edit_image', 'NSXOcA60DY5Q'],
+  ['linux-flux-depth-boat-paint-math', 'FluxDepthPipeline:control_edit_image', 'uJXjYkrtPtwr'],
+]) {
+  test('recovers the original integrated control run for ' + workflowId, { skip: !integratedRoot }, async () => {
+    const evidencePath = resolve(integratedRoot, slug, 'exact-native-evidence.json');
+    const { receipt, evidence } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId,
+      evidencePath,
+    });
+    assert.equal(receipt.taskId, taskId);
+    assert.equal(receipt.conditioningModel.source, 'integrated_checkpoint');
+    assert.equal(receipt.observationLimits.originalUploadResponsesObserved, false);
+    assert.equal(receipt.observationLimits.hostFilesMatchedNativeLoads, true);
+    assert.equal(receipt.observationLimits.processedControlPixelsObserved, false);
+    assert.equal(receipt.qualificationClaims.rightsApproved, false);
+    const [guide, source, mask] = evidence.inputs;
+    assert.equal(receipt.guideBinding.sha256, guide.file.sha256);
+    assert.equal(receipt.inputBinding.sha256, source.file.sha256);
+    assert.equal(receipt.maskBinding?.sha256, mask?.file.sha256);
+    const read = (ref) => JSON.parse(readCanonicalEvidenceFile(dirname(evidencePath), ref).bytes);
+    const graph = read(evidence.graphRequest);
+    const { latestOutput: output } = read(evidence.outputPackage);
+    const sampler = Object.values(graph.nodes).find(({ action }) => /^Control(?:Edit|Inpaint)$/u.test(action));
+    sampler.params.control_image.sourceId = sampler.params.image.sourceId;
+    assert.throws(
+      () => verifySavedControlImageInputs(graph, output, evidence.inputs, workflowId),
+      assert.AssertionError,
+    );
+  });
+}
 
 for (const [slug, workflowId, componentClass, taskId] of cases) {
   test('recovers the historical guide and verified sampler for ' + workflowId, { skip: !root }, async () => {

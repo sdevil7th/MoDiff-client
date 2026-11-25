@@ -2214,6 +2214,31 @@ const plainImageLegacyNull = ['control_guidance_start', 'conditioning_scale', 's
 const pagScalars = ['pag_scale', 'pag_adaptive_scale'];
 export const directImagePromptRoutes = [
   {
+    format: 'modiff.private.pixart-sigma-text-to-image-prompt-variant.v1',
+    workflowId: 'PixArtSigmaPipeline:text_to_image',
+    modelType: 'PixArtSigmaPipeline',
+    modelRepo: 'PixArt-alpha/PixArt-Sigma-XL-2-1024-MS',
+    modelRevision: 'e102b3591cc82e97071b8b4cb90d834d0c487207',
+    active: [...plainImageActive, 'negative_prompt', 'max_sequence_length'],
+    inactive: plainImageInactive,
+    legacyNull: plainImageLegacyNull,
+    platform: /^Linux-/u,
+    backend: 'rocm',
+    dtype: 'float32',
+    offload: 'model_cpu',
+    deviceMap: 'none',
+    replayedRuntimeContract: '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5',
+    generation: {
+      width: 1024,
+      height: 1024,
+      num_inference_steps: 20,
+      guidance_scale: 4.5,
+      max_sequence_length: 300,
+      seed: 42,
+      negative_prompt: '',
+    },
+  },
+  {
     format: 'modiff.private.lumina2-prompt-variant.v1',
     workflowId: 'Lumina2Pipeline:text_to_image',
     modelType: 'Lumina2Pipeline',

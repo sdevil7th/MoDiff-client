@@ -873,6 +873,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.direct-image-inpaint-native-png.v1',
       'modiff.private.saved-image-edit-native-png.v1',
       'modiff.private.saved-image-edit-native-webp.v1',
+      'modiff.private.saved-image-edit-native-host-file.v1',
       'modiff.private.server-retained-image-edit-native-png.v1',
     ].includes(evidence.format)
   ) {
@@ -956,7 +957,11 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
     const { readControlInpaintEvidence } = await import('./control-inpaint-evidence.mjs');
     return readControlInpaintEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
   }
-  if (evidence.format === 'modiff.private.saved-control-image-native-png.v1') {
+  if (
+    ['modiff.private.saved-control-image-native-png.v1', 'modiff.private.saved-control-image-native-files.v1'].includes(
+      evidence.format,
+    )
+  ) {
     const { readSavedControlImageEvidence } = await import('./saved-control-image-evidence.mjs');
     return readSavedControlImageEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath });
   }

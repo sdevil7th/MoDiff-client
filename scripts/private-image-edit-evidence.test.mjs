@@ -473,6 +473,7 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['LongCatImageEditPipeline:edit_image', 'MODIFF_SAVED_LONGCAT_EDIT_EVIDENCE', false, []],
   ['QwenImageModularPipeline:edit_image', 'MODIFF_QWEN_BOOKSHOP_EDIT_EVIDENCE', false, []],
   ['ChromaImg2ImgPipeline:edit_image', 'MODIFF_CHROMA_LARCH_EDIT_EVIDENCE', false, []],
+  ['JoyImageEditPipeline:edit_image', 'MODIFF_SAVED_JOY_BASE_EDIT_EVIDENCE', false, []],
   ['FluxKontextInpaintPipeline:inpaint', 'MODIFF_SAVED_KONTEXT_WINDOW_EVIDENCE', true, []],
   [
     'FluxKontextInpaintPipeline:outpaint',
@@ -525,7 +526,14 @@ for (const [workflowId, variable, hasMask, unobserved] of [
       const original = await readCanonicalWorkflowEvidence(args);
       const { receipt } = original;
       assert.equal(receipt.observationLimits.independentConsumerPixels, false);
-      assert.equal(receipt.observationLimits.sourceByteWitness, 'native-load-and-upload-with-typed-wire');
+      const hostFileWitness = workflowId === 'JoyImageEditPipeline:edit_image';
+      assert.equal(
+        receipt.observationLimits.sourceByteWitness,
+        hostFileWitness
+          ? 'retained-host-file-with-native-load-and-typed-wire'
+          : 'native-load-and-upload-with-typed-wire',
+      );
+      if (hostFileWitness) assert.equal(receipt.observationLimits.originalUploadResponseObserved, false);
       assert.deepEqual(receipt.observationLimits.configuredUnobservedControls, unobserved);
       assert.equal(Boolean(receipt.maskBinding), hasMask);
       const root = mkdtempSync(join(tmpdir(), 'modiff-retained-edit-'));
@@ -536,6 +544,25 @@ for (const [workflowId, variable, hasMask, unobserved] of [
         }
         const descriptor = JSON.parse(original.descriptorBytes);
         const changedPath = join(root, 'evidence.json');
+        if (hostFileWitness) {
+          const changed = structuredClone(descriptor);
+          const path = join(root, changed.hostInputFiles.path);
+          const originalBytes = readFileSync(path);
+          const witness = JSON.parse(originalBytes);
+          witness.files[0].sha256 = 'a'.repeat(64);
+          const bytes = Buffer.from(JSON.stringify(witness));
+          Object.assign(changed.hostInputFiles, {
+            bytes: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+          });
+          writeFileSync(path, bytes);
+          writeFileSync(changedPath, JSON.stringify(changed));
+          await assert.rejects(
+            readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+            /Original host inputs differ/u,
+          );
+          writeFileSync(path, originalBytes);
+        }
         if (workflowId.endsWith(':outpaint')) {
           assert.equal(receipt.observationLimits.canvasSizeObserved, true);
           assert.equal(receipt.observationLimits.canvasPixelsObserved, false);

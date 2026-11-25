@@ -9,8 +9,9 @@ import {
   canonicalGraphIdentity,
   normalizeBackendRuntime,
   selectBackendRuntimeFingerprintEvidence,
+  selectInstalledModelIdentity,
 } from './live-proof-provenance.mjs';
-import { verifyNativeLoadedImage } from './native-image-load-evidence.mjs';
+import { verifyNativeLoadedImage, verifyRetainedHostImageFiles } from './native-image-load-evidence.mjs';
 import {
   validateLateNativeImageVariantRun,
   validateNativeVariantOutput,
@@ -26,6 +27,7 @@ import {
 import { decodedMediaHash, technicalMediaErrors } from './template-gallery-harness.mjs';
 
 const format = 'modiff.private.saved-control-image-native-png.v1';
+const retainedHostFormat = 'modiff.private.saved-control-image-native-files.v1';
 const linuxReplayRuntime = '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5';
 const windowsReplayRuntime = 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c';
 const commonSource = 'e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8';
@@ -39,7 +41,24 @@ const sd15Repair = {
   windows: true,
   additionalInputs: ['source', 'mask'],
 };
+const fluxControl = {
+  action: 'ControlEdit',
+  pipelineClass: 'FluxControlImg2ImgPipeline',
+  source: '585997dc1146ec6effb20c260272babc01713ecdea4f78a0872c12ef2568ef83',
+  integratedControl: true,
+  additionalInputs: ['source'],
+};
+const fluxControlInpaint = {
+  ...fluxControl,
+  action: 'ControlInpaint',
+  pipelineClass: 'FluxControlInpaintPipeline',
+  additionalInputs: ['source', 'mask'],
+};
 const routes = {
+  'FluxCannyPipeline:control_edit_image': { ...fluxControl, lateOutput: true },
+  'FluxCannyPipeline:control_inpaint': { ...fluxControlInpaint, lateOutput: true },
+  'FluxDepthPipeline:control_edit_image': fluxControl,
+  'FluxDepthPipeline:control_inpaint': fluxControlInpaint,
   'StableDiffusionPipeline:control_image': {
     pipelineClass: 'StableDiffusionControlNetPipeline',
     componentClass: 'ControlNetModel',
@@ -133,7 +152,11 @@ function owners(api, route) {
     ],
   );
   const [guide, canny, loader] = route.canny ? [path[0], path[1], path[4]] : [path[3], null, path[2]];
-  const inputs = { guide, ...Object.fromEntries(additionalInputs.map((role, index) => [role, path[index + 5]])) };
+  const afterInputs = route.canny ? 5 : 4;
+  const inputs = {
+    guide,
+    ...Object.fromEntries(additionalInputs.map((role, index) => [role, path[index + afterInputs]])),
+  };
   const [sampler, preview] = path.slice(-2);
   return { path, inputs, canny, loader, sampler, preview };
 }
@@ -206,10 +229,13 @@ export function verifySavedControlImageInputs(api, output, inputs, workflowId) {
     executed_task: workflowId.split(':')[1],
     strength: inputOwners.source ? params.strength.value : null,
     guidance_scale: route.trueCfg ? null : params.guidance_scale.value,
-    max_sequence_length: route.trueCfg ? params.max_sequence_length.value : null,
-    control_guidance_start: route.guidanceWindowUnavailable ? null : params.control_guidance_start.value,
-    control_guidance_end: route.guidanceWindowUnavailable ? null : params.control_guidance_end.value,
+    max_sequence_length: route.trueCfg || route.integratedControl ? params.max_sequence_length.value : null,
+    control_guidance_start:
+      route.guidanceWindowUnavailable || route.integratedControl ? null : params.control_guidance_start.value,
+    control_guidance_end:
+      route.guidanceWindowUnavailable || route.integratedControl ? null : params.control_guidance_end.value,
     ...(route.trueCfg && { true_cfg_scale: params.guidance_scale.value }),
+    ...(route.integratedControl && { conditioning_scale: null, negative_prompt: null }),
   });
   const nativeSampler = record(sampler);
   assert.deepEqual(
@@ -219,6 +245,32 @@ export function verifySavedControlImageInputs(api, output, inputs, workflowId) {
   );
   assert.equal(nativeSampler.mediaEvidence, undefined);
   return decoded;
+}
+
+function verifyIntegratedControlCheckpoint({ loader, target, pipelineClass, completed, hints, runtime, observations }) {
+  assert.equal(target.modelSet.length, 1);
+  assert.equal(observations.length, 1);
+  const [{ repoId, revision }] = target.modelSet;
+  const [observation] = observations;
+  assert.equal(observation.error, false);
+  assert.equal(observation.runtimeFingerprint, runtime.fingerprint);
+  assert.equal(observation.models.length, 1);
+  const [record] = observation.models;
+  assert.equal(record.complete, true);
+  assert.equal(record.repairRequired, false);
+  const installed = selectInstalledModelIdentity(observation, repoId);
+  assert.equal(installed.selectedRevision, revision);
+  assert.equal(installed.modelRevision, repoId + '@' + revision);
+  assert.deepEqual(loader.model_id.value, { source: 'hub', value: repoId });
+  assert.equal(loader.revision.value, revision);
+  assert.equal(loader.pipeline_class.value, pipelineClass);
+  assert.equal(loader.conditioning_kind.value, 'none');
+  assert.deepEqual(completed.runtimeHints, {
+    ...hints,
+    controlledArtifacts: [],
+    loaderContract: ['modules.DiffusersImage.LoadPipeline'],
+  });
+  return { repoId, revision, source: 'integrated_checkpoint' };
 }
 
 export async function readSavedControlImageEvidence({
@@ -234,7 +286,7 @@ export async function readSavedControlImageEvidence({
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes);
-  assert.equal(evidence.format, format);
+  assert.equal(evidence.format, route.integratedControl ? retainedHostFormat : format);
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.workflowId, manifest.id);
   const evidenceRoot = realpathSync(dirname(evidencePath));
@@ -265,7 +317,11 @@ export async function readSavedControlImageEvidence({
   assert.equal(new Set(inputs.map(({ file }) => file.sha256)).size, roles.length);
   for (const [index, role] of roles.entries()) {
     const { sourceValue } = inputs[index];
-    assert.match(sourceValue, /^@data\/images\/[\w-]{1,128}\.png$/u);
+    const sourcePattern =
+      route.integratedControl && role === 'source'
+        ? /^@data\/images\/[\w-]{1,128}\.(?:png|webp)$/u
+        : /^@data\/images\/[\w-]{1,128}\.png$/u;
+    assert.match(sourceValue, sourcePattern);
     const fileSlot = expected.nodes[canonical.inputs[role]].params.file;
     assert.deepEqual(fileSlot, { display: 'filebrowser', value: role === 'source' ? [] : '' });
     fileSlot.value = [sourceValue];
@@ -284,6 +340,9 @@ export async function readSavedControlImageEvidence({
       'Saved graph differs outside its prompt and selected images.',
     );
   }
+  const nativeStore = route.integratedControl ? read(evidence.persistedOutput) : undefined;
+  const stored = nativeStore ? JSON.parse(nativeStore.bytes).outputs : undefined;
+  if (stored) assert.equal(stored.length, 1);
   const validate = route.lateOutput ? validateLateNativeImageVariantRun : validateNativeVariantRun;
   const { task, output, hints } = validate({
     target,
@@ -296,16 +355,35 @@ export async function readSavedControlImageEvidence({
     graphRequest,
     graphAcknowledgment: json(evidence.graphAcknowledgment),
     validatePreparation: (value) => validateUnmodifiedExpertPreparation(value, route.pipelineClass),
-    ...(route.lateOutput && { persistedOutput: json(evidence.persistedOutput).outputs[0] }),
+    ...(route.lateOutput && { persistedOutput: (stored ?? json(evidence.persistedOutput).outputs)[0] }),
   });
+  if (stored) {
+    assert.equal(stored[0].taskId, task.task_id);
+    assert.equal(stored[0].mediaHash, output.mediaHash);
+    assert.deepEqual(stored[0].apiGraphSnapshot, output.apiGraphSnapshot);
+    assert.deepEqual(stored[0].resolvedExecutionInputs, output.resolvedExecutionInputs);
+    verifyRetainedHostImageFiles(json(evidence.hostInputFiles), {
+      taskId: task.task_id,
+      persistedOutputSha256: sha256(nativeStore.bytes),
+      inputs,
+    });
+  }
   const decoded = verifySavedControlImageInputs(graphRequest, output, inputs, manifest.id);
   const imageBindings = Object.fromEntries(
-    roles.map((role, index) => {
-      const input = inputs[index];
-      const decodedImage = decoded[index];
-      verifyRetainedPngUpload(json(input.upload), input, decodedImage, read(input.file).bytes);
-      return [role, { nodeId: actual.inputs[role], field: 'file', sha256: input.file.sha256, decodedImage }];
-    }),
+    await Promise.all(
+      roles.map(async (role, index) => {
+        const input = inputs[index];
+        const decodedImage = decoded[index];
+        const file = read(input.file);
+        if (route.integratedControl) {
+          const dimensions = await decodedMediaHash(file.file, 'image');
+          assert.deepEqual([dimensions.width, dimensions.height], [decodedImage.width, decodedImage.height]);
+        } else {
+          verifyRetainedPngUpload(json(input.upload), input, decodedImage, file.bytes);
+        }
+        return [role, { nodeId: actual.inputs[role], field: 'file', sha256: input.file.sha256, decodedImage }];
+      }),
+    ),
   );
   const source = backendSourceEvidence({
     before: json(evidence.backendSourceBefore).identity,
@@ -329,7 +407,8 @@ export async function readSavedControlImageEvidence({
   const backendContract = backendContractIdentity(JSON.parse(nodeBytes), identity.canonicalGraph);
   assert.ok(backendContract.fingerprint);
   const runtime = selectBackendRuntimeFingerprintEvidence([task.runtimeFingerprint]);
-  const control = verifyConditioningModels({
+  const verifyModels = route.integratedControl ? verifyIntegratedControlCheckpoint : verifyConditioningModels;
+  const control = verifyModels({
     loader: graphRequest.nodes[actual.loader].params,
     target,
     pipelineClass: route.pipelineClass,
@@ -391,6 +470,10 @@ export async function readSavedControlImageEvidence({
     observationLimits: {
       fullConsumedFieldAccounting: false,
       processedControlPixelsObserved: false,
+      ...(route.integratedControl && {
+        originalUploadResponsesObserved: false,
+        hostFilesMatchedNativeLoads: true,
+      }),
       ...(route.pagSettingsUnobserved && { effectivePagSettingsObserved: false }),
       physicalPlatformQualification: false,
     },
