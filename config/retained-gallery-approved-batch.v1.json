@@ -645,6 +645,19 @@
     "capturedAt": "2026-11-24T22:39:17.259Z",
     "outputExtension": "wav"
   },
+  "ltx_long_wind_and_tide_at_the_headland": {
+    "associationSha256": "c43060ec8058eb209719668f1cd942b406882d7e6a90c7577bf46b5ce79e1ddd",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d68ff3c7d7b2d190e68d6f148834ae971638c23a9d31086a3848874658f37da2",
+    "templateRevisionHash": "73e9ef351cbe53f541789d49ac53118ad61dbc234b40f1c516bd982f9e621153",
+    "capturedAt": "2026-11-25T11:16:56.343Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Lightricks/LTX-Video-0.9.8-13B-distilled",
+    "outputSize": {
+      "width": 768,
+      "height": 512
+    }
+  },
   "ltx2_enamel_teapot_window_light": {
     "associationSha256": "e7b9031dbffc495a1c803a1f05ba565dfa0e3a69a01f893f8641743dfe4641ca",
     "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
@@ -1470,6 +1483,19 @@
     "outputSize": {
       "width": 1280,
       "height": 704
+    }
+  },
+  "wan_vace_amber_glass_stabilized": {
+    "associationSha256": "e718c4bcb80657d3a22d2c6b53f568b216ba73cf51e51e6971cd248107290584",
+    "backendSourceFingerprint": "sha256:backend-source-v1:438519cbac050bb30e69d86506f4510f260d790899896038d9707a5edd488e95",
+    "backendContractFingerprint": "sha256:backend-contract-v1:5a281b9ce038d5cd332f93df5f1a29c485cf04edd0b8b809b2921217daeb7010",
+    "templateRevisionHash": "0a03ac711cd90be44c4f79f9d39ce3afa4e0cad264bdfc24294d625ce551181d",
+    "capturedAt": "2026-11-17T04:47:18.627Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Wan-AI/Wan2.1-VACE-1.3B-diffusers",
+    "outputSize": {
+      "width": 1664,
+      "height": 960
     }
   },
   "wan_vace_amber_rings_after_rain": {

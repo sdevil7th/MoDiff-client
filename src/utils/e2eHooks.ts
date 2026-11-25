@@ -33,7 +33,11 @@ import { hasTemplateOperationRecipe } from '../studio/templateOperationSelection
 import { getFormDefaultsForMode } from '../studio/modelProfiles';
 import type { StudioTaskTemplateSkeleton } from '../studio/taskTemplateContracts';
 import { materializeTemplateDefaultInputs } from '../studio/templateInputs';
-import { createTemplateOperationWorkflow, normalizeTemplateRuntimeDevice } from '../studio/templateWorkflow';
+import {
+  applyTemplateVideoPromptWindows,
+  createTemplateOperationWorkflow,
+  normalizeTemplateRuntimeDevice,
+} from '../studio/templateWorkflow';
 import { ensureStudioAutoPlanReadyForRun } from '../studio/useStudioRunActions';
 import type { UserBlockDefinition } from '../studio/types';
 import { createUserBlockNode, normalizeUserBlockDefinition } from '../studio/userBlocks';
@@ -275,6 +279,7 @@ async function applyTemplate(
       );
     }
     await createOrUpdateStudioGraph(useStudioStore.getState().form, context, GALLERY_GRAPH_FINALIZATION_TIMEOUT_MS);
+    applyTemplateVideoPromptWindows(template);
     for (const block of template.workflowBlocks ?? []) {
       if (block === 'lora') {
         await addLoraWorkflowBlock(useStudioStore.getState().form, template.workflowBlockSettings?.lora, {

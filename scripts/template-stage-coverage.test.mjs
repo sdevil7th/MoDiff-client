@@ -33,16 +33,13 @@ test('every fresh template has an explicit operation or retained standalone auth
   const nativeTemplates = new Set(retained.map(({ template }) => template));
   for (const template of templates) {
     await t.test(template.id, () => {
-      if (nativeTemplates.has(template)) {
-        assert.equal(template.example.lockedSettings.resourceMode, 'expert');
-        assert.ok(template.requiredBackendCapabilities.length > 0);
-        return;
-      }
-      assert.equal(
-        selections.hasTemplateOperationRecipe(template),
-        true,
+      if (selections.hasTemplateOperationRecipe(template)) return;
+      assert.ok(
+        nativeTemplates.has(template),
         `${template.label} still falls back to the legacy flat graph builder`,
       );
+      assert.equal(template.example.lockedSettings.resourceMode, 'expert');
+      assert.ok(template.requiredBackendCapabilities.length > 0);
     });
   }
 });

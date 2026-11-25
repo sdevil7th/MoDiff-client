@@ -1569,5 +1569,37 @@
     "inputSha256": "ff30b36f685b657db6de0cb59dff37601e147123ba19b9c42a32fc1060bd323e",
     "inputLocatorSha256": "b966dd6c256b44b89c050faba78dd69ca11d01c3fa49897ca9f03a61dc3df64c",
     "guideSha256": "64e81c4250408ca9a2ffc11e2987413096ae65674c2935a0417a351a50bb3ba4"
+  },
+  "wan_vace_amber_glass_stabilized": {
+    "workflowId": "WanVACEPipeline:video_inpaint",
+    "sourceTaskTemplateId": "wan_vace_masked_object_replace",
+    "retainedGraphHash": "sha256:canonical-graph-v1:5b7ac5d2442e6c92e28ee9bff7e02847c3de46dc2570e5d7eb779583f186fc0c",
+    "originalReceiptSha256": "d5451bccf12b116e53dfb6bb685d4e5cc82d5f949eee3a7feb55bd70921d2f7d",
+    "reviewedTemplateSha256": "0a03ac711cd90be44c4f79f9d39ce3afa4e0cad264bdfc24294d625ce551181d",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_5b0b9cdb",
+      "galleryTemplateLockHash": "tpl_6035cabd",
+      "promptSettingsHash": "ps_1cd79e28"
+    },
+    "promptSha256": "79656edb849220336b96beeec58d17955f7f1f9d8cc7113a5c0387a401c79bbe",
+    "inputSha256": "da6a0abe90bfc8c4efcb4a63201a6db839c944416cef49d452b629fbb86c3ec0",
+    "inputLocatorSha256": "ffaaf8cd52d49e8d2cb2f7841f95af434b2e0db1cb320ed9ddda6b5bc83e6874",
+    "maskSha256": "c8eefe9665e6ba8965e7d48c5e6116f2e3ba230ac35390efb834140c5d4cdf8b",
+    "referenceImageSha256": "43a36ae8d33da045a6ad1321195cd163ce3188e1d119008860386afacd21dbc2"
+  },
+  "ltx_long_wind_and_tide_at_the_headland": {
+    "workflowId": "LTXI2VLongMultiPromptPipeline:image_to_video",
+    "sourceTaskTemplateId": "task-template:ltx-long:image-to-video:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:cdee10882c28fd4417274cbcd16101f9b7a2d144cf8ab828ab261ff6b660e673",
+    "originalReceiptSha256": "931a643453b17f494211e7a1663a7d1ea65444b8c5e92d7eb6f3c0b46412fafa",
+    "reviewedTemplateSha256": "73e9ef351cbe53f541789d49ac53118ad61dbc234b40f1c516bd982f9e621153",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_c88d362b",
+      "galleryTemplateLockHash": "tpl_3bb28fd4",
+      "promptSettingsHash": "ps_75d6a3e5"
+    },
+    "promptSha256": "46826d4c16c0e700fd7f24ce5eb4c04af3c69ea290180244bcd062c3c6a46d79",
+    "inputSha256": "51624f59295a77119bf336a63bfc7731d33d6612bc44b15495bddabdfae3ef51",
+    "inputLocatorSha256": "ff67721141957f1b8ee5881a9036cf19512f0dfe8e068e682da35a39060121ad"
   }
 }

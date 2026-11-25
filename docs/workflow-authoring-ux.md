@@ -28,6 +28,12 @@ its library, adapter, schema and ordered modes still match the current registry.
 A separately consumed intermediate remains accessible. Opening an existing user
 document respects the presentation saved in that document.
 
+Scheduled video recipes load their prompt windows into the Generate stage on
+first open. Masked video recipes can place a single Composite stage between
+Upscale and Video Output. It takes the original clip, the generated clip, and
+the aligned mask from their existing connections. Prepare Mask owns mask
+growth. Composite owns edge feathering.
+
 ## Start a workflow
 
 In Developer, search for an action or filter by Image, Audio, Video, 3D, or Text &

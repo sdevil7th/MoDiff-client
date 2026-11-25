@@ -660,6 +660,34 @@ export function createTemplateOperationGraph(
         set,
         connect,
       });
+    } else if (block === 'video_masked_composite') {
+      const settings = template.workflowBlockSettings?.videoMaskedComposite;
+      const source = roles.get('loadVideo');
+      const output = roles.get('videoExport');
+      const masks = graph.nodes.filter(
+        (node) => node.data.module === 'modules.VideoConditioning' && node.data.action === 'AlignMask',
+      );
+      const tail = graph.edges.find((edge) => edge.target === output?.id && edge.targetHandle === 'video');
+      const generated = graph.nodes.find((node) => node.id === tail?.source);
+      if (
+        selection.task !== 'video_inpaint' ||
+        !settings ||
+        !source ||
+        !output ||
+        masks.length !== 1 ||
+        !tail ||
+        !generated
+      )
+        throw new Error('A video composite needs a source clip, one aligned mask, and a generated clip.');
+      const [mask] = masks;
+      const composite = utility('modules.Video.MaskedComposite', 0);
+      set(mask!, ['grow_pixels'], settings.maskGrowPixels);
+      set(composite, ['feather'], settings.feather);
+      graph.edges = graph.edges.filter((edge) => edge.id !== tail.id);
+      connect(source, ['video'], composite, ['source']);
+      connect(generated, [tail.sourceHandle!], composite, ['generated']);
+      connect(mask!, ['output'], composite, ['mask']);
+      connect(composite, ['output'], output, ['video']);
     } else if (block === 'upscaler') {
       const videoExport = roles.get('videoExport');
       const videoInput = graph.edges.find((edge) => edge.target === videoExport?.id && edge.targetHandle === 'video');

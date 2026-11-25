@@ -43,6 +43,28 @@ export type TemplateWorkflowResult = {
   warnings: string[];
 };
 
+export function applyTemplateVideoPromptWindows(template: StudioTemplate) {
+  const settings = template.workflowBlockSettings?.videoPromptWindows;
+  if (!settings) return;
+  const samplerId = useStudioStore.getState().graphBinding?.nodes.wanGenerate;
+  const flow = useFlowStore.getState();
+  const sampler = flow.nodes.find((node) => node.id === samplerId);
+  const values = [
+    ['prompt_segments_json', settings.promptsJson],
+    ['segment_frame_length', settings.segmentFrameLength],
+    ['temporal_overlap', settings.temporalOverlap],
+    ['temporal_overlap_condition_strength', settings.overlapConditionStrength],
+  ] as const;
+  if (
+    !sampler ||
+    sampler.data.module !== 'modules.DiffusersVideo' ||
+    sampler.data.action !== 'Generate' ||
+    values.some(([field]) => !sampler.data.params[field])
+  )
+    throw new Error('Video prompt windows require a compatible Generate stage.');
+  for (const [field, value] of values) flow.setParam(sampler.id, field, value);
+}
+
 async function applyWorkflowBlock(
   block: StudioTemplateWorkflowBlock,
   form: StudioFormState,
@@ -227,6 +249,7 @@ export async function createTemplateOperationWorkflow(
       ? ['modules.ModularDiffusers.Lora', 'modules.DiffusersImage.LoadAdapter', 'modules.DiffusersAudio.LoadAdapter']
       : []),
     ...(template.workflowBlocks?.includes('upscaler') ? ['modules.Spandrel.Upscaler'] : []),
+    ...(template.workflowBlocks?.includes('video_masked_composite') ? ['modules.Video.MaskedComposite'] : []),
     ...(selection.task === 'video_outpaint' ? ['modules.VideoConditioning.OutpaintCanvas'] : []),
     ...(template.workflowBlocks?.some((block) => ['video_sequence', 'quality_video_sequence'].includes(block))
       ? [
@@ -372,6 +395,7 @@ export async function createWorkflowFromTemplate(template: StudioTemplate): Prom
       }
       graphCreated = true;
       warnings = result.warnings;
+      applyTemplateVideoPromptWindows(template);
       for (const block of template.workflowBlocks ?? []) {
         try {
           await applyWorkflowBlock(block, after, template, { graphPrepared: true, workflowContext: context });

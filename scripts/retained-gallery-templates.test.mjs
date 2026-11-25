@@ -51,7 +51,7 @@ before(async () => {
     process.env.MODIFF_BACKEND_PYTHON ||
     join(backend, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
   const script = join(client, 'scripts/template-operation-fixtures.py');
-  const args = [script, '--mock-cuda', '--studio-spec-only'];
+  const args = [script, '--mock-cuda'];
   fixture = JSON.parse(
     execFileSync(
       process.platform === 'win32' ? python : join(backend, 'scripts/with-runtime-env.sh'),
@@ -62,9 +62,10 @@ before(async () => {
         maxBuffer: 64 * 1024 * 1024,
         env: { ...process.env, MODIFF_BACKEND_DIR: backend },
         input: JSON.stringify(
-          recipes.map(({ template: { id, modelType, mode } }) => ({
+          recipes.map(({ template: { id, modelType, mode, executionSelection } }) => ({
             id,
-            selection: { bindingSpec: { modelType, mode } },
+            studioSpecOnly: !executionSelection,
+            selection: executionSelection ?? { bindingSpec: { modelType, mode } },
           })),
         ),
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -175,6 +176,16 @@ test('retained Gallery recipes preserve the native graph identities and standalo
         const capture = descriptor.capture
           ? JSON.parse(readCanonicalEvidenceFile(evidenceRoot, descriptor.capture).bytes)
           : descriptor;
+        if (descriptor.format === 'modiff.private.saved-vace-composite.v1') {
+          const run = JSON.parse(readCanonicalEvidenceFile(evidenceRoot, descriptor.run).bytes);
+          assert.equal(run.task.status, 'completed');
+          assert.equal(canonicalGraphIdentity(run.outputs[0].apiGraphSnapshot).hash, recipe.retainedGraphHash);
+          assert.deepEqual(
+            [descriptor.sourceVideo.sha256, descriptor.maskVideo.sha256, descriptor.referenceImage.sha256],
+            [recipe.inputSha256, recipe.maskSha256, recipe.referenceImageSha256],
+          );
+          continue;
+        }
         const saved = JSON.parse(
           readCanonicalEvidenceFile(evidenceRoot, capture.creatorPackage ?? capture.creator).bytes,
         );
@@ -194,6 +205,7 @@ test('retained Gallery recipes preserve the native graph identities and standalo
               recipe.guideSha256,
               recipe.lastFrameSha256,
               recipe.secondaryReferenceSha256,
+              recipe.referenceImageSha256,
               ...Object.values(recipe.videoConditionerHashes ?? {}),
             ]),
           ]
@@ -276,7 +288,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           assert.equal(payload.values.pipeline_class, videoContract.pipelineClass);
           flow.getState().setParam(payload.node, 'pipeline', { direction: 'output', value: videoContract }, 'signal');
         } else {
-          assert.equal(payload.action, 'Generate');
+          assert.ok(['Generate', 'GenerateVideoAudio'].includes(payload.action));
           assert.equal(payload.fn, 'update_adapter_modes');
           assert.deepEqual(payload.values.video_contract, videoContract);
         }
@@ -319,12 +331,60 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       // FLF metadata changes the runtime ports. Exercise that transition with
       // the real backend in the retained first/last-frame browser test.
       if (recipe.lastFrameSha256) continue;
-      const {
-        spec,
-        imageContract,
-        audioContract: nextAudioContract,
-        videoContract: nextVideoContract,
-      } = fixture.recipes.find((item) => item.id === template.id);
+      const row = fixture.recipes.find((item) => item.id === template.id);
+      if (template.workflowBlockSettings?.videoMaskedComposite) {
+        const { createTemplateOperationGraph } = await server.ssrLoadModule('/src/studio/templateOperationWorkflow.ts');
+        const { parseOperationStarter } = await server.ssrLoadModule('/src/workflow/operationStarterRequest.ts');
+        const { parseOperationContracts } = await server.ssrLoadModule('/src/workflow/operationContracts.ts');
+        assert.ok(template.executionSelection, 'The composite requires its declared normal template graph.');
+        studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
+        studio.getState().applyTemplate(template, {
+          sourceVideo: 'review-source-video.mp4',
+          maskVideo: 'review-mask-video.mp4',
+          referenceImages: ['review-reference-image.png'],
+        });
+        const form = studio.getState().form;
+        const selection = template.executionSelection;
+        const starter = parseOperationStarter(
+          row.starter,
+          selection.pipelineClass,
+          selection.task,
+          parseOperationContracts(fixture.publicPayload.operationContracts, 3),
+          selection,
+        );
+        const capability = fixture.capabilities.find(({ modelType }) => modelType === selection.bindingSpec.modelType);
+        assert.ok(capability);
+        const graph = createTemplateOperationGraph(template, form, starter, fixture.registry, row.spec, capability);
+        const api = flow.getState().exportGraph('retained-video-composite', undefined, {
+          sourceGraph: graph,
+          randomizeSeeds: false,
+        });
+        const actions = Object.entries(api.nodes);
+        const [compositeId, compose] = actions.find(([, node]) => node.action === 'MaskedComposite');
+        const [alignedId, aligned] = actions.find(([, node]) => node.action === 'AlignMask');
+        const [upscaleId, upscale] = actions.find(([, node]) => node.action === 'Upscaler');
+        const [encoderId, encoder] = actions.find(([, node]) => node.action === 'EncodeInputs');
+        const [generatedId, generated] = actions.find(
+          ([, node]) => node.module === 'modules.DiffusersVideo' && node.action === 'Generate',
+        );
+        const output = actions.find(([, node]) => node.module === 'modules.Video' && node.action === 'Export')[1];
+        const settings = template.workflowBlockSettings.videoMaskedComposite;
+        assert.equal(api.nodes[compose.params.source.sourceId].params.file.value, 'review-source-video.mp4');
+        assert.equal(api.nodes[aligned.params.mask.sourceId].params.file.value, 'review-mask-video.mp4');
+        assert.deepEqual(api.nodes[encoder.params.reference_images.sourceId].params.file.value, [
+          'review-reference-image.png',
+        ]);
+        assert.equal(encoder.params.mask.sourceId, alignedId);
+        assert.equal(generated.params.encoded_inputs.sourceId, encoderId);
+        assert.equal(upscale.params.image.sourceId, generatedId);
+        assert.equal(compose.params.generated.sourceId, upscaleId);
+        assert.equal(compose.params.mask.sourceId, alignedId);
+        assert.equal(compose.params.feather.value, settings.feather);
+        assert.equal(aligned.params.grow_pixels.value, settings.maskGrowPixels);
+        assert.equal(output.params.video.sourceId, compositeId);
+        continue;
+      }
+      const { spec, imageContract, audioContract: nextAudioContract, videoContract: nextVideoContract } = row;
       contract = imageContract;
       audioContract = nextAudioContract;
       videoContract = nextVideoContract;
@@ -368,7 +428,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       );
       const form = studio.getState().form;
       assert.equal(form.device, template.example.lockedSettings.device ?? 'cuda:0');
-      assert.equal(form.resourceMode, 'expert');
+      assert.equal(form.resourceMode, template.example.lockedSettings.resourceMode ?? 'expert');
       assert.equal(form.randomSeed, false);
       await graphBridge.createOrUpdateStudioGraph(form, undefined, 3000).catch((error) => {
         assert.fail(
@@ -379,6 +439,10 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           })}`,
         );
       });
+      if (template.workflowBlockSettings?.videoPromptWindows) {
+        const { applyTemplateVideoPromptWindows } = await server.ssrLoadModule('/src/studio/templateWorkflow.ts');
+        applyTemplateVideoPromptWindows(template);
+      }
       const binding = studio.getState().graphBinding;
       assert.equal(binding.executionSpec.contentHash, spec.contentHash);
       assert.equal(studio.getState().activeWorkflowTabId, tabId);
@@ -425,6 +489,16 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         assert.equal(generation.params.prompt.value, template.prompt);
         assert.equal(loader.params.model_id.value.value, template.modelArtifact.value);
         assert.equal(loader.params.revision.value, template.modelArtifact.revision);
+        const promptWindows = template.workflowBlockSettings?.videoPromptWindows;
+        if (promptWindows) {
+          assert.equal(generation.params.prompt_segments_json.value, promptWindows.promptsJson);
+          assert.equal(generation.params.segment_frame_length.value, promptWindows.segmentFrameLength);
+          assert.equal(generation.params.temporal_overlap.value, promptWindows.temporalOverlap);
+          assert.equal(
+            generation.params.temporal_overlap_condition_strength.value,
+            promptWindows.overlapConditionStrength,
+          );
+        }
         if (sourceVideo) {
           const source = api.nodes[binding.nodes.loadVideo];
           assert.equal(source.params.file.value, 'review-source-video.mp4');
@@ -442,9 +516,12 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           assert.equal(guide.module, 'modules.VideoConditioning');
         }
         if (input.length) {
-          const source = api.nodes[binding.nodes.loadImage];
+          const reference = generation.params.reference_images;
+          const source = api.nodes[reference?.sourceId];
+          assert.equal(source?.module, 'modules.Image', template.id);
+          assert.equal(source.action, 'Load', template.id);
           assert.deepEqual([source.params.file.value].flat(), input);
-          assert.equal(generation.params.reference_images.sourceId, binding.nodes.loadImage);
+          assert.equal(reference.sourceKey, 'image', template.id);
         }
         for (const [, field, role, port] of motionInputRoles) {
           const loaderId = binding.nodes[role];

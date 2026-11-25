@@ -2268,6 +2268,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/ltx_long_wind_and_tide_at_the_headland.first.png",
+      "size": 614949,
+      "sha256": "sha256:bytes:51624f59295a77119bf336a63bfc7731d33d6612bc44b15495bddabdfae3ef51",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 512
+    },
+    {
       "path": "template-gallery/inputs/ltx_video_image_to_video.before.webp",
       "size": 301384,
       "sha256": "sha256:bytes:930364ab2667e492e51b8a60664751d66f5ed3f2d580664832977e89bcfbbf26",
@@ -3146,6 +3157,35 @@
       "height": 512
     },
     {
+      "path": "template-gallery/inputs/wan_vace_amber_glass_stabilized.before.mp4",
+      "size": 88384819,
+      "sha256": "sha256:bytes:da6a0abe90bfc8c4efcb4a63201a6db839c944416cef49d452b629fbb86c3ec0",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_vace_amber_glass_stabilized.mask.mp4",
+      "size": 47859,
+      "sha256": "sha256:bytes:c8eefe9665e6ba8965e7d48c5e6116f2e3ba230ac35390efb834140c5d4cdf8b",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_vace_amber_glass_stabilized.reference.png",
+      "size": 1105663,
+      "sha256": "sha256:bytes:43a36ae8d33da045a6ad1321195cd163ce3188e1d119008860386afacd21dbc2",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1664,
+      "height": 960
+    },
+    {
       "path": "template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
       "size": 289576,
       "sha256": "sha256:bytes:748b164fd91bc2eed97f7c1d1125a04496a056f29cc016d7cc0da3734c2303b7",
@@ -3549,6 +3589,15 @@
       ]
     },
     {
+      "path": "template-gallery/ltx_long_wind_and_tide_at_the_headland.mp4",
+      "size": 235350,
+      "sha256": "sha256:bytes:62c8d0eb30f3900276fda6c9c48c8e676cc04385bfbbfe117eecd46144cb81ea",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/ltx_video_animated_story.card-poster.png",
       "size": 2259121,
       "sha256": "sha256:bytes:fcd07a3c5a3e8df1890f1dd98f72746a67025a7bf3c4f6559026b24a8afa445c",
@@ -3801,8 +3850,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 519522,
-      "sha256": "sha256:bytes:aced8ad0f0bbd93c7c98853b8d17c72da6cbc1c276f77cf0b3becd1bf889867e",
+      "size": 524756,
+      "sha256": "sha256:bytes:fe948ccb643e19685fb242236c2c9c5888e3b756de0718c1c39b6c3f694d689b",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -7169,6 +7218,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/ltx_long_wind_and_tide_at_the_headland.original-provenance.json",
+      "size": 3868,
+      "sha256": "sha256:bytes:2246d2229387b0b8333ea331c7e908267fd298ee62361328594ef0e1c0454261",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_long_wind_and_tide_at_the_headland.original-review.json",
+      "size": 912,
+      "sha256": "sha256:bytes:d07b5483c13439d9addbf9e12c3a7bb1be8f7770ec1a895dab76387d3987560f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_long_wind_and_tide_at_the_headland.quality-review.json",
+      "size": 3138,
+      "sha256": "sha256:bytes:88a3a90318d651835043e95c78198db78dc4e1e47992c6c83798d8fc03f8994e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx_long_wind_and_tide_at_the_headland.retained-template-provenance.json",
+      "size": 4013,
+      "sha256": "sha256:bytes:8a0c4e70cbe66ed06f4c7c5538dc6046533d3af2b6d416073878dee089096e60",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/ltx_video_animated_story.quality-review.json",
       "size": 5831,
       "sha256": "sha256:bytes:1ec83b229ba5c7995c8ada2629c448334965939304ffddc7a70161c8b7e1b7f1",
@@ -9691,6 +9776,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/wan_vace_amber_glass_stabilized.original-provenance.json",
+      "size": 2446,
+      "sha256": "sha256:bytes:6b08670223819852e7ed62a06af7ddf1707a38b7364f2269aa22d5e6592dce0b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_amber_glass_stabilized.original-review.json",
+      "size": 928,
+      "sha256": "sha256:bytes:66f4440a92234772ba4de1ccd6eec655251cb53b2059e99568a6f7fa7f1254c0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_amber_glass_stabilized.quality-review.json",
+      "size": 3296,
+      "sha256": "sha256:bytes:fecde3eeefab0f0a2351a6ceaacb18fddf91668c5f74e0e847962ae98e28a404",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_vace_amber_glass_stabilized.retained-template-provenance.json",
+      "size": 4686,
+      "sha256": "sha256:bytes:7eba7fc91b85672ce34324a462f2a040c52857c8b72c739e4a37b17315fe9e76",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/wan_vace_amber_rings_after_rain.original-provenance.json",
       "size": 1478,
       "sha256": "sha256:bytes:4596d993891c34f721ac085d6d9377e63af8610998160c4d582fc2761b1efdff",
@@ -11506,6 +11627,15 @@
       ]
     },
     {
+      "path": "template-gallery/wan_vace_amber_glass_stabilized.mp4",
+      "size": 24359650,
+      "sha256": "sha256:bytes:a90aff3b61c664b51073574cc6c12efa894f45b88226637b254c9d81a53aad87",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/wan_vace_amber_rings_after_rain.mp4",
       "size": 706351,
       "sha256": "sha256:bytes:e89cb86ed3bd34040b7fc6c699f99e21c4dc827ac943258c7d9daad9d58b752c",
@@ -11906,9 +12036,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:9cc2b2a8c2a8a6e7b667dacf0b1916d3831ef00d5f1cfdad7bb40f0dec1ff6c0",
+  "assetSetId": "sha256:canonical-json:8ee20b6e168398e406a81e3eb9b9187741c405571af52f2454956c4e9f500bcb",
   "status": "ready",
-  "assetCount": 1228,
-  "totalBytes": 1171462339,
+  "assetCount": 1242,
+  "totalBytes": 1286239150,
   "missingAssets": []
 }

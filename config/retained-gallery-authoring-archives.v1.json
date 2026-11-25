@@ -254,6 +254,11 @@
     "bytes": 4704,
     "sha256": "a5e8eb4646ad66a06aab17db27872df48e1ebfc36a13287698f390bb228bbf26"
   },
+  "LTXI2VLongMultiPromptPipeline:image_to_video": {
+    "descriptorSha256": "931a643453b17f494211e7a1663a7d1ea65444b8c5e92d7eb6f3c0b46412fafa",
+    "bytes": 5911,
+    "sha256": "b400e1aff4867503d189098258113dd692f02b003f4240912d5ea50a650f719d"
+  },
   "Lumina2Pipeline:text_to_image": {
     "descriptorSha256": "68ec9070dfda6f4bcf5990d404e3032b9c9d0add8965753e0a162bfdd67c09f7",
     "bytes": 4071,
@@ -523,6 +528,11 @@
     "descriptorSha256": "111a1e8352784824dc9d3cb094113e0547b19cd50416b072cff31356c95a0124",
     "bytes": 4991,
     "sha256": "c91ec7e55964e72702d69979edf84e8714c8e5acb3adda5a6c6bccfce14db5db"
+  },
+  "WanVACEPipeline:video_inpaint": {
+    "descriptorSha256": "d5451bccf12b116e53dfb6bb685d4e5cc82d5f949eee3a7feb55bd70921d2f7d",
+    "bytes": 6144,
+    "sha256": "6a007c214d778f210e7e097a36c8afd1de585716920c3136a74bef37dfb4ea37"
   },
   "ZImageInpaintPipeline:inpaint": {
     "descriptorSha256": "00f04c60e1fc37087db0c90144a1b5c27b1e211e88b1ef8ec567c0ff3eb9853c",

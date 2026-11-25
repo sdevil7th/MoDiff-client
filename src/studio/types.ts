@@ -418,6 +418,8 @@ export type StudioTemplateId =
   | 'animatelcm_sunlit_surf'
   | 'flux_kontext_bookshop_clear_glass'
   | 'sdxl_pag_two_tier_cobalt_glass'
+  | 'wan_vace_amber_glass_stabilized'
+  | 'ltx_long_wind_and_tide_at_the_headland'
   | 'ace_step_text_to_audio'
   | 'minimax_music3_chamber_pop'
   | 'ace_step_audio_variation'
@@ -1421,7 +1423,14 @@ export type StudioTemplateIntentGroup =
   | 'planning';
 
 export type StudioTemplateWorkflowBlock =
-  'lora' | 'upscaler' | 'masked_composite' | 'video_sequence' | 'quality_video_sequence' | 'soundtrack' | 'lyric_video';
+  | 'lora'
+  | 'upscaler'
+  | 'masked_composite'
+  | 'video_masked_composite'
+  | 'video_sequence'
+  | 'quality_video_sequence'
+  | 'soundtrack'
+  | 'lyric_video';
 
 export type StudioTemplateModelArtifact = {
   source: 'hub' | 'local';
@@ -1458,6 +1467,14 @@ export type StudioTemplateLoraSettings = {
 export type StudioTemplateWorkflowBlockSettings = {
   /** Fresh graph only: bounded JSON arrays wired to declared encoding inputs. */
   encodingInputs?: { role: StudioGraphRole; values: Record<string, number[]> };
+  /** Fresh graph only: initial settings for a generator that declares prompt windows. */
+  videoPromptWindows?: {
+    promptsJson: string;
+    segmentFrameLength: number;
+    temporalOverlap: number;
+    overlapConditionStrength: number;
+  };
+  videoMaskedComposite?: { maskGrowPixels: number; feather: number };
   maskedComposite?: {
     backgroundReferenceIndex: number;
     foregroundSize: { width: number; height: number };

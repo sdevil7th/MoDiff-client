@@ -334,7 +334,9 @@ export function getTemplateLockHash(
   modelRevision = template.example?.modelRevision ?? 'unlocked',
 ) {
   const workflowLock =
-    template.workflowBlocks?.length || template.workflowBlockSettings?.encodingInputs
+    template.workflowBlocks?.length ||
+    template.workflowBlockSettings?.encodingInputs ||
+    template.workflowBlockSettings?.videoPromptWindows
       ? {
           blocks: template.workflowBlocks ?? [],
           settings: template.workflowBlockSettings ?? {},

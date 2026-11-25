@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                 spec = studio_execution_spec_for_pair(binding["modelType"], binding["mode"]) if binding else None
                 if binding and spec is None:
                     raise ValueError(f"Missing template semantic bindings: {binding}")
-                if studio_spec_only:
+                if studio_spec_only or item.get("studioSpecOnly", False):
                     if spec is None:
                         raise ValueError("A Studio-only fixture needs an exact binding specification.")
                     for _, key, _, _ in spec["roles"]:
@@ -135,11 +135,12 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                         "modules.DiffusersVideo.LoadPipeline", "modules.DiffusersVideo.GenerateSequence",
                         "modules.Video.Compose", "modules.Video.LyricOverlay",
                         "modules.VideoConditioning.Storyboard", "modules.VideoConditioning.ShotPrompt",
-                        "modules.VideoConditioning.ShotInputs", "modules.VideoConditioning.OutpaintCanvas", "modules.Primitive.ToList",
+                        "modules.VideoConditioning.ShotInputs", "modules.VideoConditioning.OutpaintCanvas",
+                        "modules.Video.MaskedComposite", "modules.Primitive.ToList",
                         "modules.Video.Concatenate", "modules.Video.ConcatenateAssets", "modules.Video.Trim",
                         "modules.DiffusersRuntime.PipelineQuantizationConfigV2", "modules.DiffusersRuntime.DiffusersExecutionRecipe"):
                 describe(key)
-            if not studio_spec_only and any(item["selection"]["pipelineClass"] == "Cosmos3OmniModularPipeline" for item in selections):
+            if not studio_spec_only and any(item["selection"].get("pipelineClass") == "Cosmos3OmniModularPipeline" for item in selections):
                 from modiff.modular_whole_workflow_contracts import (
                     PINNED_WHOLE_WORKFLOW_GRAPH_ADAPTERS, reviewed_whole_workflow_action_adapter,
                 )
