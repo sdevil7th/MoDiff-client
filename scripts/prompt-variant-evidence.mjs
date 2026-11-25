@@ -254,6 +254,60 @@ const cogVideoEditRoute = {
   ],
 };
 
+const animateDiffPagRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.animatediff-pag-video-prompt-variant.v1',
+  workflowId: 'AnimateDiffPAGPipeline:text_to_video',
+  modelType: 'AnimateDiffPAGPipeline',
+  platform: /^Windows-/u,
+  backend: 'cuda',
+  previousExpertFamily: 'AudioLDM2Pipeline',
+  modelRepo: 'stable-diffusion-v1-5/stable-diffusion-v1-5',
+  modelRevision: '451f4fe16113bff5a5d2269ed5ad43b0592e9a14',
+  motionAdapter: {
+    repoId: 'guoyww/animatediff-motion-adapter-v1-5-2',
+    revision: '6167b88ffe39b4441fdf2113e77b99a6f56b7906',
+  },
+  configuredUnobservedControls: ['pag_scale', 'pag_adaptive_scale'],
+};
+
+const animateDiffEditRoute = {
+  ...cogVideoEditRoute,
+  format: 'modiff.private.animatediff-source-video-variant.v1',
+  workflowId: 'AnimateDiffVideoToVideoPipeline:video_to_video',
+  modelType: 'AnimateDiffVideoToVideoPipeline',
+  platform: animateDiffPagRoute.platform,
+  backend: animateDiffPagRoute.backend,
+  modelRepo: animateDiffPagRoute.modelRepo,
+  modelRevision: animateDiffPagRoute.modelRevision,
+  motionAdapter: animateDiffPagRoute.motionAdapter,
+  sourceFingerprint: 'sha256:backend-source-v1:2beaa95aae8558e64cf99f056b011d00c0653dc7d03987cd67c8ed7e774c770e',
+  replayedRuntimeContract: 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c',
+  reviewedSettings: [['generator', 'strength', 0.8, 0.45]],
+};
+
+const allegroRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.allegro-video-prompt-variant.v1',
+  workflowId: 'AllegroPipeline:text_to_video',
+  modelType: 'AllegroPipeline',
+  previousExpertFamily: 'AllegroPipeline',
+  modelRepo: 'rhymes-ai/Allegro',
+  modelRevision: 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6',
+  sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+  bindNegativePrompt: true,
+  reviewedSettings: [
+    ['recipe', 'attention_backend', '_native_math', 'auto'],
+    ['recipe', 'offload_mode', 'sequential_cpu', 'model_cpu'],
+  ],
+  retainedOffloadFallback: 'sequential_cpu',
+};
+
+const promptModelSet = (profile) => [
+  ...(profile.motionAdapter ? [profile.motionAdapter] : []),
+  { repoId: profile.modelRepo, revision: profile.modelRevision },
+];
+
 const imagePromptRoute = {
   outputKind: 'image',
   displayType: 'image',
@@ -332,6 +386,12 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   }
   const baseline = canonicalGraphIdentity(expected);
   assert.equal(baseline.hash, baselineHash, 'The current authored prompt recipe differs from the original baseline.');
+  for (const [role, field, defaultValue, reviewedValue] of profile.reviewedSettings ?? []) {
+    const param = expectedOwners[role].node.params[field];
+    assert.equal(param.value, defaultValue);
+    assert.ok(!param.sourceId && !param.sourceKey, 'The reviewed setting must be literal.');
+    param.value = reviewedValue;
+  }
   const expectedInputs = expectedOwners.generator.node.params;
   if (profile.bindsImage) {
     assert.match(sourceValue, /^@data\/images\/[a-z0-9_-]{1,120}[.]png$/iu);
@@ -361,6 +421,17 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   assert.ok(typeof prompt === 'string' && prompt.length <= 4096 && prompt.trim() === prompt && prompt.length > 0);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt), 'Prompt exercise contains an unsupported control character.');
   promptSlot.value = prompt;
+  let negativePrompt;
+  if (profile.bindNegativePrompt) {
+    const slot = expectedInputs.negative_prompt;
+    assert.deepEqual(slot, { value: '', display: 'textarea' });
+    negativePrompt = submittedOwners.generator.node.params.negative_prompt.value;
+    assert.ok(
+      typeof negativePrompt === 'string' && negativePrompt.length <= 4096 && negativePrompt.trim() === negativePrompt,
+    );
+    assert.ok(!/[\u0000-\u001f\u007f]/u.test(negativePrompt));
+    slot.value = negativePrompt;
+  }
   let seed;
   if (profile.bindSeed) {
     const seedSlot = expectedInputs.seed;
@@ -379,7 +450,7 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
       ? 'Prompt variant changed a field or wire outside the bound prompt and seed.'
       : 'Prompt variant changed a field or wire outside the empty prompt.';
   for (const graph of [created, output]) same(canonicalGraphIdentity(graph), identity, mismatch);
-  return { ...submittedOwners, identity, prompt, expected, seed };
+  return { ...submittedOwners, identity, prompt, negativePrompt, expected, seed };
 }
 
 function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
@@ -401,6 +472,10 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
     // The connected execution recipe wins over this retained loader fallback.
     assert.equal(bound.loader.node.params.enable_vae_tiling.value, true);
     same(consumed.ambiguousFields, ['vaeTiling']);
+  } else if (profile.retainedOffloadFallback) {
+    assert.equal(bound.loader.node.params.offload_mode.value, profile.retainedOffloadFallback);
+    assert.equal(bound.recipe.node.params.offload_mode.value, 'model_cpu');
+    same(consumed.ambiguousFields, ['offloadMode']);
   } else same(consumed.ambiguousFields, []);
   const roles = profile.chain.map(([role]) => bound[role]);
   same(
@@ -462,7 +537,7 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
   return image;
 }
 
-function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted, observation) {
+function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted, observations) {
   same(
     graphCompleted.runtimeHints,
     { ...hints, controlledArtifacts: [], loaderContract: profile.loaderContract },
@@ -480,17 +555,27 @@ function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted
   assert.ok(Number.isSafeInteger(peakAllocatedBytes));
   if (profile.executionDevice === 'cpu:0') assert.equal(peakAllocatedBytes, 0);
   else assert.ok(peakAllocatedBytes > 0);
-  assert.equal(observation.error, false);
-  assert.equal(observation.runtimeFingerprint, runtime.fingerprint);
-  assert.equal(observation.models.length, 1);
-  const model = selectInstalledModelIdentity(observation, profile.modelRepo);
-  const [{ complete, repairRequired }] = observation.models;
-  assert.equal(complete, true);
-  assert.equal(repairRequired, false);
-  assert.equal(model?.selectedRevision, profile.modelRevision);
-  assert.equal(model?.modelRevision, `${profile.modelRepo}@${profile.modelRevision}`);
+  for (const { repoId, revision } of promptModelSet(profile)) {
+    const matching = observations.filter((observation) => selectInstalledModelIdentity(observation, repoId));
+    assert.equal(matching.length, 1, 'Expected a single installed identity for ' + repoId);
+    const [observation] = matching;
+    assert.equal(observation.error, false);
+    assert.equal(observation.runtimeFingerprint, runtime.fingerprint);
+    assert.equal(observation.models.length, 1);
+    const model = selectInstalledModelIdentity(observation, repoId);
+    const [{ complete, repairRequired }] = observation.models;
+    assert.equal(complete, true);
+    assert.equal(repairRequired, false);
+    assert.equal(model.selectedRevision, revision);
+    assert.equal(model.modelRevision, repoId + '@' + revision);
+  }
   same(bound.loader.node.params.model_id.value, { source: 'hub', value: profile.modelRepo });
   assert.equal(bound.loader.node.params.revision.value, profile.modelRevision);
+  if (profile.motionAdapter) {
+    const { motion_adapter_id, motion_adapter_revision } = bound.loader.node.params;
+    same(motion_adapter_id.value, { source: 'hub', value: profile.motionAdapter.repoId });
+    assert.equal(motion_adapter_revision.value, profile.motionAdapter.revision);
+  }
   return { runtime, measurement: task.runtimeMeasurement };
 }
 
@@ -798,9 +883,13 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         wanA14BRoute,
         cogVideoRoute,
         cogVideoEditRoute,
+        animateDiffPagRoute,
+        animateDiffEditRoute,
+        allegroRoute,
       ].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
-  const generatedVideo = profile === wanA14BRoute || profile === cogVideoRoute || profile === cogVideoEditRoute;
+  const generatedVideo =
+    profile.outputKind === 'video' && ['text_to_video', 'video_to_video'].includes(profile.executedTask);
   const generatedAudio = profile === audioRoute || profile === audioLdmRoute;
   const requiresOriginalRequest =
     imageRoute !== undefined ||
@@ -811,7 +900,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     generatedAudio ||
     generatedVideo;
   const sampledCpuMemory = profile.executionDevice === 'cpu:0';
-  same(target.modelSet, [{ repoId: profile.modelRepo, revision: profile.modelRevision }]);
+  same(target.modelSet, promptModelSet(profile));
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   assert.ok(target.outputPlan.mediaKinds.includes(profile.outputKind));
   const stat = lstatSync(evidencePath);
@@ -836,6 +925,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     ...(requiresOriginalRequest ? ['graphRequest', 'graphAcknowledgment'] : []),
     ...(profile.lateNativeSnapshot ? ['persistedOutputs'] : []),
     ...(sampledCpuMemory ? ['worker', 'resourceSamples'] : []),
+    ...(profile.replayedRuntimeContract ? ['registryReplay'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.format, profile.format);
@@ -844,7 +934,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   assert.equal(evidence.inputs.length, profile.bindsImage || profile.bindsVideoUpload ? 1 : 0);
   const [suppliedInput] = evidence.inputs;
   if (suppliedInput) keys(suppliedInput, ['sourceValue', 'file', 'upload']);
-  assert.equal(evidence.modelObservations.length, 1);
+  assert.equal(evidence.modelObservations.length, target.modelSet.length);
   assert.equal(evidence.outputs.length, 1);
   const [outputRef] = evidence.outputs;
   keys(outputRef, ['backendPath', 'mediaType', 'file']);
@@ -995,7 +1085,19 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       },
     };
   }
-  const nodes = json(evidence.nodes);
+  const nodeBytes = read(evidence.nodes).bytes;
+  const nodes = JSON.parse(nodeBytes);
+  if (profile.replayedRuntimeContract) {
+    same(json(evidence.registryReplay), {
+      scope: 'Original nodes handler only, with exact source and runtime contract',
+      modelRuns: 0,
+      fileCount: source.identity.files.length,
+      sourceFingerprint: source.identity.fingerprint,
+      runtimeContract: profile.replayedRuntimeContract,
+      nodeHash: digest(nodeBytes),
+      nodeBytes: nodeBytes.length,
+    });
+  }
   const backendContract = backendContractIdentity(nodes, bound.identity.canonicalGraph);
   assert.ok(backendContract.fingerprint, 'Native backend contract fingerprint is missing.');
   for (const [role, module, action] of profile.chain) {
@@ -1013,7 +1115,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     task,
     hints,
     graphCompleted,
-    json(evidence.modelObservations[0]),
+    evidence.modelObservations.map(json),
   );
   const peakMemoryBytes = sampledCpuMemory
     ? validateSampledCpuWorkerMemory(
@@ -1105,6 +1207,15 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     peakMemoryBytes,
     canonicalDefaultsExecuted: false,
     promptBinding: { nodeId: bound.generator.id, field: 'prompt', sha256: digest(bound.prompt) },
+    ...(profile.bindNegativePrompt
+      ? {
+          negativePromptBinding: {
+            nodeId: bound.generator.id,
+            field: 'negative_prompt',
+            sha256: digest(bound.negativePrompt),
+          },
+        }
+      : {}),
     ...(inputBinding ? { inputBinding } : {}),
     ...(accounting ? { seedBinding: { nodeId: bound.generator.id, field: 'seed', value: bound.seed } } : {}),
     decodedOutput,
@@ -1118,6 +1229,11 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       ...(profile.bindsVideoUpload
         ? { sourceVideoByteWitness: 'original-upload-and-typed-wire', normalizedConsumerFramesObserved: false }
         : {}),
+      ...(profile.motionAdapter ? { motionAdapterBoundByGraph: true } : {}),
+      ...(profile.configuredUnobservedControls
+        ? { configuredUnobservedControls: profile.configuredUnobservedControls }
+        : {}),
+      ...(profile.retainedOffloadFallback ? { retainedLoaderOffloadFallback: profile.retainedOffloadFallback } : {}),
     },
     qualificationClaims: {
       publicTemplate: false,

@@ -385,7 +385,15 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['AllegroPipeline:text_to_video', 'MODIFF_ALLEGRO_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['CogVideoXPipeline:text_to_video', 'MODIFF_COGVIDEOX_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['AnimateDiffPAGPipeline:text_to_video', 'MODIFF_ANIMATEDIFF_PAG_VIDEO_EVIDENCE', 'video'],
+  [
+    'AnimateDiffVideoToVideoPipeline:video_to_video',
+    'MODIFF_ANIMATEDIFF_EDIT_VIDEO_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
   [
     'CogVideoXVideoToVideoPipeline:video_to_video',
     'MODIFF_COGVIDEOX_EDIT_EVIDENCE',
@@ -443,6 +451,33 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       }
       const changedPath = join(temp, 'evidence.json');
       const evidence = JSON.parse(original.descriptorBytes);
+      if (workflowId === 'AllegroPipeline:text_to_video') {
+        assert.equal(original.receipt.observationLimits.retainedLoaderOffloadFallback, 'sequential_cpu');
+        assert.equal(original.receipt.decodedOutput.frames, 88);
+        assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
+        assert.match(original.receipt.negativePromptBinding.sha256, /^[a-f0-9]{64}$/u);
+      }
+      if (workflowId.startsWith('AnimateDiff')) {
+        assert.equal(original.receipt.modelSet.length, 2);
+        assert.equal(original.receipt.observationLimits.motionAdapterBoundByGraph, true);
+        const [first, second] = evidence.modelObservations;
+        const incomplete = { ...evidence, modelObservations: [first, first] };
+        assert.notEqual(first.sha256, second.sha256);
+        writeFileSync(changedPath, JSON.stringify(incomplete));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Expected a single installed identity/u,
+        );
+        if (workflowId === 'AnimateDiffPAGPipeline:text_to_video') {
+          assert.deepEqual(original.receipt.observationLimits.configuredUnobservedControls, [
+            'pag_scale',
+            'pag_adaptive_scale',
+          ]);
+        } else {
+          assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
+          assert.equal(original.receipt.inputBinding.decodedVideo.frames, 16);
+        }
+      }
       const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
       const cogVideo = workflowId === 'CogVideoXPipeline:text_to_video';
       const audioLdm = workflowId === 'AudioLDM2Pipeline:text_to_audio';
@@ -538,7 +573,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         writeFileSync(changedPath, JSON.stringify(substituted));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-          workflowId === 'CogVideoXVideoToVideoPipeline:video_to_video'
+          kind === 'video'
             ? /Archived video upload differs/u
             : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
               ? /Caption source bytes differ from the native load|Archived authoring requires the exact original capture/u

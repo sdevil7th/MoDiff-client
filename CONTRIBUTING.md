@@ -550,12 +550,17 @@ produced the recorded RGB source and grayscale mask and that those exact pixels
 and dimensions reached their respective Inpaint ports. Its receipt binds the
 source and mask separately to the saved Expert execution.
 
-The saved control-image reader verifies the original PNG upload and decoded
-source, the guide wire into the sampler, the main and conditioning model
-revisions, and the observed sampler settings. An archived node registry can
-be replayed from the original source and runtime contract without inference.
-The receipt records when the saved run lacks processed guide pixels or
-effective PAG settings.
+The saved control-image reader verifies the original PNG uploads and decoded
+media, each guide, source and mask wire into the applicable sampler ports, the
+main and conditioning model revisions, and the observed sampler settings.
+An archived node registry can be replayed from the original source and runtime
+contract without inference. The receipt records when the saved run lacks
+processed guide pixels or effective PAG settings.
+
+AnimateDiff prompt and source-video receipts bind the base model and motion
+adapter revisions. For a saved edit, the original upload and typed video wire
+bind the source. The receipt records unavailable sampler observations, such
+as the effective PAG controls or normalized source frames.
 
 The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge, Spandrel
 Real-ESRGAN 2×, Whisper Tiny transcription and LCM dawn edit use declarations in

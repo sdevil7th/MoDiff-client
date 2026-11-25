@@ -874,6 +874,9 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.wan-a14b-video-prompt-variant.v1',
       'modiff.private.cogvideox-video-prompt-variant.v1',
       'modiff.private.cogvideox-source-video-variant.v1',
+      'modiff.private.animatediff-pag-video-prompt-variant.v1',
+      'modiff.private.animatediff-source-video-variant.v1',
+      'modiff.private.allegro-video-prompt-variant.v1',
     ].includes(evidence.format) ||
     directImagePromptRoutes.some(({ format }) => format === evidence.format)
   ) {

@@ -26,9 +26,19 @@ import {
 import { decodedMediaHash, technicalMediaErrors } from './template-gallery-harness.mjs';
 
 const format = 'modiff.private.saved-control-image-native-png.v1';
-const replayRuntime = '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5';
+const linuxReplayRuntime = '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5';
+const windowsReplayRuntime = 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c';
 const commonSource = 'e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8';
 const sdxlSource = '371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3';
+const sd15Repair = {
+  action: 'ControlInpaint',
+  pipelineClass: 'StableDiffusionControlNetInpaintPipeline',
+  componentClass: 'ControlNetModel',
+  source: 'fe1a57b8e352eb66a1a26ebbff5865aaafcf5d55326c4bbcbaf2132ec75f54a8',
+  canny: true,
+  windows: true,
+  additionalInputs: ['source', 'mask'],
+};
 const routes = {
   'StableDiffusionPipeline:control_image': {
     pipelineClass: 'StableDiffusionControlNetPipeline',
@@ -74,6 +84,19 @@ const routes = {
     canny: true,
     guidanceWindowUnavailable: true,
   },
+  'StableDiffusionPipeline:control_edit_image': {
+    ...sd15Repair,
+    action: 'ControlEdit',
+    pipelineClass: 'StableDiffusionControlNetImg2ImgPipeline',
+    source: '3227569ff822090d00a80a3a88213d76d5ca43092d2918cec2494962457865a5',
+    additionalInputs: ['source'],
+  },
+  'StableDiffusionPipeline:control_inpaint': sd15Repair,
+  'StableDiffusionPAGPipeline:control_inpaint': {
+    ...sd15Repair,
+    pipelineClass: 'StableDiffusionControlNetPAGInpaintPipeline',
+    pagSettingsUnobserved: true,
+  },
 };
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const connected = (sourceId, sourceKey) => ({ display: 'input', sourceId, sourceKey });
@@ -89,6 +112,7 @@ function owners(api, route) {
     'modules.DiffusersImage.LoadPipeline',
   ];
   const load = 'modules.Image.Load';
+  const additionalInputs = route.additionalInputs ?? [];
   assert.deepEqual(
     path.map((id) => {
       const { module, action } = api.nodes[id];
@@ -96,19 +120,22 @@ function owners(api, route) {
     }),
     [
       ...(route.canny ? [load, 'modules.ImageFilters.Canny', ...setup] : [...setup, load]),
-      'modules.DiffusersImage.ControlGenerate',
+      ...additionalInputs.map(() => load),
+      'modules.DiffusersImage.' + (route.action ?? 'ControlGenerate'),
       'modules.Image.Preview',
     ],
   );
-  const [source, canny, loader] = route.canny ? [path[0], path[1], path[4]] : [path[3], null, path[2]];
+  const [guide, canny, loader] = route.canny ? [path[0], path[1], path[4]] : [path[3], null, path[2]];
+  const inputs = { guide, ...Object.fromEntries(additionalInputs.map((role, index) => [role, path[index + 5]])) };
   const [sampler, preview] = path.slice(-2);
-  return { path, source, canny, loader, sampler, preview };
+  return { path, inputs, canny, loader, sampler, preview };
 }
 
-export function verifySavedControlImageInputs(api, output, input, workflowId) {
+export function verifySavedControlImageInputs(api, output, inputs, workflowId) {
   const route = routes[workflowId];
   assert.ok(route, 'No reviewed saved control-image route.');
-  const { path, source, canny, loader, sampler, preview } = owners(api, route);
+  const { path, inputs: inputOwners, canny, loader, sampler, preview } = owners(api, route);
+  assert.equal(inputs.length, Object.keys(inputOwners).length);
   const receipt = output.resolvedExecutionInputs;
   assert.equal(receipt.schemaVersion, 1);
   assert.equal(receipt.source, 'backend-execution');
@@ -127,18 +154,32 @@ export function verifySavedControlImageInputs(api, output, input, workflowId) {
     assert.deepEqual(row.omittedFields, {});
     return row;
   };
-  const { sourceFile, decodedImage } = verifyNativeLoadedImage(api.nodes[source], record(source), 'RGB');
-  assert.deepEqual(sourceFile, {
-    sourceValue: input.sourceValue,
-    sha256: input.file.sha256,
-    byteSize: input.file.bytes,
+  const decoded = Object.entries(inputOwners).map(([role, id], index) => {
+    const input = inputs[index];
+    const { sourceFile, decodedImage } = verifyNativeLoadedImage(
+      api.nodes[id],
+      record(id),
+      role === 'mask' ? 'L' : 'RGB',
+    );
+    assert.deepEqual(
+      sourceFile,
+      {
+        sourceValue: input.sourceValue,
+        sha256: input.file.sha256,
+        byteSize: input.file.bytes,
+      },
+      'Saved image bytes differ for ' + role,
+    );
+    return decodedImage;
   });
   const params = api.nodes[sampler].params;
   assert.deepEqual(params.pipeline, connected(loader, 'pipeline'));
-  assert.deepEqual(params.control_image, connected(canny ?? source, canny ? 'output' : 'image'));
+  assert.deepEqual(params.control_image, connected(canny ?? inputOwners.guide, canny ? 'output' : 'image'));
+  if (inputOwners.source) assert.deepEqual(params.image, connected(inputOwners.source, 'image'));
+  if (inputOwners.mask) assert.deepEqual(params.mask_image, connected(inputOwners.mask, 'image'));
   assert.deepEqual(api.nodes[preview].params.image, connected(sampler, 'images'));
   if (canny) {
-    assert.deepEqual(api.nodes[canny].params.image, connected(source, 'image'));
+    assert.deepEqual(api.nodes[canny].params.image, connected(inputOwners.guide, 'image'));
     assert.deepEqual(record(canny).fields, { device: literal(api.nodes[canny].params.device.value) });
     assert.equal(record(canny).mediaEvidence, undefined);
   }
@@ -155,8 +196,8 @@ export function verifySavedControlImageInputs(api, output, input, workflowId) {
     ].map((field) => [field, params[field].value]),
   );
   Object.assign(expected, {
-    executed_task: 'control_image',
-    strength: null,
+    executed_task: workflowId.split(':')[1],
+    strength: inputOwners.source ? params.strength.value : null,
     guidance_scale: route.trueCfg ? null : params.guidance_scale.value,
     max_sequence_length: route.trueCfg ? params.max_sequence_length.value : null,
     control_guidance_start: route.guidanceWindowUnavailable ? null : params.control_guidance_start.value,
@@ -170,7 +211,7 @@ export function verifySavedControlImageInputs(api, output, input, workflowId) {
     'Saved control sampler fields differ from the graph.',
   );
   assert.equal(nativeSampler.mediaEvidence, undefined);
-  return decodedImage;
+  return decoded;
 }
 
 export async function readSavedControlImageEvidence({
@@ -211,12 +252,17 @@ export async function readSavedControlImageEvidence({
   const canonical = owners(expected, route);
   const actual = owners(graphRequest, route);
   assert.equal(canonicalGraphIdentity(expected).hash, evidence.originalGraphHash);
-  const [input] = evidence.inputs;
-  assert.equal(evidence.inputs.length, 1);
-  assert.match(input.sourceValue, /^@data\/images\/[\w-]{1,128}\.png$/u);
-  const fileSlot = expected.nodes[canonical.source].params.file;
-  assert.deepEqual(fileSlot, { display: 'filebrowser', value: '' });
-  fileSlot.value = [input.sourceValue];
+  const inputs = evidence.inputs;
+  const roles = Object.keys(canonical.inputs);
+  assert.equal(inputs.length, roles.length);
+  assert.equal(new Set(inputs.map(({ file }) => file.sha256)).size, roles.length);
+  for (const [index, role] of roles.entries()) {
+    const { sourceValue } = inputs[index];
+    assert.match(sourceValue, /^@data\/images\/[\w-]{1,128}\.png$/u);
+    const fileSlot = expected.nodes[canonical.inputs[role]].params.file;
+    assert.deepEqual(fileSlot, { display: 'filebrowser', value: role === 'source' ? [] : '' });
+    fileSlot.value = [sourceValue];
+  }
   const prompt = graphRequest.nodes[actual.sampler].params.prompt.value;
   assert.ok(typeof prompt === 'string' && prompt.length > 0 && prompt.length <= 4096 && prompt === prompt.trim());
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt));
@@ -228,7 +274,7 @@ export async function readSavedControlImageEvidence({
     assert.equal(
       canonicalGraphIdentity(graphSource).hash,
       identity.hash,
-      'Saved graph differs outside its prompt and guide.',
+      'Saved graph differs outside its prompt and selected images.',
     );
   }
   const validate = route.lateOutput ? validateLateNativeImageVariantRun : validateNativeVariantRun;
@@ -245,8 +291,15 @@ export async function readSavedControlImageEvidence({
     validatePreparation: (value) => validateUnmodifiedExpertPreparation(value, route.pipelineClass),
     ...(route.lateOutput && { persistedOutput: json(evidence.persistedOutput).outputs[0] }),
   });
-  const decodedImage = verifySavedControlImageInputs(graphRequest, output, input, manifest.id);
-  verifyRetainedPngUpload(json(input.upload), input, decodedImage, read(input.file).bytes);
+  const decoded = verifySavedControlImageInputs(graphRequest, output, inputs, manifest.id);
+  const imageBindings = Object.fromEntries(
+    roles.map((role, index) => {
+      const input = inputs[index];
+      const decodedImage = decoded[index];
+      verifyRetainedPngUpload(json(input.upload), input, decodedImage, read(input.file).bytes);
+      return [role, { nodeId: actual.inputs[role], field: 'file', sha256: input.file.sha256, decodedImage }];
+    }),
+  );
   const source = backendSourceEvidence({
     before: json(evidence.backendSourceBefore).identity,
     after: json(evidence.backendSourceAfter).identity,
@@ -262,7 +315,7 @@ export async function readSavedControlImageEvidence({
     modelRuns: 0,
     fileCount: source.identity.files.length,
     sourceFingerprint: expectedSource,
-    runtimeContract: replayRuntime,
+    runtimeContract: route.windows ? windowsReplayRuntime : linuxReplayRuntime,
     nodeHash: sha256(nodeBytes),
     nodeBytes: nodeBytes.length,
   });
@@ -282,8 +335,8 @@ export async function readSavedControlImageEvidence({
     observations: evidence.modelObservations.map(json),
   });
   const measurement = task.runtimeMeasurement;
-  assert.match(runtime.packages.platform, /^Linux-/u);
-  assert.equal(measurement.backend, 'rocm');
+  assert.match(runtime.packages.platform, route.windows ? /^Windows-/u : /^Linux-/u);
+  assert.equal(measurement.backend, route.windows ? 'cuda' : 'rocm');
   assert.equal(measurement.device, 'cuda:0');
   assert.equal(measurement.peakMeasurementVersion, 2);
   assert.ok(measurement.elapsedSeconds > 0 && measurement.elapsedSeconds <= 7200);
@@ -299,10 +352,10 @@ export async function readSavedControlImageEvidence({
     displayType: 'image',
     contentType: 'image/webp',
   });
-  const decoded = await decodedMediaHash(media.file, 'image');
+  const decodedOutput = await decodedMediaHash(media.file, 'image');
   const params = graphRequest.nodes[actual.sampler].params;
-  assert.deepEqual(technicalMediaErrors(decoded, { width: params.width.value, height: params.height.value }), []);
-  assert.deepEqual([item.width, item.height], [decoded.width, decoded.height]);
+  assert.deepEqual(technicalMediaErrors(decodedOutput, { width: params.width.value, height: params.height.value }), []);
+  assert.deepEqual([item.width, item.height], [decodedOutput.width, decodedOutput.height]);
   for (const ref of retainedFiles) readCanonicalEvidenceFile(evidenceRoot, ref, 16 * 1024 * 1024);
   assert.ok(readFileSync(evidencePath).equals(descriptorBytes));
   const receipt = {
@@ -322,10 +375,12 @@ export async function readSavedControlImageEvidence({
     executionDurationSeconds: measurement.elapsedSeconds,
     peakMemoryBytes: measurement.peakAllocatedBytes,
     canonicalDefaultsExecuted: false,
-    inputBinding: { nodeId: actual.source, field: 'file', sha256: input.file.sha256, decodedImage },
+    inputBinding: imageBindings.source ?? imageBindings.guide,
+    ...(imageBindings.source && { guideBinding: imageBindings.guide }),
+    ...(imageBindings.mask && { maskBinding: imageBindings.mask }),
     conditioningModel: control,
     promptBinding: { nodeId: actual.sampler, field: 'prompt', sha256: sha256(prompt) },
-    decodedOutput: { hash: decoded.hash, width: decoded.width, height: decoded.height },
+    decodedOutput: { hash: decodedOutput.hash, width: decodedOutput.width, height: decodedOutput.height },
     observationLimits: {
       fullConsumedFieldAccounting: false,
       processedControlPixelsObserved: false,
