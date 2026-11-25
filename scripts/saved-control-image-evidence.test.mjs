@@ -65,6 +65,7 @@ test('the retained native host input witness is scoped to the task, output store
 for (const [workflowId, variable] of [
   ['StableDiffusionXLControlNetPipeline:control_edit_image', 'MODIFF_SDXL_CONTROL_BOATHOUSE_EVIDENCE'],
   ['StableDiffusionXLPAGPipeline:control_edit_image', 'MODIFF_SDXL_PAG_PORT_HOLE_EVIDENCE'],
+  ['StableDiffusionXLPAGPipeline:control_edit_image', 'MODIFF_SDXL_PAG_TIERED_GLASS_EVIDENCE'],
 ]) {
   const fixture = process.env[variable];
   test(workflowId + ' binds its source, guide and native edge preparation', { skip: !fixture }, async () => {
@@ -78,7 +79,8 @@ for (const [workflowId, variable] of [
     const [guide, source] = evidence.inputs;
     assert.equal(receipt.inputBinding.sha256, source.file.sha256);
     assert.equal(receipt.guideBinding.sha256, guide.file.sha256);
-    assert.equal(receipt.observationLimits.nativeEdgeMapObserved, true);
+    const loadFieldsOnly = variable === 'MODIFF_SDXL_PAG_TIERED_GLASS_EVIDENCE';
+    assert.equal(receipt.observationLimits.nativeEdgeMapObserved, !loadFieldsOnly);
     assert.equal(receipt.observationLimits.processedControlPixelsObserved, false);
     if (workflowId.startsWith('StableDiffusionXLPAG')) {
       assert.equal(receipt.observationLimits.effectivePagSettingsObserved, false);
@@ -86,11 +88,17 @@ for (const [workflowId, variable] of [
     const read = (ref) => JSON.parse(readCanonicalEvidenceFile(dirname(evidencePath), ref).bytes);
     const graph = read(evidence.graphRequest);
     const { latestOutput: output } = read(evidence.outputPackage);
-    const canny = output.resolvedExecutionInputs.nodes.find(({ action }) => action === 'Canny');
-    canny.mediaEvidence.inputs.image[0].sha256 = 'b'.repeat(64);
+    if (loadFieldsOnly) {
+      assert.equal(receipt.observationLimits.sourceByteWitness, 'native-load-and-upload-with-typed-wire');
+      const load = output.resolvedExecutionInputs.nodes.find(({ nodeId }) => nodeId === receipt.guideBinding.nodeId);
+      load.fields.source_hashes.value[0] = 'b'.repeat(64);
+    } else {
+      const canny = output.resolvedExecutionInputs.nodes.find(({ action }) => action === 'Canny');
+      canny.mediaEvidence.inputs.image[0].sha256 = 'b'.repeat(64);
+    }
     assert.throws(
-      () => verifySavedControlImageInputs(graph, output, evidence.inputs, workflowId),
-      /Canny guide bytes differ/u,
+      () => verifySavedControlImageInputs(graph, output, evidence.inputs, workflowId, evidence.format),
+      loadFieldsOnly ? /Saved image load fields differ for guide/u : /Canny guide bytes differ/u,
     );
   });
 }

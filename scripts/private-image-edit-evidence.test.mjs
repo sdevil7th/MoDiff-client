@@ -583,13 +583,19 @@ for (const [workflowId, variable, hasMask, unobserved] of [
         }
         const descriptor = JSON.parse(original.descriptorBytes);
         const changedPath = join(root, 'evidence.json');
-        if (variable === 'MODIFF_SAVED_SDXL_PAG_GRAPHITE_EDIT_EVIDENCE') {
+        const changedStrength =
+          variable === 'MODIFF_SAVED_SDXL_PAG_GRAPHITE_EDIT_EVIDENCE'
+            ? { action: 'Edit', expected: 0.85 }
+            : descriptor.format === 'modiff.private.direct-image-edit-native-webp.v1'
+              ? { action: 'Inpaint', expected: 0.96 }
+              : null;
+        if (changedStrength) {
           const altered = structuredClone(descriptor);
           const path = join(root, altered.graphRequest.path);
           const originalRequest = readFileSync(path);
           const graph = JSON.parse(originalRequest);
-          const edit = Object.values(graph.nodes).find(({ action }) => action === 'Edit');
-          assert.equal(edit.params.strength.value, 0.85);
+          const edit = Object.values(graph.nodes).find(({ action }) => action === changedStrength.action);
+          assert.equal(edit.params.strength.value, changedStrength.expected);
           edit.params.strength.value = 0.8;
           const bytes = Buffer.from(JSON.stringify(graph));
           Object.assign(altered.graphRequest, {

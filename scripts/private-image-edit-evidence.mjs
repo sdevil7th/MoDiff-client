@@ -33,6 +33,7 @@ export const NATIVE_PNG_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-p
 export const NATIVE_PNG_INPAINT_FORMAT = 'modiff.private.direct-image-inpaint-native-png.v1';
 export const SAVED_PNG_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-png.v1';
 const SAVED_WEBP_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-webp.v1';
+const NATIVE_WEBP_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-webp.v1';
 const FLUX_ENAMEL_EDIT_FORMAT = 'modiff.private.flux-enamel-edit-native-webp.v1';
 const SAVED_HOST_FILE_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-host-file.v1';
 const RETAINED_SERVER_EDIT_FORMAT = 'modiff.private.server-retained-image-edit-native-png.v1';
@@ -181,6 +182,15 @@ const editRoutes = new Map([
       loaderClass: 'FluxKontextInpaintPipeline',
       originalRegistryHash: '4a6a3ee6a0ba2f07d6e2f66daf085d4d43b70e0180a4b277b44b0b25f7a4c06c',
       fullNativeSnapshot: false,
+      savedNativeRecipe: {
+        format: NATIVE_WEBP_EDIT_FORMAT,
+        sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+        originalRegistryHash: '194fdfe25573ca708535e0913337cfee8c1137a2b3860f5c5c5a7c5419951d46',
+        strengthVariant: { original: 0.8, retained: 0.96 },
+        fullNativeSnapshot: true,
+        nativeSourceMedia: false,
+        previousExpertFamily: 'FluxImg2ImgPipeline',
+      },
     },
   ],
   [
@@ -1132,7 +1142,7 @@ function verifyRetainedImageUpload(upload, input, decoded, bytes, encoding) {
 }
 
 function isNativeWebpEdit(format) {
-  return format === SAVED_WEBP_EDIT_FORMAT || format === FLUX_ENAMEL_EDIT_FORMAT;
+  return [SAVED_WEBP_EDIT_FORMAT, NATIVE_WEBP_EDIT_FORMAT, FLUX_ENAMEL_EDIT_FORMAT].includes(format);
 }
 
 export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {

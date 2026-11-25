@@ -41,6 +41,74 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+const cosmosNativeDir = process.env.MODIFF_SAVED_COSMOS_NATIVE_DIR;
+
+test(
+  'retained Cosmos native proof requires the exact guarded component and state chain',
+  { skip: !cosmosNativeDir },
+  () => {
+    const read = (file) => JSON.parse(readFileSync(resolve(cosmosNativeDir, file), 'utf8'));
+    const expected = read('template-provenance.verified.private.json');
+    const run = read('run-detail.final.original.json');
+    const executedOutput = read('output-package.final.original.json').latestOutput;
+    const modelIdentities = [
+      'nvidia/Cosmos3-Super-Text2Image',
+      'nvidia/Cosmos-Guardrail1',
+      'Qwen/Qwen3Guard-Gen-0.6B',
+    ].map((repo, index) => selectInstalledModelIdentity(read(`model-fingerprints-${index}.original.json`), repo));
+    const args = {
+      templateId: expected.template.id,
+      lockedSettings: expected.template.lockedSettings,
+      promptSettingsHash: expected.template.promptSettingsHash,
+      catalogTemplateLockHash: expected.template.catalogTemplateLockHash,
+      resolvedTemplateLockHash: expected.template.resolvedTemplateLockHash,
+      expectedOutput: expected.template.expectedOutput,
+      apiGraph: read('graph-request.original.json'),
+      nodesPayload: read('nodes.original.json'),
+      modelIdentities,
+      runtimeFingerprint: run.task.runtimeFingerprint,
+      deterministicMode: executedOutput.apiGraphSnapshot.deterministicMode,
+      backendSource: expected.runtime.backendSource,
+      outputAnalysis: { analyses: expected.output.items },
+      executedOutput,
+      executionReceipt: run.task,
+      taskId: run.task.task_id,
+      capturedAt: expected.capturedAt,
+    };
+    const verified = createRunProvenance(args);
+    assert.deepEqual(verified.blockers, []);
+    assert.deepEqual(validateRunProvenance(verified), []);
+    assert.equal(verified.execution.resourceCandidateId, expected.execution.resourceCandidateId);
+    assert.equal(verified.mediaHash, expected.mediaHash);
+
+    for (const mutate of [
+      (caseArgs) => caseArgs.modelIdentities.splice(1, 1),
+      (caseArgs) => {
+        caseArgs.modelIdentities[1].selectedRevision = '0'.repeat(40);
+      },
+      (caseArgs) => {
+        const decoder = Object.values(caseArgs.apiGraph.nodes).find(
+          (node) => node.action === 'WorkflowCosmos3OmniDecode',
+        );
+        decoder.params.state_in.sourceId = decoder.params.pipeline_components.sourceId;
+        caseArgs.executedOutput.apiGraphSnapshot = structuredClone(caseArgs.apiGraph);
+      },
+      (caseArgs) => {
+        const sampler = caseArgs.executedOutput.resolvedExecutionInputs.nodes.find(
+          (node) => node.action === 'WorkflowCosmos3OmniDenoise',
+        );
+        sampler.fields.seed.value += 1;
+      },
+    ]) {
+      const altered = structuredClone(args);
+      mutate(altered);
+      const rejected = createRunProvenance(altered);
+      assert.equal(rejected.execution.resourceCandidateId, null);
+      assert.ok(rejected.blockers.includes('execution.resourceCandidateId is missing.'));
+    }
+  },
+);
+
 test('optional native applied adapter proof locks exact order and distinguishes reuse without changing historical requirements', () => {
   const args = appliedOrderCase();
   const before = JSON.stringify(args);

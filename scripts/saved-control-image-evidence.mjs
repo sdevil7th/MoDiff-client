@@ -33,6 +33,7 @@ import { decodedMediaHash, technicalMediaErrors } from './template-gallery-harne
 
 const format = 'modiff.private.saved-control-image-native-png.v1';
 const retainedHostFormat = 'modiff.private.saved-control-image-native-files.v1';
+const loadFieldsFormat = 'modiff.private.saved-control-image-native-load-fields.v1';
 const linuxReplayRuntime = '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5';
 const windowsReplayRuntime = 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c';
 const commonSource = 'e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8';
@@ -117,6 +118,17 @@ const routes = {
     pipelineClass: 'StableDiffusionXLControlNetPAGImg2ImgPipeline',
     previousExpertFamily: 'StableDiffusionXLControlNetImg2ImgPipeline',
     pagSettingsUnobserved: true,
+    loadFieldsVariant: {
+      source: 'b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+      originalRegistryHash: '194fdfe25573ca708535e0913337cfee8c1137a2b3860f5c5c5a7c5419951d46',
+      windows: false,
+      cannyMediaWitness: false,
+      controls: [
+        ['strength', 0.8, 1],
+        ['conditioning_scale', 1, 0.85],
+        ['guidance_scale', 5, 6],
+      ],
+    },
   },
   'StableDiffusionXLPAGPipeline:control_image': {
     pipelineClass: 'StableDiffusionXLControlNetPAGPipeline',
@@ -185,9 +197,18 @@ function owners(api, route) {
   return { path, inputs, canny, loader, sampler, preview };
 }
 
-export function verifySavedControlImageInputs(api, output, inputs, workflowId) {
+function savedControlRoute(workflowId, evidenceFormat) {
   const route = routes[workflowId];
   assert.ok(route, 'No reviewed saved control-image route.');
+  if (evidenceFormat === loadFieldsFormat) {
+    assert.ok(route.loadFieldsVariant, 'No reviewed control-image load evidence variant.');
+    return { ...route, ...route.loadFieldsVariant, loadFieldsOnly: true };
+  }
+  return route;
+}
+
+export function verifySavedControlImageInputs(api, output, inputs, workflowId, evidenceFormat) {
+  const route = savedControlRoute(workflowId, evidenceFormat);
   const { path, inputs: inputOwners, canny, loader, sampler, preview } = owners(api, route);
   assert.equal(inputs.length, Object.keys(inputOwners).length);
   const receipt = output.resolvedExecutionInputs;
@@ -197,7 +218,10 @@ export function verifySavedControlImageInputs(api, output, inputs, workflowId) {
   assert.equal(receipt.nodeId, preview);
   assert.equal(receipt.attemptIndex, 0);
   assert.equal(receipt.truncated, false);
-  assert.deepEqual(receipt.mediaEvidenceStatus, { schemaVersion: 1, truncated: false });
+  assert.deepEqual(
+    receipt.mediaEvidenceStatus,
+    route.loadFieldsOnly ? undefined : { schemaVersion: 1, truncated: false },
+  );
   assert.deepEqual(receipt.unavailableFields, []);
   assert.deepEqual(receipt.uncapturedNodeIds, []);
   assert.deepEqual(receipt.nodes.map(({ nodeId }) => nodeId).sort(), [...path].sort());
@@ -210,6 +234,28 @@ export function verifySavedControlImageInputs(api, output, inputs, workflowId) {
   };
   const decoded = Object.entries(inputOwners).map(([role, id], index) => {
     const input = inputs[index];
+    if (route.loadFieldsOnly) {
+      const load = api.nodes[id];
+      const row = record(id);
+      assert.equal(row.mediaEvidence, undefined);
+      const mode = role === 'mask' ? 'L' : 'RGB';
+      const width = row.fields.source_widths?.value?.[0];
+      const height = row.fields.source_heights?.value?.[0];
+      assert.ok([width, height].every((size) => Number.isSafeInteger(size) && size > 0 && size <= 8192));
+      assert.deepEqual(load.params.file, { display: 'filebrowser', value: [input.sourceValue] });
+      assert.deepEqual(
+        row.fields,
+        {
+          alpha_channel: literal(load.params.alpha_channel.value),
+          source_hashes: literal([input.file.sha256]),
+          source_widths: literal([width]),
+          source_heights: literal([height]),
+          source_modes: literal([mode]),
+        },
+        'Saved image load fields differ for ' + role,
+      );
+      return { width, height, mode };
+    }
     const { sourceFile, decodedImage } = verifyNativeLoadedImage(
       api.nodes[id],
       record(id),
@@ -301,6 +347,33 @@ function verifyIntegratedControlCheckpoint({ loader, target, pipelineClass, comp
   return { repoId, revision, source: 'integrated_checkpoint' };
 }
 
+function validateDirectMutationPreparation(preparation, pipelineClass, { loader, sampler, preview }) {
+  const { availableRamBytes, availableVramBytes, mutationPreparation, ...status } = preparation;
+  assert.ok([availableRamBytes, availableVramBytes].every((bytes) => Number.isSafeInteger(bytes) && bytes > 0));
+  assert.deepEqual(status, {
+    performed: true,
+    reasons: ['direct pipeline mutation policy changed'],
+    resourceMode: 'expert',
+    incomingModelFamily: pipelineClass,
+    previousModelFamily: pipelineClass,
+    residentRecipeReusable: false,
+    resourceRecipeChanged: false,
+    cleanup: null,
+  });
+  const { memoryBefore, memoryAfter, ...release } = mutationPreparation;
+  assert.deepEqual(release, {
+    ownerIds: [loader],
+    releasedNodeIds: [sampler, loader, preview].sort(),
+    retainedOutputNodes: [sampler, preview].sort(),
+    releasedComponentCount: 0,
+  });
+  for (const memory of [memoryBefore, memoryAfter]) {
+    assert.equal(memory.available, true);
+    assert.equal(memory.allocator_stats_status, 'paused_during_execution');
+    assert.equal(memory.device_count, 1);
+  }
+}
+
 export async function readSavedControlImageEvidence({
   clientRoot,
   manifest,
@@ -309,12 +382,14 @@ export async function readSavedControlImageEvidence({
   artifact,
   evidencePath,
 }) {
-  const route = routes[manifest.id];
-  assert.ok(route, 'No reviewed saved control-image route.');
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
   const descriptorBytes = readFileSync(evidencePath);
   const evidence = JSON.parse(descriptorBytes);
-  assert.equal(evidence.format, route.integratedControl ? retainedHostFormat : format);
+  const route = savedControlRoute(manifest.id, evidence.format);
+  assert.equal(
+    evidence.format,
+    route.loadFieldsOnly ? loadFieldsFormat : route.integratedControl ? retainedHostFormat : format,
+  );
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.workflowId, manifest.id);
   const evidenceRoot = realpathSync(dirname(evidencePath));
@@ -360,6 +435,16 @@ export async function readSavedControlImageEvidence({
   const promptSlot = expected.nodes[canonical.sampler].params.prompt;
   assert.deepEqual(promptSlot, { display: 'textarea', value: '' });
   promptSlot.value = prompt;
+  if (route.loadFieldsOnly) {
+    const loader = expected.nodes[canonical.loader].params;
+    assert.equal(loader.execution_profile_id, undefined);
+    loader.execution_profile_id = { value: '' };
+    for (const [key, original, retained] of route.controls) {
+      const parameter = expected.nodes[canonical.sampler].params[key];
+      assert.equal(parameter.value, original);
+      parameter.value = retained;
+    }
+  }
   const identity = canonicalGraphIdentity(expected);
   for (const graphSource of [graphRequest, creator.apiGraph, ...visual]) {
     assert.equal(
@@ -383,12 +468,14 @@ export async function readSavedControlImageEvidence({
     graphRequest,
     graphAcknowledgment: json(evidence.graphAcknowledgment),
     validatePreparation: (value) =>
-      route.previousExpertFamily
-        ? validateImagePromptPreparation(value, {
-            modelType: route.pipelineClass,
-            previousExpertFamily: route.previousExpertFamily,
-          })
-        : validateUnmodifiedExpertPreparation(value, route.pipelineClass),
+      route.loadFieldsOnly
+        ? validateDirectMutationPreparation(value, route.pipelineClass, actual)
+        : route.previousExpertFamily
+          ? validateImagePromptPreparation(value, {
+              modelType: route.pipelineClass,
+              previousExpertFamily: route.previousExpertFamily,
+            })
+          : validateUnmodifiedExpertPreparation(value, route.pipelineClass),
     ...(route.lateOutput && { persistedOutput: (stored ?? json(evidence.persistedOutput).outputs)[0] }),
   });
   if (stored) {
@@ -402,17 +489,18 @@ export async function readSavedControlImageEvidence({
       inputs,
     });
   }
-  const decoded = verifySavedControlImageInputs(graphRequest, output, inputs, manifest.id);
+  const decoded = verifySavedControlImageInputs(graphRequest, output, inputs, manifest.id, evidence.format);
   const imageBindings = Object.fromEntries(
     await Promise.all(
       roles.map(async (role, index) => {
         const input = inputs[index];
         const decodedImage = decoded[index];
         const file = read(input.file);
-        if (route.integratedControl) {
+        if (route.integratedControl || route.loadFieldsOnly) {
           const dimensions = await decodedMediaHash(file.file, 'image');
           assert.deepEqual([dimensions.width, dimensions.height], [decodedImage.width, decodedImage.height]);
-        } else {
+        }
+        if (!route.integratedControl) {
           verifyRetainedPngUpload(json(input.upload), input, decodedImage, file.bytes);
         }
         return [role, { nodeId: actual.inputs[role], field: 'file', sha256: input.file.sha256, decodedImage }];
@@ -508,6 +596,10 @@ export async function readSavedControlImageEvidence({
     observationLimits: {
       fullConsumedFieldAccounting: false,
       processedControlPixelsObserved: false,
+      ...(route.loadFieldsOnly && {
+        nativeEdgeMapObserved: false,
+        sourceByteWitness: 'native-load-and-upload-with-typed-wire',
+      }),
       ...(route.cannyMediaWitness && { nativeEdgeMapObserved: true }),
       ...(route.integratedControl && {
         originalUploadResponsesObserved: false,

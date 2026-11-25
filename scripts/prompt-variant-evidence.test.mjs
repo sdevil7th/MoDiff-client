@@ -660,6 +660,28 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       if (workflowId === 'AnimateLCMPipeline:text_to_video') {
         assert.equal(original.receipt.modelSet[1].repoId, 'wangfuyun/AnimateLCM');
         assert.equal(original.receipt.decodedOutput.frames, 16);
+        const runPath = join(temp, evidence.runDetail.path);
+        const originalRun = readFileSync(runPath);
+        const run = JSON.parse(originalRun);
+        if (run.task.runtimePreparation.previousModelFamily === 'StableDiffusionXLControlNetPAGImg2ImgPipeline') {
+          const originalPreparation = run.task.runtimePreparation;
+          for (const [changes, failure] of [
+            [{ availableRamBytes: 4 * 1024 ** 3 }, /lacks measured pressure/u],
+            [{ reasons: originalPreparation.reasons.slice(0, 1) }, /Unreviewed direct image cache cleanup/u],
+            [{ previousModelFamily: 'UnreviewedPipeline' }, /Unreviewed previous Expert model family/u],
+          ]) {
+            run.task.runtimePreparation = { ...originalPreparation, ...changes };
+            const bytes = Buffer.from(JSON.stringify(run));
+            const substituted = {
+              ...evidence,
+              runDetail: { ...evidence.runDetail, bytes: bytes.length, sha256: digest(bytes) },
+            };
+            writeFileSync(runPath, bytes);
+            writeFileSync(changedPath, JSON.stringify(substituted));
+            await assert.rejects(() => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }), failure);
+          }
+          writeFileSync(runPath, originalRun);
+        }
       }
       const sanaOpeningImage = workflowId === 'SanaImageToVideoPipeline:image_to_video';
       if (sanaOpeningImage) {

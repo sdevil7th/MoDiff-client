@@ -768,14 +768,19 @@ function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
     same(output.formSnapshot, snapshot.studioForm);
     const entries = nodeEntries(apiGraph),
       ids = new Set(entries.map(([id]) => id));
+    const guardedCosmos = apiParamValue(owner, 'model_type') === 'Cosmos3OmniModularPipeline';
+    const stages = guardedCosmos
+      ? ['WorkflowCosmos3OmniTextEncode', 'WorkflowCosmos3OmniDenoise', 'WorkflowCosmos3OmniDecode']
+      : ['EncodePrompt', 'Denoise', 'DecodeLatents'];
+    const scopedActions = ['ModelsLoader', ...stages, ...(guardedCosmos ? [] : ['Guider', 'Lora'])];
     same([...new Set(apiGraph.paths.flat())].sort(), [...ids].sort());
     const byScope = new Map();
     for (const [id, node] of entries) {
       const kind = node.module + '.' + node.action;
       assert(
-        ['ModelsLoader', 'EncodePrompt', 'Guider', 'Denoise', 'DecodeLatents', 'Lora']
+        scopedActions
           .map((a) => 'modules.ModularDiffusers.' + a)
-          .concat('modules.Spandrel.Upscaler', 'modules.Image.Preview')
+          .concat('modules.Image.Preview', ...(guardedCosmos ? [] : ['modules.Spandrel.Upscaler']))
           .includes(kind),
       );
       const list = byScope.get(kind) ?? [];
@@ -783,23 +788,28 @@ function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
       byScope.set(kind, list);
       for (const param of Object.values(node.params)) if (param.sourceId) assert(ids.has(param.sourceId));
     }
-    for (const action of ['ModelsLoader', 'EncodePrompt', 'Denoise', 'DecodeLatents'])
+    for (const action of ['ModelsLoader', ...stages])
       assert.equal(byScope.get('modules.ModularDiffusers.' + action)?.length, 1);
     assert((byScope.get('modules.ModularDiffusers.Guider')?.length ?? 0) <= 1);
     assert((byScope.get('modules.Spandrel.Upscaler')?.length ?? 0) <= 1);
     const previews = byScope.get('modules.Image.Preview');
     assert(previews?.length >= 1 && previews.length <= 2);
-    const decode = byScope.get('modules.ModularDiffusers.DecodeLatents')[0],
-      denoise = byScope.get('modules.ModularDiffusers.Denoise')[0],
-      encode = byScope.get('modules.ModularDiffusers.EncodePrompt')[0];
-    for (const [role, field, producer, port] of [
-      [encode, 'text_encoders', ownerId, 'text_encoders'],
-      [denoise, 'unet', ownerId, 'unet_out'],
-      [denoise, 'scheduler', ownerId, 'scheduler'],
-      [denoise, 'embeddings', encode.id, 'embeddings'],
-      [decode, 'vae', ownerId, 'vae_out'],
-      [decode, 'latents', denoise.id, 'latents'],
-    ])
+    const [encode, denoise, decode] = stages.map((stage) => byScope.get('modules.ModularDiffusers.' + stage)[0]);
+    const connections = guardedCosmos
+      ? [
+          ...[encode, denoise, decode].map((stage) => [stage, 'pipeline_components', ownerId, 'pipeline_components']),
+          [denoise, 'state_in', encode.id, 'state_out'],
+          [decode, 'state_in', denoise.id, 'state_out'],
+        ]
+      : [
+          [encode, 'text_encoders', ownerId, 'text_encoders'],
+          [denoise, 'unet', ownerId, 'unet_out'],
+          [denoise, 'scheduler', ownerId, 'scheduler'],
+          [denoise, 'embeddings', encode.id, 'embeddings'],
+          [decode, 'vae', ownerId, 'vae_out'],
+          [decode, 'latents', denoise.id, 'latents'],
+        ];
+    for (const [role, field, producer, port] of connections)
       same(connectedParamSource(role.node, field), { nodeId: producer, field: port });
     const guider = byScope.get('modules.ModularDiffusers.Guider')?.[0];
     if (guider) same(connectedParamSource(denoise.node, 'guider'), { nodeId: guider.id, field: 'guider_out' });
@@ -810,7 +820,7 @@ function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
       const expected =
         p.id === output.nodeId && upscaler
           ? { nodeId: upscaler.id, field: 'output' }
-          : { nodeId: decode.id, field: 'images' };
+          : { nodeId: decode.id, field: guardedCosmos ? 'image' : 'images' };
       same(connectedParamSource(p.node, 'image'), expected);
     }
     const receipt = output.resolvedExecutionInputs;
@@ -858,6 +868,61 @@ function nativeExpertOwnerCaptureMatches(apiGraph, context, ownerId, owner) {
             : apiParamValue(owner, key);
       same(field.value, expected, 'Native Expert consumed ' + key);
       assert(!Object.hasOwn(rows.get(ownerId).omittedFields ?? {}, key));
+    }
+    if (guardedCosmos) {
+      // Cosmos owns prompt and output safety in the connected component bundle.
+      // Only its exact guarded text-to-image profile can use this receipt path.
+      assert.equal(previews.length, 1);
+      same(apiGraph.paths, [[ownerId, encode.id, denoise.id, decode.id, previews[0].id]]);
+      const wiredFields = [...connections, [previews[0], 'image', decode.id, 'image']];
+      for (const [id, node] of entries) {
+        same(
+          Object.keys(node.params)
+            .filter((key) => connectedParamSource(node, key))
+            .sort(),
+          wiredFields
+            .filter(([stage]) => stage.id === id)
+            .map(([, field]) => field)
+            .sort(),
+        );
+      }
+      same(apiParamValue(owner, 'reviewed_variant'), 'nvidia/Cosmos3-Super-Text2Image');
+      same(apiParamValue(owner, 'workflow_id'), 'text2image');
+      same(
+        modelSetIdentity(modelIdentities).items.map(({ repoId, selectedRevision }) => [repoId, selectedRevision]),
+        [
+          ['nvidia/Cosmos-Guardrail1', 'd6d4bfa899a71454a700907664f3e88f503950cf'],
+          ['nvidia/Cosmos3-Super-Text2Image', 'daf3d374804be4c512c2135568a7cb95d4341d79'],
+          ['Qwen/Qwen3Guard-Gen-0.6B', 'fada3b2f655b89601929198343c94cd2f64d93cc'],
+        ],
+      );
+      assert(
+        modelIdentities.every(
+          (model) => model.fingerprint && model.modelRevision === model.repoId + '@' + model.selectedRevision,
+        ),
+      );
+      same(apiParamValue(owner, 'repo_id')?.value, 'nvidia/Cosmos3-Super-Text2Image');
+      same(apiParamValue(owner, 'revision'), 'daf3d374804be4c512c2135568a7cb95d4341d79');
+      for (const [stage, block] of [
+        [encode, 'text_encoder'],
+        [denoise, 'denoise'],
+        [decode, 'decode'],
+      ]) {
+        same(apiParamValue(stage.node, 'pipeline_class'), 'Cosmos3OmniModularPipeline');
+        same(apiParamValue(stage.node, 'workflow_id'), 'text2image');
+        same(apiParamValue(stage.node, 'block_path'), block);
+      }
+      for (const [stage, fields] of [
+        [encode, ['prompt', 'negative_prompt', 'width', 'height', 'num_frames', 'fps']],
+        [denoise, ['num_inference_steps', 'guidance_scale', 'seed']],
+      ]) {
+        for (const key of fields) {
+          same(rows.get(stage.id).fields[key], { source: 'literal', value: apiParamValue(stage.node, key) });
+          assert(!Object.hasOwn(rows.get(stage.id).omittedFields ?? {}, key));
+        }
+      }
+      assert.equal(apiParamValue(encode.node, 'num_frames'), 1);
+      return true;
     }
     if (upscaler)
       for (const key of ['model_id', 'device']) {

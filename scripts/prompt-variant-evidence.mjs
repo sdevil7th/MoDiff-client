@@ -623,6 +623,7 @@ const animateLcmVideoRoute = {
   workflowId: 'AnimateLCMPipeline:text_to_video',
   modelType: 'AnimateLCMPipeline',
   motionAdapter: { repoId: 'wangfuyun/AnimateLCM', revision: '3d4d00fc113225e1040f4d3bec504b6ec750c10c' },
+  lowRamTransitionFrom: 'StableDiffusionXLControlNetPAGImg2ImgPipeline',
 };
 
 const latteVideoRoute = {
@@ -1112,9 +1113,23 @@ export function validateSampledCpuWorkerMemory(bytes, worker, source, task) {
   return peak;
 }
 
-export function validateImagePromptPreparation(preparation, { modelType, previousExpertFamily }) {
+export function validateImagePromptPreparation(preparation, { modelType, previousExpertFamily, lowRamTransitionFrom }) {
   const previous = preparation?.previousModelFamily ?? null;
-  assert.ok(previous === null || previous === previousExpertFamily, 'Unreviewed previous Expert model family.');
+  const lowRamTransition = previous !== null && previous === lowRamTransitionFrom;
+  assert.ok(
+    previous === null || previous === previousExpertFamily || lowRamTransition,
+    'Unreviewed previous Expert model family.',
+  );
+  if (lowRamTransition) {
+    // Four GiB is the lower bound of the backend's RAM safety floor. The
+    // retained task records both the pressure and the actual model release.
+    assert.ok(
+      preparation.performed === true &&
+        preparation.availableRamBytes < 4 * 1024 ** 3 &&
+        preparation.cleanup?.released?.models > 0,
+      'The retained low-RAM transition lacks measured pressure or model release.',
+    );
+  }
   if (preparation?.performed !== true) {
     validateUnmodifiedExpertPreparation(preparation, modelType, previous);
     return;
@@ -1131,7 +1146,11 @@ export function validateImagePromptPreparation(preparation, { modelType, previou
   } else if (previous !== null) {
     reason = `model family changed from ${previous} to ${modelType}`;
   }
-  same(reasons, [reason], 'Unreviewed direct image cache cleanup.');
+  same(
+    reasons,
+    lowRamTransition ? [reason, 'available system memory is below the safety floor'] : [reason],
+    'Unreviewed direct image cache cleanup.',
+  );
   keys(cleanup, ['released', 'allocatorTrimmed', 'errors']);
   same(cleanup.errors, [], 'Direct image cache cleanup failed.');
   assert.equal(typeof cleanup.allocatorTrimmed, 'boolean');
