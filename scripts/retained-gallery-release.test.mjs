@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalWorkflowContract, readCanonicalEvidenceFile } from './release-contract-core.mjs';
 import {
+  assertRetainedMotionInputs,
   assertRetainedVideoAdjustment,
   assertRetainedVideoReference,
   createRetainedGalleryReleaseReader,
@@ -103,6 +104,40 @@ test('a retained video reference binds the declared material image to the exact 
         native,
       ),
     /must declare its reference image/u,
+  );
+});
+
+test('retained motion roles reject swapped, omitted, and undeclared inputs', () => {
+  const face = '2'.repeat(64);
+  const pose = '3'.repeat(64);
+  const recipe = {
+    videoConditionerHashes: { face, pose },
+    template: {
+      inputBindings: [
+        { field: 'faceVideo', mediaType: 'video' },
+        { field: 'poseVideo', mediaType: 'video' },
+      ],
+    },
+  };
+  const approved = { approvedFaceVideoPath: { sha256: face }, approvedPoseVideoPath: { sha256: pose } };
+  const bindings = [
+    { role: 'face', consumerPort: 'face_video', sha256: face },
+    { role: 'pose', consumerPort: 'pose_video', sha256: pose },
+  ];
+  assert.doesNotThrow(() => assertRetainedMotionInputs(recipe, approved, { videoConditionBindings: bindings }));
+  assert.throws(() => assertRetainedMotionInputs(recipe, { ...approved, approvedFaceVideoPath: { sha256: pose } }));
+  assert.throws(() => assertRetainedMotionInputs(recipe, { approvedFaceVideoPath: { sha256: face } }));
+  assert.throws(
+    () =>
+      assertRetainedMotionInputs(
+        { ...recipe, videoConditionerHashes: { face, pose, unknown: '4'.repeat(64) } },
+        approved,
+      ),
+    /Unknown retained motion input role/u,
+  );
+  assert.throws(
+    () => assertRetainedMotionInputs(recipe, approved, { videoConditionBindings: [...bindings].reverse() }),
+    /differs from the saved typed binding/u,
   );
 });
 

@@ -13,6 +13,7 @@ export type RetainedGalleryRecipe = {
   readonly lastFrameSha256?: string;
   readonly secondaryReferenceSha256?: string;
   readonly referenceImageSha256?: string;
+  readonly videoConditionerHashes?: Readonly<Partial<Record<'face' | 'pose' | 'background' | 'mask', string>>>;
   readonly reviewedCatalogLock: {
     readonly templateLockHash: string;
     readonly galleryTemplateLockHash: string;

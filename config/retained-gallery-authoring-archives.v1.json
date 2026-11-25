@@ -463,5 +463,10 @@
     "descriptorSha256": "111a1e8352784824dc9d3cb094113e0547b19cd50416b072cff31356c95a0124",
     "bytes": 4991,
     "sha256": "c91ec7e55964e72702d69979edf84e8714c8e5acb3adda5a6c6bccfce14db5db"
+  },
+  "WanAnimatePipeline:character_replace": {
+    "descriptorSha256": "3201ab9ec6ce7873a6bb2e48e50bf83956edb4169ff0b2dfa2ba4667a85153c2",
+    "bytes": 7348,
+    "sha256": "b2c1690cdde91111627becb49ad8e32513b644ce13c3188b1906b122266502eb"
   }
 }

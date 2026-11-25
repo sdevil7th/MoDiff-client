@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:1d5ae5e7fa702186eb134bfa4d86f7e4f517faf88720885ddd6960980505fd6b",
+  "assetSetId": "sha256:canonical-json:6dae2febe2da4a2154a550b5eb6530843803c6fe838fd2a3220dda5337b45c1e",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -7095,6 +7095,141 @@
       "provenanceTemplateId": "wan_a14b_wind_across_pond"
     },
     {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.background.mp4",
+      "sha256": "sha256:bytes:56d9cdc81884fc95644f38a5761ce4be55a441be9c572d3112f2c324541c315e",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.face.mp4",
+      "sha256": "sha256:bytes:b90706154957e438dc3df732e59b97467872221695ec87b3e135c8ad29ec9a7f",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.first.png",
+      "sha256": "sha256:bytes:ade9d6ac1301a5df16c94c0a03b25d201719f38766874b473f3c22c3fdd84be5",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.mask.mp4",
+      "sha256": "sha256:bytes:66238c0f48aef7920122e948c9bfccb8c3c9af842ac989ba744edb575d30f3e2",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.pose.mp4",
+      "sha256": "sha256:bytes:2fd6db2696b9a6bc7457bb8b747af5cd7ec4ec5603e86b06f01e591f17ed39f2",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
       "path": "template-gallery/inputs/wan_flf_blue_hour_at_the_tram_shelter.first.png",
       "sha256": "sha256:bytes:6d2c561cf33919ae42e773d95a0232799da3f2b92a23a94dad80902cfb73527a",
       "publishDecision": "approved",
@@ -8673,7 +8808,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:76650b43470a6406be046086c8c987b12b24257866783ce4581bf72d5a67970b",
+      "sha256": "sha256:bytes:dbfe7fcfa87e5e03df973310c7905fde71c6d74dc10a23ddb8929ecc19521c0d",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -8690,7 +8825,7 @@
       "reviewedBy": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-25",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "de8db2f2fa14b59514ea146654439aea279cc6fad5be1dca8cf17e057abe9945",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained."
     },
     {
@@ -23126,6 +23261,114 @@
       "provenanceTemplateId": "wan_a14b_wind_across_pond"
     },
     {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.original-provenance.json",
+      "sha256": "sha256:bytes:ce7cd68be0d73e65a89ec5136e5cb21e16940f318448d7d85493c4109135ce10",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.original-review.json",
+      "sha256": "sha256:bytes:368f120d1eb2c48f11a688a7c1293371bbad8cd67c026e24cf0655d8dc8f4e04",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.quality-review.json",
+      "sha256": "sha256:bytes:c0a191c85ddf88e695030d83c665e5016a5dc4a119724bc6330e3536b8406244",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.retained-template-provenance.json",
+      "sha256": "sha256:bytes:cbc0bb0c647d903d9b6a26858b83d660ba333be4bdda28c14b3098f069f19970",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
+    },
+    {
       "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.original-provenance.json",
       "sha256": "sha256:bytes:556edbb96784d97900a95f4c3cdf618102ae2f492b2791a67ef5cd9e258f3dfb",
       "publishDecision": "approved",
@@ -27555,6 +27798,33 @@
       "humanApprovalPacketSHA256": "de8db2f2fa14b59514ea146654439aea279cc6fad5be1dca8cf17e057abe9945",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
       "provenanceTemplateId": "wan_a14b_wind_across_pond"
+    },
+    {
+      "path": "template-gallery/wan_animate_glasshouse_keeper.mp4",
+      "sha256": "sha256:bytes:4d936509b7aa591221f0a7de3e15bc815b4d322d1bb9e78d894d767a48c55a19",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceRevision": "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "Wan-AI/Wan2.2-Animate-14B-Diffusers@6f4df10861c758af86ac3c979aacc1bf5c03eff0 https://huggingface.co/Wan-AI/Wan2.2-Animate-14B-Diffusers/tree/6f4df10861c758af86ac3c979aacc1bf5c03eff0"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "01bd531cf1d88e5338a9c8dc4b831048b7660d92b628f61f3b28e75bb68b9a6c",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "wan_animate_glasshouse_keeper"
     },
     {
       "path": "template-gallery/wan_flf_blue_hour_at_the_tram_shelter.mp4",

@@ -194,6 +194,7 @@ test('retained Gallery recipes preserve the native graph identities and standalo
               recipe.guideSha256,
               recipe.lastFrameSha256,
               recipe.secondaryReferenceSha256,
+              ...Object.values(recipe.videoConditionerHashes ?? {}),
             ]),
           ]
             .filter(Boolean)
@@ -342,6 +343,15 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
             ]
           : [];
       const mask = recipe.maskSha256 ? 'review-mask-image.png' : undefined;
+      const motionInputRoles = [
+        ['face', 'faceVideo', 'loadFaceVideo', 'face_video'],
+        ['pose', 'poseVideo', 'loadPoseVideo', 'pose_video'],
+        ['background', 'backgroundVideo', 'loadBackgroundVideo', 'background_video'],
+        ['mask', 'maskVideo', 'loadMaskVideo', 'mask'],
+      ].filter(([role]) => recipe.videoConditionerHashes?.[role]);
+      const motionInputs = Object.fromEntries(
+        motionInputRoles.map(([role, field]) => [field, 'review-' + role + '.mp4']),
+      );
       const tabId = studio.getState().createWorkflowTab(template.label, undefined, 'template', template.id);
       studio.getState().applyTemplate(
         template,
@@ -353,6 +363,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
               ...(guide && { controlImage: guide }),
               ...(sourceVideo && { sourceVideo: 'review-source-video.mp4' }),
               ...(controlVideo && { controlVideo: 'review-control-video.mp4' }),
+              ...motionInputs,
             },
       );
       const form = studio.getState().form;
@@ -434,6 +445,24 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
           const source = api.nodes[binding.nodes.loadImage];
           assert.deepEqual([source.params.file.value].flat(), input);
           assert.equal(generation.params.reference_images.sourceId, binding.nodes.loadImage);
+        }
+        for (const [, field, role, port] of motionInputRoles) {
+          const loaderId = binding.nodes[role];
+          assert.equal(api.nodes[loaderId].params.file.value, motionInputs[field]);
+          assert.equal(generation.params[port].sourceId, loaderId);
+          assert.equal(generation.params[port].sourceKey, 'video');
+        }
+        if (motionInputRoles.length) {
+          const { coerceStudioFormState } = await server.ssrLoadModule('/src/studio/outputContracts.ts');
+          const { inferStudioFormFromWorkflow } = await server.ssrLoadModule('/src/studio/workflowInference.ts');
+          const restored = coerceStudioFormState(JSON.parse(JSON.stringify(form)));
+          const inferred = inferStudioFormFromWorkflow(flow.getState().nodes, form, flow.getState().edges);
+          assert.equal(inferred.mode, template.mode);
+          assert.equal(inferred.sourceVideo, '');
+          for (const [, field] of motionInputRoles) {
+            assert.equal(restored[field], motionInputs[field]);
+            assert.equal(inferred[field], motionInputs[field]);
+          }
         }
         continue;
       }

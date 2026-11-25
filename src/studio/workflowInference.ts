@@ -617,9 +617,17 @@ export function inferStudioFormFromWorkflow(
   const loadAudios = nodes.filter((node) => node.data?.action === 'Load' && nodeKey(node).startsWith('modules.Audio.'));
   const sourceVideoNode =
     loadVideos.find((node) => node.data?.studioRole === 'loadVideo') ??
-    loadVideos.find((node) => !['loadControlVideo', 'loadMaskVideo'].includes(String(node.data?.studioRole)));
+    loadVideos.find(
+      (node) =>
+        !['loadControlVideo', 'loadMaskVideo', 'loadPoseVideo', 'loadFaceVideo', 'loadBackgroundVideo'].includes(
+          String(node.data?.studioRole),
+        ),
+    );
   const maskVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadMaskVideo');
   const controlVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadControlVideo');
+  const poseVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadPoseVideo');
+  const faceVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadFaceVideo');
+  const backgroundVideoNode = loadVideos.find((node) => node.data?.studioRole === 'loadBackgroundVideo');
   const videoOperationNode = findProcessor(nodes, VIDEO_PROCESSOR);
   const videoUpscaleNode = findProcessor(nodes, VIDEO_UPSCALER);
   const operationVideos =
@@ -704,6 +712,9 @@ export function inferStudioFormFromWorkflow(
       stringValue(paramValue(sourceVideoNode, ['file'])),
     maskVideo: stringValue(paramValue(maskVideoNode, ['file'])),
     controlVideo: stringValue(paramValue(controlVideoNode, ['file'])),
+    ...(poseVideoNode && { poseVideo: stringValue(paramValue(poseVideoNode, ['file'])) }),
+    ...(faceVideoNode && { faceVideo: stringValue(paramValue(faceVideoNode, ['file'])) }),
+    ...(backgroundVideoNode && { backgroundVideo: stringValue(paramValue(backgroundVideoNode, ['file'])) }),
     sourceAudio: stringValue(paramValue(loadAudioNode, ['file'])),
     referenceAudio: stringValue(paramValue(loadReferenceAudioNode, ['file'])),
     speechLanguage:

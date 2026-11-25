@@ -2867,6 +2867,53 @@
       "height": 512
     },
     {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.background.mp4",
+      "size": 389870,
+      "sha256": "sha256:bytes:56d9cdc81884fc95644f38a5761ce4be55a441be9c572d3112f2c324541c315e",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.face.mp4",
+      "size": 1640506,
+      "sha256": "sha256:bytes:b90706154957e438dc3df732e59b97467872221695ec87b3e135c8ad29ec9a7f",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.first.png",
+      "size": 434726,
+      "sha256": "sha256:bytes:ade9d6ac1301a5df16c94c0a03b25d201719f38766874b473f3c22c3fdd84be5",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.mask.mp4",
+      "size": 4737,
+      "sha256": "sha256:bytes:66238c0f48aef7920122e948c9bfccb8c3c9af842ac989ba744edb575d30f3e2",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.pose.mp4",
+      "size": 59742,
+      "sha256": "sha256:bytes:2fd6db2696b9a6bc7457bb8b747af5cd7ec4ec5603e86b06f01e591f17ed39f2",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/inputs/wan_flf_blue_hour_at_the_tram_shelter.first.png",
       "size": 695609,
       "sha256": "sha256:bytes:6d2c561cf33919ae42e773d95a0232799da3f2b92a23a94dad80902cfb73527a",
@@ -3490,8 +3537,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 474815,
-      "sha256": "sha256:bytes:76650b43470a6406be046086c8c987b12b24257866783ce4581bf72d5a67970b",
+      "size": 477685,
+      "sha256": "sha256:bytes:dbfe7fcfa87e5e03df973310c7905fde71c6d74dc10a23ddb8929ecc19521c0d",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -8696,6 +8743,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.original-provenance.json",
+      "size": 5203,
+      "sha256": "sha256:bytes:ce7cd68be0d73e65a89ec5136e5cb21e16940f318448d7d85493c4109135ce10",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.original-review.json",
+      "size": 1152,
+      "sha256": "sha256:bytes:368f120d1eb2c48f11a688a7c1293371bbad8cd67c026e24cf0655d8dc8f4e04",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.quality-review.json",
+      "size": 3520,
+      "sha256": "sha256:bytes:c0a191c85ddf88e695030d83c665e5016a5dc4a119724bc6330e3536b8406244",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.retained-template-provenance.json",
+      "size": 4925,
+      "sha256": "sha256:bytes:cbc0bb0c647d903d9b6a26858b83d660ba333be4bdda28c14b3098f069f19970",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/wan_flf_blue_hour_at_the_tram_shelter.original-provenance.json",
       "size": 1322,
       "sha256": "sha256:bytes:556edbb96784d97900a95f4c3cdf618102ae2f492b2791a67ef5cd9e258f3dfb",
@@ -10525,6 +10608,15 @@
       ]
     },
     {
+      "path": "template-gallery/wan_animate_glasshouse_keeper.mp4",
+      "size": 256854,
+      "sha256": "sha256:bytes:4d936509b7aa591221f0a7de3e15bc815b4d322d1bb9e78d894d767a48c55a19",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/wan_flf_blue_hour_at_the_tram_shelter.mp4",
       "size": 398821,
       "sha256": "sha256:bytes:a356ce3baa0be0556829715ccc72f1a9ccbe99625315cca04e3ee33a4e83f550",
@@ -10943,9 +11035,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:1d5ae5e7fa702186eb134bfa4d86f7e4f517faf88720885ddd6960980505fd6b",
+  "assetSetId": "sha256:canonical-json:6dae2febe2da4a2154a550b5eb6530843803c6fe838fd2a3220dda5337b45c1e",
   "status": "ready",
-  "assetCount": 1125,
-  "totalBytes": 1133080624,
+  "assetCount": 1135,
+  "totalBytes": 1135884729,
   "missingAssets": []
 }

@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "09bb6cf8c7ac96422f2de34fabe7770c9e1413db"
+    "revision": "2339c1cb95deb500215754b5a139c295dbbed7d7"
   },
   "originalCampaign": {
     "total": 89,
@@ -1077,7 +1077,13 @@
       "category": "supplementary-only",
       "reason": "Published and registered from an approved saved run outside the original campaign selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "wan_animate_glasshouse_keeper",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:893f2e3ff088d9bee012024429a9fed35390e6be78e840c19fedcc08b75240d7"
+  "profileHash": "sha256:canonical-json:794f3429451359a307b79b43b521a9505791f25801716615200c68a7126ae3fd"
 }

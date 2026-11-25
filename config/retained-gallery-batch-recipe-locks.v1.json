@@ -1342,5 +1342,26 @@
     },
     "inputSha256": "5c24b2b67f893f48e4dbf0d893e0aa4308852592f30f8179b44298cca4ce197e",
     "inputLocatorSha256": "f0c6bcf6e2ac02da300d9ea08fff96a335c47e436244ab9b36a3bdd47690cf3b"
+  },
+  "wan_animate_glasshouse_keeper": {
+    "workflowId": "WanAnimatePipeline:character_replace",
+    "sourceTaskTemplateId": "task-template:wan-animate:character-replace:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:120c2a963fb5ba4565a577eb4c1730b48d3d52d63f7610b6369c04ebf74af3e5",
+    "originalReceiptSha256": "3201ab9ec6ce7873a6bb2e48e50bf83956edb4169ff0b2dfa2ba4667a85153c2",
+    "reviewedTemplateSha256": "c709baafb5f990b9f9ca029bfc04ad15d0006f2c84c85759f6a18d68a0cc565d",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_db8a8100",
+      "galleryTemplateLockHash": "tpl_ed4e5a82",
+      "promptSettingsHash": "ps_ebb62f19"
+    },
+    "promptSha256": "d59a41833449299a528dee0f0a830e437d3b4e854dcc9130fdc2a9ffe82a9d40",
+    "inputSha256": "ade9d6ac1301a5df16c94c0a03b25d201719f38766874b473f3c22c3fdd84be5",
+    "inputLocatorSha256": "ca0e442b88fd3082f32afdde686253739533435631755c91a5ae3cad6d008ea2",
+    "videoConditionerHashes": {
+      "face": "b90706154957e438dc3df732e59b97467872221695ec87b3e135c8ad29ec9a7f",
+      "pose": "2fd6db2696b9a6bc7457bb8b747af5cd7ec4ec5603e86b06f01e591f17ed39f2",
+      "background": "56d9cdc81884fc95644f38a5761ce4be55a441be9c572d3112f2c324541c315e",
+      "mask": "66238c0f48aef7920122e948c9bfccb8c3c9af842ac989ba744edb575d30f3e2"
+    }
   }
 }

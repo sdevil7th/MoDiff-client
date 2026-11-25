@@ -1315,5 +1315,18 @@
       "width": 1664,
       "height": 960
     }
+  },
+  "wan_animate_glasshouse_keeper": {
+    "associationSha256": "df20117453015264b552c44bf2beae6ff08803d9e805537b1b20ec0f65c675db",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:6b262add8ba2463e96d9d3a9b0e92cd5a745badc3e8a985bc4ff1ac29483a2bd",
+    "templateRevisionHash": "c709baafb5f990b9f9ca029bfc04ad15d0006f2c84c85759f6a18d68a0cc565d",
+    "capturedAt": "2026-11-25T11:54:29.880Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "Wan-AI/Wan2.2-Animate-14B-Diffusers",
+    "outputSize": {
+      "width": 768,
+      "height": 512
+    }
   }
 }

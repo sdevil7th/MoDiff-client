@@ -403,6 +403,7 @@ export type StudioTemplateId =
   | 'wan_vace_outpaint_reframe'
   | 'wan_vace_reference_motion'
   | 'wan_vace_grayscale_control'
+  | 'wan_animate_glasshouse_keeper'
   | 'ace_step_text_to_audio'
   | 'minimax_music3_chamber_pop'
   | 'ace_step_audio_variation'
@@ -973,6 +974,9 @@ export type StudioFormState = {
   sourceVideo: string;
   maskVideo: string;
   controlVideo: string;
+  poseVideo?: string;
+  faceVideo?: string;
+  backgroundVideo?: string;
   sourceAudio: string;
   referenceAudio: string;
   speechLanguage: string;
@@ -1580,6 +1584,9 @@ export type StudioTemplateInputFormField =
   | 'sourceVideo'
   | 'maskVideo'
   | 'controlVideo'
+  | 'poseVideo'
+  | 'faceVideo'
+  | 'backgroundVideo'
   | 'sourceAudio'
   | 'referenceAudio';
 

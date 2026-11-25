@@ -94,6 +94,38 @@ export function assertRetainedVideoReference(recipe, approvedFiles, nativeReceip
   }
 }
 
+const motionInputRoles = [
+  ['face', 'faceVideo', 'face_video', 'approvedFaceVideoPath'],
+  ['pose', 'poseVideo', 'pose_video', 'approvedPoseVideoPath'],
+  ['background', 'backgroundVideo', 'background_video', 'approvedBackgroundVideoPath'],
+  ['mask', 'maskVideo', 'mask', 'approvedMaskVideoPath'],
+];
+
+export function assertRetainedMotionInputs(recipe, approvedFiles, nativeReceipt) {
+  const expected = [];
+  const hashes = recipe.videoConditionerHashes ?? {};
+  for (const [role, field, consumerPort, approvalKey] of motionInputRoles) {
+    const sha256 = hashes[role];
+    assert.equal(approvedFiles[approvalKey]?.sha256, sha256);
+    if (sha256 === undefined) continue;
+    assert.match(sha256, /^[a-f0-9]{64}$/u);
+    assert.ok(
+      recipe.template.inputBindings?.some((binding) => binding.field === field && binding.mediaType === 'video'),
+      'The retained recipe must declare its motion video input.',
+    );
+    expected.push({ role, consumerPort, sha256 });
+  }
+  assert.equal(Object.keys(hashes).length, expected.length, 'Unknown retained motion input role.');
+  if (expected.length && nativeReceipt) {
+    const observed = nativeReceipt.videoConditionBindings?.map(({ role, consumerPort, sha256 }) => ({
+      role,
+      consumerPort,
+      sha256,
+    }));
+    same(observed, expected, 'Published motion input differs from the saved typed binding.');
+  }
+}
+
 function assertRetainedBatchEvidence({
   recipe,
   sourceWorkflow,
@@ -132,6 +164,7 @@ function assertRetainedBatchEvidence({
   assert.equal(association.approvedFiles.approvedClosingFramePath?.sha256, recipe.lastFrameSha256);
   assert.equal(association.approvedFiles.approvedSecondaryReferencePath?.sha256, recipe.secondaryReferenceSha256);
   assertRetainedVideoReference(recipe, association.approvedFiles, nativeReceipt);
+  assertRetainedMotionInputs(recipe, association.approvedFiles, nativeReceipt);
   if (recipe.secondaryReferenceSha256) {
     assert.equal(recipe.template.mode, 'multi_image_reference_edit');
     same(
