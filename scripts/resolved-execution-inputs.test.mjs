@@ -410,6 +410,32 @@ test('layer decomposition evidence retains one input and the ordered output stac
   }
 });
 
+test('controlled inpainting evidence preserves the source, mask and derived guide roles', async () => {
+  const { parseBuiltinMediaEvidence } = await server.ssrLoadModule('/src/studio/builtinMediaEvidence.ts');
+  const rgb = { kind: 'image', sha256: 'a'.repeat(64), byteSize: 3, width: 1, height: 1, mode: 'RGB' };
+  const mask = { ...rgb, sha256: 'b'.repeat(64), byteSize: 1, mode: 'L' };
+  const guide = { ...rgb, sha256: 'c'.repeat(64) };
+  const base = { schemaVersion: 1, source: 'native-builtin-media-v1', status: 'complete', files: {} };
+  const edges = {
+    ...base,
+    controls: { low_threshold: 0.1, high_threshold: 0.7, output_mode: 'RGB', device: 'cpu:0' },
+    inputs: { image: [rgb] },
+    outputs: { output: [guide] },
+  };
+  const inpaint = {
+    ...base,
+    controls: {},
+    inputs: { image: [rgb], mask_image: [mask], control_image: [guide] },
+    outputs: { images: [rgb] },
+  };
+  assert.deepEqual(parseBuiltinMediaEvidence(edges, 'ImageFilters.Canny'), edges);
+  assert.deepEqual(parseBuiltinMediaEvidence(inpaint, 'DiffusersImage.ControlInpaint'), inpaint);
+  assert.equal(parseBuiltinMediaEvidence(inpaint, 'DiffusersImage.Inpaint'), undefined);
+  const invalid = structuredClone(inpaint);
+  invalid.inputs.background = invalid.inputs.image;
+  assert.equal(parseBuiltinMediaEvidence(invalid, 'DiffusersImage.ControlInpaint'), undefined);
+});
+
 test('native builtin media metadata survives strict parsing without granting model evidence', async () => {
   const backend = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
   const python =

@@ -38,6 +38,18 @@ export const BUILTIN_MEDIA_EVIDENCE_SCOPES: Record<
     outputs: ['images'],
     files: [],
   },
+  'DiffusersImage.ControlInpaint': {
+    controls: '',
+    inputs: ['image', 'mask_image', 'control_image'],
+    outputs: ['images'],
+    files: [],
+  },
+  'ImageFilters.Canny': {
+    controls: 'low_threshold high_threshold output_mode device',
+    inputs: ['image'],
+    outputs: ['output'],
+    files: [],
+  },
   'ImageOperations.ProcessImage': {
     controls: imageControls,
     inputs: ['image', 'mask'],
