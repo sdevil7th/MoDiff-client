@@ -269,6 +269,24 @@ export type StudioTemplateId =
   | 'sana_tidal_pool_on_black_basalt'
   | 'joyimage_herbarium_rainy_porthole'
   | 'longcat_florist_end_of_lane'
+  | 'kandinsky3_smoked_glass_on_limestone'
+  | 'longcat_clear_glass_at_the_bookshop'
+  | 'qwen_2511_pale_amber_on_limestone'
+  | 'qwen_cobalt_on_charcoal_slate'
+  | 'joy_plus_lavender_on_limestone'
+  | 'omnigen_cobalt_against_soft_apricot'
+  | 'flux_klein_alpine_lake_panorama'
+  | 'zimage_rocky_glacial_shores'
+  | 'qwen_bookshop_gouache'
+  | 'kontext_wide_water_alpine_ridge'
+  | 'chroma_alpine_block_print'
+  | 'joyimage_base_cobalt_paper_band'
+  | 'sdxl_blue_glass_on_linen'
+  | 'qwen_2512_cobalt_backdrop_repair'
+  | 'flux1_dev_limestone_studio_scratch_repair'
+  | 'zimage_seamless_cobalt_backdrop'
+  | 'sdxl_pag_cobalt_wall'
+  | 'flux_klein_open_glacial_lake'
   | 'lumina2_larch_on_glacial_pond'
   | 'hunyuan_dit_coastal_lighthouse'
   | 'omnigen_tulips_after_rain'
@@ -1675,7 +1693,10 @@ export type StudioTemplateExample = {
   // verified executable settings. Their recipes use the model's PAG defaults.
   lockedSettings?: Partial<
     StudioTemplateLockedSettings & Pick<StudioFormState, 'device' | 'speechLanguage' | 'pagScale' | 'pagAdaptiveScale'>
-  >;
+  > & {
+    // The source-bound retained recipes record the shared input resolution default.
+    matchInputResolution?: true;
+  };
   /** Contract for each primary runtime output emitted by the graph. */
   expectedOutput?: TemplateExpectedOutput;
   /** Optional derived gallery-media override, such as a review contact sheet. */

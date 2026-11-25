@@ -198,6 +198,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/chroma_alpine_block_print.webp",
+      "size": 374366,
+      "sha256": "sha256:bytes:c8c30a11f94c3100910bd565e04097ebc36fad1c412f7adaa8496092ef55a804",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/chroma_restored_cobalt_backdrop.webp",
       "size": 119420,
       "sha256": "sha256:bytes:66e00fa95a61ab9d0f77bce099476dd8ffc569697fe59fb509e8c589402dad9b",
@@ -296,6 +307,17 @@
       "path": "template-gallery/flowers_after_rain.webp",
       "size": 253846,
       "sha256": "sha256:bytes:ffebbed5e41a1aadbffe64573e522c4ef1b1131844503200f535d1198df1fe83",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux1_dev_limestone_studio_scratch_repair.webp",
+      "size": 119092,
+      "sha256": "sha256:bytes:b5fe5ad2e6acf82a7fb6cc2730cac9fb9c588a8e0263736e4a16dc2e77442f49",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -510,6 +532,28 @@
         "runtime"
       ],
       "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_klein_alpine_lake_panorama.webp",
+      "size": 579614,
+      "sha256": "sha256:bytes:3f2435f483779b1b27d9dad2347c055dc8855373d90aad6442174be9d341d059",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/flux_klein_open_glacial_lake.webp",
+      "size": 420904,
+      "sha256": "sha256:bytes:32041e979ea1b3c51030e7d64eb3edee675d5c4cdc7abb596817b4e0769ce65b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
       "height": 1024
     },
     {
@@ -1510,6 +1554,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/chroma_alpine_block_print.before.png",
+      "size": 1509971,
+      "sha256": "sha256:bytes:88290a96bc8d52f11f2d1e3c0c0e04c2027661816e54b57d7d4739d731ca1e75",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/chroma_restored_cobalt_backdrop.before.png",
       "size": 623267,
       "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
@@ -1539,6 +1594,28 @@
       "purposes": [
         "runtime"
       ]
+    },
+    {
+      "path": "template-gallery/inputs/flux1_dev_limestone_studio_scratch_repair.before.png",
+      "size": 623267,
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux1_dev_limestone_studio_scratch_repair.mask.png",
+      "size": 1571,
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/inputs/flux2_klein_edit.before.png",
@@ -1663,6 +1740,39 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/flux_klein_alpine_lake_panorama.before.png",
+      "size": 1003084,
+      "sha256": "sha256:bytes:50270382b4b730b87f79b775accaeeb81f3ff8885cd3d2cea94830206fbc181b",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 832,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/inputs/flux_klein_open_glacial_lake.before.png",
+      "size": 1509971,
+      "sha256": "sha256:bytes:88290a96bc8d52f11f2d1e3c0c0e04c2027661816e54b57d7d4739d731ca1e75",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_klein_open_glacial_lake.mask.png",
+      "size": 4475,
+      "sha256": "sha256:bytes:877d3c4e0e976d3885419f3f327d8974394d69aca35667e5479b944880d84e04",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/flux_kontext_edit.before.webp",
       "size": 196402,
       "sha256": "sha256:bytes:a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b",
@@ -1731,6 +1841,50 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/joy_plus_lavender_on_limestone.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/joyimage_base_cobalt_paper_band.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/kandinsky3_smoked_glass_on_limestone.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/kontext_wide_water_alpine_ridge.before.png",
+      "size": 1003084,
+      "sha256": "sha256:bytes:50270382b4b730b87f79b775accaeeb81f3ff8885cd3d2cea94830206fbc181b",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 832,
+      "height": 768
+    },
+    {
       "path": "template-gallery/inputs/lcm_dawn_alpine_lake.before.webp",
       "size": 164148,
       "sha256": "sha256:bytes:25fe06d8e93645bc6ff29928556a0cd654aa6d70178d435268b3d17e9188feaa",
@@ -1740,6 +1894,17 @@
       ],
       "width": 512,
       "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/longcat_clear_glass_at_the_bookshop.before.webp",
+      "size": 569776,
+      "sha256": "sha256:bytes:ff045be510a0e88cbab69bbe8c3794dd26bd19036bdec26a63a5b6ea5a11bc66",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/inputs/ltx_boardwalk_tracking.end.webp",
@@ -1807,12 +1972,67 @@
       "height": 48
     },
     {
+      "path": "template-gallery/inputs/omnigen_cobalt_against_soft_apricot.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/qwen-carton-layout-control.png",
       "size": 11137,
       "sha256": "sha256:bytes:b748201353f02543c2a48920bb514c2741366151df45bf6c4904aeb0f32f1a67",
       "contentType": "image/png",
       "purposes": [
         "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_2511_pale_amber_on_limestone.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_2512_cobalt_backdrop_repair.before.png",
+      "size": 891109,
+      "sha256": "sha256:bytes:f5db354dc97ea11898d868898c5cc8ef454bb75ffe098b00bb2f06bc89f85885",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1328,
+      "height": 1328
+    },
+    {
+      "path": "template-gallery/inputs/qwen_2512_cobalt_backdrop_repair.mask.png",
+      "size": 2405,
+      "sha256": "sha256:bytes:75ce495cdb65e3cb92cbd1c2ed94546d3f946e86642095d08334be13fd8a8b8f",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1328,
+      "height": 1328
+    },
+    {
+      "path": "template-gallery/inputs/qwen_bookshop_gouache.before.webp",
+      "size": 569776,
+      "sha256": "sha256:bytes:ff045be510a0e88cbab69bbe8c3794dd26bd19036bdec26a63a5b6ea5a11bc66",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
       ],
       "width": 1024,
       "height": 1024
@@ -1825,6 +2045,17 @@
       "purposes": [
         "runtime",
         "tooling"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/qwen_cobalt_on_charcoal_slate.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
       ],
       "width": 1024,
       "height": 1024
@@ -2117,6 +2348,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/sdxl_blue_glass_on_linen.before.png",
+      "size": 624887,
+      "sha256": "sha256:bytes:0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/sdxl_canny_adapter_glass_study.before.png",
       "size": 7281,
       "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
@@ -2186,6 +2428,28 @@
       "path": "template-gallery/inputs/sdxl_controlnet_glass_study_on_slate.before.png",
       "size": 7281,
       "sha256": "sha256:bytes:6bd07628a37c087178e9de58a98c6c5879468163f1a2376a581511a42503e2e2",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_pag_cobalt_wall.before.png",
+      "size": 623267,
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_pag_cobalt_wall.mask.png",
+      "size": 1571,
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -2285,6 +2549,39 @@
       "height": 768
     },
     {
+      "path": "template-gallery/inputs/zimage_rocky_glacial_shores.before.png",
+      "size": 1003084,
+      "sha256": "sha256:bytes:50270382b4b730b87f79b775accaeeb81f3ff8885cd3d2cea94830206fbc181b",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 832,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/inputs/zimage_seamless_cobalt_backdrop.before.png",
+      "size": 623267,
+      "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/zimage_seamless_cobalt_backdrop.mask.png",
+      "size": 1571,
+      "sha256": "sha256:bytes:1f48775f2826f84e0c5b55f16f3475bdc80ecad8b931d6b0279598610e9a828d",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/janus_red_enamel_teapot.webp",
       "size": 33688,
       "sha256": "sha256:bytes:c2cc1b06535dae0816a255e5a08bb20372a4cbd2c4b895f51273140dba4615eb",
@@ -2314,6 +2611,28 @@
       ]
     },
     {
+      "path": "template-gallery/joy_plus_lavender_on_limestone.webp",
+      "size": 115464,
+      "sha256": "sha256:bytes:6c1f36ca4b6eb78cc6ce314e60534f4496fae9a972b3f03ce2254257aa9737a3",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/joyimage_base_cobalt_paper_band.webp",
+      "size": 121610,
+      "sha256": "sha256:bytes:99fabcac42e8698eb652089bf52698690648937552975d54a68141be9a66b307",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/joyimage_herbarium_rainy_porthole.webp",
       "size": 356600,
       "sha256": "sha256:bytes:50213ff01502af1445d1d72618c3614c444931fd94739a53191bd2c36f36e578",
@@ -2334,6 +2653,28 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/kandinsky3_smoked_glass_on_limestone.webp",
+      "size": 84442,
+      "sha256": "sha256:bytes:77d55b454e684b69306ae806b31911750ae496888e58c85c1d896a5f222b71dd",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/kontext_wide_water_alpine_ridge.webp",
+      "size": 457222,
+      "sha256": "sha256:bytes:18090bf07900510b2d99c7c4ab38b9e38dc680fe437def20b2ce7297265db4b8",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
     },
     {
       "path": "template-gallery/layers/qwen_layered_portrait.native-layer-00.webp",
@@ -2455,6 +2796,17 @@
       ],
       "width": 512,
       "height": 512
+    },
+    {
+      "path": "template-gallery/longcat_clear_glass_at_the_bookshop.webp",
+      "size": 481278,
+      "sha256": "sha256:bytes:a29ccb40ac98bbda8401abaa2b25b9d61722505188056468ae18e66887f89338",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/longcat_florist_end_of_lane.webp",
@@ -2740,8 +3092,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 369766,
-      "sha256": "sha256:bytes:4cdc61e54dab42aa8d528f9fbda584ca594d05fce5016b44d9eac6f373654806",
+      "size": 416784,
+      "sha256": "sha256:bytes:f560bf35f17e3c3f5f117c90f84d4bcedbc53e7eb536f462cbdbac96069b67f5",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -2772,6 +3124,17 @@
       "path": "template-gallery/ochre_paper_pavilion.webp",
       "size": 150332,
       "sha256": "sha256:bytes:6fd64eda0cd96aca0f5c9d860fec6fed090426ff1c5cd5c9434a639755c06c1e",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/omnigen_cobalt_against_soft_apricot.webp",
+      "size": 66642,
+      "sha256": "sha256:bytes:305c3d2b35bc57b3151a332bc6084cbdf962337572c5e15ae3d7d546a07a1ead",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -2857,9 +3220,53 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/qwen_2511_pale_amber_on_limestone.webp",
+      "size": 133998,
+      "sha256": "sha256:bytes:126660eff58b75eed79a942adc24e76f731decd65f83db098e72298141531772",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_2512_cobalt_backdrop_repair.webp",
+      "size": 168926,
+      "sha256": "sha256:bytes:6b3a9c583a930c462ec1d484b71d26d97346862c2d4e4a25aa35c2062e3dfefe",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1328,
+      "height": 1328
+    },
+    {
+      "path": "template-gallery/qwen_bookshop_gouache.webp",
+      "size": 787262,
+      "sha256": "sha256:bytes:555bab08051dc3a0381747c207ed241be3afd54c5c6113a8b4abf04010960201",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1328,
+      "height": 1328
+    },
+    {
       "path": "template-gallery/qwen_character_angles.webp",
       "size": 200648,
       "sha256": "sha256:bytes:4a3a001c82fb171de587b505ad269b493eceefa2c243b9c1b4d1a7205777c354",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/qwen_cobalt_on_charcoal_slate.webp",
+      "size": 128874,
+      "sha256": "sha256:bytes:3cf9cea1b23834ec9dd589b37335250885be163eb4257155d8e76a08583dade2",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -3550,6 +3957,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/chroma_alpine_block_print.original-provenance.json",
+      "size": 1270,
+      "sha256": "sha256:bytes:f17d6523a55fcf5bd0c147d9a46dee5b6e7fc6363f6a08685ba8a65459f73cf2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_alpine_block_print.original-review.json",
+      "size": 882,
+      "sha256": "sha256:bytes:a7ba022616f2a41b3046a7ac3ca7779a6f4efc5692bc02c21dc52701354f8a01",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_alpine_block_print.quality-review.json",
+      "size": 2565,
+      "sha256": "sha256:bytes:bb7979a051f9839fdee168737f18bf99c630f5e7edba7ab59f8e7471315d9413",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_alpine_block_print.retained-template-provenance.json",
+      "size": 3669,
+      "sha256": "sha256:bytes:d8643c8c82d299a62068afd7b38de0d24fcfd6882585370e73fbe63402726e4a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/chroma_restored_cobalt_backdrop.original-provenance.json",
       "size": 1422,
       "sha256": "sha256:bytes:f87d18b81ff559f1298f0c780db0f5eb89e9f8219b4f4aff80c224bc3ef47ce4",
@@ -3850,6 +4293,42 @@
       "path": "template-gallery/reviews/flowers_after_rain.retained-template-provenance.json",
       "size": 3284,
       "sha256": "sha256:bytes:5251193aa4454f936e7677ee44b91d30938885e46645007effb8b1de8ea61f4a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux1_dev_limestone_studio_scratch_repair.original-provenance.json",
+      "size": 1674,
+      "sha256": "sha256:bytes:876f2fb80e0352d1c5d25648da72ec9324d03e46bad65e42cd487c415d952626",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux1_dev_limestone_studio_scratch_repair.original-review.json",
+      "size": 1023,
+      "sha256": "sha256:bytes:9c6d1ea38c006fe11dd5e65d5c82d040e20844d8d38c680b1d45ea189b9e2282",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux1_dev_limestone_studio_scratch_repair.quality-review.json",
+      "size": 2852,
+      "sha256": "sha256:bytes:1233ae9bdb89e3599b691f2bc14408f1f9dd762c3db734bb8fd828fce1f040b0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux1_dev_limestone_studio_scratch_repair.retained-template-provenance.json",
+      "size": 4137,
+      "sha256": "sha256:bytes:61e8601aaefcc918f03d5f110d57e8f26cb2149d6034c22fb9c13915ddb70324",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -4174,6 +4653,78 @@
       "path": "template-gallery/reviews/flux_fill_outpaint.reviewed-provenance.json",
       "size": 167448,
       "sha256": "sha256:bytes:83bd50a5df98a04d55a86ca75b3f39a5d87d11221910a8f2d1cc570dc5cc423c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_alpine_lake_panorama.original-provenance.json",
+      "size": 1582,
+      "sha256": "sha256:bytes:82e163fa04890d8549972f17c4d863ba445dd9f2f1088199737d534b807c9e97",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_alpine_lake_panorama.original-review.json",
+      "size": 1110,
+      "sha256": "sha256:bytes:0af53835f9eb84a14dbbd91c1c6527b27d7e2ef05682c5c5a8b9a120599220c7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_alpine_lake_panorama.quality-review.json",
+      "size": 2610,
+      "sha256": "sha256:bytes:6903b5b197080a67979212e174d52cf4e68a85773c6b6011f8c8d0b2eb5d0271",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_alpine_lake_panorama.retained-template-provenance.json",
+      "size": 3982,
+      "sha256": "sha256:bytes:0d74c14cd0dde401464e43f75a8c126b881bbbeb05bf145297ad33d575022aeb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_open_glacial_lake.original-provenance.json",
+      "size": 1489,
+      "sha256": "sha256:bytes:5b7df305704e076244a7d1fbd4e64589e7825ee96a116c0a9a6ef4c16a3231e5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_open_glacial_lake.original-review.json",
+      "size": 890,
+      "sha256": "sha256:bytes:127d7ce73ad054114252277de338834612bed27d675c1e48dc377bedb84fb237",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_open_glacial_lake.quality-review.json",
+      "size": 2409,
+      "sha256": "sha256:bytes:8fbb74c11639cba4c5ab3fab926e29d8e3c703ba5830fe9305352119e962dd60",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_klein_open_glacial_lake.retained-template-provenance.json",
+      "size": 4104,
+      "sha256": "sha256:bytes:cce6957687fe79ea590c44ce56f1ac0c594f6df854c4e367e88c4509c0b880c2",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -4740,6 +5291,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/joy_plus_lavender_on_limestone.original-provenance.json",
+      "size": 1437,
+      "sha256": "sha256:bytes:1d38c6f1a9b8c9f496cfb0905e6b4e2c8dd25129110ebf28c86e1070178c1237",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joy_plus_lavender_on_limestone.original-review.json",
+      "size": 889,
+      "sha256": "sha256:bytes:01efaac50374f321864b496b45ee9d133b3d67a9a30ba61eddf81fd23d7204bb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joy_plus_lavender_on_limestone.quality-review.json",
+      "size": 2644,
+      "sha256": "sha256:bytes:8bf5fa341804d3de8c849d40c5ac8518f954def1ba5eae8e56da820eb86d148c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joy_plus_lavender_on_limestone.retained-template-provenance.json",
+      "size": 3715,
+      "sha256": "sha256:bytes:9d769bc0f109f129a0a74b77d642cd0029204a037d3bb9e0ab17c322b31e4892",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joyimage_base_cobalt_paper_band.original-provenance.json",
+      "size": 1429,
+      "sha256": "sha256:bytes:e8cbdf5d79e8c91cc1f85575b2a5a29fcd3a1b2b470bd08137514d71b4e157ef",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joyimage_base_cobalt_paper_band.original-review.json",
+      "size": 840,
+      "sha256": "sha256:bytes:7d27c8cfdbcb51dba2f6b724268469f067e1a2f85320ac168ee4415ac0446ab9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joyimage_base_cobalt_paper_band.quality-review.json",
+      "size": 2256,
+      "sha256": "sha256:bytes:d2cd9b10d5095d45599db6987b5c8d43beae50b388dae281602eae6a5dd70ddb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/joyimage_base_cobalt_paper_band.retained-template-provenance.json",
+      "size": 3767,
+      "sha256": "sha256:bytes:e82f59c601357c4dd42e4c4a6ea7d5f71f87afbef7d4ed254e7dc724e1555319",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/joyimage_herbarium_rainy_porthole.original-provenance.json",
       "size": 1049,
       "sha256": "sha256:bytes:9d044b889706d4034d96da08aec8f9c6fa2458e2d75b36055a1a707e11140d38",
@@ -4812,6 +5435,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/kandinsky3_smoked_glass_on_limestone.original-provenance.json",
+      "size": 1538,
+      "sha256": "sha256:bytes:e62c78c152e7273c32f506b361d4cece5e2a61939ab8763078fb04111795a098",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kandinsky3_smoked_glass_on_limestone.original-review.json",
+      "size": 968,
+      "sha256": "sha256:bytes:307daef8829faa1835d0d7092e594aa8bf1b703c51157a8cc7581aaf1e84d437",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kandinsky3_smoked_glass_on_limestone.quality-review.json",
+      "size": 2646,
+      "sha256": "sha256:bytes:e6d9b0e253b694fab331fe62247c0adf47c2947d841ba8da08629522a37613ef",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kandinsky3_smoked_glass_on_limestone.retained-template-provenance.json",
+      "size": 3797,
+      "sha256": "sha256:bytes:5dbf90cd4b0f214fdae6e49c20ec03e38fc8552275d07e900ae737af469ea66a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kontext_wide_water_alpine_ridge.original-provenance.json",
+      "size": 1549,
+      "sha256": "sha256:bytes:8f93f5553eeb580705586eda046026ac8ed8742b09defff688fd67892e131d90",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kontext_wide_water_alpine_ridge.original-review.json",
+      "size": 1047,
+      "sha256": "sha256:bytes:f54561af3e759232c7e01a2515d98b66c38d56d7fe8ece573ce2f83bfcbbf3f8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kontext_wide_water_alpine_ridge.quality-review.json",
+      "size": 2400,
+      "sha256": "sha256:bytes:2dcf22dab88c45ead8d951f9443f61657d37eb30d07add1183a3633dbffcfe98",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/kontext_wide_water_alpine_ridge.retained-template-provenance.json",
+      "size": 3986,
+      "sha256": "sha256:bytes:97059d8dd67e7e5a82c9c458b4c992c680235cae0fc205fde6ae3915f43f3ff7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/lcm_dawn_alpine_lake.quality-review.json",
       "size": 2982,
       "sha256": "sha256:bytes:e5c590a6287147faad9d5eab5676b8d2bb8224a8581a2043cf78c8dd50dcb0b9",
@@ -4824,6 +5519,42 @@
       "path": "template-gallery/reviews/lcm_dawn_alpine_lake.retained-template-provenance.json",
       "size": 5757,
       "sha256": "sha256:bytes:767b8d794460fca5a3e1c79a89aeaa2b1dcdb815d47702e1063ed35d07163247",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_clear_glass_at_the_bookshop.original-provenance.json",
+      "size": 1396,
+      "sha256": "sha256:bytes:055c3ff5cf5493c80e675b8cd97de5c448856204330c1434522cc0c91482b522",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_clear_glass_at_the_bookshop.original-review.json",
+      "size": 899,
+      "sha256": "sha256:bytes:dabecbb61888f492a4e7d8f45e368097c7f286df24c163c8b5e753ce4553d0ff",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_clear_glass_at_the_bookshop.quality-review.json",
+      "size": 2651,
+      "sha256": "sha256:bytes:03185586cf4d78ccfa2aae9dcb3962e82b611d03bb5fefc03bdf34851d50a9ed",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_clear_glass_at_the_bookshop.retained-template-provenance.json",
+      "size": 3725,
+      "sha256": "sha256:bytes:8df85b747c9a5b0fe11bb20d81d64b1df7bccb96ec505aa99855adbcf9dd6e51",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5190,6 +5921,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/omnigen_cobalt_against_soft_apricot.original-provenance.json",
+      "size": 1525,
+      "sha256": "sha256:bytes:88ee6e3f6d910a68983aedb6b0cb553cad2341ca72627f2d6c578ecfefe1d760",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_cobalt_against_soft_apricot.original-review.json",
+      "size": 1043,
+      "sha256": "sha256:bytes:ae25cda076716b4dfe73095b1bcaa75418984db19fda3592f60335da9194e3e2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_cobalt_against_soft_apricot.quality-review.json",
+      "size": 2659,
+      "sha256": "sha256:bytes:f81904cbc14984f2916d4d26b20a38d7e90f46aa967bead471d642c0196ad273",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/omnigen_cobalt_against_soft_apricot.retained-template-provenance.json",
+      "size": 3869,
+      "sha256": "sha256:bytes:1ac31719c0a2fcf0c59ebf8c1f6fbcff2be9847aa23b748c1bb43a706b8f14fd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/omnigen_tulips_after_rain.original-provenance.json",
       "size": 1602,
       "sha256": "sha256:bytes:cd37ada4ad60fccb5fece5fe6ef03dd62ba7a8a66eb141579f8fa424b6265d71",
@@ -5406,6 +6173,114 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/qwen_2511_pale_amber_on_limestone.original-provenance.json",
+      "size": 1390,
+      "sha256": "sha256:bytes:92184da315494eafd5ffb5f97e0b6b16b9adc7e2900cfe2159a74eb95f2c664d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2511_pale_amber_on_limestone.original-review.json",
+      "size": 884,
+      "sha256": "sha256:bytes:c927ac13e8f20facd97ba72db03ae4fc658d5b2b5120a9473d2bcd280e01356c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2511_pale_amber_on_limestone.quality-review.json",
+      "size": 2604,
+      "sha256": "sha256:bytes:1448c1f4aeddd0ca2238d62a91db71644d723172bad44eee0f62618f89580160",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2511_pale_amber_on_limestone.retained-template-provenance.json",
+      "size": 3718,
+      "sha256": "sha256:bytes:0d91cc6e5417f0defc5ef7615cc85f19de32bf6732e01e75d6051b94be8df0d8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2512_cobalt_backdrop_repair.original-provenance.json",
+      "size": 1644,
+      "sha256": "sha256:bytes:aff76ebb3392dc74718791d4d3e964e12ed333818e3e3004c2b00efdb1065cda",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2512_cobalt_backdrop_repair.original-review.json",
+      "size": 960,
+      "sha256": "sha256:bytes:87b770beaa2fa2fbbc469450467e7ba7fd0c1f79e227cc24ba1e226e8b4af900",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2512_cobalt_backdrop_repair.quality-review.json",
+      "size": 2646,
+      "sha256": "sha256:bytes:cfe7231165788dcb08f50c7d45ab5f0953fd96c92da8d1ecd428af7d0a20cbce",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_2512_cobalt_backdrop_repair.retained-template-provenance.json",
+      "size": 4098,
+      "sha256": "sha256:bytes:7303db8a55bb4bfb9947f5d501be2907de1da8ebe0e8972578567e04d33ad336",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_bookshop_gouache.original-provenance.json",
+      "size": 1272,
+      "sha256": "sha256:bytes:4af138819ecda66dc7754a8ea6886ca1bb324540a235b73b14c3d2bb547e58de",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_bookshop_gouache.original-review.json",
+      "size": 839,
+      "sha256": "sha256:bytes:3b34b326d7200df17d7e8ef42964bf5398dd8216fef84e09ec974c7007101271",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_bookshop_gouache.quality-review.json",
+      "size": 2431,
+      "sha256": "sha256:bytes:94fe1a1dd8188e3f6860c7154e414c605cc8f94e79524fa5dc6f0bb557f23a98",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_bookshop_gouache.retained-template-provenance.json",
+      "size": 3653,
+      "sha256": "sha256:bytes:7b9356ca691735f772c1a0e914393459401f84cd012e782e4f0d940fac255648",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/qwen_character_angles.quality-review.json",
       "size": 4382,
       "sha256": "sha256:bytes:748fb8b3839911be02f80185d329b5b028456c78916da6ad07349e0086b0f106",
@@ -5418,6 +6293,42 @@
       "path": "template-gallery/reviews/qwen_character_angles.reviewed-provenance.json",
       "size": 106701,
       "sha256": "sha256:bytes:a4d880bcad84c21fe3787001fceb2f9b2f4042fe83e1e2c6733d0f578a586c66",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_cobalt_on_charcoal_slate.original-provenance.json",
+      "size": 1377,
+      "sha256": "sha256:bytes:e792e4d45eff40be63575b5d1b983d59aabdecf004890c98e828f6b58a1d549b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_cobalt_on_charcoal_slate.original-review.json",
+      "size": 894,
+      "sha256": "sha256:bytes:d2caf52b07dff116307a43afe1f087fe17cb98f2daa8549ec5e5c2331e0fac2f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_cobalt_on_charcoal_slate.quality-review.json",
+      "size": 2634,
+      "sha256": "sha256:bytes:492e8a71b24369a4f96ae8e7781fe6926274d5871066c2ae371165026bb585fc",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/qwen_cobalt_on_charcoal_slate.retained-template-provenance.json",
+      "size": 3688,
+      "sha256": "sha256:bytes:416a58ebfb2db64e9d1e75995cd8b6e8151b60a60600c9bfe33a472b2c31d8bb",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6162,6 +7073,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sdxl_blue_glass_on_linen.original-provenance.json",
+      "size": 1408,
+      "sha256": "sha256:bytes:27a97a45a77e030c923d8bdd21038de3f89a94132da92d6313179f752949ac89",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_blue_glass_on_linen.original-review.json",
+      "size": 807,
+      "sha256": "sha256:bytes:fabaeafe1e26297e9f1601776a60ecb99aff54d8bcd793f59efcdbb24aff75ca",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_blue_glass_on_linen.quality-review.json",
+      "size": 2364,
+      "sha256": "sha256:bytes:ac2ad3f014c2418214a1f5c0d24da1c6e0f854b5f465b5f73fc86a49f691e690",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_blue_glass_on_linen.retained-template-provenance.json",
+      "size": 3671,
+      "sha256": "sha256:bytes:bc7bc5349f88639d71d68f5fbd560c09bae488e4240cd5c53c9731904f655896",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sdxl_canny_adapter_glass_study.original-provenance.json",
       "size": 1220,
       "sha256": "sha256:bytes:daf26190a849032e45d97c519a2d0a943ea9cab99937916d7f2f9b88b29a69a0",
@@ -6300,6 +7247,42 @@
       "path": "template-gallery/reviews/sdxl_controlnet_glass_study_on_slate.retained-template-provenance.json",
       "size": 3701,
       "sha256": "sha256:bytes:564bd43c3c23f41f40e46ee762ad2a3c61e63ca7a5600f8af0fdf92b263856fe",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_cobalt_wall.original-provenance.json",
+      "size": 1601,
+      "sha256": "sha256:bytes:73001e41f7161d3d7f501d8901c64ea75b69926342d874f517161846bbc2c65e",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_cobalt_wall.original-review.json",
+      "size": 1074,
+      "sha256": "sha256:bytes:9c33914daf546f076a1cd4248d62bca41f48046bbf32641336a61e6af8ce5ae6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_cobalt_wall.quality-review.json",
+      "size": 2807,
+      "sha256": "sha256:bytes:792bcb8050a146a925e0a3459c499e41ca08f710496292775ed7a85acf4e1ddf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_cobalt_wall.retained-template-provenance.json",
+      "size": 4118,
+      "sha256": "sha256:bytes:69442605e67b4da6af5ab3971559219066b7c569139088412a65945487509612",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6878,6 +7861,78 @@
       "path": "template-gallery/reviews/zimage_golden_amber_glass.retained-template-provenance.json",
       "size": 3660,
       "sha256": "sha256:bytes:b7b4cc1441995324830d2c34d883b4bcb86b62faf445afbc15ea77b7855d024a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_rocky_glacial_shores.original-provenance.json",
+      "size": 1571,
+      "sha256": "sha256:bytes:f6f52781f50d76e5f47500b56a32d904ad2fe1c05ffc3db32232b0c3b1811aa7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_rocky_glacial_shores.original-review.json",
+      "size": 1090,
+      "sha256": "sha256:bytes:3b2e791eb5191adbb9deb87721e44a602c3078e85930124f8b0de631ff6752a0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_rocky_glacial_shores.quality-review.json",
+      "size": 2543,
+      "sha256": "sha256:bytes:9017baf79260e6a9ae4b85b8663ef71de2ccff3edad73c1275562af14d3b8750",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_rocky_glacial_shores.retained-template-provenance.json",
+      "size": 3949,
+      "sha256": "sha256:bytes:625f42767a68845e1dd2e09a4760d7938138c8c8a8b8a196d3748184b0bfa44d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_seamless_cobalt_backdrop.original-provenance.json",
+      "size": 1582,
+      "sha256": "sha256:bytes:d4a52b23af4248329ef8232b4058b8fcf3c877ddfcfc9b20c4e27a3aacadfa9f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_seamless_cobalt_backdrop.original-review.json",
+      "size": 940,
+      "sha256": "sha256:bytes:b112c13caaa7ec635f2dfc8a4dc8fd2304778d1bc7aa5f1dab5c6c430ed48704",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_seamless_cobalt_backdrop.quality-review.json",
+      "size": 2592,
+      "sha256": "sha256:bytes:0d1d91ea0c9d9c165f2ab152c8a6405e6bb43ad26dc886a844367c051ea3ea8c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/zimage_seamless_cobalt_backdrop.retained-template-provenance.json",
+      "size": 4101,
+      "sha256": "sha256:bytes:dc64773a27bdd47d79712c11274cbdf9b3bde35a576d2e96be1ef1dc12972361",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -7605,6 +8660,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/sdxl_blue_glass_on_linen.webp",
+      "size": 154298,
+      "sha256": "sha256:bytes:a6a5af6e608dfc8de66c3ad394aaf39c0b82692cf89619979f6a3997a7fbec62",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/sdxl_canny_adapter_glass_study.webp",
       "size": 140860,
       "sha256": "sha256:bytes:a3cc3458190184277baebd012898e3eef8504570f6ce52a64228a78f68400eef",
@@ -7641,6 +8707,17 @@
       "path": "template-gallery/sdxl_controlnet_glass_study_on_slate.webp",
       "size": 171678,
       "sha256": "sha256:bytes:a900fb44cec09e91eb4d6237dc5a81aa9dfa0a92deea9ccfa3c5f84b2c7dc4e5",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/sdxl_pag_cobalt_wall.webp",
+      "size": 119358,
+      "sha256": "sha256:bytes:dc976b97d1919d526a84c397596fbb4b440edf3cf53fad156f07fba46810e8de",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -8490,11 +9567,33 @@
       ],
       "width": 640,
       "height": 640
+    },
+    {
+      "path": "template-gallery/zimage_rocky_glacial_shores.webp",
+      "size": 532258,
+      "sha256": "sha256:bytes:7a94fbad28ad8901a49b53de126a2bd9e34077ad7402efa15caeaa7b970a0cae",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "path": "template-gallery/zimage_seamless_cobalt_backdrop.webp",
+      "size": 119866,
+      "sha256": "sha256:bytes:8149300a89e8cc784540a3fa663e83ca708d68d250a57710266f8a1e126fd4b5",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:1dd39d0a777c1194ca6722527d6b1f8dd1f9f02e89b64fdc2ef056a64748d189",
+  "assetSetId": "sha256:canonical-json:649f3cf808a22d61c582c6c78e4f62b70fd4854f19d78a8d0fd442d7986fdb30",
   "status": "ready",
-  "assetCount": 870,
-  "totalBytes": 1061074979,
+  "assetCount": 983,
+  "totalBytes": 1080562802,
   "missingAssets": []
 }

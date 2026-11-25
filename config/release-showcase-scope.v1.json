@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "c1313d4630a08fa4735e1b7295b8a45364886cc8"
+    "revision": "3bdae2719d62ea6747de119308ac2b2c3e5c39a8"
   },
   "originalCampaign": {
     "total": 89,
@@ -837,7 +837,115 @@
       "category": "supplementary-only",
       "reason": "Published and registered from an approved saved run outside the original campaign selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "chroma_alpine_block_print",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "flux1_dev_limestone_studio_scratch_repair",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "flux_klein_alpine_lake_panorama",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "flux_klein_open_glacial_lake",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "joy_plus_lavender_on_limestone",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "joyimage_base_cobalt_paper_band",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "kandinsky3_smoked_glass_on_limestone",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "kontext_wide_water_alpine_ridge",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "longcat_clear_glass_at_the_bookshop",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "omnigen_cobalt_against_soft_apricot",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "qwen_2511_pale_amber_on_limestone",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "qwen_2512_cobalt_backdrop_repair",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "qwen_bookshop_gouache",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "qwen_cobalt_on_charcoal_slate",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_blue_glass_on_linen",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_pag_cobalt_wall",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "zimage_rocky_glacial_shores",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "zimage_seamless_cobalt_backdrop",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:ef8bad58798dd4bc110738b59ac622482771ebad7d23870625edce6a955e67e5"
+  "profileHash": "sha256:canonical-json:76c4067e6c1b5f113362403963a9ffdaac7843f4899cbdbbac88babc026752c6"
 }
