@@ -129,6 +129,35 @@ test('current-source verification failure stays blocked without inventing other 
   }
 });
 
+test('candidate report ignores coverage from a different release contract', () => {
+  const f = fixture();
+  const path = join(dirname(f.output), 'resource-recipe-coverage.v1.json');
+  const coverage = { required: 2, qualified: 2, missing: 0 };
+  try {
+    writeFileSync(
+      path,
+      JSON.stringify({ releaseContractHash: 'previous-contract-hash', status: 'complete', coverage }),
+    );
+    assert.equal(f.run().status, 0);
+    const stale = f.read();
+    assert.equal(stale.gates.resourceRecipesQualified, false);
+    assert.equal(stale.coverage.resourceRecipes, null);
+    assert(stale.blockers.some((blocker) => blocker.id === 'resource-report-not-current'));
+
+    writeFileSync(
+      path,
+      JSON.stringify({ releaseContractHash: 'retained-contract-hash', status: 'complete', coverage }),
+    );
+    assert.equal(f.run().status, 0);
+    const current = f.read();
+    assert.equal(current.gates.resourceRecipesQualified, true);
+    assert.deepEqual(current.coverage.resourceRecipes, coverage);
+    f.assertPreserved();
+  } finally {
+    f.close();
+  }
+});
+
 test('candidate report counts exact runs and bound variants without granting release eligibility', () => {
   const standalone = (id, status, receipt, missing, releaseEligible = false) => ({
     id,

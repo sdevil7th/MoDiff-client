@@ -68,9 +68,12 @@ const releaseContractCurrent =
 const hardwareQualification = existsSync(HARDWARE_QUALIFICATION_PATH)
   ? readJson(HARDWARE_QUALIFICATION_PATH)
   : { receipts: [] };
-const resourceQualification = existsSync(RESOURCE_QUALIFICATION_PATH)
+const savedResourceQualification = existsSync(RESOURCE_QUALIFICATION_PATH)
   ? readJson(RESOURCE_QUALIFICATION_PATH)
-  : { status: 'missing', coverage: { required: 0, qualified: 0, missing: 0 } };
+  : null;
+const resourceQualificationStale =
+  savedResourceQualification !== null && savedResourceQualification.releaseContractHash !== contract.contractHash;
+const resourceQualification = resourceQualificationStale ? null : savedResourceQualification;
 const packageSet = Object.values(contract.packageSets ?? {})[0] ?? {};
 const incompleteTemplates = contract.templates
   .filter((template) => !template.releaseEligible)
@@ -145,7 +148,7 @@ const gates = {
   workflowsEligible: incompleteWorkflows.length === 0,
   qualificationReceiptsComplete:
     contract.coverage?.completeQualificationReceiptCount === contract.coverage?.templateCount,
-  resourceRecipesQualified: resourceQualification.status === 'complete',
+  resourceRecipesQualified: resourceQualification?.status === 'complete',
   supportedProfileDeclared: hardwareCoverage.hasSupportedProfile,
   supportedProfilesPhysicallyQualified: hardwareCoverage.allSupportedProfilesQualified,
 };
@@ -193,9 +196,11 @@ const blockers = [
     ? []
     : [
         {
-          id: 'resource-recipes-incomplete',
-          count: resourceQualification.coverage?.missing ?? null,
-          message: 'Every advertised model-family resource recipe requires a measured real-weight run.',
+          id: resourceQualificationStale ? 'resource-report-not-current' : 'resource-recipes-incomplete',
+          count: resourceQualification?.coverage?.missing ?? null,
+          message: resourceQualificationStale
+            ? 'The saved resource report belongs to a different release contract. Run npm run release:resources:generate.'
+            : 'Every advertised model-family resource recipe requires a measured real-weight run.',
         },
       ]),
   ...(gates.supportedProfileDeclared
@@ -233,9 +238,9 @@ const body = {
     workflows: contract.coverage?.workflowCount ?? 0,
     eligibleWorkflows: contract.coverage?.releaseEligibleWorkflowCount ?? 0,
     standaloneExecution,
-    resourceRecipes: resourceQualification.coverage,
-    releaseEligibleResourceRecipes: resourceQualification.coverage?.byReleaseLane?.releaseEligible ?? null,
-    deferredResourceRecipes: resourceQualification.coverage?.byReleaseLane?.deferred ?? null,
+    resourceRecipes: resourceQualification?.coverage ?? null,
+    releaseEligibleResourceRecipes: resourceQualification?.coverage?.byReleaseLane?.releaseEligible ?? null,
+    deferredResourceRecipes: resourceQualification?.coverage?.byReleaseLane?.deferred ?? null,
   },
   receiptMissingFieldCounts: missingFieldCounts,
   incompleteTemplates,
