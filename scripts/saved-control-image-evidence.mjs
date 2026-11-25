@@ -22,7 +22,7 @@ import {
   validateNativeVariantRun,
   validateUnmodifiedExpertPreparation,
 } from './native-variant-run-evidence.mjs';
-import { verifyRetainedPngUpload } from './private-image-edit-evidence.mjs';
+import { verifyRetainedPngUpload, verifyRetainedWebpUpload } from './private-image-edit-evidence.mjs';
 import { validateImagePromptPreparation } from './prompt-variant-evidence.mjs';
 import {
   canonicalWorkflowAuthoringContract,
@@ -34,6 +34,7 @@ import { decodedMediaHash, technicalMediaErrors } from './template-gallery-harne
 const format = 'modiff.private.saved-control-image-native-png.v1';
 const retainedHostFormat = 'modiff.private.saved-control-image-native-files.v1';
 const loadFieldsFormat = 'modiff.private.saved-control-image-native-load-fields.v1';
+export const integratedControlUploadFormat = 'modiff.private.integrated-control-edit-native-upload.v1';
 const linuxReplayRuntime = '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5';
 const windowsReplayRuntime = 'e5d045d5ecf997c0cfe8dba771fd92cfc1fef6d3e10d91791b2b5e747f384b3c';
 const commonSource = 'e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8';
@@ -60,6 +61,12 @@ const fluxControlInpaint = {
   pipelineClass: 'FluxControlInpaintPipeline',
   additionalInputs: ['source', 'mask'],
 };
+const fluxControlUpload = {
+  source: '73c0d5622c9c305eb2c13478fbac4ca9ea09c71689c74d38679fa6af592c8964',
+  originalRegistryHash: '0c7eb754b1eec427474be513ff6bd7837ce77ceb5f05853361616e302962fef4',
+  previousExpertFamily: fluxControl.pipelineClass,
+  lateOutput: false,
+};
 const sdxlWindowsControlEdit = {
   action: 'ControlEdit',
   pipelineClass: 'StableDiffusionXLControlNetImg2ImgPipeline',
@@ -73,9 +80,16 @@ const sdxlWindowsControlEdit = {
   previousExpertFamily: 'StableDiffusionXLImg2ImgPipeline',
 };
 const routes = {
-  'FluxCannyPipeline:control_edit_image': { ...fluxControl, lateOutput: true },
+  'FluxCannyPipeline:control_edit_image': {
+    ...fluxControl,
+    lateOutput: true,
+    integratedUploadVariant: { ...fluxControlUpload, controls: [['strength', 0.8, 1]] },
+  },
   'FluxCannyPipeline:control_inpaint': { ...fluxControlInpaint, lateOutput: true },
-  'FluxDepthPipeline:control_edit_image': fluxControl,
+  'FluxDepthPipeline:control_edit_image': {
+    ...fluxControl,
+    integratedUploadVariant: { ...fluxControlUpload, controls: [['strength', 0.8, 0.64]] },
+  },
   'FluxDepthPipeline:control_inpaint': fluxControlInpaint,
   'StableDiffusionPipeline:control_image': {
     pipelineClass: 'StableDiffusionControlNetPipeline',
@@ -200,6 +214,10 @@ function owners(api, route) {
 function savedControlRoute(workflowId, evidenceFormat) {
   const route = routes[workflowId];
   assert.ok(route, 'No reviewed saved control-image route.');
+  if (evidenceFormat === integratedControlUploadFormat) {
+    assert.ok(route.integratedUploadVariant, 'No reviewed integrated control edit with native upload evidence.');
+    return { ...route, ...route.integratedUploadVariant, loadFieldsOnly: true, integratedUpload: true };
+  }
   if (evidenceFormat === loadFieldsFormat) {
     assert.ok(route.loadFieldsVariant, 'No reviewed control-image load evidence variant.');
     return { ...route, ...route.loadFieldsVariant, loadFieldsOnly: true };
@@ -388,7 +406,13 @@ export async function readSavedControlImageEvidence({
   const route = savedControlRoute(manifest.id, evidence.format);
   assert.equal(
     evidence.format,
-    route.loadFieldsOnly ? loadFieldsFormat : route.integratedControl ? retainedHostFormat : format,
+    route.integratedUpload
+      ? integratedControlUploadFormat
+      : route.loadFieldsOnly
+        ? loadFieldsFormat
+        : route.integratedControl
+          ? retainedHostFormat
+          : format,
   );
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.workflowId, manifest.id);
@@ -435,26 +459,29 @@ export async function readSavedControlImageEvidence({
   const promptSlot = expected.nodes[canonical.sampler].params.prompt;
   assert.deepEqual(promptSlot, { display: 'textarea', value: '' });
   promptSlot.value = prompt;
-  if (route.loadFieldsOnly) {
+  if (route.loadFieldsOnly && !route.integratedUpload) {
     const loader = expected.nodes[canonical.loader].params;
     assert.equal(loader.execution_profile_id, undefined);
     loader.execution_profile_id = { value: '' };
-    for (const [key, original, retained] of route.controls) {
-      const parameter = expected.nodes[canonical.sampler].params[key];
-      assert.equal(parameter.value, original);
-      parameter.value = retained;
-    }
+  }
+  for (const [key, original, retained] of route.controls ?? []) {
+    const parameter = expected.nodes[canonical.sampler].params[key];
+    assert.equal(parameter.value, original);
+    parameter.value = retained;
   }
   const identity = canonicalGraphIdentity(expected);
   for (const graphSource of [graphRequest, creator.apiGraph, ...visual]) {
     assert.equal(
       canonicalGraphIdentity(graphSource).hash,
       identity.hash,
-      'Saved graph differs outside its prompt and selected images.',
+      'Saved graph differs outside its prompt, selected images, and reviewed controls.',
     );
   }
   const nativeStore = route.integratedControl ? read(evidence.persistedOutput) : undefined;
-  const stored = nativeStore ? JSON.parse(nativeStore.bytes).outputs : undefined;
+  const storedOutputs = nativeStore ? JSON.parse(nativeStore.bytes).outputs : undefined;
+  const stored = route.integratedUpload
+    ? storedOutputs.filter(({ taskId }) => taskId === run.task.task_id)
+    : storedOutputs;
   if (stored) assert.equal(stored.length, 1);
   const validate = route.lateOutput ? validateLateNativeSingleAssetRun : validateNativeVariantRun;
   const { task, output, hints } = validate({
@@ -468,7 +495,7 @@ export async function readSavedControlImageEvidence({
     graphRequest,
     graphAcknowledgment: json(evidence.graphAcknowledgment),
     validatePreparation: (value) =>
-      route.loadFieldsOnly
+      route.loadFieldsOnly && !route.integratedUpload
         ? validateDirectMutationPreparation(value, route.pipelineClass, actual)
         : route.previousExpertFamily
           ? validateImagePromptPreparation(value, {
@@ -483,11 +510,13 @@ export async function readSavedControlImageEvidence({
     assert.equal(stored[0].mediaHash, output.mediaHash);
     assert.deepEqual(stored[0].apiGraphSnapshot, output.apiGraphSnapshot);
     assert.deepEqual(stored[0].resolvedExecutionInputs, output.resolvedExecutionInputs);
-    verifyRetainedHostImageFiles(json(evidence.hostInputFiles), {
-      taskId: task.task_id,
-      persistedOutputSha256: sha256(nativeStore.bytes),
-      inputs,
-    });
+    if (!route.integratedUpload) {
+      verifyRetainedHostImageFiles(json(evidence.hostInputFiles), {
+        taskId: task.task_id,
+        persistedOutputSha256: sha256(nativeStore.bytes),
+        inputs,
+      });
+    }
   }
   const decoded = verifySavedControlImageInputs(graphRequest, output, inputs, manifest.id, evidence.format);
   const imageBindings = Object.fromEntries(
@@ -500,8 +529,9 @@ export async function readSavedControlImageEvidence({
           const dimensions = await decodedMediaHash(file.file, 'image');
           assert.deepEqual([dimensions.width, dimensions.height], [decodedImage.width, decodedImage.height]);
         }
-        if (!route.integratedControl) {
-          verifyRetainedPngUpload(json(input.upload), input, decodedImage, file.bytes);
+        if (!route.integratedControl || route.integratedUpload) {
+          const verifyUpload = input.sourceValue.endsWith('.webp') ? verifyRetainedWebpUpload : verifyRetainedPngUpload;
+          verifyUpload(json(input.upload), input, decodedImage, file.bytes);
         }
         return [role, { nodeId: actual.inputs[role], field: 'file', sha256: input.file.sha256, decodedImage }];
       }),
@@ -601,10 +631,12 @@ export async function readSavedControlImageEvidence({
         sourceByteWitness: 'native-load-and-upload-with-typed-wire',
       }),
       ...(route.cannyMediaWitness && { nativeEdgeMapObserved: true }),
-      ...(route.integratedControl && {
-        originalUploadResponsesObserved: false,
-        hostFilesMatchedNativeLoads: true,
-      }),
+      ...(route.integratedUpload && { originalUploadResponsesObserved: true }),
+      ...(route.integratedControl &&
+        !route.integratedUpload && {
+          originalUploadResponsesObserved: false,
+          hostFilesMatchedNativeLoads: true,
+        }),
       ...(route.pagSettingsUnobserved && { effectivePagSettingsObserved: false }),
       physicalPlatformQualification: false,
     },

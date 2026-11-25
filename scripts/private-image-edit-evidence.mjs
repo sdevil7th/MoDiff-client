@@ -1108,6 +1108,10 @@ export function verifyRetainedPngUpload(upload, input, decoded, bytes) {
   verifyRetainedImageUpload(upload, input, decoded, bytes, 'png');
 }
 
+export function verifyRetainedWebpUpload(upload, input, decoded, bytes) {
+  verifyRetainedImageUpload(upload, input, decoded, bytes, 'webp');
+}
+
 function verifyRetainedImageUpload(upload, input, decoded, bytes, encoding) {
   const png = encoding === 'png';
   keys(upload, ['error', 'path', 'media']);

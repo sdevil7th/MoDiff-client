@@ -6,12 +6,13 @@ import { verifyConditioningModels } from './control-inpaint-evidence.mjs';
 import { selectBackendRuntimeFingerprintEvidence } from './live-proof-provenance.mjs';
 import { verifyRetainedHostImageFiles } from './native-image-load-evidence.mjs';
 import { readCanonicalEvidenceFile, readCanonicalWorkflowEvidence } from './release-contract-core.mjs';
-import { verifySavedControlImageInputs } from './saved-control-image-evidence.mjs';
+import { integratedControlUploadFormat, verifySavedControlImageInputs } from './saved-control-image-evidence.mjs';
 
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
 const root = process.env.MODIFF_SAVED_CONTROL_EVIDENCE_DIR;
 const integratedRoot = process.env.MODIFF_SAVED_INTEGRATED_CONTROL_EVIDENCE_DIR;
+const revisedFluxRoot = process.env.MODIFF_REVISED_FLUX_CONTROL_EVIDENCE_DIR;
 const cases = [
   ['linux-sd15-control-fixed', 'StableDiffusionPipeline:control_image', 'ControlNetModel', 'qa0wL-hE_WwQ'],
   [
@@ -39,6 +40,42 @@ const cases = [
     'Hujzhp32JY-C',
   ],
 ];
+
+for (const [slug, workflowId, taskId, strength] of [
+  ['canny-black-ink', 'FluxCannyPipeline:control_edit_image', '4gv8bcow7Kk7', 1],
+  ['depth-paint', 'FluxDepthPipeline:control_edit_image', 'GSYDNu2yTddj', 0.64],
+]) {
+  test(
+    `the revised ${slug} capture binds both original uploads and its consumed strength`,
+    { skip: !revisedFluxRoot },
+    async () => {
+      const evidencePath = resolve(revisedFluxRoot, `exact-${slug}-evidence`, 'evidence.json');
+      const { receipt, evidence } = await readCanonicalWorkflowEvidence({
+        clientRoot,
+        backendRoot,
+        workflowId,
+        evidencePath,
+      });
+      assert.equal(evidence.format, integratedControlUploadFormat);
+      assert.equal(receipt.taskId, taskId);
+      assert.equal(receipt.conditioningModel.source, 'integrated_checkpoint');
+      assert.equal(receipt.guideBinding.sha256, evidence.inputs[0].file.sha256);
+      assert.equal(receipt.inputBinding.sha256, evidence.inputs[1].file.sha256);
+      assert.equal(receipt.observationLimits.originalUploadResponsesObserved, true);
+      assert.equal(receipt.qualificationClaims.rightsApproved, false);
+      const read = (ref) => JSON.parse(readCanonicalEvidenceFile(dirname(evidencePath), ref).bytes);
+      const graph = read(evidence.graphRequest);
+      const { latestOutput: output } = read(evidence.outputPackage);
+      const sampler = output.resolvedExecutionInputs.nodes.find(({ action }) => action === 'ControlEdit');
+      assert.equal(sampler.fields.strength.value, strength);
+      sampler.fields.strength.value = 0.8;
+      assert.throws(
+        () => verifySavedControlImageInputs(graph, output, evidence.inputs, workflowId, evidence.format),
+        /Saved control sampler fields differ/u,
+      );
+    },
+  );
+}
 
 test('the retained native host input witness is scoped to the task, output store and exact source files', () => {
   const sourceValue = '@data/images/guide.png';

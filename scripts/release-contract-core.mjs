@@ -986,6 +986,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.saved-control-image-native-png.v1',
       'modiff.private.saved-control-image-native-files.v1',
       'modiff.private.saved-control-image-native-load-fields.v1',
+      'modiff.private.integrated-control-edit-native-upload.v1',
     ].includes(evidence.format)
   ) {
     const { readSavedControlImageEvidence } = await import('./saved-control-image-evidence.mjs');
