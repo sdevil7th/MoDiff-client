@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "2339c1cb95deb500215754b5a139c295dbbed7d7"
+    "revision": "9a1a6227fa40f37e1269e5e3cd4f4e1c84df8d00"
   },
   "originalCampaign": {
     "total": 89,
@@ -540,8 +540,8 @@
     },
     {
       "id": "cosmos3_super_text_to_image",
-      "category": "rights-or-access",
-      "reason": "Large AMD cloud RAM/VRAM/library/artifact/rights/cost admission remains deferred; no charges incurred.",
+      "category": "supplementary-only",
+      "reason": "Now published and release-qualified from a reviewed AMD run. Filed outside the original curated preview selection.",
       "countedAsComplete": false
     },
     {
@@ -552,8 +552,8 @@
     },
     {
       "id": "flux2_dev_text_to_image",
-      "category": "amd-cloud",
-      "reason": "Full recipe deferred to AMD cloud; local complete-workflow campaign budget is two hours. No MoDiff user runtime restriction.",
+      "category": "supplementary-only",
+      "reason": "Now published and release-qualified from a reviewed AMD run. Filed outside the original curated preview selection.",
       "countedAsComplete": false
     },
     {
@@ -1083,7 +1083,103 @@
       "category": "supplementary-only",
       "reason": "Published and registered from an approved saved run outside the original campaign selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "animatediff_pag_snowmelt_over_river_stones",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "animatelcm_sunlit_surf",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "chroma_copper_medallion_outpaint",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "flux_dev_forest_green_teapot",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "flux_kontext_bookshop_clear_glass",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "latte_water_folding_over_slate",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "ltx2_enamel_teapot_window_light",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "ltx2_glasshouse_drip",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "ltx2_kiln_at_first_light",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "ltx2_moss_and_basalt",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "ltx2_surf_below_the_breakwater",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "ltx_long_wind_and_tide_at_the_headland",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_pag_lighthouse_in_graphite",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "sdxl_pag_two_tier_cobalt_glass",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "wan_animate_signal_through_the_rain",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "wan_vace_amber_glass_stabilized",
+      "category": "supplementary-only",
+      "reason": "Published and registered from an approved saved run outside the original campaign selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:794f3429451359a307b79b43b521a9505791f25801716615200c68a7126ae3fd"
+  "profileHash": "sha256:canonical-json:17a8f0208fc7afe7d83b32b2b2216bbb3140fff032d8bd646f3502aed858b64e"
 }
