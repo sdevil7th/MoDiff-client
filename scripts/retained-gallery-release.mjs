@@ -16,6 +16,34 @@ import { verifyRetainedSpeechGalleryEvidence } from './retained-speech-gallery-e
 
 const same = (actual, expected, label) => assert.deepEqual(actual, expected, label);
 
+export function assertRetainedVideoAdjustment(nativeReceipt, output, label) {
+  const { videoAdjustment, video } = output;
+  const source = nativeReceipt.decodedOutput;
+  assert.equal(source.kind, 'video', label);
+  assert.equal(output.sourceOutputHash, nativeReceipt.outputHash, label);
+  assert.notEqual(output.outputEncodedSha256, nativeReceipt.outputHash, label);
+  assert.equal(videoAdjustment.schemaVersion, 1, label);
+  assert.equal(videoAdjustment.sourceVideoHash, source.hash, label);
+  for (const key of ['width', 'height', 'frames', 'fps', 'durationSeconds']) {
+    assert.equal(video[key], source[key], label);
+  }
+  if (videoAdjustment.kind === 'exposure_deflicker') {
+    assert.equal(source.audio, undefined, label);
+    assert.equal(video.hasAudio, false, label);
+    assert.equal(video.audio ?? null, null, label);
+    assert.equal(videoAdjustment.sourceAudioHash, undefined, label);
+    assert.notEqual(output.decodedMediaHash, source.hash, label);
+  } else {
+    assert.equal(videoAdjustment.kind, 'audio_gain', label);
+    assert.ok(source.audio?.hash && video.audio?.hash && video.hasAudio, label);
+    assert.equal(videoAdjustment.sourceAudioHash, source.audio.hash, label);
+    assert.equal(output.decodedMediaHash, source.hash, label);
+    assert.equal(video.audio.sourceSampleRate, source.audio.sourceSampleRate, label);
+    assert.equal(video.audio.channels, source.audio.channels, label);
+    assert.notEqual(video.audio.hash, source.audio.hash, label);
+  }
+}
+
 function assertRetainedNativeIdentity(association, entry, nativeReceipt, label) {
   const { observedExecution, output } = association;
   const expected = {
@@ -166,6 +194,10 @@ function assertRetainedBatchEvidence({
       decodedAudiovisualMediaHash(decodedMediaHash, entry.decodedAudioHash) ?? undefined,
       label,
     );
+    if (association.output.videoAdjustment) {
+      assertRetainedVideoAdjustment(nativeReceipt, association.output, label);
+      return;
+    }
     if (recipe.workflowId === 'SpandrelVideoUpscale:video_upscale') {
       const { width, height, frames, fps } = videoMetadata;
       same(nativeReceipt.decodedOutput, { hash: decodedMediaHash, width, height, frameCount: frames, fps }, label);

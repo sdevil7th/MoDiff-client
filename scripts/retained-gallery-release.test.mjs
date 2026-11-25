@@ -5,12 +5,73 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalWorkflowContract } from './release-contract-core.mjs';
-import { createRetainedGalleryReleaseReader, verifiedRetainedGalleryAssetIndex } from './retained-gallery-release.mjs';
+import {
+  assertRetainedVideoAdjustment,
+  createRetainedGalleryReleaseReader,
+  verifiedRetainedGalleryAssetIndex,
+} from './retained-gallery-release.mjs';
 import { createHash } from 'node:crypto';
 import { validateRetainedGalleryProvenance, verifyRetainedApprovedFiles } from './retained-gallery-provenance.mjs';
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const hash = (value) => `sha256:canonical-json:${canonicalJsonHash(value)}`;
+
+test('an exposure-corrected retained video stays bound to its silent source and frame cadence', () => {
+  const video = { width: 512, height: 512, frames: 16, fps: 8, durationSeconds: 2 };
+  const native = { outputHash: 'native-file', decodedOutput: { kind: 'video', hash: 'native-video', ...video } };
+  const output = {
+    sourceOutputHash: 'native-file',
+    outputEncodedSha256: 'corrected-file',
+    decodedMediaHash: 'corrected-video',
+    video: { ...video, hasAudio: false },
+    videoAdjustment: { schemaVersion: 1, kind: 'exposure_deflicker', sourceVideoHash: 'native-video' },
+  };
+  assert.doesNotThrow(() => assertRetainedVideoAdjustment(native, output));
+  assert.doesNotThrow(() =>
+    assertRetainedVideoAdjustment(native, { ...output, video: { ...output.video, audio: null } }),
+  );
+  for (const modification of [
+    { sourceOutputHash: 'different-file' },
+    { outputEncodedSha256: 'native-file' },
+    { decodedMediaHash: 'native-video' },
+    { video: { ...output.video, frames: 15 } },
+    { video: { ...output.video, fps: 16 } },
+    { video: { ...output.video, hasAudio: true } },
+    { video: { ...output.video, audio: { hash: 'unexpected-audio' } } },
+    { videoAdjustment: { ...output.videoAdjustment, sourceVideoHash: 'different-video' } },
+    { videoAdjustment: { ...output.videoAdjustment, kind: 'replace_video' } },
+  ]) {
+    assert.throws(() => assertRetainedVideoAdjustment(native, { ...output, ...modification }));
+  }
+});
+
+test('an audio-gain adjustment retains the exact video and recorded original audio', () => {
+  const video = { width: 768, height: 512, frames: 81, fps: 24, durationSeconds: 3.38 };
+  const audio = { sourceSampleRate: 24000, channels: 2, hash: 'native-audio' };
+  const native = { outputHash: 'native-file', decodedOutput: { kind: 'video', hash: 'native-video', ...video, audio } };
+  const output = {
+    sourceOutputHash: 'native-file',
+    outputEncodedSha256: 'adjusted-file',
+    decodedMediaHash: 'native-video',
+    video: { ...video, hasAudio: true, audio: { ...audio, hash: 'adjusted-audio' } },
+    videoAdjustment: {
+      schemaVersion: 1,
+      kind: 'audio_gain',
+      sourceVideoHash: 'native-video',
+      sourceAudioHash: audio.hash,
+    },
+  };
+  assert.doesNotThrow(() => assertRetainedVideoAdjustment(native, output));
+  for (const modification of [
+    { decodedMediaHash: 'changed-video' },
+    { video: { ...output.video, audio } },
+    { video: { ...output.video, audio: { ...output.video.audio, sourceSampleRate: 48000 } } },
+    { video: { ...output.video, audio: { ...output.video.audio, channels: 1 } } },
+    { videoAdjustment: { ...output.videoAdjustment, sourceAudioHash: 'different-audio' } },
+  ]) {
+    assert.throws(() => assertRetainedVideoAdjustment(native, { ...output, ...modification }));
+  }
+});
 
 test('retained registration binds the exact approved review, provenance and mask files', () => {
   const archive = new Map([

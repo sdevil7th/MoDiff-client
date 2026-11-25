@@ -830,6 +830,14 @@ skeletons. Release qualification links each row to its verified Gallery
 template. The retained receipt keeps the absent native resource candidate and
 declared observation limits. It grants no broader platform or Auto qualification.
 
+A retained video can carry a separately reviewed delivery adjustment. Preserve
+the native output and reproduce the adjustment from that output before review.
+Record the adjustment and both encoded identities in the pinned association.
+Exposure correction preserves the native silent stream's geometry and cadence.
+Audio gain preserves the exact decoded video, sample rate and channel count.
+The edited streams must differ from their native counterparts. The normal
+media checks, quality review and exact-file rights apply to the delivery file.
+
 `npm run gallery:verify` verifies locally materialized bytes against the active
 source descriptor. For an immutable Hugging Face subset, it requires the exact
 complete storage manifest and rights ledger, verifies every included file's
