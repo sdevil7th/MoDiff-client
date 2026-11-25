@@ -183,6 +183,12 @@ const editRoutes = new Map([
       loaderClass: 'ChromaInpaintPipeline',
       sourceFingerprint: 'sha256:backend-source-v1:70bc1ff7fe61307be52cfda86b38c6400f2156cbc8240a489b62ff19a93d58dc',
       originalRegistryHash: '67979c2308c670f70d5d4fd38672be0a3ccd3cae7f083d1c7e7ae2e2169f90e8',
+      alternateSourceRegistryPair: {
+        sourceFingerprint: 'sha256:backend-source-v1:ee86f26ee410419fae168f4380029a01d302ec0fd0607308d9b1e40ae2ace7f7',
+        registryHash: '100a85d1bff56ef6d0bf236fb4a69f869b3c909a7a4ec31683bbc7f24d24d80c',
+        // This worker records the original upload and native load hashes and dimensions.
+        nativeSourceMedia: false,
+      },
       canvasVariant: [],
     },
   ],
@@ -1262,6 +1268,12 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     hasNativeSnapshot || route.serverRetainedOutput ? validateNativeVariantRun : validateLateNativeImageVariantRun;
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
+  const alternate =
+    savedImage &&
+    route.alternateSourceRegistryPair &&
+    task.runtimeFingerprint.backendSource?.fingerprint === route.alternateSourceRegistryPair.sourceFingerprint
+      ? route.alternateSourceRegistryPair
+      : null;
   const sourceProjection = !savedImage || route.samplerSourceProjection === true;
   let sourceBinding;
   if (!sourceProjection) {
@@ -1269,7 +1281,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       bound,
       output,
       { input, maskInput, references },
-      route,
+      alternate ? { ...route, nativeSourceMedia: alternate.nativeSourceMedia } : route,
       read,
       json,
       evidence,
@@ -1323,10 +1335,14 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   });
   same(source.blockers, []);
   if (savedImage) {
-    assert.equal(source.identity.fingerprint, route.sourceFingerprint);
+    assert.equal(source.identity.fingerprint, alternate?.sourceFingerprint ?? route.sourceFingerprint);
   }
   if (route.originalRegistryHash) {
-    assert.equal(sha256(nodes.bytes), route.originalRegistryHash);
+    assert.equal(
+      sha256(nodes.bytes),
+      alternate?.registryHash ?? route.originalRegistryHash,
+      'The node registry does not match the saved runtime source.',
+    );
   }
   if (replayedRegistry) {
     const replay = json(evidence.registryReplay);
@@ -1413,6 +1429,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       ...(bound.canvas
         ? { canvasSizeObserved: true, canvasPixelsObserved: false, derivedMaskPixelsObserved: false }
         : {}),
+      ...(alternate?.nativeSourceMedia === false ? { fullSourceDecodeRecordObserved: false } : {}),
       ...(masked
         ? { maskByteWitness: savedImage ? 'native-load-and-upload-with-typed-wire' : 'native-load-consumer-and-upload' }
         : {}),

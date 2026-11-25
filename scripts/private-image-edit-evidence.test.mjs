@@ -566,6 +566,33 @@ for (const [workflowId, variable, hasMask, unobserved] of [
         }
         const descriptor = JSON.parse(original.descriptorBytes);
         const changedPath = join(root, 'evidence.json');
+        if (receipt.observationLimits.fullSourceDecodeRecordObserved === false) {
+          const changed = structuredClone(descriptor);
+          const capturePath = join(root, changed.capture.path);
+          const captureBytes = readFileSync(capturePath);
+          const capture = JSON.parse(captureBytes);
+          const nodesPath = join(root, capture.nodes.path);
+          const nodesBytes = readFileSync(nodesPath);
+          const replacement = Buffer.concat([nodesBytes, Buffer.from('\n')]);
+          Object.assign(capture.nodes, {
+            bytes: replacement.length,
+            sha256: createHash('sha256').update(replacement).digest('hex'),
+          });
+          const changedCapture = Buffer.from(JSON.stringify(capture));
+          Object.assign(changed.capture, {
+            bytes: changedCapture.length,
+            sha256: createHash('sha256').update(changedCapture).digest('hex'),
+          });
+          writeFileSync(nodesPath, replacement);
+          writeFileSync(capturePath, changedCapture);
+          writeFileSync(changedPath, JSON.stringify(changed));
+          await assert.rejects(
+            readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+            /node registry does not match the saved runtime source/u,
+          );
+          writeFileSync(nodesPath, nodesBytes);
+          writeFileSync(capturePath, captureBytes);
+        }
         if (hostFileWitness) {
           const changed = structuredClone(descriptor);
           const path = join(root, changed.hostInputFiles.path);
