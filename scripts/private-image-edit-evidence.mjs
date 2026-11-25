@@ -25,7 +25,7 @@ import {
   exportCanonicalWorkflowGraphs,
   readCanonicalEvidenceFile,
 } from './release-contract-core.mjs';
-import { validateSampledCpuWorkerMemory } from './prompt-variant-evidence.mjs';
+import { validateImagePromptPreparation, validateSampledCpuWorkerMemory } from './prompt-variant-evidence.mjs';
 
 export const PRIVATE_IMAGE_EDIT_FORMAT = 'modiff.private.lcm-source-bound-edit.v1';
 export const DIRECT_IMAGE_EDIT_FORMAT = 'modiff.private.direct-image-edit-source-bound.v1';
@@ -33,6 +33,7 @@ export const NATIVE_PNG_EDIT_FORMAT = 'modiff.private.direct-image-edit-native-p
 export const NATIVE_PNG_INPAINT_FORMAT = 'modiff.private.direct-image-inpaint-native-png.v1';
 export const SAVED_PNG_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-png.v1';
 const SAVED_WEBP_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-webp.v1';
+const RETAINED_SERVER_EDIT_FORMAT = 'modiff.private.server-retained-image-edit-native-png.v1';
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
 const imageGeometry = ['height', 'max_sequence_length', 'width'];
 const stableDiffusionEditConsumed = [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'];
@@ -73,6 +74,35 @@ const retainedCfgInpaint = {
   masked: true,
 };
 const editRoutes = new Map([
+  [
+    'ZImageInpaintPipeline:inpaint',
+    {
+      ...retainedCfgInpaint,
+      modelRepo: 'Tongyi-MAI/Z-Image-Turbo',
+      modelRevision: 'f332072aa78be7aecdf3ee76d5c247082da564a6',
+      loaderClass: 'ZImageInpaintPipeline',
+      sourceFingerprint: qwenPlusEdit.sourceFingerprint,
+      guidanceObservedAsTrueCfg: false,
+    },
+  ],
+  [
+    'OmniGenPipeline:edit_image',
+    {
+      ...retainedImageEdit,
+      format: RETAINED_SERVER_EDIT_FORMAT,
+      modelRepo: 'Shitao/OmniGen-v1-diffusers',
+      modelRevision: '016e2f61d12a98303f6bbdf122687694d7984268',
+      loaderClass: 'OmniGenPipeline',
+      consumed: [...baseConsumed, 'width', 'height', 'guidance_scale'],
+      inactiveRecorded: ['negative_prompt', 'max_sequence_length', 'strength'],
+      inputImagePromptPrefix: '<img><|image_1|></img> ',
+      unobservedControls: ['image_guidance_scale'],
+      sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+      originalRegistryHash: 'c4e99d780fef75bce44f4c5e7414d99840a794999355308f69f03176bd573193',
+      serverRetainedOutput: true,
+      previousExpertFamily: 'ChromaImg2ImgPipeline',
+    },
+  ],
   [
     'Kandinsky3Pipeline:edit_image',
     {
@@ -600,6 +630,10 @@ function verifySavedEditControls(bound, output, route) {
     controls.true_cfg_scale = controls.guidance_scale;
     controls.guidance_scale = literal(null);
   }
+  if (route.inputImagePromptPrefix) {
+    assert.ok(['<img>', '</img>', '<|image_'].every((token) => !bound.prompt.includes(token)));
+    controls.prompt = literal(route.inputImagePromptPrefix + bound.prompt);
+  }
   for (const field of [
     'conditioning_scale',
     'control_guidance_start',
@@ -798,7 +832,8 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const evidence = JSON.parse(descriptorBytes);
   const masked = route.masked === true;
   const savedImage =
-    [SAVED_PNG_EDIT_FORMAT, SAVED_WEBP_EDIT_FORMAT].includes(route.format) && evidence.format === route.format;
+    [SAVED_PNG_EDIT_FORMAT, SAVED_WEBP_EDIT_FORMAT, RETAINED_SERVER_EDIT_FORMAT].includes(route.format) &&
+    evidence.format === route.format;
   const replayedRegistry = savedImage && !route.originalRegistryHash;
   const referenceCount = route.orderedReferences ?? 0;
   const pngFormat = masked ? NATIVE_PNG_INPAINT_FORMAT : NATIVE_PNG_EDIT_FORMAT;
@@ -835,7 +870,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     'workflowId',
     'qualificationClaims',
     'creatorPackage',
-    'outputPackage',
+    ...(route.serverRetainedOutput ? [] : ['outputPackage']),
     'runDetail',
     'nodes',
     'backendSourceBefore',
@@ -863,18 +898,22 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   for (const source of capture.inputs) keys(source, ['nodeId', 'field', 'sourceValue', 'file']);
   keys(outputRef, ['backendPath', 'mediaType', 'file']);
   const creator = json(capture.creatorPackage);
-  const outputPackage = json(capture.outputPackage);
+  const outputPackage = route.serverRetainedOutput ? undefined : json(capture.outputPackage);
   const run = json(capture.runDetail);
   const graphCompleted = json(capture.graphCompleted);
   const graphRequest = json(evidence.graphRequest);
   const graphAcknowledgment = json(evidence.graphAcknowledgment);
   const store = json(evidence.persistedOutputs);
-  assert.equal(store.outputs.length, 1);
-  const [persistedOutput] = store.outputs;
+  const exactStoredOutputs = route.serverRetainedOutput
+    ? store.outputs.filter(({ taskId }) => taskId === run.task.task_id)
+    : store.outputs;
+  assert.equal(exactStoredOutputs.length, 1);
+  const [persistedOutput] = exactStoredOutputs;
+  const retainedVisual = outputPackage?.latestOutput.graphSnapshot ?? persistedOutput.graphSnapshot;
   const [expected, ...visualExports] = await exportCanonicalWorkflowGraphs(clientRoot, [
     graph,
     creator.graph,
-    outputPackage.latestOutput.graphSnapshot,
+    retainedVisual,
     run.workflow_snapshot,
   ]);
   const bound = bindPrivateImageEditGraph({
@@ -900,12 +939,19 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     displayType: 'image',
     creator,
     outputPackage,
+    ...(route.serverRetainedOutput ? { retainedServerOutput: persistedOutput } : {}),
     run,
     graphCompleted,
     graphRequest,
     graphAcknowledgment,
     persistedOutput,
-    validatePreparation: (preparation) => validateUnmodifiedExpertPreparation(preparation, loaderClass),
+    validatePreparation: (preparation) =>
+      route.serverRetainedOutput
+        ? validateImagePromptPreparation(preparation, {
+            modelType: loaderClass,
+            previousExpertFamily: route.previousExpertFamily,
+          })
+        : validateUnmodifiedExpertPreparation(preparation, loaderClass),
   };
   const hasNativeSnapshot =
     route.fullNativeSnapshot || (route.fullOrLateNativeSnapshot && run.outputs[0]?.apiGraphSnapshot !== undefined);
@@ -913,7 +959,8 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     assert.equal(run.outputs.length, 1);
     same(run.outputs[0], persistedOutput, 'Saved native output differs from the at-close output store.');
   }
-  const validateRun = hasNativeSnapshot ? validateNativeVariantRun : validateLateNativeImageVariantRun;
+  const validateRun =
+    hasNativeSnapshot || route.serverRetainedOutput ? validateNativeVariantRun : validateLateNativeImageVariantRun;
   const { task, output, hints } = validateRun(runOptions);
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
   let sourceBinding;
@@ -1069,6 +1116,8 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
         ? { independentConsumerPixels: false, configuredUnobservedControls: route.unobservedControls ?? [] }
         : {}),
       ...(route.cpuExecution ? { executionDevice: 'cpu:0', peakMemorySource: 'sampled-worker-rss' } : {}),
+      ...(route.serverRetainedOutput ? { clientApiSnapshotObserved: false, serverOutputStoreMatched: true } : {}),
+      ...(route.inputImagePromptPrefix ? { nativeInputMarkerBound: true } : {}),
       physicalPlatformQualification: false,
     },
     qualificationClaims: {

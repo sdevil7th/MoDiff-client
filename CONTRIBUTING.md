@@ -564,6 +564,15 @@ adapter revisions. For a saved edit, the original upload and typed video wire
 bind the source. The receipt records unavailable sampler observations, such
 as the effective PAG controls or normalized source frames.
 
+The retained Wan VACE puddle recipe also binds the exact Spandrel checkpoint
+to its upscale action and verifies delivery at the reviewed output size. This
+named recipe uses a pinned secondary artifact alongside the primary model.
+
+The saved OmniGen wall edit uses the original graph request and acknowledgement,
+completion event, and backend-retained output and run record. The receipt
+records the missing client API snapshot and unobserved image guidance. This
+path requires the exact native records and original image bytes.
+
 Saved JoyImage Plus edits retain reference files in Load order, including
 the source image before the material reference. The proof binds each upload
 and native decode to the typed Edit connection. The archived two-reference

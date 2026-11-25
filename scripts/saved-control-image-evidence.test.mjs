@@ -26,6 +26,7 @@ const cases = [
     'ControlNetModel',
     'UlftQtP0nIJk',
   ],
+  ['linux-sdxl-pag-cabin-verified', 'StableDiffusionXLPAGPipeline:control_image', 'ControlNetModel', 'MVsWymJP8z5O'],
   ['linux-canny-adapter-fixed', 'StableDiffusionXLAdapterPipeline:control_image', 'T2IAdapter', 'gWs5V9Dz1NY-'],
   ['windows-sd15-control-print', 'StableDiffusionPipeline:control_edit_image', 'ControlNetModel', 'jlVMYFMnS--d'],
   ['windows-sd15-control-inpaint-fixed', 'StableDiffusionPipeline:control_inpaint', 'ControlNetModel', '6TOEAhgF-bhi'],

@@ -70,6 +70,7 @@ export function validateNativeVariantRun({
   displayType,
   creator,
   outputPackage,
+  retainedServerOutput,
   run,
   graphCompleted,
   graphRequest,
@@ -77,18 +78,28 @@ export function validateNativeVariantRun({
   validatePreparation = (preparation) => assert.equal(preparation, null),
 }) {
   assert.equal(creator?.manifest?.packageType, 'modiff-workflow-share');
-  assert.equal(outputPackage?.manifest?.packageType, 'modiff-output-package');
-  const output = outputPackage.latestOutput;
+  const serverOnly = retainedServerOutput !== undefined;
+  if (serverOnly) {
+    assert.equal(outputPackage, undefined);
+    assert.equal(displayType, 'image');
+    assert.ok(graphRequest && graphAcknowledgment, 'A server-retained image requires the original Run exchange.');
+    assert.ok(retainedServerOutput.apiGraphSnapshot == null, 'Unexpected client API snapshot on server-only output.');
+  } else {
+    assert.equal(outputPackage?.manifest?.packageType, 'modiff-output-package');
+  }
+  const output = serverOnly ? retainedServerOutput : outputPackage.latestOutput;
   const task = run.task;
-  const submitted = output.apiGraphSnapshot;
+  const submitted = serverOnly ? graphRequest : output.apiGraphSnapshot;
   const hints = submitted.runtimeHints;
   recordKeys(
     hints,
     ['clientRunId', 'runInputHash', 'workflowTabId', 'workflowCanvasEpoch', 'workflowTitle', 'workflowSnapshot'],
     'Unexpected submission runtime hints.',
   );
-  same(outputPackage.apiGraph, submitted, 'Original package API graph differs.');
-  same(outputPackage.graph, output.graphSnapshot, 'Original package visual graph differs.');
+  if (!serverOnly) {
+    same(outputPackage.apiGraph, submitted, 'Original package API graph differs.');
+    same(outputPackage.graph, output.graphSnapshot, 'Original package visual graph differs.');
+  }
   same(creator.metadata?.studio, output.formSnapshot, 'Creator form differs from the persisted output.');
   assert.equal(output.formSnapshot.mode, expectedFormMode);
   assert.equal(output.formSnapshot.modelType, target.modelType);
@@ -137,6 +148,10 @@ export function validateNativeVariantRun({
   assert.equal(run.outputs.length, 1, 'A single native output is required.');
   const nativeOutput = run.outputs[0];
   for (const field of nativeOutputFields) {
+    if (serverOnly && field === 'apiGraphSnapshot') {
+      assert.ok(nativeOutput[field] == null, 'Unexpected client API snapshot on native task output.');
+      continue;
+    }
     assert.notEqual(output[field], undefined, `Original output is missing ${field}.`);
     same(output[field], nativeOutput[field], `Original native output ${field} differs.`);
   }

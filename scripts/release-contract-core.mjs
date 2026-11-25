@@ -220,8 +220,10 @@ export { canonicalAccountingExecutionPlan } from './live-proof-provenance.mjs';
 // template, a model entitlement, or permission to change canonical defaults.
 export function canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact = null) {
   const canonical = canonicalWorkflowContract(manifest, graph);
+  const reviewedVaceSource =
+    manifest.id === 'WanVACEPipeline:text_to_video' && manifest.sourceTemplateId === 'wan_vace_direct_text_to_video';
   assert.ok(
-    manifest.sourceTemplateId?.startsWith('task-template:'),
+    manifest.sourceTemplateId?.startsWith('task-template:') || reviewedVaceSource,
     'Only standalone canonical workflows use this recorder.',
   );
   assert.ok(authoring && authoring.canonicalWorkflowId === manifest.id, 'Exact canonical authoring record is missing.');
@@ -860,6 +862,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.direct-image-inpaint-native-png.v1',
       'modiff.private.saved-image-edit-native-png.v1',
       'modiff.private.saved-image-edit-native-webp.v1',
+      'modiff.private.server-retained-image-edit-native-png.v1',
     ].includes(evidence.format)
   ) {
     const { readPrivateImageEditEvidence } = await import('./private-image-edit-evidence.mjs');
@@ -918,6 +921,10 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.sana-video-prompt-variant.v1',
       'modiff.private.sana-opening-image-variant.v1',
       'modiff.private.mochi-video-prompt-variant.v1',
+      'modiff.private.animatediff-video-prompt-variant.v1',
+      'modiff.private.animatelcm-video-prompt-variant.v1',
+      'modiff.private.latte-video-prompt-variant.v1',
+      'modiff.private.wan-vace-video-prompt-variant.v1',
     ].includes(evidence.format) ||
     directImagePromptRoutes.some(({ format }) => format === evidence.format)
   ) {

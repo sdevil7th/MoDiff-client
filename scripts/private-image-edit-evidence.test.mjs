@@ -132,6 +132,27 @@ test('strict output verification accepts a separately joined late native image s
   assert.deepEqual(options, before);
 });
 
+test('server-retained images require the original Run exchange and matching backend records', () => {
+  const options = archivedImage();
+  const retainedServerOutput = structuredClone(options.run.outputs[0]);
+  const retained = { ...options, outputPackage: undefined, retainedServerOutput };
+  assert.deepEqual(validateNativeVariantRun(retained).output, retainedServerOutput);
+  assert.throws(
+    () => validateNativeVariantRun({ ...retained, graphRequest: undefined }),
+    /requires the original Run exchange/u,
+  );
+  assert.throws(
+    () =>
+      validateNativeVariantRun({
+        ...retained,
+        graphAcknowledgment: { ...retained.graphAcknowledgment, task_id: 'stale' },
+      }),
+    assert.AssertionError,
+  );
+  options.run.outputs[0].mediaHash = 'unrelated-output';
+  assert.throws(() => validateNativeVariantRun(retained), /Original native output mediaHash differs/u);
+});
+
 test('the late native image join rejects a changed task, capture, graph or output', () => {
   const scenarios = [
     [
@@ -450,6 +471,7 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['QwenImageModularPipeline:inpaint', 'MODIFF_SAVED_QWEN_SCRATCH_EVIDENCE', true, []],
   ['FluxDevPipeline:inpaint', 'MODIFF_SAVED_FLUX_DEV_REPAIR_EVIDENCE', true, []],
   ['LongCatImageEditPipeline:edit_image', 'MODIFF_SAVED_LONGCAT_EDIT_EVIDENCE', false, []],
+  ['ZImageInpaintPipeline:inpaint', 'MODIFF_SAVED_ZIMAGE_REPAIR_EVIDENCE', true, []],
 ]) {
   const saved = process.env[variable];
   test(
@@ -524,6 +546,23 @@ test('Kandinsky CPU edit joins archived pixels and sampled worker memory', { ski
     assert.equal(dirname(root), resolve(tmpdir()));
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+const serverRetainedEdit = process.env.MODIFF_SERVER_RETAINED_OMNIGEN_EDIT_EVIDENCE;
+test('saved OmniGen joins the server capture and one original input', { skip: !serverRetainedEdit }, async () => {
+  const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+  const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '..', 'MoDiff'));
+  const result = await readCanonicalWorkflowEvidence({
+    clientRoot,
+    backendRoot,
+    workflowId: 'OmniGenPipeline:edit_image',
+    evidencePath: resolve(serverRetainedEdit),
+  });
+  assert.equal(result.receipt.observationLimits.serverOutputStoreMatched, true);
+  assert.equal(result.receipt.observationLimits.clientApiSnapshotObserved, false);
+  assert.equal(result.receipt.observationLimits.nativeInputMarkerBound, true);
+  assert.deepEqual(result.receipt.observationLimits.configuredUnobservedControls, ['image_guidance_scale']);
+  assert.equal(result.receipt.qualificationClaims.hardwareQualified, false);
 });
 
 test('retained native PNG upload binds an exact safe path, file bytes and decoded dimensions', () => {

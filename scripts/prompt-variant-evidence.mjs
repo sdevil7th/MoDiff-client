@@ -379,11 +379,76 @@ const mochiVideoRoute = {
   reviewedSettings: [['recipe', 'attention_backend', '_native_math', 'auto']],
 };
 
-const promptModelSet = (profile) => [
-  ...(profile.motionAdapter ? [profile.motionAdapter] : []),
-  ...(profile.controlAdapter ? [profile.controlAdapter] : []),
-  { repoId: profile.modelRepo, revision: profile.modelRevision },
-];
+const animateDiffVideoRoute = {
+  ...animateDiffPagRoute,
+  format: 'modiff.private.animatediff-video-prompt-variant.v1',
+  workflowId: 'AnimateDiffPipeline:text_to_video',
+  modelType: 'AnimateDiffPipeline',
+  previousExpertFamily: 'AnimateLCMPipeline',
+  sourceFingerprint: 'sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290',
+  configuredUnobservedControls: undefined,
+};
+
+const animateLcmVideoRoute = {
+  ...animateDiffVideoRoute,
+  format: 'modiff.private.animatelcm-video-prompt-variant.v1',
+  workflowId: 'AnimateLCMPipeline:text_to_video',
+  modelType: 'AnimateLCMPipeline',
+  motionAdapter: { repoId: 'wangfuyun/AnimateLCM', revision: '3d4d00fc113225e1040f4d3bec504b6ec750c10c' },
+};
+
+const latteVideoRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.latte-video-prompt-variant.v1',
+  workflowId: 'LattePipeline:text_to_video',
+  modelType: 'LattePipeline',
+  modelRepo: 'maxin-cn/Latte-1',
+  modelRevision: '0653024365272f061fc44d1078134df22842b687',
+  previousExpertFamily: null,
+  sourceFingerprint: mochiVideoRoute.sourceFingerprint,
+  bindNegativePrompt: true,
+};
+
+const wanVaceVideoRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.wan-vace-video-prompt-variant.v1',
+  workflowId: 'WanVACEPipeline:text_to_video',
+  modelType: 'WanVACEPipeline',
+  modelRepo: 'Wan-AI/Wan2.1-VACE-1.3B-diffusers',
+  modelRevision: 'ec4d2cb062b548996b179d493fdd05340de702a1',
+  previousExpertFamily: 'WanVACEPipeline',
+  sourceFingerprint: mochiVideoRoute.sourceFingerprint,
+  baselinePromptHash: '156339977073854795a350225015284e3676c45a49a30bff4d8120389e841848',
+  baselineNegativePromptHash: '767ef620d530158fb8c7a406c8b7f5f968b617d70b4d9eaf1796b4b5ffa57c98',
+  bindNegativePrompt: true,
+  videoUpscaler: {
+    repoId: 'nateraw/real-esrgan',
+    file: {
+      source: 'hub',
+      value: 'nateraw/real-esrgan/RealESRGAN_x2plus.pth',
+      revision: '42efb9c3eeed1f5c0c8a626cf5f7f4481dfbb094',
+      byteSize: 67061725,
+      sha256: '49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb',
+      license: 'bsd-3-clause',
+    },
+    scale: 2,
+  },
+  chain: [
+    ...wanA14BRoute.chain.slice(0, -1),
+    ['upscaler', 'modules.Spandrel', 'Upscaler', 'device model_id'],
+    wanA14BRoute.chain.at(-1),
+  ],
+};
+
+const promptModelSet = (profile) =>
+  [
+    ...(profile.motionAdapter ? [profile.motionAdapter] : []),
+    ...(profile.controlAdapter ? [profile.controlAdapter] : []),
+    { repoId: profile.modelRepo, revision: profile.modelRevision },
+    ...(profile.videoUpscaler
+      ? [{ repoId: profile.videoUpscaler.file.value, revision: profile.videoUpscaler.file.revision }]
+      : []),
+  ].sort((left, right) => (left.repoId === right.repoId ? 0 : left.repoId < right.repoId ? -1 : 1));
 
 const imagePromptRoute = {
   outputKind: 'image',
@@ -498,8 +563,8 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   }
   const promptSlot = expectedInputs.prompt;
   assert.equal(
-    promptSlot.value,
-    profile.baselinePrompt ?? '',
+    profile.baselinePromptHash ? digest(promptSlot.value) : promptSlot.value,
+    profile.baselinePromptHash ?? profile.baselinePrompt ?? '',
     'The authored prompt differs from the reviewed default.',
   );
   assert.ok(!promptSlot.sourceId, 'The authored prompt must be an unconnected literal.');
@@ -511,7 +576,11 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
   let negativePrompt;
   if (profile.bindNegativePrompt) {
     const slot = expectedInputs.negative_prompt;
-    assert.deepEqual(slot, { value: '', display: 'textarea' });
+    const baselineValue = profile.baselineNegativePromptHash ? slot.value : '';
+    assert.deepEqual(slot, { value: baselineValue, display: 'textarea' });
+    if (profile.baselineNegativePromptHash) {
+      assert.equal(digest(slot.value), profile.baselineNegativePromptHash);
+    }
     negativePrompt = submittedOwners.generator.node.params.negative_prompt.value;
     assert.ok(
       typeof negativePrompt === 'string' && negativePrompt.length <= 4096 && negativePrompt.trim() === negativePrompt,
@@ -563,7 +632,11 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
     assert.equal(bound.loader.node.params.offload_mode.value, profile.retainedOffloadFallback);
     assert.equal(bound.recipe.node.params.offload_mode.value, 'model_cpu');
     same(consumed.ambiguousFields, ['offloadMode']);
-  } else same(consumed.ambiguousFields, []);
+  } else {
+    // The loader and reviewed upscaler each supply a repository. Their
+    // typed records below independently bind the two selector values.
+    same(consumed.ambiguousFields, profile.videoUpscaler ? ['repo'] : []);
+  }
   const roles = profile.chain.map(([role]) => bound[role]);
   same(
     consumed.nodes.map(({ nodeId }) => nodeId).sort(),
@@ -652,9 +725,30 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
 }
 
 function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted, observations) {
+  const controlledArtifacts = [];
+  if (profile.videoUpscaler) {
+    const { file, repoId: repository } = profile.videoUpscaler;
+    const { module, action, params } = bound.upscaler.node;
+    same(params.model_id.value, file);
+    assert.ok(file.value.startsWith(repository + '/'));
+    const payload = {
+      schemaVersion: 1,
+      kind: 'spandrel_upscaler',
+      module,
+      action,
+      artifact: {
+        source: file.source,
+        repository,
+        revision: file.revision,
+        weightName: file.value.slice(repository.length + 1),
+        sha256: file.sha256,
+      },
+    };
+    controlledArtifacts.push({ ...payload, descriptorSha256: digest(stableStringify(payload)) });
+  }
   same(
     graphCompleted.runtimeHints,
-    { ...hints, controlledArtifacts: [], loaderContract: profile.loaderContract },
+    { ...hints, controlledArtifacts, loaderContract: profile.loaderContract },
     'Native completion has unreviewed runtime authority.',
   );
   assert.match(task.runtimeFingerprint.packages.platform, profile.platform);
@@ -670,18 +764,19 @@ function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted
   if (profile.executionDevice === 'cpu:0') assert.equal(peakAllocatedBytes, 0);
   else assert.ok(peakAllocatedBytes > 0);
   for (const { repoId, revision } of promptModelSet(profile)) {
-    const matching = observations.filter((observation) => selectInstalledModelIdentity(observation, repoId));
-    assert.equal(matching.length, 1, 'Expected a single installed identity for ' + repoId);
+    const installedRepo = repoId === profile.videoUpscaler?.file.value ? profile.videoUpscaler.repoId : repoId;
+    const matching = observations.filter((observation) => selectInstalledModelIdentity(observation, installedRepo));
+    assert.equal(matching.length, 1, 'Expected a single installed identity for ' + installedRepo);
     const [observation] = matching;
     assert.equal(observation.error, false);
     assert.equal(observation.runtimeFingerprint, runtime.fingerprint);
     assert.equal(observation.models.length, 1);
-    const model = selectInstalledModelIdentity(observation, repoId);
+    const model = selectInstalledModelIdentity(observation, installedRepo);
     const [{ complete, repairRequired }] = observation.models;
     assert.equal(complete, true);
     assert.equal(repairRequired, false);
     assert.equal(model.selectedRevision, revision);
-    assert.equal(model.modelRevision, repoId + '@' + revision);
+    assert.equal(model.modelRevision, installedRepo + '@' + revision);
   }
   same(bound.loader.node.params.model_id.value, { source: 'hub', value: profile.modelRepo });
   assert.equal(bound.loader.node.params.revision.value, profile.modelRevision);
@@ -729,7 +824,7 @@ export function validateSampledCpuWorkerMemory(bytes, worker, source, task) {
   return peak;
 }
 
-function validateImagePromptPreparation(preparation, { modelType, previousExpertFamily }) {
+export function validateImagePromptPreparation(preparation, { modelType, previousExpertFamily }) {
   const previous = preparation?.previousModelFamily ?? null;
   assert.ok(previous === null || previous === previousExpertFamily, 'Unreviewed previous Expert model family.');
   if (preparation?.performed !== true) {
@@ -1005,6 +1100,10 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         sanaVideoRoute,
         sanaOpeningImageRoute,
         mochiVideoRoute,
+        animateDiffVideoRoute,
+        animateLcmVideoRoute,
+        latteVideoRoute,
+        wanVaceVideoRoute,
       ].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
   const generatedVideo =
@@ -1288,9 +1387,10 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     const decoded = await decodedMediaHash(media.file, 'video');
     if (generatedVideo) {
       const { width, height, num_frames } = bound.generator.node.params;
+      const scale = profile.videoUpscaler?.scale ?? 1;
       decodedOutput = validateNativeVideoDelivery(decoded, item, {
-        width: width.value,
-        height: height.value,
+        width: width.value * scale,
+        height: height.value * scale,
         frames: num_frames.value,
         fps: bound.preview.node.params.fps.value,
       });

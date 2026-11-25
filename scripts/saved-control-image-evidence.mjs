@@ -75,6 +75,13 @@ const routes = {
     source: sdxlSource,
     canny: true,
   },
+  'StableDiffusionXLPAGPipeline:control_image': {
+    pipelineClass: 'StableDiffusionXLControlNetPAGPipeline',
+    componentClass: 'ControlNetModel',
+    source: commonSource,
+    canny: true,
+    pagSettingsUnobserved: true,
+  },
   'StableDiffusionXLAdapterPipeline:control_image': {
     pipelineClass: 'StableDiffusionXLAdapterPipeline',
     componentClass: 'T2IAdapter',

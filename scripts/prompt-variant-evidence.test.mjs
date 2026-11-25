@@ -387,6 +387,10 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['AllegroPipeline:text_to_video', 'MODIFF_ALLEGRO_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['MochiPipeline:text_to_video', 'MODIFF_MOCHI_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['LattePipeline:text_to_video', 'MODIFF_LATTE_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['AnimateDiffPipeline:text_to_video', 'MODIFF_ANIMATEDIFF_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['AnimateLCMPipeline:text_to_video', 'MODIFF_ANIMATELCM_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['WanVACEPipeline:text_to_video', 'MODIFF_WAN_VACE_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['SanaVideoPipeline:text_to_video', 'MODIFF_SANA_VIDEO_PROMPT_EVIDENCE', 'video'],
   [
     'SanaImageToVideoPipeline:image_to_video',
@@ -483,6 +487,36 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         assert.equal(original.receipt.decodedOutput.width, 848);
         assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
       }
+      if (workflowId === 'WanVACEPipeline:text_to_video') {
+        assert.equal(original.receipt.sourceTemplateId, 'wan_vace_direct_text_to_video');
+        assert.deepEqual(
+          original.receipt.modelSet.map(({ repoId }) => repoId),
+          ['Wan-AI/Wan2.1-VACE-1.3B-diffusers', 'nateraw/real-esrgan/RealESRGAN_x2plus.pth'],
+        );
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.decodedOutput.width, 1664);
+        assert.equal(original.receipt.decodedOutput.height, 960);
+        const completionPath = join(temp, evidence.graphCompleted.path);
+        const savedCompletion = readFileSync(completionPath);
+        const completion = JSON.parse(savedCompletion);
+        completion.runtimeHints.controlledArtifacts = [];
+        const bytes = Buffer.from(JSON.stringify(completion));
+        const substituted = {
+          ...evidence,
+          graphCompleted: { ...evidence.graphCompleted, bytes: bytes.length, sha256: digest(bytes) },
+        };
+        writeFileSync(completionPath, bytes);
+        writeFileSync(changedPath, JSON.stringify(substituted));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /unreviewed runtime authority/u,
+        );
+        writeFileSync(completionPath, savedCompletion);
+      }
+      if (workflowId === 'AnimateLCMPipeline:text_to_video') {
+        assert.equal(original.receipt.modelSet[1].repoId, 'wangfuyun/AnimateLCM');
+        assert.equal(original.receipt.decodedOutput.frames, 16);
+      }
       const sanaOpeningImage = workflowId === 'SanaImageToVideoPipeline:image_to_video';
       if (sanaOpeningImage) {
         assert.equal(original.receipt.decodedOutput.frames, 81);
@@ -522,7 +556,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
             'pag_scale',
             'pag_adaptive_scale',
           ]);
-        } else {
+        } else if (workflowId === 'AnimateDiffVideoToVideoPipeline:video_to_video') {
           assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
           assert.equal(original.receipt.inputBinding.decodedVideo.frames, 16);
         }
