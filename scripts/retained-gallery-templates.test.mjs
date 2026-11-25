@@ -547,7 +547,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.equal(loader.params.revision.value, template.modelArtifact.revision, template.id);
       assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');
       assert.equal(loader.params.device.value, form.device);
-      if (template.id === 'longcat_last_tram_at_dusk') {
+      if (template.mode === 'text_to_audio' && binding.nodes.audioGenerate) {
         const generation = api.nodes[binding.nodes.audioGenerate].params;
         const output = api.nodes[binding.nodes.audioExport].params;
         const locked = template.example.lockedSettings;
@@ -555,6 +555,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         assert.equal(generation.stable_audio_steps.value, locked.steps);
         assert.equal(generation.stable_audio_guidance.value, locked.guidanceScale);
         assert.equal(generation.audio_duration.value, locked.audioDuration);
+        assert.equal(generation.sample_rate.value, template.example.expectedOutput.sampleRate);
         assert.equal(Number(generation.seed.value), template.example.lockedSeed);
         assert.equal(generation.pipeline.sourceId, binding.nodes.audioPipeline);
         assert.equal(output.audio.sourceId, binding.nodes.audioGenerate);

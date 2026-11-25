@@ -6725,6 +6725,34 @@
       "approvedOriginalReviewPath": "/template-gallery/reviews/ltx_long_wind_and_tide_at_the_headland.original-review.json",
       "approvedOriginalProvenancePath": "/template-gallery/reviews/ltx_long_wind_and_tide_at_the_headland.original-provenance.json",
       "approvedSourcePath": "/template-gallery/inputs/ltx_long_wind_and_tide_at_the_headland.first.png"
+    },
+    {
+      "templateId": "audioldm2_wind_through_high_pines",
+      "templateLockHash": "tpl_576af977",
+      "promptSettingsHash": "ps_0a65234d",
+      "modelRevision": "cvssp/audioldm2@c8e7e189d324425c05c4c2f81214041ef4107983",
+      "runtimeFingerprint": "sha256:stable-runtime-v1:c2642af585975d6b55b551bcdfb8606edb2fab4b37a05875aa3a8024270b6eab",
+      "graphHash": "sha256:canonical-graph-v1:3b4e9f186c35a687114a08eef220f841aba92feaae4d515ce9c6b15252750cd5",
+      "proofLockHash": "sha256:retained-template-association-v1:9fe2a7c19f04a2244c3d179c189b17fd220e5672949822021a4edc2dc320e0e4",
+      "backendSourceFingerprint": "sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290",
+      "backendContractFingerprint": "sha256:backend-contract-v1:9ddcba2a3da4634780919a6872ed9a6586f7a765f16243cee9763b776d02b356",
+      "modelCommit": "c8e7e189d324425c05c4c2f81214041ef4107983",
+      "templateRevisionHash": "1e95e96945a61ebe10ce15747c762aacbb9cc86520b8cf826aa9a4b91b7f9edd",
+      "provenancePath": "/template-gallery/reviews/audioldm2_wind_through_high_pines.retained-template-provenance.json",
+      "provenanceHash": "sha256:canonical-json:e4ab0b1a51d37ecc4b48b8d840921f7c1bce58591f6b33c54197c707d3e2f4fb",
+      "outputPath": "/template-gallery/audioldm2_wind_through_high_pines.wav",
+      "thumbnailPath": "/template-gallery/audioldm2_wind_through_high_pines.wav",
+      "mediaHash": "sha256:decoded-audio-pcm-s16le-48000-stereo:363d8b6b0568ebc840eac064135a3cb3646ab297d0769f54bd493972d8a87b46",
+      "mediaType": "audio",
+      "verificationTimestamp": "2026-11-25T00:34:07.462Z",
+      "verificationStatus": "reviewed",
+      "qualityReviewStatus": "approved_reviewed",
+      "qualityReviewHash": "sha256:canonical-json:e886270ebc722c98053c76b1e83bfb88608444912f47933e7e0c46d38e7bb5d0",
+      "qualityReviewPath": "/template-gallery/reviews/audioldm2_wind_through_high_pines.quality-review.json",
+      "reviewer": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25T16:50:04.589Z",
+      "approvedOriginalReviewPath": "/template-gallery/reviews/audioldm2_wind_through_high_pines.original-review.json",
+      "approvedOriginalProvenancePath": "/template-gallery/reviews/audioldm2_wind_through_high_pines.original-provenance.json"
     }
   ]
 }

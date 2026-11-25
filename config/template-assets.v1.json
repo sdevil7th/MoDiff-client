@@ -228,6 +228,15 @@
       ]
     },
     {
+      "path": "template-gallery/audioldm2_wind_through_high_pines.wav",
+      "size": 320044,
+      "sha256": "sha256:bytes:6466efff6cc71c5f068df11ab58a1443dfe53ccf28e31c3ad2806590fe6190a6",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/bookshop_at_blue_hour.webp",
       "size": 569776,
       "sha256": "sha256:bytes:ff045be510a0e88cbab69bbe8c3794dd26bd19036bdec26a63a5b6ea5a11bc66",
@@ -3850,8 +3859,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 524756,
-      "sha256": "sha256:bytes:fe948ccb643e19685fb242236c2c9c5888e3b756de0718c1c39b6c3f694d689b",
+      "size": 527055,
+      "sha256": "sha256:bytes:789269290f378489a939b79daad98d9a5e2bf351c105f362895a5e8aee67a6f4",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -4924,6 +4933,42 @@
       "path": "template-gallery/reviews/animatelcm_sunlit_surf.retained-template-provenance.json",
       "size": 3894,
       "sha256": "sha256:bytes:0d7bf5194255e03658f6934d1be023dbf4ee556c39b4ff2ad54c10f2e8da3ede",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/audioldm2_wind_through_high_pines.original-provenance.json",
+      "size": 1354,
+      "sha256": "sha256:bytes:d61c68aaeec091d060e4c9bd260ffe885326826db71078e904acacac42ea3c40",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/audioldm2_wind_through_high_pines.original-review.json",
+      "size": 702,
+      "sha256": "sha256:bytes:429e7cac396b1c29e7348015a777e3ab85483813d80cc6a3e1e5400d34f6f0f4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/audioldm2_wind_through_high_pines.quality-review.json",
+      "size": 2438,
+      "sha256": "sha256:bytes:29dee8c7187cf2cd9b55070b86a8cdc9507df35ee0f69b63706c79f909273895",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/audioldm2_wind_through_high_pines.retained-template-provenance.json",
+      "size": 3438,
+      "sha256": "sha256:bytes:58a23cef1b5f084fb1ebca4a74af2c8fb42b39adba46ff2d769944086b224c9f",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -12036,9 +12081,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:8ee20b6e168398e406a81e3eb9b9187741c405571af52f2454956c4e9f500bcb",
+  "assetSetId": "sha256:canonical-json:ae0711e49b16b50a55cbdf0e7ca90b58b1b723e3a66b3385ca19662982e70c42",
   "status": "ready",
-  "assetCount": 1242,
-  "totalBytes": 1286239150,
+  "assetCount": 1247,
+  "totalBytes": 1286569425,
   "missingAssets": []
 }

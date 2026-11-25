@@ -116,6 +116,14 @@
       "height": 512
     }
   },
+  "audioldm2_wind_through_high_pines": {
+    "associationSha256": "55ce12b28bcb74c188a81a7f5652f58fa5e2e4e5f502477c712a2fc91fda19f9",
+    "backendSourceFingerprint": "sha256:backend-source-v1:2faeaaa03b7902a03df5cd0cea38129b7419f6d844125c0ca7e29ccfaf635290",
+    "backendContractFingerprint": "sha256:backend-contract-v1:9ddcba2a3da4634780919a6872ed9a6586f7a765f16243cee9763b776d02b356",
+    "templateRevisionHash": "1e95e96945a61ebe10ce15747c762aacbb9cc86520b8cf826aa9a4b91b7f9edd",
+    "capturedAt": "2026-11-25T00:34:07.462Z",
+    "outputExtension": "wav"
+  },
   "bookshop_at_blue_hour": {
     "associationSha256": "e88d530a22af0c530efeea91227f5287740e579eeab88ab18d11d20979bef7cb",
     "backendSourceFingerprint": "sha256:backend-source-v1:371fd754663a95b1b06900df9a838042048466464b4bd5cfa7033c1b6eebe0e3",

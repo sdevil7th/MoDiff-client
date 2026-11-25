@@ -34,6 +34,11 @@
     "bytes": 5060,
     "sha256": "3af27719dbc699a711ea79d0f38fd05301c280468e0c3454231e191861ca5d24"
   },
+  "AudioLDM2Pipeline:text_to_audio": {
+    "descriptorSha256": "23a27ed8d0cdd7b64c550a961a66853c304e6516533018995fb8e91b8d77dec4",
+    "bytes": 3926,
+    "sha256": "2c285934816b2989e03c9b8fa79b2b744c9421e1669714b60cb95da93dcfb6d3"
+  },
   "AuraFlowPipeline:text_to_image": {
     "descriptorSha256": "c4ce21c85cf0412cc1e69ff59009037bbdde9d1692cff19f307d589b84fb5b1f",
     "bytes": 4108,

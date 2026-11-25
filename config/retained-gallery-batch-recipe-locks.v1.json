@@ -1601,5 +1601,18 @@
     "promptSha256": "46826d4c16c0e700fd7f24ce5eb4c04af3c69ea290180244bcd062c3c6a46d79",
     "inputSha256": "51624f59295a77119bf336a63bfc7731d33d6612bc44b15495bddabdfae3ef51",
     "inputLocatorSha256": "ff67721141957f1b8ee5881a9036cf19512f0dfe8e068e682da35a39060121ad"
+  },
+  "audioldm2_wind_through_high_pines": {
+    "workflowId": "AudioLDM2Pipeline:text_to_audio",
+    "sourceTaskTemplateId": "task-template:audioldm2-base:text-to-audio:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:3b4e9f186c35a687114a08eef220f841aba92feaae4d515ce9c6b15252750cd5",
+    "originalReceiptSha256": "23a27ed8d0cdd7b64c550a961a66853c304e6516533018995fb8e91b8d77dec4",
+    "reviewedTemplateSha256": "1e95e96945a61ebe10ce15747c762aacbb9cc86520b8cf826aa9a4b91b7f9edd",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_3490e48c",
+      "galleryTemplateLockHash": "tpl_576af977",
+      "promptSettingsHash": "ps_0a65234d"
+    },
+    "promptSha256": "cdf4f4e12b557231ea6404ae2fb46fef4975a772c2f434a9920386b506ffbe01"
   }
 }

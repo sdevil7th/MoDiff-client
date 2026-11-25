@@ -260,6 +260,7 @@ export type StudioTemplateId =
   | 'smolvlm_red_triangle'
   | 'kandinsky3_ginkgo_on_slate'
   | 'chroma_terracotta_and_blue'
+  | 'audioldm2_wind_through_high_pines'
   | 'longcat_last_tram_at_dusk'
   | 'qwen_layered_sunset_and_peaks'
   | 'wan_a14b_cloudbreak_over_the_ridges'
