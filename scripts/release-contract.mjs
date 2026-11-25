@@ -17,6 +17,7 @@ import {
   assessWorkflowReleaseEvidence,
   readCanonicalEvidenceFile,
   readCanonicalWorkflowEvidence,
+  withCanonicalWorkflowGraphExporter,
 } from './release-contract-core.mjs';
 import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
 import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
@@ -365,39 +366,41 @@ if (existsSync(canonicalRegistryPath)) {
   ) {
     throw new Error('Canonical workflow receipt registry has an invalid schema.');
   }
-  for (const stored of registry.receipts) {
-    const descriptor = readCanonicalEvidenceFile(
-      BACKEND_ROOT,
-      { path: stored.evidencePath, bytes: stored.evidenceBytes, sha256: stored.evidenceSha256 },
-      65536,
-    );
-    const derived = await readCanonicalWorkflowEvidence({
-      clientRoot: CLIENT_ROOT,
-      backendRoot: BACKEND_ROOT,
-      workflowId: stored.workflowId,
-      evidencePath: descriptor.file,
-    });
-    const body = { ...stored };
-    delete body.evidencePath;
-    delete body.evidenceSha256;
-    delete body.evidenceBytes;
-    if (JSON.stringify(stable(body)) !== JSON.stringify(stable(derived.receipt))) {
-      throw new Error(`Canonical workflow receipt differs from original task evidence: ${stored.workflowId}`);
-    }
-    if (
-      derived.receipt.inputBinding ||
-      derived.receipt.promptBinding ||
-      stored.workflowId === 'DDIMPipeline:unconditional_image'
-    ) {
-      if (retainedNativeBySha.has(stored.evidenceSha256)) {
-        throw new Error(`Original bound workflow evidence is duplicated: ${stored.workflowId}`);
+  await withCanonicalWorkflowGraphExporter(CLIENT_ROOT, async () => {
+    for (const stored of registry.receipts) {
+      const descriptor = readCanonicalEvidenceFile(
+        BACKEND_ROOT,
+        { path: stored.evidencePath, bytes: stored.evidenceBytes, sha256: stored.evidenceSha256 },
+        65536,
+      );
+      const derived = await readCanonicalWorkflowEvidence({
+        clientRoot: CLIENT_ROOT,
+        backendRoot: BACKEND_ROOT,
+        workflowId: stored.workflowId,
+        evidencePath: descriptor.file,
+      });
+      const body = { ...stored };
+      delete body.evidencePath;
+      delete body.evidenceSha256;
+      delete body.evidenceBytes;
+      if (JSON.stringify(stable(body)) !== JSON.stringify(stable(derived.receipt))) {
+        throw new Error(`Canonical workflow receipt differs from original task evidence: ${stored.workflowId}`);
       }
-      retainedNativeBySha.set(stored.evidenceSha256, { ...derived, registeredReceipt: stored });
+      if (
+        derived.receipt.inputBinding ||
+        derived.receipt.promptBinding ||
+        stored.workflowId === 'DDIMPipeline:unconditional_image'
+      ) {
+        if (retainedNativeBySha.has(stored.evidenceSha256)) {
+          throw new Error(`Original bound workflow evidence is duplicated: ${stored.workflowId}`);
+        }
+        retainedNativeBySha.set(stored.evidenceSha256, { ...derived, registeredReceipt: stored });
+      }
+      const previous = canonicalReceiptsByWorkflow.get(stored.workflowId);
+      if (!previous || String(previous.capturedAt).localeCompare(stored.capturedAt) < 0)
+        canonicalReceiptsByWorkflow.set(stored.workflowId, stored);
     }
-    const previous = canonicalReceiptsByWorkflow.get(stored.workflowId);
-    if (!previous || String(previous.capturedAt).localeCompare(stored.capturedAt) < 0)
-      canonicalReceiptsByWorkflow.set(stored.workflowId, stored);
-  }
+  });
 }
 const vite = await createServer({
   root: CLIENT_ROOT,

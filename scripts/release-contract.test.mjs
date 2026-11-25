@@ -13,6 +13,7 @@ import {
   selectCurrentHistoricalEvidence,
   canonicalWorkflowContract,
   exportCanonicalWorkflowGraphs,
+  withCanonicalWorkflowGraphExporter,
   readCanonicalWorkflowEvidence,
   findCanonicalWorkflowRecord,
   templateResourceExecutionModelType,
@@ -33,6 +34,33 @@ import {
   selectCanonicalWorkflowCapabilities,
   selectReviewedExperimentalWorkflows,
 } from './workflow-library-manifest-state.mjs';
+
+test('a batch compiler preserves exact graph exports and releases its offline scope', async () => {
+  const clientRoot = resolve('.');
+  const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? '../MoDiff');
+  const read = (name) => JSON.parse(readFileSync(join(backendRoot, 'data', name), 'utf8'));
+  const entries = read('workflow-library-manifest.json').workflows.filter(
+    ({ modelType }) => modelType === 'BuiltinDataOperation',
+  );
+  assert.ok(entries.length >= 2);
+  const graphs = entries.slice(0, 2).map(({ graphPath }) => read(join('graphs', graphPath)));
+  const expected = await exportCanonicalWorkflowGraphs(clientRoot, graphs);
+  const prior = globalThis.fetch;
+  await assert.rejects(
+    withCanonicalWorkflowGraphExporter(clientRoot, async () => {
+      const [last, first] = await Promise.all([
+        exportCanonicalWorkflowGraphs(clientRoot, [graphs[1]]),
+        exportCanonicalWorkflowGraphs(clientRoot, [graphs[0]]),
+      ]);
+      assert.deepEqual([first[0], last[0]], expected);
+      assert.equal(globalThis.fetch, prior);
+      throw new Error('stop the test batch');
+    }),
+    /stop the test batch/u,
+  );
+  assert.equal(globalThis.fetch, prior);
+  assert.deepEqual(await exportCanonicalWorkflowGraphs(clientRoot, [graphs[0]]), [expected[0]]);
+});
 
 test('verified standalone model execution remains distinct from a reviewed exact template recipe', () => {
   const workflow = { modelType: 'ExamplePipeline', exactModelRevision: `example/base@${'a'.repeat(40)}` };

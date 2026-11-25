@@ -296,11 +296,38 @@ const allegroRoute = {
   modelRevision: 'c1b9207bb5cb79e2aa08f3d139c17d26c0de55b6',
   sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
   bindNegativePrompt: true,
+  retainedNativeMathDefault: true,
   reviewedSettings: [
     ['recipe', 'attention_backend', '_native_math', 'auto'],
     ['recipe', 'offload_mode', 'sequential_cpu', 'model_cpu'],
   ],
   retainedOffloadFallback: 'sequential_cpu',
+};
+
+const sanaVideoRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.sana-video-prompt-variant.v1',
+  workflowId: 'SanaVideoPipeline:text_to_video',
+  modelType: 'SanaVideoPipeline',
+  previousExpertFamily: 'AllegroPipeline',
+  modelRepo: 'Efficient-Large-Model/SANA-Video_2B_480p_diffusers',
+  modelRevision: 'db5f398b13ca086d09a50ce156c20527773841b1',
+  bindNegativePrompt: true,
+};
+
+const sanaOpeningImageRoute = {
+  ...sanaVideoRoute,
+  format: 'modiff.private.sana-opening-image-variant.v1',
+  workflowId: 'SanaImageToVideoPipeline:image_to_video',
+  modelType: 'SanaImageToVideoPipeline',
+  previousExpertFamily: null,
+  executedTask: 'image_to_video',
+  bindsImage: true,
+  imageInputPort: 'reference_images',
+  retainedImageLoadFields: true,
+  retainedNativeMathDefault: true,
+  reviewedSettings: [['recipe', 'attention_backend', '_native_math', 'auto']],
+  chain: [['source', 'modules.Image', 'Load', ''], ...sanaVideoRoute.chain],
 };
 
 const promptModelSet = (profile) => [
@@ -384,6 +411,14 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
       param.value = cpuValue;
     }
   }
+  if (profile.retainedNativeMathDefault) {
+    const attention = expectedOwners.recipe.node.params.attention_backend;
+    assert.ok(['auto', '_native_math'].includes(attention.value));
+    assert.ok(!attention.sourceId && !attention.sourceKey);
+    // Verify the archive's literal pre-change graph identity before applying
+    // the recorded selection that became the current canonical default.
+    attention.value = '_native_math';
+  }
   const baseline = canonicalGraphIdentity(expected);
   assert.equal(baseline.hash, baselineHash, 'The current authored prompt recipe differs from the original baseline.');
   for (const [role, field, defaultValue, reviewedValue] of profile.reviewedSettings ?? []) {
@@ -398,7 +433,11 @@ export function bindPromptVariant(profile, original, created, output, baselineHa
     const { params } = expectedOwners.source.node;
     same(params.file, { display: 'filebrowser', value: [] });
     assert.equal(params.alpha_channel.value, 'ignore');
-    same(expectedInputs.images, { display: 'input', sourceId: expectedOwners.source.id, sourceKey: 'image' });
+    same(expectedInputs[profile.imageInputPort ?? 'images'], {
+      display: 'input',
+      sourceId: expectedOwners.source.id,
+      sourceKey: 'image',
+    });
     params.file.value = [sourceValue];
   }
   if (profile.bindsVideoUpload) {
@@ -490,11 +529,38 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
     assert.equal(row.action, node.action);
     same(row.omittedFields, {});
     if (profile.bindsImage && id === bound.source.id) {
-      const { sourceFile, decodedImage } = verifyNativeLoadedImage(node, row, 'RGB');
-      assert.equal(sourceFile.sourceValue, suppliedImage.sourceValue);
-      assert.equal(sourceFile.sha256, suppliedImage.file.sha256, 'Caption source bytes differ from the native load.');
-      assert.equal(sourceFile.byteSize, suppliedImage.file.bytes);
-      image = { nodeId: id, field: 'file', sha256: sourceFile.sha256, decodedImage };
+      let decodedImage;
+      if (profile.retainedImageLoadFields) {
+        assert.equal(row.mediaEvidence, undefined);
+        const [width] = row.fields.source_widths.value;
+        const [height] = row.fields.source_heights.value;
+        for (const dimension of [width, height]) assert.ok(Number.isSafeInteger(dimension) && dimension > 0);
+        same(
+          row.fields,
+          Object.fromEntries(
+            Object.entries({
+              alpha_channel: 'ignore',
+              source_hashes: [suppliedImage.file.sha256],
+              source_widths: [width],
+              source_heights: [height],
+              source_modes: ['RGB'],
+            }).map(([field, value]) => [field, { value, source: 'literal' }]),
+          ),
+          'Opening image differs from the retained Load fields.',
+        );
+        decodedImage = { width, height, mode: 'RGB' };
+      } else {
+        const native = verifyNativeLoadedImage(node, row, 'RGB');
+        assert.equal(native.sourceFile.sourceValue, suppliedImage.sourceValue);
+        assert.equal(
+          native.sourceFile.sha256,
+          suppliedImage.file.sha256,
+          'Caption source bytes differ from the native load.',
+        );
+        assert.equal(native.sourceFile.byteSize, suppliedImage.file.bytes);
+        decodedImage = native.decodedImage;
+      }
+      image = { nodeId: id, field: 'file', sha256: suppliedImage.file.sha256, decodedImage };
       continue;
     }
     const expected = Object.fromEntries(
@@ -886,10 +952,13 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         animateDiffPagRoute,
         animateDiffEditRoute,
         allegroRoute,
+        sanaVideoRoute,
+        sanaOpeningImageRoute,
       ].find(({ workflowId }) => workflowId === target.workflowId);
   assert.ok(profile, 'Prompt variant route is not reviewed.');
   const generatedVideo =
-    profile.outputKind === 'video' && ['text_to_video', 'video_to_video'].includes(profile.executedTask);
+    profile.outputKind === 'video' &&
+    ['text_to_video', 'image_to_video', 'video_to_video'].includes(profile.executedTask);
   const generatedAudio = profile === audioRoute || profile === audioLdmRoute;
   const requiresOriginalRequest =
     imageRoute !== undefined ||
@@ -1047,6 +1116,11 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
       },
       'Caption input differs from the original image upload.',
     );
+    if (profile.retainedImageLoadFields) {
+      const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
+      const decoded = await decodedMediaHash(source.file, 'image');
+      same([decoded.width, decoded.height], [width, height], 'Opening image dimensions differ from the original file.');
+    }
   }
   if (profile.bindsVideoUpload) {
     const { bytes, file } = read(suppliedInput.file);
@@ -1234,6 +1308,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         ? { configuredUnobservedControls: profile.configuredUnobservedControls }
         : {}),
       ...(profile.retainedOffloadFallback ? { retainedLoaderOffloadFallback: profile.retainedOffloadFallback } : {}),
+      ...(profile.retainedImageLoadFields
+        ? { openingImageLoadFieldsObserved: true, samplerInputPixelsObserved: false }
+        : {}),
     },
     qualificationClaims: {
       publicTemplate: false,

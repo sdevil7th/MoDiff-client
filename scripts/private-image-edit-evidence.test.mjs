@@ -445,6 +445,10 @@ for (const [workflowId, variable, hasMask, unobserved] of [
     ['pag_scale', 'pag_adaptive_scale'],
   ],
   ['ZImageModularPipeline:edit_image', 'MODIFF_SAVED_ZIMAGE_EDIT_EVIDENCE', false, []],
+  ['QwenImageEditPlusPipeline:edit_image', 'MODIFF_SAVED_QWEN_AMBER_EVIDENCE', false, []],
+  ['QwenImageEditPipeline:edit_image', 'MODIFF_SAVED_QWEN_SLATE_EVIDENCE', false, []],
+  ['QwenImageModularPipeline:inpaint', 'MODIFF_SAVED_QWEN_SCRATCH_EVIDENCE', true, []],
+  ['FluxDevPipeline:inpaint', 'MODIFF_SAVED_FLUX_DEV_REPAIR_EVIDENCE', true, []],
 ]) {
   const saved = process.env[variable];
   test(
@@ -522,3 +526,55 @@ test('retained native PNG upload binds an exact safe path, file bytes and decode
   };
   assert.throws(() => verifyRetainedPngUpload(magicWitness, { sourceValue }, metadata, wrongMagic), /not PNG/u);
 });
+
+for (const [model, task, variable] of [
+  ['JoyImageEditPlusPipeline', 'edit_image', 'MODIFF_SAVED_JOY_PLUS_EDIT_EVIDENCE'],
+  ['JoyImageEditPlusPipeline', 'multi_image_reference_edit', 'MODIFF_SAVED_JOY_PLUS_REFERENCES_EVIDENCE'],
+  ['QwenImageEditPlusPipeline', 'multi_image_reference_edit', 'MODIFF_SAVED_QWEN_TERRACOTTA_EVIDENCE'],
+]) {
+  const evidencePath = process.env[variable];
+  test(`${model} verifies exact references in ${task}`, { skip: !evidencePath }, async () => {
+    const clientRoot = fileURLToPath(new URL('..', import.meta.url));
+    const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '..', 'MoDiff'));
+    const args = {
+      clientRoot,
+      backendRoot,
+      workflowId: model + ':' + task,
+      evidencePath: resolve(evidencePath),
+    };
+    const result = await readCanonicalWorkflowEvidence(args);
+    const { receipt } = result;
+    assert.equal(receipt.observationLimits.independentConsumerPixels, false);
+    assert.equal(receipt.inputBinding.decodedImage.mode, 'RGB');
+    if (task === 'edit_image') {
+      assert.equal(receipt.referenceBindings, undefined);
+      return;
+    }
+    assert.equal(receipt.referenceBindings.length, 1);
+    const [material] = receipt.referenceBindings;
+    assert.equal(material.inputIndex, 1);
+    assert.equal(material.nodeId, receipt.inputBinding.nodeId);
+    assert.notEqual(material.sha256, receipt.inputBinding.sha256);
+    assert.equal(receipt.observationLimits.retainedStudioFormMode, 'edit_image');
+    const root = mkdtempSync(join(tmpdir(), 'modiff-reference-proof-'));
+    try {
+      for (const file of result.retainedFiles) {
+        assert.equal(basename(file.path), file.path);
+        copyFileSync(file.absolutePath, join(root, file.path));
+      }
+      const descriptor = JSON.parse(result.descriptorBytes);
+      const [materialUpload] = descriptor.referenceUploads;
+      descriptor.referenceUploads[0] = descriptor.inputUpload;
+      descriptor.inputUpload = materialUpload;
+      const substituted = join(root, 'evidence.json');
+      writeFileSync(substituted, JSON.stringify(descriptor));
+      await assert.rejects(
+        readCanonicalWorkflowEvidence({ ...args, evidencePath: substituted }),
+        assert.AssertionError,
+      );
+    } finally {
+      assert.equal(dirname(root), resolve(tmpdir()));
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}

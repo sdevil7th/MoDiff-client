@@ -1,9 +1,10 @@
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { assertCanonicalAccountingGraphEnvelope } from './canonical-runtime-hints.mjs';
 import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import retainedGalleryAuthoringArchives from '../config/retained-gallery-authoring-archives.v1.json' with { type: 'json' };
 import {
   backendSourceEvidence,
@@ -628,8 +629,7 @@ export function canonicalEvidenceWritePath(root, relativePath) {
 
 // Metadata-only export through the exact frontend implementation used by Run.
 // Ephemeral storage and a rejecting fetch prevent inspection from using a live app.
-export async function exportCanonicalWorkflowGraphs(clientRoot, graphs) {
-  const { createServer } = await import('vite');
+function withGraphExportEnvironment(callback) {
   const prior = new Map(
     ['window', 'localStorage', 'fetch'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
   );
@@ -647,30 +647,65 @@ export async function exportCanonicalWorkflowGraphs(clientRoot, graphs) {
   globalThis.fetch = () => {
     throw new Error('Canonical qualification export cannot access the network.');
   };
-  let server;
-  try {
-    server = await createServer({
-      root: clientRoot,
-      configFile: false,
-      logLevel: 'silent',
-      optimizeDeps: { entries: [], noDiscovery: true },
-      server: { middlewareMode: true, hmr: false, watch: null },
-      appType: 'custom',
-    });
-    const { useFlowStore } = await server.ssrLoadModule('/src/stores/useFlowStore.ts');
-    return graphs.map((graph) =>
-      useFlowStore.getState().exportGraph('canonical-qualification', undefined, {
-        sourceGraph: structuredClone(graph),
-        randomizeSeeds: false,
-      }),
-    );
-  } finally {
-    await server?.close();
+  const restore = () => {
     for (const [key, descriptor] of prior) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
     }
+  };
+  let deferred = false;
+  try {
+    const result = callback();
+    if (result instanceof Promise) {
+      deferred = true;
+      return result.finally(restore);
+    }
+    return result;
+  } finally {
+    if (!deferred) restore();
   }
+}
+
+const canonicalGraphExport = new AsyncLocalStorage();
+
+// A receipt batch uses the same frontend compiler for every graph. Each export
+// still gets a cloned input, fixed seeds and its own offline environment.
+export async function withCanonicalWorkflowGraphExporter(clientRoot, callback) {
+  const { createServer } = await import('vite');
+  let server;
+  try {
+    const { useFlowStore } = await withGraphExportEnvironment(async () => {
+      server = await createServer({
+        root: clientRoot,
+        configFile: false,
+        logLevel: 'silent',
+        optimizeDeps: { entries: [], noDiscovery: true },
+        server: { middlewareMode: true, hmr: false, watch: null },
+        appType: 'custom',
+      });
+      return server.ssrLoadModule('/src/stores/useFlowStore.ts');
+    });
+    const exportGraphs = (graphs) =>
+      withGraphExportEnvironment(() =>
+        graphs.map((graph) =>
+          useFlowStore.getState().exportGraph('canonical-qualification', undefined, {
+            sourceGraph: structuredClone(graph),
+            randomizeSeeds: false,
+          }),
+        ),
+      );
+    return await canonicalGraphExport.run({ clientRoot: resolve(clientRoot), exportGraphs }, () =>
+      callback(exportGraphs),
+    );
+  } finally {
+    await server?.close();
+  }
+}
+
+export async function exportCanonicalWorkflowGraphs(clientRoot, graphs) {
+  const active = canonicalGraphExport.getStore();
+  if (active?.clientRoot === resolve(clientRoot)) return active.exportGraphs(graphs);
+  return withCanonicalWorkflowGraphExporter(clientRoot, (exportGraphs) => exportGraphs(graphs));
 }
 
 // Publication moves these authoring rows out of the hidden-candidate
@@ -877,6 +912,8 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.animatediff-pag-video-prompt-variant.v1',
       'modiff.private.animatediff-source-video-variant.v1',
       'modiff.private.allegro-video-prompt-variant.v1',
+      'modiff.private.sana-video-prompt-variant.v1',
+      'modiff.private.sana-opening-image-variant.v1',
     ].includes(evidence.format) ||
     directImagePromptRoutes.some(({ format }) => format === evidence.format)
   ) {

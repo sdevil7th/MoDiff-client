@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { stableJsonValue } from './canonical-json.mjs';
-import { verifyNativeLoadedImage } from './native-image-load-evidence.mjs';
+import { verifyNativeLoadedImages } from './native-image-load-evidence.mjs';
 import {
   backendContractIdentity,
   backendSourceEvidence,
@@ -33,6 +33,42 @@ export const SAVED_PNG_EDIT_FORMAT = 'modiff.private.saved-image-edit-native-png
 const baseConsumed = ['num_inference_steps', 'output_type', 'prompt', 'seed'];
 const imageGeometry = ['height', 'max_sequence_length', 'width'];
 const stableDiffusionEditConsumed = [...baseConsumed, 'negative_prompt', 'guidance_scale', 'strength'];
+const retainedImageEdit = {
+  format: SAVED_PNG_EDIT_FORMAT,
+  captureFormat: 'modiff.private.direct-image-edit-observation.v1',
+  consumed: [...baseConsumed, ...imageGeometry, 'negative_prompt', 'guidance_scale'],
+  inactiveRecorded: ['strength'],
+  inputPathPrefix: '@data/images/',
+  nativeSourceMedia: true,
+  outputGeometryFromSettings: true,
+};
+const joyPlusEdit = {
+  ...retainedImageEdit,
+  modelRepo: 'jdopensource/JoyAI-Image-Edit-Plus-Diffusers',
+  modelRevision: 'c2686460c7b64d8aa11bc4d0da423fb316b33f9e',
+  loaderClass: 'JoyImageEditPlusPipeline',
+};
+const qwenPlusEdit = {
+  ...retainedImageEdit,
+  modelRepo: 'Qwen/Qwen-Image-Edit-2511',
+  modelRevision: '6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9',
+  loaderClass: 'QwenImageEditPlusPipeline',
+  sourceFingerprint: 'sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8',
+  runtimeContractDigest: '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5',
+  fullNativeSnapshot: true,
+  guidanceObservedAsTrueCfg: true,
+};
+const retainedCfgInpaint = {
+  ...retainedImageEdit,
+  captureFormat: 'modiff.private.direct-image-inpaint-observation.v1',
+  consumed: [...retainedImageEdit.consumed, 'strength'],
+  inactiveRecorded: [],
+  sourceFingerprint: 'sha256:backend-source-v1:43f2ed10792fc6167b963166287cf7d5a0429afa26029e6455b0418e2123be86',
+  runtimeContractDigest: qwenPlusEdit.runtimeContractDigest,
+  fullNativeSnapshot: true,
+  guidanceObservedAsTrueCfg: true,
+  masked: true,
+};
 const editRoutes = new Map([
   [
     'LatentConsistencyModelPipeline:edit_image',
@@ -211,6 +247,63 @@ const editRoutes = new Map([
       outputGeometryFromSettings: true,
     },
   ],
+  [
+    'JoyImageEditPlusPipeline:edit_image',
+    {
+      ...joyPlusEdit,
+      fullNativeSnapshot: true,
+      sourceFingerprint: 'sha256:backend-source-v1:d275bc94517015b221a9a8b5aea7572ec68c491060855c7895526e1ba640796d',
+      originalRegistryHash: '6167f8ae8f746e854b73dfcb66000a54c71d65199c1f4b0b081b7a9ce02d9d28',
+    },
+  ],
+  [
+    'JoyImageEditPlusPipeline:multi_image_reference_edit',
+    {
+      ...joyPlusEdit,
+      task: 'multi_image_reference_edit',
+      retainedFormMode: 'edit_image',
+      orderedReferences: 1,
+      sourceFingerprint: 'sha256:backend-source-v1:585997dc1146ec6effb20c260272babc01713ecdea4f78a0872c12ef2568ef83',
+      runtimeContractDigest: '8cbe038eeeb6d4a4c079783b8d7e4915d9f78faad9495cb8e354504c66925cf5',
+    },
+  ],
+  ['QwenImageEditPlusPipeline:edit_image', qwenPlusEdit],
+  [
+    'QwenImageEditPipeline:edit_image',
+    {
+      ...qwenPlusEdit,
+      modelRepo: 'Qwen/Qwen-Image-Edit',
+      modelRevision: 'ac7f9318f633fc4b5778c59367c8128225f1e3de',
+      loaderClass: 'QwenImageEditPipeline',
+    },
+  ],
+  [
+    'QwenImageEditPlusPipeline:multi_image_reference_edit',
+    {
+      ...qwenPlusEdit,
+      task: 'multi_image_reference_edit',
+      retainedFormMode: 'edit_image',
+      orderedReferences: 1,
+    },
+  ],
+  [
+    'QwenImageModularPipeline:inpaint',
+    {
+      ...retainedCfgInpaint,
+      modelRepo: 'Qwen/Qwen-Image-2512',
+      modelRevision: '25468b98e3276ca6700de15c6628e51b7de54a26',
+      loaderClass: 'QwenImageInpaintPipeline',
+    },
+  ],
+  [
+    'FluxDevPipeline:inpaint',
+    {
+      ...retainedCfgInpaint,
+      modelRepo: 'black-forest-labs/FLUX.1-dev',
+      modelRevision: '3de623fc3c33e44ffbe2bad470d0f45bccf2eb21',
+      loaderClass: 'FluxInpaintPipeline',
+    },
+  ],
 ]);
 const lcmRoute = editRoutes.get('LatentConsistencyModelPipeline:edit_image');
 
@@ -277,6 +370,7 @@ export function bindPrivateImageEditGraph({
   submitted,
   input,
   maskInput,
+  references = [],
   strengthVariant,
   inputPathPrefix = '',
   nativePngEvidence = false,
@@ -289,17 +383,19 @@ export function bindPrivateImageEditGraph({
   const canonicalPrompt = canonical.edit.node.params.prompt;
   assert.equal(canonicalPrompt.value, '');
   const safeBasename = nativePngEvidence ? /^[a-zA-Z0-9_-][\w.-]{0,200}\.png$/u : /^[a-zA-Z0-9_-][\w.-]{0,200}\.webp$/u;
-  const bindFile = (role, reference) => {
+  const bindFile = (role, selected) => {
     const field = canonical[role].node.params.file;
     assert.deepEqual(field, { value: role === 'mask' ? '' : [], display: 'filebrowser' });
-    assert.equal(reference.nodeId, observed[role].id);
-    assert.equal(reference.field, 'file');
-    assert.ok(typeof reference.sourceValue === 'string' && reference.sourceValue.startsWith(inputPathPrefix));
-    assert.match(reference.sourceValue.slice(inputPathPrefix.length), safeBasename);
-    field.value = [reference.sourceValue];
+    field.value = selected.map((reference) => {
+      assert.equal(reference.nodeId, observed[role].id);
+      assert.equal(reference.field, 'file');
+      assert.ok(typeof reference.sourceValue === 'string' && reference.sourceValue.startsWith(inputPathPrefix));
+      assert.match(reference.sourceValue.slice(inputPathPrefix.length), safeBasename);
+      return reference.sourceValue;
+    });
   };
-  bindFile('source', input);
-  if (masked) bindFile('mask', maskInput);
+  bindFile('source', [input, ...references]);
+  if (masked) bindFile('mask', [maskInput]);
   const prompt = observed.edit.node.params.prompt.value;
   assert.ok(typeof prompt === 'string' && prompt.length > 0 && prompt.length <= 4096 && prompt.trim() === prompt);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt));
@@ -466,6 +562,10 @@ function verifySavedEditControls(bound, output, route) {
   const controls = Object.fromEntries(
     route.consumed.map((name) => [name, literal(bound.edit.node.params[name].value)]),
   );
+  if (route.guidanceObservedAsTrueCfg) {
+    controls.true_cfg_scale = controls.guidance_scale;
+    controls.guidance_scale = literal(null);
+  }
   for (const field of [
     'conditioning_scale',
     'control_guidance_start',
@@ -474,7 +574,7 @@ function verifySavedEditControls(bound, output, route) {
   ]) {
     controls[field] = literal(null);
   }
-  controls.executed_task = literal(bound.mask ? 'inpaint' : 'edit_image');
+  controls.executed_task = literal(route.task ?? (bound.mask ? 'inpaint' : 'edit_image'));
   same(sampler.fields, controls, 'Saved sampler controls differ.');
   const loader = record(bound.loader);
   for (const [field, value] of Object.entries({
@@ -495,42 +595,62 @@ function verifySavedEditControls(bound, output, route) {
   return record;
 }
 
-async function verifySavedPngSource(bound, output, input, maskInput, route, read, json, evidence) {
+async function verifySavedPngSource(bound, output, { input, maskInput, references }, route, read, json, evidence) {
   const record = verifySavedEditControls(bound, output, route);
   const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
-  const verify = async (role, rootImage, upload, port, mode) => {
+  const verify = async (role, selected, uploads, port, mode) => {
     const owner = bound[role];
-    const { bytes, file } = read(rootImage.file);
-    const { width, height } = await decodedMediaHash(file, 'image');
-    const decodedImage = { width, height, mode };
+    assert.equal(uploads.length, selected.length);
+    const images = await Promise.all(
+      selected.map(async (entry, index) => {
+        const { bytes, file } = read(entry.file);
+        const { width, height } = await decodedMediaHash(file, 'image');
+        const decodedImage = { width, height, mode };
+        verifyRetainedPngUpload(json(uploads[index]), entry, decodedImage, bytes);
+        return decodedImage;
+      }),
+    );
     const row = record(owner);
     same(
       row.fields,
       {
         alpha_channel: literal(owner.node.params.alpha_channel.value),
-        source_hashes: literal([rootImage.file.sha256]),
-        source_widths: literal([width]),
-        source_heights: literal([height]),
-        source_modes: literal([mode]),
+        source_hashes: literal(selected.map(({ file }) => file.sha256)),
+        source_widths: literal(images.map(({ width }) => width)),
+        source_heights: literal(images.map(({ height }) => height)),
+        source_modes: literal(images.map(({ mode }) => mode)),
       },
       `Original ${role} load differs.`,
     );
     same(bound.edit.node.params[port], { display: 'input', sourceId: owner.id, sourceKey: 'image' });
-    verifyRetainedPngUpload(json(upload), rootImage, decodedImage, bytes);
-    if (!route.nativeSourceMedia) return decodedImage;
-    const native = verifyNativeLoadedImage(owner.node, row, mode);
-    same(native.sourceFile, {
-      sourceValue: rootImage.sourceValue,
-      sha256: rootImage.file.sha256,
-      byteSize: rootImage.file.bytes,
+    if (!route.nativeSourceMedia) return images;
+    const nativeImages = verifyNativeLoadedImages(
+      owner.node,
+      row,
+      images.map(({ mode }) => mode),
+    );
+    return nativeImages.map(({ sourceFile, decodedImage }, index) => {
+      const entry = selected[index];
+      const { width, height } = images[index];
+      same(sourceFile, {
+        sourceValue: entry.sourceValue,
+        sha256: entry.file.sha256,
+        byteSize: entry.file.bytes,
+      });
+      same([decodedImage.width, decodedImage.height], [width, height]);
+      return decodedImage;
     });
-    same([native.decodedImage.width, native.decodedImage.height], [width, height]);
-    return native.decodedImage;
   };
-  const decodedInput = await verify('source', input, evidence.inputUpload, 'image', 'RGB');
-  if (!maskInput) return { decodedInput };
+  const [decodedInput, ...decodedReferences] = await verify(
+    'source',
+    [input, ...references],
+    [evidence.inputUpload, ...(evidence.referenceUploads ?? [])],
+    'image',
+    'RGB',
+  );
+  if (!maskInput) return { decodedInput, decodedReferences };
   assert.notEqual(input.file.sha256, maskInput.file.sha256);
-  const decodedMask = await verify('mask', maskInput, evidence.maskUpload, 'mask_image', 'L');
+  const [decodedMask] = await verify('mask', [maskInput], [evidence.maskUpload], 'mask_image', 'L');
   same([decodedInput.width, decodedInput.height], [decodedMask.width, decodedMask.height]);
   return { decodedInput, mask: { decodedImage: decodedMask } };
 }
@@ -615,6 +735,8 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   const evidence = JSON.parse(descriptorBytes);
   const masked = route.masked === true;
   const savedPng = route.format === SAVED_PNG_EDIT_FORMAT && evidence.format === SAVED_PNG_EDIT_FORMAT;
+  const replayedRegistry = savedPng && !route.originalRegistryHash;
+  const referenceCount = route.orderedReferences ?? 0;
   const pngFormat = masked ? NATIVE_PNG_INPAINT_FORMAT : NATIVE_PNG_EDIT_FORMAT;
   const nativePngEvidence = savedPng || (route.nativePngEvidence === true && evidence.format === pngFormat);
   keys(evidence, [
@@ -627,7 +749,8 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     'persistedOutputs',
     ...(nativePngEvidence ? ['inputUpload'] : ['inputServerBefore', 'inputServerAfter']),
     ...(masked ? ['maskUpload'] : []),
-    ...(savedPng ? ['registryReplay'] : []),
+    ...(replayedRegistry ? ['registryReplay'] : []),
+    ...(referenceCount ? ['referenceUploads'] : []),
   ]);
   assert.equal(evidence.schemaVersion, 1);
   assert.equal(evidence.format, nativePngEvidence && !savedPng ? pngFormat : route.format);
@@ -661,10 +784,16 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   assert.equal(capture.format, route.captureFormat);
   assert.equal(capture.workflowId, workflowId);
   same(capture.qualificationClaims, { releaseEligible: false, technicalVariant: true });
-  assert.equal(capture.inputs.length, masked ? 2 : 1);
+  assert.equal(capture.inputs.length, masked ? 2 : 1 + referenceCount);
   assert.equal(capture.outputs.length, 1);
   assert.equal(capture.modelObservations.length, 1);
-  const [input, maskInput] = capture.inputs;
+  const [input, ...otherInputs] = capture.inputs;
+  const maskInput = masked ? otherInputs[0] : undefined;
+  const references = masked ? [] : otherInputs;
+  if (referenceCount) {
+    assert.equal(evidence.referenceUploads.length, referenceCount);
+    assert.equal(new Set(capture.inputs.map(({ file }) => file.sha256)).size, capture.inputs.length);
+  }
   const [outputRef] = capture.outputs;
   for (const source of capture.inputs) keys(source, ['nodeId', 'field', 'sourceValue', 'file']);
   keys(outputRef, ['backendPath', 'mediaType', 'file']);
@@ -688,6 +817,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     submitted: graphRequest,
     input,
     maskInput,
+    references,
     strengthVariant: route.strengthVariant,
     inputPathPrefix: route.inputPathPrefix,
     nativePngEvidence,
@@ -699,6 +829,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   }
   const runOptions = {
     target,
+    expectedFormMode: route.retainedFormMode,
     outputNodeId: bound.preview.id,
     displayType: 'image',
     creator,
@@ -721,7 +852,15 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   same(hints.workflowSnapshot.studioForm, output.formSnapshot);
   let sourceBinding;
   if (savedPng) {
-    sourceBinding = await verifySavedPngSource(bound, output, input, maskInput, route, read, json, evidence);
+    sourceBinding = await verifySavedPngSource(
+      bound,
+      output,
+      { input, maskInput, references },
+      route,
+      read,
+      json,
+      evidence,
+    );
   } else {
     validatePrivateImageEditFields(bound, output, route.consumed);
     sourceBinding = await verifySourceBinding(clientRoot, bound, output, input, route);
@@ -740,7 +879,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       verifyRetainedPngUpload(json(evidence.maskUpload), maskInput, sourceBinding.mask.decodedImage, maskMedia.bytes);
     }
   }
-  const { decodedInput, mask } = sourceBinding;
+  const { decodedInput, decodedReferences, mask } = sourceBinding;
   const media = read(outputRef.file);
   const item = validateNativeVariantOutput({
     output,
@@ -772,6 +911,11 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
   same(source.blockers, []);
   if (savedPng) {
     assert.equal(source.identity.fingerprint, route.sourceFingerprint);
+  }
+  if (route.originalRegistryHash) {
+    assert.equal(sha256(nodes.bytes), route.originalRegistryHash);
+  }
+  if (replayedRegistry) {
     const replay = json(evidence.registryReplay);
     assert.equal(replay.scope, 'Original nodes handler only, with exact source and runtime contract');
     assert.equal(replay.modelRuns, 0);
@@ -809,6 +953,17 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
     peakMemoryBytes: peakAllocatedBytes,
     canonicalDefaultsExecuted: false,
     inputBinding: { nodeId: input.nodeId, field: 'file', sha256: input.file.sha256, decodedImage: decodedInput },
+    ...(referenceCount
+      ? {
+          referenceBindings: references.map((reference, index) => ({
+            nodeId: reference.nodeId,
+            field: 'file',
+            inputIndex: index + 1,
+            sha256: reference.file.sha256,
+            decodedImage: decodedReferences[index],
+          })),
+        }
+      : {}),
     ...(masked
       ? {
           maskBinding: {
@@ -831,6 +986,7 @@ export async function readPrivateImageEditEvidence({ clientRoot, manifest, graph
       ...(masked
         ? { maskByteWitness: savedPng ? 'native-load-and-upload-with-typed-wire' : 'native-load-consumer-and-upload' }
         : {}),
+      ...(route.retainedFormMode ? { retainedStudioFormMode: route.retainedFormMode } : {}),
       ...(savedPng
         ? { independentConsumerPixels: false, configuredUnobservedControls: route.unobservedControls ?? [] }
         : {}),

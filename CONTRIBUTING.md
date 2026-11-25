@@ -535,6 +535,8 @@ eligible, promote local review receipts, or change ordinary template recording
 and Gallery publication policy.
 
 The release contract records `missingReleaseEvidence` for each held workflow.
+It uses one offline frontend compiler per receipt batch and still validates
+every retained graph, model record and output file separately.
 The release-candidate report exposes that list as `incompleteWorkflowEvidence`
 and reports standalone execution under `coverage.standaloneExecution`. Its
 `awaitingReleaseEligibility` count identifies verified standalone workflows that
@@ -561,6 +563,12 @@ AnimateDiff prompt and source-video receipts bind the base model and motion
 adapter revisions. For a saved edit, the original upload and typed video wire
 bind the source. The receipt records unavailable sampler observations, such
 as the effective PAG controls or normalized source frames.
+
+Saved JoyImage Plus edits retain reference files in Load order, including
+the source image before the material reference. The proof binds each upload
+and native decode to the typed Edit connection. The archived two-reference
+run carries an older Image Edit label in its form. The executable graph and
+observed sampler identify the two-reference task.
 
 The reviewed Marigold synthetic ramp, SmolLM2 rain-gauge, Spandrel
 Real-ESRGAN 2×, Whisper Tiny transcription and LCM dawn edit use declarations in

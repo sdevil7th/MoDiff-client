@@ -386,6 +386,13 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['AllegroPipeline:text_to_video', 'MODIFF_ALLEGRO_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['SanaVideoPipeline:text_to_video', 'MODIFF_SANA_VIDEO_PROMPT_EVIDENCE', 'video'],
+  [
+    'SanaImageToVideoPipeline:image_to_video',
+    'MODIFF_SANA_OPENING_IMAGE_EVIDENCE',
+    'video',
+    'real_backend_input_bound_model_variant',
+  ],
   ['CogVideoXPipeline:text_to_video', 'MODIFF_COGVIDEOX_VIDEO_PROMPT_EVIDENCE', 'video'],
   ['AnimateDiffPAGPipeline:text_to_video', 'MODIFF_ANIMATEDIFF_PAG_VIDEO_EVIDENCE', 'video'],
   [
@@ -456,6 +463,13 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         assert.equal(original.receipt.decodedOutput.frames, 88);
         assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
         assert.match(original.receipt.negativePromptBinding.sha256, /^[a-f0-9]{64}$/u);
+      }
+      const sanaOpeningImage = workflowId === 'SanaImageToVideoPipeline:image_to_video';
+      if (sanaOpeningImage) {
+        assert.equal(original.receipt.decodedOutput.frames, 81);
+        assert.equal(original.receipt.negativePromptBinding.field, 'negative_prompt');
+        assert.equal(original.receipt.observationLimits.openingImageLoadFieldsObserved, true);
+        assert.equal(original.receipt.observationLimits.samplerInputPixelsObserved, false);
       }
       if (workflowId.startsWith('AnimateDiff')) {
         assert.equal(original.receipt.modelSet.length, 2);
@@ -573,11 +587,13 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
         writeFileSync(changedPath, JSON.stringify(substituted));
         await assert.rejects(
           () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
-          kind === 'video'
-            ? /Archived video upload differs/u
-            : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
-              ? /Caption source bytes differ from the native load|Archived authoring requires the exact original capture/u
-              : /Caption source bytes differ from the native load/u,
+          sanaOpeningImage
+            ? /Opening image differs from the retained Load fields/u
+            : kind === 'video'
+              ? /Archived video upload differs/u
+              : workflowId === 'HuggingFaceAnyToAnyModel:image_to_text'
+                ? /Caption source bytes differ from the native load|Archived authoring requires the exact original capture/u
+                : /Caption source bytes differ from the native load/u,
         );
         writeFileSync(path, originalBytes);
       }

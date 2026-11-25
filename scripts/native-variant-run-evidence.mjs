@@ -48,6 +48,7 @@ export function validateUnmodifiedExpertPreparation(preparation, modelType, prev
 // readers must separately bind the submitted graph, model and consumed inputs.
 export function validateNativeVariantRun({
   target,
+  expectedFormMode = target.task,
   outputNodeId,
   displayType,
   creator,
@@ -72,7 +73,7 @@ export function validateNativeVariantRun({
   same(outputPackage.apiGraph, submitted, 'Original package API graph differs.');
   same(outputPackage.graph, output.graphSnapshot, 'Original package visual graph differs.');
   same(creator.metadata?.studio, output.formSnapshot, 'Creator form differs from the persisted output.');
-  assert.equal(output.formSnapshot.mode, target.task);
+  assert.equal(output.formSnapshot.mode, expectedFormMode);
   assert.equal(output.formSnapshot.modelType, target.modelType);
   assert.equal(output.formSnapshot.resourceMode, 'expert');
   assert.equal(task.status, 'completed');
