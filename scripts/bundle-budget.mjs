@@ -493,6 +493,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // Approved retained templates and their exact input bindings measure 571013 bytes.
+  7624 +
   // The retained Glasshouse Keeper recipe and motion bindings add 720 bytes (562669 to 563389).
   720 +
   // The approved native video and 2× upscale catalog measures 562669 bytes.
@@ -803,6 +805,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The expanded catalogue measures 749498 total startup gzip bytes.
+  7622 +
   // The same change adds 721 bytes across the startup closure (741155 to 741876).
   721 +
   // The same video catalog measures 741155 total startup bytes.
