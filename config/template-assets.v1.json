@@ -192,6 +192,15 @@
       ]
     },
     {
+      "path": "template-gallery/animatediff_pag_snowmelt_over_river_stones.mp4",
+      "size": 1062279,
+      "sha256": "sha256:bytes:89f219daf95b6017deaca023289cb1bb44d0e465195dae61b9bd0e64eabb9aef",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/animatediff_red_tram_in_watercolor.mp4",
       "size": 70088,
       "sha256": "sha256:bytes:88ddfb68b18872e653bcc7c9c05299f7e84186e3d54ac6f31c33ea9390c1e3be",
@@ -204,6 +213,15 @@
       "path": "template-gallery/animatediff_red_tram_through_snow.mp4",
       "size": 110415,
       "sha256": "sha256:bytes:3082836cafeb4561f57b53b62da63e83602ad4b61c7af02fe2fc75ff83375cb6",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/animatelcm_sunlit_surf.mp4",
+      "size": 872096,
+      "sha256": "sha256:bytes:f3d865965b9a15d9688a1c1944e530bdcccff14e6c7792efe2069ef042f80926",
       "contentType": "video/mp4",
       "purposes": [
         "runtime"
@@ -252,6 +270,17 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/chroma_copper_medallion_outpaint.webp",
+      "size": 73742,
+      "sha256": "sha256:bytes:c81e3852d6455e213f25a3da135b7a66f65e1aec3477a1a21335606a3259775f",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 768
     },
     {
       "path": "template-gallery/chroma_restored_cobalt_backdrop.webp",
@@ -602,6 +631,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/flux_dev_forest_green_teapot.webp",
+      "size": 142004,
+      "sha256": "sha256:bytes:43d9a0136c684014d436b8f01142ac239e2833d76b3c071a41df747fa3656565",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/flux_fill_inpaint.webp",
       "size": 189448,
       "sha256": "sha256:bytes:edad9352bd415cd468829ad139fc8d201d3e067d7a9d174d790f6dae4f09fc15",
@@ -638,6 +678,17 @@
       "path": "template-gallery/flux_klein_open_glacial_lake.webp",
       "size": 420904,
       "sha256": "sha256:bytes:32041e979ea1b3c51030e7d64eb3edee675d5c4cdc7abb596817b4e0769ce65b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_kontext_bookshop_clear_glass.webp",
+      "size": 552568,
+      "sha256": "sha256:bytes:ec9c8cb45d16a96a87ce1cfba214dbbb14693125c9b16d3bc75d25a502e61788",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1690,6 +1741,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/chroma_copper_medallion_outpaint.before.png",
+      "size": 313225,
+      "sha256": "sha256:bytes:a8aaf9be57bc6bab356c5c1f9b76a1458e7e85e9daf6681e7e38a28fc28e1535",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 832,
+      "height": 768
+    },
+    {
       "path": "template-gallery/inputs/chroma_restored_cobalt_backdrop.before.png",
       "size": 623267,
       "sha256": "sha256:bytes:e75c20f0e8a74e283b996bf526e6ea74535ed24125ad97c2d92508d3435d7a87",
@@ -1909,6 +1971,17 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/flux_dev_forest_green_teapot.before.webp",
+      "size": 143918,
+      "sha256": "sha256:bytes:443062a26e22e3542e284f50d0274b7c70b881b3cce76568eb8eb22ce4c396d6",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/flux_fill_inpaint.before.webp",
       "size": 142192,
       "sha256": "sha256:bytes:b7c221b367738177e32fece56067d743df96282a6ccb2afd040ee89ea0a8f678",
@@ -1956,6 +2029,28 @@
       "path": "template-gallery/inputs/flux_klein_open_glacial_lake.mask.png",
       "size": 4475,
       "sha256": "sha256:bytes:877d3c4e0e976d3885419f3f327d8974394d69aca35667e5479b944880d84e04",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_kontext_bookshop_clear_glass.before.webp",
+      "size": 569776,
+      "sha256": "sha256:bytes:ff045be510a0e88cbab69bbe8c3794dd26bd19036bdec26a63a5b6ea5a11bc66",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/flux_kontext_bookshop_clear_glass.mask.png",
+      "size": 1441,
+      "sha256": "sha256:bytes:6f9114963580bd8942bc25e31e67a7fa2f7fdea73c775dd49bb9972c65829578",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -2118,6 +2213,37 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx2_enamel_teapot_window_light.first.png",
+      "size": 611837,
+      "sha256": "sha256:bytes:7be24582bd4f26633a636c4110e38baecd94e6c6b3fd35450848f97bc07f2855",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx2_glasshouse_drip.first.png",
+      "size": 2109128,
+      "sha256": "sha256:bytes:124d647abcc3d14dcd8388d749814e0b11bc5df820d126e9542ca2f333f73c73",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/ltx2_moss_and_basalt.before.mp4",
+      "size": 579374,
+      "sha256": "sha256:bytes:3b5e40ac2bf76236d1f901a7a2522addd7c4a1b2701bd89a33c1506b1523bc38",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
     },
     {
       "path": "template-gallery/inputs/ltx_boardwalk_tracking.end.webp",
@@ -2836,9 +2962,42 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/inputs/sdxl_pag_lighthouse_in_graphite.before.png",
+      "size": 1663180,
+      "sha256": "sha256:bytes:4cbc984b44c398b6e92b4350513d3543139e9dffe01a38857845c8a7698272c8",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/inputs/sdxl_pag_snow_cabin.before.png",
       "size": 8404,
       "sha256": "sha256:bytes:ca250462efc77625134ebe305b2ee67281a1dcf8919e45299c648f0fdacf919a",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_pag_two_tier_cobalt_glass.before.png",
+      "size": 613011,
+      "sha256": "sha256:bytes:ff30b36f685b657db6de0cb59dff37601e147123ba19b9c42a32fc1060bd323e",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/inputs/sdxl_pag_two_tier_cobalt_glass.guide.png",
+      "size": 6118,
+      "sha256": "sha256:bytes:64e81c4250408ca9a2ffc11e2987413096ae65674c2935a0417a351a50bb3ba4",
       "contentType": "image/png",
       "purposes": [
         "runtime"
@@ -2928,6 +3087,35 @@
     },
     {
       "path": "template-gallery/inputs/wan_animate_glasshouse_keeper.pose.mp4",
+      "size": 59742,
+      "sha256": "sha256:bytes:2fd6db2696b9a6bc7457bb8b747af5cd7ec4ec5603e86b06f01e591f17ed39f2",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_signal_through_the_rain.face.mp4",
+      "size": 23786,
+      "sha256": "sha256:bytes:523c3b8d098977aa228f4319b81e675cb31ea96394eda45125dbfa24721d0d68",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_signal_through_the_rain.first.png",
+      "size": 484717,
+      "sha256": "sha256:bytes:5e73a03d1c557ef5572faad8f7b270ceb33be54e311982450fb5df2ba799d668",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 768,
+      "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/wan_animate_signal_through_the_rain.pose.mp4",
       "size": 59742,
       "sha256": "sha256:bytes:2fd6db2696b9a6bc7457bb8b747af5cd7ec4ec5603e86b06f01e591f17ed39f2",
       "contentType": "video/mp4",
@@ -3144,6 +3332,15 @@
       "height": 768
     },
     {
+      "path": "template-gallery/latte_water_folding_over_slate.mp4",
+      "size": 714235,
+      "sha256": "sha256:bytes:97cd72f79c9389e0c4f502be0759f4764e00861217cee1e11ce563b54d2d86b8",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/layers/qwen_layered_portrait.native-layer-00.webp",
       "size": 103484,
       "sha256": "sha256:bytes:ba904a37ab5bc2905458dfab79179aba4c268bcf409aa0444549664797eb5dea",
@@ -3305,6 +3502,51 @@
       ],
       "width": 1024,
       "height": 1024
+    },
+    {
+      "path": "template-gallery/ltx2_enamel_teapot_window_light.mp4",
+      "size": 3941814,
+      "sha256": "sha256:bytes:de941b83125f6a84a29c978f968541028dd6c1e41b5e3c4c95ba686ccb69274f",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx2_glasshouse_drip.mp4",
+      "size": 5764256,
+      "sha256": "sha256:bytes:189410c3652a33b15d16ec0ad6c71b304d9ed2684f04247704202836d498b91c",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx2_kiln_at_first_light.mp4",
+      "size": 1273728,
+      "sha256": "sha256:bytes:75c9bf0b44b5b4c7bcab8c8d7d1381d1b2695bc62d5a251916121c11b79178ed",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx2_moss_and_basalt.mp4",
+      "size": 4920421,
+      "sha256": "sha256:bytes:e197eb3cb4ddaf13e4f0e4a71a4c92d30b1cae04dea651fd987213d84d262b09",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/ltx2_surf_below_the_breakwater.mp4",
+      "size": 7510392,
+      "sha256": "sha256:bytes:a8d3e7c63417bad7a8a949738fe4cf6f5beb8aa1694476a5289e7037d64dfcd9",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
     },
     {
       "path": "template-gallery/ltx_video_animated_story.card-poster.png",
@@ -3559,8 +3801,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 483020,
-      "sha256": "sha256:bytes:100626a0d35d6d31c18d319b76965055e00968228edfb926c0469dfda09c6561",
+      "size": 519522,
+      "sha256": "sha256:bytes:aced8ad0f0bbd93c7c98853b8d17c72da6cbc1c276f77cf0b3becd1bf889867e",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -4495,6 +4737,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/animatediff_pag_snowmelt_over_river_stones.original-provenance.json",
+      "size": 2460,
+      "sha256": "sha256:bytes:73a4c1a10f0a30ae90014daf6f8d7c113138636fe1b533efe7bb1aa9a8fe4a7f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_pag_snowmelt_over_river_stones.original-review.json",
+      "size": 609,
+      "sha256": "sha256:bytes:19924850a8ecddec18e16ebe09af4050343b542b56bc5e5acd30e18976c8e6f9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_pag_snowmelt_over_river_stones.quality-review.json",
+      "size": 2575,
+      "sha256": "sha256:bytes:278a3dd1683bbe793b8a0ba89d857cc3b2a46262b489f0dcc3e985188c5ffaf6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatediff_pag_snowmelt_over_river_stones.retained-template-provenance.json",
+      "size": 4096,
+      "sha256": "sha256:bytes:9c3ffb884931cb7445f67de31986283eba87d34a67fcbd4212a17a48f324d46a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/animatediff_red_tram_in_watercolor.original-provenance.json",
       "size": 1424,
       "sha256": "sha256:bytes:e7a460bbb4657cda566f0c90b57d820aa0000785df2737e2ad7777296897f8a4",
@@ -4561,6 +4839,42 @@
       "path": "template-gallery/reviews/animatediff_red_tram_through_snow.retained-template-provenance.json",
       "size": 4630,
       "sha256": "sha256:bytes:aa34be488b31fd42a12a1db6ff4c0b0ba2ec653439f4a62011698aeb46b71baa",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatelcm_sunlit_surf.original-provenance.json",
+      "size": 2718,
+      "sha256": "sha256:bytes:ccbd715d022d2d0121c473a75ad2f06c9a1dbb782b43b5c626726b6df2888ded",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatelcm_sunlit_surf.original-review.json",
+      "size": 658,
+      "sha256": "sha256:bytes:273d0f2980b99943ead3cee2ce02a3cb67414cdd3ee3d258f555d168757ec1c8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatelcm_sunlit_surf.quality-review.json",
+      "size": 2572,
+      "sha256": "sha256:bytes:491737730d41fb96fb03a8f220ba78248c72619a34be55a8cc64111d822b913b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/animatelcm_sunlit_surf.retained-template-provenance.json",
+      "size": 3894,
+      "sha256": "sha256:bytes:0d7bf5194255e03658f6934d1be023dbf4ee556c39b4ff2ad54c10f2e8da3ede",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -4687,6 +5001,42 @@
       "path": "template-gallery/reviews/chroma_alpine_block_print.retained-template-provenance.json",
       "size": 3669,
       "sha256": "sha256:bytes:d8643c8c82d299a62068afd7b38de0d24fcfd6882585370e73fbe63402726e4a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_copper_medallion_outpaint.original-provenance.json",
+      "size": 2229,
+      "sha256": "sha256:bytes:ce863e2679e5452c432729c3096dac08a7361d2e23dbee80a24230057c77cec9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_copper_medallion_outpaint.original-review.json",
+      "size": 650,
+      "sha256": "sha256:bytes:0e9ec0c5a89f56c48135a248e3418af86261bb649601e757cd8ee3e41b9fcbdd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_copper_medallion_outpaint.quality-review.json",
+      "size": 2581,
+      "sha256": "sha256:bytes:09fc86de80eb03a9ae7346e73a1fa4f275e43252829b45b253e103496d9a60f1",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/chroma_copper_medallion_outpaint.retained-template-provenance.json",
+      "size": 4008,
+      "sha256": "sha256:bytes:729aad830c6768451f07c0ce0b5585e1cb6acc96511f3d4c5eb859562920d077",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -5467,6 +5817,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/flux_dev_forest_green_teapot.original-provenance.json",
+      "size": 1312,
+      "sha256": "sha256:bytes:28609162b2b43dace4e077983617ab5160c9af14e1547f422809d4b7a972c73f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_dev_forest_green_teapot.original-review.json",
+      "size": 540,
+      "sha256": "sha256:bytes:f6798fd9a441c2af0f5d766201406c7935c257ee0c67125571aefe6df6226b27",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_dev_forest_green_teapot.quality-review.json",
+      "size": 2619,
+      "sha256": "sha256:bytes:585a69e794e648da35ca0890b5d86ac00a456369bf7e4b7ddfc2e27c0e2779cf",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_dev_forest_green_teapot.retained-template-provenance.json",
+      "size": 3717,
+      "sha256": "sha256:bytes:fef44975f3e9e55d2f8144ecaa9a9c1907e4312add999370ca4d4da6cb67e721",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/flux_fill_inpaint.quality-review.json",
       "size": 5326,
       "sha256": "sha256:bytes:118df046dca340d5130af71eefea56e4d0182c2beb9b01ac4de9da102fb002ff",
@@ -5569,6 +5955,42 @@
       "path": "template-gallery/reviews/flux_klein_open_glacial_lake.retained-template-provenance.json",
       "size": 4104,
       "sha256": "sha256:bytes:cce6957687fe79ea590c44ce56f1ac0c594f6df854c4e367e88c4509c0b880c2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_bookshop_clear_glass.original-provenance.json",
+      "size": 1608,
+      "sha256": "sha256:bytes:d55fd398015906cdcda745266d74bb35e8fb98f5c013d850104e8b2f88ba6d54",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_bookshop_clear_glass.original-review.json",
+      "size": 744,
+      "sha256": "sha256:bytes:b5edb7c5b069232e188bc5026cbf7c2bf8f8c48734045204c33caf6a7a7b86d2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_bookshop_clear_glass.quality-review.json",
+      "size": 2572,
+      "sha256": "sha256:bytes:e120dbcafe857f60c9e705d7fce6a5935d80010588003902d33573882e53674a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_kontext_bookshop_clear_glass.retained-template-provenance.json",
+      "size": 4183,
+      "sha256": "sha256:bytes:706c47754ac4f8c85e7d41846a2085f544e52c132178beff600c249cd29b25d0",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -6387,6 +6809,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/latte_water_folding_over_slate.original-provenance.json",
+      "size": 1675,
+      "sha256": "sha256:bytes:78b4bc4724cd17a1257feccd32ddc38735c5df0e4144c27d5d0d8d3ee1fd2ef9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/latte_water_folding_over_slate.original-review.json",
+      "size": 554,
+      "sha256": "sha256:bytes:999a0678c180f2fbdba3fe72331f42d997a671785f837f261beec272e97cb95a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/latte_water_folding_over_slate.quality-review.json",
+      "size": 2578,
+      "sha256": "sha256:bytes:2e2c24315e418c9cf93eb6e742d453a52b43dcfabf21b85d0fc33f9e048dcdc2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/latte_water_folding_over_slate.retained-template-provenance.json",
+      "size": 3491,
+      "sha256": "sha256:bytes:8f4dd40d5f9ba67c1001b7d41730c004cebe9bda2a8756b5c32caa4041f2b6b5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/lcm_dawn_alpine_lake.quality-review.json",
       "size": 2982,
       "sha256": "sha256:bytes:e5c590a6287147faad9d5eab5676b8d2bb8224a8581a2043cf78c8dd50dcb0b9",
@@ -6525,6 +6983,186 @@
       "path": "template-gallery/reviews/low_vram.reviewed-provenance.json",
       "size": 100927,
       "sha256": "sha256:bytes:a07f1942cb39c873d7ccd1b99dbece3c203d73296712aa0168a3edf4054b8076",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_enamel_teapot_window_light.original-provenance.json",
+      "size": 2397,
+      "sha256": "sha256:bytes:1fbe54b9ca2549c6966faf71d0bcbbde7a9c60b2ff64e3bd27086ed97c81aa26",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_enamel_teapot_window_light.original-review.json",
+      "size": 802,
+      "sha256": "sha256:bytes:267b0c3024607fabad7de1a91cc01b0523b7e8aabb82ae45f0ab79522496bf56",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_enamel_teapot_window_light.quality-review.json",
+      "size": 3265,
+      "sha256": "sha256:bytes:9b54148c2f192cefa6d83b75ded11a7a45bb048327dd164c4095702c76b98e65",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_enamel_teapot_window_light.retained-template-provenance.json",
+      "size": 4504,
+      "sha256": "sha256:bytes:f09d8c8ab232f31491bffe08d4ab09b2e4385849905660c4454d63a6c7d57714",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_glasshouse_drip.original-provenance.json",
+      "size": 2116,
+      "sha256": "sha256:bytes:2d1b15c2d57f48e996da58f168af3a46124c5a05735f93c9e7278fcb8a7fc49b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_glasshouse_drip.original-review.json",
+      "size": 590,
+      "sha256": "sha256:bytes:b4f072e5c562496ea776a53b1cb5704dbba69e5d273191160afb3cb8f2524ad8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_glasshouse_drip.quality-review.json",
+      "size": 2751,
+      "sha256": "sha256:bytes:6caef4f4af6cf21f2de32684a374508b990d6ef392957a11ddbb217b5037a34d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_glasshouse_drip.retained-template-provenance.json",
+      "size": 4087,
+      "sha256": "sha256:bytes:06e0dc880d5f9233edba458c58390254af536a1657d217d6e2e315e68452d5c3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_kiln_at_first_light.original-provenance.json",
+      "size": 2033,
+      "sha256": "sha256:bytes:9b3de62f3b8a92705c227b1c737a62113ae2af8e09ce19a82f3ec60f7dd12681",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_kiln_at_first_light.original-review.json",
+      "size": 604,
+      "sha256": "sha256:bytes:fd00080cb70166bef3d980c54eae560171173d4e716a0c2de027b45b455d2035",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_kiln_at_first_light.quality-review.json",
+      "size": 2850,
+      "sha256": "sha256:bytes:9838d274b6b603d9842987b9248a067f146364c87ba39edce523c5994771e4e5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_kiln_at_first_light.retained-template-provenance.json",
+      "size": 3877,
+      "sha256": "sha256:bytes:e00c10faebe723569e24af1c9266f4dc0b2477558fd861250984392488f97d2c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_moss_and_basalt.original-provenance.json",
+      "size": 3482,
+      "sha256": "sha256:bytes:479f80077697b798779e8eff2a07867a7e49b04e0aff6adb7588e294d44af590",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_moss_and_basalt.original-review.json",
+      "size": 816,
+      "sha256": "sha256:bytes:552f9f76f3033f5ca379a4c09b35c3ed9be3f2504481e5a6d3d45da35cc4b007",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_moss_and_basalt.quality-review.json",
+      "size": 3102,
+      "sha256": "sha256:bytes:9565db5dd4d9a378cdb9d4c17f3129a55b8d3d4cb72b4df5297e28994904ef85",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_moss_and_basalt.retained-template-provenance.json",
+      "size": 4449,
+      "sha256": "sha256:bytes:1ae833652317aef0279d320f60fcbd678045af0bdd4fa056ae3c1735634708c3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_surf_below_the_breakwater.original-provenance.json",
+      "size": 2043,
+      "sha256": "sha256:bytes:1d8ad8211ab76299edf0659f556f609b71d729a8db1c6f8404aac40d47dd36f6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_surf_below_the_breakwater.original-review.json",
+      "size": 509,
+      "sha256": "sha256:bytes:9dd1a9b09ae08f162a8f666e69e55cb2fbfe0dce933899aa32c58e3b4a38ea0f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_surf_below_the_breakwater.quality-review.json",
+      "size": 2706,
+      "sha256": "sha256:bytes:901cf95b6ba4baa4bda362e9fcae6b46e2d758c08612633d294e86abd70a9ba2",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ltx2_surf_below_the_breakwater.retained-template-provenance.json",
+      "size": 3905,
+      "sha256": "sha256:bytes:c5d870f9b90d13ecec6edf2bdf0dca17a3603ee1bc9ba0e0f1a956a9b7283dea",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -8493,6 +9131,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/sdxl_pag_lighthouse_in_graphite.original-provenance.json",
+      "size": 2754,
+      "sha256": "sha256:bytes:042e90f725818b6ec86db0f60b7b19cc59856e445c3b11c8f81bd11f6b817d18",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_lighthouse_in_graphite.original-review.json",
+      "size": 614,
+      "sha256": "sha256:bytes:02aece417b9581ebf7330fdcb4bac17e156a77564df88093d4748342c46011f6",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_lighthouse_in_graphite.quality-review.json",
+      "size": 2460,
+      "sha256": "sha256:bytes:fff347aeb1f18af04502cb973b04ebda279e36ddcfe30ccfdec6f2e13254f550",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_lighthouse_in_graphite.retained-template-provenance.json",
+      "size": 3771,
+      "sha256": "sha256:bytes:0a272b63747525e66ca2d17e43739ea139ac97497e02d08443f72486dc980530",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/sdxl_pag_snow_cabin.original-provenance.json",
       "size": 1325,
       "sha256": "sha256:bytes:9f8fc8e1ec02ce87e641958fdbded7f199cee15cde9e077cbb40b12e0e8d7d93",
@@ -8523,6 +9197,42 @@
       "path": "template-gallery/reviews/sdxl_pag_snow_cabin.retained-template-provenance.json",
       "size": 3678,
       "sha256": "sha256:bytes:d82c38326bd8b615ed7a934890b979e34f2870f8b0c7aa6f919f0b541d828905",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_two_tier_cobalt_glass.original-provenance.json",
+      "size": 2329,
+      "sha256": "sha256:bytes:d4964819e6cb3ce6ba2484f5cac7f9a7b5eb45a24760cc256e01d060c4ab797b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_two_tier_cobalt_glass.original-review.json",
+      "size": 664,
+      "sha256": "sha256:bytes:4b05631fe8df2205288c9afa83ffea0814cf681163cabc05a9c5b8cf5ec238c9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_two_tier_cobalt_glass.quality-review.json",
+      "size": 2595,
+      "sha256": "sha256:bytes:b146fa66a1c40921b090b5356a4d288e0bcf9ee27c3c3406d551188acb79eb5a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/sdxl_pag_two_tier_cobalt_glass.retained-template-provenance.json",
+      "size": 4075,
+      "sha256": "sha256:bytes:0e83d8ea9d2bd9e76097be0cf86fff4049d744c7be289dabb5f08039f6afc599",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -8867,6 +9577,42 @@
       "path": "template-gallery/reviews/wan_animate_glasshouse_keeper.retained-template-provenance.json",
       "size": 4925,
       "sha256": "sha256:bytes:cbc0bb0c647d903d9b6a26858b83d660ba333be4bdda28c14b3098f069f19970",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_signal_through_the_rain.original-provenance.json",
+      "size": 2614,
+      "sha256": "sha256:bytes:c6ade5109c32d17a15fbaebf57c45ee32cee41502f0be365a3ddee7c012d2c47",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_signal_through_the_rain.original-review.json",
+      "size": 837,
+      "sha256": "sha256:bytes:85d59351c41ffbb1c9910be7830d71b326910bebabd39f89fb1cc4a1db880914",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_signal_through_the_rain.quality-review.json",
+      "size": 2790,
+      "sha256": "sha256:bytes:d4949512728370151d4e5422724129744515972b08dee0fbba2fd5883ead261c",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/wan_animate_signal_through_the_rain.retained-template-provenance.json",
+      "size": 4484,
+      "sha256": "sha256:bytes:0e9f6bb00b8bd54c23aaf8c63cb3fb27d3c4a8adfdc103f63b61b6730413a483",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -10208,9 +10954,31 @@
       "height": 1024
     },
     {
+      "path": "template-gallery/sdxl_pag_lighthouse_in_graphite.webp",
+      "size": 447288,
+      "sha256": "sha256:bytes:6acd5e4afd90b2da12ba56d2efc594b9a3b0f99450b8aa373d0f6e6ae00abec2",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/sdxl_pag_snow_cabin.webp",
       "size": 329912,
       "sha256": "sha256:bytes:22b8ba630d466d07025f3d272878330192f5f0fec9bcea03cb13a38ce171d541",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/sdxl_pag_two_tier_cobalt_glass.webp",
+      "size": 116618,
+      "sha256": "sha256:bytes:2ac737f90e471c9f792b1d2a478645d7cc09c56889f31befc3266a0fef10ac2c",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -10711,6 +11479,15 @@
       ]
     },
     {
+      "path": "template-gallery/wan_animate_signal_through_the_rain.mp4",
+      "size": 287523,
+      "sha256": "sha256:bytes:a9e2a96cfba367aea3a8d5cdc9cc1cfbc60a288d50e056b82977d696a37b805b",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/wan_flf_blue_hour_at_the_tram_shelter.mp4",
       "size": 398821,
       "sha256": "sha256:bytes:a356ce3baa0be0556829715ccc72f1a9ccbe99625315cca04e3ee33a4e83f550",
@@ -11129,9 +11906,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:e0bc710e59c6913a8e011a9bf904a4ea0dbe484a5b1ba87b0d5b2eddf5e73fed",
+  "assetSetId": "sha256:canonical-json:9cc2b2a8c2a8a6e7b667dacf0b1916d3831ef00d5f1cfdad7bb40f0dec1ff6c0",
   "status": "ready",
-  "assetCount": 1145,
-  "totalBytes": 1136432102,
+  "assetCount": 1228,
+  "totalBytes": 1171462339,
   "missingAssets": []
 }
