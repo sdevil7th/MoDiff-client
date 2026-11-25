@@ -577,5 +577,13 @@
       "width": 1024,
       "height": 1024
     }
+  },
+  "longcat_last_tram_at_dusk": {
+    "associationSha256": "71e08a2d99e32542e3494718c24ba864ee1c24a5dded029f757272e78bf47b37",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:9ddcba2a3da4634780919a6872ed9a6586f7a765f16243cee9763b776d02b356",
+    "templateRevisionHash": "9d0f7b50afd87f366ecf6c0d66352d87dd2bdf0b4ae9a50f818619d6254d6b92",
+    "capturedAt": "2026-11-24T22:39:17.259Z",
+    "outputExtension": "wav"
   }
 }

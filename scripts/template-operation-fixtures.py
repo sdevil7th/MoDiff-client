@@ -92,6 +92,11 @@ with tempfile.TemporaryDirectory(prefix="modiff-template-schema-") as temporary:
                         row["imageContract"] = image_pipeline_contract(
                             get_image_pipeline_adapter(spec["pipelineClass"]), spec["mode"]
                         )
+                    if any(key == "modules.DiffusersAudio.LoadPipeline" for _, key, _, _ in spec["roles"]):
+                        from modules.DiffusersAudio.main import _audio_contract_signal, get_audio_pipeline_adapter
+
+                        adapter = get_audio_pipeline_adapter(spec["pipelineClass"])
+                        row["audioContract"] = _audio_contract_signal(adapter, spec["mode"], adapter.default_repo)
                     rows.append(row)
                     continue
                 starter = resolve_operation_starter(MODULE_MAP, contracts, {

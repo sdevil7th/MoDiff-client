@@ -218,5 +218,10 @@
     "descriptorSha256": "449bc094096e644f4070a681e382650d133c0854ec6770cfbb736f0299e04179",
     "bytes": 4729,
     "sha256": "e523fa1d31a2bb0c2ccbd2525ac0cce68fe57adc77332446239ddf62683f8a05"
+  },
+  "LongCatAudioDiTPipeline:text_to_audio": {
+    "descriptorSha256": "8019b9dbf5af0e8ba5c8eeed7132ec5578968ee0607309dd65327d69599a5c5d",
+    "bytes": 3894,
+    "sha256": "7512d2ef931525302161e9662c172403df5b608a374214a4a39b5bd71e014562"
   }
 }

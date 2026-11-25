@@ -221,6 +221,7 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
   const previousFlow = flow.getState();
   const previousNodes = nodeStore.getState();
   let contract;
+  let audioContract;
   const fieldActions = [];
   try {
     globalThis.WebSocket = undefined;
@@ -231,6 +232,26 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       );
       const payload = JSON.parse(options.body);
       fieldActions.push(payload.fn);
+      if (payload.module === 'modules.DiffusersAudio') {
+        assert.equal(payload.fn, 'update_audio_contract');
+        assert.ok(audioContract);
+        if (payload.action === 'LoadPipeline') {
+          assert.equal(payload.values.pipeline_class, audioContract.pipelineClass);
+          assert.equal(payload.values.mode, audioContract.mode);
+          flow.getState().setParam(
+            payload.node,
+            'pipeline',
+            { direction: 'output', origin: 'audio_contract', value: audioContract },
+            'signal',
+          );
+        } else {
+          assert.equal(payload.action, 'Generate');
+          if (payload.values.audio_contract !== audioContract.pipelineClass) {
+            assert.deepEqual(payload.values.audio_contract, audioContract);
+          }
+        }
+        return Response.json({ error: false, nodes: [] });
+      }
       assert.equal(payload.module, 'modules.DiffusersImage');
       assert.ok(contract);
       if (payload.fn === 'update_pipeline_contract') {
@@ -263,8 +284,13 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
     });
     for (const recipe of recipes) {
       const { template } = recipe;
-      const { spec, imageContract } = fixture.recipes.find((item) => item.id === template.id);
+      const {
+        spec,
+        imageContract,
+        audioContract: nextAudioContract,
+      } = fixture.recipes.find((item) => item.id === template.id);
       contract = imageContract;
+      audioContract = nextAudioContract;
       const inputBinding = template.inputBindings?.[0];
       const audio = inputBinding?.mediaType === 'audio';
       const guide = template.inputBindings?.some(({ field }) => field === 'controlImage')
@@ -327,6 +353,19 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.equal(loader.params.revision.value, template.modelArtifact.revision);
       assert.equal(loader.params.dtype.value, template.example.lockedSettings.dtype ?? 'float32');
       assert.equal(loader.params.device.value, form.device);
+      if (template.id === 'longcat_last_tram_at_dusk') {
+        const generation = api.nodes[binding.nodes.audioGenerate].params;
+        const output = api.nodes[binding.nodes.audioExport].params;
+        const locked = template.example.lockedSettings;
+        assert.equal(generation.prompt.value, template.prompt);
+        assert.equal(generation.stable_audio_steps.value, locked.steps);
+        assert.equal(generation.stable_audio_guidance.value, locked.guidanceScale);
+        assert.equal(generation.audio_duration.value, locked.audioDuration);
+        assert.equal(Number(generation.seed.value), template.example.lockedSeed);
+        assert.equal(generation.pipeline.sourceId, binding.nodes.audioPipeline);
+        assert.equal(output.audio.sourceId, binding.nodes.audioGenerate);
+        continue;
+      }
       if (approvedBatchIds.has(template.id) && !audio) {
         const actions = Object.values(api.nodes);
         const generation = actions.find(({ action }) =>

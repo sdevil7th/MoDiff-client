@@ -111,6 +111,15 @@ function assertRetainedBatchEvidence({
   if (association.output.mediaType === 'image') {
     assert.equal(nativeReceipt.decodedOutput.hash, association.output.decodedMediaHash, label);
   }
+  if (association.output.mediaType === 'audio') {
+    const { decodedMediaHash, durationSeconds, sampleRate, channels, outputEncodedSha256 } = association.output;
+    same(
+      nativeReceipt.decodedOutput,
+      { kind: 'audio', hash: decodedMediaHash, durationSeconds, sampleRate, channels },
+      label,
+    );
+    assert.equal(outputEncodedSha256, nativeReceipt.outputHash, label);
+  }
 }
 
 function assertRetainedSpandrelEvidence({ recipe, sourceWorkflow, association, entry, nativeReceipt }) {

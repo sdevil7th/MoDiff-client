@@ -2342,6 +2342,15 @@
       "height": 512
     },
     {
+      "path": "template-gallery/longcat_last_tram_at_dusk.wav",
+      "size": 237612,
+      "sha256": "sha256:bytes:6d7e8a05a49b111c59cda0fe69dfb7c5f92fb8e560ae468cf96a16bbd068a78b",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/low_vram.webp",
       "size": 230540,
       "sha256": "sha256:bytes:a69d58bfa342f850d807690080ca9aac583ca9fb69115e55904de315f71938e1",
@@ -2605,8 +2614,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 347462,
-      "sha256": "sha256:bytes:5270a2956e09da1470a48cad222156db9ed6951b21e14178a111fbaede1bb75f",
+      "size": 349730,
+      "sha256": "sha256:bytes:2f8c5d5a64412ebbd688cc81deb6d6d89fc9a5a1d8dccfcd6813b82a9e49740e",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -4559,6 +4568,42 @@
       "path": "template-gallery/reviews/lcm_dawn_alpine_lake.retained-template-provenance.json",
       "size": 5757,
       "sha256": "sha256:bytes:767b8d794460fca5a3e1c79a89aeaa2b1dcdb815d47702e1063ed35d07163247",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_last_tram_at_dusk.original-provenance.json",
+      "size": 1251,
+      "sha256": "sha256:bytes:34b322e643eacf47f4c02019564cb85720cb3b9b8334d524e47226d60c4faa60",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_last_tram_at_dusk.original-review.json",
+      "size": 541,
+      "sha256": "sha256:bytes:7ee2f38d8dd9199e6a754312dba9e962007389ba4527f0aebb96272b454394a5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_last_tram_at_dusk.quality-review.json",
+      "size": 2332,
+      "sha256": "sha256:bytes:f2883c589ff0313062b4c0c995b35ce08d837f02efb4f6f097d004961b8d298f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/longcat_last_tram_at_dusk.retained-template-provenance.json",
+      "size": 3457,
+      "sha256": "sha256:bytes:071240681910f119ab723f580b68bc1037896a28132a51fbb338e61bf9f8a0bf",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -7982,9 +8027,9 @@
       "height": 640
     }
   ],
-  "assetSetId": "sha256:canonical-json:42a99213cc747732b46d350cf1e908d2388ae363fdb0d6fb1200d084ca3971f2",
+  "assetSetId": "sha256:canonical-json:590bbae6d7144864057e6c8e48842d8f113fca303aaebedbb685222da06f3ece",
   "status": "ready",
-  "assetCount": 816,
-  "totalBytes": 1055193864,
+  "assetCount": 821,
+  "totalBytes": 1055441325,
   "missingAssets": []
 }

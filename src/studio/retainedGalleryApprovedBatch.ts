@@ -3846,4 +3846,81 @@ export const APPROVED_RETAINED_BATCH: RetainedGalleryRecipe[] = [
       runtimeReuseKey: 'sha256:canonical-graph-v1:9012c51eebe966a595a2fc5b93f9645e23a2fd6cc194e28ae0218f87b2495565',
     },
   },
+{
+  "workflowId": "LongCatAudioDiTPipeline:text_to_audio",
+  "sourceTaskTemplateId": "task-template:longcat-audio-dit-1b:text-to-audio:v1",
+  "retainedGraphHash": "sha256:canonical-graph-v1:2d149a078f6469b473a083b6116ef47452ae4ccc8a1ca0fc7b0ea416f5257515",
+  "originalReceiptSha256": "8019b9dbf5af0e8ba5c8eeed7132ec5578968ee0607309dd65327d69599a5c5d",
+  "reviewedTemplateSha256": "9d0f7b50afd87f366ecf6c0d66352d87dd2bdf0b4ae9a50f818619d6254d6b92",
+  "reviewedCatalogLock": {
+    "templateLockHash": "tpl_0738853e",
+    "galleryTemplateLockHash": "tpl_e6bfed44",
+    "promptSettingsHash": "ps_11aa3e00"
+  },
+  "promptSha256": "47545a310a3cffc0c8a458241c77dca330e10fe92fbc796239efb689bfb40949",
+  "template": {
+    "id": "longcat_last_tram_at_dusk",
+    "label": "LongCat AudioDiT 1B — Text to audio: Last Tram at Dusk",
+    "mode": "text_to_audio",
+    "modelType": "LongCatAudioDiTPipeline",
+    "intentGroup": "audio",
+    "thumbnailVariant": "audio",
+    "category": "audio_generation",
+    "outputKinds": [
+      "audio"
+    ],
+    "readinessPolicy": "runnable",
+    "modelArtifact": {
+      "source": "hub",
+      "value": "ruixiangma/LongCat-AudioDiT-1B-Diffusers",
+      "revision": "f4c063ea37f262ba5e6129ebd80095a6d6a9de4d"
+    },
+    "description": "Reproduce the reviewed Last Tram at Dusk example with the saved prompt, settings and model revision.",
+    "prompt": "The last tram leaves at dusk, so we will walk home beside the river.",
+    "negativePrompt": "",
+    "example": {
+      "mediaType": "audio",
+      "status": "unverified",
+      "modelRevision": "f4c063ea37f262ba5e6129ebd80095a6d6a9de4d",
+      "lockedSeed": 42,
+      "lockedSettings": {
+        "steps": 16,
+        "guidanceScale": 4,
+        "strength": 0.8,
+        "maxSequenceLength": 512,
+        "pagScale": 0,
+        "pagAdaptiveScale": 0,
+        "dtype": "bfloat16",
+        "resourceMode": "expert",
+        "quantizationMode": "none",
+        "autoOffload": true,
+        "offloadMode": "model_cpu",
+        "audioDuration": 5
+      },
+      "expectedOutput": {
+        "durationSeconds": 4.949333333333334,
+        "sampleRate": 24000
+      },
+      "runtimeEstimate": "9.73 seconds in the saved run"
+    },
+    "requiredBackendCapabilities": [
+      "modules.Audio.Export",
+      "modules.DiffusersAudio.Generate",
+      "modules.DiffusersAudio.LoadPipeline",
+      "modules.DiffusersRuntime.PipelineQuantizationConfigV2",
+      "modules.DiffusersRuntime.DiffusersExecutionRecipe"
+    ],
+    "mediaSlots": [
+      {
+        "id": "result",
+        "label": "Generated audio",
+        "kind": "audio",
+        "role": "output",
+        "placeholder": "Result pending"
+      }
+    ],
+    "recipeSummary": "Reproduce the reviewed Last Tram at Dusk example with the saved prompt, settings and model revision.",
+    "runtimeReuseKey": "sha256:canonical-graph-v1:2d149a078f6469b473a083b6116ef47452ae4ccc8a1ca0fc7b0ea416f5257515"
+  }
+},
 ];

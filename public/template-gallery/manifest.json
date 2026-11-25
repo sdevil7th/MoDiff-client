@@ -4448,6 +4448,34 @@
       "height": 1024,
       "approvedOriginalReviewPath": "/template-gallery/reviews/sdxl_canny_adapter_glass_study.original-review.json",
       "approvedOriginalProvenancePath": "/template-gallery/reviews/sdxl_canny_adapter_glass_study.original-provenance.json"
+    },
+    {
+      "templateId": "longcat_last_tram_at_dusk",
+      "templateLockHash": "tpl_e6bfed44",
+      "promptSettingsHash": "ps_11aa3e00",
+      "modelRevision": "ruixiangma/LongCat-AudioDiT-1B-Diffusers@f4c063ea37f262ba5e6129ebd80095a6d6a9de4d",
+      "runtimeFingerprint": "sha256:stable-runtime-v1:880a46e4923ce13be6f24b148b864a2d7abbfcb7aa6cf894905f3fff79fabaf9",
+      "graphHash": "sha256:canonical-graph-v1:2d149a078f6469b473a083b6116ef47452ae4ccc8a1ca0fc7b0ea416f5257515",
+      "proofLockHash": "sha256:retained-template-association-v1:95ffea69c60d414a0bd23077ca61f5ddd50586f06b4808e4b8dac121ebd75e85",
+      "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+      "backendContractFingerprint": "sha256:backend-contract-v1:9ddcba2a3da4634780919a6872ed9a6586f7a765f16243cee9763b776d02b356",
+      "modelCommit": "f4c063ea37f262ba5e6129ebd80095a6d6a9de4d",
+      "templateRevisionHash": "9d0f7b50afd87f366ecf6c0d66352d87dd2bdf0b4ae9a50f818619d6254d6b92",
+      "provenancePath": "/template-gallery/reviews/longcat_last_tram_at_dusk.retained-template-provenance.json",
+      "provenanceHash": "sha256:canonical-json:1842dacf80fa8b0d1fb3e355e7f07ea6c8c9c01d9d75cb7406537b6c66b6409a",
+      "outputPath": "/template-gallery/longcat_last_tram_at_dusk.wav",
+      "thumbnailPath": "/template-gallery/longcat_last_tram_at_dusk.wav",
+      "mediaHash": "sha256:decoded-audio-pcm-s16le-48000-stereo:776d0f13f0503cb46377d0121e83c0a871b5de2344a97c8de2cfd87abcd93040",
+      "mediaType": "audio",
+      "verificationTimestamp": "2026-11-24T22:39:17.259Z",
+      "verificationStatus": "reviewed",
+      "qualityReviewStatus": "approved_reviewed",
+      "qualityReviewHash": "sha256:canonical-json:c3329564cd8b05d18e1b3e91a3656290b0a0b1c735eee45082b78b1098ea8e41",
+      "qualityReviewPath": "/template-gallery/reviews/longcat_last_tram_at_dusk.quality-review.json",
+      "reviewer": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25T05:51:53.933Z",
+      "approvedOriginalReviewPath": "/template-gallery/reviews/longcat_last_tram_at_dusk.original-review.json",
+      "approvedOriginalProvenancePath": "/template-gallery/reviews/longcat_last_tram_at_dusk.original-provenance.json"
     }
   ]
 }
