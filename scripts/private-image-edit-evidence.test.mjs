@@ -489,6 +489,7 @@ for (const [workflowId, variable, hasMask, unobserved] of [
   ['LongCatImageEditPipeline:edit_image', 'MODIFF_SAVED_LONGCAT_EDIT_EVIDENCE', false, []],
   ['QwenImageModularPipeline:edit_image', 'MODIFF_QWEN_BOOKSHOP_EDIT_EVIDENCE', false, []],
   ['ChromaImg2ImgPipeline:edit_image', 'MODIFF_CHROMA_LARCH_EDIT_EVIDENCE', false, []],
+  ['DreamLitePipeline:edit_image', 'MODIFF_SAVED_DREAMLITE_COPPER_EDIT_EVIDENCE', false, []],
   ['JoyImageEditPipeline:edit_image', 'MODIFF_SAVED_JOY_BASE_EDIT_EVIDENCE', false, []],
   ['StableDiffusionXLPipeline:edit_image', 'MODIFF_SDXL_LINEN_EDIT_EVIDENCE', false, []],
   ['FluxDevPipeline:edit_image', 'MODIFF_SAVED_FLUX_DEV_TEAPOT_EVIDENCE', false, []],
@@ -730,6 +731,7 @@ for (const [model, task, variable] of [
   ['JoyImageEditPlusPipeline', 'edit_image', 'MODIFF_SAVED_JOY_PLUS_EDIT_EVIDENCE'],
   ['JoyImageEditPlusPipeline', 'multi_image_reference_edit', 'MODIFF_SAVED_JOY_PLUS_REFERENCES_EVIDENCE'],
   ['QwenImageEditPlusPipeline', 'multi_image_reference_edit', 'MODIFF_SAVED_QWEN_TERRACOTTA_EVIDENCE'],
+  ['OmniGenPipeline', 'multi_image_reference_edit', 'MODIFF_SAVED_OMNIGEN_ORDERED_REFERENCES_EVIDENCE'],
 ]) {
   const evidencePath = process.env[variable];
   test(`${model} verifies exact references in ${task}`, { skip: !evidencePath }, async () => {

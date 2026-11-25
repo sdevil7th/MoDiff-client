@@ -2212,6 +2212,29 @@ const plainImageInactive =
   );
 const plainImageLegacyNull = ['control_guidance_start', 'conditioning_scale', 'strength', 'control_guidance_end'];
 const pagScalars = ['pag_scale', 'pag_adaptive_scale'];
+const retainedDreamLiteMobileDefaults = {
+  workflowId: 'DreamLiteMobilePipeline:text_to_image',
+  modelType: 'DreamLiteMobilePipeline',
+  modelRepo: 'carlofkl/DreamLite-mobile',
+  modelRevision: '6695c3f4be230f0493fa5dbf78be3bc4d3bb2ab4',
+  retainedDefaultPrompt: '',
+  active: [...plainImageActive.filter((field) => field !== 'guidance_scale'), 'max_sequence_length'],
+  inactive: [...plainImageInactive, 'guidance_scale', 'negative_prompt'],
+  legacyNull: [...plainImageLegacyNull, 'guidance_scale', 'negative_prompt'],
+  savedGenerateBlock: true,
+  retainedObservationSource:
+    'sha256:backend-source-v1:fd16f3acc76e08525b28215b603104d281e8ab26169b03076a112edbb7d100bb',
+  dtype: 'bfloat16',
+  offload: 'model_cpu',
+  deviceMap: 'none',
+  generation: {
+    width: 1024,
+    height: 1024,
+    num_inference_steps: 4,
+    max_sequence_length: 200,
+    seed: 42,
+  },
+};
 export const directImagePromptRoutes = [
   {
     format: 'modiff.private.dreamlite-base-prompt-variant.v1',
@@ -3002,7 +3025,12 @@ function accountingDigest(kind, value) {
  * Native acceptance remains separate; the default factory path stays unchanged.
  */
 export function canonicalAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target, runtimeEvidence }) {
-  return imageAccountingExecutionPlan({ expectedApiGraph, apiGraph, consumed, target, runtimeEvidence });
+  const retainedDefaults =
+    target.workflowId === retainedDreamLiteMobileDefaults.workflowId ? retainedDreamLiteMobileDefaults : undefined;
+  return imageAccountingExecutionPlan(
+    { expectedApiGraph, apiGraph, consumed, target, runtimeEvidence },
+    retainedDefaults,
+  );
 }
 
 export function directImagePromptAccountingExecutionPlan(args) {
@@ -3053,7 +3081,9 @@ function imageAccountingExecutionPlan(
   );
   if (retainedGenerator) {
     assert.equal(
-      runtimeEvidence?.sourceFingerprint,
+      promptVariant.retainedDefaultPrompt === undefined
+        ? runtimeEvidence?.sourceFingerprint
+        : runtimeEvidence?.run?.task?.runtimeFingerprint?.backendSource?.fingerprint,
       promptVariant.retainedObservationSource,
       'Retained image source differs from the reviewed adapter.',
     );
@@ -3462,10 +3492,13 @@ function imageAccountingExecutionPlan(
     );
   }
   if (promptVariant) {
-    assert.ok(
-      typeof value(generate, 'prompt') === 'string' && value(generate, 'prompt').trim(),
-      'Direct image accounting needs the authored prompt.',
-    );
+    const prompt = value(generate, 'prompt');
+    if (promptVariant.retainedDefaultPrompt !== undefined) {
+      assert.ok(retainedGenerator, 'The historical default route requires its retained sampler record.');
+      assert.equal(prompt, promptVariant.retainedDefaultPrompt, 'The retained default prompt differs.');
+    } else {
+      assert.ok(typeof prompt === 'string' && prompt.trim(), 'Direct image accounting needs the authored prompt.');
+    }
     accountingKeys(
       generate.row.fields,
       [

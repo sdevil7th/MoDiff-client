@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { before, test } from 'node:test';
 import { protocolFactoryArguments } from './canonical-provenance-fixtures.mjs';
@@ -17,6 +17,38 @@ import { exportCanonicalWorkflowGraphs, readCanonicalWorkflowEvidence } from './
 
 const clientRoot = fileURLToPath(new URL('../', import.meta.url));
 const backendRoot = fileURLToPath(new URL('../../MoDiff/', import.meta.url));
+const dreamLiteMobileDefaults = process.env.MODIFF_DREAMLITE_MOBILE_DEFAULTS_EVIDENCE;
+test(
+  'the retained DreamLite Mobile default validates the original blank prompt without claiming full accounting',
+  {
+    skip: !dreamLiteMobileDefaults,
+  },
+  async () => {
+    const workflowId = 'DreamLiteMobilePipeline:text_to_image';
+    const { receipt, evidence } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId,
+      evidencePath: dreamLiteMobileDefaults,
+    });
+    assert.equal(receipt.proofKind, 'real_backend_weights');
+    assert.equal(receipt.observationLimits.fullConsumedFieldAccounting, false);
+    assert.ok(Object.values(receipt.qualificationClaims).every((value) => value === false));
+    const read = (ref) => JSON.parse(readFileSync(join(dirname(dreamLiteMobileDefaults), ref.path), 'utf8'));
+    const run = read(evidence.runDetail);
+    const output = run.outputs[0];
+    const completed = read(evidence.graphCompleted);
+    const apiGraph = output.apiGraphSnapshot;
+    const consumed = output.resolvedExecutionInputs;
+    const expectedApiGraph = { sid: apiGraph.sid, nodes: apiGraph.nodes, paths: apiGraph.paths };
+    const runtimeEvidence = { run, output, graphCompleted: completed };
+    const args = { expectedApiGraph, apiGraph, consumed, target: receipt, runtimeEvidence };
+    assert.equal(canonicalAccountingExecutionPlan(args).retainedGenerator, true);
+    run.task.runtimeFingerprint.backendSource.fingerprint = 'sha256:backend-source-v1:' + '0'.repeat(64);
+    assert.throws(() => canonicalAccountingExecutionPlan(args), /Retained image source differs/u);
+  },
+);
+
 const retainedProfiles = [
   {
     modelType: 'DDPMPipeline',

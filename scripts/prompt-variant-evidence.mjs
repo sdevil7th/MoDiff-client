@@ -247,6 +247,45 @@ const wanA14BOpeningRoute = {
   chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
 };
 
+const subwaySoundtrack = {
+  repoId: 'ACE-Step/acestep-v15-xl-turbo-diffusers',
+  revision: '200ba991ae448051e14b0183157e35c2d27c9fb0',
+  modelType: 'AceStepPipeline',
+};
+const wanSubwayRoute = {
+  ...wanA14BRoute,
+  format: 'modiff.private.wan-subway-soundtrack-variant.v1',
+  workflowId: 'WanTI2VPipeline:text_to_video',
+  modelType: 'WanTI2VPipeline',
+  modelRepo: 'Wan-AI/Wan2.2-TI2V-5B-Diffusers',
+  modelRevision: 'b8fff7315c768468a5333511427288870b2e9635',
+  sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+  retainedRegistryHash: '1c3c2335c07fde65bfddcdea34b2c9a51b91648c9afb04e0266e3fcbe1102b49',
+  baselinePromptHash: '893f3cf9925d3ddbd7c8ff60a052c5f4378ccb7731f907071b5936c19de33e22',
+  bindSeed: false,
+  soundtrack: subwaySoundtrack,
+  loaderContract: ['modules.DiffusersAudio.LoadPipeline', 'modules.DiffusersVideo.LoadPipeline'],
+  chain: [
+    ['audioQuantization', ...wanA14BRoute.chain[0].slice(1)],
+    ['audioRecipe', ...wanA14BRoute.chain[1].slice(1)],
+    [
+      'audioLoader',
+      'modules.DiffusersAudio',
+      'LoadPipeline',
+      'auto_offload device dtype enable_vae_tiling model_id offload_mode pipeline_class revision',
+    ],
+    [
+      'audioGenerator',
+      'modules.DiffusersAudio',
+      'Generate',
+      'prompt lyrics audio_duration vocal_language num_inference_steps guidance_scale shift task_type keyscale timesignature bpm seed sample_rate',
+    ],
+    ['audioFit', 'modules.Audio', 'FitDuration', ''],
+    ...wanA14BRoute.chain.slice(0, -1),
+    ['preview', 'modules.Video', 'ExportWithAudio', 'fps'],
+  ],
+};
+
 const ltxScheduledRoute = {
   ...wanA14BRoute,
   format: 'modiff.private.ltx-long-scheduled-image-variant.v1',
@@ -545,6 +584,7 @@ const promptModelSet = (profile) =>
   [
     ...(profile.motionAdapter ? [profile.motionAdapter] : []),
     ...(profile.controlAdapter ? [profile.controlAdapter] : []),
+    ...(profile.soundtrack ? [{ repoId: profile.soundtrack.repoId, revision: profile.soundtrack.revision }] : []),
     { repoId: profile.modelRepo, revision: profile.modelRevision },
     ...(profile.videoUpscaler
       ? [{ repoId: profile.videoUpscaler.file.value, revision: profile.videoUpscaler.file.revision }]
@@ -752,6 +792,18 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
     // The connected execution recipe wins over this retained loader fallback.
     assert.equal(bound.loader.node.params.enable_vae_tiling.value, true);
     same(consumed.ambiguousFields, ['vaeTiling']);
+  } else if (profile.soundtrack) {
+    same(consumed.ambiguousFields, [
+      'attentionBackend',
+      'guidanceScale',
+      'modelType',
+      'outputType',
+      'prompt',
+      'repo',
+      'revision',
+      'seed',
+      'steps',
+    ]);
   } else if (profile.retainedOffloadFallback) {
     assert.equal(bound.loader.node.params.offload_mode.value, profile.retainedOffloadFallback);
     assert.equal(bound.recipe.node.params.offload_mode.value, 'model_cpu');
@@ -819,6 +871,9 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
     if (profile.executedTask && id === bound.generator.id) {
       expected.executed_task = { value: profile.executedTask, source: 'literal' };
     }
+    if (profile.soundtrack && id === bound.audioGenerator.id) {
+      expected.output_type = { value: 'pt', source: 'literal' };
+    }
     if (profile === audioRoute && id === bound.generator.id) {
       assert.equal(node.params.negative_prompt.value, '');
       assert.equal(node.params.stable_audio_steps.value, 16);
@@ -850,6 +905,27 @@ function validateConsumedPromptVariant(profile, bound, output, suppliedImage) {
 
 function validateNativePromptRuntime(profile, bound, task, hints, graphCompleted, observations) {
   const controlledArtifacts = [];
+  if (profile.soundtrack) {
+    const { repoId, revision, modelType } = profile.soundtrack;
+    for (const [loader, repository, pin, pipelineClass] of [
+      [bound.audioLoader, repoId, revision, modelType],
+      [bound.loader, profile.modelRepo, profile.modelRevision, profile.modelType],
+    ]) {
+      const { module, action, params } = loader.node;
+      same(params.model_id.value, { source: 'hub', value: repository });
+      assert.equal(params.revision.value, pin);
+      assert.equal(params.pipeline_class.value, pipelineClass);
+      const payload = {
+        schemaVersion: 1,
+        kind: 'diffusers_pipeline',
+        module,
+        action,
+        artifact: { source: 'hub', repository, revision: pin },
+        pipelineClass,
+      };
+      controlledArtifacts.push({ ...payload, descriptorSha256: digest(stableStringify(payload)) });
+    }
+  }
   if (profile.videoUpscaler) {
     const { file, repoId: repository } = profile.videoUpscaler;
     const { module, action, params } = bound.upscaler.node;
@@ -1171,7 +1247,7 @@ export function validatePromptVariantVideo(decoded, item, bound) {
   return validateNativeVideoDelivery(decoded, item, { width: frameSize, height: frameSize, fps, frames: 20 });
 }
 
-export function validateNativeVideoDelivery(decoded, item, { width, height, fps, frames }) {
+export function validateNativeVideoDelivery(decoded, item, { width, height, fps, frames, soundtrack = false }) {
   const native = item.mediaMetadata;
   assert.equal(native.source, 'encoded-file');
   assert.equal(native.width, width);
@@ -1186,8 +1262,16 @@ export function validateNativeVideoDelivery(decoded, item, { width, height, fps,
   );
   assert.ok(Math.abs(decoded.durationSeconds - native.duration_seconds) <= 0.02);
   assert.equal(decoded.codecName, 'h264');
-  assert.equal(decoded.hasAudio, false);
+  assert.equal(decoded.hasAudio, soundtrack);
   assert.equal(decoded.uniqueFrameRatio, 1);
+  const audio = decoded.embeddedAudio;
+  if (soundtrack) {
+    assert.equal(audio?.sourceSampleRate, 48000);
+    assert.equal(audio.channels, 2);
+    assert.equal(audio.clippedSampleRatio, 0);
+    assert.ok(audio.peakAmplitude > 0.05 && audio.silenceRatio < 0.75);
+    assert.match(audio.hash, /^sha256:decoded-audio-pcm-s16le-48000-stereo:[a-f0-9]{64}$/u);
+  }
   return {
     kind: 'video',
     width: decoded.width,
@@ -1196,6 +1280,7 @@ export function validateNativeVideoDelivery(decoded, item, { width, height, fps,
     frames: decoded.frames,
     durationSeconds: decoded.durationSeconds,
     hash: decoded.hash,
+    ...(soundtrack ? { audio } : {}),
   };
 }
 
@@ -1215,6 +1300,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         audioLdmRoute,
         wanA14BRoute,
         wanA14BOpeningRoute,
+        wanSubwayRoute,
         ltxScheduledRoute,
         wanAnimateRoute,
         wanReplaceRoute,
@@ -1354,7 +1440,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
           graphAcknowledgment: json(evidence.graphAcknowledgment),
         }
       : {}),
-    ...(imageRoute || generatedVideo || profile === audioLdmRoute
+    ...(imageRoute || (generatedVideo && !profile.soundtrack) || profile === audioLdmRoute
       ? { validatePreparation: (preparation) => validateImagePromptPreparation(preparation, profile) }
       : {}),
     ...(profile === videoRoute || profile === audioRoute
@@ -1473,6 +1559,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   }
   if (!inputBinding) inputBinding = guideBinding;
   const nodeBytes = read(evidence.nodes).bytes;
+  if (profile.retainedRegistryHash) assert.equal(digest(nodeBytes), profile.retainedRegistryHash);
   const nodes = JSON.parse(nodeBytes);
   if (profile.replayedRuntimeContract) {
     same(json(evidence.registryReplay), {
@@ -1514,7 +1601,8 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         task,
       )
     : measurement.peakAllocatedBytes;
-  const media = read(outputRef.file, 2 * 1024 * 1024);
+  const mediaLimit = (profile.soundtrack ? 64 : 2) * 1024 * 1024;
+  const media = read(outputRef.file, mediaLimit);
   const item = validateNativeVariantOutput({
     output,
     outputRef,
@@ -1545,6 +1633,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         height: height.value * scale,
         frames: num_frames.value,
         fps: bound.preview.node.params.fps.value,
+        soundtrack: Boolean(profile.soundtrack),
       });
     } else decodedOutput = validatePromptVariantVideo(decoded, item, bound);
   } else if (generatedAudio) {
@@ -1577,7 +1666,9 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     }
     decodedOutput = { kind: 'image', hash: decoded.hash, width: decoded.width, height: decoded.height };
   }
-  for (const ref of retainedFiles) readCanonicalEvidenceFile(root, ref, 16 * 1024 * 1024);
+  for (const ref of retainedFiles) {
+    readCanonicalEvidenceFile(root, ref, ref.path === outputRef.file.path ? mediaLimit : 16 * 1024 * 1024);
+  }
   assert.ok(readFileSync(evidencePath).equals(descriptorBytes), 'Prompt variant descriptor changed during validation.');
   const receipt = {
     schemaVersion: 1,
@@ -1614,6 +1705,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     observationLimits: {
       fullConsumedFieldAccounting: Boolean(accounting && !accounting.retainedGenerator),
       physicalPlatformQualification: false,
+      ...(profile.soundtrack ? { configuredAudioFitObserved: false, audiovisualSynchronizationReviewed: false } : {}),
       ...(accounting?.retainedGenerator && imageRoute.typedOnly?.length
         ? { configuredUnobservedControls: [...imageRoute.typedOnly] }
         : {}),

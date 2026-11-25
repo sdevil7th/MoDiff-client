@@ -89,6 +89,19 @@ const retainedOutpaint = {
 };
 const editRoutes = new Map([
   [
+    'DreamLitePipeline:edit_image',
+    {
+      ...retainedImageEdit,
+      format: SAVED_WEBP_EDIT_FORMAT,
+      modelRepo: 'carlofkl/DreamLite-base',
+      modelRevision: '751cb8dbb9072a8c8ffd8684e0f254b50f20531b',
+      loaderClass: 'DreamLitePipeline',
+      sourceFingerprint: 'sha256:backend-source-v1:6c9e4842b9ebdfd2427b449dd490bef2b22ff3346d7c440bf4a90b2365184385',
+      originalRegistryHash: '946f902f4cd1c1e65f9b3b0413393278670905fd755e5bd9e5f506e2e72bc5e0',
+      fullNativeSnapshot: true,
+    },
+  ],
+  [
     'DreamLiteMobilePipeline:edit_image',
     {
       modelRepo: 'carlofkl/DreamLite-mobile',
@@ -287,6 +300,26 @@ const editRoutes = new Map([
       originalRegistryHash: 'c4e99d780fef75bce44f4c5e7414d99840a794999355308f69f03176bd573193',
       serverRetainedOutput: true,
       previousExpertFamily: 'ChromaImg2ImgPipeline',
+    },
+  ],
+  [
+    'OmniGenPipeline:multi_image_reference_edit',
+    {
+      ...retainedImageEdit,
+      modelRepo: 'Shitao/OmniGen-v1-diffusers',
+      modelRevision: '016e2f61d12a98303f6bbdf122687694d7984268',
+      loaderClass: 'OmniGenPipeline',
+      consumed: [...baseConsumed, 'width', 'height', 'guidance_scale'],
+      inactiveRecorded: ['negative_prompt', 'max_sequence_length', 'strength'],
+      orderedReferences: 1,
+      task: 'multi_image_reference_edit',
+      retainedFormMode: 'edit_image',
+      inputImagePromptPrefix: '<img><|image_1|></img> <img><|image_2|></img> ',
+      unobservedControls: ['image_guidance_scale'],
+      sourceFingerprint: 'sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7',
+      originalRegistryHash: 'c4e99d780fef75bce44f4c5e7414d99840a794999355308f69f03176bd573193',
+      fullNativeSnapshot: true,
+      previousExpertFamily: 'LongCatImagePipeline',
     },
   ],
   [

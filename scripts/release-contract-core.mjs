@@ -216,10 +216,16 @@ const immutableRevision = (value) => typeof value === 'string' && /^[a-f0-9]{40,
 
 export { canonicalAccountingExecutionPlan } from './live-proof-provenance.mjs';
 
+const reviewedReplacementSources = new Map([
+  ['WanImageToVideoPipeline:image_to_video', 'wan_22_i2v_seed_vault'],
+  ['WanTI2VPipeline:text_to_video', 'wan_22_ti2v_5b_seed_vault'],
+]);
+
 export function isReviewedReplacementSource(manifest, authoring) {
+  const reviewedSource = reviewedReplacementSources.get(manifest.id);
   return (
-    manifest.id === 'WanImageToVideoPipeline:image_to_video' &&
-    manifest.sourceTemplateId === 'wan_22_i2v_seed_vault' &&
+    reviewedSource !== undefined &&
+    manifest.sourceTemplateId === reviewedSource &&
     authoring?.canonicalWorkflowId === manifest.id &&
     authoring.replacementSourceTemplateId === manifest.sourceTemplateId
   );
@@ -578,6 +584,7 @@ export function validateCanonicalWorkflowEvidence({
     outputHash: provenance.output.collectionHash,
     executionDurationSeconds: provenance.execution.elapsedSeconds,
     peakMemoryBytes: provenance.execution.peakMemoryBytes,
+    ...(plan.retainedGenerator ? { observationLimits: { fullConsumedFieldAccounting: false } } : {}),
     qualificationClaims: {
       publicTemplate: false,
       qualityApproved: false,
@@ -924,6 +931,7 @@ export async function readCanonicalWorkflowEvidence({ clientRoot, backendRoot, w
       'modiff.private.audioldm2-prompt-variant.v1',
       'modiff.private.wan-a14b-video-prompt-variant.v1',
       'modiff.private.wan-a14b-opening-image-variant.v1',
+      'modiff.private.wan-subway-soundtrack-variant.v1',
       'modiff.private.ltx-long-scheduled-image-variant.v1',
       'modiff.private.wan-character-animate-inputs.v1',
       'modiff.private.wan-character-replace-inputs.v1',

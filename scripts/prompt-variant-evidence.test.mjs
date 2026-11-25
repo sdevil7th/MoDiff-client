@@ -385,6 +385,7 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
   ['HuggingFaceTextGenerationModel:text_generation', 'MODIFF_SMOLLM2_PROMPT_EVIDENCE', 'json'],
   ['ShapEPipeline:text_to_3d', 'MODIFF_SHAPE_PROMPT_EVIDENCE', 'video'],
   ['Wan22Pipeline:text_to_video', 'MODIFF_WAN_A14B_VIDEO_PROMPT_EVIDENCE', 'video'],
+  ['WanTI2VPipeline:text_to_video', 'MODIFF_WAN_SUBWAY_SOUNDTRACK_EVIDENCE', 'video'],
   [
     'WanImageToVideoPipeline:image_to_video',
     'MODIFF_WAN_A14B_OPENING_IMAGE_EVIDENCE',
@@ -506,7 +507,11 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
       const refs = original.retainedFiles;
       for (const ref of refs) {
         assert.match(ref.path, /^[a-z0-9.-]+$/iu);
-        const archived = readCanonicalEvidenceFile(dirname(evidencePath), ref);
+        const archiveLimit =
+          workflowId === 'WanTI2VPipeline:text_to_video' && ref.path === original.evidence.outputs[0].file.path
+            ? 64 * 1024 * 1024
+            : undefined;
+        const archived = readCanonicalEvidenceFile(dirname(evidencePath), ref, archiveLimit);
         writeFileSync(join(temp, ref.path), archived.bytes);
       }
       const changedPath = join(temp, 'evidence.json');
@@ -621,6 +626,18 @@ for (const [workflowId, variable, kind, proofKind = 'real_backend_prompt_bound_m
           assert.equal(original.receipt.observationLimits.normalizedConsumerFramesObserved, false);
           assert.equal(original.receipt.inputBinding.decodedVideo.frames, 16);
         }
+      }
+      if (workflowId === 'WanTI2VPipeline:text_to_video') {
+        assert.equal(original.receipt.modelSet.length, 2);
+        assert.equal(original.receipt.decodedOutput.audio.sourceSampleRate, 48000);
+        assert.equal(original.receipt.decodedOutput.audio.channels, 2);
+        assert.equal(original.receipt.observationLimits.audiovisualSynchronizationReviewed, false);
+        const [videoIdentity] = evidence.modelObservations;
+        writeFileSync(changedPath, JSON.stringify({ ...evidence, modelObservations: [videoIdentity, videoIdentity] }));
+        await assert.rejects(
+          () => readCanonicalWorkflowEvidence({ ...args, evidencePath: changedPath }),
+          /Expected a single installed identity/u,
+        );
       }
       const route = directImagePromptRoutes.find((row) => row.workflowId === workflowId);
       const cogVideo = workflowId === 'CogVideoXPipeline:text_to_video';
