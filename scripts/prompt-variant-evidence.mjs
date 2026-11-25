@@ -357,6 +357,14 @@ const wanSubwayRoute = {
   ],
 };
 
+const wanSubwayDefaultRoute = {
+  ...wanSubwayRoute,
+  format: 'modiff.private.wan-subway-soundtrack-default.v1',
+  canonicalDefaults: true,
+  sourceFingerprint: 'sha256:backend-source-v1:73c0d5622c9c305eb2c13478fbac4ca9ea09c71689c74d38679fa6af592c8964',
+  retainedRegistryHash: '0c7eb754b1eec427474be513ff6bd7837ce77ceb5f05853361616e302962fef4',
+};
+
 const ltxScheduledRoute = {
   ...wanA14BRoute,
   format: 'modiff.private.ltx-long-scheduled-image-variant.v1',
@@ -853,7 +861,8 @@ export function bindPromptVariant(
   const submittedOwners = owners(profile, output);
   const prompt = submittedOwners.generator.node.params.prompt.value;
   assert.ok(typeof prompt === 'string' && prompt.length <= 4096 && prompt.trim() === prompt);
-  if (profile.imageOnly) assert.equal(prompt, promptSlot.value);
+  if (profile.canonicalDefaults) assert.equal(prompt, promptSlot.value, 'Canonical prompt cannot be changed.');
+  else if (profile.imageOnly) assert.equal(prompt, promptSlot.value);
   else assert.ok(prompt.length > 0);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt), 'Prompt exercise contains an unsupported control character.');
   promptSlot.value = prompt;
@@ -884,6 +893,9 @@ export function bindPromptVariant(
     seedSlot.value = raw;
   }
   const identity = canonicalGraphIdentity(expected);
+  if (profile.canonicalDefaults) {
+    same(identity, canonicalGraphIdentity(original), 'Canonical settings and wires cannot be changed.');
+  }
   const mismatch = profile.bindsImage
     ? 'Image-bound variant changed the canonical graph outside its reviewed input and controls.'
     : profile.bindSeed
@@ -1429,6 +1441,10 @@ export function validateNativeVideoDelivery(
 
 export async function readPromptVariantEvidence({ clientRoot, manifest, graph, authoring, artifact, evidencePath }) {
   const target = canonicalWorkflowAuthoringContract(manifest, graph, authoring, artifact);
+  const stat = lstatSync(evidencePath);
+  assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= 65536);
+  const descriptorBytes = readFileSync(evidencePath);
+  const evidence = JSON.parse(descriptorBytes);
   const imageRoute = directImagePromptRoutes.find(({ workflowId }) => workflowId === target.workflowId);
   let profile = imageRoute
     ? { ...imagePromptRoute, ...imageRoute }
@@ -1444,7 +1460,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         stableAudioRoute,
         wanA14BRoute,
         wanA14BOpeningRoute,
-        wanSubwayRoute,
+        evidence.format === wanSubwayDefaultRoute.format ? wanSubwayDefaultRoute : wanSubwayRoute,
         ...ltx2AudioVideoRoutes,
         ltxScheduledRoute,
         wanAnimateRoute,
@@ -1485,10 +1501,6 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
   same(target.modelSet, promptModelSet(profile));
   assert.equal(target.outputPlan.minimumAssetCount, 1);
   assert.ok(target.outputPlan.mediaKinds.includes(profile.outputKind));
-  const stat = lstatSync(evidencePath);
-  assert.ok(stat.isFile() && !stat.isSymbolicLink() && stat.size > 0 && stat.size <= 65536);
-  const descriptorBytes = readFileSync(evidencePath);
-  const evidence = JSON.parse(descriptorBytes);
   keys(evidence, [
     'schemaVersion',
     'format',
@@ -1864,7 +1876,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     outputHash: item.mediaHash,
     executionDurationSeconds: measurement.elapsedSeconds,
     peakMemoryBytes,
-    canonicalDefaultsExecuted: false,
+    canonicalDefaultsExecuted: profile.canonicalDefaults === true,
     promptBinding: { nodeId: bound.generator.id, field: 'prompt', sha256: digest(bound.prompt) },
     ...(profile.bindNegativePrompt
       ? {

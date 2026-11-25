@@ -25,6 +25,30 @@ const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const backendRoot = resolve(process.env.MODIFF_BACKEND_DIR ?? join(clientRoot, '../MoDiff'));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 
+const subwayDefaultEvidence = process.env.MODIFF_WAN_SUBWAY_DEFAULT_EVIDENCE;
+test(
+  'the original Subway run verifies both pinned models and its unchanged template',
+  { skip: !subwayDefaultEvidence },
+  async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId: 'WanTI2VPipeline:text_to_video',
+      evidencePath: subwayDefaultEvidence,
+    });
+    assert.equal(receipt.taskId, 'q1OmLM7R0ueK');
+    assert.equal(receipt.sourceTemplateId, 'wan_22_ti2v_5b_seed_vault');
+    assert.equal(receipt.canonicalDefaultsExecuted, true);
+    assert.deepEqual(
+      receipt.modelSet.map(({ repoId }) => repoId),
+      ['ACE-Step/acestep-v15-xl-turbo-diffusers', 'Wan-AI/Wan2.2-TI2V-5B-Diffusers'],
+    );
+    assert.equal(receipt.decodedOutput.frames, 121);
+    assert.ok(receipt.decodedOutput.audio);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+  },
+);
+
 for (const [workflowId, environment, proofKind, output] of [
   [
     'StableAudioPipeline:text_to_audio',
@@ -141,6 +165,17 @@ test('a prompt variant fills a single empty literal and keeps all other fields a
   const baselineHash = canonicalGraphIdentity(baseline).hash;
   assert.equal(bindPromptVariant(profile, baseline, creator, submitted, baselineHash).prompt, 'One example');
   assert.equal(baseline.nodes.b.params.prompt.value, '');
+  const exactProfile = { ...profile, canonicalDefaults: true };
+  assert.throws(
+    () => bindPromptVariant(exactProfile, baseline, creator, submitted, baselineHash),
+    /Canonical prompt cannot be changed/u,
+  );
+  const exactSubmission = { ...structuredClone(baseline), runtimeHints: {} };
+  const changedDefault = { ...exactProfile, reviewedSettings: [['loader', 'device', 'cuda:0', 'cpu']] };
+  assert.throws(
+    () => bindPromptVariant(changedDefault, baseline, baseline, exactSubmission, baselineHash),
+    /Canonical settings and wires cannot be changed/u,
+  );
 
   const wrongControl = structuredClone(submitted);
   wrongControl.nodes.a.params.device.value = 'cpu';
