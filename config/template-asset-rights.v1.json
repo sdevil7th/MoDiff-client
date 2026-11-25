@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:ae0711e49b16b50a55cbdf0e7ca90b58b1b723e3a66b3385ca19662982e70c42",
+  "assetSetId": "sha256:canonical-json:b16429b50a2a5b58296739df4279f79fad5f7517d68bb2e5a54885d211aabb02",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -17,9 +17,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "MoDiff project name in the project-authored lyrics"
-      ],
+      "marks": ["MoDiff project name in the project-authored lyrics"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
@@ -139,9 +137,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Singer-style and training-song rights require upstream confirmation"
-      ],
+      "marks": ["Singer-style and training-song rights require upstream confirmation"],
       "requiredAttribution": [],
       "assetLicense": "upstream-terms-only",
       "reviewedBy": null,
@@ -164,9 +160,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Singer-style and training-song rights require upstream confirmation"
-      ],
+      "marks": ["Singer-style and training-song rights require upstream confirmation"],
       "requiredAttribution": [],
       "assetLicense": "upstream-terms-only",
       "reviewedBy": null,
@@ -364,9 +358,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "MoDiff project name in the project-authored lyrics"
-      ],
+      "marks": ["MoDiff project name in the project-authored lyrics"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
@@ -602,9 +594,7 @@
       "sourceUrl": "https://huggingface.co/cvssp/audioldm2/tree/c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceRevision": "cvssp/audioldm2@c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"
-      ],
+      "modelTerms": ["https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -737,9 +727,7 @@
       "sourceUrl": "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceRevision": "lodestones/Chroma1-HD@0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"
-      ],
+      "modelTerms": ["https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -1199,9 +1187,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1226,9 +1212,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1253,9 +1237,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1280,9 +1262,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1307,9 +1287,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1336,9 +1314,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1363,9 +1339,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1390,9 +1364,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1417,9 +1389,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1444,9 +1414,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -1777,9 +1745,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "not-applicable",
-      "marks": [
-        "Fictional ASTERMIST / LAVENDER SLEEP SPRAY product label"
-      ],
+      "marks": ["Fictional ASTERMIST / LAVENDER SLEEP SPRAY product label"],
       "requiredAttribution": [],
       "publicationBasis": "Existing maintainer publication authorization and current explicit instruction to register these three accepted assets; no new ownership or rights quotation is fabricated.",
       "path": "template-gallery/flux_kontext_edit.webp",
@@ -1804,9 +1770,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "not-applicable",
-      "marks": [
-        "Fictional ASTERMIST / LAVENDER SLEEP SPRAY product label"
-      ],
+      "marks": ["Fictional ASTERMIST / LAVENDER SLEEP SPRAY product label"],
       "requiredAttribution": [],
       "publicationBasis": "Existing maintainer publication authorization and current explicit instruction to register these three accepted assets; no new ownership or rights quotation is fabricated.",
       "path": "template-gallery/flux_kontext_multi_reference.webp",
@@ -1962,9 +1926,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Studio Ghibli style reference; no franchise character requested"
-      ],
+      "marks": ["Studio Ghibli style reference; no franchise character requested"],
       "requiredAttribution": [],
       "assetLicense": "upstream-terms-only",
       "reviewedBy": null,
@@ -1988,9 +1950,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Studio Ghibli style reference; no franchise character requested"
-      ],
+      "marks": ["Studio Ghibli style reference; no franchise character requested"],
       "requiredAttribution": [],
       "assetLicense": "upstream-terms-only",
       "reviewedBy": null,
@@ -2337,9 +2297,7 @@
       "sourceUrl": "https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceRevision": "zai-org/GLM-Image@2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"
-      ],
+      "modelTerms": ["mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -2658,9 +2616,7 @@
       "reviewedAt": "2026-11-13",
       "reviewClass": "per-file-maintainer-accepted-native-six-registration",
       "provenanceTemplateId": "flux_redux_edit",
-      "consumingTemplateIds": [
-        "flux_redux_edit"
-      ],
+      "consumingTemplateIds": ["flux_redux_edit"],
       "retainedOriginalPath": "template-gallery/inputs/flux_redux_edit.before.webp",
       "humanApprovalPacketSHA256": "03b66b4631afb15032d62a1705331b56f6b12c4882c23945175ec92cc45a506f",
       "publicationBasis": "Register the six approved assets now while Moonflower runs on Linux. Use Windows in parallel wherever possible, and keep the longer workflows separate for AMD cloud."
@@ -2813,9 +2769,7 @@
       "reviewedAt": "2026-11-15",
       "reviewClass": "per-file-maintainer-accepted-native-two-registration",
       "provenanceTemplateId": "flux_redux_multi_reference",
-      "consumingTemplateIds": [
-        "flux_redux_multi_reference"
-      ],
+      "consumingTemplateIds": ["flux_redux_multi_reference"],
       "retainedOriginalPath": "template-gallery/inputs/flux_redux_multi_reference.before.webp",
       "humanApprovalPacketSHA256": "c3c5e06d05771cf28f823e1dee31a9e7e3765d2f84038823aaadc505ee8290f5",
       "publicationBasis": "you can register these two as well"
@@ -3197,9 +3151,7 @@
       "reviewedAt": "2026-11-13",
       "reviewClass": "per-file-maintainer-accepted-native-six-registration",
       "provenanceTemplateId": "ltx_video_video_to_video",
-      "consumingTemplateIds": [
-        "ltx_video_video_to_video"
-      ],
+      "consumingTemplateIds": ["ltx_video_video_to_video"],
       "retainedOriginalPath": "template-gallery/inputs/ltx_video_video_to_video.before.mp4",
       "humanApprovalPacketSHA256": "03b66b4631afb15032d62a1705331b56f6b12c4882c23945175ec92cc45a506f",
       "publicationBasis": "Register the six approved assets now while Moonflower runs on Linux. Use Windows in parallel wherever possible, and keep the longer workflows separate for AMD cloud."
@@ -3537,9 +3489,7 @@
       "reviewedAt": "2026-11-15",
       "reviewClass": "per-file-maintainer-accepted-native-seven-registration",
       "provenanceTemplateId": "wan_vace_grayscale_control",
-      "consumingTemplateIds": [
-        "wan_vace_grayscale_control"
-      ],
+      "consumingTemplateIds": ["wan_vace_grayscale_control"],
       "retainedOriginalPath": "template-gallery/inputs/wan_vace_grayscale_control.before.mp4",
       "humanApprovalPacketSHA256": "95c7c2ed080c3d618db1701b066724660595337460c46df8305b50810783eaa3",
       "publicationBasis": "these are approved, you can register them"
@@ -3719,9 +3669,7 @@
       "reviewedAt": "2026-11-15",
       "reviewClass": "per-file-maintainer-accepted-native-seven-registration",
       "provenanceTemplateId": "wan_vace_outpaint_reframe",
-      "consumingTemplateIds": [
-        "wan_vace_outpaint_reframe"
-      ],
+      "consumingTemplateIds": ["wan_vace_outpaint_reframe"],
       "retainedOriginalPath": "template-gallery/inputs/wan_vace_outpaint_reframe.before.mp4",
       "humanApprovalPacketSHA256": "95c7c2ed080c3d618db1701b066724660595337460c46df8305b50810783eaa3",
       "publicationBasis": "these are approved, you can register them"
@@ -3901,9 +3849,7 @@
       "reviewedAt": "2026-11-15",
       "reviewClass": "per-file-maintainer-accepted-native-seven-registration",
       "provenanceTemplateId": "wan_vace_video_color_grade",
-      "consumingTemplateIds": [
-        "wan_vace_video_color_grade"
-      ],
+      "consumingTemplateIds": ["wan_vace_video_color_grade"],
       "retainedOriginalPath": "template-gallery/inputs/wan_vace_video_color_grade.before.mp4",
       "humanApprovalPacketSHA256": "95c7c2ed080c3d618db1701b066724660595337460c46df8305b50810783eaa3",
       "publicationBasis": "these are approved, you can register them"
@@ -4083,9 +4029,7 @@
       "reviewedAt": "2026-11-15",
       "reviewClass": "per-file-maintainer-accepted-native-seven-registration",
       "provenanceTemplateId": "wan_vace_video_to_video",
-      "consumingTemplateIds": [
-        "wan_vace_video_to_video"
-      ],
+      "consumingTemplateIds": ["wan_vace_video_to_video"],
       "retainedOriginalPath": "template-gallery/inputs/wan_vace_video_to_video.before.mp4",
       "humanApprovalPacketSHA256": "95c7c2ed080c3d618db1701b066724660595337460c46df8305b50810783eaa3",
       "publicationBasis": "these are approved, you can register them"
@@ -4321,10 +4265,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-11-13",
       "reviewClass": "per-file-maintainer-accepted-native-six-registration",
-      "consumingTemplateIds": [
-        "ace_step_audio_repaint",
-        "ace_step_audio_variation"
-      ],
+      "consumingTemplateIds": ["ace_step_audio_repaint", "ace_step_audio_variation"],
       "humanApprovalPacketSHA256": "03b66b4631afb15032d62a1705331b56f6b12c4882c23945175ec92cc45a506f",
       "publicationBasis": "Register the six approved assets now while Moonflower runs on Linux. Use Windows in parallel wherever possible, and keep the longer workflows separate for AMD cloud.",
       "provenanceTemplateId": "ace_step_audio_variation"
@@ -4487,9 +4428,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "character_edit",
-      "consumingTemplateIds": [
-        "character_edit"
-      ]
+      "consumingTemplateIds": ["character_edit"]
     },
     {
       "path": "template-gallery/inputs/chroma_alpine_block_print.before.png",
@@ -4528,9 +4467,7 @@
       "sourceUrl": "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceRevision": "lodestones/Chroma1-HD@0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"
-      ],
+      "modelTerms": ["https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -4732,9 +4669,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux2_klein_multi_reference",
-      "consumingTemplateIds": [
-        "flux2_klein_multi_reference"
-      ]
+      "consumingTemplateIds": ["flux2_klein_multi_reference"]
     },
     {
       "path": "template-gallery/inputs/flux3-packaging-protected-photo-mask-v1.png",
@@ -4750,9 +4685,7 @@
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
-      "requiredAttribution": [
-        "sourav-das"
-      ],
+      "requiredAttribution": ["sourav-das"],
       "assetLicense": "CC-BY-4.0",
       "reviewedBy": "sourav-das",
       "reviewedAt": "2026-10-31",
@@ -4971,9 +4904,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_control_canny",
-      "consumingTemplateIds": [
-        "flux_control_canny"
-      ]
+      "consumingTemplateIds": ["flux_control_canny"]
     },
     {
       "path": "template-gallery/inputs/flux_depth_control.before.png",
@@ -4997,9 +4928,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_depth_control",
-      "consumingTemplateIds": [
-        "flux_depth_control"
-      ]
+      "consumingTemplateIds": ["flux_depth_control"]
     },
     {
       "path": "template-gallery/inputs/flux_depth_marine_bow_repair.before.webp",
@@ -5131,9 +5060,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_fill_inpaint",
-      "consumingTemplateIds": [
-        "flux_fill_inpaint"
-      ]
+      "consumingTemplateIds": ["flux_fill_inpaint"]
     },
     {
       "path": "template-gallery/inputs/flux_fill_outpaint.before.png",
@@ -5157,9 +5084,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_fill_outpaint",
-      "consumingTemplateIds": [
-        "flux_fill_outpaint"
-      ]
+      "consumingTemplateIds": ["flux_fill_outpaint"]
     },
     {
       "path": "template-gallery/inputs/flux_klein_alpine_lake_panorama.before.png",
@@ -5318,9 +5243,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_kontext_edit",
-      "consumingTemplateIds": [
-        "flux_kontext_edit"
-      ]
+      "consumingTemplateIds": ["flux_kontext_edit"]
     },
     {
       "path": "template-gallery/inputs/flux_kontext_multi_reference.before.webp",
@@ -5344,9 +5267,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_kontext_multi_reference",
-      "consumingTemplateIds": [
-        "flux_kontext_multi_reference"
-      ]
+      "consumingTemplateIds": ["flux_kontext_multi_reference"]
     },
     {
       "path": "template-gallery/inputs/flux_kontext_multi_reference.material-strip.v2.png",
@@ -5369,9 +5290,7 @@
       "reviewedBy": "maintainer (current user)",
       "reviewedAt": "2026-11-12",
       "reviewClass": "per-file-maintainer-accepted-native-three-registration",
-      "consumingTemplateIds": [
-        "flux_kontext_multi_reference"
-      ],
+      "consumingTemplateIds": ["flux_kontext_multi_reference"],
       "derivedFromContentHash": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
       "publicationBasis": "Existing maintainer publication authorization and current explicit instruction to register these three accepted assets; no new ownership or rights quotation is fabricated.",
       "humanApprovalPacketSHA256": "69c6b3d9b0ea2fcca16ee538f6e75b414b7141658b74f10578758e61360f63fd"
@@ -5399,9 +5318,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_redux_edit",
-      "consumingTemplateIds": [
-        "flux_redux_edit"
-      ]
+      "consumingTemplateIds": ["flux_redux_edit"]
     },
     {
       "path": "template-gallery/inputs/flux_redux_multi_reference.before.webp",
@@ -5426,9 +5343,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "flux_redux_multi_reference",
-      "consumingTemplateIds": [
-        "flux_redux_multi_reference"
-      ]
+      "consumingTemplateIds": ["flux_redux_multi_reference"]
     },
     {
       "path": "template-gallery/inputs/hunyuan_dit_green_glass_study.before.png",
@@ -5686,9 +5601,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -5713,9 +5626,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -5740,9 +5651,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -5851,9 +5760,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "ltx_video_image_to_video",
-      "consumingTemplateIds": [
-        "ltx_video_image_to_video"
-      ]
+      "consumingTemplateIds": ["ltx_video_image_to_video"]
     },
     {
       "path": "template-gallery/inputs/ltx_video_multi_reference.before.webp",
@@ -5878,9 +5785,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "ltx_video_multi_reference",
-      "consumingTemplateIds": [
-        "ltx_video_multi_reference"
-      ]
+      "consumingTemplateIds": ["ltx_video_multi_reference"]
     },
     {
       "path": "template-gallery/inputs/ltx_video_video_to_video.before.mp4",
@@ -5907,9 +5812,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "ltx_video_video_to_video",
-      "consumingTemplateIds": [
-        "ltx_video_video_to_video"
-      ]
+      "consumingTemplateIds": ["ltx_video_video_to_video"]
     },
     {
       "path": "template-gallery/inputs/marigold_depth_synthetic_ramp.before.png",
@@ -6221,9 +6124,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_character_angles",
-      "consumingTemplateIds": [
-        "qwen_character_angles"
-      ]
+      "consumingTemplateIds": ["qwen_character_angles"]
     },
     {
       "path": "template-gallery/inputs/qwen_cobalt_on_charcoal_slate.before.png",
@@ -6330,9 +6231,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_edit_plus_single_image",
-      "consumingTemplateIds": [
-        "qwen_edit_plus_single_image"
-      ]
+      "consumingTemplateIds": ["qwen_edit_plus_single_image"]
     },
     {
       "path": "template-gallery/inputs/qwen_edit_strength_sweep.before.webp",
@@ -6356,9 +6255,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_edit_strength_sweep",
-      "consumingTemplateIds": [
-        "qwen_edit_strength_sweep"
-      ]
+      "consumingTemplateIds": ["qwen_edit_strength_sweep"]
     },
     {
       "path": "template-gallery/inputs/qwen_inpaint_mask_draft.before.webp",
@@ -6382,9 +6279,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_inpaint_mask_draft",
-      "consumingTemplateIds": [
-        "qwen_inpaint_mask_draft"
-      ]
+      "consumingTemplateIds": ["qwen_inpaint_mask_draft"]
     },
     {
       "path": "template-gallery/inputs/qwen_inpaint_object_replace.before.webp",
@@ -6408,9 +6303,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_inpaint_object_replace",
-      "consumingTemplateIds": [
-        "qwen_inpaint_object_replace"
-      ]
+      "consumingTemplateIds": ["qwen_inpaint_object_replace"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to previously approved synthetic source rights and recorded model terms",
@@ -6487,9 +6380,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_logo_texture",
-      "consumingTemplateIds": [
-        "qwen_logo_texture"
-      ]
+      "consumingTemplateIds": ["qwen_logo_texture"]
     },
     {
       "path": "template-gallery/inputs/qwen_multi_reference_product.before.webp",
@@ -6514,9 +6405,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_multi_reference_product",
-      "consumingTemplateIds": [
-        "qwen_multi_reference_product"
-      ]
+      "consumingTemplateIds": ["qwen_multi_reference_product"]
     },
     {
       "path": "template-gallery/inputs/qwen_outpaint_aspect_template.before.webp",
@@ -6540,9 +6429,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_outpaint_aspect_template",
-      "consumingTemplateIds": [
-        "qwen_outpaint_aspect_template"
-      ]
+      "consumingTemplateIds": ["qwen_outpaint_aspect_template"]
     },
     {
       "path": "template-gallery/inputs/qwen_outpaint_draft.before.webp",
@@ -6566,9 +6453,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_outpaint_draft",
-      "consumingTemplateIds": [
-        "qwen_outpaint_draft"
-      ]
+      "consumingTemplateIds": ["qwen_outpaint_draft"]
     },
     {
       "path": "template-gallery/inputs/qwen_packaging_dieline.before.png",
@@ -6593,9 +6478,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_packaging_dieline",
-      "consumingTemplateIds": [
-        "qwen_packaging_dieline"
-      ]
+      "consumingTemplateIds": ["qwen_packaging_dieline"]
     },
     {
       "path": "template-gallery/inputs/qwen_product_ad_composite.before.webp",
@@ -6620,9 +6503,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_product_ad_composite",
-      "consumingTemplateIds": [
-        "qwen_product_ad_composite"
-      ]
+      "consumingTemplateIds": ["qwen_product_ad_composite"]
     },
     {
       "path": "template-gallery/inputs/qwen_product_relight.before.webp",
@@ -6647,9 +6528,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_product_relight",
-      "consumingTemplateIds": [
-        "qwen_product_relight"
-      ]
+      "consumingTemplateIds": ["qwen_product_relight"]
     },
     {
       "path": "template-gallery/inputs/qwen_tile_extract.before.webp",
@@ -6673,9 +6552,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "qwen_tile_extract",
-      "consumingTemplateIds": [
-        "qwen_tile_extract"
-      ]
+      "consumingTemplateIds": ["qwen_tile_extract"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, with exact-file rights explicitly attested by the maintainer",
@@ -6726,9 +6603,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "reference_fusion",
-      "consumingTemplateIds": [
-        "reference_fusion"
-      ]
+      "consumingTemplateIds": ["reference_fusion"]
     },
     {
       "path": "template-gallery/inputs/restoring_the_studio_backdrop.before.png",
@@ -6740,9 +6615,7 @@
       "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."
-      ],
+      "modelTerms": ["CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -6767,9 +6640,7 @@
       "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."
-      ],
+      "modelTerms": ["CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -7703,6 +7574,33 @@
       "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
     },
     {
+      "path": "template-gallery/inputs/stable_video_lighthouse_headland.first.png",
+      "sha256": "sha256:bytes:41f07c8ec7ab5d7097cba0f77867b61e666c6a803900784697ff816b851b98de",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861",
+      "sourceRevision": "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/blob/043843887ccd51926e3efed36270444a838e7861/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861 https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_video_lighthouse_headland"
+    },
+    {
       "path": "template-gallery/inputs/wan_a14b_wind_across_pond.first.png",
       "sha256": "sha256:bytes:cd29e54e208f6040d3f4cbbf8c9f096d537f8c71dffb50d5abae3298cc49deaf",
       "publishDecision": "approved",
@@ -8106,9 +8004,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "wan_vace_grayscale_control",
-      "consumingTemplateIds": [
-        "wan_vace_grayscale_control"
-      ]
+      "consumingTemplateIds": ["wan_vace_grayscale_control"]
     },
     {
       "path": "template-gallery/inputs/wan_vace_outpaint_reframe.before.mp4",
@@ -8133,9 +8029,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "wan_vace_outpaint_reframe",
-      "consumingTemplateIds": [
-        "wan_vace_outpaint_reframe"
-      ]
+      "consumingTemplateIds": ["wan_vace_outpaint_reframe"]
     },
     {
       "path": "template-gallery/inputs/wan_vace_video_color_grade.before.mp4",
@@ -8160,9 +8054,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "wan_vace_video_color_grade",
-      "consumingTemplateIds": [
-        "wan_vace_video_color_grade"
-      ]
+      "consumingTemplateIds": ["wan_vace_video_color_grade"]
     },
     {
       "path": "template-gallery/inputs/wan_vace_video_to_video.before.mp4",
@@ -8187,9 +8079,7 @@
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
       "provenanceTemplateId": "wan_vace_video_to_video",
-      "consumingTemplateIds": [
-        "wan_vace_video_to_video"
-      ]
+      "consumingTemplateIds": ["wan_vace_video_to_video"]
     },
     {
       "path": "template-gallery/inputs/zimage_golden_amber_glass.before.png",
@@ -8309,9 +8199,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -8336,9 +8224,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -8363,9 +8249,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -8579,9 +8463,7 @@
       "sourceUrl": "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687",
       "sourceRevision": "maxin-cn/Latte-1@0653024365272f061fc44d1078134df22842b687",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"
-      ],
+      "modelTerms": ["https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -9004,9 +8886,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -9031,9 +8911,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -9058,9 +8936,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -9085,9 +8961,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -9112,9 +8986,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -9811,7 +9683,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:789269290f378489a939b79daad98d9a5e2bf351c105f362895a5e8aee67a6f4",
+      "sha256": "sha256:bytes:da498c34fa5389f278304f27fe78a0058e8d74f4a0d188442bbad93d4a276328",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -9828,7 +9700,7 @@
       "reviewedBy": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-25",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "c897ae58c52588da56b92e22d8b3c6b7d9becac539057047f38e1303230949da",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained."
     },
     {
@@ -9870,9 +9742,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "AI-generated music — MiniMax-Music3"
-      ],
+      "requiredAttribution": ["AI-generated music — MiniMax-Music3"],
       "assetLicense": "Apache-2.0",
       "publisherLicenseUrl": "https://huggingface.co/MiniMaxAI/MiniMax-Music3/blob/fbdf52fbaaca799592917417eb05f1899f1255ec/LICENSE",
       "path": "template-gallery/minimax_music3_chamber_pop.wav",
@@ -10645,9 +10515,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "TIDELINE: fictional cinema and event"
-      ],
+      "marks": ["TIDELINE: fictional cinema and event"],
       "requiredAttribution": [],
       "sourceRightsAttestation": "I hold the rights or permissions needed to publish this exact generated TIDELINE cinema image and its redacted technical/review records under Apache-2.0. The film event and cinema are fictional; no external image inputs or real-person likenesses were used.",
       "path": "template-gallery/qwen_low_vram_poster_layout.webp",
@@ -10672,9 +10540,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "MICA DROP: fictional product name"
-      ],
+      "marks": ["MICA DROP: fictional product name"],
       "requiredAttribution": [],
       "sourceRightsAttestation": "I approve this exact image as a reviewed concept with the stated design limitations and incomplete independent resource monitoring, without a fully guarded or hardware-qualification claim. I hold the rights or permissions needed to publish this generated MICA DROP image and its redacted technical/review metadata under Apache-2.0. The product is fictional in this example; no external image input or real-person likeness was used.",
       "path": "template-gallery/qwen_low_vram_product_concept.webp",
@@ -10699,9 +10565,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "KITE & ANVIL: fictional stationery brand"
-      ],
+      "marks": ["KITE & ANVIL: fictional stationery brand"],
       "requiredAttribution": [],
       "sourceRightsAttestation": "I hold the rights or permissions needed to publish this exact generated KITE & ANVIL stationery image and its redacted technical/review metadata under Apache-2.0. The stationery brand is fictional in this example; no external image inputs or real-person likenesses were used.",
       "path": "template-gallery/qwen_low_vram_text_rendering.webp",
@@ -10830,9 +10694,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "MATERIAL CULTURE: fictional exhibition title"
-      ],
+      "marks": ["MATERIAL CULTURE: fictional exhibition title"],
       "requiredAttribution": [],
       "sourceRightsAttestation": "I hold the rights or permissions needed to publish this exact generated MATERIAL CULTURE exhibition poster and its redacted technical/review metadata under Apache-2.0. The exhibition is fictional in this example; no external image inputs or real-person likenesses were used.",
       "path": "template-gallery/qwen_poster_logo_text.webp",
@@ -10938,9 +10800,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "VERDA 03: fictional product name in this generated example"
-      ],
+      "marks": ["VERDA 03: fictional product name in this generated example"],
       "requiredAttribution": [],
       "sourceRightsAttestation": "I hold the rights or permissions needed to publicly redistribute this exact generated VERDA 03 poster and its redacted technical and quality metadata under Apache-2.0. VERDA 03 is a fictional product name in this example; no external image inputs or real-person likenesses were used.",
       "path": "template-gallery/qwen_text_rendering.webp",
@@ -11526,9 +11386,7 @@
       "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceLicense": "Maintainer-authorized file with publisher terms retained",
-      "modelTerms": [
-        "CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."
-      ],
+      "modelTerms": ["CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -12645,9 +12503,7 @@
       "sourceUrl": "https://huggingface.co/cvssp/audioldm2/tree/c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceRevision": "cvssp/audioldm2@c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"
-      ],
+      "modelTerms": ["https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -12672,9 +12528,7 @@
       "sourceUrl": "https://huggingface.co/cvssp/audioldm2/tree/c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceRevision": "cvssp/audioldm2@c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"
-      ],
+      "modelTerms": ["https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -12699,9 +12553,7 @@
       "sourceUrl": "https://huggingface.co/cvssp/audioldm2/tree/c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceRevision": "cvssp/audioldm2@c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"
-      ],
+      "modelTerms": ["https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -12726,9 +12578,7 @@
       "sourceUrl": "https://huggingface.co/cvssp/audioldm2/tree/c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceRevision": "cvssp/audioldm2@c8e7e189d324425c05c4c2f81214041ef4107983",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"
-      ],
+      "modelTerms": ["https://huggingface.co/cvssp/audioldm2/blob/c8e7e189d324425c05c4c2f81214041ef4107983/README.md"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -13121,9 +12971,7 @@
       "sourceUrl": "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceRevision": "lodestones/Chroma1-HD@0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"
-      ],
+      "modelTerms": ["https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -13148,9 +12996,7 @@
       "sourceUrl": "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceRevision": "lodestones/Chroma1-HD@0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"
-      ],
+      "modelTerms": ["https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -13175,9 +13021,7 @@
       "sourceUrl": "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceRevision": "lodestones/Chroma1-HD@0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"
-      ],
+      "modelTerms": ["https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -13202,9 +13046,7 @@
       "sourceUrl": "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceRevision": "lodestones/Chroma1-HD@0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"
-      ],
+      "modelTerms": ["https://huggingface.co/lodestones/Chroma1-HD/tree/0e0c60ece1e82b17cb7f77342d765ba5024c40c0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -16548,9 +16390,7 @@
       "sourceUrl": "https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceRevision": "zai-org/GLM-Image@2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"
-      ],
+      "modelTerms": ["mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -16575,9 +16415,7 @@
       "sourceUrl": "https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceRevision": "zai-org/GLM-Image@2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"
-      ],
+      "modelTerms": ["mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -16602,9 +16440,7 @@
       "sourceUrl": "https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceRevision": "zai-org/GLM-Image@2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"
-      ],
+      "modelTerms": ["mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -16629,9 +16465,7 @@
       "sourceUrl": "https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceRevision": "zai-org/GLM-Image@2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"
-      ],
+      "modelTerms": ["mit. https://huggingface.co/zai-org/GLM-Image/tree/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17132,9 +16966,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17159,9 +16991,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17186,9 +17016,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17213,9 +17041,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17240,9 +17066,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17267,9 +17091,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17294,9 +17116,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17321,9 +17141,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17348,9 +17166,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17375,9 +17191,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17402,9 +17216,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -17429,9 +17241,7 @@
       "sourceUrl": "https://huggingface.co/deepseek-community/Janus-Pro-1B/tree/1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceRevision": "deepseek-community/Janus-Pro-1B@1655280bb75959cc1cb85529a2a8b26e7016072e",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"
-      ],
+      "modelTerms": ["https://github.com/deepseek-ai/Janus/blob/main/LICENSE-MODEL"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18212,9 +18022,7 @@
       "sourceUrl": "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687",
       "sourceRevision": "maxin-cn/Latte-1@0653024365272f061fc44d1078134df22842b687",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"
-      ],
+      "modelTerms": ["https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18239,9 +18047,7 @@
       "sourceUrl": "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687",
       "sourceRevision": "maxin-cn/Latte-1@0653024365272f061fc44d1078134df22842b687",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"
-      ],
+      "modelTerms": ["https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18266,9 +18072,7 @@
       "sourceUrl": "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687",
       "sourceRevision": "maxin-cn/Latte-1@0653024365272f061fc44d1078134df22842b687",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"
-      ],
+      "modelTerms": ["https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18293,9 +18097,7 @@
       "sourceUrl": "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687",
       "sourceRevision": "maxin-cn/Latte-1@0653024365272f061fc44d1078134df22842b687",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"
-      ],
+      "modelTerms": ["https://huggingface.co/maxin-cn/Latte-1/tree/0653024365272f061fc44d1078134df22842b687"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18734,9 +18536,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18761,9 +18561,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18788,9 +18586,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18815,9 +18611,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18842,9 +18636,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18869,9 +18661,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18896,9 +18686,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18923,9 +18711,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18950,9 +18736,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -18977,9 +18761,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19004,9 +18786,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19031,9 +18811,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19058,9 +18836,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19085,9 +18861,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19112,9 +18886,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19139,9 +18911,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/blob/47da56e2ad66ce4125a9922b4a8826bf407f9d0a/LICENSE"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19166,9 +18936,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19193,9 +18961,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19220,9 +18986,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -19247,9 +19011,7 @@
       "sourceUrl": "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceRevision": "Lightricks/LTX-2@47da56e2ad66ce4125a9922b4a8826bf407f9d0a",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"
-      ],
+      "modelTerms": ["https://huggingface.co/Lightricks/LTX-2/tree/47da56e2ad66ce4125a9922b4a8826bf407f9d0a"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -22863,9 +22625,7 @@
       "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."
-      ],
+      "modelTerms": ["CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -22890,9 +22650,7 @@
       "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."
-      ],
+      "modelTerms": ["CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -22917,9 +22675,7 @@
       "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."
-      ],
+      "modelTerms": ["CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -22944,9 +22700,7 @@
       "sourceUrl": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/tree/451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceRevision": "stable-diffusion-v1-5/stable-diffusion-v1-5@451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
       "sourceLicense": "MoDiff-authored Gallery metadata",
-      "modelTerms": [
-        "CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."
-      ],
+      "modelTerms": ["CreativeML Open RAIL-M at the pinned Stable Diffusion v1.5 revision."],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -25804,6 +25558,222 @@
       "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
     },
     {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.original-provenance.json",
+      "sha256": "sha256:bytes:26867757b5d173fd0561791ca6114c84c2cb07b0790c2c2c292b3a109af12bc9",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceRevision": "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-audio-open-1.0/blob/f21265c1e2710b3bd2386596943f0007f55f802e/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_audio_glass_roof_rain"
+    },
+    {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.original-review.json",
+      "sha256": "sha256:bytes:57dc1622e671d71d0f34df6890aaf520a98e64dd2f333edcac58fb6a641afea9",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceRevision": "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-audio-open-1.0/blob/f21265c1e2710b3bd2386596943f0007f55f802e/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_audio_glass_roof_rain"
+    },
+    {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.quality-review.json",
+      "sha256": "sha256:bytes:2aa5a85090091d93cf2b23494790f75146c523fe1880bef0b0212d9f8bd7d2d5",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceRevision": "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-audio-open-1.0/blob/f21265c1e2710b3bd2386596943f0007f55f802e/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_audio_glass_roof_rain"
+    },
+    {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.retained-template-provenance.json",
+      "sha256": "sha256:bytes:6681cbf847e93d8e25b0bde0f61aaa1d7928e68d439875d8c204c69dc55fb7e9",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceRevision": "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-audio-open-1.0/blob/f21265c1e2710b3bd2386596943f0007f55f802e/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_audio_glass_roof_rain"
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.original-provenance.json",
+      "sha256": "sha256:bytes:25bb70c7420bc425e8d919e74d2a48e7debf888e362b5c6da84ae841878cab74",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861",
+      "sourceRevision": "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/blob/043843887ccd51926e3efed36270444a838e7861/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861 https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_video_lighthouse_headland"
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.original-review.json",
+      "sha256": "sha256:bytes:9c2dbec34ba3818608ecd4e0f72729926d8ea1d536e90fb2e1a64d3cb1cad597",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861",
+      "sourceRevision": "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/blob/043843887ccd51926e3efed36270444a838e7861/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861 https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_video_lighthouse_headland"
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.quality-review.json",
+      "sha256": "sha256:bytes:f61d4759e7dd2ef99f9553cce415e5f278eca5c61c68391935b6a5d9ac90ad3d",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861",
+      "sourceRevision": "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/blob/043843887ccd51926e3efed36270444a838e7861/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861 https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_video_lighthouse_headland"
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.retained-template-provenance.json",
+      "sha256": "sha256:bytes:4522c6ff83f21b51ed4de646d27e95475255931ac9e243c77d167bc039c66f67",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861",
+      "sourceRevision": "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/blob/043843887ccd51926e3efed36270444a838e7861/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861 https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_video_lighthouse_headland"
+    },
+    {
       "path": "template-gallery/reviews/the_glasshouse_seed_tray.original-provenance.json",
       "sha256": "sha256:bytes:267ab964ea3749739c8f58b86f7b94aa2c2cfe506a12c4f33c615c8415a97230",
       "publishDecision": "approved",
@@ -27887,9 +27857,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "wan_vace_outpaint_reframe"
-      ]
+      "consumingTemplateIds": ["wan_vace_outpaint_reframe"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/124415536a8071baccf8821232ad79a0a8ceec30ae62617c91a8d7a0b59d0a8c.webp",
@@ -27912,9 +27880,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_logo_texture"
-      ]
+      "consumingTemplateIds": ["qwen_logo_texture"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/16f6ea27b5d7cfaed106e2e694572bbe92b7c7e2a43835b3f4313a748f510f74.png",
@@ -27937,9 +27903,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_fill_inpaint"
-      ]
+      "consumingTemplateIds": ["flux_fill_inpaint"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/1d993540e914f0e2d230f1133b57ae14bb837829237a53c89613fcdef6699995.webp",
@@ -27962,9 +27926,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux2_klein_multi_reference"
-      ]
+      "consumingTemplateIds": ["flux2_klein_multi_reference"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/218d83e0706fec201097582a6e5e00dc79f2d7d1ecb0badba2214c5ecaae1866.mp4",
@@ -27987,9 +27949,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "wan_vace_video_to_video"
-      ]
+      "consumingTemplateIds": ["wan_vace_video_to_video"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/233d1b3a123fceb4f3b68d2d3a9f5b4129627073b8235fe7248ae6ebdeecb554.mp4",
@@ -28015,9 +27975,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_video_to_video"
-      ]
+      "consumingTemplateIds": ["ltx_video_video_to_video"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/283b1cfb32b15fe6b31a29dce1f2b96026c1ad0826bf3f24aebebf4b6f9a4f07.webp",
@@ -28040,9 +27998,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "reference_fusion"
-      ]
+      "consumingTemplateIds": ["reference_fusion"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/29722ed072feec11cd36adce7b6cb48483bff3f05776048b93f960b5554ab533.png",
@@ -28065,9 +28021,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_inpaint_mask_draft"
-      ]
+      "consumingTemplateIds": ["qwen_inpaint_mask_draft"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/2e0ec8892660785e322468d0153fd2dadf7a4d920fce2d7d4a0b686a8fe8515d.webp",
@@ -28090,9 +28044,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_redux_edit"
-      ]
+      "consumingTemplateIds": ["flux_redux_edit"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e.png",
@@ -28115,9 +28067,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_depth_control"
-      ]
+      "consumingTemplateIds": ["flux_depth_control"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -28166,9 +28116,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ace_step_audio_continuation"
-      ]
+      "consumingTemplateIds": ["ace_step_audio_continuation"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/38a6f334f89048effe579fc473d6fb38437eb579f324ac399d1ec0f6509f74d9.webp",
@@ -28191,9 +28139,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_long_showcase"
-      ]
+      "consumingTemplateIds": ["ltx_video_long_showcase"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/39428f00f67b49fc6d624617df2964c9f869de21e7e188ef5b231ae04c4aeacc.webp",
@@ -28216,10 +28162,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_multi_reference_product",
-        "reference_fusion"
-      ]
+      "consumingTemplateIds": ["qwen_multi_reference_product", "reference_fusion"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/3c4d3a7a58a7be7f8d8920106dcfea30e28b4af115ce406bcf5b16cec4b4297a.mp4",
@@ -28242,9 +28185,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "wan_vace_outpaint_reframe"
-      ]
+      "consumingTemplateIds": ["wan_vace_outpaint_reframe"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -28293,9 +28234,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_control_canny"
-      ]
+      "consumingTemplateIds": ["flux_control_canny"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -28344,9 +28283,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_multi_reference_product"
-      ]
+      "consumingTemplateIds": ["qwen_multi_reference_product"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/4b1b8d9e351abd437f2ffff90cc6a958160a87863ba4d8e85a0aa80a37e7a10e.webp",
@@ -28369,9 +28306,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_character_angles"
-      ]
+      "consumingTemplateIds": ["qwen_character_angles"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/4b800b6a362c9ad7755858a3ec2affbda8706c5a71578ced35b80432fd234741.webp",
@@ -28394,9 +28329,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_redux_multi_reference"
-      ]
+      "consumingTemplateIds": ["flux_redux_multi_reference"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -28445,9 +28378,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_multi_reference"
-      ]
+      "consumingTemplateIds": ["ltx_video_multi_reference"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/6224e9ee47765858f2ec0c33679140d020cf3ad6e4fa2fa4557ef50f811aef0e.webp",
@@ -28470,9 +28401,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_tile_extract"
-      ]
+      "consumingTemplateIds": ["qwen_tile_extract"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/70c74691e2bcd7cdb352b7e64e5af5a1a7f01d77112d32a8edadc0060a95ef34.png",
@@ -28495,9 +28424,7 @@
       "reviewedBy": "maintainer (current user)",
       "reviewedAt": "2026-11-12",
       "reviewClass": "per-file-maintainer-accepted-native-three-registration",
-      "consumingTemplateIds": [
-        "flux_kontext_multi_reference"
-      ],
+      "consumingTemplateIds": ["flux_kontext_multi_reference"],
       "derivedFromContentHash": "sha256:bytes:9f421cdc0fa80b3aae368bd3b20a8f6f05942ec461f88541f01aec5390468897",
       "publicationBasis": "Existing maintainer publication authorization and current explicit instruction to register these three accepted assets; no new ownership or rights quotation is fabricated.",
       "humanApprovalPacketSHA256": "69c6b3d9b0ea2fcca16ee538f6e75b414b7141658b74f10578758e61360f63fd"
@@ -28523,9 +28450,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_multi_reference"
-      ]
+      "consumingTemplateIds": ["ltx_video_multi_reference"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/799d82b016a108d4b6902500b4226afd5d2391f4a7b0693af75255425c943a5e.png",
@@ -28548,9 +28473,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_fill_outpaint"
-      ]
+      "consumingTemplateIds": ["flux_fill_outpaint"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/7f1ea58485fa7802765b9fbbf0e6957e8607261c91669fdcc44cbed80c6fb309.webp",
@@ -28573,9 +28496,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_redux_multi_reference"
-      ]
+      "consumingTemplateIds": ["flux_redux_multi_reference"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/862e292caa1759156fffde5cfccda8b97ec622514258f81986188cf63a836ea9.webp",
@@ -28598,9 +28519,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_outpaint_draft"
-      ]
+      "consumingTemplateIds": ["qwen_outpaint_draft"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/88a7ada5cb91a6ef86de0ff7c26c6b4683df25cc0baa18382371ce0748cd0bd6.webp",
@@ -28623,9 +28542,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_long_showcase"
-      ]
+      "consumingTemplateIds": ["ltx_video_long_showcase"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -28674,10 +28591,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_image_to_video",
-        "ltx_video_long_showcase"
-      ]
+      "consumingTemplateIds": ["ltx_video_image_to_video", "ltx_video_long_showcase"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/9328061557396ef591a9f4a6242abf1cdd61082846518726c3114f746ccedd63.webp",
@@ -28700,9 +28614,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_logo_texture"
-      ]
+      "consumingTemplateIds": ["qwen_logo_texture"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/965240cf250a9074a7adab394c76070674cf517bed42b6c4647112d17dec84de.webp",
@@ -28725,9 +28637,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_layered_portrait"
-      ]
+      "consumingTemplateIds": ["qwen_layered_portrait"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/9f9f9685db5e9f8e1c162a0515151b03912c84777727b38682b65839db501ae6.webp",
@@ -28750,9 +28660,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_inpaint_object_replace"
-      ]
+      "consumingTemplateIds": ["qwen_inpaint_object_replace"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/a2f8ac6f5937d6e618b48ce9947153b8233ff7a82dcf67f28766d20b9917d730.webp",
@@ -28775,9 +28683,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_inpaint_mask_draft"
-      ]
+      "consumingTemplateIds": ["qwen_inpaint_mask_draft"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/a6d165bd87e2c57ab8cf71fa15de9d8724fccf5782c16c34c25dc77934751676.webp",
@@ -28800,9 +28706,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_edit_strength_sweep"
-      ]
+      "consumingTemplateIds": ["qwen_edit_strength_sweep"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/a7b61f36043354596eb01e702474300b222cb32e304bcf259506cad03917ce9b.webp",
@@ -28853,10 +28757,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_control_image_layout",
-        "qwen_packaging_dieline"
-      ]
+      "consumingTemplateIds": ["qwen_control_image_layout", "qwen_packaging_dieline"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/b7c221b367738177e32fece56067d743df96282a6ccb2afd040ee89ea0a8f678.webp",
@@ -28879,9 +28780,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_fill_inpaint"
-      ]
+      "consumingTemplateIds": ["flux_fill_inpaint"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/b9909f4cbff8af6e97be6d1e4923c67687eee41dbd64b051a018866781da12ab.webp",
@@ -28904,9 +28803,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "character_edit"
-      ]
+      "consumingTemplateIds": ["character_edit"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/bf4dbaa55b83b19ca56c691e9d1a10d3b838ff2fec926aaea6b526561c68f8e6.png",
@@ -28929,9 +28826,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux_fill_outpaint"
-      ]
+      "consumingTemplateIds": ["flux_fill_outpaint"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/c810699838c636767d2a5b25fb457df94a4b76a70da9a77e77009681779acbf2.webp",
@@ -28954,9 +28849,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_long_showcase"
-      ]
+      "consumingTemplateIds": ["ltx_video_long_showcase"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/d49908e24c58d144f4264f4028cb0f7f2e72fb02b315443fd021715ebed1e737.webp",
@@ -28979,9 +28872,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_long_showcase"
-      ]
+      "consumingTemplateIds": ["ltx_video_long_showcase"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/d5ba3943d6c0a264860ba0cde18d87e2d9554a3f7328308f4d771e082a9e0c24.png",
@@ -29004,9 +28895,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux2_klein_edit"
-      ]
+      "consumingTemplateIds": ["flux2_klein_edit"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/d86b921f1be36360b5b660b8a5b9d0e9165e888be8a06fe2d8f362e87de40429.mp4",
@@ -29029,9 +28918,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "wan_vace_video_color_grade"
-      ]
+      "consumingTemplateIds": ["wan_vace_video_color_grade"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/d898e00f3be4b28e237f71acf8024ad3715a657e1fcf3aeaf57279468dff7a76.webp",
@@ -29054,9 +28941,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_outpaint_aspect_template"
-      ]
+      "consumingTemplateIds": ["qwen_outpaint_aspect_template"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/ddaccd06100d51494e5aaaecedab7b27eaeeda5290d453498d3e1cb9460ad474.webp",
@@ -29079,9 +28964,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ltx_video_long_showcase"
-      ]
+      "consumingTemplateIds": ["ltx_video_long_showcase"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/e07d05a658d361b6d28af62bcccfaeba9254507467dae1c5839efd546fed96a7.wav",
@@ -29104,10 +28987,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "ace_step_audio_repaint",
-        "ace_step_audio_variation"
-      ]
+      "consumingTemplateIds": ["ace_step_audio_repaint", "ace_step_audio_variation"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/e0ab22f77f5d966d7868f8950f79702dc6d156d0eaef3e06205097558d5c5bb2.webp",
@@ -29130,9 +29010,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_product_ad_composite"
-      ]
+      "consumingTemplateIds": ["qwen_product_ad_composite"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/e0f19676addbba6fe954711c235878ef43495e8066b84ed70b5c240a8512b026.mp4",
@@ -29155,9 +29033,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "wan_vace_grayscale_control"
-      ]
+      "consumingTemplateIds": ["wan_vace_grayscale_control"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/e14e0fb4bccace254e3430bbddd49728980e5445b988eff1ae8164f135d1cc8d.png",
@@ -29180,9 +29056,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_inpaint_object_replace"
-      ]
+      "consumingTemplateIds": ["qwen_inpaint_object_replace"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -29231,9 +29105,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_edit_plus_single_image"
-      ]
+      "consumingTemplateIds": ["qwen_edit_plus_single_image"]
     },
     {
       "path": "template-gallery/runtime-inputs/assets/f791a809c0df307cd7dafa8c54ae86bbe4c53d73afdacb2183ff8cdbeac994c2.webp",
@@ -29256,9 +29128,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "qwen_product_relight"
-      ]
+      "consumingTemplateIds": ["qwen_product_relight"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -29307,9 +29177,7 @@
       "reviewedBy": "SOURAV DAS",
       "reviewedAt": "2026-08-03",
       "reviewClass": "standard-human-attestation",
-      "consumingTemplateIds": [
-        "flux2_klein_multi_reference"
-      ]
+      "consumingTemplateIds": ["flux2_klein_multi_reference"]
     },
     {
       "creatorOrRightsholder": "MoDiff project maintainers, subject to original synthetic source terms",
@@ -30021,9 +29889,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Apache-2.0 project-authored metadata",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -30044,9 +29910,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Original synthetic generation; underlying model terms retained",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -30067,9 +29931,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Apache-2.0 project-authored metadata",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -30090,14 +29952,10 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Original synthetic generation; underlying model terms retained",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Fictional MATERIAL ATLAS label"
-      ],
+      "marks": ["Fictional MATERIAL ATLAS label"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
@@ -30145,9 +30003,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Fictional MATERIAL ATLAS label"
-      ],
+      "marks": ["Fictional MATERIAL ATLAS label"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
@@ -30165,9 +30021,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Apache-2.0 project-authored metadata",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -30188,14 +30042,10 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Original synthetic generation; underlying model terms retained",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Fictional MATERIAL ATLAS label"
-      ],
+      "marks": ["Fictional MATERIAL ATLAS label"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
@@ -30213,9 +30063,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Apache-2.0 project-authored metadata",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -30236,9 +30084,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Original synthetic generation; underlying model terms retained",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -30259,9 +30105,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Apache-2.0 project-authored metadata",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
@@ -30282,9 +30126,7 @@
       "sourceUrl": "https://huggingface.co/black-forest-labs/flux-3-image-klein/tree/8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceRevision": "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68",
       "sourceLicense": "Original synthetic generation; underlying model terms retained",
-      "modelTerms": [
-        "black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"
-      ],
+      "modelTerms": ["black-forest-labs/flux-3-image-klein@8454017f9ebaada30c998fccd9f67a80c7580f68: Apache-2.0"],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
@@ -30427,9 +30269,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Fictional MATERIAL ATLAS label"
-      ],
+      "marks": ["Fictional MATERIAL ATLAS label"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
@@ -30567,9 +30407,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "Fictional MATERIAL ATLAS label"
-      ],
+      "marks": ["Fictional MATERIAL ATLAS label"],
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "SOURAV DAS",
@@ -30731,9 +30569,7 @@
       "aiGenerated": false,
       "humanLikenessConsent": "not-applicable",
       "marks": [],
-      "requiredAttribution": [
-        "AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."
-      ],
+      "requiredAttribution": ["AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "MoDiff workspace owner",
       "reviewedAt": "2026-11-18",
@@ -30756,9 +30592,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."
-      ],
+      "requiredAttribution": ["AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "MoDiff workspace owner",
       "reviewedAt": "2026-11-18",
@@ -30781,9 +30615,7 @@
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
       "marks": [],
-      "requiredAttribution": [
-        "AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."
-      ],
+      "requiredAttribution": ["AI-generated with Lightricks LTX-2.5 Full. Original edit and Foley by MoDiff."],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "MoDiff workspace owner",
       "reviewedAt": "2026-11-18",
@@ -30897,6 +30729,87 @@
       "humanApprovalPacketSHA256": "ea2e749b805706828428bd34589bd41263e9c432a9503fe17c3c6a6d7d932176",
       "publicationBasis": "Maintainer approved this exact saved Spandrel 2× technical preview and confirmed redistribution rights.",
       "provenanceTemplateId": "spandrel_x2_synthetic_gradient"
+    },
+    {
+      "path": "template-gallery/stable_audio_glass_roof_rain.wav",
+      "sha256": "sha256:bytes:9fe09d48f7f229f04d2b34c2e193cf7346c68115bb618b84959478a3599a1e05",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceRevision": "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-audio-open-1.0/blob/f21265c1e2710b3bd2386596943f0007f55f802e/LICENSE.md"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-audio-open-1.0@f21265c1e2710b3bd2386596943f0007f55f802e https://huggingface.co/stabilityai/stable-audio-open-1.0/tree/f21265c1e2710b3bd2386596943f0007f55f802e"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_audio_glass_roof_rain"
+    },
+    {
+      "path": "template-gallery/stable_video_lighthouse_headland.mp4",
+      "sha256": "sha256:bytes:e08e06f8a9f0a1d88e5d34c224636586cce7b91bb79c25e89d197484c740a88c",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861",
+      "sourceRevision": "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/blob/043843887ccd51926e3efed36270444a838e7861/LICENSE.md"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861 https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_video_lighthouse_headland"
+    },
+    {
+      "path": "template-gallery/stable_video_lighthouse_headland.poster.png",
+      "sha256": "sha256:bytes:67955f6727290e49f37945a2a27eeaf25032d7cd5595112523f1e9289d462292",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861",
+      "sourceRevision": "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/blob/043843887ccd51926e3efed36270444a838e7861/LICENSE.md"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "stabilityai/stable-video-diffusion-img2vid-xt-1-1@043843887ccd51926e3efed36270444a838e7861 https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1/tree/043843887ccd51926e3efed36270444a838e7861"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-25",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "stable_video_lighthouse_headland"
     },
     {
       "path": "template-gallery/the_glasshouse_seed_tray.webp",
@@ -32130,9 +32043,7 @@
       ],
       "aiGenerated": true,
       "humanLikenessConsent": "synthetic",
-      "marks": [
-        "LumaPod project-authored concept name/wordmark approved in this packet"
-      ],
+      "marks": ["LumaPod project-authored concept name/wordmark approved in this packet"],
       "requiredAttribution": [],
       "path": "template-gallery/z_image_product_mockup.webp",
       "sha256": "sha256:bytes:0d9c80e29c95d62835f56c95d666ed6d8b47e6792005ab59aef1d1c9b6de84df",

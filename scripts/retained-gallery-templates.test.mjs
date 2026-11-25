@@ -447,6 +447,12 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
       assert.equal(binding.executionSpec.contentHash, spec.contentHash);
       assert.equal(studio.getState().activeWorkflowTabId, tabId);
       const api = flow.getState().exportGraph('retained-template-check', undefined, { randomizeSeeds: false });
+      const attentionBackend = template.example.lockedSettings.attentionBackend;
+      if (attentionBackend !== undefined) {
+        assert.equal(form.attentionBackend, attentionBackend, template.id);
+        const recipe = Object.values(api.nodes).find(({ action }) => action === 'DiffusersExecutionRecipe');
+        assert.equal(recipe?.params.attention_backend.value, attentionBackend, template.id);
+      }
       if (template.modelType === 'SpandrelImageUpscale') {
         const source = api.nodes[binding.nodes.loadImage].params;
         const upscaler = api.nodes[binding.nodes.imageUpscaler].params;

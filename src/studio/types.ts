@@ -261,6 +261,8 @@ export type StudioTemplateId =
   | 'kandinsky3_ginkgo_on_slate'
   | 'chroma_terracotta_and_blue'
   | 'audioldm2_wind_through_high_pines'
+  | 'stable_audio_glass_roof_rain'
+  | 'stable_video_lighthouse_headland'
   | 'longcat_last_tram_at_dusk'
   | 'qwen_layered_sunset_and_peaks'
   | 'wan_a14b_cloudbreak_over_the_ridges'
@@ -1753,7 +1755,8 @@ export type StudioTemplateExample = {
   // Retained catalog records may preserve PAG form values alongside their
   // verified executable settings. Their recipes use the model's PAG defaults.
   lockedSettings?: Partial<
-    StudioTemplateLockedSettings & Pick<StudioFormState, 'device' | 'speechLanguage' | 'pagScale' | 'pagAdaptiveScale'>
+    StudioTemplateLockedSettings &
+      Pick<StudioFormState, 'device' | 'speechLanguage' | 'pagScale' | 'pagAdaptiveScale' | 'attentionBackend'>
   > & {
     // The source-bound retained recipes record the shared input resolution default.
     matchInputResolution?: true;

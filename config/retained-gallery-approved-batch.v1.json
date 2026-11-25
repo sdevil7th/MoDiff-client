@@ -1405,6 +1405,28 @@
     },
     "beforeExtension": "mp4"
   },
+  "stable_audio_glass_roof_rain": {
+    "associationSha256": "42b85d8e9a58a41900016810baa77e17dc62c473d42faa18186aa5f0e1e98822",
+    "backendSourceFingerprint": "sha256:backend-source-v1:bf8ee3b3df08410b5f041279f84ca3b9e0bbb7248f0e73fbe4c0ecb718727b6c",
+    "backendContractFingerprint": "sha256:backend-contract-v1:92104623eb3205adaa23cccc593a604da25d7f696e79cd9b947b553b92da39f0",
+    "templateRevisionHash": "98b2b306a1e1b6198b80157de33d35a146532b246d2bdd4effb1bbc10415014f",
+    "capturedAt": "2026-11-25T17:07:08.451Z",
+    "outputExtension": "wav",
+    "primaryModelRepo": "stabilityai/stable-audio-open-1.0"
+  },
+  "stable_video_lighthouse_headland": {
+    "associationSha256": "8e3d467da8ae4717532674d6599a10054d19bc566d8faa1910004c85a6902cbf",
+    "backendSourceFingerprint": "sha256:backend-source-v1:b29a5b0d317aaa781ae2a5205b46b518eea5a3d68a214eb0968dba4ac0660af7",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d68ff3c7d7b2d190e68d6f148834ae971638c23a9d31086a3848874658f37da2",
+    "templateRevisionHash": "0ca724757ea5c4d3ddcb75957d99e5c8c25994915ebcb1610565e329e2542bd4",
+    "capturedAt": "2026-11-25T17:02:44.883Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    "outputSize": {
+      "width": 1024,
+      "height": 576
+    }
+  },
   "the_glasshouse_seed_tray": {
     "associationSha256": "e08a25a88a52011adcb645ed75fe1904eec042529005c19e11552d90210f3f03",
     "backendSourceFingerprint": "sha256:backend-source-v1:057b165c6ef6225461649a47077562dffad098a2d37d639a13bf0e73088d79ab",

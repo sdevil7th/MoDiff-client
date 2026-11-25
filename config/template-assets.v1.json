@@ -3057,6 +3057,17 @@
       "height": 48
     },
     {
+      "path": "template-gallery/inputs/stable_video_lighthouse_headland.first.png",
+      "size": 883588,
+      "sha256": "sha256:bytes:41f07c8ec7ab5d7097cba0f77867b61e666c6a803900784697ff816b851b98de",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 576
+    },
+    {
       "path": "template-gallery/inputs/wan_a14b_wind_across_pond.first.png",
       "size": 669116,
       "sha256": "sha256:bytes:cd29e54e208f6040d3f4cbbf8c9f096d537f8c71dffb50d5abae3298cc49deaf",
@@ -3859,8 +3870,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 527055,
-      "sha256": "sha256:bytes:789269290f378489a939b79daad98d9a5e2bf351c105f362895a5e8aee67a6f4",
+      "size": 531940,
+      "sha256": "sha256:bytes:da498c34fa5389f278304f27fe78a0058e8d74f4a0d188442bbad93d4a276328",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -9549,6 +9560,78 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.original-provenance.json",
+      "size": 1270,
+      "sha256": "sha256:bytes:26867757b5d173fd0561791ca6114c84c2cb07b0790c2c2c292b3a109af12bc9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.original-review.json",
+      "size": 636,
+      "sha256": "sha256:bytes:57dc1622e671d71d0f34df6890aaf520a98e64dd2f333edcac58fb6a641afea9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.quality-review.json",
+      "size": 2579,
+      "sha256": "sha256:bytes:2aa5a85090091d93cf2b23494790f75146c523fe1880bef0b0212d9f8bd7d2d5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/stable_audio_glass_roof_rain.retained-template-provenance.json",
+      "size": 3447,
+      "sha256": "sha256:bytes:6681cbf847e93d8e25b0bde0f61aaa1d7928e68d439875d8c204c69dc55fb7e9",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.original-provenance.json",
+      "size": 1200,
+      "sha256": "sha256:bytes:25bb70c7420bc425e8d919e74d2a48e7debf888e362b5c6da84ae841878cab74",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.original-review.json",
+      "size": 662,
+      "sha256": "sha256:bytes:9c2dbec34ba3818608ecd4e0f72729926d8ea1d536e90fb2e1a64d3cb1cad597",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.quality-review.json",
+      "size": 2507,
+      "sha256": "sha256:bytes:f61d4759e7dd2ef99f9553cce415e5f278eca5c61c68391935b6a5d9ac90ad3d",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/stable_video_lighthouse_headland.retained-template-provenance.json",
+      "size": 4026,
+      "sha256": "sha256:bytes:4522c6ff83f21b51ed4de646d27e95475255931ac9e243c77d167bc039c66f67",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/the_glasshouse_seed_tray.original-provenance.json",
       "size": 2794,
       "sha256": "sha256:bytes:267ab964ea3749739c8f58b86f7b94aa2c2cfe506a12c4f33c615c8415a97230",
@@ -11542,6 +11625,35 @@
       "height": 96
     },
     {
+      "path": "template-gallery/stable_audio_glass_roof_rain.wav",
+      "size": 5760044,
+      "sha256": "sha256:bytes:9fe09d48f7f229f04d2b34c2e193cf7346c68115bb618b84959478a3599a1e05",
+      "contentType": "audio/x-wav",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/stable_video_lighthouse_headland.mp4",
+      "size": 229224,
+      "sha256": "sha256:bytes:e08e06f8a9f0a1d88e5d34c224636586cce7b91bb79c25e89d197484c740a88c",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/stable_video_lighthouse_headland.poster.png",
+      "size": 437122,
+      "sha256": "sha256:bytes:67955f6727290e49f37945a2a27eeaf25032d7cd5595112523f1e9289d462292",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 960,
+      "height": 360
+    },
+    {
       "path": "template-gallery/the_glasshouse_seed_tray.webp",
       "size": 406498,
       "sha256": "sha256:bytes:21fc2abc9656ec805dfa5836064beb5c53e920fd8d75a658b7cfefdcff83a35f",
@@ -12081,9 +12193,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:ae0711e49b16b50a55cbdf0e7ca90b58b1b723e3a66b3385ca19662982e70c42",
+  "assetSetId": "sha256:canonical-json:b16429b50a2a5b58296739df4279f79fad5f7517d68bb2e5a54885d211aabb02",
   "status": "ready",
-  "assetCount": 1247,
-  "totalBytes": 1286569425,
+  "assetCount": 1259,
+  "totalBytes": 1293900615,
   "missingAssets": []
 }

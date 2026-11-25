@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "39306b96a08248f4d3b413833d51992227f3a31d"
+    "revision": "e39500e807b448bdb0df4e8cdc1cccbe3ff46f4a"
   },
   "originalCampaign": {
     "total": 89,
@@ -1185,7 +1185,19 @@
       "category": "supplementary-only",
       "reason": "Published from the approved saved AudioLDM2 run, outside the original curated selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "stable_audio_glass_roof_rain",
+      "category": "supplementary-only",
+      "reason": "Published from the approved AMD run, outside the original curated selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "stable_video_lighthouse_headland",
+      "category": "supplementary-only",
+      "reason": "Published from the approved AMD run, outside the original curated selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:5c3b0a2d2f94f37f99b9147fb7930b4052bad6f761c6a1fdcfc9f5197c79abc5"
+  "profileHash": "sha256:canonical-json:ba3051846bbff869e582a1cdd71fa2d395baed58ef2adbdb61a6babed1c5bb72"
 }
