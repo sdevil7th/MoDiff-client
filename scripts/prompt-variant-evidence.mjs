@@ -262,6 +262,17 @@ const wanA14BOpeningRoute = {
   chain: [['source', 'modules.Image', 'Load', ''], ...wanA14BRoute.chain],
 };
 
+const wanA14BDefaultOpeningRoute = {
+  ...wanA14BOpeningRoute,
+  format: 'modiff.private.wan-a14b-default-opening.v1',
+  previousExpertFamily: 'FluxControlImg2ImgPipeline',
+  sourceFingerprint: 'sha256:backend-source-v1:73c0d5622c9c305eb2c13478fbac4ca9ea09c71689c74d38679fa6af592c8964',
+  retainedRegistryHash: '0c7eb754b1eec427474be513ff6bd7837ce77ceb5f05853361616e302962fef4',
+  fixedAuthoredPrompts: true,
+  retainedImageLoadFields: true,
+  openingWebpSha256: '0afd006835683f29a96f60652958fe696713da2ac15bf75170e0e87b96860e15',
+};
+
 const ltx2AudioVideoRoutes = [
   ['LTX2Pipeline', 'text_to_video'],
   ['LTX2ConditionPipeline', 'text_to_video'],
@@ -814,7 +825,12 @@ export function bindPromptVariant(
   bindReviewedSettings(expectedOwners, profile.reviewedSettings);
   const expectedInputs = expectedOwners.generator.node.params;
   if (profile.bindsImage) {
-    assert.match(sourceValue, /^@data\/images\/[a-z0-9_-]{1,120}[.]png$/iu);
+    assert.match(
+      sourceValue,
+      profile.openingWebpSha256
+        ? /^@data\/images\/[a-z0-9_-]{1,120}[.]webp$/iu
+        : /^@data\/images\/[a-z0-9_-]{1,120}[.]png$/iu,
+    );
     const { params } = expectedOwners.source.node;
     same(params.file, { display: 'filebrowser', value: [] });
     assert.equal(params.alpha_channel.value, 'ignore');
@@ -861,7 +877,8 @@ export function bindPromptVariant(
   const submittedOwners = owners(profile, output);
   const prompt = submittedOwners.generator.node.params.prompt.value;
   assert.ok(typeof prompt === 'string' && prompt.length <= 4096 && prompt.trim() === prompt);
-  if (profile.canonicalDefaults) assert.equal(prompt, promptSlot.value, 'Canonical prompt cannot be changed.');
+  if (profile.canonicalDefaults || profile.fixedAuthoredPrompts)
+    assert.equal(prompt, promptSlot.value, 'Canonical prompt cannot be changed.');
   else if (profile.imageOnly) assert.equal(prompt, promptSlot.value);
   else assert.ok(prompt.length > 0);
   assert.ok(!/[\u0000-\u001f\u007f]/u.test(prompt), 'Prompt exercise contains an unsupported control character.');
@@ -879,6 +896,8 @@ export function bindPromptVariant(
       typeof negativePrompt === 'string' && negativePrompt.length <= 4096 && negativePrompt.trim() === negativePrompt,
     );
     assert.ok(!/[\u0000-\u001f\u007f]/u.test(negativePrompt));
+    if (profile.fixedAuthoredPrompts)
+      assert.equal(negativePrompt, slot.value, 'Canonical negative prompt cannot be changed.');
     slot.value = negativePrompt;
   }
   let seed;
@@ -1459,7 +1478,7 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
         audioLdmRoute,
         stableAudioRoute,
         wanA14BRoute,
-        wanA14BOpeningRoute,
+        evidence.format === wanA14BDefaultOpeningRoute.format ? wanA14BDefaultOpeningRoute : wanA14BOpeningRoute,
         evidence.format === wanSubwayDefaultRoute.format ? wanSubwayDefaultRoute : wanSubwayRoute,
         ...ltx2AudioVideoRoutes,
         ltxScheduledRoute,
@@ -1670,23 +1689,29 @@ export async function readPromptVariantEvidence({ clientRoot, manifest, graph, a
     const source = read(suppliedInput.file, (profile.nativeJointAudio ? 8 : 2) * 1024 * 1024);
     const upload = json(suppliedInput.upload);
     const { width, height } = inputBinding.decodedImage;
-    assert.equal(upload.error, false);
-    assert.equal(upload.path, suppliedInput.sourceValue);
-    same(
-      upload.media,
-      {
-        filename: suppliedInput.sourceValue.split('/').at(-1),
-        extension: '.png',
-        sizeBytes: source.bytes.length,
-        sha256: inputBinding.sha256,
-        kind: 'image',
-        mimeType: 'image/png',
-        width,
-        height,
-        frames: 1,
-      },
-      'Caption input differs from the original image upload.',
-    );
+    if (profile.openingWebpSha256) {
+      assert.equal(inputBinding.sha256, profile.openingWebpSha256, 'The authored opening image differs.');
+      const { verifyRetainedWebpUpload } = await import('./private-image-edit-evidence.mjs');
+      verifyRetainedWebpUpload(upload, suppliedInput, { width, height }, source.bytes);
+    } else {
+      assert.equal(upload.error, false);
+      assert.equal(upload.path, suppliedInput.sourceValue);
+      same(
+        upload.media,
+        {
+          filename: suppliedInput.sourceValue.split('/').at(-1),
+          extension: '.png',
+          sizeBytes: source.bytes.length,
+          sha256: inputBinding.sha256,
+          kind: 'image',
+          mimeType: 'image/png',
+          width,
+          height,
+          frames: 1,
+        },
+        'Caption input differs from the original image upload.',
+      );
+    }
     if (profile.retainedImageLoadFields) {
       const { decodedMediaHash } = await import('./template-gallery-harness.mjs');
       const decoded = await decodedMediaHash(source.file, 'image');

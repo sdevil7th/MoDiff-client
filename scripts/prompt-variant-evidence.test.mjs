@@ -49,6 +49,27 @@ test(
   },
 );
 
+const miseEvidence = process.env.MODIFF_WAN_A14B_DEFAULT_OPENING_EVIDENCE;
+test(
+  'Final Mise en Place binds the original WebP in the current generic Generate recipe',
+  { skip: !miseEvidence },
+  async () => {
+    const { receipt } = await readCanonicalWorkflowEvidence({
+      clientRoot,
+      backendRoot,
+      workflowId: 'WanImageToVideoPipeline:image_to_video',
+      evidencePath: miseEvidence,
+    });
+    assert.equal(receipt.taskId, 'JFza3SGd1h5j');
+    assert.equal(receipt.sourceTemplateId, 'wan_22_i2v_seed_vault');
+    assert.equal(receipt.inputBinding.sha256, '0afd006835683f29a96f60652958fe696713da2ac15bf75170e0e87b96860e15');
+    assert.deepEqual(receipt.inputBinding.decodedImage, { width: 1536, height: 1024, mode: 'RGB' });
+    assert.equal(receipt.decodedOutput.frames, 81);
+    assert.equal(receipt.observationLimits.openingImageLoadFieldsObserved, true);
+    assert.ok(Object.values(receipt.qualificationClaims).every((claim) => claim === false));
+  },
+);
+
 for (const [workflowId, environment, proofKind, output] of [
   [
     'StableAudioPipeline:text_to_audio',
