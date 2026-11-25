@@ -69,6 +69,31 @@ function assertRetainedNativeIdentity(association, entry, nativeReceipt, label) 
   same(actual, expected, label);
 }
 
+export function assertRetainedVideoReference(recipe, approvedFiles, nativeReceipt) {
+  const { referenceImageSha256 } = recipe;
+  assert.equal(approvedFiles.approvedReferenceImagePath?.sha256, referenceImageSha256);
+  if (referenceImageSha256 === undefined) return;
+  assert.match(referenceImageSha256, /^[a-f0-9]{64}$/u);
+  assert.equal(recipe.secondaryReferenceSha256, undefined);
+  const { inputBindings = [], inputRequirements } = recipe.template;
+  assert.ok(inputRequirements?.sourceVideo || inputBindings.some(({ field }) => field === 'sourceVideo'));
+  const imageBinding = inputBindings.find(
+    ({ field, mediaType }) => field === 'referenceImages' && mediaType === 'image',
+  );
+  assert.equal(
+    inputRequirements?.referenceImages ?? imageBinding?.count,
+    1,
+    'The retained video recipe must declare its reference image.',
+  );
+  if (nativeReceipt) {
+    same(
+      nativeReceipt.referenceBindings?.map(({ inputIndex, sha256 }) => ({ inputIndex, sha256 })),
+      [{ inputIndex: 0, sha256: referenceImageSha256 }],
+      'Published video reference differs from the saved input.',
+    );
+  }
+}
+
 function assertRetainedBatchEvidence({
   recipe,
   sourceWorkflow,
@@ -106,6 +131,7 @@ function assertRetainedBatchEvidence({
   assert.equal(association.approvedFiles.approvedGuidePath?.sha256, recipe.guideSha256);
   assert.equal(association.approvedFiles.approvedClosingFramePath?.sha256, recipe.lastFrameSha256);
   assert.equal(association.approvedFiles.approvedSecondaryReferencePath?.sha256, recipe.secondaryReferenceSha256);
+  assertRetainedVideoReference(recipe, association.approvedFiles, nativeReceipt);
   if (recipe.secondaryReferenceSha256) {
     assert.equal(recipe.template.mode, 'multi_image_reference_edit');
     same(

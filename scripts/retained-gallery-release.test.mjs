@@ -7,6 +7,7 @@ import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalWorkflowContract, readCanonicalEvidenceFile } from './release-contract-core.mjs';
 import {
   assertRetainedVideoAdjustment,
+  assertRetainedVideoReference,
   createRetainedGalleryReleaseReader,
   verifiedRetainedGalleryAssetIndex,
 } from './retained-gallery-release.mjs';
@@ -55,6 +56,53 @@ test('the saved Amber source stays byte-bound at its original size', { skip: !sa
   assert.throws(
     () => readCanonicalEvidenceFile(dirname(source), { ...ref, sha256: '0'.repeat(64) }, beforeLimit),
     /Evidence file hash differs/u,
+  );
+});
+
+test('a retained video reference binds the declared material image to the exact saved input', () => {
+  const sha256 = '1'.repeat(64);
+  const recipe = {
+    referenceImageSha256: sha256,
+    template: {
+      inputBindings: [
+        { field: 'sourceVideo', mediaType: 'video', count: 1 },
+        { field: 'maskVideo', mediaType: 'video', count: 1 },
+        { field: 'referenceImages', mediaType: 'image', count: 1 },
+      ],
+    },
+  };
+  const approvedFiles = { approvedReferenceImagePath: { sha256 } };
+  const native = { referenceBindings: [{ nodeId: 'reference-load', field: 'file', inputIndex: 0, sha256 }] };
+  assert.doesNotThrow(() => assertRetainedVideoReference(recipe, approvedFiles, native));
+  assert.doesNotThrow(() => assertRetainedVideoReference(recipe, approvedFiles));
+  assert.doesNotThrow(() =>
+    assertRetainedVideoReference(
+      { ...recipe, template: { inputRequirements: { sourceVideo: true, maskVideo: true, referenceImages: 1 } } },
+      approvedFiles,
+      native,
+    ),
+  );
+  assert.throws(() => assertRetainedVideoReference(recipe, {}, native));
+  assert.throws(() => assertRetainedVideoReference({}, approvedFiles, native));
+  assert.throws(
+    () => assertRetainedVideoReference(recipe, approvedFiles, { referenceBindings: [{ inputIndex: 1, sha256 }] }),
+    /Published video reference differs/u,
+  );
+  assert.throws(
+    () =>
+      assertRetainedVideoReference(recipe, approvedFiles, {
+        referenceBindings: [{ inputIndex: 0, sha256: '0'.repeat(64) }],
+      }),
+    /Published video reference differs/u,
+  );
+  assert.throws(
+    () =>
+      assertRetainedVideoReference(
+        { ...recipe, template: { inputBindings: recipe.template.inputBindings.slice(0, 2) } },
+        approvedFiles,
+        native,
+      ),
+    /must declare its reference image/u,
   );
 });
 
