@@ -493,6 +493,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // SSD weight-loading validation adds 28 measured startup gzip bytes.
+  28 +
   // Four approved saved image recipes add 1280 gzip bytes, for 574410 total.
   1280 +
   // The two approved FLUX control edits measure 573130 bytes.
@@ -813,6 +815,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same change adds 27 overall startup gzip bytes.
+  27 +
   // The four saved image recipes add 1281 gzip bytes, for 752896 total.
   1281 +
   // The same build measures 751615 total startup gzip bytes.

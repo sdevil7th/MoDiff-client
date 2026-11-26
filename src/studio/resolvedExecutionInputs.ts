@@ -1,6 +1,6 @@
 import type { StudioMode, StudioModelType, StudioOutput } from './types';
 import { STUDIO_MODE_DESCRIPTIONS, STUDIO_MODEL_LABELS, STUDIO_MODEL_PROFILES } from './modelProfiles';
-import type { WeightLoadingMode } from '../types/api';
+import { isWorkflowResourceValue, type WeightLoadingMode } from '../types/api';
 import { parseBuiltinMediaEvidence, type BuiltinMediaEvidence } from './builtinMediaEvidence';
 
 type InputValue = string | number | boolean | null | (string | number | boolean | null)[];
@@ -741,7 +741,7 @@ export function coerceResolvedExecutionInputs(
         !record(field) ||
         !inputValue(field.value) ||
         (scope === 'HuggingFaceTransformers.GenerateImageVideoText' && !textGenerationInputValue(key, field.value)) ||
-        (canonical === 'weightLoadingMode' && field.value !== 'cpu' && field.value !== 'cuda') ||
+        (canonical === 'weightLoadingMode' && !isWorkflowResourceValue('weight_loading_mode', field.value)) ||
         (canonical === 'weightFormat' &&
           field.value !== 'native' &&
           field.value !== 'fp8r' &&

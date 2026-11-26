@@ -4538,9 +4538,9 @@ test('Auto treats mirrored boundary resource inputs as one atomic resource group
   assert.deepEqual(exported(), before);
 });
 
-test('weight loading Auto plans accept only the declared cpu/cuda patch values', async () => {
+test('weight loading Auto plans accept only declared patch values', async () => {
   const auto = await server.ssrLoadModule('/src/studio/workflowAutoExecutionV2.ts');
-  for (const value of ['cpu', 'cuda']) {
+  for (const value of ['cpu', 'cuda', 'ssd_stream']) {
     const plan = { ...workflowPlan(true), patches: [{ nodeId: 'loader', field: 'weight_loading_mode', value }] };
     assert.deepEqual(auto.parseWorkflowAutoPlanV2(plan), plan);
   }
@@ -4571,8 +4571,8 @@ test('weight loading runtime messages preserve the field-specific current and pr
         resourceUpdates: [{ nodeId: 'loader', ...update }],
       }),
     );
-  for (const value of ['cpu', 'cuda'])
-    for (const previousValue of [undefined, null, 'cpu', 'cuda'])
+  for (const value of ['cpu', 'cuda', 'ssd_stream'])
+    for (const previousValue of [undefined, null, 'cpu', 'cuda', 'ssd_stream'])
       assert.ok(parsed({ field: 'weight_loading_mode', value, previousValue }));
   for (const value of ['auto', 'CUDA', '', true, null, 1])
     assert.equal(parsed({ field: 'weight_loading_mode', value }), null);

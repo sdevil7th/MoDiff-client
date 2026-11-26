@@ -320,7 +320,7 @@ export type ResourceRetryWebsocketMessage = BaseWebsocketMessage<'resource_retry
   errors?: unknown;
 };
 
-export type WeightLoadingMode = 'cpu' | 'cuda';
+export type WeightLoadingMode = 'cpu' | 'cuda' | 'ssd_stream';
 
 type WorkflowResourceValues = {
   offload_mode: string;
@@ -456,7 +456,7 @@ export function isWorkflowResourceValue(field: unknown, value: unknown): boolean
   return (
     (field === 'offload_mode' && typeof value === 'string') ||
     (field === 'auto_offload' && typeof value === 'boolean') ||
-    (field === 'weight_loading_mode' && (value === 'cpu' || value === 'cuda'))
+    (field === 'weight_loading_mode' && (value === 'cpu' || value === 'cuda' || value === 'ssd_stream'))
   );
 }
 

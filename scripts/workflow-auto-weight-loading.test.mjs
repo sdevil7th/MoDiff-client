@@ -491,12 +491,12 @@ test('actual backend weight-loading descriptor survives factory, fresh Model Set
     Array.isArray(descriptor.options)
       ? descriptor.options.map((option) => (typeof option === 'string' ? option : option.value))
       : Object.keys(descriptor.options),
-    ['cpu', 'cuda'],
+    ['cpu', 'cuda', 'ssd_stream'],
   );
   assert.equal(descriptor.fieldOptions.controlTier, 'advanced');
   const node = modules.factory.createNodeFromRegistry(key, fixture.registry, { x: 0, y: 0 });
   assert.deepEqual(node.data.params.weight_loading_mode, descriptor);
-  node.data.params.weight_loading_mode.value = 'cuda';
+  node.data.params.weight_loading_mode.value = 'ssd_stream';
   assert.equal(descriptor.value ?? descriptor.default, 'cpu');
   const graph = freshGraph();
   assert.equal(graph.nodes.filter((node) => !node.data.blockProjectionOwnerId).length, 4);
@@ -533,7 +533,7 @@ test('fresh image coordinator serializes the enum patch and preserves model and 
     const body = JSON.parse(init.body);
     requests.push({ url: String(url), body });
     if (String(url).endsWith('/auto_resource/workflow'))
-      return response(plan([{ nodeId: id, field: 'weight_loading_mode', value: 'cuda' }]));
+      return response(plan([{ nodeId: id, field: 'weight_loading_mode', value: 'ssd_stream' }]));
     assert.ok(String(url).endsWith('/graph'));
     return response({ task_id: 'metadata-transport-only', sid: 'session-1', message: 'queued' });
   };
@@ -544,9 +544,9 @@ test('fresh image coordinator serializes the enum patch and preserves model and 
   });
   assert.equal(requests.length, 2);
   assert.equal(requests[0].body.graph.nodes[id].params.weight_loading_mode.value, 'cpu');
-  assert.equal(requests[1].body.nodes[id].params.weight_loading_mode.value, 'cuda');
+  assert.equal(requests[1].body.nodes[id].params.weight_loading_mode.value, 'ssd_stream');
   const expected = structuredClone(before.nodes);
-  expected[id].params.weight_loading_mode.value = 'cuda';
+  expected[id].params.weight_loading_mode.value = 'ssd_stream';
   assert.deepEqual(result.submittedGraph.nodes, expected);
   assert.deepEqual(exported().nodes, expected);
   assert.equal(result.submittedGraph.runtimeHints.workflowAutoPlan.graphHash, plan([]).plannedGraphHash);

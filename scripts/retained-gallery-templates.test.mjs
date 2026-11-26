@@ -773,9 +773,13 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         assert.equal(preview.device.value, 'cuda:0');
         preview.device.value = 'cpu:0';
       } else {
-        // The retained loader preceded explicit quantization. This current
-        // field was separately asserted above to keep the same native default.
-        delete comparable.nodes[binding.nodes.transformersTextModel].params.quantization_mode;
+        // This retained loader predates the two explicit placement controls.
+        // Verify the fresh graph uses the same defaults before comparing the
+        // remaining fields against the archived recipe.
+        const model = comparable.nodes[binding.nodes.transformersTextModel].params;
+        assert.equal(model.weight_loading_mode.value, 'cpu');
+        delete model.weight_loading_mode;
+        delete model.quantization_mode;
       }
       const byRole = ({ nodes }) => Object.fromEntries(nodes.map((node) => [node.key, node.params]));
       assert.deepEqual(

@@ -2079,9 +2079,9 @@ test('captured native and whole-pipeline attention/VAE policies survive history 
   assert.deepEqual(inputs.coerceResolvedExecutionInputs(mixed, identity), mixed);
 });
 
-test('captured weight loading mode preserves its cpu/cuda value through output history', () => {
+test('captured weight loading mode survives output history', () => {
   const identity = { taskId: 'actual-task', attemptIndex: 2, nodeId: 'preview' };
-  for (const value of ['cpu', 'cuda']) {
+  for (const value of ['cpu', 'cuda', 'ssd_stream']) {
     const capture = receipt();
     capture.nodes.push({
       nodeId: 'loader',

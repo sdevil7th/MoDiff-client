@@ -3176,6 +3176,19 @@ test('only current registry runtime scopes refresh hardware choices across unrel
   );
 });
 
+test('SSD streaming extends an older loading selector only at presentation time', async () => {
+  const options = await server.ssrLoadModule('/src/studio/runtimeOptions.ts');
+  const api = await server.ssrLoadModule('/src/types/api.ts');
+  const saved = ['cpu', 'cuda'];
+  const live = { weight_loading_mode: { runtimeOptions: 'choices', options: ['cpu', 'cuda', 'ssd_stream'] } };
+  const presented = options.registeredRuntimeOptionPresentation(saved, 'weight_loading_mode', live);
+  assert.deepEqual(options.runtimeOptionValues(presented), ['cpu', 'cuda', 'ssd_stream']);
+  assert.deepEqual(saved, ['cpu', 'cuda']);
+  assert.equal(options.registeredRuntimeOptionPresentation(saved, 'weight_loading_mode', undefined), saved);
+  assert.equal(api.isWorkflowResourceValue('weight_loading_mode', 'ssd_stream'), true);
+  assert.equal(api.isWorkflowResourceValue('weight_loading_mode', 'another-setting'), false);
+});
+
 test('generic model default weight format requires its exact declared immutable selection', async () => {
   const inventory = await server.ssrLoadModule('/src/workflow/workflowModelInventory.ts');
   const model = {
