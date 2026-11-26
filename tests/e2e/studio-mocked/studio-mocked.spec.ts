@@ -36973,9 +36973,22 @@ test('standalone startup awaits owned metadata and fresh workflow reload retains
       },
     });
   });
+  const waitForStandaloneLauncher = async () => {
+    // Keep the fallback timer paused until this page owns the runtime metadata.
+    // The lazy launcher can then commit on the next animation frames.
+    await expect
+      .poll(() => page.evaluate(() => window.__MODIFF_E2E__?.getState().nodes.discoveryRequests.runtime.status))
+      .toBe('success');
+    await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        await page.clock.runFor(250);
+        return page.getByTestId('task-launcher').isVisible();
+      })
+      .toBe(true);
+  };
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('task-launcher')).toBeVisible();
-  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+  await waitForStandaloneLauncher();
   await page.clock.runFor(1200);
   const id = await page.evaluate(() => window.__MODIFF_E2E__!.getState().studio.activeWorkflowTabId!);
   await expect.poll(() => documents.filter((x) => x.id === id).length).toBeGreaterThan(0);
@@ -36984,8 +36997,7 @@ test('standalone startup awaits owned metadata and fresh workflow reload retains
   expect(queueRequests).toBe(0);
   const before = documents.length;
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('task-launcher')).toBeVisible();
-  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0);
+  await waitForStandaloneLauncher();
   await page.clock.runFor(1200);
   await expect.poll(() => documents.slice(before).filter((x) => x.id === id).length).toBeGreaterThan(0);
   expect(documents.slice(before).find((x) => x.id === id)!.method).toBe('GET');
