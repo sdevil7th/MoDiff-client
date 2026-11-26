@@ -1674,5 +1674,54 @@
     "inputSha256": "c3d52c29b6a8cae80d2feffb8a978cded8b34509abd09216f665ab3af13f189e",
     "inputLocatorSha256": "413b3d05273c8b38fd36af33d25ef9f1f5e017f7cdc243f861c9138f071ad452",
     "guideSha256": "2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e"
+  },
+  "pixart_sigma_terracotta_herbs": {
+    "workflowId": "PixArtSigmaPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:pixart-sigma-1024:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:45bdf2a38647f2c0aaa52206922a4a32a60e4253a3d6cf9185f7007125d367f4",
+    "originalReceiptSha256": "9076f16b4370211173012a13026466ed57e9b82f92a720e5a337391ec71dbe63",
+    "reviewedTemplateSha256": "480e216355d747c12b2bb430d60fb8b3f6e774775d7976d5ffcf2fc108af82ee",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_41e35f4c",
+      "galleryTemplateLockHash": "tpl_a325d457",
+      "promptSettingsHash": "ps_7d930751"
+    },
+    "promptSha256": "813f8878c0e2ff1f2dfeba644ba0c587bbfc5f22664a590ac6733ce4e8a459e6"
+  },
+  "pixart_sigma_pag_pink_mascot": {
+    "workflowId": "PixArtSigmaPAGPipeline:text_to_image",
+    "sourceTaskTemplateId": "task-template:pixart-sigma-1024-pag:text-to-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:202b5ad2b76097f3e45033e55153e9077e4110164e5878672526eeb72d986b57",
+    "originalReceiptSha256": "54cc8c6e36ad415979c524badb765ea92ef6d2e3de0cbee165f1d77d0fad26c4",
+    "reviewedTemplateSha256": "f1f33d46c694c535230dc9b15fd3c021ad4b4b9a9a70d99a5596c01c3a5f2025",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_547b61fe",
+      "galleryTemplateLockHash": "tpl_723f7b31",
+      "promptSettingsHash": "ps_13489954"
+    }
+  },
+  "ddpm_cifar32_technical_preview": {
+    "workflowId": "DDPMPipeline:unconditional_image",
+    "sourceTaskTemplateId": "task-template:ddpm-cifar10:unconditional-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:4fc0c90a6cd5807a3e07843afc9b41d2464390cd6d445b418d0cc48ce964ecc7",
+    "originalReceiptSha256": "61f703fb3a33e10d66c0d7b365b2960bcef3adebef89ed32e25da14310758c62",
+    "reviewedTemplateSha256": "ea0657f083a38e463cf3e03212cb1080bf03a810f8feb162a0f80176cf48b34e",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_56aaf24b",
+      "galleryTemplateLockHash": "tpl_9d22bacd",
+      "promptSettingsHash": "ps_e4c5ee1c"
+    }
+  },
+  "consistency_64_technical_preview": {
+    "workflowId": "ConsistencyModelPipeline:unconditional_image",
+    "sourceTaskTemplateId": "task-template:consistency-imagenet64:unconditional-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:6912051646a49f18b61e7f98fdf9665059818faaac3ca3d29c796b32941ee479",
+    "originalReceiptSha256": "334fff51739318953bc9c5b7c98530c929b8765592f800d1ec9f4453744e9495",
+    "reviewedTemplateSha256": "7c73b72123f3a2fc2e3bdef6594d378cfdb16bf862bab5aa0c230cde93e52bfb",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_cdc10e5d",
+      "galleryTemplateLockHash": "tpl_2aa7d54b",
+      "promptSettingsHash": "ps_b171853c"
+    }
   }
 }

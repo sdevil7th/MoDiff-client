@@ -16,6 +16,30 @@ import { verifyRetainedSpeechGalleryEvidence } from './retained-speech-gallery-e
 
 const same = (actual, expected, label) => assert.deepEqual(actual, expected, label);
 
+const fullGraphImageResources = new Map([
+  ['DDIMPipeline:unconditional_image', 'manual-resource-v1:DDIMPipeline|float32|none|none'],
+  ['DDPMPipeline:unconditional_image', 'manual-resource-v1:DDPMPipeline|float32|none|none'],
+  ['ConsistencyModelPipeline:unconditional_image', 'manual-resource-v1:ConsistencyModelPipeline|float32|none|none'],
+  ['PixArtSigmaPAGPipeline:text_to_image', 'manual-resource-v1:PixArtSigmaPAGPipeline|float32|model_cpu|none'],
+]);
+
+export function retainedFullGraphImageResource(workflowId) {
+  return fullGraphImageResources.get(workflowId) ?? null;
+}
+
+export function assertRetainedFullGraphImage(nativeOutput, receipt, output, dimensions, label) {
+  assert.equal(receipt.proofKind, 'real_backend_weights', label);
+  assert.equal(nativeOutput.collectionHash, receipt.outputHash, label);
+  assert.equal(nativeOutput.count, 1, label);
+  assert.equal(nativeOutput.items.length, 1, label);
+  const [image] = nativeOutput.items;
+  assert.equal(image.mediaType, 'image', label);
+  assert.equal(image.backendMediaHash, output.outputEncodedSha256, label);
+  assert.equal(image.byteSize, output.outputBytes, label);
+  assert.equal(image.decodedSha256, output.decodedMediaHash, label);
+  assert.deepEqual([image.width, image.height], dimensions, label);
+}
+
 export function assertRetainedVideoAdjustment(nativeReceipt, output, label) {
   const { videoAdjustment, video } = output;
   const source = nativeReceipt.decodedOutput;
@@ -138,12 +162,7 @@ function assertRetainedBatchEvidence({
   assert.equal(association.originalCanonicalWorkflowHash, sourceWorkflow.contract.graphHash);
   assert.equal(association.originalEvidenceSha256, recipe.originalReceiptSha256);
   assert.equal(association.originalGraphHash, recipe.retainedGraphHash);
-  assert.equal(
-    association.originalResourceCandidateId,
-    recipe.workflowId === 'DDIMPipeline:unconditional_image'
-      ? 'manual-resource-v1:DDIMPipeline|float32|none|none'
-      : null,
-  );
+  assert.equal(association.originalResourceCandidateId, retainedFullGraphImageResource(recipe.workflowId));
   assert.equal(association.originalTemplateLockHash, null);
   assert.equal(association.observedExecution.backendContractFingerprint, entry.backendContractFingerprint);
   assert.equal(association.observedExecution.observationLimits.physicalPlatformQualification, false);
@@ -180,15 +199,15 @@ function assertRetainedBatchEvidence({
   if (!nativeReceipt) return;
   const label = 'Published Gallery batch proof differs from the verified native receipt.';
   assertRetainedNativeIdentity(association, entry, nativeReceipt, label);
-  if (recipe.workflowId === 'DDIMPipeline:unconditional_image') {
-    assert.equal(nativeReceipt.proofKind, 'real_backend_weights', label);
+  if (retainedFullGraphImageResource(recipe.workflowId)) {
     assert.equal(nativeReceipt.backendContractFingerprint, entry.backendContractFingerprint, label);
-    assert.equal(native.provenance.output.collectionHash, nativeReceipt.outputHash, label);
-    const [image] = native.provenance.output.items;
-    assert.equal(native.provenance.output.count, 1, label);
-    assert.equal(image.backendMediaHash, association.output.outputEncodedSha256, label);
-    assert.equal(image.decodedSha256, association.output.decodedMediaHash, label);
-    assert.deepEqual([image.width, image.height], [entry.width, entry.height], label);
+    assertRetainedFullGraphImage(
+      native.provenance.output,
+      nativeReceipt,
+      association.output,
+      [entry.width, entry.height],
+      label,
+    );
     return;
   }
   assert.equal(nativeReceipt.canonicalDefaultsExecuted, false, label);

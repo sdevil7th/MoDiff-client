@@ -195,7 +195,9 @@ test('retained Gallery recipes preserve the native graph identities and standalo
         });
         assert.equal(canonicalGraphIdentity(api).hash, recipe.retainedGraphHash, template.id);
         assert.deepEqual(
-          Object.values(capture.inputs ?? [capture.input ?? { file: capture.source }])
+          Object.values(
+            capture.inputs ?? (capture.input || capture.source ? [capture.input ?? { file: capture.source }] : []),
+          )
             .map(({ file }) => file.sha256)
             .sort(),
           [
@@ -237,7 +239,11 @@ test('retained Gallery recipes preserve the native graph identities and standalo
       assert.equal(retainedTemplateGraph(recipe).hash, recipe.retainedGraphHash, template.id);
     }
   }
-  assert.ok(!published.some((item) => ['PixArtSigmaPAGPipeline', 'ShapEPipeline'].includes(item.modelType)));
+  const pag = published.find((item) => item.id === 'pixart_sigma_pag_pink_mascot');
+  assert.equal(pag.modelType, 'PixArtSigmaPAGPipeline');
+  assert.equal(pag.prompt, '');
+  assert.equal(pag.example.lockedSettings.pagScale, 4);
+  assert.ok(!published.some((item) => item.modelType === 'ShapEPipeline'));
 });
 
 test('fresh Expert recipes prepare with current backend specs and without a generation request', async () => {

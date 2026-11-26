@@ -254,6 +254,10 @@ export type StudioPresetId =
 export type StudioTemplateId =
   | 'alpine_lake_in_oils'
   | 'ddim_cifar10_preview'
+  | 'ddpm_cifar32_technical_preview'
+  | 'consistency_64_technical_preview'
+  | 'pixart_sigma_terracotta_herbs'
+  | 'pixart_sigma_pag_pink_mascot'
   | 'sdxl_clear_cobalt_backdrop'
   | 'sdxl_turbo_orange_caps'
   | 'whisper_small_an_open_door'

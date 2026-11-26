@@ -6,10 +6,12 @@ import { test } from 'node:test';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { canonicalWorkflowContract, readCanonicalEvidenceFile } from './release-contract-core.mjs';
 import {
+  assertRetainedFullGraphImage,
   assertRetainedMotionInputs,
   assertRetainedVideoAdjustment,
   assertRetainedVideoReference,
   createRetainedGalleryReleaseReader,
+  retainedFullGraphImageResource,
   verifiedRetainedGalleryAssetIndex,
 } from './retained-gallery-release.mjs';
 import { createHash } from 'node:crypto';
@@ -21,6 +23,49 @@ import {
 import { loadTemplateRuntime } from './template-gallery-harness.mjs';
 
 const hash = (value) => `sha256:canonical-json:${canonicalJsonHash(value)}`;
+
+test('full-graph image recipes require the saved resource settings and exact native image', () => {
+  assert.equal(
+    retainedFullGraphImageResource('PixArtSigmaPAGPipeline:text_to_image'),
+    'manual-resource-v1:PixArtSigmaPAGPipeline|float32|model_cpu|none',
+  );
+  for (const pipeline of ['DDIMPipeline', 'DDPMPipeline', 'ConsistencyModelPipeline']) {
+    assert.equal(
+      retainedFullGraphImageResource(`${pipeline}:unconditional_image`),
+      `manual-resource-v1:${pipeline}|float32|none|none`,
+    );
+  }
+  assert.equal(retainedFullGraphImageResource('PixArtSigmaPipeline:text_to_image'), null);
+  const image = {
+    mediaType: 'image',
+    backendMediaHash: 'original-image-bytes',
+    decodedSha256: 'original-decoded-image',
+    width: 32,
+    height: 32,
+    byteSize: 2000,
+  };
+  const native = { collectionHash: 'original-collection', count: 1, items: [image] };
+  const receipt = { proofKind: 'real_backend_weights', outputHash: native.collectionHash };
+  const output = {
+    outputEncodedSha256: image.backendMediaHash,
+    decodedMediaHash: image.decodedSha256,
+    outputBytes: 2000,
+  };
+  const check = (collection, run = receipt) => assertRetainedFullGraphImage(collection, run, output, [32, 32]);
+  assert.doesNotThrow(() => check(native));
+  assert.throws(() => check(native, { ...receipt, proofKind: 'real_backend_prompt_bound_model_variant' }));
+  assert.throws(() => check({ ...native, collectionHash: 'another-collection' }));
+  assert.throws(() => check({ ...native, items: [image, image] }));
+  for (const override of [
+    { width: 64 },
+    { mediaType: 'video' },
+    { byteSize: 2001 },
+    { backendMediaHash: 'another-encoded-image' },
+    { decodedSha256: 'another-decoded-image' },
+  ]) {
+    assert.throws(() => check({ ...native, items: [{ ...image, ...override }] }));
+  }
+});
 
 test('only retained Gallery before videos accept the larger encoded source size', () => {
   for (const prefix of ['', '/']) {

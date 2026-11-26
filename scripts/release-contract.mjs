@@ -23,7 +23,7 @@ import {
 import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
 import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest-state.mjs';
 import { readReviewedBoundTemplateAssociations } from './retained-template-association.mjs';
-import { createRetainedGalleryReleaseReader } from './retained-gallery-release.mjs';
+import { createRetainedGalleryReleaseReader, retainedFullGraphImageResource } from './retained-gallery-release.mjs';
 import { canonicalJsonHash } from './canonical-json.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -390,7 +390,7 @@ if (existsSync(canonicalRegistryPath)) {
       if (
         derived.receipt.inputBinding ||
         derived.receipt.promptBinding ||
-        stored.workflowId === 'DDIMPipeline:unconditional_image'
+        retainedFullGraphImageResource(stored.workflowId)
       ) {
         if (retainedNativeBySha.has(stored.evidenceSha256)) {
           throw new Error(`Original bound workflow evidence is duplicated: ${stored.workflowId}`);

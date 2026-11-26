@@ -579,5 +579,25 @@
     "bytes": 5192,
     "sha256": "f4d0c17bb30cd6be44f18dc6edbd80f72f52000702e9093aff3178fe2f7b1efa",
     "additionalDescriptorHashes": ["bf9721153bcecfc373e34c532462a705e21dda2fd89fbc1c168fa910d1c558e7"]
+  },
+  "PixArtSigmaPipeline:text_to_image": {
+    "descriptorSha256": "9076f16b4370211173012a13026466ed57e9b82f92a720e5a337391ec71dbe63",
+    "bytes": 4120,
+    "sha256": "025a0e44cd231f3579a4173439d642355212ee7fd4415540039b6c8aae5246e4"
+  },
+  "PixArtSigmaPAGPipeline:text_to_image": {
+    "descriptorSha256": "54cc8c6e36ad415979c524badb765ea92ef6d2e3de0cbee165f1d77d0fad26c4",
+    "bytes": 4264,
+    "sha256": "d2182c0c8c32de1c79574440e4b2bd3c06ed5e65d44e25577e84abe66d1bb151"
+  },
+  "DDPMPipeline:unconditional_image": {
+    "descriptorSha256": "61f703fb3a33e10d66c0d7b365b2960bcef3adebef89ed32e25da14310758c62",
+    "bytes": 3420,
+    "sha256": "617f8c40fd0786d79297a9d2820959c7cf4c52de7e7bb751dbcfaf32b17ddf08"
+  },
+  "ConsistencyModelPipeline:unconditional_image": {
+    "descriptorSha256": "334fff51739318953bc9c5b7c98530c929b8765592f800d1ec9f4453744e9495",
+    "bytes": 3531,
+    "sha256": "6ac7b11519a0b10ab0aed6a6562a888354c2716e130f1039cf6ce37ef91bb16d"
   }
 }

@@ -343,6 +343,17 @@
       ]
     },
     {
+      "path": "template-gallery/consistency_64_technical_preview.webp",
+      "size": 1670,
+      "sha256": "sha256:bytes:51a46954f6fbb16fa13807e9f376ab88a70fd39fc4d134101ebc560569d5a59a",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 64,
+      "height": 64
+    },
+    {
       "path": "template-gallery/copper_hour_dunes.webp",
       "size": 135298,
       "sha256": "sha256:bytes:45eabeca35fe5982441c80158faa69bca6da1d7f2efb3002a81a8b5c03ae4ef2",
@@ -368,6 +379,17 @@
       "path": "template-gallery/ddim_cifar10_preview.webp",
       "size": 962,
       "sha256": "sha256:bytes:8da37d75c632e43b7131bcb634f76a9e83857a88bf511785fa8f55c746f0f0a4",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "path": "template-gallery/ddpm_cifar32_technical_preview.webp",
+      "size": 954,
+      "sha256": "sha256:bytes:c5c8e86cdb7b5b694a8497742b80cbefc3d2563e08ae17be690b666dc6d7d533",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -3903,8 +3925,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 537280,
-      "sha256": "sha256:bytes:eec3e7bc7d17a4f6ef3063c9d38ff2b85eb230d059576df289a879312a018e88",
+      "size": 546548,
+      "sha256": "sha256:bytes:8539f3e57be366102255dd96d82f277c46c6f00f90dc3564e87b87c51926a17f",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -3988,6 +4010,28 @@
       "path": "template-gallery/persimmon_glaze.webp",
       "size": 67650,
       "sha256": "sha256:bytes:0a8f757232720068dbf3ad94fa81e525c7e9d7260853680328019c43ded30279",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/pixart_sigma_pag_pink_mascot.webp",
+      "size": 249382,
+      "sha256": "sha256:bytes:3070a4858fe91e8567d36bfc706a6201690ccc27f341e5191be548c99f97c28c",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/pixart_sigma_terracotta_herbs.webp",
+      "size": 395394,
+      "sha256": "sha256:bytes:97aac37be4286b29536fd415783ee91c3879822ea122c705a5573ba251ac1441",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -5361,6 +5405,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/consistency_64_technical_preview.original-provenance.json",
+      "size": 1051,
+      "sha256": "sha256:bytes:c82dfa46d0a9c91b1feeda1193f8edc71f9b41764c039fde7f6342baa26a0308",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/consistency_64_technical_preview.original-review.json",
+      "size": 506,
+      "sha256": "sha256:bytes:82808ed1d53a1d3f2d221a562605d1d069a4dd7ceb047d87587437b6b2e0842a",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/consistency_64_technical_preview.quality-review.json",
+      "size": 2444,
+      "sha256": "sha256:bytes:b4c1485e93b6e771f7179a46190fb3abd473c0755eda9cf3c3a502281ffd6b80",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/consistency_64_technical_preview.retained-template-provenance.json",
+      "size": 3394,
+      "sha256": "sha256:bytes:e7f7e6760448ffa8638c917540596a40382e0cd2b26d4d290346e03127ac0564",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/copper_hour_dunes.original-provenance.json",
       "size": 3659,
       "sha256": "sha256:bytes:6223329bd7a1a962703aefba1379c33dae7f57daa40a09aa8e77c1cdd05b099c",
@@ -5463,6 +5543,42 @@
       "path": "template-gallery/reviews/ddim_cifar10_preview.retained-template-provenance.json",
       "size": 3342,
       "sha256": "sha256:bytes:8f2075aff72c4a31ca3e247ce7b1c1c6ebaa8b8f29d7ad7e124555543b7ddfbd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ddpm_cifar32_technical_preview.original-provenance.json",
+      "size": 999,
+      "sha256": "sha256:bytes:766480adc6a7bcef178a8d124f1a4fca0fc03b1c708130a14c3b03afa1d110b0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ddpm_cifar32_technical_preview.original-review.json",
+      "size": 488,
+      "sha256": "sha256:bytes:bea6f49fd79e6e4aa10fb89efd4774be93d87aa43f45a0f1369193c4646601a0",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ddpm_cifar32_technical_preview.quality-review.json",
+      "size": 2416,
+      "sha256": "sha256:bytes:a5b456f0922a48ac8be8bf15923da379a96af7ce3ef8f71225ddf34a0924d1c3",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/ddpm_cifar32_technical_preview.retained-template-provenance.json",
+      "size": 3337,
+      "sha256": "sha256:bytes:466a9954a1a05984d31ac6a9b6cb5d3ed37c90460b039093f5dc89565bcf2673",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -7859,6 +7975,78 @@
       "path": "template-gallery/reviews/persimmon_glaze.retained-template-provenance.json",
       "size": 3294,
       "sha256": "sha256:bytes:4813f96f9332d04d4b8b0fc8d30d51e110ab8d157a1aef7c6172474f09bb490f",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_pag_pink_mascot.original-provenance.json",
+      "size": 1237,
+      "sha256": "sha256:bytes:14847afca116ec723f4a85007332a14b6cc31f52226c62ae6a04c2c7640982de",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_pag_pink_mascot.original-review.json",
+      "size": 525,
+      "sha256": "sha256:bytes:332ba1b4fcd00c119b88015f82d40f13c985a294661b2c1f48f8b80c00a866b7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_pag_pink_mascot.quality-review.json",
+      "size": 2440,
+      "sha256": "sha256:bytes:b2babd69ef190701f21b5831fef6b8a10f3999e0051db6b6e45226882f5db666",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_pag_pink_mascot.retained-template-provenance.json",
+      "size": 3373,
+      "sha256": "sha256:bytes:47d6baf48d8af2f0ba388dc5ffa2c9445a3b3a261056f07b0968c7a52b697315",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_terracotta_herbs.original-provenance.json",
+      "size": 1434,
+      "sha256": "sha256:bytes:50104329cd991e137b9fabe09a0177216e250f601eb076ecf26f055dc6e7c12b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_terracotta_herbs.original-review.json",
+      "size": 474,
+      "sha256": "sha256:bytes:a4fc8269ed81c851a2ba87c033f6a578343afafe612b1b74f5afd73315cbadcb",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_terracotta_herbs.quality-review.json",
+      "size": 2330,
+      "sha256": "sha256:bytes:f8446ea6f8c3a4edd86455cfd8aa456b5c899a6e11cfa3e766aed2eccc99e6e4",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/pixart_sigma_terracotta_herbs.retained-template-provenance.json",
+      "size": 3350,
+      "sha256": "sha256:bytes:143ee68055070094253340c78699cdfd77ea54a43ff6678400988c1b8f27b56e",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -12298,9 +12486,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:f7171be49ec9b65b02949db31d45a0bc8a4079a2dec5a35d32d2e70e597e8468",
+  "assetSetId": "sha256:canonical-json:179504c1ce6950cf1b5f94f30e743f39b2fb5a2b0b2a3bd6a4558b833bb0ebcd",
   "status": "ready",
-  "assetCount": 1270,
-  "totalBytes": 1294535654,
+  "assetCount": 1290,
+  "totalBytes": 1295222120,
   "missingAssets": []
 }

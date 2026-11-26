@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "9f5e32a0c6cf9096d76e625bf7f844c10680edd4"
+    "revision": "47f928f9ba9df49317b24dd18e267fdb9d873e02"
   },
   "originalCampaign": {
     "total": 89,
@@ -1209,7 +1209,31 @@
       "category": "supplementary-only",
       "reason": "Published from the approved AMD run, outside the original curated selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "pixart_sigma_terracotta_herbs",
+      "category": "supplementary-only",
+      "reason": "Published from the approved saved recipe, outside the original curated selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "pixart_sigma_pag_pink_mascot",
+      "category": "supplementary-only",
+      "reason": "Published from the approved saved recipe, outside the original curated selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "ddpm_cifar32_technical_preview",
+      "category": "supplementary-only",
+      "reason": "Published from the approved saved recipe, outside the original curated selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "consistency_64_technical_preview",
+      "category": "supplementary-only",
+      "reason": "Published from the approved saved recipe, outside the original curated selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:73677bd5c8dd26c2d8c30db64dfb28aa3eb38771ae741647b6733d5b5dce3572"
+  "profileHash": "sha256:canonical-json:0a2a95138336a3c15595776d9758b300a4347cdef17d4f57aba4b11127d5aab0"
 }

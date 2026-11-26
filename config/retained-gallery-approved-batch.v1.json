@@ -1634,5 +1634,57 @@
     },
     "beforeExtension": "webp",
     "beforePath": "/template-gallery/inputs/flux_depth_marine_bow_repair.before.webp"
+  },
+  "pixart_sigma_terracotta_herbs": {
+    "associationSha256": "0b6f6526aee4aed5db56e4d685b2bb903e3ff8c0a94b0060edd4620d37f3ab09",
+    "backendSourceFingerprint": "sha256:backend-source-v1:e3aea8f8d102572ad10fdd0700f0c42d92061e864ede89777efcd6a3269770a8",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "480e216355d747c12b2bb430d60fb8b3f6e774775d7976d5ffcf2fc108af82ee",
+    "capturedAt": "2026-11-23T17:15:12.387Z",
+    "outputExtension": "webp",
+    "primaryModelRepo": "PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "pixart_sigma_pag_pink_mascot": {
+    "associationSha256": "0e88e6d01b9ffc0074cfac9d245c295304d45996ffd7557d3a5bc96a7c32dba8",
+    "backendSourceFingerprint": "sha256:backend-source-v1:8dd9a4d61d2c9c484e4167e38e7360d6b64a37d278e49771630e428189f5448b",
+    "backendContractFingerprint": "sha256:backend-contract-v1:300f2fb801e65ef8a0355d217f3f89e59d11e38f976af5a86ba41212d30216fd",
+    "templateRevisionHash": "f1f33d46c694c535230dc9b15fd3c021ad4b4b9a9a70d99a5596c01c3a5f2025",
+    "capturedAt": "2026-11-19T06:29:39.928Z",
+    "outputExtension": "webp",
+    "primaryModelRepo": "PixArt-alpha/PixArt-Sigma-XL-2-1024-MS",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "ddpm_cifar32_technical_preview": {
+    "associationSha256": "1aeeeb5ba1b8bf92cac5150e6d16c4ce742891205863e39fff482cfa14cc3d9a",
+    "backendSourceFingerprint": "sha256:backend-source-v1:8dd9a4d61d2c9c484e4167e38e7360d6b64a37d278e49771630e428189f5448b",
+    "backendContractFingerprint": "sha256:backend-contract-v1:d16a0d75259eb0a1deadd48385d2f456ee5d7ed8e4c42ec8c27a53a0f95c079c",
+    "templateRevisionHash": "ea0657f083a38e463cf3e03212cb1080bf03a810f8feb162a0f80176cf48b34e",
+    "capturedAt": "2026-11-19T07:41:28.161Z",
+    "outputExtension": "webp",
+    "primaryModelRepo": "google/ddpm-cifar10-32",
+    "outputSize": {
+      "width": 32,
+      "height": 32
+    }
+  },
+  "consistency_64_technical_preview": {
+    "associationSha256": "38d3a6c81c2e1c4db1cb5a683ff5480ac75ea09f9a3ddc710018caeba0bce559",
+    "backendSourceFingerprint": "sha256:backend-source-v1:8dd9a4d61d2c9c484e4167e38e7360d6b64a37d278e49771630e428189f5448b",
+    "backendContractFingerprint": "sha256:backend-contract-v1:fd79d9695a0390dba3364bad57ac4ea2ccbb5cef673189181f756368701ea1e4",
+    "templateRevisionHash": "7c73b72123f3a2fc2e3bdef6594d378cfdb16bf862bab5aa0c230cde93e52bfb",
+    "capturedAt": "2026-11-19T07:34:55.386Z",
+    "outputExtension": "webp",
+    "primaryModelRepo": "openai/diffusers-cd_imagenet64_l2",
+    "outputSize": {
+      "width": 64,
+      "height": 64
+    }
   }
 }
