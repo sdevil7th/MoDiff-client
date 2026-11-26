@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "e39500e807b448bdb0df4e8cdc1cccbe3ff46f4a"
+    "revision": "9f5e32a0c6cf9096d76e625bf7f844c10680edd4"
   },
   "originalCampaign": {
     "total": 89,
@@ -1197,7 +1197,19 @@
       "category": "supplementary-only",
       "reason": "Published from the approved AMD run, outside the original curated selection.",
       "countedAsComplete": false
+    },
+    {
+      "id": "flux_canny_black_ink_cube",
+      "category": "supplementary-only",
+      "reason": "Published from the approved AMD run, outside the original curated selection.",
+      "countedAsComplete": false
+    },
+    {
+      "id": "flux_depth_marine_teal_bow_edit",
+      "category": "supplementary-only",
+      "reason": "Published from the approved AMD run, outside the original curated selection.",
+      "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:ba3051846bbff869e582a1cdd71fa2d395baed58ef2adbdb61a6babed1c5bb72"
+  "profileHash": "sha256:canonical-json:73677bd5c8dd26c2d8c30db64dfb28aa3eb38771ae741647b6733d5b5dce3572"
 }

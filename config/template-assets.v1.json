@@ -574,6 +574,17 @@
       "height": 512
     },
     {
+      "path": "template-gallery/flux_canny_black_ink_cube.webp",
+      "size": 104436,
+      "sha256": "sha256:bytes:6e5d7e57733a301c94e9ec50075492aebb831b8f2686f3c96ab810592a5ff3b0",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
       "path": "template-gallery/flux_canny_clean_backdrop.webp",
       "size": 119146,
       "sha256": "sha256:bytes:7261f62b7730f9bd0ceebf9beb3c768cf81640afaeb6285ba6f7f2cdb1406df2",
@@ -610,6 +621,17 @@
       "path": "template-gallery/flux_depth_marine_bow_repair.webp",
       "size": 535562,
       "sha256": "sha256:bytes:05697db755f8deae61615744c651ee81af79c0dded87323841d01e980d87c9cf",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "path": "template-gallery/flux_depth_marine_teal_bow_edit.webp",
+      "size": 502632,
+      "sha256": "sha256:bytes:e169de0a8b997dbb30ba63f329360cd4ac730a9413f124fade3c0a2bd42bffe0",
       "contentType": "image/webp",
       "purposes": [
         "runtime"
@@ -1889,6 +1911,17 @@
       ],
       "width": 512,
       "height": 512
+    },
+    {
+      "path": "template-gallery/inputs/flux_canny_black_ink_cube.guide.png",
+      "size": 5492,
+      "sha256": "sha256:bytes:fb9c9cd18138c124335a688b92c15f3194b0f0071f1dac710b71870b9e3b361f",
+      "contentType": "image/png",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 1024,
+      "height": 1024
     },
     {
       "path": "template-gallery/inputs/flux_canny_clean_backdrop.before.png",
@@ -3870,8 +3903,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 531940,
-      "sha256": "sha256:bytes:da498c34fa5389f278304f27fe78a0058e8d74f4a0d188442bbad93d4a276328",
+      "size": 537280,
+      "sha256": "sha256:bytes:eec3e7bc7d17a4f6ef3063c9d38ff2b85eb230d059576df289a879312a018e88",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -5796,6 +5829,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.original-provenance.json",
+      "size": 1472,
+      "sha256": "sha256:bytes:ffa8a788f7fb52949d814a9f49fcce56b0c24eedeebcc93ac096af99eccc984b",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.original-review.json",
+      "size": 565,
+      "sha256": "sha256:bytes:0d2613893fe629784a951879aa26d8edbec5b41635d28daf727aa8ff9ad6c5c5",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.quality-review.json",
+      "size": 2681,
+      "sha256": "sha256:bytes:876e52c4f3137edf34fc3f53ff22a751a987816d9ec54ffc9206627e6a25bcce",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.retained-template-provenance.json",
+      "size": 3875,
+      "sha256": "sha256:bytes:78610fce6104c3ab1a363716af15194a02a1466e697590b3af0aa3f8edf9aebd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/flux_canny_clean_backdrop.original-provenance.json",
       "size": 1732,
       "sha256": "sha256:bytes:7936bae847ef1c4e92911b3bede96023c8f2e13a67a43775eea3de2b73715f1d",
@@ -5898,6 +5967,42 @@
       "path": "template-gallery/reviews/flux_depth_marine_bow_repair.retained-template-provenance.json",
       "size": 4156,
       "sha256": "sha256:bytes:93addd088b5f77d730cd7791c03326143216fe0f59ab07b81f5a5ec8b4ca7799",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.original-provenance.json",
+      "size": 1468,
+      "sha256": "sha256:bytes:1693d179dfee6ccaada54e291c4dee8f818a30ce4adab5d26a2f835a4340a0dd",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.original-review.json",
+      "size": 536,
+      "sha256": "sha256:bytes:7722237c624f3fa884dade97287657a67130ccf29879ac0ab98c39c7da0e5ed7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.quality-review.json",
+      "size": 2639,
+      "sha256": "sha256:bytes:f4e528d2c0cdd892a93074a909de8988b0deed238fe06fa38b9d6cbfb66044ed",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.retained-template-provenance.json",
+      "size": 3903,
+      "sha256": "sha256:bytes:41803e83072069305fa268ce320f359268e9422e93e94ca8838ed10707e770a7",
       "contentType": "application/json",
       "purposes": [
         "runtime"
@@ -12193,9 +12298,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:b16429b50a2a5b58296739df4279f79fad5f7517d68bb2e5a54885d211aabb02",
+  "assetSetId": "sha256:canonical-json:f7171be49ec9b65b02949db31d45a0bc8a4079a2dec5a35d32d2e70e597e8468",
   "status": "ready",
-  "assetCount": 1259,
-  "totalBytes": 1293900615,
+  "assetCount": 1270,
+  "totalBytes": 1294535654,
   "missingAssets": []
 }

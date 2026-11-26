@@ -622,7 +622,14 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         if (mask) assert.ok(sources.some(({ params }) => params.file.value?.includes(mask)));
         if (guide) {
           assert.ok(sources.some(({ params }) => params.file.value?.includes(guide)));
-          assert.equal(generation.params.conditioning_scale.value, locked.conditioningScale);
+          if (locked.conditioningScale !== undefined) {
+            assert.equal(generation.params.conditioning_scale.value, locked.conditioningScale);
+          } else {
+            assert.equal(generation.params.image_contract?.value.fieldParams?.conditioning_scale?.hidden, true);
+          }
+          if (generation.action === 'ControlEdit' && locked.strength !== undefined) {
+            assert.equal(generation.params.strength.value, locked.strength);
+          }
         }
         continue;
       }

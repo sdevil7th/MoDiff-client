@@ -451,3 +451,39 @@ test(
     }
   },
 );
+
+const fluxSourceFixture = process.env.MODIFF_VERIFY_REUSED_FLUX_GALLERY;
+test(
+  'approved FLUX edits require their pinned shared Gallery source even when the bytes match',
+  { skip: !fluxSourceFixture },
+  () => {
+    const registry = JSON.parse(readFileSync(join(fluxSourceFixture, 'public/template-gallery/manifest.json'), 'utf8'));
+    for (const [templateId, sourceFilename] of [
+      ['flux_canny_black_ink_cube', 'joy_plus_lavender_on_limestone.before.png'],
+      ['flux_depth_marine_teal_bow_edit', 'flux_depth_marine_bow_repair.before.webp'],
+    ]) {
+      const entry = registry.examples.find((item) => item.templateId === templateId);
+      assert.equal(entry.beforePath, '/template-gallery/inputs/' + sourceFilename);
+      const read = (path) => readFileSync(join(fluxSourceFixture, 'public' + path));
+      const provenance = JSON.parse(read(entry.provenancePath));
+      const frozen = {
+        templateRevisionHash: entry.templateRevisionHash,
+        outputBytes: read(entry.outputPath),
+        beforeBytes: read(entry.beforePath),
+      };
+      assert.deepEqual(validateRetainedGalleryProvenance(provenance, entry, frozen), []);
+      const substitute = {
+        ...entry,
+        beforePath: '/template-gallery/inputs/' + templateId + '.before.' + sourceFilename.split('.').at(-1),
+      };
+      assert.ok(
+        validateRetainedGalleryProvenance(provenance, substitute, frozen).some((item) => item.includes('beforePath')),
+      );
+      assert.ok(
+        validateRetainedGalleryProvenance(provenance, entry, { ...frozen, beforeBytes: Buffer.from('changed') }).some(
+          (item) => item.includes('source bytes'),
+        ),
+      );
+    }
+  },
+);

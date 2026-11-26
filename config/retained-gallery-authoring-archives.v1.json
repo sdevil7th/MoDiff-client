@@ -567,5 +567,17 @@
     "descriptorSha256": "449bc094096e644f4070a681e382650d133c0854ec6770cfbb736f0299e04179",
     "bytes": 4729,
     "sha256": "e523fa1d31a2bb0c2ccbd2525ac0cce68fe57adc77332446239ddf62683f8a05"
+  },
+  "FluxCannyPipeline:control_edit_image": {
+    "descriptorSha256": "724ce269610cdd5125ec9134578e90efa01e8a5983e40f24c6430d75c482a33f",
+    "bytes": 5192,
+    "sha256": "ca4e16701f620f3df1f5e90fe875186805cdbb18ec37cdc79d6308e77b9f56c3",
+    "additionalDescriptorHashes": ["415d44064aa7a39efc8210929310318c19ec426af27d9d79355f10152528c65f"]
+  },
+  "FluxDepthPipeline:control_edit_image": {
+    "descriptorSha256": "0058748cdd192a232fed65515497b9f245d45b3da79f7eeae3edb3ffd040e1d4",
+    "bytes": 5192,
+    "sha256": "f4d0c17bb30cd6be44f18dc6edbd80f72f52000702e9093aff3178fe2f7b1efa",
+    "additionalDescriptorHashes": ["bf9721153bcecfc373e34c532462a705e21dda2fd89fbc1c168fa910d1c558e7"]
   }
 }

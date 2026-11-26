@@ -193,7 +193,10 @@ export function validateRetainedGalleryProvenance(bundle, entry, { templateRevis
     qualityReviewStatus: 'approved_reviewed',
     verificationStatus: 'reviewed',
     verificationTimestamp: pins.capturedAt,
-    beforePath: pins.inputSize ? base + 'inputs/' + stem + '.before.' + (pins.beforeExtension ?? 'png') : undefined,
+    // A reused source must retain the exact already approved Gallery path.
+    beforePath: pins.inputSize
+      ? (pins.beforePath ?? base + 'inputs/' + stem + '.before.' + (pins.beforeExtension ?? 'png'))
+      : undefined,
     afterPath: pins.inputSize ? outputPath : undefined,
     beforeMediaHash: output.inputEncodedSha256,
     beforeSourceMediaHash: pins.beforeExtension === 'mp4' ? output.inputEncodedSha256 : undefined,

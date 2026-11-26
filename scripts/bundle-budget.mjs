@@ -493,6 +493,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // The two approved FLUX control edits measure 573130 bytes.
+  800 +
   // The two retained Stability AI recipes and their attention setting measure 572330 bytes.
   806 +
   // The retained AudioLDM2 recipe measures 571524 bytes.
@@ -809,6 +811,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The same build measures 751615 total startup gzip bytes.
+  798 +
   // The same build measures 750817 total startup gzip bytes.
   807 +
   // The same recipe measures 750010 total startup gzip bytes.

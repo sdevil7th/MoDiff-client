@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:b16429b50a2a5b58296739df4279f79fad5f7517d68bb2e5a54885d211aabb02",
+  "assetSetId": "sha256:canonical-json:f7171be49ec9b65b02949db31d45a0bc8a4079a2dec5a35d32d2e70e597e8468",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -1424,6 +1424,33 @@
       "provenanceTemplateId": "flux3_klein_fp8r512_text_to_image"
     },
     {
+      "path": "template-gallery/flux_canny_black_ink_cube.webp",
+      "sha256": "sha256:bytes:6e5d7e57733a301c94e9ec50075492aebb831b8f2686f3c96ab810592a5ff3b0",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceRevision": "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2 https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_canny_black_ink_cube"
+    },
+    {
       "path": "template-gallery/flux_canny_clean_backdrop.webp",
       "sha256": "sha256:bytes:7261f62b7730f9bd0ceebf9beb3c768cf81640afaeb6285ba6f7f2cdb1406df2",
       "publishDecision": "approved",
@@ -1526,6 +1553,33 @@
       "humanApprovalPacketSHA256": "d7e2fd301d16eede3da44cec1811930560ba0d958dfd46d8d0962eb3a22eea63",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
       "provenanceTemplateId": "flux_depth_marine_bow_repair"
+    },
+    {
+      "path": "template-gallery/flux_depth_marine_teal_bow_edit.webp",
+      "sha256": "sha256:bytes:e169de0a8b997dbb30ba63f329360cd4ac730a9413f124fade3c0a2bd42bffe0",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceRevision": "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_depth_marine_teal_bow_edit"
     },
     {
       "path": "template-gallery/flux_dev_expert_text_to_image.card-poster.webp",
@@ -4800,6 +4854,33 @@
         "flux3_klein_fp8r512_single_reference_edit"
       ],
       "approvalInheritedFromPath": "template-gallery/inputs/flux2_klein_edit.before.png"
+    },
+    {
+      "path": "template-gallery/inputs/flux_canny_black_ink_cube.guide.png",
+      "sha256": "sha256:bytes:fb9c9cd18138c124335a688b92c15f3194b0f0071f1dac710b71870b9e3b361f",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceRevision": "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2 https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_canny_black_ink_cube"
     },
     {
       "path": "template-gallery/inputs/flux_canny_clean_backdrop.before.png",
@@ -9683,7 +9764,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:da498c34fa5389f278304f27fe78a0058e8d74f4a0d188442bbad93d4a276328",
+      "sha256": "sha256:bytes:eec3e7bc7d17a4f6ef3063c9d38ff2b85eb230d059576df289a879312a018e88",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -9698,9 +9779,9 @@
       "requiredAttribution": [],
       "assetLicense": "Apache-2.0",
       "reviewedBy": "MoDiff workspace maintainer",
-      "reviewedAt": "2026-11-25",
+      "reviewedAt": "2026-11-26",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "a7a2ce4e3e9bdfddcd33a4f3c2a7df0b69c0e815eef0493a9f0a748acf1716b8",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained."
     },
     {
@@ -14893,6 +14974,114 @@
       "humanApprovalScope": "Exact source images, authored mask and SHA-bound review packet. Numeric quality scores are the AI assessment, not human-supplied scores. The metadata is project-authored; it introduces no new third-party media rights."
     },
     {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.original-provenance.json",
+      "sha256": "sha256:bytes:ffa8a788f7fb52949d814a9f49fcce56b0c24eedeebcc93ac096af99eccc984b",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceRevision": "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2 https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_canny_black_ink_cube"
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.original-review.json",
+      "sha256": "sha256:bytes:0d2613893fe629784a951879aa26d8edbec5b41635d28daf727aa8ff9ad6c5c5",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceRevision": "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2 https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_canny_black_ink_cube"
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.quality-review.json",
+      "sha256": "sha256:bytes:876e52c4f3137edf34fc3f53ff22a751a987816d9ec54ffc9206627e6a25bcce",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceRevision": "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2 https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_canny_black_ink_cube"
+    },
+    {
+      "path": "template-gallery/reviews/flux_canny_black_ink_cube.retained-template-provenance.json",
+      "sha256": "sha256:bytes:78610fce6104c3ab1a363716af15194a02a1466e697590b3af0aa3f8edf9aebd",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceRevision": "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Canny-dev@27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2 https://huggingface.co/black-forest-labs/FLUX.1-Canny-dev/tree/27c3d8bdc17509b47cf4fd9ba25ab1c7508a69a2"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_canny_black_ink_cube"
+    },
+    {
       "path": "template-gallery/reviews/flux_canny_clean_backdrop.original-provenance.json",
       "sha256": "sha256:bytes:7936bae847ef1c4e92911b3bede96023c8f2e13a67a43775eea3de2b73715f1d",
       "publishDecision": "approved",
@@ -15195,6 +15384,114 @@
       "humanApprovalPacketSHA256": "d7e2fd301d16eede3da44cec1811930560ba0d958dfd46d8d0962eb3a22eea63",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
       "provenanceTemplateId": "flux_depth_marine_bow_repair"
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.original-provenance.json",
+      "sha256": "sha256:bytes:1693d179dfee6ccaada54e291c4dee8f818a30ce4adab5d26a2f835a4340a0dd",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceRevision": "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_depth_marine_teal_bow_edit"
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.original-review.json",
+      "sha256": "sha256:bytes:7722237c624f3fa884dade97287657a67130ccf29879ac0ab98c39c7da0e5ed7",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceRevision": "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_depth_marine_teal_bow_edit"
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.quality-review.json",
+      "sha256": "sha256:bytes:f4e528d2c0cdd892a93074a909de8988b0deed238fe06fa38b9d6cbfb66044ed",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceRevision": "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_depth_marine_teal_bow_edit"
+    },
+    {
+      "path": "template-gallery/reviews/flux_depth_marine_teal_bow_edit.retained-template-provenance.json",
+      "sha256": "sha256:bytes:41803e83072069305fa268ce320f359268e9422e93e94ca8838ed10707e770a7",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceRevision": "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "black-forest-labs/FLUX.1-Depth-dev@fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a https://huggingface.co/black-forest-labs/FLUX.1-Depth-dev/tree/fb5e9b1bae41b8c8adcea4ea2a87b74dd298f07a"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "68a00a8e0e0cdf80ef52460f27dcb5544125a9d3f5422c6960dfecbd21c953e1",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "flux_depth_marine_teal_bow_edit"
     },
     {
       "path": "template-gallery/reviews/flux_dev_expert_text_to_image.quality-review.json",

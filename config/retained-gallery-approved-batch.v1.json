@@ -1596,5 +1596,43 @@
       "width": 1024,
       "height": 1024
     }
+  },
+  "flux_canny_black_ink_cube": {
+    "associationSha256": "05be845003036dccba5d99186b1484d6d47ec6df28bfcdd35a32102a141b9b1c",
+    "backendSourceFingerprint": "sha256:backend-source-v1:73c0d5622c9c305eb2c13478fbac4ca9ea09c71689c74d38679fa6af592c8964",
+    "backendContractFingerprint": "sha256:backend-contract-v1:a726a4911d942b352bd2cf362667a5c67d7868af60789bf1ecd73896ddd05a43",
+    "templateRevisionHash": "31fd14f25aae5426b9b42550ef75f26b26e4847703460e6076bcefea1d9c8cc6",
+    "capturedAt": "2026-11-25T18:59:54.565Z",
+    "outputExtension": "webp",
+    "primaryModelRepo": "black-forest-labs/FLUX.1-Canny-dev",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "beforeExtension": "png",
+    "beforePath": "/template-gallery/inputs/joy_plus_lavender_on_limestone.before.png"
+  },
+  "flux_depth_marine_teal_bow_edit": {
+    "associationSha256": "59340478a35dfce98e9c6735f2cc2fab40dd2386c1e74dbe1f674ec4cde0a5cd",
+    "backendSourceFingerprint": "sha256:backend-source-v1:73c0d5622c9c305eb2c13478fbac4ca9ea09c71689c74d38679fa6af592c8964",
+    "backendContractFingerprint": "sha256:backend-contract-v1:a726a4911d942b352bd2cf362667a5c67d7868af60789bf1ecd73896ddd05a43",
+    "templateRevisionHash": "4495ab72ea261fbec0dbbe7796bbb1927c5acf5a39dcd6cc28ae13496c76c019",
+    "capturedAt": "2026-11-25T18:56:57.629Z",
+    "outputExtension": "webp",
+    "primaryModelRepo": "black-forest-labs/FLUX.1-Depth-dev",
+    "outputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "inputSize": {
+      "width": 1024,
+      "height": 1024
+    },
+    "beforeExtension": "webp",
+    "beforePath": "/template-gallery/inputs/flux_depth_marine_bow_repair.before.webp"
   }
 }

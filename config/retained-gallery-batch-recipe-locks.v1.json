@@ -1642,5 +1642,37 @@
     "promptSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "inputSha256": "41f07c8ec7ab5d7097cba0f77867b61e666c6a803900784697ff816b851b98de",
     "inputLocatorSha256": "d79c9efe3b98c7a29473ef76321ca10b42c37381dadfecc2373db7c51b5777ef"
+  },
+  "flux_canny_black_ink_cube": {
+    "workflowId": "FluxCannyPipeline:control_edit_image",
+    "sourceTaskTemplateId": "task-template:flux-canny:control-edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:67b6ea243b95dcc3bd650ffad71d1138f4cc7d1d57e243a755d53acc3ed87fa4",
+    "originalReceiptSha256": "724ce269610cdd5125ec9134578e90efa01e8a5983e40f24c6430d75c482a33f",
+    "reviewedTemplateSha256": "31fd14f25aae5426b9b42550ef75f26b26e4847703460e6076bcefea1d9c8cc6",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_6309469e",
+      "galleryTemplateLockHash": "tpl_35d15309",
+      "promptSettingsHash": "ps_62bb6180"
+    },
+    "promptSha256": "1ec08bfc27e69f226af0d8ce5d8588afb0c103c25b2399189b9f84ade100fbff",
+    "inputSha256": "0a41a9c56b98945e60c96ef796660c35b2cab7bf0b36d5e84ab0d97ef97f0a5a",
+    "inputLocatorSha256": "00d3f6164f425c19f3865f5816408f5ab4f9964483c22293c3b855ca62dfda47",
+    "guideSha256": "fb9c9cd18138c124335a688b92c15f3194b0f0071f1dac710b71870b9e3b361f"
+  },
+  "flux_depth_marine_teal_bow_edit": {
+    "workflowId": "FluxDepthPipeline:control_edit_image",
+    "sourceTaskTemplateId": "task-template:flux-depth:control-edit-image:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:fb0d8ae61d4bde3d097d3dfb64fe2f8d3d91e03c30fc36d89cf96ab650313a0d",
+    "originalReceiptSha256": "0058748cdd192a232fed65515497b9f245d45b3da79f7eeae3edb3ffd040e1d4",
+    "reviewedTemplateSha256": "4495ab72ea261fbec0dbbe7796bbb1927c5acf5a39dcd6cc28ae13496c76c019",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_74cd6773",
+      "galleryTemplateLockHash": "tpl_9c2a8470",
+      "promptSettingsHash": "ps_fdc2afcb"
+    },
+    "promptSha256": "b83acc336b8f6dcbf6bb984c351b31875c619517b186894512fc78d58fe73302",
+    "inputSha256": "c3d52c29b6a8cae80d2feffb8a978cded8b34509abd09216f665ab3af13f189e",
+    "inputLocatorSha256": "413b3d05273c8b38fd36af33d25ef9f1f5e017f7cdc243f861c9138f071ad452",
+    "guideSha256": "2e202069a584ee5ada91e2deaea6bf7b92a94f4816e669e695d7cb64d5a1cb0e"
   }
 }
