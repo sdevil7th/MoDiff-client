@@ -57,3 +57,15 @@ previews withheld. The checker repeats the saved evidence validation and binds
 the exact accepted graph and output to the existing restricted artifact review.
 The release report lists them separately under `previewFreeResearchWorkflows`.
 Their proof does not extend to Gallery publication or Auto resource admission.
+
+The release report also lists `privateQualifiedWorkflows`. This covers Chinese
+New Year Ensemble under its research and academic terms, Ghibli Story Illustration
+under its personal noncommercial terms, and the exact operator-approved FramePack
+keyframe clip under its territory-limited private scope. The release checker
+requires the local native request, acknowledgement, completion, model pins and
+decoded media to match their recorded hashes. The two adapter workflows must
+match their current executable exports. FramePack requires the verified original
+recipe and the approved variant with both reference images. The registry carries
+hashes, and the private media and run records stay outside Git and the Gallery.
+This server-side evidence establishes execution and delivery. Browser interaction
+and hardware qualification use their own checks.

@@ -176,6 +176,7 @@ export function assessWorkflowReleaseEvidence({
   sourceTemplate,
   canonicalReceipt,
   previewFreeResearch,
+  privateQualification,
 }) {
   const dataOperation = modelType === 'BuiltinDataOperation';
   const mediaOperation = ['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation'].includes(
@@ -189,6 +190,7 @@ export function assessWorkflowReleaseEvidence({
   const releaseEligible = Boolean(
     (exactModelRevision && sourceTemplate?.releaseEligible) ||
     (exactModelRevision && previewFreeResearch) ||
+    (exactModelRevision && privateQualification) ||
     ((dataOperation || mediaOperation) && hasDeterministicReceipt && verifiedCorrectness && executedRequiredDefaults),
   );
   const missingReleaseEvidence = [];

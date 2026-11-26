@@ -28,6 +28,8 @@ import {
   validateCanonicalWorkflowEvidence,
 } from './release-contract-core.mjs';
 import { canonicalGraphIdentity, createRunProvenance, sha256Value } from './live-proof-provenance.mjs';
+import { readPrivateWorkflowQualification } from './private-workflow-qualification.mjs';
+import { validateNativeVariantOutput } from './native-variant-run-evidence.mjs';
 import { galleryEvidenceCandidates, readReleaseRunProvenance } from './release-evidence-paths.mjs';
 import {
   selectCanonicalWorkflowVariantTemplates,
@@ -137,6 +139,137 @@ test('verified standalone model execution remains distinct from a reviewed exact
       { releaseEligible: false, missingReleaseEvidence: ['eligible_source_template', 'reviewed_bound_recipe'] },
     );
   }
+});
+
+test('the withheld-preview lane requires the reviewed policy and retained native evidence', async () => {
+  const backendRoot = mkdtempSync(join(tmpdir(), 'modiff-private-qualification-'));
+  const repoId = 'ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA';
+  const revision = 'a'.repeat(40);
+  const manifest = {
+    id: 'AceStepAudioPipeline:text_to_audio:ace_step_chinese_new_year_lora',
+    sourceTemplateId: 'ace_step_chinese_new_year_lora',
+    requiredArtifacts: [repoId, 'Runware/acestep-v15-turbo-diffusers'],
+  };
+  const canonicalHash = `sha256:workflow-graph-v1:${'d'.repeat(64)}`;
+  const review = {
+    workflowId: manifest.id,
+    sourceTemplateId: manifest.sourceTemplateId,
+    canonicalWorkflowHash: canonicalHash,
+    scope: 'research_academic_only',
+    preview: 'withheld',
+    redistributionAuthorized: false,
+    modelSet: [
+      { repoId, revision },
+      { repoId: manifest.requiredArtifacts[1], revision: 'b'.repeat(40) },
+    ],
+    outputSha256: 'c'.repeat(64),
+    evidence: { sha256: 'e'.repeat(64), bytes: 1000 },
+  };
+  const policy = {
+    id: 'ace-step-chinese-new-year-research-academic-only',
+    useScope: review.scope,
+    repository: repoId,
+    reviewedRevision: revision,
+    acknowledgementRequired: true,
+  };
+  const usagePolicy = (candidate) => (candidate === repoId ? policy : null);
+  const args = { backendRoot, manifest, canonicalHash, review, usagePolicy };
+  try {
+    const privateQualification = await readPrivateWorkflowQualification(args);
+    assert.equal(privateQualification, null);
+    assert.equal(
+      assessWorkflowReleaseEvidence({
+        modelType: 'AceStepAudioPipeline',
+        exactModelRevision: `${repoId}@${revision}`,
+        privateQualification,
+      }).releaseEligible,
+      false,
+    );
+    for (const change of [
+      { preview: 'published' },
+      { redistributionAuthorized: true },
+      { scope: 'personal_noncommercial' },
+      { canonicalWorkflowHash: 'another-graph' },
+      { modelSet: [{ repoId, revision }] },
+    ]) {
+      await assert.rejects(readPrivateWorkflowQualification({ ...args, review: { ...review, ...change } }));
+    }
+    await assert.rejects(readPrivateWorkflowQualification({ ...args, usagePolicy: () => null }));
+    await assert.rejects(
+      readPrivateWorkflowQualification({
+        ...args,
+        usagePolicy: () => ({ ...policy, reviewedRevision: 'f'.repeat(40) }),
+      }),
+    );
+  } finally {
+    rmdirSync(backendRoot);
+  }
+});
+
+test('server-only private media checks accept missing UI context only in that evidence lane', () => {
+  const bytes = Buffer.from('byte-locked fixture');
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const runtimeFingerprint = { fingerprint: 'test-runtime-fingerprint' };
+  const task = { task_id: 'task-fixture', runtimeFingerprint };
+  const backendPath = '@data/studio/outputs/private-fixture.wav';
+  const mediaHash = `sha256:bytes:${sha256}`;
+  const item = {
+    index: 0,
+    backendPath,
+    taskId: task.task_id,
+    attemptIndex: 0,
+    clientRunId: null,
+    runInputHash: null,
+    displayType: 'audio',
+    contentType: 'audio/x-wav',
+    mediaHash,
+    byteSize: bytes.length,
+  };
+  const output = {
+    mediaItems: [item],
+    mediaHash,
+    nodeId: 'audio-output',
+    mediaCollectionHash: 'test-collection',
+    backendProvenance: {
+      source: 'backend-record',
+      backendExecutionId: task.task_id,
+      clientRunId: null,
+      runInputHash: null,
+      workflowTabId: null,
+      mediaCollectionHash: 'test-collection',
+      attemptIndex: 0,
+      nodeId: 'audio-output',
+      fieldKey: 'preview',
+      runtimeFingerprint: runtimeFingerprint.fingerprint,
+      mediaPath: backendPath,
+      mediaHash,
+      mediaItems: [item],
+    },
+  };
+  const args = {
+    output,
+    outputRef: { backendPath, mediaType: 'audio', file: { sha256 } },
+    task,
+    bytes,
+    displayType: 'audio',
+    contentType: 'audio/x-wav',
+  };
+  assert.throws(() => validateNativeVariantOutput(args));
+  assert.deepEqual(validateNativeVariantOutput({ ...args, backendOnly: true }), item);
+  assert.throws(() =>
+    validateNativeVariantOutput({
+      ...args,
+      backendOnly: true,
+      output: { ...output, clientRunId: 'unrelated-ui-run' },
+    }),
+  );
+  assert.throws(() =>
+    validateNativeVariantOutput({
+      ...args,
+      backendOnly: true,
+      outputRef: { ...args.outputRef, file: { sha256: 'a'.repeat(64) } },
+    }),
+  );
 });
 
 test('preview-free research qualification binds the reviewed recipe and the validated private output', () => {

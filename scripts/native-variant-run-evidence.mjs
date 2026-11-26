@@ -211,12 +211,25 @@ export function validateLateNativeSingleAssetRun({ run, persistedOutput, ...opti
   return validateNativeVariantRun({ ...options, run: { ...run, outputs: [persistedOutput] } });
 }
 
-export function validateNativeVariantOutput({ output, outputRef, task, bytes, displayType, contentType }) {
+export function validateNativeVariantOutput({
+  output,
+  outputRef,
+  task,
+  bytes,
+  displayType,
+  contentType,
+  backendOnly = false,
+}) {
   const { backendProvenance } = output;
   assert.equal(backendProvenance.source, 'backend-record');
   assert.equal(backendProvenance.backendExecutionId, task.task_id);
-  for (const key of ['clientRunId', 'runInputHash', 'workflowTabId', 'mediaCollectionHash'])
-    assert.equal(backendProvenance[key], output[key]);
+  for (const key of ['clientRunId', 'runInputHash', 'workflowTabId']) {
+    if (backendOnly) {
+      assert.equal(backendProvenance[key] ?? null, null);
+      assert.equal(output[key] ?? null, null);
+    } else assert.equal(backendProvenance[key], output[key]);
+  }
+  assert.equal(backendProvenance.mediaCollectionHash, output.mediaCollectionHash);
   assert.equal(backendProvenance.attemptIndex, 0);
   assert.equal(backendProvenance.nodeId, output.nodeId);
   assert.equal(backendProvenance.fieldKey, 'preview');
@@ -230,8 +243,8 @@ export function validateNativeVariantOutput({ output, outputRef, task, bytes, di
   assert.equal(item.backendPath, outputRef.backendPath);
   assert.equal(item.taskId, task.task_id);
   assert.equal(item.attemptIndex, 0);
-  assert.equal(item.clientRunId, output.clientRunId);
-  assert.equal(item.runInputHash, output.runInputHash);
+  assert.equal(item.clientRunId, backendOnly ? null : output.clientRunId);
+  assert.equal(item.runInputHash, backendOnly ? null : output.runInputHash);
   assert.equal(item.displayType, displayType);
   assert.equal(item.contentType, contentType);
   assert.equal(outputRef.mediaType, displayType);

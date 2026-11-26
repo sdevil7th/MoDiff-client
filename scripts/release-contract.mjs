@@ -19,6 +19,7 @@ import {
   assessWorkflowReleaseEvidence,
   readCanonicalEvidenceFile,
   readCanonicalWorkflowEvidence,
+  exportCanonicalWorkflowGraphs,
   withCanonicalWorkflowGraphExporter,
 } from './release-contract-core.mjs';
 import { findGalleryEvidencePath } from './release-evidence-paths.mjs';
@@ -26,6 +27,7 @@ import { selectReviewedExperimentalWorkflows } from './workflow-library-manifest
 import { readReviewedBoundTemplateAssociations } from './retained-template-association.mjs';
 import { createRetainedGalleryReleaseReader, retainedFullGraphImageResource } from './retained-gallery-release.mjs';
 import { canonicalJsonHash } from './canonical-json.mjs';
+import { readPrivateWorkflowQualification } from './private-workflow-qualification.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -40,6 +42,7 @@ const TEMPLATE_RECEIPT_REGISTRY_PATH = join(
 );
 const RETAINED_TEMPLATE_REVIEW_ROOT = join(BACKEND_ROOT, 'data/qualification/release/retained-template-review');
 const PREVIEW_FREE_REVIEW_PATH = join(CLIENT_ROOT, 'config/preview-free-research-workflows.v1.json');
+const PRIVATE_QUALIFICATION_PATH = join(CLIENT_ROOT, 'config/private-workflow-qualification.v1.json');
 const CHECK = process.argv.includes('--check');
 
 function readJson(path) {
@@ -425,6 +428,7 @@ const vite = await createServer({
 
 try {
   const { STUDIO_TEMPLATES } = await vite.ssrLoadModule('/src/studio/templates.ts');
+  const { usagePolicyForRepository } = await vite.ssrLoadModule('/src/studio/modelUsagePolicies.ts');
   const { RETAINED_GALLERY_TEMPLATES } = await vite.ssrLoadModule('/scripts/retained-gallery-recipes.ts');
   const retainedRecipesByTemplate = new Map(RETAINED_GALLERY_TEMPLATES.map((recipe) => [recipe.template.id, recipe]));
   const retainedRecipesByWorkflow = new Map(RETAINED_GALLERY_TEMPLATES.map((recipe) => [recipe.workflowId, recipe]));
@@ -590,6 +594,35 @@ try {
     };
   }).sort((left, right) => left.id.localeCompare(right.id));
 
+  const privateReviewRegistry = readJson(PRIVATE_QUALIFICATION_PATH);
+  if (privateReviewRegistry.schemaVersion !== 1 || !Array.isArray(privateReviewRegistry.reviews)) {
+    throw new Error('Invalid private workflow review registry.');
+  }
+  const reviewedPrivateWorkflows = privateReviewRegistry.reviews.map((review) => {
+    const record = workflowRecords.find(({ manifest }) => manifest.id === review.workflowId);
+    if (!record) throw new Error(`Missing private workflow source: ${review.workflowId}`);
+    return { review, ...record };
+  });
+  if (new Set(reviewedPrivateWorkflows.map(({ manifest }) => manifest.id)).size !== reviewedPrivateWorkflows.length) {
+    throw new Error('Private workflow reviews contain duplicate workflow IDs.');
+  }
+  const canonicalPrivateGraphs = await exportCanonicalWorkflowGraphs(
+    CLIENT_ROOT,
+    reviewedPrivateWorkflows.map(({ graph }) => graph),
+  );
+  const privateQualifications = new Map();
+  for (const [index, { manifest, contract, review }] of reviewedPrivateWorkflows.entries()) {
+    const verified = await readPrivateWorkflowQualification({
+      backendRoot: BACKEND_ROOT,
+      manifest,
+      canonicalHash: contract.graphHash,
+      expectedGraph: canonicalPrivateGraphs[index],
+      canonicalReceipt: canonicalReceiptsByWorkflow.get(manifest.id),
+      review,
+      usagePolicy: usagePolicyForRepository,
+    });
+    if (verified) privateQualifications.set(manifest.id, verified);
+  }
   const workflows = workflowRecords
     .map(({ manifest, graph, contract }) => {
       const artifact = artifactByModel.get(manifest.modelType);
@@ -617,7 +650,15 @@ try {
         !sourceTemplate && !catalogRevision && authoring && !manifest.modelType.startsWith('Builtin')
           ? canonicalWorkflowDeclaredModelRevision(manifest, graph, authoring, artifact)
           : null;
-      const exactModelRevision = sourceTemplate?.exactModelRevision ?? authoredRevision ?? catalogRevision;
+      const privateQualification = privateQualifications.get(manifest.id);
+      if (privateQualification && sourceTemplate?.reviewedExampleReleaseApproved) {
+        throw new Error(`Private workflow must withhold its Gallery preview: ${manifest.id}`);
+      }
+      const exactModelRevision =
+        privateQualification?.modelRevision ??
+        sourceTemplate?.exactModelRevision ??
+        authoredRevision ??
+        catalogRevision;
       const previewFreeResearch = assessPreviewFreeResearchWorkflow({
         manifest,
         graphHash: contract.graphHash,
@@ -635,6 +676,7 @@ try {
         sourceTemplate,
         canonicalReceipt,
         previewFreeResearch,
+        privateQualification,
       });
       if (reviewedRetainedTemplate) {
         releaseEvidence.missingReleaseEvidence = releaseEvidence.missingReleaseEvidence.filter(
@@ -653,19 +695,22 @@ try {
         backendNodes: contract.backendNodes,
         packageSetIds: [packageSet.id],
         exactModelRevision,
-        exactModelRevisionSource: sourceTemplate?.exactModelRevision
-          ? 'template_recipe'
-          : authoredRevision
-            ? 'canonical_authoring'
-            : catalogRevision
-              ? 'artifact_catalog'
-              : null,
+        exactModelRevisionSource: privateQualification
+          ? 'verified_private_execution'
+          : sourceTemplate?.exactModelRevision
+            ? 'template_recipe'
+            : authoredRevision
+              ? 'canonical_authoring'
+              : catalogRevision
+                ? 'artifact_catalog'
+                : null,
         requiredArtifacts: manifest.requiredArtifacts ?? [],
         defaultAssets: sourceTemplate?.defaultAssets ?? [],
         userInputs: sourceTemplate?.userInputs ?? manifest.requiredInputs ?? {},
         resourceRecipes: sourceTemplate?.resourceRecipes ?? null,
         outputContract: sourceTemplate?.outputContract ?? { mediaKinds: [manifest.mediaKind] },
-        lastSuccessfulRealRun: sourceTemplate?.lastSuccessfulRealRun ?? canonicalReceipt ?? null,
+        lastSuccessfulRealRun:
+          privateQualification ?? sourceTemplate?.lastSuccessfulRealRun ?? canonicalReceipt ?? null,
         ...(showCanonicalEvidence
           ? {
               canonicalExecutionEvidence: {
@@ -678,6 +723,7 @@ try {
           : {}),
         ...releaseEvidence,
         ...(previewFreeResearch ? { previewFreeResearch } : {}),
+        ...(privateQualification ? { privateQualification } : {}),
         ...(reviewedRetainedTemplate ? { reviewedRetainedTemplate } : {}),
       };
     })
@@ -704,6 +750,7 @@ try {
       workflowCount: workflows.length,
       releaseEligibleWorkflowCount: workflows.filter((item) => item.releaseEligible).length,
       previewFreeResearchWorkflowCount: workflows.filter((item) => item.previewFreeResearch).length,
+      privateQualifiedWorkflowCount: workflows.filter((item) => item.privateQualification).length,
       missingTemplateEvidence: templates
         .filter((item) => item.missingReleaseEvidence.length)
         .map((item) => ({ id: item.id, missing: item.missingReleaseEvidence })),
