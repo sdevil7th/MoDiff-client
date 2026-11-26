@@ -108,6 +108,9 @@ document. If that document changes while recovery is pending, automatic navigati
 is cancelled. The activity shelf still reports a running task and opens it on
 explicit selection; a fresh empty session can recover its snapshot. Recovery
 must not mutate the running graph or steal the user's editing tab.
+The empty-canvas workflow launcher opens after startup completes. If discovery
+fails, the startup dialog owns keyboard and pointer input until the user retries
+or dismisses the error and opens a fresh workflow.
 
 Workflow snapshots and portable packages may omit the viewport. Import and
 restore retain the current valid camera when it is absent or rejected by the

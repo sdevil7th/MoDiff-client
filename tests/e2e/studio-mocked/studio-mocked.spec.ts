@@ -2902,6 +2902,9 @@ test('My workflows opens a closed saved document without rewriting its backend r
 }) => {
   const workflowId = 'library-open-no-echo-regression';
   const fixture = await prepareRestorationStartup(page, workflowId);
+  // Allow lazy startup and the dialogs' animation frames to complete during
+  // ordinary user gestures. Explicit clock advances below still cover autosave.
+  await page.clock.resume();
   await page.route('**/workflows**', async (route) => {
     if (route.request().method() === 'GET' && new URL(route.request().url()).pathname === '/workflows') {
       await route.fulfill({ json: { workflows: [fixture.getBackend()] } });
@@ -2911,7 +2914,7 @@ test('My workflows opens a closed saved document without rewriting its backend r
   });
   await page.goto(FRONTEND_URL, { waitUntil: 'domcontentloaded' });
   await fixture.waitForCanvas();
-  await page.clock.runFor(1200);
+  await expect(page.getByTestId('startup-workspace-gate')).toHaveCount(0, { timeout: 30_000 });
   await page.getByRole('button', { name: 'Close Disposable restoration regression', exact: true }).click();
   await page.clock.runFor(1200);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -21280,6 +21283,7 @@ test('fresh Qwen template uses ordinary native stages without legacy field refre
   await expect(page.getByTestId('studio-panel')).toBeVisible();
   await openTemplateBrowser(page);
   await page.getByTestId('template-browser-category-all').click();
+  await page.getByTestId('template-browser-search').fill('Product Concept');
   await page.getByTestId('template-browser-use-qwen_low_vram_product_concept').click();
   await expect(page.getByTestId('template-detail-qwen_low_vram_product_concept')).toBeVisible();
   await page.getByTestId('template-browser-create-qwen_low_vram_product_concept').click();
@@ -25205,8 +25209,10 @@ test('a startup load error closes into a new empty workflow without deleting the
 
   const startupGate = page.getByTestId('startup-workspace-gate');
   await expect(startupGate).toContainText('Could not finish loading', { timeout: 30_000 });
+  await expect(page.getByTestId('task-launcher')).toHaveCount(0);
   await startupGate.getByLabel('Close loading error and start with an empty workflow').click();
   await expect(startupGate).toHaveCount(0);
+  await expect(page.getByTestId('task-launcher')).toBeVisible();
   await page.waitForFunction(() => Boolean(window.__MODIFF_E2E__), null, { timeout: 30_000 });
   const state = await page.evaluate(() => window.__MODIFF_E2E__!.getState());
   expect(state.flow.visibleNodeCount).toBe(0);
@@ -37053,6 +37059,19 @@ test('full image template cards, details, artifact search and Model Manager focu
   mockInstalledRepos.clear();
   await ensureFrontend();
   await installMockRoutes(page);
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(CLIENT_ROOT, 'public/template-gallery/manifest.json'), 'utf8'),
+  );
+  await page.route('**/template-gallery/manifest.json*', (route) => route.fulfill({ json: manifest }));
+  // The current Gallery advertises generated images for both variants. Serve
+  // deterministic pixels at those exact URLs so this UI check also works offline.
+  const previewPixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOCkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route(/\/template-gallery\/(?:cosmos3_super_text_to_image|flux2_dev_text_to_image)\.webp$/u, (route) =>
+    route.fulfill({ body: previewPixel, contentType: 'image/png' }),
+  );
   const fixture = await imageTemplateSchemas();
   await page.route('**/model_capabilities**', (route) => route.fulfill({ status: 200, json: fixture.publicPayload }));
   await page.route('**/nodes**', (route) =>
@@ -37081,10 +37100,9 @@ test('full image template cards, details, artifact search and Model Manager focu
     await browser.getByTestId('template-browser-search').fill(repo);
     const card = browser.getByTestId(`template-browser-card-${id}`);
     await expect(card.getByText(`${label} · Text to image`, { exact: true })).toBeVisible();
-    const poster = `/assets/${id === 'flux2_dev_text_to_image' ? 'flux2-dev' : 'cosmos3-super'}.card-poster.png`;
-    const artwork = card.getByRole('img', { name: 'Template preview', exact: true });
-    await expect(artwork).toHaveAttribute('src', poster);
-    await expect.poll(() => artwork.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
+    const artwork = card.getByRole('img', { name: 'Preview', exact: true });
+    await expect(artwork).toHaveAttribute('src', new RegExp(`/template-gallery/${id}\\.webp$`));
+    await expect.poll(() => artwork.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
     await card.getByTestId(`template-browser-use-${id}`).click();
     await expect(browser.getByText(`${label} · Text to image`, { exact: true })).toHaveCount(2);
   }
