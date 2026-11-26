@@ -85,11 +85,11 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `2a47c734f037db7ce91f0570aecfd1a6e5909c0a`.
+CI backend contract: `70fe2b8576d41ccc1efa1ac478c9899fb179a951`.
 
-Both CI jobs use this immutable backend revision. It includes shared video
-stages, conditional reference requirements, the scoped Linux shared-memory LTX
-Auto loading fix and Run recovery. Its hardware coverage is recorded separately.
+Both CI jobs use this immutable backend revision. It includes the weight-loading
+controls that the client verifies when it opens saved recipes. Hardware coverage
+is recorded separately.
 
 The 3 November Linux video testing deployment used backend
 `496f3aed56ce1c6a868549df310c68e765712ce3` and client

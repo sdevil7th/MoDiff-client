@@ -801,7 +801,8 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         // Verify the fresh graph uses the same defaults before comparing the
         // remaining fields against the archived recipe.
         const model = comparable.nodes[binding.nodes.transformersTextModel].params;
-        assert.equal(model.weight_loading_mode.value, 'cpu');
+        assert.equal(model.weight_loading_mode?.value, 'cpu', 'The fresh text loader defaults to CPU weight loading');
+        assert.equal(model.quantization_mode?.value, 'none', 'The fresh text loader defaults to unquantized weights');
         delete model.weight_loading_mode;
         delete model.quantization_mode;
       }
