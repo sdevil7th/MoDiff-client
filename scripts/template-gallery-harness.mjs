@@ -1833,7 +1833,13 @@ export function beforePreviewContractErrors(decoded, contract = templateGalleryC
   return errors;
 }
 
-export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image', retainedVideoPreview) {
+export function technicalMediaErrors(
+  decoded,
+  expected = {},
+  mediaType = 'image',
+  retainedVideoPreview,
+  nativeTurntable = false,
+) {
   const errors = [];
   for (const field of ['width', 'height', 'frames', 'sampleRate']) {
     const measured =
@@ -1857,13 +1863,17 @@ export function technicalMediaErrors(decoded, expected = {}, mediaType = 'image'
     if (Number(decoded.lumaStdDev ?? 0) < 0.75) errors.push('decoded media has near-zero visual variance');
   }
   if (mediaType === 'video') {
-    const retainedClip = retainedVideoPreviewMatches(retainedVideoPreview, {
-      ...decoded,
-      decodedAudioHash: decoded.embeddedAudio?.hash,
-      mediaHash: decodedMediaHashMatches(decoded, retainedVideoPreview?.mediaHash)
-        ? retainedVideoPreview.mediaHash
-        : decoded.hash,
-    });
+    const retainedClip = retainedVideoPreviewMatches(
+      retainedVideoPreview,
+      {
+        ...decoded,
+        decodedAudioHash: decoded.embeddedAudio?.hash,
+        mediaHash: decodedMediaHashMatches(decoded, retainedVideoPreview?.mediaHash)
+          ? retainedVideoPreview.mediaHash
+          : decoded.hash,
+      },
+      nativeTurntable,
+    );
     const requestedMotionProfile = expected.motionReviewProfile ?? DEFAULT_MOTION_REVIEW_PROFILE;
     const hasKnownMotionProfile = Object.hasOwn(MOTION_REVIEW_PROFILES, requestedMotionProfile);
     if (!hasKnownMotionProfile) {
@@ -2707,7 +2717,13 @@ export async function verifyGallery(
       }
       errors.push(
         ...(decoded
-          ? technicalMediaErrors(decoded, galleryExpectedOutput(template), entry.mediaType ?? 'image', retainedPreview)
+          ? technicalMediaErrors(
+              decoded,
+              galleryExpectedOutput(template),
+              entry.mediaType ?? 'image',
+              retainedPreview,
+              template.mode === 'text_to_3d',
+            )
           : []
         ).map((error) => `${entry.templateId} technical media gate: ${error}`),
       );

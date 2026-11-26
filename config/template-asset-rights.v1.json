@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "assetSetId": "sha256:canonical-json:179504c1ce6950cf1b5f94f30e743f39b2fb5a2b0b2a3bd6a4558b833bb0ebcd",
+  "assetSetId": "sha256:canonical-json:2fc79cbb1c9f5a520d57def2623affaeedd307f12f2e34065ec482e485bed13d",
   "records": [
     {
       "path": "template-gallery/ace_step_audio_continuation.wav",
@@ -9818,7 +9818,7 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "sha256": "sha256:bytes:8539f3e57be366102255dd96d82f277c46c6f00f90dc3564e87b87c51926a17f",
+      "sha256": "sha256:bytes:15616f0e250275d3b5c6771cf667e845a979b8a3e8e61fec6a72a59a6725c074",
       "publishDecision": "approved",
       "holdReason": null,
       "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
@@ -9835,7 +9835,7 @@
       "reviewedBy": "MoDiff workspace maintainer",
       "reviewedAt": "2026-11-26",
       "reviewClass": "per-file-maintainer-accepted-retained-registration",
-      "humanApprovalPacketSHA256": "efc64011c443b1678207c0dfd79e89def1c0dc3699668f058803e9044b4bd281",
+      "humanApprovalPacketSHA256": "8ed148b43a11d27176b996c42432ccd9bd06c7c94b64f08a48dc4167de24a698",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained."
     },
     {
@@ -26087,6 +26087,114 @@
       "provenanceTemplateId": "sdxl_turbo_orange_caps"
     },
     {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.original-provenance.json",
+      "sha256": "sha256:bytes:668bdbe05f99a8ab63a923569cb852fc7fb9dc28fd5bd8a978425bd02db021d8",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceRevision": "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40 https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "8ed148b43a11d27176b996c42432ccd9bd06c7c94b64f08a48dc4167de24a698",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "shap_e_traffic_cone_turntable"
+    },
+    {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.original-review.json",
+      "sha256": "sha256:bytes:9fd2d7c5b61bfca3f70994218c302b4c939cbe6f78064360fe32d93633969c22",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceRevision": "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40 https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "8ed148b43a11d27176b996c42432ccd9bd06c7c94b64f08a48dc4167de24a698",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "shap_e_traffic_cone_turntable"
+    },
+    {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.quality-review.json",
+      "sha256": "sha256:bytes:241507a58736bbcd8f4ca1948fc842276fda4fe1635ddd6cd0bfe057159a7505",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceRevision": "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40 https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "8ed148b43a11d27176b996c42432ccd9bd06c7c94b64f08a48dc4167de24a698",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "shap_e_traffic_cone_turntable"
+    },
+    {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.retained-template-provenance.json",
+      "sha256": "sha256:bytes:72579b5cd08573adefe06f1ddda3b6f9c1c42f3f2c36622ef64cec896d03d0f7",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Project-authored redacted Gallery review, provenance or registration metadata",
+      "sourceUrl": "https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceRevision": "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceLicense": "MoDiff-authored Gallery metadata",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40 https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "8ed148b43a11d27176b996c42432ccd9bd06c7c94b64f08a48dc4167de24a698",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "shap_e_traffic_cone_turntable"
+    },
+    {
       "path": "template-gallery/reviews/smollm2_rain_gauge.quality-review.json",
       "sha256": "sha256:bytes:a457e4143d17eecd1af499e61a28e7df0533b4a6a8f67712182ab8a829115e09",
       "publishDecision": "approved",
@@ -30715,6 +30823,60 @@
       "humanApprovalPacketSHA256": "d216f065bdc316366c6183592f657bcfbbd7cb05acd0e510c6b3877fe56bcec2",
       "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped six saved cases with model terms retained.",
       "provenanceTemplateId": "sdxl_turbo_orange_caps"
+    },
+    {
+      "path": "template-gallery/shap_e_traffic_cone_turntable.mp4",
+      "sha256": "sha256:bytes:6fd6dacd583bf43561c100a2d8df7773ab4faeb054325cc22ca2d00bb3f45836",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceRevision": "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "aiGenerated": true,
+      "humanLikenessConsent": "synthetic",
+      "marks": [],
+      "requiredAttribution": [
+        "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40 https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "8ed148b43a11d27176b996c42432ccd9bd06c7c94b64f08a48dc4167de24a698",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "shap_e_traffic_cone_turntable"
+    },
+    {
+      "path": "template-gallery/shap_e_traffic_cone_turntable.poster.webp",
+      "sha256": "sha256:bytes:a61343b31e7b7aa532aa5d501ecf820543595fed119374b42470b08cf44d5c2b",
+      "publishDecision": "approved",
+      "holdReason": null,
+      "creatorOrRightsholder": "MoDiff project maintainers, as confirmed by workspace maintainer",
+      "creationMethod": "Exact approved file captured from a saved MoDiff workflow",
+      "sourceUrl": "https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceRevision": "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40",
+      "sourceLicense": "Maintainer-authorized file with publisher terms retained",
+      "modelTerms": [
+        "Publisher model terms at https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "aiGenerated": false,
+      "humanLikenessConsent": "not-applicable",
+      "marks": [],
+      "requiredAttribution": [
+        "openai/shap-e@7bd337afdea1c17842e1c3cc45c4e268356dba40 https://huggingface.co/openai/shap-e/tree/7bd337afdea1c17842e1c3cc45c4e268356dba40"
+      ],
+      "assetLicense": "Apache-2.0",
+      "reviewedBy": "MoDiff workspace maintainer",
+      "reviewedAt": "2026-11-26",
+      "reviewClass": "per-file-maintainer-accepted-retained-registration",
+      "humanApprovalPacketSHA256": "8ed148b43a11d27176b996c42432ccd9bd06c7c94b64f08a48dc4167de24a698",
+      "publicationBasis": "Maintainer approved the exact files and confirmed redistribution rights for the scoped saved cases with model terms retained.",
+      "provenanceTemplateId": "shap_e_traffic_cone_turntable"
     },
     {
       "path": "template-gallery/showcases/flux3-kolkata-bride.v1.json",

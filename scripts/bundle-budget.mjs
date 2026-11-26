@@ -493,6 +493,8 @@ const SOURCE_LICENSES = new URL('../public/THIRD_PARTY_LICENSES.txt', import.met
 // 504492/682980/346033 largest/startup/deferred gzip bytes: the reviewed
 // migration ceilings below still pass with 8/12/304 bytes of headroom.
 const MAX_STARTUP_CHUNK_GZIP_BYTES =
+  // The approved native Shap-E preview brings the largest chunk to 575069 gzip bytes.
+  631 +
   // SSD weight-loading validation adds 28 measured startup gzip bytes.
   28 +
   // Four approved saved image recipes add 1280 gzip bytes, for 574410 total.
@@ -815,6 +817,8 @@ const MAX_STARTUP_CHUNK_GZIP_BYTES =
 // The same build measures 673359 aggregate startup bytes (+45 over the cap).
 // Keep 19 bytes of headroom; deferred limits and loading boundaries stay fixed.
 const MAX_STARTUP_GZIP_BYTES =
+  // The Shap-E preview and its Gallery descriptor add 634 bytes of startup JavaScript.
+  634 +
   // The same change adds 27 overall startup gzip bytes.
   27 +
   // The four saved image recipes add 1281 gzip bytes, for 752896 total.
@@ -1196,6 +1200,8 @@ const MAX_DEFERRED_CHUNK_GZIP_BYTES = 64 * 1024;
 // Startup code differs only in the three verified Dataset descriptor values.
 // Retain both startup caps, the independent 64 KiB chunk cap and prior headroom.
 const MAX_DEFERRED_GZIP_BYTES =
+  // The native turntable comparison adds 129 bytes and keeps 41 bytes of headroom.
+  129 +
   // Stage discovery, action search and compatible mode changes (355589 -> 357408 gzip bytes).
   1819 +
   // Applicable conditioning controls add 646 deferred gzip bytes (355104 -> 355750).

@@ -4,7 +4,7 @@
   "name": "Registered showcase preview without AMD-cloud backlog",
   "dataset": {
     "repository": "sourav-das/modiff-template-gallery",
-    "revision": "47f928f9ba9df49317b24dd18e267fdb9d873e02"
+    "revision": "c320700d169958015ff43655c765a4650634025f"
   },
   "originalCampaign": {
     "total": 89,
@@ -523,6 +523,11 @@
       "id": "lumina_opal_pendant_in_limestone",
       "evidenceScope": "current_recipe",
       "templateLockHash": "tpl_f24a6ace"
+    },
+    {
+      "id": "shap_e_traffic_cone_turntable",
+      "evidenceScope": "current_recipe",
+      "templateLockHash": "tpl_60ef5b65"
     }
   ],
   "excludedTemplates": [
@@ -1235,5 +1240,5 @@
       "countedAsComplete": false
     }
   ],
-  "profileHash": "sha256:canonical-json:0a2a95138336a3c15595776d9758b300a4347cdef17d4f57aba4b11127d5aab0"
+  "profileHash": "sha256:canonical-json:bcf392c87ddbb33dd46af0a50015a9cd33ba0f01a20ebb0af71c58993f82ba0b"
 }

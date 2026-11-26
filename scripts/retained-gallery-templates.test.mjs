@@ -243,7 +243,10 @@ test('retained Gallery recipes preserve the native graph identities and standalo
   assert.equal(pag.modelType, 'PixArtSigmaPAGPipeline');
   assert.equal(pag.prompt, '');
   assert.equal(pag.example.lockedSettings.pagScale, 4);
-  assert.ok(!published.some((item) => item.modelType === 'ShapEPipeline'));
+  assert.deepEqual(
+    published.filter((item) => item.modelType === 'ShapEPipeline').map(({ id }) => id),
+    ['shap_e_traffic_cone_turntable'],
+  );
 });
 
 test('fresh Expert recipes prepare with current backend specs and without a generation request', async () => {
@@ -491,6 +494,27 @@ test('fresh Expert recipes prepare with current backend specs and without a gene
         continue;
       }
       const loader = api.nodes[binding.nodes[spec.roles.find(([, key]) => key.endsWith('.' + spec.loaderAction))[0]]];
+      if (template.mode === 'text_to_3d') {
+        const { lockedSettings, lockedSeed } = template.example;
+        const render = Object.entries(api.nodes).find(
+          ([, node]) => node.module === 'modules.DiffusersThreeD' && node.action === 'GenerateRenderedArtifact',
+        );
+        assert.ok(render);
+        const [renderId, generation] = render;
+        const delivery = Object.values(api.nodes).find(
+          ({ module, action }) => module === 'modules.Video' && action === 'Export',
+        );
+        assert.equal(loader.params.model_id.value.value, template.modelArtifact.value);
+        assert.equal(loader.params.revision.value, template.modelArtifact.revision);
+        assert.equal(generation.params.frame_size.value, lockedSettings.width);
+        assert.equal(generation.params.num_inference_steps.value, lockedSettings.steps);
+        assert.equal(generation.params.guidance_scale.value, lockedSettings.guidanceScale);
+        assert.equal(generation.params.prompt.value, template.prompt);
+        assert.equal(Number(generation.params.seed.value), lockedSeed);
+        assert.equal(delivery.params.fps.value, lockedSettings.fps);
+        assert.equal(delivery.params.video.sourceId, renderId);
+        continue;
+      }
       if (template.example.retainedVideoPreview) {
         const { lockedSettings, lockedSeed } = template.example;
         const generation = api.nodes[binding.nodes.wanGenerate];

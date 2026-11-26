@@ -256,6 +256,7 @@ export type StudioTemplateId =
   | 'ddim_cifar10_preview'
   | 'ddpm_cifar32_technical_preview'
   | 'consistency_64_technical_preview'
+  | 'shap_e_traffic_cone_turntable'
   | 'pixart_sigma_terracotta_herbs'
   | 'pixart_sigma_pag_pink_mascot'
   | 'sdxl_clear_cobalt_backdrop'

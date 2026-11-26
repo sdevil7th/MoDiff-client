@@ -237,6 +237,7 @@ const body = {
     completeQualificationReceipts: contract.coverage?.completeQualificationReceiptCount ?? 0,
     workflows: contract.coverage?.workflowCount ?? 0,
     eligibleWorkflows: contract.coverage?.releaseEligibleWorkflowCount ?? 0,
+    previewFreeResearchWorkflows: contract.coverage?.previewFreeResearchWorkflowCount ?? 0,
     standaloneExecution,
     resourceRecipes: resourceQualification?.coverage ?? null,
     releaseEligibleResourceRecipes: resourceQualification?.coverage?.byReleaseLane?.releaseEligible ?? null,

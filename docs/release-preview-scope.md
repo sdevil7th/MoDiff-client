@@ -11,6 +11,10 @@ Real-ESRGAN 2× — Synthetic Gradient are registered in the Gallery as suppleme
 They count toward the workflow release report and sit outside the original
 89-case selection.
 
+Shap-E — Traffic Cone Turntable is also a supplement. Its approved 256 × 256
+rendered turntable is an exact technical preview. It establishes the text-to-3D
+workflow's rendered output and leaves mesh quality unmeasured.
+
 Five originals remain deferred to AMD cloud: Amber Glass Replacement, The Winter
 Delivery, Subway Musician, Final Mise en Place and Morning Light Teapot. Chinese
 New Year Ensemble, Ghibli Story Illustration and Cosmos 3 Publisher Caption
@@ -47,3 +51,9 @@ persisted previews and exported bytes against an independent expected result.
 This grants no model-memory, hardware, full consumed-field or browser-interaction
 claim. File-backed media utilities and model-backed workflows retain their own
 evidence requirements; see the canonical recorder in `CONTRIBUTING.md`.
+
+The four DreamLite workflows qualify for noncommercial research with their
+previews withheld. The checker repeats the saved evidence validation and binds
+the exact accepted graph and output to the existing restricted artifact review.
+The release report lists them separately under `previewFreeResearchWorkflows`.
+Their proof does not extend to Gallery publication or Auto resource admission.

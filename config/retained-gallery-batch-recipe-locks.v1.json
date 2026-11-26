@@ -1723,5 +1723,18 @@
       "galleryTemplateLockHash": "tpl_2aa7d54b",
       "promptSettingsHash": "ps_b171853c"
     }
+  },
+  "shap_e_traffic_cone_turntable": {
+    "workflowId": "ShapEPipeline:text_to_3d",
+    "sourceTaskTemplateId": "task-template:shap-e:text-to-3d:v1",
+    "retainedGraphHash": "sha256:canonical-graph-v1:eb319f05ba885a4c4e8c35fd06126484d519a95c1fd8078d85cd95574d6c8d08",
+    "originalReceiptSha256": "c5790dffe67ccbdf93d3d073d3b1018770c296cba10d9b9b99902c56a79b2620",
+    "reviewedTemplateSha256": "fa62bcb8142d0e8e3cf7816cc648ca33ae32dfcfebb83d455c52e14f662a8ff2",
+    "reviewedCatalogLock": {
+      "templateLockHash": "tpl_12256c8e",
+      "galleryTemplateLockHash": "tpl_60ef5b65",
+      "promptSettingsHash": "ps_7ddd815e"
+    },
+    "promptSha256": "2c167518c1795e7ce461c297f3f9e1a92b7d5e0dcc49a059d49f190cca7cbd00"
   }
 }

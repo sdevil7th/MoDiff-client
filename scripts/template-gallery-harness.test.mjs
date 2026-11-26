@@ -1092,6 +1092,29 @@ test('video delivery floor accepts native Wan resolution without weakening templ
   assert.match(lowResolution.join('\n'), /at least 768x480/);
 });
 
+test('a reviewed native 3D turntable retains its exact small render', () => {
+  const hash = 'sha256:decoded-video-framemd5:' + 'a'.repeat(64);
+  const preview = { mediaHash: hash, width: 256, height: 256, frames: 20, fps: 12 };
+  const decoded = {
+    ...preview,
+    hash,
+    durationSeconds: 20 / 12,
+    uniqueFrameRatio: 1,
+    nearBlackRatio: 0,
+    lumaStdDev: 20,
+    codecName: 'h264',
+    pixelFormat: 'yuv420p',
+  };
+  assert.deepEqual(technicalMediaErrors(decoded, {}, 'video', preview, true), []);
+  assert.match(technicalMediaErrors(decoded, {}, 'video', preview).join('\n'), /at least 768x480/);
+  assert.match(
+    technicalMediaErrors({ ...decoded, hash: hash.replace(/a+$/u, 'b'.repeat(64)) }, {}, 'video', preview, true).join(
+      '\n',
+    ),
+    /differs from the reviewed retained preview/,
+  );
+});
+
 test('public provenance redacts machine paths and source commit ids', () => {
   const redacted = redactPublicProvenance({
     runtime: {

@@ -21,6 +21,7 @@ import {
   templateResourceExecutionModelType,
   qualificationModelArtifacts,
   assessGalleryReleaseApproval,
+  assessPreviewFreeResearchWorkflow,
   assessWorkflowReleaseEvidence,
   canonicalWorkflowAuthoringContract,
   canonicalWorkflowDeclaredModelRevision,
@@ -135,6 +136,79 @@ test('verified standalone model execution remains distinct from a reviewed exact
       }),
       { releaseEligible: false, missingReleaseEvidence: ['eligible_source_template', 'reviewed_bound_recipe'] },
     );
+  }
+});
+
+test('preview-free research qualification binds the reviewed recipe and the validated private output', () => {
+  const id = 'DreamLitePipeline:edit_image';
+  const sourceTemplateId = 'task-template:dreamlite-base:edit-image:v1';
+  const revision = 'a'.repeat(40);
+  const repoId = 'carlofkl/DreamLite-base';
+  const graphHash = `sha256:workflow-graph-v1:${'b'.repeat(64)}`;
+  const review = {
+    workflowId: id,
+    sourceTemplateId,
+    canonicalWorkflowHash: graphHash,
+    executedGraphHash: `sha256:canonical-graph-v1:${'c'.repeat(64)}`,
+    evidenceSha256: 'd'.repeat(64),
+    outputHash: `sha256:bytes:${'e'.repeat(64)}`,
+  };
+  const receipt = {
+    ...review,
+    graphHash: review.executedGraphHash,
+    task: 'edit_image',
+    modelType: 'DreamLitePipeline',
+    proofKind: 'real_backend_input_bound_model_variant',
+    modelSet: [{ repoId, revision }],
+    inputBinding: { sha256: 'f'.repeat(64) },
+    canonicalDefaultsExecuted: false,
+  };
+  const artifactReview = {
+    license: { commercialUseAllowed: false, id: 'cc-by-nc-4.0' },
+    admission: { autoEligible: false, galleryEligible: false, executableModes: [id] },
+    repositories: [{ pipelineClass: receipt.modelType, repository: repoId, revision }],
+  };
+  const args = {
+    manifest: { id, sourceTemplateId, modelType: receipt.modelType, mode: receipt.task, mediaKind: 'image' },
+    graphHash,
+    exactModelRevision: `${repoId}@${revision}`,
+    receipt,
+    review,
+    artifactReview,
+  };
+  const previewFreeResearch = assessPreviewFreeResearchWorkflow(args);
+  assert.deepEqual(previewFreeResearch, {
+    scope: 'noncommercial_research',
+    preview: 'withheld',
+    license: 'cc-by-nc-4.0',
+    canonicalDefaultsExecuted: false,
+    evidenceSha256: review.evidenceSha256,
+  });
+  assert.deepEqual(
+    assessWorkflowReleaseEvidence({
+      modelType: receipt.modelType,
+      exactModelRevision: args.exactModelRevision,
+      canonicalReceipt: receipt,
+      previewFreeResearch,
+    }),
+    { releaseEligible: true, missingReleaseEvidence: [] },
+  );
+
+  for (const change of [
+    { review: null },
+    { receipt: null },
+    { graphHash: `sha256:workflow-graph-v1:${'9'.repeat(64)}` },
+    { exactModelRevision: `${repoId}@${'9'.repeat(40)}` },
+    { review: { ...review, evidenceSha256: '9'.repeat(64) } },
+    { review: { ...review, outputHash: `sha256:bytes:${'9'.repeat(64)}` } },
+    { receipt: { ...receipt, graphHash: `sha256:canonical-graph-v1:${'9'.repeat(64)}` } },
+    { receipt: { ...receipt, inputBinding: null } },
+    { manifest: { ...args.manifest, sourceTemplateId: 'different-template' } },
+    { artifactReview: { ...artifactReview, license: null } },
+    { artifactReview: { ...artifactReview, license: { commercialUseAllowed: false } } },
+    { artifactReview: { ...artifactReview, admission: { ...artifactReview.admission, galleryEligible: true } } },
+  ]) {
+    assert.equal(assessPreviewFreeResearchWorkflow({ ...args, ...change }), null);
   }
 });
 

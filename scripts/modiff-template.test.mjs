@@ -4651,7 +4651,11 @@ test('Experimental refuses undeclared or incomplete internal creator selections'
 
 test('every template name identifies its exact model and operation', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
-  const reviewedImageTitles = new Map([
+  const reviewedTitles = new Map([
+    [
+      'shap_e_traffic_cone_turntable',
+      ['Shap-E — Technical Preview: Traffic Cone Turntable', 'Shap-E Rendered 3D', 'text_to_3d'],
+    ],
     ['pixart_sigma_terracotta_herbs', ['Lavender and Rosemary', 'PixArt Sigma XL 1024px', 'text_to_image']],
     [
       'pixart_sigma_pag_pink_mascot',
@@ -4686,8 +4690,8 @@ test('every template name identifies its exact model and operation', () => {
       assert.equal(template.label, 'Wav2Vec2 — Station Announcement');
       assert.equal(modelLabel, 'Wav2Vec2 Base 960h');
       assert.equal(template.mode, 'speech_to_text');
-    } else if (reviewedImageTitles.has(template.id)) {
-      assert.deepEqual([template.label, modelLabel, template.mode], reviewedImageTitles.get(template.id));
+    } else if (reviewedTitles.has(template.id)) {
+      assert.deepEqual([template.label, modelLabel, template.mode], reviewedTitles.get(template.id));
     } else {
       assert.ok(template.label.startsWith(`${modelLabel} — `), `${template.id} must begin with its model name`);
     }

@@ -15,6 +15,7 @@ import {
   templateResourceExecutionModelType,
   qualificationModelArtifacts,
   assessGalleryReleaseApproval,
+  assessPreviewFreeResearchWorkflow,
   assessWorkflowReleaseEvidence,
   readCanonicalEvidenceFile,
   readCanonicalWorkflowEvidence,
@@ -38,6 +39,7 @@ const TEMPLATE_RECEIPT_REGISTRY_PATH = join(
   'template-run-receipts.v2.json',
 );
 const RETAINED_TEMPLATE_REVIEW_ROOT = join(BACKEND_ROOT, 'data/qualification/release/retained-template-review');
+const PREVIEW_FREE_REVIEW_PATH = join(CLIENT_ROOT, 'config/preview-free-research-workflows.v1.json');
 const CHECK = process.argv.includes('--check');
 
 function readJson(path) {
@@ -350,6 +352,15 @@ const workflowRecords = [...workflowManifest.workflows, ...reviewedExperimental]
   return { manifest: workflow, graph, contract: canonicalWorkflowContract(workflow, graph) };
 });
 const canonicalReceiptsByWorkflow = new Map();
+const researchReviews = readJson(PREVIEW_FREE_REVIEW_PATH);
+if (researchReviews.schemaVersion !== 1 || !Array.isArray(researchReviews.reviews)) {
+  throw new Error('Preview-free research workflow reviews have an invalid schema.');
+}
+const researchReviewsByWorkflow = new Map(researchReviews.reviews.map((review) => [review.workflowId, review]));
+if (researchReviewsByWorkflow.size !== researchReviews.reviews.length) {
+  throw new Error('Preview-free research workflow reviews contain duplicate workflow IDs.');
+}
+const dreamLiteArtifactReview = readJson(join(BACKEND_ROOT, 'data/dreamlite-artifact-review.json'));
 const retainedNativeBySha = new Map();
 const executionStatuses = {
   real_backend_deterministic_data: 'verified_deterministic_execution',
@@ -580,7 +591,7 @@ try {
   }).sort((left, right) => left.id.localeCompare(right.id));
 
   const workflows = workflowRecords
-    .map(({ manifest, graph }) => {
+    .map(({ manifest, graph, contract }) => {
       const artifact = artifactByModel.get(manifest.modelType);
       const retainedRecipe = retainedRecipesByWorkflow.get(manifest.id);
       const authoring = canonicalAuthoring.find((row) => row.canonicalWorkflowId === manifest.id);
@@ -607,6 +618,14 @@ try {
           ? canonicalWorkflowDeclaredModelRevision(manifest, graph, authoring, artifact)
           : null;
       const exactModelRevision = sourceTemplate?.exactModelRevision ?? authoredRevision ?? catalogRevision;
+      const previewFreeResearch = assessPreviewFreeResearchWorkflow({
+        manifest,
+        graphHash: contract.graphHash,
+        exactModelRevision,
+        receipt: canonicalReceipt,
+        review: researchReviewsByWorkflow.get(manifest.id),
+        artifactReview: dreamLiteArtifactReview,
+      });
       const executionStatus = manifest.requiredArtifacts?.some((item) => item.startsWith('builtin:'))
         ? 'unsupported_builtin_model_not_applicable'
         : 'missing';
@@ -615,6 +634,7 @@ try {
         exactModelRevision,
         sourceTemplate,
         canonicalReceipt,
+        previewFreeResearch,
       });
       if (reviewedRetainedTemplate) {
         releaseEvidence.missingReleaseEvidence = releaseEvidence.missingReleaseEvidence.filter(
@@ -629,8 +649,8 @@ try {
         ...(manifest.experimentalRecipe
           ? { experimentalRecipe: manifest.experimentalRecipe, modelSupportTier: 'experimental' }
           : {}),
-        graphHash: canonicalWorkflowContract(manifest, graph).graphHash,
-        backendNodes: canonicalWorkflowContract(manifest, graph).backendNodes,
+        graphHash: contract.graphHash,
+        backendNodes: contract.backendNodes,
         packageSetIds: [packageSet.id],
         exactModelRevision,
         exactModelRevisionSource: sourceTemplate?.exactModelRevision
@@ -657,6 +677,7 @@ try {
             }
           : {}),
         ...releaseEvidence,
+        ...(previewFreeResearch ? { previewFreeResearch } : {}),
         ...(reviewedRetainedTemplate ? { reviewedRetainedTemplate } : {}),
       };
     })
@@ -682,6 +703,7 @@ try {
         .length,
       workflowCount: workflows.length,
       releaseEligibleWorkflowCount: workflows.filter((item) => item.releaseEligible).length,
+      previewFreeResearchWorkflowCount: workflows.filter((item) => item.previewFreeResearch).length,
       missingTemplateEvidence: templates
         .filter((item) => item.missingReleaseEvidence.length)
         .map((item) => ({ id: item.id, missing: item.missingReleaseEvidence })),

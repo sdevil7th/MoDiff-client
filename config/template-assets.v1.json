@@ -3925,8 +3925,8 @@
     },
     {
       "path": "template-gallery/manifest.json",
-      "size": 546548,
-      "sha256": "sha256:bytes:8539f3e57be366102255dd96d82f277c46c6f00f90dc3564e87b87c51926a17f",
+      "size": 548992,
+      "sha256": "sha256:bytes:15616f0e250275d3b5c6771cf667e845a979b8a3e8e61fec6a72a59a6725c074",
       "contentType": "application/json",
       "purposes": [
         "runtime",
@@ -9745,6 +9745,42 @@
       ]
     },
     {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.original-provenance.json",
+      "size": 1105,
+      "sha256": "sha256:bytes:668bdbe05f99a8ab63a923569cb852fc7fb9dc28fd5bd8a978425bd02db021d8",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.original-review.json",
+      "size": 530,
+      "sha256": "sha256:bytes:9fd2d7c5b61bfca3f70994218c302b4c939cbe6f78064360fe32d93633969c22",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.quality-review.json",
+      "size": 2488,
+      "sha256": "sha256:bytes:241507a58736bbcd8f4ca1948fc842276fda4fe1635ddd6cd0bfe057159a7505",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/reviews/shap_e_traffic_cone_turntable.retained-template-provenance.json",
+      "size": 3699,
+      "sha256": "sha256:bytes:72579b5cd08573adefe06f1ddda3b6f9c1c42f3f2c36622ef64cec896d03d0f7",
+      "contentType": "application/json",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
       "path": "template-gallery/reviews/smollm2_rain_gauge.quality-review.json",
       "size": 2378,
       "sha256": "sha256:bytes:a457e4143d17eecd1af499e61a28e7df0533b4a6a8f67712182ab8a829115e09",
@@ -11551,6 +11587,26 @@
       "height": 512
     },
     {
+      "path": "template-gallery/shap_e_traffic_cone_turntable.mp4",
+      "size": 18588,
+      "sha256": "sha256:bytes:6fd6dacd583bf43561c100a2d8df7773ab4faeb054325cc22ca2d00bb3f45836",
+      "contentType": "video/mp4",
+      "purposes": [
+        "runtime"
+      ]
+    },
+    {
+      "path": "template-gallery/shap_e_traffic_cone_turntable.poster.webp",
+      "size": 1390,
+      "sha256": "sha256:bytes:a61343b31e7b7aa532aa5d501ecf820543595fed119374b42470b08cf44d5c2b",
+      "contentType": "image/webp",
+      "purposes": [
+        "runtime"
+      ],
+      "width": 256,
+      "height": 256
+    },
+    {
       "path": "template-gallery/showcases/flux3-kolkata-bride.v1.json",
       "size": 5475,
       "sha256": "sha256:bytes:64a51a70baec5b4a99937ac3952e458450c7d699669b6f31241106da33f70b55",
@@ -12486,9 +12542,9 @@
       "height": 1024
     }
   ],
-  "assetSetId": "sha256:canonical-json:179504c1ce6950cf1b5f94f30e743f39b2fb5a2b0b2a3bd6a4558b833bb0ebcd",
+  "assetSetId": "sha256:canonical-json:2fc79cbb1c9f5a520d57def2623affaeedd307f12f2e34065ec482e485bed13d",
   "status": "ready",
-  "assetCount": 1290,
-  "totalBytes": 1295222120,
+  "assetCount": 1296,
+  "totalBytes": 1295252364,
   "missingAssets": []
 }

@@ -19,8 +19,14 @@ export function retainedVideoPreviewMatches(
     fps?: number;
     durationSeconds?: number;
   },
+  nativeTurntable = false,
 ) {
   if (!preview) return false;
+  // Render 3D produces a square native orbit rather than a video-generation
+  // delivery. The reviewed hash, dimensions, frame count and cadence still bind it.
+  const dimensionsMatchTask = nativeTurntable
+    ? preview.width >= 64 && preview.width === preview.height
+    : preview.width >= 480 && preview.height >= 480;
   return (
     /^sha256:decoded-video-(framemd5|rgba):[a-f0-9]{64}$/u.test(preview.mediaHash) &&
     preview.mediaHash === media.mediaHash &&
@@ -31,8 +37,7 @@ export function retainedVideoPreviewMatches(
     preview.height === media.height &&
     Number.isSafeInteger(preview.width) &&
     Number.isSafeInteger(preview.height) &&
-    preview.width >= 480 &&
-    preview.height >= 480 &&
+    dimensionsMatchTask &&
     Number.isSafeInteger(preview.frames) &&
     preview.frames >= 2 &&
     preview.frames === media.frames &&

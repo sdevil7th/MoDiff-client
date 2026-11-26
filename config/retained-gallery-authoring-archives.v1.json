@@ -599,5 +599,10 @@
     "descriptorSha256": "334fff51739318953bc9c5b7c98530c929b8765592f800d1ec9f4453744e9495",
     "bytes": 3531,
     "sha256": "6ac7b11519a0b10ab0aed6a6562a888354c2716e130f1039cf6ce37ef91bb16d"
+  },
+  "ShapEPipeline:text_to_3d": {
+    "descriptorSha256": "c5790dffe67ccbdf93d3d073d3b1018770c296cba10d9b9b99902c56a79b2620",
+    "bytes": 3547,
+    "sha256": "34a1878e576eace6526160ed7842f15ef269b51189cd407c6a58353efd69454b"
   }
 }

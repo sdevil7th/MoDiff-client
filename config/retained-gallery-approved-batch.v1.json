@@ -1686,5 +1686,18 @@
       "width": 64,
       "height": 64
     }
+  },
+  "shap_e_traffic_cone_turntable": {
+    "associationSha256": "f55390bea2eb0a0b8a086c200704b345c1754cf6a9754245977677cbe7be6725",
+    "backendSourceFingerprint": "sha256:backend-source-v1:3486a8950b4b134157b022faf89983af60c5e274d4ec3ed9fedd44b2ee1459ab",
+    "backendContractFingerprint": "sha256:backend-contract-v1:9378c60e00d05964ea18fe541c5454ee2aedc97ad016658f5dcffe4ac46bd326",
+    "templateRevisionHash": "fa62bcb8142d0e8e3cf7816cc648ca33ae32dfcfebb83d455c52e14f662a8ff2",
+    "capturedAt": "2026-11-26T12:31:34.910Z",
+    "outputExtension": "mp4",
+    "primaryModelRepo": "openai/shap-e",
+    "outputSize": {
+      "width": 256,
+      "height": 256
+    }
   }
 }

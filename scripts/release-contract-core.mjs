@@ -111,7 +111,72 @@ export function assessGalleryReleaseApproval(entry, { matchesCurrentRecipe, unav
   return { approved: reasons.length === 0, reasons };
 }
 
-export function assessWorkflowReleaseEvidence({ modelType, exactModelRevision, sourceTemplate, canonicalReceipt }) {
+export function assessPreviewFreeResearchWorkflow({
+  manifest,
+  graphHash,
+  exactModelRevision,
+  receipt,
+  review,
+  artifactReview,
+}) {
+  if (!review || !receipt) return null;
+  const admitted = artifactReview?.admission;
+  const model = artifactReview?.repositories?.find(
+    (row) => row.pipelineClass === manifest.modelType && `${row.repository}@${row.revision}` === exactModelRevision,
+  );
+  const expectedProof =
+    manifest.mode === 'edit_image'
+      ? ['real_backend_input_bound_model_variant']
+      : ['real_backend_weights', 'real_backend_prompt_bound_model_variant'];
+  if (
+    artifactReview?.license?.commercialUseAllowed !== false ||
+    typeof artifactReview.license.id !== 'string' ||
+    !artifactReview.license.id.trim() ||
+    admitted?.galleryEligible !== false ||
+    admitted?.autoEligible !== false ||
+    !admitted.executableModes?.includes(manifest.id) ||
+    !model ||
+    manifest.mediaKind !== 'image' ||
+    !['text_to_image', 'edit_image'].includes(manifest.mode) ||
+    !expectedProof.includes(receipt.proofKind) ||
+    (manifest.mode === 'edit_image' && !receipt.inputBinding?.sha256) ||
+    review.workflowId !== manifest.id ||
+    review.sourceTemplateId !== manifest.sourceTemplateId ||
+    review.sourceTemplateId !== receipt.sourceTemplateId ||
+    review.canonicalWorkflowHash !== graphHash ||
+    review.canonicalWorkflowHash !== receipt.canonicalWorkflowHash ||
+    review.executedGraphHash !== receipt.graphHash ||
+    review.evidenceSha256 !== receipt.evidenceSha256 ||
+    review.outputHash !== receipt.outputHash ||
+    receipt.workflowId !== manifest.id ||
+    receipt.modelType !== manifest.modelType ||
+    receipt.task !== manifest.mode ||
+    receipt.modelSet?.length !== 1 ||
+    receipt.modelSet[0].repoId !== model.repository ||
+    receipt.modelSet[0].revision !== model.revision ||
+    !/^sha256:workflow-graph-v1:[a-f0-9]{64}$/.test(graphHash) ||
+    !/^sha256:canonical-graph-v1:[a-f0-9]{64}$/.test(review.executedGraphHash) ||
+    !/^[a-f0-9]{64}$/.test(review.evidenceSha256) ||
+    !/^sha256:(bytes|decoded-output-collection-v1):[a-f0-9]{64}$/.test(review.outputHash)
+  )
+    return null;
+
+  return {
+    scope: 'noncommercial_research',
+    preview: 'withheld',
+    license: artifactReview.license.id,
+    canonicalDefaultsExecuted: receipt.canonicalDefaultsExecuted ?? receipt.proofKind === 'real_backend_weights',
+    evidenceSha256: receipt.evidenceSha256,
+  };
+}
+
+export function assessWorkflowReleaseEvidence({
+  modelType,
+  exactModelRevision,
+  sourceTemplate,
+  canonicalReceipt,
+  previewFreeResearch,
+}) {
   const dataOperation = modelType === 'BuiltinDataOperation';
   const mediaOperation = ['BuiltinImageOperation', 'BuiltinAudioOperation', 'BuiltinVideoOperation'].includes(
     modelType,
@@ -123,6 +188,7 @@ export function assessWorkflowReleaseEvidence({ modelType, exactModelRevision, s
   const executedRequiredDefaults = !mediaOperation || canonicalReceipt?.canonicalDefaultsExecuted === true;
   const releaseEligible = Boolean(
     (exactModelRevision && sourceTemplate?.releaseEligible) ||
+    (exactModelRevision && previewFreeResearch) ||
     ((dataOperation || mediaOperation) && hasDeterministicReceipt && verifiedCorrectness && executedRequiredDefaults),
   );
   const missingReleaseEvidence = [];
