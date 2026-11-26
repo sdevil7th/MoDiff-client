@@ -85,7 +85,7 @@ application source pair is:
 | MoDiff        | `1239d1cecd12a7318eb263ca17c34d4fc0445d14` |
 | MoDiff-client | `c561a01395044fd71c1918e95fb9e9709d8e7601` |
 
-CI backend contract: `70fe2b8576d41ccc1efa1ac478c9899fb179a951`.
+CI backend contract: `61dd5a3bdb95833180c67fdb6af98a8599b0586b`.
 
 Both CI jobs use this immutable backend revision. It includes the weight-loading
 controls that the client verifies when it opens saved recipes. Hardware coverage
