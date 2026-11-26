@@ -67,5 +67,8 @@ decoded media to match their recorded hashes. The two adapter workflows must
 match their current executable exports. FramePack requires the verified original
 recipe and the approved variant with both reference images. The registry carries
 hashes, and the private media and run records stay outside Git and the Gallery.
+Both the asset and workflow release checks verify that these templates expose
+no Gallery previews and that the public asset list contains none of their exact
+output bytes under any filename. These checks also run on a clean checkout.
 This server-side evidence establishes execution and delivery. Browser interaction
 and hardware qualification use their own checks.

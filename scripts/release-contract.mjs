@@ -28,6 +28,7 @@ import { readReviewedBoundTemplateAssociations } from './retained-template-assoc
 import { createRetainedGalleryReleaseReader, retainedFullGraphImageResource } from './retained-gallery-release.mjs';
 import { canonicalJsonHash } from './canonical-json.mjs';
 import { readPrivateWorkflowQualification } from './private-workflow-qualification.mjs';
+import { readPrivateGalleryReviews } from './template-asset-release-contract.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLIENT_ROOT = resolve(SCRIPT_DIR, '..');
@@ -42,7 +43,6 @@ const TEMPLATE_RECEIPT_REGISTRY_PATH = join(
 );
 const RETAINED_TEMPLATE_REVIEW_ROOT = join(BACKEND_ROOT, 'data/qualification/release/retained-template-review');
 const PREVIEW_FREE_REVIEW_PATH = join(CLIENT_ROOT, 'config/preview-free-research-workflows.v1.json');
-const PRIVATE_QUALIFICATION_PATH = join(CLIENT_ROOT, 'config/private-workflow-qualification.v1.json');
 const CHECK = process.argv.includes('--check');
 
 function readJson(path) {
@@ -594,16 +594,19 @@ try {
     };
   }).sort((left, right) => left.id.localeCompare(right.id));
 
-  const privateReviewRegistry = readJson(PRIVATE_QUALIFICATION_PATH);
-  if (privateReviewRegistry.schemaVersion !== 1 || !Array.isArray(privateReviewRegistry.reviews)) {
-    throw new Error('Invalid private workflow review registry.');
-  }
-  const reviewedPrivateWorkflows = privateReviewRegistry.reviews.map((review) => {
+  const privateReviews = readPrivateGalleryReviews(
+    CLIENT_ROOT,
+    gallerySource,
+    readJson(join(CLIENT_ROOT, 'config', 'template-assets.v1.json')),
+    gallery,
+  );
+  const reviewedPrivateWorkflows = privateReviews.map((review) => {
     const record = workflowRecords.find(({ manifest }) => manifest.id === review.workflowId);
     if (!record) throw new Error(`Missing private workflow source: ${review.workflowId}`);
     return { review, ...record };
   });
-  if (new Set(reviewedPrivateWorkflows.map(({ manifest }) => manifest.id)).size !== reviewedPrivateWorkflows.length) {
+  const privateWorkflowIds = new Set(privateReviews.map(({ workflowId }) => workflowId));
+  if (privateWorkflowIds.size !== privateReviews.length) {
     throw new Error('Private workflow reviews contain duplicate workflow IDs.');
   }
   const canonicalPrivateGraphs = await exportCanonicalWorkflowGraphs(
@@ -651,7 +654,7 @@ try {
           ? canonicalWorkflowDeclaredModelRevision(manifest, graph, authoring, artifact)
           : null;
       const privateQualification = privateQualifications.get(manifest.id);
-      if (privateQualification && sourceTemplate?.reviewedExampleReleaseApproved) {
+      if (privateWorkflowIds.has(manifest.id) && sourceTemplate?.reviewedExampleReleaseApproved) {
         throw new Error(`Private workflow must withhold its Gallery preview: ${manifest.id}`);
       }
       const exactModelRevision =
