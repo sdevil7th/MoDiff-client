@@ -2956,6 +2956,9 @@ test('template prompt recipes are distinct, detailed, and not generic placeholde
         (template.mode === 'image_to_video' && template.modelType === 'StableVideoDiffusionPipeline')
       ) {
         assert.equal(template.prompt, '', `${template.id} keeps its prompt-free task contract`);
+      } else if (template.id === 'pixart_sigma_pag_pink_mascot') {
+        assert.equal(template.prompt, '', 'The PAG preview preserves the original blank-prompt run.');
+        assert.equal(template.example.lockedSettings.pagScale, 4);
       } else {
         assert.ok(template.prompt.trim(), `${template.id} retains the recorded prompt`);
       }
@@ -4648,6 +4651,25 @@ test('Experimental refuses undeclared or incomplete internal creator selections'
 
 test('every template name identifies its exact model and operation', () => {
   const { STUDIO_TEMPLATES } = templatesModule;
+  const reviewedImageTitles = new Map([
+    ['pixart_sigma_terracotta_herbs', ['Lavender and Rosemary', 'PixArt Sigma XL 1024px', 'text_to_image']],
+    [
+      'pixart_sigma_pag_pink_mascot',
+      ['Technical Preview — Pink Mascot', 'PixArt Sigma XL 1024px PAG', 'text_to_image'],
+    ],
+    [
+      'ddpm_cifar32_technical_preview',
+      ['Technical Preview — DDPM CIFAR-10 Technical Preview', 'DDPM CIFAR-10 32x32', 'unconditional_image'],
+    ],
+    [
+      'consistency_64_technical_preview',
+      [
+        'Technical Preview — Consistency Model 64px Technical Preview',
+        'Consistency Model ImageNet 64x64',
+        'unconditional_image',
+      ],
+    ],
+  ]);
   for (const template of STUDIO_TEMPLATES) {
     const modelName = browserModule.templateModelDisplayName(template);
     const modelLabel =
@@ -4664,6 +4686,8 @@ test('every template name identifies its exact model and operation', () => {
       assert.equal(template.label, 'Wav2Vec2 — Station Announcement');
       assert.equal(modelLabel, 'Wav2Vec2 Base 960h');
       assert.equal(template.mode, 'speech_to_text');
+    } else if (reviewedImageTitles.has(template.id)) {
+      assert.deepEqual([template.label, modelLabel, template.mode], reviewedImageTitles.get(template.id));
     } else {
       assert.ok(template.label.startsWith(`${modelLabel} — `), `${template.id} must begin with its model name`);
     }
